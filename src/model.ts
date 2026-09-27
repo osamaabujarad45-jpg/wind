@@ -1,3 +1,5 @@
+// Shared by the app and the API server (server/main.ts). Keep it free of React Native imports.
+
 export const cities = [
   { id: 'ramallah', ar: 'رام الله', en: 'Ramallah', latitude: 31.9038, longitude: 35.2034 },
   { id: 'bireh', ar: 'البيرة', en: 'Al-Bireh', latitude: 31.9107, longitude: 35.2164 },
@@ -13,33 +15,64 @@ export const cities = [
 
 export type CityId = typeof cities[number]['id'];
 export type Service = 'parcel' | 'ride' | 'freight';
-export type OrderStatus = 'requested' | 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed';
+export type Role = 'customer' | 'driver' | 'admin';
+export type Vehicle = 'car' | 'van' | 'truck';
+export type UserStatus = 'active' | 'pending' | 'blocked';
+export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled';
+export type Plan = 'plus' | 'pro';
+export type Point = { latitude: number; longitude: number };
 
-export type Booking = {
-  id: string;
-  service: Service;
-  pickupCity: CityId;
-  pickupPoint?: { latitude: number; longitude: number };
-  dropoffCity: CityId;
-  pickupNote: string;
-  dropoffNote: string;
-  contact: string;
-  detail: string;
-  option: string;
-  payment: 'cash' | 'digital';
-  shared: boolean;
-  samplePrice: number;
-  status: OrderStatus;
-  createdAt: number;
+export const services: Service[] = ['parcel', 'ride', 'freight'];
+export const vehicles: Vehicle[] = ['car', 'van', 'truck'];
+export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'completed'];
+export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit'];
+export const vehicleServices: Record<Vehicle, Service[]> = { car: ['parcel', 'ride'], van: ['parcel', 'freight'], truck: ['freight'] };
+export const planForRole: Partial<Record<Role, Plan>> = { customer: 'plus', driver: 'pro' };
+export const sharedCapacity = 4;
+
+export function optionsFor(service: Service): string[] {
+  return service === 'ride' ? ['1', '2', '3', '4'] : ['small', 'medium', 'large'];
+}
+
+// Admin-editable; stored server-side. Discounts and commissions are fractions.
+export const defaultSettings = {
+  parcelBase: 12, parcelPerKm: 0.8, parcelLarge: 10,
+  rideBase: 15, ridePerKm: 1.1,
+  freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
+  sharedDiscount: 0.4, plusDiscount: 0.15,
+  commission: 0.15, proCommission: 0.05,
+  plusPrice: 29, proPrice: 99,
+};
+export type Settings = typeof defaultSettings;
+export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission'];
+
+export type User = {
+  id: number; phone: string; name: string; role: Role; status: UserStatus;
+  vehicle: Vehicle | null; rating: number | null; createdAt: number;
 };
 
-export const statusFlow: OrderStatus[] = ['requested', 'searching', 'assigned', 'at_pickup', 'in_transit', 'completed'];
+export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
+
+export type Order = {
+  id: number; customerId: number; driverId: number | null; service: Service; shared: boolean;
+  pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null;
+  pickupNote: string; dropoffNote: string; contact: string | null; detail: string;
+  option: string; loadingHelp: boolean; price: number; commission: number | null;
+  status: OrderStatus; handoverCode: string | null; rating: number | null;
+  createdAt: number; updatedAt: number;
+  customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
+  driverLocation?: (Point & { updatedAt: number; ageSeconds: number }) | null;
+};
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;
 }
 
-export function nearestCity(point: { latitude: number; longitude: number }): CityId {
+export function isCity(id: unknown): id is CityId {
+  return cities.some(item => item.id === id);
+}
+
+export function nearestCity(point: Point): CityId {
   return cities.reduce((nearest, candidate) => {
     const distance = (item: typeof cities[number]) =>
       (item.latitude - point.latitude) ** 2 + (item.longitude - point.longitude) ** 2;
@@ -47,24 +80,49 @@ export function nearestCity(point: { latitude: number; longitude: number }): Cit
   }).id;
 }
 
-export function sampleQuote(service: Service, pickupCity: CityId, dropoffCity: CityId, option: string, shared = false): number {
-  const intercity = pickupCity !== dropoffCity &&
-    !(['ramallah', 'bireh'].includes(pickupCity) && ['ramallah', 'bireh'].includes(dropoffCity));
-  const base = service === 'freight' ? 90 : service === 'ride' ? 20 : 18;
-  const distance = intercity ? (service === 'freight' ? 120 : 45) : 0;
-  const size = service === 'freight' && option === 'large' ? 60
-    : service === 'parcel' && option === 'large' ? 12 : 0;
-  const total = base + distance + size;
-  // ponytail: flat 40% off when pooled; real split needs the dispatch service to know who shares the route.
-  return shared ? Math.round(total * 0.6) : total;
+// ponytail: straight-line km x1.3 road factor; swap for a routing API once West Bank road data is validated.
+export function distanceKm(a: Point, b: Point): number {
+  const rad = (deg: number) => deg * Math.PI / 180;
+  const h = Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 +
+    Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
+  return Math.round(2 * 6371 * Math.asin(Math.sqrt(h)) * 1.3 * 10) / 10;
 }
 
-// Palestinian mobiles (Jawwal 059, Ooredoo 056); accepts Arabic-Indic digits from Arabic keyboards.
-export function isValidPhone(input: string): boolean {
+export function quote(s: Settings, o: {
+  service: Service; pickupCity: CityId; dropoffCity: CityId; option: string;
+  loadingHelp?: boolean; shared: boolean; plus?: boolean;
+}): number {
+  const km = distanceKm(city(o.pickupCity), city(o.dropoffCity));
+  const large = o.option === 'large';
+  let total = o.service === 'parcel' ? s.parcelBase + s.parcelPerKm * km + (large ? s.parcelLarge : 0)
+    : o.service === 'ride' ? s.rideBase + s.ridePerKm * km
+    : s.freightBase + s.freightPerKm * km + (large ? s.freightLarge : 0) + (o.loadingHelp ? s.loadingHelp : 0);
+  if (o.shared) total *= (1 - s.sharedDiscount) * (o.service === 'ride' ? Number(o.option) || 1 : 1); // shared rides are per seat
+  if (o.plus) total *= 1 - s.plusDiscount;
+  return Math.max(1, Math.round(total));
+}
+
+export function commissionOn(price: number, rate: number): number {
+  return Math.round(price * rate * 100) / 100;
+}
+
+// Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
+// and +970 / 00970 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
+export function normalizePhone(input: string): string | null {
   const ascii = input.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[\s-]/g, '');
-  return /^(?:(?:\+|00)?970|0)?5[69]\d{7}$/.test(ascii);
+  const match = /^(?:(?:\+|00)?970|0)?(5[69]\d{7})$/.exec(ascii);
+  return match ? `0${match[1]}` : null;
+}
+
+export function isValidPhone(input: string): boolean {
+  return normalizePhone(input) !== null;
 }
 
 export function nextStatus(status: OrderStatus): OrderStatus {
-  return statusFlow[Math.min(statusFlow.indexOf(status) + 1, statusFlow.length - 1)];
+  const index = statusFlow.indexOf(status);
+  return index < 0 ? status : statusFlow[Math.min(index + 1, statusFlow.length - 1)];
+}
+
+export function orderCode(id: number): string {
+  return `W-${String(id).padStart(5, '0')}`;
 }

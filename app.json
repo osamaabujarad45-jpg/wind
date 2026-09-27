@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "Darbna",
-    "slug": "darbna",
-    "scheme": "darbna",
+    "name": "Wind",
+    "slug": "wind",
+    "scheme": "wind",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ps.darbna.app",
+      "bundleIdentifier": "ps.wind.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "ps.darbna.app",
+      "package": "ps.wind.app",
       "adaptiveIcon": {
         "backgroundColor": "#F8F7F0",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +32,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Darbna uses your location to help set your pickup point."
+          "locationWhenInUsePermission": "Wind uses your location to help set your pickup point."
         }
       ],
       "expo-font",

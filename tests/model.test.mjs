@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
-import { isValidPhone, nearestCity, nextStatus, sampleQuote, statusFlow } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, city, nearestCity, nextStatus, normalizePhone, quote, statusFlow } from '../src/model.ts';
 
-for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.ok(isValidPhone(ok), ok);
-for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.ok(!isValidPhone(bad), bad);
+for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
+for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
 
-assert.equal(sampleQuote('parcel', 'ramallah', 'bireh', 'small'), 18);
-assert.equal(sampleQuote('freight', 'nablus', 'hebron', 'large'), 270);
-assert.equal(sampleQuote('freight', 'nablus', 'hebron', 'large', true), 162);
+const km = distanceKm(city('ramallah'), city('nablus'));
+assert.ok(km > 40 && km < 50, `ramallah-nablus ${km}km`);
+const trip = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false };
+assert.equal(quote(s, trip), Math.round(s.parcelBase + s.parcelPerKm * km));
+assert.ok(quote(s, { ...trip, shared: true }) < quote(s, trip));
+assert.ok(quote(s, { ...trip, shared: true, plus: true }) < quote(s, { ...trip, shared: true }));
+const ride = { service: 'ride', pickupCity: 'hebron', dropoffCity: 'hebron', shared: true };
+assert.equal(quote(s, { ...ride, option: '3' }), Math.round(s.rideBase * (1 - s.sharedDiscount) * 3)); // shared rides are per seat
+assert.equal(quote(s, { ...ride, option: '3', shared: false }), s.rideBase);
+
 assert.equal(nextStatus('completed'), 'completed');
+assert.equal(nextStatus('cancelled'), 'cancelled');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);
 assert.equal(nearestCity({ latitude: 31.9038, longitude: 35.2034 }), 'ramallah');

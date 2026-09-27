@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local API database
+*.db
+*.db-shm
+*.db-wal

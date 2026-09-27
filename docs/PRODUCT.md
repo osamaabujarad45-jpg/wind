@@ -1,10 +1,10 @@
-# Darbna — product requirements and market study
+# Wind — product requirements and market study
 
 Research snapshot: 27 September 2026. The launch geography is **multiple West Bank cities** and the first release includes **all three services**. This document distinguishes published facts from product assumptions; market size, competitor transaction volumes, and live city coverage have not been independently measured.
 
 ## 1. The product
 
-Darbna lets someone move **an item, a person, or a large load** through one familiar route flow: choose service → set pickup and destination → add the few details that service needs → see the available vehicle and price → confirm → track → complete with proof and support.
+Wind lets someone move **an item, a person, or a large load** through one familiar route flow: choose service → set pickup and destination → add the few details that service needs → see the available vehicle and price → confirm → track → complete with proof and support.
 
 The customer should always know:
 
@@ -22,7 +22,7 @@ Arabic is the default with complete English copy; both must use clear labels, re
 
 ## 2. What the market evidence says
 
-| Published product or source | Observed offer | Darbna implication |
+| Published product or source | Observed offer | Wind implication |
 |---|---|---|
 | [Yummy Palestine](https://yummy.ps/?lang=ar&language=en) | Food and grocery ordering with order tracking in Palestine. | Do not build a restaurant marketplace first. Serve customer-owned parcels and non-food pickup. |
 | [Waselne](https://waselne.com/) | Peer-to-peer parcel and passenger matching; its site also shows road conditions. | A managed order, driver verification, support, clear fare, and handoff record are useful differentiators. This is a proposed positioning, not a measured competitor weakness. |
@@ -33,7 +33,7 @@ Arabic is the default with complete English copy; both must use clear labels, re
 
 The [Palestinian Central Bureau of Statistics 2024 yearbook](https://www.pcbs.gov.ps/media/duelruxt/book2709.pdf) reports 2023 smartphone access in 95.2% of West Bank households. This supports a mobile-first approach, but it does not measure willingness to use this product. [OCHA's 2025 West Bank access snapshot](https://www.un.org/unispal/document/ocha-west-bank-humanitarian-access-snapshot-january-december-2025/) documents movement constraints, so quoted ETAs need confidence ranges and route-delay handling.
 
-The [Palestinian Ministry of Telecommunications and Digital Economy's 2025 express-courier payment announcement](https://www.mtde.gov.ps/home/news/23075?culture=ar-SA) says courier companies must offer electronic payment and payments over ₪500 must use electronic means. Applicability to Darbna's exact legal structure must be checked before launch. The [PMA's licensed payment providers directory](https://www.pma.ps/supervision-institutions-companies/electronic-payment-service-companies) is the starting point for choosing a provider.
+The [Palestinian Ministry of Telecommunications and Digital Economy's 2025 express-courier payment announcement](https://www.mtde.gov.ps/home/news/23075?culture=ar-SA) says courier companies must offer electronic payment and payments over ₪500 must use electronic means. Applicability to Wind's exact legal structure must be checked before launch. The [PMA's licensed payment providers directory](https://www.pma.ps/supervision-institutions-companies/electronic-payment-service-companies) is the starting point for choosing a provider.
 
 ## 3. Users and jobs
 
@@ -76,7 +76,7 @@ The [Palestinian Ministry of Telecommunications and Digital Economy's 2025 expre
 
 - **U9** See only jobs matched to verified vehicle type, capacity, operating area, and license.
 - **U10** See expected pay, pickup, destination, item/load notes, and required documents before accepting.
-- **U11** Use turn-by-turn external navigation while Darbna reports job status and location.
+- **U11** Use turn-by-turn external navigation while Wind reports job status and location.
 - **U12** Record arrival, pickup, delay, handoff, and incident with offline retry.
 - **U13** Stop location sharing immediately when a job ends and see earnings/settlement history.
 
