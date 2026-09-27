@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "Fast Ship",
-    "slug": "fast-ship",
-    "scheme": "fastship",
+    "name": "Darbna",
+    "slug": "darbna",
+    "scheme": "darbna",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ps.fastship.app",
+      "bundleIdentifier": "ps.darbna.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "ps.fastship.app",
+      "package": "ps.darbna.app",
       "adaptiveIcon": {
         "backgroundColor": "#F8F7F0",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +32,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Fast Ship uses your location to help set your pickup point."
+          "locationWhenInUsePermission": "Darbna uses your location to help set your pickup point."
         }
       ],
       "expo-font",

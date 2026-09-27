@@ -1,4 +1,4 @@
-# Fast Ship — system requirements and implementation plan
+# Darbna — system requirements and implementation plan
 
 ## 1. Architecture
 
@@ -21,7 +21,7 @@ Use a modular monolith for the API at first. One database transaction owns assig
 - **Real time:** authenticated WebSocket/SSE order events; APNs/FCM push for background updates, SMS fallback for critical handoffs.
 - **Maps:** provider with validated West Bank routing and a manual override; pin, landmark, and phone contact always available. Never treat map route length as a guaranteed travel time.
 - **Storage:** private object storage for proof photos and driver documents, short signed access URLs.
-- **Payments:** one PMA-licensed provider first; tokenized card/wallet flow, no card storage in Fast Ship.
+- **Payments:** one PMA-licensed provider first; tokenized card/wallet flow, no card storage in Darbna.
 
 Validate API/framework/provider choice against current pricing, availability, and contractual terms before implementation.
 
@@ -105,7 +105,7 @@ Every write checks actor role and order ownership. Event payloads include an ord
 Before any real booking:
 
 1. Confirm passenger-transport permissions, driver/vehicle licensing, insurance, and operating regions with the relevant authorities and transport partners.
-2. Confirm whether Fast Ship itself needs an express-courier license or can operate through a licensed carrier; the [ministry publishes a 2025 licensed-company list](https://mtde.gov.ps/uploads/files/20250925085342_%D8%B4%D8%B1%D9%83%D8%A9_%D8%A7%D9%84%D8%A8%D8%B1%D9%8A%D8%AF_%D8%A7%D9%84%D9%85%D8%B1%D8%AE%D8%B5%D8%A9_2025.pdf).
+2. Confirm whether Darbna itself needs an express-courier license or can operate through a licensed carrier; the [ministry publishes a 2025 licensed-company list](https://mtde.gov.ps/uploads/files/20250925085342_%D8%B4%D8%B1%D9%83%D8%A9_%D8%A7%D9%84%D8%A8%D8%B1%D9%8A%D8%AF_%D8%A7%D9%84%D9%85%D8%B1%D8%AE%D8%B5%D8%A9_2025.pdf).
 3. Confirm courier e-payment obligations and the over-₪500 rule from the [ministry's 2025 announcement](https://www.mtde.gov.ps/home/news/23075?culture=ar-SA); contract with a provider from the [PMA directory](https://www.pma.ps/supervision-institutions-companies/electronic-payment-service-companies).
 4. Set prohibited goods, damage/insurance, customer refund, cancellation, privacy/retention, emergency, and support policies with local counsel and pilot partners.
 5. Drive test each enabled city pair at representative times; validate maps, road restrictions, expected fare, safe pickup points, and fallback route.

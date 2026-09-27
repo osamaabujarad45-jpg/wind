@@ -4,13 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { cities, city, isValidPhone, nearestCity, sampleQuote, type CityId, type Service } from '../model';
-import { useFastShip } from '../state';
+import { useDarbna } from '../state';
 import { palette, PrimaryButton, ScreenTitle, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string }>();
   const service: Service = params.service === 'ride' || params.service === 'freight' ? params.service : 'parcel';
-  const { placeBooking, gpsPoint, setGpsPoint } = useFastShip();
+  const { placeBooking, gpsPoint, setGpsPoint } = useDarbna();
   const { c, language, rtl } = useCopy();
   const [pickupCity, setPickupCity] = useState<CityId>(gpsPoint ? nearestCity(gpsPoint) : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>('nablus');
@@ -22,8 +22,11 @@ export default function Book() {
   const [option, setOption] = useState(service === 'ride' ? '1' : 'small');
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [payment, setPayment] = useState<'cash' | 'digital'>('cash');
+  const [shared, setShared] = useState(true);
   const [error, setError] = useState('');
-  const price = sampleQuote(service, pickupCity, dropoffCity, option) + (service === 'freight' && loadingHelp ? 30 : 0);
+  const help = service === 'freight' && loadingHelp ? 30 : 0;
+  const quote = (pooled: boolean) => sampleQuote(service, pickupCity, dropoffCity, option, pooled) + help;
+  const price = quote(shared);
   const serviceTitle = c[service];
 
   function submit() {
@@ -37,12 +40,12 @@ export default function Book() {
     }
     setError('');
     placeBooking({
-      id: `FS-${Date.now().toString().slice(-7)}`,
+      id: `DR-${Date.now().toString().slice(-7)}`,
       service, pickupCity, dropoffCity, pickupPoint: gpsPoint ?? undefined,
       pickupNote: pickupNote.trim(), dropoffNote: dropoffNote.trim(),
       contact: contact.trim(), detail: detail.trim(),
       option: service === 'freight' && loadingHelp ? `${option}+help` : option,
-      payment, samplePrice: price, status: 'requested', createdAt: Date.now(),
+      payment, shared, samplePrice: price, status: 'requested', createdAt: Date.now(),
     });
     router.replace('/activity');
   }
@@ -79,7 +82,7 @@ export default function Book() {
   function choices(items: { key: string; label: string }[], current: string, select: (key: string) => void) {
     return <View style={[styles.choices, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
       {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label}
-        accessibilityState={{ checked: current === item.key }}
+        aria-checked={current === item.key}
         onPress={() => select(item.key)}
         style={[styles.choice, current === item.key && styles.choiceActive]}>
         <Text style={[styles.choiceText, current === item.key && { color: palette.olive }]}>{item.label}</Text>
@@ -124,6 +127,13 @@ export default function Book() {
             {choices([{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }], loadingHelp ? 'yes' : 'no', key => setLoadingHelp(key === 'yes'))}
           </>}
         </View>
+
+        <Text style={[styles.section, { textAlign: rtl ? 'right' : 'left' }]}>{c.mode}</Text>
+        {choices([
+          { key: 'shared', label: `${c.shared} · ${c.nis} ${quote(true)}` },
+          { key: 'private', label: `${c.private} · ${c.nis} ${quote(false)}` },
+        ], shared ? 'shared' : 'private', key => setShared(key === 'shared'))}
+        <Text style={[styles.note, { textAlign: rtl ? 'right' : 'left', marginBottom: 24 }]}>{c.sharedNote}</Text>
 
         <Text style={[styles.section, { textAlign: rtl ? 'right' : 'left' }]}>{c.payment}</Text>
         {choices([{ key: 'cash', label: c.cash }, { key: 'digital', label: c.digital }], payment, key => setPayment(key as 'cash' | 'digital'))}

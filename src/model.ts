@@ -27,6 +27,7 @@ export type Booking = {
   detail: string;
   option: string;
   payment: 'cash' | 'digital';
+  shared: boolean;
   samplePrice: number;
   status: OrderStatus;
   createdAt: number;
@@ -46,14 +47,16 @@ export function nearestCity(point: { latitude: number; longitude: number }): Cit
   }).id;
 }
 
-export function sampleQuote(service: Service, pickupCity: CityId, dropoffCity: CityId, option: string): number {
+export function sampleQuote(service: Service, pickupCity: CityId, dropoffCity: CityId, option: string, shared = false): number {
   const intercity = pickupCity !== dropoffCity &&
     !(['ramallah', 'bireh'].includes(pickupCity) && ['ramallah', 'bireh'].includes(dropoffCity));
   const base = service === 'freight' ? 90 : service === 'ride' ? 20 : 18;
   const distance = intercity ? (service === 'freight' ? 120 : 45) : 0;
   const size = service === 'freight' && option === 'large' ? 60
     : service === 'parcel' && option === 'large' ? 12 : 0;
-  return base + distance + size;
+  const total = base + distance + size;
+  // ponytail: flat 40% off when pooled; real split needs the dispatch service to know who shares the route.
+  return shared ? Math.round(total * 0.6) : total;
 }
 
 // Palestinian mobiles (Jawwal 059, Ooredoo 056); accepts Arabic-Indic digits from Arabic keyboards.

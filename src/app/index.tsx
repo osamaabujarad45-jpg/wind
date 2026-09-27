@@ -5,11 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import type { Service } from '../model';
-import { useFastShip } from '../state';
+import { useDarbna } from '../state';
 import { BottomBar, palette, PrimaryButton, useCopy } from '../ui';
 
 export default function Home() {
-  const { booking, language, setLanguage, gpsPoint, setGpsPoint } = useFastShip();
+  const { booking, language, setLanguage, gpsPoint, setGpsPoint } = useDarbna();
   const { c, rtl } = useCopy();
   const [gps, setGps] = useState<'idle' | 'loading' | 'ready' | 'denied'>('idle');
 
@@ -37,7 +37,7 @@ export default function Home() {
       <View style={[styles.top, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
         <View style={[styles.brand, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
           <View style={styles.brandMark}><View style={styles.brandLine} /><View style={styles.brandDotA} /><View style={styles.brandDotB} /></View>
-          <View><Text style={[styles.brandName, { textAlign: rtl ? 'right' : 'left' }]}>{c.brand}</Text><Text style={styles.brandLatin}>FAST SHIP</Text></View>
+          <View><Text style={[styles.brandName, { textAlign: rtl ? 'right' : 'left' }]}>{c.brand}</Text><Text style={styles.brandLatin}>DARBNA</Text></View>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={language === 'ar' ? 'English' : 'العربية'}
           onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} style={styles.language}>
@@ -73,7 +73,7 @@ export default function Home() {
         style={({ pressed }) => [styles.serviceCard, { opacity: pressed ? 0.75 : 1, flexDirection: rtl ? 'row-reverse' : 'row' }]}>
         <View style={[styles.serviceIcon, { backgroundColor: service.pale }]}><Ionicons name={service.icon} size={27} color={service.color} /></View>
         <View style={styles.serviceText}>
-          <Text style={[styles.serviceEyebrow, { textAlign: rtl ? 'right' : 'left' }]}>0{index + 1} / FAST SHIP</Text>
+          <Text style={[styles.serviceEyebrow, { textAlign: rtl ? 'right' : 'left' }]}>0{index + 1} / DARBNA</Text>
           <Text style={[styles.serviceTitle, { textAlign: rtl ? 'right' : 'left' }]}>{service.title}</Text>
           <Text style={[styles.body, { textAlign: rtl ? 'right' : 'left' }]}>{service.description}</Text>
         </View>

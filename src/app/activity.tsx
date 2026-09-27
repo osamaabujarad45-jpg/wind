@@ -4,11 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import RouteMap from '../RouteMap';
 import { city, statusFlow } from '../model';
-import { useFastShip } from '../state';
+import { useDarbna } from '../state';
 import { BottomBar, palette, PrimaryButton, ScreenTitle, useCopy } from '../ui';
 
 export default function Activity() {
-  const { booking, advanceDemo } = useFastShip();
+  const { booking, advanceDemo } = useDarbna();
   const { c, language, rtl } = useCopy();
 
   if (!booking) return <SafeAreaView style={styles.safe}>
@@ -31,7 +31,7 @@ export default function Activity() {
       <ScreenTitle title={c.activityTitle} />
       <View style={[styles.orderHead, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
         <View>
-          <Text style={[styles.eyebrow, { textAlign: rtl ? 'right' : 'left' }]}>{c.sampleOrder}</Text>
+          <Text style={[styles.eyebrow, { textAlign: rtl ? 'right' : 'left' }]}>{c.sampleOrder} · {booking.shared ? c.shared : c.private}</Text>
           <Text style={styles.orderId}>{booking.id}</Text>
         </View>
         <View style={styles.statusPill}><Text style={styles.statusText}>{c[booking.status]}</Text></View>

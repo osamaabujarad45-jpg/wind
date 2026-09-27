@@ -1,6 +1,6 @@
-# Fast Ship / فاست شيب
+# Darbna / دربنا
 
-Arabic-first iOS and Android project for three services across multiple West Bank cities: parcels, licensed passenger rides, and large-load transport.
+Arabic-first iOS and Android project for three services across multiple West Bank cities: parcels, licensed passenger rides, and large-load transport. Positioned as the shared, lower-cost delivery layer for Souqna orders: requests heading the same way are pooled so each pays less (a private option stays available). The Souqna integration and any co-branding need a written agreement with Souqna first.
 
 ## Run the interactive prototype
 
@@ -40,7 +40,7 @@ npx eas-cli@latest submit --platform all      # TestFlight / Play internal testi
 npx expo export --platform web && npx eas-cli@latest deploy   # web preview on EAS Hosting
 ```
 
-- `GOOGLE_MAPS_API_KEY` (Maps SDK for Android, restricted to package `ps.fastship.app`) enables the Android map. Without it Android shows the static route preview instead of crashing. iOS uses Apple Maps and needs no key.
+- `GOOGLE_MAPS_API_KEY` (Maps SDK for Android, restricted to package `ps.darbna.app`) enables the Android map. Without it Android shows the static route preview instead of crashing. iOS uses Apple Maps and needs no key.
 - Layout direction is controlled by the in-app language toggle; OS RTL auto-flip is disabled (`expo-localization` `supportsRTL: false`).
 - While this is a prototype, ship to TestFlight and Play internal/closed testing only. App Store review rejects demo builds (guideline 2.2) and a public Play listing for a ride/courier service needs the licensing described in `docs/SYSTEM.md`.
 

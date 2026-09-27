@@ -15,7 +15,7 @@ type Store = {
 
 const Context = createContext<Store | null>(null);
 
-export function FastShipProvider({ children }: { children: React.ReactNode }) {
+export function DarbnaProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>('ar');
   const [gpsPoint, setGpsPoint] = useState<{ latitude: number; longitude: number } | null>(null);
   const [booking, placeBooking] = useState<Booking | null>(null);
@@ -23,8 +23,8 @@ export function FastShipProvider({ children }: { children: React.ReactNode }) {
   return <Context.Provider value={{ language, setLanguage, gpsPoint, setGpsPoint, booking, placeBooking, advanceDemo }}>{children}</Context.Provider>;
 }
 
-export function useFastShip() {
+export function useDarbna() {
   const store = useContext(Context);
-  if (!store) throw new Error('FastShipProvider is missing');
+  if (!store) throw new Error('DarbnaProvider is missing');
   return store;
 }

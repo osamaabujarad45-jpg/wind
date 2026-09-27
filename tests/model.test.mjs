@@ -6,6 +6,7 @@ for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.ok(!
 
 assert.equal(sampleQuote('parcel', 'ramallah', 'bireh', 'small'), 18);
 assert.equal(sampleQuote('freight', 'nablus', 'hebron', 'large'), 270);
+assert.equal(sampleQuote('freight', 'nablus', 'hebron', 'large', true), 162);
 assert.equal(nextStatus('completed'), 'completed');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);

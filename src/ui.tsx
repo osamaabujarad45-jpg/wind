@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useFastShip } from './state';
+import { useDarbna } from './state';
 
 export const palette = {
   paper: '#F8F7F0',
@@ -21,11 +21,11 @@ export const palette = {
 export const copy = {
   ar: {
     demo: 'نموذج تفاعلي',
-    brand: 'فاست شيب',
+    brand: 'دربنا',
     home: 'الرئيسية',
     activity: 'طلباتي',
     greeting: 'كل مشوار، إله طريق.',
-    homeIntro: 'توصيل أغراض، مشوار، أو نقل حمولة — من مكان واحد وبخطوات واضحة.',
+    homeIntro: 'توصيل أغراض، مشوار، أو نقل حمولة — نشارك الطريق مع طلبات ماشية بنفس الاتجاه، فتدفع أقل.',
     where: 'وين نقطة الانطلاق؟',
     gpsPrompt: 'حدّد موقعك الحالي لتسهيل الاستلام',
     gpsButton: 'استخدم موقعي',
@@ -71,6 +71,10 @@ export const copy = {
     loadingHelp: 'مساعدة في التحميل',
     yes: 'نعم',
     no: 'لا',
+    mode: 'نوع التوصيل',
+    shared: 'مشترك',
+    private: 'خاص',
+    sharedNote: 'المشترك أرخص: نجمع طلبك مع طلبات على نفس الطريق، وقد يتأخر قليلاً.',
     payment: 'طريقة الدفع',
     cash: 'نقداً',
     digital: 'دفع إلكتروني',
@@ -102,11 +106,11 @@ export const copy = {
   },
   en: {
     demo: 'Interactive prototype',
-    brand: 'Fast Ship',
+    brand: 'Darbna',
     home: 'Home',
     activity: 'Orders',
     greeting: 'Every trip, one clear route.',
-    homeIntro: 'Send an item, book a ride, or move a load in one simple flow.',
+    homeIntro: 'Send an item, book a ride, or move a load — shared with orders heading the same way, so you pay less.',
     where: 'Where are you starting?',
     gpsPrompt: 'Use your location to simplify pickup',
     gpsButton: 'Use my location',
@@ -152,6 +156,10 @@ export const copy = {
     loadingHelp: 'Loading help',
     yes: 'Yes',
     no: 'No',
+    mode: 'Delivery type',
+    shared: 'Shared',
+    private: 'Private',
+    sharedNote: 'Shared costs less: grouped with orders on the same route, may take a little longer.',
     payment: 'Payment method',
     cash: 'Cash',
     digital: 'Digital payment',
@@ -184,7 +192,7 @@ export const copy = {
 } as const;
 
 export function useCopy() {
-  const { language } = useFastShip();
+  const { language } = useDarbna();
   return { c: copy[language], language, rtl: language === 'ar' };
 }
 
