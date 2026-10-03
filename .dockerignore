@@ -1,4 +1,6 @@
 # The API image needs only these; everything else (node_modules, app code) stays out of the build context.
 *
+!Dockerfile
+!railway.json
 !server
 !src/model.ts

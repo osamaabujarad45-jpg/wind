@@ -3,7 +3,7 @@
     "name": "Wind",
     "slug": "wind",
     "scheme": "wind",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,8 +16,15 @@
     },
     "android": {
       "package": "ps.wind.app",
+      "versionCode": 3,
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#F8F7F0",
+        "backgroundColor": "#12342A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -32,7 +39,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Wind uses your location to help set your pickup point."
+          "locationWhenInUsePermission": "Wind uses your location for pickup and, for drivers, to share your position during an active order while the app is open."
         }
       ],
       "expo-font",
@@ -46,8 +53,8 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "imageWidth": 200,
-          "backgroundColor": "#F8F7F0"
+          "imageWidth": 120,
+          "backgroundColor": "#F3F2EC"
         }
       ]
     ],

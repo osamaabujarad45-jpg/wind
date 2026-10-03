@@ -4,7 +4,7 @@ import { api } from '../../api';
 import { fractionSettings, type Settings } from '../../model';
 import { PasswordCard } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, confirm, ErrorText, Field, haptic, Header, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, confirm, ErrorText, Field, haptic, Header, ListGroup, Screen, Txt, useCopy } from '../../ui';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelBase', 'parcelPerKm', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp'] },
@@ -50,7 +50,7 @@ export default function AdminSettings() {
     <View style={{ gap: 10 }}>
       <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
       <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
-      <PasswordCard />
+      <ListGroup><PasswordCard /></ListGroup>
       <Button title={c.logout} icon="log-out-outline" variant="danger" onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
     </View>
   </Screen>;

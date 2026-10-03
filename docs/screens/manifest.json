@@ -1,0 +1,486 @@
+[
+  {
+    "id": "intro",
+    "group": "Launch",
+    "name": "Animated intro",
+    "route": "/",
+    "file": "src/intro.tsx",
+    "ar": [
+      "ar/intro-1.png",
+      "ar/intro-2.png",
+      "ar/intro-3.png",
+      "ar/intro-4.png",
+      "ar/intro-5.png"
+    ],
+    "en": [
+      "en/intro-1.png",
+      "en/intro-2.png",
+      "en/intro-3.png",
+      "en/intro-4.png",
+      "en/intro-5.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "welcome-1",
+    "group": "Launch",
+    "name": "Welcome · services",
+    "route": "/",
+    "file": "src/app/welcome.tsx",
+    "ar": [
+      "ar/welcome-1.png"
+    ],
+    "en": [
+      "en/welcome-1.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "welcome-2",
+    "group": "Launch",
+    "name": "Welcome · clear pricing",
+    "route": "/",
+    "file": "src/app/welcome.tsx",
+    "ar": [
+      "ar/welcome-2.png"
+    ],
+    "en": [
+      "en/welcome-2.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "welcome-3",
+    "group": "Launch",
+    "name": "Welcome · track & handover",
+    "route": "/",
+    "file": "src/app/welcome.tsx",
+    "ar": [
+      "ar/welcome-3.png"
+    ],
+    "en": [
+      "en/welcome-3.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "sign-in",
+    "group": "Launch",
+    "name": "Sign in",
+    "route": "/auth",
+    "file": "src/app/auth.tsx",
+    "ar": [
+      "ar/sign-in.png"
+    ],
+    "en": [
+      "en/sign-in.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "sign-up",
+    "group": "Launch",
+    "name": "Create account (driver)",
+    "route": "/auth",
+    "file": "src/app/auth.tsx",
+    "ar": [
+      "ar/sign-up.png"
+    ],
+    "en": [
+      "en/sign-up.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "sign-up-customer",
+    "group": "Launch",
+    "name": "Create account (customer)",
+    "route": "/auth",
+    "file": "src/app/auth.tsx",
+    "ar": [
+      "ar/sign-up-customer.png"
+    ],
+    "en": [
+      "en/sign-up-customer.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "help",
+    "group": "Launch",
+    "name": "Help & support",
+    "route": "/help?topic=password",
+    "file": "src/app/help.tsx",
+    "ar": [
+      "ar/help.png"
+    ],
+    "en": [
+      "en/help.png"
+    ],
+    "session": null
+  },
+  {
+    "id": "home",
+    "group": "Customer",
+    "name": "Home",
+    "route": "/",
+    "file": "src/app/(customer)/index.tsx",
+    "ar": [
+      "ar/home.png"
+    ],
+    "en": [
+      "en/home.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "book-parcel",
+    "group": "Customer",
+    "name": "Book a parcel",
+    "route": "/book?service=parcel",
+    "file": "src/app/book.tsx",
+    "ar": [
+      "ar/book-parcel.png"
+    ],
+    "en": [
+      "en/book-parcel.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "book-ride",
+    "group": "Customer",
+    "name": "Book a ride",
+    "route": "/book?service=ride",
+    "file": "src/app/book.tsx",
+    "ar": [
+      "ar/book-ride.png"
+    ],
+    "en": [
+      "en/book-ride.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "book-freight",
+    "group": "Customer",
+    "name": "Book a load",
+    "route": "/book?service=freight",
+    "file": "src/app/book.tsx",
+    "ar": [
+      "ar/book-freight.png"
+    ],
+    "en": [
+      "en/book-freight.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "orders",
+    "group": "Customer",
+    "name": "My orders",
+    "route": "/orders",
+    "file": "src/app/(customer)/orders.tsx",
+    "ar": [
+      "ar/orders.png"
+    ],
+    "en": [
+      "en/orders.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "order-searching",
+    "group": "Customer",
+    "name": "Order · finding a driver",
+    "route": "/order/3",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/order-searching.png"
+    ],
+    "en": [
+      "en/order-searching.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "order-live",
+    "group": "Customer",
+    "name": "Order · on the way",
+    "route": "/order/2",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/order-live.png"
+    ],
+    "en": [
+      "en/order-live.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "order-parcel-live",
+    "group": "Customer",
+    "name": "Parcel · awaiting handover",
+    "route": "/order/6",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/order-parcel-live.png"
+    ],
+    "en": [
+      "en/order-parcel-live.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "order-done",
+    "group": "Customer",
+    "name": "Order · delivered",
+    "route": "/order/1",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/order-done.png"
+    ],
+    "en": [
+      "en/order-done.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "receipt",
+    "group": "Customer",
+    "name": "Receipt",
+    "route": "/receipt/1",
+    "file": "src/app/receipt/[id].tsx",
+    "ar": [
+      "ar/receipt.png"
+    ],
+    "en": [
+      "en/receipt.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "account",
+    "group": "Customer",
+    "name": "Account",
+    "route": "/account",
+    "file": "src/parts.tsx (AccountScreen)",
+    "ar": [
+      "ar/account.png"
+    ],
+    "en": [
+      "en/account.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "profile",
+    "group": "Customer",
+    "name": "Edit profile",
+    "route": "/profile",
+    "file": "src/app/profile.tsx",
+    "ar": [
+      "ar/profile.png"
+    ],
+    "en": [
+      "en/profile.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "driver-pending",
+    "group": "Driver",
+    "name": "Awaiting approval",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "ar": [
+      "ar/driver-pending.png"
+    ],
+    "en": [
+      "en/driver-pending.png"
+    ],
+    "session": "pending"
+  },
+  {
+    "id": "driver-jobs",
+    "group": "Driver",
+    "name": "Jobs",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "ar": [
+      "ar/driver-jobs.png"
+    ],
+    "en": [
+      "en/driver-jobs.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-idle",
+    "group": "Driver",
+    "name": "Jobs · ready for an assignment",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "ar": [
+      "ar/driver-idle.png"
+    ],
+    "en": [
+      "en/driver-idle.png"
+    ],
+    "session": "idle"
+  },
+  {
+    "id": "driver-order",
+    "group": "Driver",
+    "name": "Active trip",
+    "route": "/order/2",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/driver-order.png"
+    ],
+    "en": [
+      "en/driver-order.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-trips",
+    "group": "Driver",
+    "name": "My trips",
+    "route": "/driver/trips",
+    "file": "src/app/driver/trips.tsx",
+    "ar": [
+      "ar/driver-trips.png"
+    ],
+    "en": [
+      "en/driver-trips.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-earnings",
+    "group": "Driver",
+    "name": "Earnings",
+    "route": "/driver/earnings",
+    "file": "src/app/driver/earnings.tsx",
+    "ar": [
+      "ar/driver-earnings.png"
+    ],
+    "en": [
+      "en/driver-earnings.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-receipt",
+    "group": "Driver",
+    "name": "Receipt (driver view)",
+    "route": "/receipt/1",
+    "file": "src/app/receipt/[id].tsx",
+    "ar": [
+      "ar/driver-receipt.png"
+    ],
+    "en": [
+      "en/driver-receipt.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-account",
+    "group": "Driver",
+    "name": "Account",
+    "route": "/driver/account",
+    "file": "src/parts.tsx (AccountScreen)",
+    "ar": [
+      "ar/driver-account.png"
+    ],
+    "en": [
+      "en/driver-account.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "admin-dashboard",
+    "group": "Admin",
+    "name": "Dashboard",
+    "route": "/admin",
+    "file": "src/app/admin/index.tsx",
+    "ar": [
+      "ar/admin-dashboard.png"
+    ],
+    "en": [
+      "en/admin-dashboard.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-orders",
+    "group": "Admin",
+    "name": "All orders",
+    "route": "/admin/orders",
+    "file": "src/app/admin/orders.tsx",
+    "ar": [
+      "ar/admin-orders.png"
+    ],
+    "en": [
+      "en/admin-orders.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-order",
+    "group": "Admin",
+    "name": "Parcel · delivery code recovery",
+    "route": "/order/6",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/admin-order.png"
+    ],
+    "en": [
+      "en/admin-order.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-users",
+    "group": "Admin",
+    "name": "Users",
+    "route": "/admin/users",
+    "file": "src/app/admin/users.tsx",
+    "ar": [
+      "ar/admin-users.png"
+    ],
+    "en": [
+      "en/admin-users.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-subscriptions",
+    "group": "Admin",
+    "name": "Subscriptions",
+    "route": "/admin/subscriptions",
+    "file": "src/app/admin/subscriptions.tsx",
+    "ar": [
+      "ar/admin-subscriptions.png"
+    ],
+    "en": [
+      "en/admin-subscriptions.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-settings",
+    "group": "Admin",
+    "name": "Tariffs & settings",
+    "route": "/admin/settings",
+    "file": "src/app/admin/settings.tsx",
+    "ar": [
+      "ar/admin-settings.png"
+    ],
+    "en": [
+      "en/admin-settings.png"
+    ],
+    "session": "admin"
+  }
+]

@@ -1,32 +1,44 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import type { Point } from './model';
-import { palette } from './ui';
+import { palette, useCopy } from './ui';
 
 export type RouteMapProps = {
   pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;
   driver?: Point | null; driverTitle?: string;
 };
 
-// Map-free route card: web, and Android builds without a Maps key.
-export default function RoutePreview({ pickupTitle, dropoffTitle, driver, driverTitle }: RouteMapProps) {
-  return <View style={styles.preview}>
-    <View style={styles.route}><View style={styles.dot} /><View style={styles.line} /><View style={[styles.dot, { backgroundColor: palette.clay }]} /></View>
-    <View style={styles.labels}>
-      <Text style={styles.city}>{pickupTitle}</Text>
-      {driver && <View style={styles.driver}><Ionicons name="car" size={16} color={palette.blue} /><Text style={styles.driverText}>{driverTitle}</Text></View>}
-      <Text style={styles.city}>{dropoffTitle}</Text>
-    </View>
+// Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
+export default function RoutePreview({ pickupTitle, dropoffTitle }: RouteMapProps) {
+  const { rtl, c } = useCopy();
+  const [w, setW] = useState(0);
+  const h = 156;
+  const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
+  const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  return <View style={styles.preview} onLayout={e => setW(e.nativeEvent.layout.width)} accessible
+    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}`}>
+    <View style={[styles.road, { top: h * 0.22, left: -20, right: -20, height: 10 }]} />
+    <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
+    <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
+    <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
+    <Text style={styles.diagram}>{c.routeDiagram}</Text>
+    {w > 0 && <>
+      <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
+      <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
+      <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
+      <Text numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
+      <Text numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+    </>}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  preview: { height: 180, backgroundColor: palette.olivePale, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },
-  route: { alignItems: 'center', height: 110 },
-  dot: { width: 13, height: 13, borderRadius: 7, backgroundColor: palette.olive },
-  line: { width: 2, flex: 1, backgroundColor: palette.olive, opacity: 0.45 },
-  labels: { height: 115, justifyContent: 'space-between' },
-  city: { fontSize: 17, color: palette.ink, fontWeight: '800' },
-  driver: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  driverText: { fontSize: 13, color: palette.blue, fontWeight: '800' },
+  preview: { height: 156, backgroundColor: '#E6ECE3', overflow: 'hidden' },
+  road: { position: 'absolute', backgroundColor: '#FFFFFF', opacity: 0.75, borderRadius: 4 },
+  line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
+  pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: '#FFFFFF' },
+  dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: '#FFFFFF' },
+  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
+  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
 });

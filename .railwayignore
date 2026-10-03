@@ -1,0 +1,17 @@
+# Upload only the API build inputs. Never send phone fixtures, native builds or secrets.
+*
+!Dockerfile
+!.dockerignore
+!railway.json
+!server/
+!server/**
+!src/
+src/*
+!src/model.ts
+**/.env*
+**/*.db*
+**/*.log
+**/*.key
+**/*.pem
+**/*.jks
+**/*.keystore

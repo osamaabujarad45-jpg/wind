@@ -1,0 +1,63 @@
+// Help & support: FAQ, contact, privacy. Open to everyone, signed in or not (store requirement).
+// /help?topic=password opens that answer directly (linked from "Forgot password?" on sign-in).
+import { useState } from 'react';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
+import { PRIVACY_URL, SUPPORT_URL } from '../api';
+import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
+
+const topics = ['price', 'code', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
+type Topic = typeof topics[number];
+
+export default function Help() {
+  const { topic, order } = useLocalSearchParams<{ topic?: string; order?: string }>();
+  const { c } = useCopy();
+  const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) ? topic as Topic : null);
+  const orderRef = typeof order === 'string' && /^W-\d+$/.test(order) ? order : undefined;
+
+  return <Screen>
+    <Header title={c.help} back />
+    {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {orderRef}</Txt>}
+    <Txt style={{ marginBottom: 16 }}>{c.helpIntro}</Txt>
+
+    <Appear>
+      <Card tone="olive">
+        <Row gap={12} style={{ marginBottom: 12 }}>
+          <View style={styles.icon}><Ionicons name="chatbubbles-outline" size={22} color={palette.olive} /></View>
+          <Txt variant="title" style={{ flex: 1 }}>{c.contactUs}</Txt>
+        </Row>
+        {SUPPORT_URL
+          ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
+          : <Txt variant="caption">{c.noSupportLine}</Txt>}
+      </Card>
+    </Appear>
+
+    <Txt variant="h2" style={{ marginVertical: 12 }}>{c.faq}</Txt>
+    <Card style={{ paddingVertical: 4 }}>
+      {topics.map((key, i) => {
+        const expanded = open === key;
+        return <Animated.View key={key} layout={LinearTransition.duration(200)} style={[styles.item, i === topics.length - 1 && { borderBottomWidth: 0 }]}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={c[`q_${key}`]}
+            onPress={() => setOpen(expanded ? null : key)}>
+            <Row gap={10} style={{ minHeight: 52 }}>
+              <Txt variant="title" style={{ flex: 1, fontSize: 15 }}>{c[`q_${key}`]}</Txt>
+              <Ionicons name={expanded ? 'remove' : 'add'} size={20} color={palette.olive} />
+            </Row>
+          </Pressable>
+          {expanded && <Animated.View entering={FadeIn.duration(220)} style={{ paddingBottom: 14 }}>
+            <Txt>{c[`a_${key}`]}</Txt>
+          </Animated.View>}
+        </Animated.View>;
+      })}
+    </Card>
+
+    <Button title={c.privacy} icon="shield-checkmark-outline" variant="soft" onPress={() => Linking.openURL(PRIVACY_URL)} />
+  </Screen>;
+}
+
+const styles = StyleSheet.create({
+  icon: { width: 42, height: 42, borderRadius: 14, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  item: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
+});

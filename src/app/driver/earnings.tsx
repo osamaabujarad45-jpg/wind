@@ -10,6 +10,7 @@ export default function Earnings() {
   const { data, error, reload } = useApi<{ today: Bucket; week: Bucket; all: Bucket }>('/driver/earnings');
   return <Screen onRefresh={reload}>
     <Header title={c.earnings} />
+    <Txt variant="caption" style={{ marginBottom: 12 }}>{c.earningsNote}</Txt>
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading /> : <>
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>

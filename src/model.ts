@@ -49,14 +49,22 @@ export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDisc
 export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; rating: number | null; createdAt: number;
+  email?: string | null; permanentlyApprovedAt?: number | null;
+  phoneVerifiedAt?: number | null; emailVerifiedAt?: number | null;
 };
+
+export function normalizeEmail(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const email = input.trim().toLowerCase();
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
 
 export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
 
 export type Order = {
   id: number; customerId: number; driverId: number | null; service: Service; shared: boolean;
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null;
-  pickupNote: string; dropoffNote: string; contact: string | null; detail: string;
+  pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   createdAt: number; updatedAt: number;

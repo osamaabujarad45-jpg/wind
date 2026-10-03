@@ -7,7 +7,7 @@ import { api, PRIVACY_URL, SUPPORT_URL } from './api';
 import { city, orderCode, type Order, type Service } from './model';
 import { useSession } from './session';
 import {
-  Appear, Badge, Button, Card, confirm, ErrorText, Field, fill, Header, haptic, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
 
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
@@ -20,41 +20,69 @@ export function useFormat() {
   const { language } = useCopy();
   const locale = language === 'ar' ? 'ar-PS' : 'en-GB';
   return {
-    date: (ms: number) => new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
-    time: (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    date: (ms: number) => new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Hebron' }),
+    time: (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' }),
   };
 }
 
-export function ServiceIcon({ service, size = 48 }: { service: Service; size?: number }) {
+export function ServiceIcon({ service, size = 40 }: { service: Service; size?: number }) {
   const meta = serviceMeta[service];
-  return <View style={{ width: size, height: size, borderRadius: size / 3, backgroundColor: meta.pale, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={meta.icon} size={size / 2} color={meta.color} />
+  return <View style={{ width: size, height: size, borderRadius: size * 0.3, backgroundColor: meta.pale, alignItems: 'center', justifyContent: 'center' }}>
+    <Ionicons name={meta.icon} size={size * 0.5} color={meta.color} />
   </View>;
 }
 
-export function OrderRow({ order, index = 0, footer, amount }: { order: Order; index?: number; footer?: React.ReactNode; amount?: number }) {
+// Pickup (olive dot) joined to drop-off (clay square): the route spine used on booking, trip and job screens.
+export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo }: {
+  from: string; to: string; fromNote?: string; toNote?: string; onFrom?: () => void; onTo?: () => void;
+}) {
+  const { c, row } = useCopy();
+  const stop = (label: string, place: string, note: string | undefined, first: boolean, onPress?: () => void) => {
+    const body = <View style={[styles.stop, { flexDirection: row }]}>
+      <View style={styles.rail}>
+        <View style={first ? styles.dot : styles.square} />
+        {first && <View style={styles.spine} />}
+      </View>
+      <View style={{ flex: 1, paddingBottom: first ? 12 : 0 }}>
+        <Txt variant="micro">{label}</Txt>
+        <Row gap={6}>
+          <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>{place}</Txt>
+          {onPress && <Ionicons name="chevron-down" size={15} color={palette.olive} />}
+        </Row>
+        {!!note && <Txt variant="caption" numberOfLines={2}>{note}</Txt>}
+      </View>
+    </View>;
+    return onPress ? <Press accessibilityLabel={`${label}: ${place}`} onPress={onPress}>{body}</Press> : body;
+  };
+  return <View>
+    {stop(c.pickup, from, fromNote, true, onFrom)}
+    {stop(c.dropoff, to, toNote, false, onTo)}
+  </View>;
+}
+
+export function OrderRow({ order, index = 0 }: { order: Order; index?: number }) {
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
-  // Footer sits outside the pressable area: a button inside a button is invalid on web and steals taps on native.
   return <Appear index={index}>
-    <Card>
+    <Card style={{ padding: 12 }}>
       <Press accessibilityLabel={`${orderCode(order.id)} ${c[order.service]}`} onPress={() => router.push(`/order/${order.id}`)}>
-        <Row gap={12}>
+        <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
-          <View style={{ flex: 1, gap: 3 }}>
+          <View style={{ flex: 1, gap: 2 }}>
             <Row style={{ justifyContent: 'space-between' }}>
-              <Txt variant="title">{c[order.service]}</Txt>
-              <Txt variant="title" style={{ color: palette.olive }}>{money(amount ?? order.price)}</Txt>
+              <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}
+              </Txt>
+              <Txt variant="title">{money(order.price)}</Txt>
             </Row>
-            <Txt variant="caption">{city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]} · {order.shared ? c.shared : c.private}</Txt>
-            <Row style={{ justifyContent: 'space-between', marginTop: 4 }}>
+            <Txt variant="caption" numberOfLines={1}>{c[order.service]} · {order.shared ? c.shared : c.private} · {time(order.createdAt)}</Txt>
+            <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
               <Badge label={c[order.status]} status={order.status} />
-              <Txt variant="caption">{orderCode(order.id)} · {time(order.createdAt)}</Txt>
+              <Txt variant="micro">{orderCode(order.id)}</Txt>
             </Row>
           </View>
         </Row>
       </Press>
-      {footer && <View style={{ marginTop: 12 }}>{footer}</View>}
     </Card>
   </Appear>;
 }
@@ -95,7 +123,7 @@ export function PlanCard() {
         {sub && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.clay} />}
       </Row>
       <Txt>{sub?.status === 'active' && sub.endsAt ? fill(c.subActive, { date: date(sub.endsAt) }) : sub ? c.subPending : pitch}</Txt>
-      {!sub && <View style={{ marginTop: 12 }}><Button title={c.subscribe} variant="soft" icon="sparkles-outline" onPress={subscribe} loading={busy} /></View>}
+      {!sub && <View style={{ marginTop: 10, alignSelf: 'flex-start' }}><Button title={c.subscribe} size="sm" icon="sparkles-outline" onPress={subscribe} loading={busy} /></View>}
       <ErrorText>{error}</ErrorText>
     </Card>
   </Appear>;
@@ -127,27 +155,29 @@ export function PasswordCard() {
     setBusy(false);
   }
 
-  if (!open) return <View style={{ gap: 6 }}>
-    <Button title={c.changePassword} icon="key-outline" variant="soft" onPress={() => { setOpen(true); setMessage(''); }} />
-    {!!message && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800' }}>{message}</Txt>}
+  // A row inside a ListGroup; opens in place into the form.
+  if (!open) return <View>
+    <ListRow icon="key-outline" label={c.changePassword} tone="muted" onPress={() => { setOpen(true); setMessage(''); }} />
+    {!!message && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', paddingBottom: 10 }}>{message}</Txt>}
   </View>;
-  return <Appear>
-    <Card>
-      <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password" />
-      <Field label={c.newPassword} value={next} onChangeText={setNext} placeholder={c.passwordHint} secureTextEntry autoComplete="new-password" />
-      <ErrorText>{error}</ErrorText>
-      <Row gap={8}>
-        <View style={{ flex: 1 }}><Button title={c.save} onPress={save} loading={busy} disabled={!current || next.length < 6} /></View>
-        <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" onPress={() => setOpen(false)} /></View>
-      </Row>
-    </Card>
+  return <Appear style={{ padding: 16 }}>
+    <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password" />
+    <Field label={c.newPassword} value={next} onChangeText={setNext} placeholder={c.passwordHint} secureTextEntry autoComplete="new-password" />
+    <ErrorText>{error}</ErrorText>
+    <Row gap={8}>
+      <View style={{ flex: 1 }}><Button title={c.save} onPress={save} loading={busy} disabled={!current || next.length < 6} /></View>
+      <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" onPress={() => setOpen(false)} /></View>
+    </Row>
   </Appear>;
 }
 
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
-export function HelpLinks() {
+export function HelpLinks({ help = true }: { help?: boolean }) {
   const { c } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+    {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
+      <Txt variant="caption" style={styles.link}>{c.help}</Txt>
+    </Press>}
     {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => Linking.openURL(SUPPORT_URL!)}>
       <Txt variant="caption" style={styles.link}>{c.support}</Txt>
     </Press>}
@@ -178,34 +208,46 @@ export function AccountScreen() {
     <Header title={c.account} />
     <Appear>
       <Card>
-        <Row gap={14}>
-          <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, alignItems: 'center', justifyContent: 'center' }}>
-            <Txt variant="h2" style={{ color: palette.olive }}>{user.name.slice(0, 1)}</Txt>
-          </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Txt variant="h2">{user.name}</Txt>
-            <Txt>{user.phone}</Txt>
-            <Row gap={6}>
-              <Badge label={c[user.role]} tone={tones.blue} />
-              {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
-              {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.clay} />}
-            </Row>
-          </View>
-        </Row>
+        <Press accessibilityLabel={c.editProfile} onPress={() => router.push('/profile')}>
+          <Row gap={12}>
+            <Avatar name={user.name} size={52} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt variant="h2" numberOfLines={1}>{user.name}</Txt>
+              <Txt variant="caption">{user.phone}</Txt>
+              <Row gap={6} style={{ marginTop: 4 }}>
+                <Badge label={c[user.role]} tone={tones.blue} />
+                {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
+                {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.clay} />}
+              </Row>
+            </View>
+            <Ionicons name="create-outline" size={19} color={palette.olive} />
+          </Row>
+        </Press>
       </Card>
     </Appear>
     <PlanCard />
-    <View style={{ gap: 10, marginTop: 4 }}>
-      <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
+    <ListGroup>
+      <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="clay" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
-      <Button title={c.logout} icon="log-out-outline" variant="danger" onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
-      <ErrorText>{deleteError}</ErrorText>
-      <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" onPress={() => confirm(c.deleteConfirm, deleteAccount, c.deleteAccount, c.no)} />
-      <HelpLinks />
-    </View>
+    </ListGroup>
+    <ListGroup>
+      <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
+      {SUPPORT_URL && <ListRow icon="chatbubble-ellipses-outline" label={c.support} tone="blue" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
+      <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(PRIVACY_URL)} />
+    </ListGroup>
+    <ErrorText>{deleteError}</ErrorText>
+    <ListGroup>
+      <ListRow icon="log-out-outline" label={c.logout} danger onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
+      <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => confirm(c.deleteConfirm, deleteAccount, c.deleteAccount, c.no)} />
+    </ListGroup>
   </Screen>;
 }
 
 const styles = StyleSheet.create({
   link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
+  stop: { alignItems: 'stretch', gap: 10 },
+  rail: { width: 12, alignItems: 'center', paddingTop: 5 },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },
+  square: { width: 10, height: 10, borderRadius: 2, backgroundColor: palette.clay },
+  spine: { flex: 1, width: 2, borderRadius: 1, backgroundColor: palette.line, marginTop: 4 },
 });
