@@ -102,6 +102,27 @@ try {
   assert.equal(stats.completed, 3);
   assert.equal(stats.statuses.returned, 1);
 
+  // ---- T4: disputes after completion or return ----
+  const reason = 'Box arrived with a broken corner';
+  await call(`/orders/${other2.id}/dispute`, { token: customer.token, body: { reason }, expect: 409 }); // cancelled
+  await call(`/orders/${order.id}/dispute`, { token: driver.token, body: { reason }, expect: 404 });
+  await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'short' }, expect: 400 });
+  const disputed = await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason } });
+  assert.deepEqual(disputed.dispute, { status: 'open', reason, resolution: null });
+  await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason }, expect: 409 }); // one per order
+  db.prepare('UPDATE orders SET completed_at = ? WHERE id = ?').run(Date.now() - 8 * 86_400_000, retry.id);
+  await call(`/orders/${retry.id}/dispute`, { token: customer.token, body: { reason }, expect: 409 }); // window closed
+  await call('/admin/disputes', { token: customer.token, expect: 403 });
+  const open = await call('/admin/disputes', { token: admin.token });
+  assert.equal(open.length, 1);
+  assert.equal(open[0].orderId, order.id);
+  assert.equal(open[0].status, 'open');
+  await call(`/admin/disputes/${open[0].id}/resolve`, { token: admin.token, body: { resolution: 'no' }, expect: 400 });
+  await call(`/admin/disputes/${open[0].id}/resolve`, { token: admin.token, body: { resolution: 'Driver photo shows intact box; explained' } });
+  await call(`/admin/disputes/${open[0].id}/resolve`, { token: admin.token, body: { resolution: 'Second time' }, expect: 409 });
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).dispute.status, 'resolved');
+  assert.equal((await call(`/orders/${order.id}`, { token: driver.token })).dispute, null);
+
   console.log('exceptions: ok');
 } finally {
   server.close();

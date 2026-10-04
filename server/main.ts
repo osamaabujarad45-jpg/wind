@@ -570,6 +570,41 @@ route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
   return getOrder(order.id, user);
 });
 
+// One dispute per finished order, opened by its customer within a week. Resolution is a recorded
+// decision only; refunds and cash corrections belong to cash settlement.
+route('POST', '/api/orders/:id/dispute', ({ user, params, body }) => {
+  const r = one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id) ?? fail(404, 'not_found');
+  const reason = text(body.reason, 1000);
+  if (reason.length < 10) fail(400, 'invalid_input');
+  if (!finishedStatuses.includes(r.status) || Date.now() - (r.completed_at ?? r.updated_at) > 7 * DAY) fail(409, 'cannot_dispute');
+  if (one('SELECT id FROM order_disputes WHERE order_id = ?', r.id)) fail(409, 'dispute_exists');
+  run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?)', r.id, user.id, reason, Date.now());
+  return getOrder(r.id, user);
+});
+
+route('GET', '/api/admin/disputes', ({ user }) => {
+  need(user, 'admin');
+  return all(`SELECT od.id, od.order_id orderId, od.reason, od.status, od.resolution, od.created_at createdAt, od.resolved_at resolvedAt,
+    o.status orderStatus, c.name customerName FROM order_disputes od JOIN orders o ON o.id = od.order_id JOIN users c ON c.id = od.customer_id
+    ORDER BY od.status = 'open' DESC, od.id DESC LIMIT 200`);
+});
+
+route('POST', '/api/admin/disputes/:id/resolve', ({ user, params, body }) => {
+  need(user, 'admin');
+  const resolution = text(body.resolution, 1000);
+  if (resolution.length < 5) fail(400, 'invalid_input');
+  const dispute = one('SELECT * FROM order_disputes WHERE id = ?', Number(params[0])) ?? fail(404, 'not_found');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!run("UPDATE order_disputes SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'open'",
+      resolution, user.id, Date.now(), dispute.id).changes) fail(409, 'cannot_resolve');
+    run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DISPUTE_RESOLVED', ?, ?)`,
+      user.id, dispute.order_id, JSON.stringify({ resolution }), Date.now());
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return { ok: true };
+});
+
 // Drivers
 route('GET', '/api/jobs', ({ user }) => {
   need(user, 'driver');

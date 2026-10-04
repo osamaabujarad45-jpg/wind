@@ -8,7 +8,7 @@
   - Verify: tests/exceptions.test.mjs. Files: server/main.ts, tests/exceptions.test.mjs, package.json
 - [x] T3: `advance` from `returning` → `returned` with return code, lockout + admin proof-reset; earnings/stats include returned.
   - Verify: tests/exceptions.test.mjs. Files: server/main.ts, src/model.ts
-- [ ] T4: Disputes: customer open (7 days, one per order), admin list + resolve.
+- [x] T4: Disputes: customer open (7 days, one per order), admin list + resolve.
   - Verify: tests/exceptions.test.mjs. Files: server/main.ts, src/model.ts
 - [ ] T5: Client UI: driver report/return code, customer return code + dispute, admin on-hold resolve + disputes; AR/EN copy.
   - Verify: typecheck, lint, test, web export. Files: src/api.ts, src/copy.ts, src/driver-work.tsx, src/app/order/[id].tsx, src/app/admin/orders.tsx
