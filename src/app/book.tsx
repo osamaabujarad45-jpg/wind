@@ -6,16 +6,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage } from '../api';
-import { newBooking, readBooking, type PendingBooking } from '../booking';
+import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type SavedPlace, type Service } from '../model';
-import { RouteLine, serviceMeta } from '../parts';
+import { RouteLine, serviceMeta, useFormat } from '../parts';
 import { useSession } from '../session';
-import { Button, Card, Choices, confirm, ErrorText, FilterChips, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
+  const { time } = useFormat();
   const [service, setService] = useState<Service>(params.service === 'ride' || params.service === 'freight' ? params.service : 'parcel');
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>(isCity(params.to) ? params.to : 'nablus');
@@ -93,6 +94,7 @@ export default function Book() {
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
+        if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
       }
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
@@ -115,6 +117,9 @@ export default function Book() {
 
   async function submit() {
     if (!ready || sending.current || (!available && !pending)) return;
+    if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
+      haptic.error(); setSlot(null); setError(c.err_invalid_schedule); return;
+    }
     const problems = {
       pickupNote: pickupNote.trim() ? undefined : c.fieldRequired,
       dropoffNote: dropoffNote.trim() ? undefined : c.fieldRequired,
@@ -162,7 +167,8 @@ export default function Book() {
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(price)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
       <Header title={c[service]} back />
-      {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt></Card>}
+      {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
+        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
       {!available && !pending && <Card tone="clay">
         <Txt variant="title">{c.serviceUnavailable}</Txt>
         <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
@@ -229,7 +235,7 @@ export default function Book() {
         <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
           onChange={setWhen} disabled={locked} />
         {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>
-          <FilterChips items={days.map(key => ({ key, label: dayLabel(key, language, c) }))} value={shownDay}
+          <FilterChips items={days.map(key => ({ key, label: dayLabel(slots.find(s => dayKey(s) === key)!, language, c) }))} value={shownDay}
             onChange={key => { setDay(key); setSlot(slots.find(s => dayKey(s) === key) ?? null); }} />
           <FilterChips items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(chosen)}
             onChange={key => setSlot(Number(key))} />
@@ -270,27 +276,13 @@ export default function Book() {
   </KeyboardAvoidingView>;
 }
 
-// Local calendar slots, every 30 minutes from 06:00 to 22:00, from one hour ahead to six days later.
-function scheduleSlots(now = Date.now()) {
-  const out: number[] = [];
-  const start = new Date(now + 60 * 60_000);
-  start.setMinutes(start.getMinutes() < 30 ? 30 : 60, 0, 0);
-  for (let t = start.getTime(); t <= now + 6.9 * 86_400_000; t += 30 * 60_000) {
-    const d = new Date(t);
-    const minutes = d.getHours() * 60 + d.getMinutes();
-    if (minutes >= 6 * 60 && minutes <= 22 * 60) out.push(t);
-  }
-  return out;
+const fmt = (language: 'ar' | 'en') => language === 'ar' ? 'ar-PS' : 'en-GB';
+function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
+  const key = dayKey(ms);
+  return key === dayKey(Date.now()) ? c.today : key === dayKey(Date.now() + 86_400_000) ? c.tomorrow
+    : new Date(ms).toLocaleDateString(fmt(language), { weekday: 'short', day: 'numeric', timeZone: HEBRON });
 }
-const dayKey = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
-function dayLabel(key: string, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
-  const [y, m, d] = key.split('-').map(Number);
-  const date = new Date(y!, m! - 1, d!);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-  return diff === 0 ? c.today : diff === 1 ? c.tomorrow : date.toLocaleDateString(language === 'ar' ? 'ar-PS' : 'en-GB', { weekday: 'short', day: 'numeric' });
-}
-const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(language === 'ar' ? 'ar-PS' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
+const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(fmt(language), { hour: 'numeric', minute: '2-digit', timeZone: HEBRON });
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 

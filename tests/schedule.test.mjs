@@ -4,6 +4,20 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
+import { dayKey, scheduleSlots } from '../src/booking.ts';
+
+// Slots follow Palestine time even on a phone set elsewhere.
+process.env.TZ = 'Europe/London';
+{
+  const now = Date.UTC(2026, 9, 4, 17, 10); // 20:10 in Hebron (UTC+3)
+  const slots = scheduleSlots(now);
+  const hebron = ms => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Asia/Hebron', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  assert.equal(hebron(slots[0]), '21:30'); // at least an hour ahead, on the half hour
+  assert.ok(slots.every(ms => hebron(ms) >= '06:00' && hebron(ms) <= '22:00'));
+  assert.equal(dayKey(slots[0]), '2026-10-04');
+  assert.equal(hebron(slots.find(ms => dayKey(ms) === '2026-10-05')), '06:00');
+  assert.ok(slots.at(-1) <= now + 6.9 * 86_400_000);
+}
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-schedule-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
@@ -51,6 +65,11 @@ try {
   assert.ok(jobs.find(j => j.id === later.id).scheduledFor > Date.now());
   const accepted = await call(`/jobs/${later.id}/accept`, { token: driver.token, body: {} });
   assert.equal(accepted.status, 'assigned');
+
+  // A saved retry whose slot has come too close is refused, never silently booked for now.
+  const stale = { ...input, quotedPrice: quote(defaultSettings, input), scheduledFor: Date.now() + 10 * MIN, requestId: '0b8c5e1e-4a7b-4d2a-9c3e-2f1a6b7c8d9e' };
+  assert.equal((await call('/orders', { token: customer.token, body: stale, expect: 400 })).error, 'invalid_schedule');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM order_commands WHERE request_id = ?').get(stale.requestId).n, 0);
 
   // The customer can still cancel a scheduled order before a driver takes it.
   const another = await book({ scheduledFor: Date.now() + DAY });

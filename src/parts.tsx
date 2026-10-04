@@ -76,7 +76,7 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
               </Txt>
               <Txt variant="title">{money(order.price)}</Txt>
             </Row>
-            <Txt variant="caption" numberOfLines={1}>{c[order.service]} · {order.shared ? c.shared : c.private} · {order.scheduledFor ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
+            <Txt variant="caption" numberOfLines={1}>{c[order.service]} · {order.shared ? c.shared : c.private} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
               <Badge label={c[order.status]} status={order.status} />
               <Txt variant="micro">{orderCode(order.id)}</Txt>

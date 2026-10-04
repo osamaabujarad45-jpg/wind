@@ -156,6 +156,10 @@ export default function OrderScreen() {
       </View>
     </Appear>
 
+    {order.scheduledFor && (order.status === 'assigned' || order.status === 'at_pickup') && <Card tone="olive" style={{ paddingVertical: 10 }}>
+      <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>
+    </Card>}
+    {order.status === 'searching' && order.scheduledFor && now >= order.scheduledFor - 30 * 60_000 && <Txt variant="caption" center>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
         <Row gap={8} style={{ marginBottom: 10 }}>

@@ -31,3 +31,22 @@ export function readBooking(saved: string | null): PendingBooking | null {
   }
   return booking;
 }
+
+// Scheduling is in Palestine time whatever the phone's zone, matching how every booked time is displayed.
+export const HEBRON = 'Asia/Hebron';
+const clock = new Intl.DateTimeFormat('en-GB', { timeZone: HEBRON, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const partsOf = (ms: number) => Object.fromEntries(clock.formatToParts(ms).map(p => [p.type, p.value])) as Record<string, string>;
+/** Calendar day in Palestine, e.g. "2026-10-05". */
+export const dayKey = (ms: number) => { const p = partsOf(ms); return `${p.year}-${p.month}-${p.day}`; };
+
+/** 30-minute pickup slots from 06:00 to 22:00 Palestine time, one hour to just under seven days ahead. */
+export function scheduleSlots(now = Date.now()) {
+  const out: number[] = [];
+  const step = 30 * 60_000; // Palestine's UTC offset is whole hours, so UTC half-hours are local half-hours
+  for (let t = Math.ceil((now + 60 * 60_000) / step) * step; t <= now + 6.9 * 86_400_000; t += step) {
+    const p = partsOf(t);
+    const minutes = Number(p.hour) * 60 + Number(p.minute);
+    if (minutes >= 6 * 60 && minutes <= 22 * 60) out.push(t);
+  }
+  return out;
+}
