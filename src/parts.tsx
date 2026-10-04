@@ -1,10 +1,10 @@
 // Pieces shared by the customer, driver and admin screens.
 import { useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, PRIVACY_URL, SUPPORT_URL } from './api';
-import { city, orderCode, type Order, type Service } from './model';
+import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { city, orderCode, type Order, type Referral, type Service } from './model';
 import { useSession } from './session';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
@@ -84,6 +84,38 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
           </View>
         </Row>
       </Press>
+    </Card>
+  </Appear>;
+}
+
+// Invite friends (SPEC-referral.md): the code, a share sheet where one exists, progress and ready reward codes.
+const canShare = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+function InviteCard() {
+  const { c, money } = useCopy();
+  const { date } = useFormat();
+  const { data } = useApi<Referral>('/me/referral');
+  if (!data) return null;
+  const r = money(data.reward);
+  const share = () => Share.share({ message: fill(c.inviteMessage, { code: data.code, r }) }).catch(() => undefined); // dismissed or unsupported
+  return <Appear>
+    <Card>
+      <Row gap={8} style={{ marginBottom: 6 }}>
+        <Ionicons name="gift-outline" size={18} color={palette.olive} />
+        <Txt variant="title" style={{ flex: 1 }}>{fill(c.inviteTitle, { r })}</Txt>
+      </Row>
+      <Txt variant="caption">{fill(c.inviteBody, { r })}</Txt>
+      <Row gap={10} style={{ marginTop: 10, justifyContent: 'space-between' }}>
+        <View accessible accessibilityLabel={`${c.inviteCodeLabel}: ${data.code.split('').join(' ')}`}>
+          <Txt variant="micro">{c.inviteCodeLabel}</Txt>
+          <Txt variant="h2" selectable style={{ letterSpacing: 2 }}>{data.code}</Txt>
+        </View>
+        {canShare && <Button title={c.inviteShare} size="sm" icon="share-social-outline" variant="soft" onPress={share} />}
+      </Row>
+      <Txt variant="caption" style={{ marginTop: 8 }}>{fill(c.inviteStats, { joined: data.joined, earned: data.earned })}</Txt>
+      {data.credits.length > 0 && <View style={{ marginTop: 8 }}>
+        <Txt variant="label">{c.inviteCredits}</Txt>
+        {data.credits.map(cr => <Txt key={cr.code} selectable>{fill(c.inviteCredit, { code: cr.code, r: money(cr.amount), t: date(cr.expiresAt) })}</Txt>)}
+      </View>}
     </Card>
   </Appear>;
 }
@@ -227,6 +259,7 @@ export function AccountScreen() {
       </Card>
     </Appear>
     <PlanCard />
+    {user.role === 'customer' && <InviteCard />}
     <ListGroup>
       <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="clay" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />

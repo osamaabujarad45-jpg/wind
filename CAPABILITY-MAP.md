@@ -28,7 +28,7 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `safety-sos` | Emergency button, incident report freezes completion | Support phone only | No | `trip-share-link` |
 | `in-app-chat` | Driver↔customer chat about the job | Phone only | No | — |
 | `push-offers` | Push job offers / status to closed app | Polling; drivers must keep app open | Expo push (free, needs EAS project + device tokens) | — |
-| `promo-referral` | Promo codes (shipped, SPEC-promo-codes.md), referral credit | None | Partial | `cash-settlement` (discount accounting) |
+| `promo-referral` | Promo codes (SPEC-promo-codes.md) and referral credit (SPEC-referral.md), both shipped | None | Yes | `cash-settlement` (discount accounting) |
 | `sms-otp` | Verified phone via OTP | Unverified self-service | **Yes** — SMS gateway (Jawwal/Ooredoo bulk SMS) | — |
 | `digital-payments` | Card/wallet in app | Cash only | **Yes** — PMA-licensed provider (PalPay, Jawwal Pay…) + contract | `cash-settlement` |
 | `routing-eta` | Real routing + ETA ranges | Straight-line × 1.3 | **Yes** — OSRM self-host or Mapbox | `road-status` |

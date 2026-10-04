@@ -562,7 +562,7 @@ function freshCode(prefix: string, length: number) {
 }
 /** The inviter's reward, once, when the friend's first order is delivered. */
 function rewardReferral(orderId: number, now: number) {
-  const ref = one('SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = \'active\'', orderId);
+  const ref = one("SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = 'active'", orderId);
   if (!ref) return;
   const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
     freshCode('R', 7), REFERRAL_REWARD, now + 90 * DAY, ref.referrer_id, now).lastInsertRowid);

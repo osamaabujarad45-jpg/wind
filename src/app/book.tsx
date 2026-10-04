@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage } from '../api';
 import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type Road, type SavedPlace, type Service } from '../model';
+import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
@@ -56,11 +56,13 @@ export default function Book() {
   const [promoInput, setPromoInput] = useState('');
   const [promoError, setPromoError] = useState('');
   const [checking, setChecking] = useState(false);
+  const [credits, setCredits] = useState<Referral['credits']>([]);
   const edit = (key: keyof typeof invalid, set: (v: string) => void) => (v: string) => { set(v); if (invalid[key]) setInvalid({ ...invalid, [key]: undefined }); };
   // Saved and recent places: landmarks are the address here, so reuse them instead of retyping.
   const isCustomer = me?.user.role === 'customer';
   const [places, setPlaces] = useState<Places>({ saved: [], recent: [] });
   useEffect(() => { if (isCustomer) api<Places>('/me/places').then(setPlaces).catch(() => undefined); }, [isCustomer]);
+  useEffect(() => { if (isCustomer) api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); }, [isCustomer]);
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const roadAlerts = roads.filter(r => (r.status === 'slow' || r.status === 'closed') && (r.cities.includes(pickupCity) || r.cities.includes(dropoffCity)));
@@ -299,9 +301,14 @@ export default function Book() {
             <Field label={c.promoCode} icon="pricetag-outline" value={promoInput} onChangeText={v => { setPromoInput(v); setPromoError(''); }}
               error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
             <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} onPress={() => applyPromo(promoInput)} />
-          </> : <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked} style={{ alignSelf: 'flex-start' }}>
-            <Row gap={6} style={styles.chip}><Ionicons name="pricetag-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.promoAdd}</Txt></Row>
-          </Press>)}
+          </> : <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8 }}>
+            {credits[0] && <Press accessibilityLabel={fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })} onPress={() => applyPromo(credits[0]!.code)} disabled={locked || checking}>
+              <Row gap={6} style={styles.chip}><Ionicons name="gift-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })}</Txt></Row>
+            </Press>}
+            <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked}>
+              <Row gap={6} style={styles.chip}><Ionicons name="pricetag-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.promoAdd}</Txt></Row>
+            </Press>
+          </View>)}
           {!promoOpen && !!promoError && <ErrorText>{promoError}</ErrorText>}
         </View>}
       </Card>

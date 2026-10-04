@@ -60,6 +60,7 @@ export const defaultSettings = {
   plusPrice: 29, proPrice: 99,
 };
 export type Settings = typeof defaultSettings;
+export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
 export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission'];
 
 export type User = {
