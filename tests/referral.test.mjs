@@ -8,7 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-referral-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, promote } = await import('../server/main.ts');
+const { server, promote, db } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -59,7 +59,7 @@ try {
   await call(`/orders/${order.id}/cancel`, { token: friend.token, body: {} });
   assert.equal((await call('/me/referral', { token: inviter.token })).joined, 0);
   order = await book(friend.token, { promoCode: mine.code, expectedDiscount: 10 });
-  assert.equal((await call('/promos/check', { token: friend.token, body: { code: mine.code, price }, expect: 409 })).error, 'promo_used');
+  assert.equal((await call('/promos/check', { token: friend.token, body: { code: mine.code, price }, expect: 409 })).error, 'invite_first_order_only');
 
   // An admin cannot create a promo that shadows an invite code.
   assert.equal((await call('/admin/promos', { token: admin.token, body: { code: mine.code, amount: 5, maxUses: 5, days: 5 }, expect: 409 })).error, 'promo_exists');
@@ -70,6 +70,9 @@ try {
   const after = await call('/me/referral', { token: inviter.token });
   assert.deepEqual([after.joined, after.earned, after.credits.length, after.credits[0].amount], [1, 1, 1, 10]);
   const credit = after.credits[0].code;
+  assert.equal((await call('/admin/promos', { token: admin.token })).some(p => p.code === credit), false); // personal codes stay out of the admin list
+  const ledger = await call('/driver/cash', { token: driver.token });
+  assert.equal(ledger.discountsCents, 1000); // Wind covered the friend's discount
   assert.equal((await call('/promos/check', { token: other.token, body: { code: credit, price }, expect: 400 })).error, 'invalid_promo');
   const own = await book(inviter.token, { promoCode: credit, expectedDiscount: 10, contact: '0599130002' });
   assert.equal(own.discount, 10);
@@ -77,7 +80,26 @@ try {
   assert.equal((await call('/promos/check', { token: inviter.token, body: { code: credit, price }, expect: 409 })).error, 'promo_used');
 
   // The friend's referral order pays out once: a later completed order adds nothing.
+  await deliver(await book(friend.token));
   assert.equal((await call('/me/referral', { token: inviter.token })).earned, 1);
+
+  // Rewards are capped at five per 30 days per inviter.
+  const extra = await register('0599130010', 'Capper');
+  const capCode = (await call('/me/referral', { token: extra.token })).code;
+  for (let i = 0; i < 6; i++) {
+    const f = await register(`059913002${i}`, `F${i}`);
+    const o = await book(f.token, { promoCode: capCode, expectedDiscount: 10, contact: `059913002${i}` });
+    db.prepare("UPDATE orders SET status = 'completed', completed_at = ? WHERE id = ?").run(Date.now(), o.id);
+  }
+  // Completion through the driver flow is what issues rewards; drive them directly here.
+  const { rewardReferral } = await import('../server/main.ts');
+  for (const r of db.prepare('SELECT order_id FROM referrals WHERE referrer_id = ?').all(extra.user.id)) rewardReferral(r.order_id, Date.now());
+  assert.equal((await call('/me/referral', { token: extra.token })).earned, 5);
+
+  // A blocked inviter's code stops working.
+  db.prepare("UPDATE users SET status = 'blocked' WHERE id = ?").run(extra.user.id);
+  const late = await register('0599130030', 'Late');
+  assert.equal((await call('/promos/check', { token: late.token, body: { code: capCode, price }, expect: 400 })).error, 'invalid_promo');
 
   // Deleting the inviter disables the code.
   await call(`/orders/${own.id}/cancel`, { token: inviter.token, body: {} });

@@ -185,7 +185,10 @@ export default function Book() {
         }
       }
       if (errorCode(e) === 'price_changed') await refresh(); // re-render with the new tariff, customer confirms again
-      if (['invalid_promo', 'promo_used'].includes(errorCode(e) ?? '')) setPromo(null);
+      if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
+        setPromo(null);
+        api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
+      }
       if (errorCode(e) === 'promo_changed' && applied) void applyPromo(applied.code); // show the new discount, customer confirms again
     } finally { sending.current = false; setBusy(false); }
   }
@@ -302,7 +305,7 @@ export default function Book() {
               error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
             <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} onPress={() => applyPromo(promoInput)} />
           </> : <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8 }}>
-            {credits[0] && <Press accessibilityLabel={fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })} onPress={() => applyPromo(credits[0]!.code)} disabled={locked || checking}>
+            {credits[0] && price >= 2 && <Press accessibilityLabel={fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })} onPress={() => applyPromo(credits[0]!.code)} disabled={locked || checking}>
               <Row gap={6} style={styles.chip}><Ionicons name="gift-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })}</Txt></Row>
             </Press>}
             <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked}>

@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
   order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS promo_redemptions_promo ON promo_redemptions(promo_id, customer_id);
 CREATE TABLE IF NOT EXISTS promo_owners (promo_id INTEGER PRIMARY KEY REFERENCES promo_codes(id), user_id INTEGER NOT NULL REFERENCES users(id));
-CREATE TABLE IF NOT EXISTS referral_codes (user_id INTEGER PRIMARY KEY REFERENCES users(id), code TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS referral_codes (user_id INTEGER PRIMARY KEY REFERENCES users(id), code TEXT NOT NULL UNIQUE, active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS referrals (
   referee_id INTEGER PRIMARY KEY REFERENCES users(id), referrer_id INTEGER NOT NULL REFERENCES users(id),
   order_id INTEGER NOT NULL REFERENCES orders(id), reward_promo_id INTEGER REFERENCES promo_codes(id), created_at INTEGER NOT NULL);
@@ -467,7 +467,7 @@ function deleteAccount(user: User) {
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
-    run('DELETE FROM referral_codes WHERE user_id = ?', user.id); // the invite code stops working
+    run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id); // the code stops working and is never reissued
     run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
     run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
@@ -529,9 +529,10 @@ function promoFor(user: User, input: unknown, price: number) {
   const p = valid ? one('SELECT * FROM promo_codes WHERE code = ? AND active = 1 AND expires_at > ?', code, Date.now()) : undefined;
   if (!p) {
     // A friend's invite code (SPEC-referral.md): first order only, never your own.
-    const ref = (valid ? one('SELECT user_id FROM referral_codes WHERE code = ?', code) : undefined) ?? fail(400, 'invalid_promo');
+    const ref = (valid ? one("SELECT r.user_id FROM referral_codes r JOIN users u ON u.id = r.user_id WHERE r.code = ? AND r.active = 1 AND u.status = 'active'", code) : undefined)
+      ?? fail(400, 'invalid_promo');
     if (ref.user_id === user.id) fail(400, 'invalid_promo');
-    if (one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)) fail(409, 'promo_used');
+    if (one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)) fail(409, 'invite_first_order_only');
     if (price < 2) fail(409, 'promo_not_applicable');
     return { id: null, referrerId: ref.user_id as number, code, discount: Math.min(REFERRAL_REWARD, price - 1) };
   }
@@ -552,6 +553,8 @@ route('POST', '/api/promos/check', ({ user, body }) => {
 });
 // Personal codes: invite codes (W…) and inviter rewards (R…) share the promo namespace.
 const REFERRAL_REWARD = 10;
+// ponytail: flat cap against farming with throwaway accounts; per-phone verification is the real fix once SMS exists.
+const REFERRAL_REWARDS_PER_30_DAYS = 5;
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const codeTaken = (code: string) => !!(one('SELECT id FROM promo_codes WHERE code = ?', code) ?? one('SELECT user_id FROM referral_codes WHERE code = ?', code));
 function freshCode(prefix: string, length: number) {
@@ -561,9 +564,10 @@ function freshCode(prefix: string, length: number) {
   }
 }
 /** The inviter's reward, once, when the friend's first order is delivered. */
-function rewardReferral(orderId: number, now: number) {
+export function rewardReferral(orderId: number, now: number) {
   const ref = one("SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = 'active'", orderId);
-  if (!ref) return;
+  if (!ref || one('SELECT COUNT(*) n FROM referrals r JOIN promo_codes p ON p.id = r.reward_promo_id WHERE r.referrer_id = ? AND p.created_at > ?',
+    ref.referrer_id, now - 30 * DAY)!.n >= REFERRAL_REWARDS_PER_30_DAYS) return;
   const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
     freshCode('R', 7), REFERRAL_REWARD, now + 90 * DAY, ref.referrer_id, now).lastInsertRowid);
   run('INSERT INTO promo_owners (promo_id, user_id) VALUES (?, ?)', promoId, ref.referrer_id);
@@ -571,7 +575,7 @@ function rewardReferral(orderId: number, now: number) {
 }
 route('GET', '/api/me/referral', ({ user }) => {
   need(user, 'customer');
-  if (!one('SELECT code FROM referral_codes WHERE user_id = ?', user.id)) run('INSERT OR IGNORE INTO referral_codes (user_id, code) VALUES (?, ?)', user.id, freshCode('W', 5));
+  if (!one('SELECT code FROM referral_codes WHERE user_id = ?', user.id)) run('INSERT INTO referral_codes (user_id, code) VALUES (?, ?) ON CONFLICT(user_id) DO NOTHING', user.id, freshCode('W', 5));
   return {
     code: one('SELECT code FROM referral_codes WHERE user_id = ?', user.id)!.code, reward: REFERRAL_REWARD,
     joined: one("SELECT COUNT(*) n FROM referrals r JOIN orders o ON o.id = r.order_id WHERE r.referrer_id = ? AND o.status <> 'cancelled'", user.id)!.n,
@@ -642,6 +646,7 @@ function createOrder(user: User, body: Row) {
 route('POST', '/api/orders', ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
+  if (body.promoCode != null) limit(identityKey('promo', user.id), 20, 60 * 60_000); // no unlimited code guessing through booking
   const { requestId, ...input } = body;
   if (requestId == null) {
     db.exec('BEGIN IMMEDIATE');

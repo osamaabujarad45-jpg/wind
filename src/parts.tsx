@@ -114,7 +114,8 @@ function InviteCard() {
       <Txt variant="caption" style={{ marginTop: 8 }}>{fill(c.inviteStats, { joined: data.joined, earned: data.earned })}</Txt>
       {data.credits.length > 0 && <View style={{ marginTop: 8 }}>
         <Txt variant="label">{c.inviteCredits}</Txt>
-        {data.credits.map(cr => <Txt key={cr.code} selectable>{fill(c.inviteCredit, { code: cr.code, r: money(cr.amount), t: date(cr.expiresAt) })}</Txt>)}
+        {data.credits.map(cr => <View key={cr.code} accessible accessibilityLabel={fill(c.inviteCredit, { code: cr.code.split('').join(' '), r: money(cr.amount), t: date(cr.expiresAt) })}>
+          <Txt selectable>{fill(c.inviteCredit, { code: cr.code, r: money(cr.amount), t: date(cr.expiresAt) })}</Txt></View>)}
       </View>}
     </Card>
   </Appear>;

@@ -39,3 +39,10 @@ code cannot shadow an invite code; deletion disables the code; stats.
 ## Success criteria
 
 Tests, typecheck, lint, screenshots; browser check of sharing, applying and the one-tap credit.
+
+## Ship review changes
+
+- Rewards are capped at 5 per inviter per 30 days (farming with throwaway accounts; phone verification is the real fix once SMS exists).
+- A blocked or deleted inviter's code is refused; deleted codes are kept as tombstones and never reissued.
+- Booking with a code shares the 20-per-hour code-check budget; a second order gets `invite_first_order_only`.
+- A used credit leaves the booking chip after a refusal.
