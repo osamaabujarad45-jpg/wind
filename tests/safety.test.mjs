@@ -58,6 +58,7 @@ try {
   assert.ok(!JSON.stringify(driverView).includes('Rude'));
   const held = await advance(driver.token, order, {}, 409);
   assert.equal(held.error, 'safety_hold');
+  assert.equal((await call(`/orders/${order.id}/release`, { token: driver.token, body: {}, expect: 409 })).error, 'safety_hold');
 
   // Admin sees who, how to reach both sides, and where.
   await call('/admin/incidents', { token: customer.token, expect: 403 });
@@ -68,6 +69,7 @@ try {
   assert.equal(incident.reporterRole, 'customer');
   assert.equal(incident.reporterPhone, '0599500002');
   assert.equal(incident.driverPhone, '0599500003');
+  assert.equal(incident.customerPhone, '0599500002'); // the account phone, not the editable order contact
   assert.equal(incident.latitude, 32.01);
   assert.equal(incident.status, 'open');
   assert.equal((await call('/admin/stats', { token: admin.token })).openIncidents, 1);
@@ -95,8 +97,15 @@ try {
   assert.deepEqual(audit, ['SAFETY_REPORTED', 'SAFETY_REPORTED', 'SAFETY_RESOLVED', 'SAFETY_RESOLVED']);
   assert.equal((await call('/admin/stats', { token: admin.token })).openIncidents, 0);
 
-  // Finished orders cannot be reported on; the dispute flow covers them.
+  // A frozen in-transit order cannot be put on hold either; resolving lifts it.
   order = await advance(driver.token, order);
+  await call(`/orders/${order.id}/sos`, { token: driver.token, body: { kind: 'accident' } });
+  const exception = await call(`/orders/${order.id}/exception`, { token: driver.token, body: { reason: 'absent', expectedStatus: 'in_transit', requestId: randomUUID() }, expect: 409 });
+  assert.equal(exception.error, 'safety_hold');
+  const [open] = (await call('/admin/incidents', { token: admin.token })).filter(i => i.status === 'open');
+  await call(`/admin/incidents/${open.id}/resolve`, { token: admin.token, body: { resolution: 'Minor, all fine' } });
+
+  // Finished orders cannot be reported on; the dispute flow covers them.
   const { handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
   await advance(driver.token, order, { code: handoverCode });
   await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'other' }, expect: 409 });

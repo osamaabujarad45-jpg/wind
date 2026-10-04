@@ -30,7 +30,7 @@ export default function AdminOrders() {
 }
 
 type IncidentRow = { id: number; orderId: number; kind: SafetyKind; note: string; status: 'open' | 'resolved'; reporterRole: 'customer' | 'driver';
-  reporterName: string; reporterPhone: string; customerName: string; customerPhone: string; driverName: string | null; driverPhone: string | null;
+  reporterName: string; reporterPhone: string; customerName: string; customerPhone: string; orderContact: string; driverName: string | null; driverPhone: string | null;
   latitude: number | null; longitude: number | null; createdAt: number };
 
 function Incidents() {
@@ -55,6 +55,7 @@ function Incidents() {
       {!!d.note && <Txt variant="body" style={{ marginBottom: 8 }}>{d.note}</Txt>}
       <View style={{ gap: 6, marginBottom: 10 }}>
         <Button title={`${c.call} ${c.customer} · ${d.customerName}`} trailing={ltr(d.customerPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.customerPhone)} />
+        {d.orderContact && d.orderContact !== d.customerPhone && <Button title={`${c.call} · ${c.contact}`} trailing={ltr(d.orderContact)} icon="call-outline" variant="soft" size="sm" onPress={call(d.orderContact)} />}
         {d.driverPhone && <Button title={`${c.call} ${c.driver} · ${d.driverName}`} trailing={ltr(d.driverPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.driverPhone)} />}
         {d.latitude != null && <Button title={c.openLocation} icon="location-outline" variant="ghost" size="sm"
           onPress={() => { Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${d.latitude},${d.longitude}`).catch(() => undefined); }} />}
@@ -62,6 +63,7 @@ function Incidents() {
       </View>
       <Field label={c.resolution} value={drafts[d.id] ?? ''} multiline maxLength={1000} disabled={busy !== null}
         onChangeText={text => setDrafts(v => ({ ...v, [d.id]: text }))} />
+      <Txt variant="caption" style={{ marginBottom: 8 }}>{c.resolutionVisible}</Txt>
       <Button title={c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
         disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5} onPress={() => resolve(d.id)} />
     </Card>)}

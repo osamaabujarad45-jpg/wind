@@ -1,7 +1,7 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
 import { useCallback, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -362,7 +362,10 @@ function Safety({ order, onChange }: { order: Order; onChange: (order: Order) =>
   const report = order.safetyReport;
   async function send() {
     setBusy(true); setFailure('');
-    try { onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote(''); }
+    try {
+      onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
+      AccessibilityInfo.announceForAccessibility(c.safetyReported); // live regions alone are silent on iOS
+    }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
   if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="outline" onPress={() => setOpen(true)} />;

@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS safety_incidents (
   lat REAL, lng REAL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')), resolution TEXT,
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
@@ -675,6 +676,7 @@ route('POST', '/api/orders/:id/sos', ({ user, params, body }) => {
   const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? null : fail(404, 'not_found');
   if (!role || !activeStatuses.includes(r.status)) fail(409, 'cannot_report');
   if (!one("SELECT id FROM safety_incidents WHERE order_id = ? AND reporter_id = ? AND status = 'open'", r.id, user.id)) {
+    limit(identityKey('sos', user.id), 10, DAY); // each report pauses a trip and pages an administrator
     const fresh = r.lat != null && Date.now() - r.loc_at <= 10 * 60_000;
     const id = Number(run(`INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now()).lastInsertRowid);
@@ -688,7 +690,7 @@ route('GET', '/api/admin/incidents', ({ user }) => {
   need(user, 'admin');
   return all(`SELECT si.id, si.order_id orderId, si.kind, si.note, si.status, si.resolution, si.reporter_role reporterRole,
     si.lat latitude, si.lng longitude, si.created_at createdAt, si.resolved_at resolvedAt, o.status orderStatus,
-    rp.name reporterName, rp.phone reporterPhone, c.name customerName, o.contact customerPhone, d.name driverName, d.phone driverPhone
+    rp.name reporterName, rp.phone reporterPhone, c.name customerName, c.phone customerPhone, o.contact orderContact, d.name driverName, d.phone driverPhone
     FROM safety_incidents si JOIN orders o ON o.id = si.order_id JOIN users rp ON rp.id = si.reporter_id
     JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
     ORDER BY si.status = 'open' DESC, si.id DESC LIMIT 200`);
@@ -755,8 +757,8 @@ function advanceOrder(user: User, id: number, body: Row) {
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
-  if (next === r.status) fail(409, 'cannot_advance');
-  safetyFree(r.id); // on_hold waits for an administrator decision
+  if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  safetyFree(r.id);
   const now = Date.now();
   if (next === 'completed' || next === 'returned') {
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
@@ -778,6 +780,7 @@ function advanceOrder(user: User, id: number, body: Row) {
 function reportException(user: User, id: number, body: Row) {
   const r = one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || r.status !== 'in_transit' || r.service === 'ride') fail(409, 'cannot_report');
+  safetyFree(r.id);
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const now = Date.now();
   run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
