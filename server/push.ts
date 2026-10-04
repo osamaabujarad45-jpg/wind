@@ -37,6 +37,6 @@ const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.mozilla
 export function pushEndpoint(value: unknown) {
   try {
     const url = new URL(String(value));
-    return url.protocol === 'https:' && !url.port && url.href.length <= 1000 && PUSH_HOSTS.some(h => h.test(url.hostname)) ? url.href : null;
+    return url.protocol === 'https:' && !url.port && !url.username && !url.password && url.href.length <= 1000 && PUSH_HOSTS.some(h => h.test(url.hostname)) ? url.href : null;
   } catch { return null; }
 }

@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { AppState, Platform } from 'react-native';
 import { getLocales } from 'expo-localization';
 import { api, configureApi, errorCode, storage } from './api';
-import { disablePush } from './push';
+import { disablePush, dropLocalPush } from './push';
 import type { Plan, Service, Settings, Subscription, User } from './model';
 
 export type Language = 'ar' | 'en';
@@ -33,6 +33,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
 
   const forget = useCallback(async () => {
+    void dropLocalPush(); // an ended session must not leave this browser alerting
     configureApi(null, () => {});
     setMe(null);
     setOffline(false);

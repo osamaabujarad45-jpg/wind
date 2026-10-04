@@ -19,16 +19,35 @@ export async function pushState(): Promise<PushState> {
 }
 
 export async function enablePush(lang: 'ar' | 'en'): Promise<PushState> {
-  const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  // Permission first, while the tap still counts as the user's gesture (Safari, iPhone home-screen app).
   if (await Notification.requestPermission() !== 'granted') return 'denied';
+  await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  const registration = await navigator.serviceWorker.ready; // subscribe needs an active worker
   const { key } = await api<{ key: string }>('/push/key');
   const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/'));
-  const subscription = await registration.pushManager.getSubscription() ?? await registration.pushManager.subscribe({
-    userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, ch => ch.charCodeAt(0)),
-  });
+  const applicationServerKey = Uint8Array.from(raw, ch => ch.charCodeAt(0));
+  let subscription = await registration.pushManager.getSubscription();
+  // A subscription made for an older server key cannot be used any more.
+  const old = subscription?.options.applicationServerKey;
+  if (subscription && old && btoa(String.fromCharCode(...new Uint8Array(old))) !== btoa(raw)) { await subscription.unsubscribe(); subscription = null; }
+  subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
   const { endpoint, keys } = subscription.toJSON();
   await api('/push/subscribe', { endpoint, p256dh: keys?.p256dh, auth: keys?.auth, lang });
   return 'on';
+}
+
+/** Re-send an existing subscription (idempotent): restores a row the server dropped and refreshes the language. */
+export async function refreshPush(lang: 'ar' | 'en') {
+  const subscription = await current();
+  if (!subscription) return;
+  const { endpoint, keys } = subscription.toJSON();
+  await api('/push/subscribe', { endpoint, p256dh: keys?.p256dh, auth: keys?.auth, lang });
+}
+
+/** Ends this browser's subscription without the server (the session is already gone). */
+export async function dropLocalPush() {
+  if (!pushSupported()) return;
+  await (await current().catch(() => null))?.unsubscribe().catch(() => undefined);
 }
 
 /** Off for this browser; also used on sign-out so a shared browser stops alerting the previous account. */

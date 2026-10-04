@@ -22,3 +22,12 @@ Tables `push_keys`, `push_subscriptions` (at most 5 per user). Encryption RFC 82
 
 `tests/push.test.mjs`: RFC 8291 Appendix A vector, VAPID signature, endpoint allowlist; subscribe validation; events reach the
 right people (mocked push service) only after commit; 410 removes; unsubscribe.
+
+## Ship review changes
+
+- One account triggers at most 5 job alerts per 10 minutes (booking itself is never refused); job alerts expire after 5 minutes and go to a random 100 free drivers.
+- Logout removes every subscription of the account; an ended session also unsubscribes the browser locally.
+- Permission is asked before registering; subscribing waits for an active worker; a subscription for an old key is replaced; an "on" browser silently re-sends its subscription.
+- Push requests never follow redirects and release their response; keys must be valid curve points; endpoints with credentials are refused.
+- The service worker only opens same-origin links and claims open tabs.
+- Not covered yet: scheduled-order release, driver release and customer cancel alerts.

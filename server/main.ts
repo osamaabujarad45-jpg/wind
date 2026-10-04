@@ -3,7 +3,7 @@
 // Run: node server/main.ts · Make an admin: node server/main.ts promote 0599XXXXXX
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { createBrotliCompress } from 'node:zlib';
@@ -65,7 +65,7 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
     && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   res.writeHead(200, {
     'Content-Type': contentType,
-    'Cache-Control': extension === '.html' || extension === '.webmanifest' || file.endsWith('sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
+    'Cache-Control': extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
     ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
   });
   const stream = createReadStream(file).on('error', () => res.destroy());
@@ -438,7 +438,11 @@ function me(user: User) {
   return { user, subscription: latestSubscription(user.id), plan: activePlan(user.id), settings: settings(), capabilities: { enabledServices, pooling: false } };
 }
 
-route('POST', '/api/auth/logout', ({ user }) => { run('DELETE FROM sessions WHERE user_id = ?', user.id); return { ok: true }; });
+route('POST', '/api/auth/logout', ({ user }) => {
+  run('DELETE FROM sessions WHERE user_id = ?', user.id);
+  run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id); // every session ended, so every browser stops alerting
+  return { ok: true };
+});
 route('GET', '/api/me', ({ user }) => me(user));
 
 route('POST', '/api/me', ({ user, body }) => {
@@ -646,23 +650,26 @@ function flushPush() {
   for (const { userIds, kind, order } of outbox.splice(0)) {
     const url = kind === 'job' ? '/driver' : `/order/${order}`;
     for (const s of all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds))
-      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), kind === 'job' || kind === 'message' ? 'high' : 'normal');
+      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), kind === 'job' || kind === 'message' ? 'high' : 'normal', kind === 'job' ? 300 : 3600);
   }
 }
-async function deliver(s: Row, message: string, urgency: string) {
+async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   try {
     const { privateKey, publicRaw } = pushKeys();
-    const res = await fetch(s.endpoint as string, { method: 'POST', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
-      headers: { TTL: '3600', Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT) } });
+    const res = await fetch(s.endpoint as string, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
+      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT) } });
+    await res.body?.cancel();
     if (res.status === 404 || res.status === 410) run('DELETE FROM push_subscriptions WHERE endpoint = ?', s.endpoint); // the browser dropped it
   } catch { /* best effort: the app still shows everything on next open */ }
 }
 /** A new job reaches free, approved drivers whose vehicle can take it (at most 100 per order). */
-function newJobPush(service: Service, orderId: number) {
+function newJobPush(service: Service, orderId: number, customerId: number) {
+  // Booking is never refused for this, but one account cannot keep 100 drivers' phones ringing: 5 job alerts per 10 minutes.
+  try { limit(identityKey('job-push', customerId), 5, 10 * 60_000); } catch { return; }
   const fits = vehicles.filter(v => vehicleServices[v].includes(service));
   const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
-    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) LIMIT 100`, ...fits);
+    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
 }
 route('GET', '/api/push/key', () => ({ key: b64url(pushKeys().publicRaw) }), true);
@@ -670,7 +677,9 @@ route('POST', '/api/push/subscribe', ({ user, body }) => {
   const endpoint = pushEndpoint(body.endpoint) ?? fail(400, 'invalid_input');
   const key = Buffer.from(String(body.p256dh ?? ''), 'base64url'), auth = Buffer.from(String(body.auth ?? ''), 'base64url');
   if (key.length !== 65 || key[0] !== 4 || auth.length !== 16) fail(400, 'invalid_input');
-  // A shared browser follows whoever signed in last; five browsers per person.
+  try { createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64url(key.subarray(1, 33)), y: b64url(key.subarray(33)) }, format: 'jwk' }); }
+  catch { fail(400, 'invalid_input'); } // a point off the curve would fail on every send
+  // A shared browser follows whoever signed in last (knowing the endpoint is the browser's own secret); five browsers per person.
   run(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lang, created_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, lang = excluded.lang, created_at = excluded.created_at`,
   endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now());
@@ -716,7 +725,7 @@ function createOrder(user: User, body: Row) {
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, now);
-  if (scheduledFor == null) newJobPush(service, id);
+  if (scheduledFor == null) newJobPush(service, id, user.id);
   return getOrder(id, user);
 }
 

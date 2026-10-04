@@ -4,7 +4,7 @@ import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
-import { disablePush, enablePush, pushState, pushSupported, type PushState } from './push';
+import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, orderCode, type Order, type Referral, type Service } from './model';
 import { useSession } from './session';
 import {
@@ -94,7 +94,9 @@ function PushRow() {
   const { c, language } = useCopy();
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { pushState().then(setState).catch(() => setState('unsupported')); }, []);
+  useEffect(() => {
+    pushState().then(next => { setState(next); if (next === 'on') void refreshPush(language).catch(() => undefined); }).catch(() => setState('unsupported'));
+  }, [language]);
   if (!state || state === 'unsupported') return null;
   async function toggle() {
     if (busy) return;

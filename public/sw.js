@@ -6,6 +6,10 @@ const words = {
     completed: 'Delivered', returned: 'Returned to the sender', message: 'New message about your order', job: 'A new job is available' },
 };
 const code = id => `W-${String(id).padStart(5, '0')}`;
+const sameOrigin = value => {
+  try { const url = new URL(String(value), self.location.origin); return url.origin === self.location.origin ? url.href : '/'; } catch { return '/'; }
+};
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', event => {
   let data = {};
@@ -16,15 +20,15 @@ self.addEventListener('push', event => {
     body, lang: data.lang === 'en' ? 'en' : 'ar', dir: data.lang === 'en' ? 'ltr' : 'rtl',
     icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',
     tag: data.kind === 'job' ? 'jobs' : `order-${data.order}`, renotify: true,
-    data: { url: typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/' },
+    data: { url: sameOrigin(data.url) },
   }));
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url ?? '/', self.location.origin).href;
+  const url = sameOrigin(event.notification.data?.url ?? '/');
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     const open = list.find(c => new URL(c.url).origin === self.location.origin);
-    return open ? open.focus().then(c => c.navigate(url)) : self.clients.openWindow(url);
+    return open ? open.focus().then(c => c.navigate(url)).catch(() => self.clients.openWindow(url)) : self.clients.openWindow(url);
   }));
 });

@@ -8,7 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, promote } = await import('../server/main.ts');
+const { server, promote, db } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -78,6 +78,12 @@ try {
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('d'), fcm('c')]);
 
+  // A busy driver hears about no new jobs; scheduled orders wait for their release.
+  sent.length = 0;
+  await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  await settle();
+  assert.deepEqual(sent, []);
+
   // 410 Gone removes the subscription; unsubscribe stops pushes.
   sent.length = 0; reply = 410;
   await call(`/orders/${order.id}/messages`, { token: driver.token, body: { body: 'Coming' } });
@@ -90,6 +96,9 @@ try {
   await call(`/orders/${order.id}/messages`, { token: customer.token, body: { body: 'Ok' } });
   await settle();
   assert.deepEqual(sent, []);
+  // Logging out ends every session, so every browser of that account stops alerting.
+  await call('/auth/logout', { token: customer.token, body: {} });
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions WHERE user_id = ?').get(customer.user.id).n, 0);
   console.log('push server: ok');
 } finally {
   server.close();
