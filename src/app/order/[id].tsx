@@ -14,7 +14,7 @@ import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -203,6 +203,9 @@ export default function OrderScreen() {
         </View>}
       </Card>
     </Appear> : null}
+
+    {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
+      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} />}
 
     {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
       <Card tone="clay">
@@ -408,6 +411,52 @@ function Safety({ order, onChange }: { order: Order; onChange: (order: Order) =>
   </Card>;
 }
 
+type Message = { id: number; mine: boolean; role: 'customer' | 'driver'; body: string; createdAt: number };
+const quickReplies = ['qrOnMyWay', 'qrArrived', 'qrCallMe', 'qrLate'] as const;
+
+// In-trip chat: cheaper than calls on local plans and kept for support. Polls while the order screen is open.
+function Chat({ orderId, canWrite }: { orderId: number; canWrite: boolean }) {
+  const { c, err, row } = useCopy();
+  const { time } = useFormat();
+  const { data, error, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, 5000);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  async function send(body: string) {
+    if (!body.trim() || busy) return;
+    setBusy(true); setFailure('');
+    try { setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: body.trim() })); setDraft(''); haptic.success(); }
+    catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
+  }
+  const recent = (data ?? []).slice(-20);
+  return <Card>
+    <Row gap={8} style={{ marginBottom: 8 }}>
+      <Ionicons name="chatbubbles-outline" size={20} color={palette.olive} />
+      <Txt variant="title" style={{ flex: 1 }}>{c.messages}</Txt>
+    </Row>
+    {error && !data ? <ErrorText>{err(error)}</ErrorText> : recent.length === 0
+      ? <Txt variant="caption" style={{ marginBottom: 8 }}>{canWrite ? c.chatEmpty : c.chatNone}</Txt>
+      : <View accessibilityLiveRegion="polite" style={{ gap: 6, marginBottom: 8 }}>
+        {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
+          accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${time(m.createdAt)}`}>
+          {!m.mine && <Txt variant="micro">{c[m.role]}</Txt>}
+          <Txt>{m.body}</Txt>
+          <Txt variant="micro">{time(m.createdAt)}</Txt>
+        </View>)}
+      </View>}
+    {canWrite && <>
+      <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        {quickReplies.map(key => <Press key={key} accessibilityLabel={`${c.send}: ${c[key]}`} disabled={busy} onPress={() => send(c[key])} style={styles.quick}>
+          <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c[key]}</Txt>
+        </Press>)}
+      </View>
+      <Field label={c.chatMessage} value={draft} onChangeText={setDraft} maxLength={500} multiline disabled={busy} />
+      <Button title={c.send} icon="send-outline" variant="soft" loading={busy} disabled={busy || !draft.trim()} onPress={() => send(draft)} />
+    </>}
+    <ErrorText>{failure}</ErrorText>
+  </Card>;
+}
+
 function Person({ title, name, sub, phone }: { title: string; name: string; sub?: string; phone?: string | null }) {
   const { c } = useCopy();
   return <Row gap={12}>
@@ -454,4 +503,6 @@ const styles = StyleSheet.create({
   code: { gap: 4 },
   digit: { width: 30, height: 40, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', lineHeight: 40, fontSize: 22, fontWeight: '900', color: palette.clayInk, overflow: 'hidden' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
+  bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  quick: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 22, backgroundColor: palette.olivePale },
 });
