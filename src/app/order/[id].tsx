@@ -8,13 +8,13 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, ApiError, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, city, commissionOn, orderCode, statusFlow, type Order, type Point } from '../../model';
+import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, statusFlow, type ExceptionReason, type Order, type Point } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, fill, haptic, Header, IconButton, Loading, palette, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -38,6 +38,10 @@ export default function OrderScreen() {
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: { requestId: string; expectedStatus: string; code: string } } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
+  const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
+  const problemAttempt = useRef<{ orderId: number; requestId: string } | null>(null);
+  const [decision, setDecision] = useState({ id, reason: '' });
+  const [dispute, setDispute] = useState({ id, reason: '' });
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   useFocusEffect(useCallback(() => {
@@ -53,10 +57,15 @@ export default function OrderScreen() {
   const mine = isDriver && order.driverId === me.user.id;
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from;
-  const step = steps.indexOf(order.status);
+  // A held or returning item is still past pickup; the bar does not move backwards.
+  const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const resetReason = proofReset.id === id ? proofReset.reason : '';
+  const decisionReason = decision.id === id ? decision.reason : '';
+  const disputeReason = dispute.id === id ? dispute.reason : '';
+  const needsCode = (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
+  const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
     if (!order || busy || key === 'accept' && (!work.known || work.order)) return;
@@ -73,8 +82,13 @@ export default function OrderScreen() {
           advanceAttempt.current = { orderId: order.id, body: { requestId: newRequestId(), expectedStatus: order.status, code } };
         body = advanceAttempt.current.body;
       }
+      if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
+        if (problemAttempt.current?.orderId !== order.id) problemAttempt.current = { orderId: order.id, requestId: newRequestId() };
+        body = { ...body, requestId: problemAttempt.current.requestId, expectedStatus: 'in_transit' };
+      }
       const next = await api<Order | { ok: true }>(path, body);
       if (key === 'advance') { advanceAttempt.current = null; setAdvanceLocked(null); }
+      if (key === 'problem') problemAttempt.current = null;
       haptic.success();
       if ('id' in next) {
         setData(next);
@@ -146,6 +160,8 @@ export default function OrderScreen() {
           <Txt variant="micro">{c.dropoff}</Txt>
         </Row>
         <Txt variant="caption" style={{ marginTop: 10 }}>{c[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}` as 'next_assigned']}</Txt>
+        {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
+          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{`${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
       </Card>
     </Appear>}
 
@@ -165,7 +181,7 @@ export default function OrderScreen() {
       </Card>
     </Appear> : null}
 
-    {isCustomer && order.handoverCode && live && <Appear index={4}>
+    {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
       <Card tone="clay">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
@@ -178,6 +194,20 @@ export default function OrderScreen() {
         </Row>
       </Card>
       <Tip id="order-code" icon="key-outline" title={c.tipCodeTitle} body={c.tipCodeBody} tone="clay" />
+    </Appear>}
+
+    {isCustomer && order.returnCode && <Appear index={4}>
+      <Card tone="clay">
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
+            <Txt variant="title">{c.returnCode}</Txt>
+            <Txt variant="caption">{c.returnHint}</Txt>
+          </View>
+          <View style={[styles.code, { flexDirection: 'row' }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
+            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+          </View>
+        </Row>
+      </Card>
     </Appear>}
 
     <Appear index={5}>
@@ -198,7 +228,21 @@ export default function OrderScreen() {
 
     <ErrorText>{actionError}</ErrorText>
 
-    {isAdmin && order.status === 'in_transit' && order.service !== 'ride' && <Card>
+    {isAdmin && order.status === 'on_hold' && <Card tone="clay">
+      <Txt variant="title">{c.exceptionTitle}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
+      <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
+        onChangeText={reason => setDecision({ id, reason })} />
+      <View style={{ gap: 8 }}>
+        {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
+          variant={action === 'reattempt' ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
+          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5}
+          onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
+            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.yes, c.no)} />)}
+      </View>
+    </Card>}
+
+    {isAdmin && (order.status === 'returning' || (order.status === 'in_transit' && order.service !== 'ride')) && <Card>
       <Txt variant="title">{c.proofResetTitle}</Txt>
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.proofResetHint}</Txt>
       <Field label={c.proofResetReason} value={resetReason} maxLength={500} disabled={!!busy}
@@ -217,14 +261,23 @@ export default function OrderScreen() {
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {mine && activeStatuses.includes(order.status) && <>
-        {order.status === 'in_transit' && order.service !== 'ride' &&
-          <Field label={c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
+        {needsCode &&
+          <Field label={order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
-        <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+        {order.status !== 'on_hold' && <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
-          onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />
+          onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />}
+        {order.status === 'in_transit' && order.service !== 'ride' && <Card tone="muted">
+          <Txt variant="title" style={{ marginBottom: 8 }}>{c.reportProblem}</Txt>
+          <FilterChips items={exceptionReasons.map(key => ({ key, label: c[`reason_${key}`] }))} value={problem.reason}
+            onChange={reason => setProblem(p => ({ ...p, reason }))} />
+          <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
+          <Button title={c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy}
+            onPress={() => confirm(c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
+              { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), c.yes, c.no)} />
+        </Card>}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
-          const dropoff = order.status === 'in_transit';
+          const dropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
           openMaps(dropoff ? null : order.pickupPoint, (dropoff ? to : from)[language], dropoff ? order.dropoffNote : order.pickupNote)
             .catch(() => setActionError(c.mapUnavailable));
         }} />
@@ -237,6 +290,19 @@ export default function OrderScreen() {
         <Button title={c.viewReceipt} icon="receipt-outline" variant="outline" onPress={() => router.push(`/receipt/${order.id}`)} />}
 
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={rating => act('rate', `/orders/${order.id}/rate`, { rating })} />}
+
+      {isCustomer && order.dispute && <Card tone={order.dispute.status === 'open' ? 'clay' : 'olive'}>
+        <Txt variant="title">{order.dispute.status === 'open' ? c.disputeOpen : c.disputeResolved}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{order.dispute.resolution ?? order.dispute.reason}</Txt>
+      </Card>}
+      {canDispute && !order.dispute && <Card>
+        <Txt variant="title">{c.disputeTitle}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
+        <Field label={c.disputeReason} value={disputeReason} multiline maxLength={1000} disabled={!!busy}
+          onChangeText={reason => setDispute({ id, reason })} />
+        <Button title={c.disputeSend} variant="outline" icon="flag-outline" loading={busy === 'dispute'} disabled={!!busy || disputeReason.trim().length < 10}
+          onPress={() => act('dispute', `/orders/${order.id}/dispute`, { reason: disputeReason.trim() }, () => setDispute({ id, reason: '' }))} />
+      </Card>}
 
       {((isCustomer || isAdmin) && ['searching', 'assigned'].includes(order.status)) &&
         <Button title={c.cancelOrder} variant="danger" size="sm" icon="close-circle-outline" loading={busy === 'cancel'}

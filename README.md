@@ -174,8 +174,12 @@ The Railway image also exports and serves this single-page web build at the API'
 Registration does not prove phone or email ownership yet; public SMS signup is
 unavailable. There are no push notifications (screens poll while open), driver
 location is foreground-only, payment is cash, and the API is a single instance.
-Post-pickup failure/return/dispute and cash settlement ledgers remain operational
-launch gaps; do not claim them as implemented. Details and the path past each are
+A parcel that cannot be delivered goes `on_hold` with the driver's reason; an
+administrator records a reattempt or return decision, and a return closes only with
+the sender's return code. Customers can open one dispute per finished order within
+seven days; resolution is a recorded decision with no automatic refund. Pickup
+evidence and the cash settlement ledger remain operational launch gaps; do not claim
+them as implemented. Details and the path past each are
 in [docs/SYSTEM.md §9](docs/SYSTEM.md).
 
 ## Product documents

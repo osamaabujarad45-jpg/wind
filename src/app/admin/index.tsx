@@ -49,7 +49,7 @@ export default function Dashboard() {
         <Card>
           <Txt variant="title" style={{ marginBottom: 10 }}>{c.allOrders}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
-            {(['searching', 'assigned', 'at_pickup', 'in_transit', 'completed', 'cancelled'] as const).map(s =>
+            {(['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning', 'completed', 'returned', 'cancelled'] as const).map(s =>
               <Badge key={s} status={s} label={`${c[s]} · ${data.statuses[s] ?? 0}`} />)}
           </Row>
           <Txt variant="title" style={{ marginVertical: 10 }}>{c.users}</Txt>
