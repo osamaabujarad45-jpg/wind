@@ -11,7 +11,8 @@ Give drivers and customers the latest crowd status of the checkpoints near their
 1. **Checkpoints** are managed by administrators (name + 1–3 nearby Wind cities). No fixed list ships
    in code — operations add the ones their routes cross.
 2. **Reports:** active drivers and administrators report a checkpoint as `open`, `slow` or `closed`
-   with an optional note (≤120). One report per person per checkpoint per 10 minutes.
+   (the API accepts an optional note ≤120; the app sends status only). One report per person per checkpoint
+   per 10 minutes and 30 per hour overall; each person counts once in "agreeing"; blocked/deleted accounts stop counting.
 3. **Status** = the latest report within the last 2 hours, plus how many reports in that window agree
    with it; older than 2 hours → "no recent reports". Reporter identity is never shown.
 4. **Where it shows:** a "Roads" screen (drivers report there; everyone signed in can read it);

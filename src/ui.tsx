@@ -218,9 +218,9 @@ export function Press({ children, onPress, style, disabled, accessibilityLabel, 
   </Pressable>;
 }
 
-export function Button({ title, onPress, variant = 'primary', icon, loading, disabled, size: s = 'md', trailing }: {
+export function Button({ title, onPress, variant = 'primary', icon, loading, disabled, size: s = 'md', trailing, label }: {
   title: string; onPress: () => void; variant?: 'primary' | 'soft' | 'danger' | 'ghost' | 'outline'; icon?: IconName; loading?: boolean; disabled?: boolean;
-  size?: 'md' | 'sm'; trailing?: string;
+  size?: 'md' | 'sm'; trailing?: string; label?: string;
 }) {
   const { row } = useCopy();
   const tone = {
@@ -229,7 +229,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
   const small = s === 'sm';
-  return <Press accessibilityLabel={trailing ? `${title} ${trailing}` : title} onPress={onPress} disabled={disabled || loading}
+  return <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading}
     style={[styles.button, small && styles.buttonSmall, { backgroundColor: tone.bg, flexDirection: row }, variant === 'outline' && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>

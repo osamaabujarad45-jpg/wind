@@ -210,11 +210,11 @@ export default function Book() {
         {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
       </Card>
 
-      {roadAlerts.length > 0 && <Card tone="clay">
+      {roadAlerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
         {roadAlerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
-      </Card>}
+      </Card></View>}
 
       <Tip id="book-landmark" icon="flag-outline" title={c.tipBookTitle} body={c.tipBookBody} tone="blue" />
 

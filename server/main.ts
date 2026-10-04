@@ -447,6 +447,7 @@ function deleteAccount(user: User) {
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
+    run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
     run('DELETE FROM sessions WHERE user_id = ?', user.id);
     db.exec('COMMIT');
@@ -770,8 +771,10 @@ const ROAD_FRESH = 2 * 3_600_000;
 function roads() {
   const since = Date.now() - ROAD_FRESH;
   return all('SELECT id, name, cities FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
-    const latest = one('SELECT status, note, created_at FROM checkpoint_reports WHERE checkpoint_id = ? AND created_at > ? ORDER BY created_at DESC, id DESC LIMIT 1', c.id, since);
-    const agreeing = latest ? one('SELECT COUNT(*) n FROM checkpoint_reports WHERE checkpoint_id = ? AND created_at > ? AND status = ?', c.id, since, latest.status)!.n : 0;
+    // Blocked (and deleted) accounts stop counting; each person counts once however often they report.
+    const recent = `FROM checkpoint_reports r JOIN users u ON u.id = r.reporter_id WHERE r.checkpoint_id = ? AND r.created_at > ? AND u.status <> 'blocked'`;
+    const latest = one(`SELECT r.status, r.note, r.created_at ${recent} ORDER BY r.created_at DESC, r.id DESC LIMIT 1`, c.id, since);
+    const agreeing = latest ? one(`SELECT COUNT(DISTINCT r.reporter_id) n ${recent} AND r.status = ?`, c.id, since, latest.status)!.n : 0;
     return { id: c.id, name: c.name, cities: JSON.parse(c.cities), status: latest?.status ?? null, note: latest?.note ?? '', reportedAt: latest?.created_at ?? null, agreeing };
   });
 }
@@ -784,6 +787,7 @@ route('POST', '/api/roads/:id/report', ({ user, params, body }) => {
   const id = Number(params[0]);
   if (!one('SELECT id FROM checkpoints WHERE id = ? AND active = 1', id)) fail(404, 'not_found');
   if (one('SELECT id FROM checkpoint_reports WHERE checkpoint_id = ? AND reporter_id = ? AND created_at > ?', id, user.id, Date.now() - 10 * 60_000)) fail(429, 'already_reported');
+  limit(identityKey('road', user.id), 30, 60 * 60_000); // across all checkpoints
   run('INSERT INTO checkpoint_reports (checkpoint_id, reporter_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)', id, user.id, body.status, note, Date.now());
   return roads();
 });
@@ -1318,6 +1322,7 @@ if (import.meta.main) {
     finally { db.close(); }
   } else {
     run('DELETE FROM sessions WHERE created_at < ?', Date.now() - SESSION_DAYS * DAY);
+    run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY); // only the last two hours are ever shown
     run('DELETE FROM request_limits WHERE until < ?', Date.now());
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));

@@ -62,7 +62,22 @@ try {
   assert.deepEqual([row.status, row.reportedAt, row.agreeing], [null, null, 0]);
   await call(`/roads/${a.id}/report`, { token: driver.token, body: { status: 'open' } }); // the 10-minute window has passed too
 
-  await call(`/admin/roads/${a.id}/remove`, { token: driver.token, body: {}, expect: 403 });
+  // One person counts once, however often they report.
+  db.prepare('UPDATE checkpoint_reports SET created_at = created_at - ?').run(11 * 60_000);
+  roads = await call(`/roads/${a.id}/report`, { token: driver.token, body: { status: 'open', note: 'call 0599123456' } });
+  assert.equal(roads.find(r => r.id === a.id).agreeing, 1);
+
+  // Deleted reporters stop counting and their notes are erased; blocked ones stop counting too.
+  await call('/me/delete', { token: driver.token, body: {} });
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM checkpoint_reports WHERE note != ''").get().n, 0);
+  row = (await call('/roads', { token: customer.token })).find(r => r.id === a.id);
+  assert.deepEqual([row.status, row.agreeing], [null, 0]);
+  await call(`/roads/${a.id}/report`, { token: driver2.token, body: { status: 'closed' } });
+  db.prepare("UPDATE users SET status = 'blocked' WHERE id = ?").run(driver2.user.id);
+  assert.equal((await call('/roads', { token: customer.token })).find(r => r.id === a.id).status, null);
+  db.prepare("UPDATE users SET status = 'active' WHERE id = ?").run(driver2.user.id);
+
+  await call(`/admin/roads/${a.id}/remove`, { token: driver2.token, body: {}, expect: 403 });
   roads = await call(`/admin/roads/${a.id}/remove`, { token: admin.token, body: {} });
   assert.deepEqual(roads.map(r => r.name), ['Checkpoint B']);
   await call(`/roads/${a.id}/report`, { token: driver2.token, body: { status: 'open' }, expect: 404 });
