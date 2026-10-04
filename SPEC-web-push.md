@@ -30,4 +30,4 @@ right people (mocked push service) only after commit; 410 removes; unsubscribe.
 - Permission is asked before registering; subscribing waits for an active worker; a subscription for an old key is replaced; an "on" browser silently re-sends its subscription.
 - Push requests never follow redirects and release their response; keys must be valid curve points; endpoints with credentials are refused.
 - The service worker only opens same-origin links and claims open tabs.
-- Not covered yet: scheduled-order release, driver release and customer cancel alerts.
+- Follow-up (2026-10-05): scheduled orders alert drivers once when released (checked every minute, `orders.job_alerted_at`); a driver dropping out tells the customer and re-offers the job; a customer cancelling an assigned order tells the driver.

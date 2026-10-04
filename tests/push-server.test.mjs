@@ -8,7 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, promote, db } = await import('../server/main.ts');
+const { server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -96,6 +96,32 @@ try {
   await call(`/orders/${order.id}/messages`, { token: customer.token, body: { body: 'Ok' } });
   await settle();
   assert.deepEqual(sent, []);
+  // Scheduled orders alert drivers once, at release; a driver dropping out tells the customer; a cancel tells the driver.
+  const second = await call('/auth/register', { body: { phone: '0599150005', name: 'Eid', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${second.user.id}/approve`, { token: admin.token, body: {} });
+  await call('/push/subscribe', { token: second.token, body: { endpoint: fcm('e'), ...browserKeys() } });
+  await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...browserKeys() } }); // dropped by the 410 above
+  sent.length = 0;
+  const later = Date.now() + 2 * 3_600_000;
+  await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), scheduledFor: later } });
+  await settle();
+  assert.deepEqual(sent, []);
+  alertReleasedJobs(later);
+  alertReleasedJobs(later); // once only
+  await settle();
+  assert.deepEqual(sent.map(s => s.url), [fcm('e')]);
+  let mine = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  mine = await call(`/jobs/${mine.id}/accept`, { token: second.token, body: {} });
+  sent.length = 0;
+  await call(`/orders/${mine.id}/release`, { token: second.token, body: {} });
+  await settle();
+  assert.ok(sent.some(s => s.url === fcm('c')));
+  await call(`/jobs/${mine.id}/accept`, { token: second.token, body: {} });
+  sent.length = 0;
+  await call(`/orders/${mine.id}/cancel`, { token: customer.token, body: {} });
+  await settle();
+  assert.deepEqual(sent.map(s => s.url), [fcm('e')]);
+
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });
   assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions WHERE user_id = ?').get(customer.user.id).n, 0);

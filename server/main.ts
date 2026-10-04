@@ -177,7 +177,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
 }
@@ -628,7 +628,7 @@ route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
 
 // Web Push (SPEC-web-push.md): opt-in per browser, no provider account. The payload carries a kind and an order id,
 // never names or addresses; the service worker words it in the subscriber's language.
-type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job';
+type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled';
 // ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
 const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -672,6 +672,15 @@ function newJobPush(service: Service, orderId: number, customerId: number) {
     AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
 }
+/** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
+export function alertReleasedJobs(now = Date.now()) {
+  for (const o of all("SELECT id, service, customer_id FROM orders WHERE status = 'searching' AND scheduled_for IS NOT NULL AND scheduled_for <= ? AND job_alerted_at IS NULL LIMIT 50", now + RELEASE_BEFORE)) {
+    run('UPDATE orders SET job_alerted_at = ? WHERE id = ?', now, o.id);
+    newJobPush(o.service as Service, o.id as number, o.customer_id as number);
+  }
+  flushPush();
+}
+setInterval(() => { try { alertReleasedJobs(); } catch (error) { outbox.length = 0; console.error(error); } }, 60_000).unref();
 route('GET', '/api/push/key', () => ({ key: b64url(pushKeys().publicRaw) }), true);
 route('POST', '/api/push/subscribe', ({ user, body }) => {
   const endpoint = pushEndpoint(body.endpoint) ?? fail(400, 'invalid_input');
@@ -725,7 +734,7 @@ function createOrder(user: User, body: Row) {
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, now);
-  if (scheduledFor == null) newJobPush(service, id, user.id);
+  if (scheduledFor == null) { run('UPDATE orders SET job_alerted_at = ? WHERE id = ?', now, id); newJobPush(service, id, user.id); }
   return getOrder(id, user);
 }
 
@@ -847,6 +856,7 @@ route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   const allowed = (user.role === 'admin' || user.id === order.customerId) && ['searching', 'assigned'].includes(order.status);
   if (!allowed) fail(409, 'cannot_cancel');
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
+  if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
   return getOrder(order.id, user);
 });
 
@@ -1084,6 +1094,8 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
   if (order.driverId !== user.id || order.status !== 'assigned') fail(409, 'cannot_release');
   safetyFree(order.id);
   run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', updated_at = ? WHERE id = ?", Date.now(), order.id);
+  queuePush([order.customerId], 'released', order.id);
+  if (!order.scheduledFor || order.scheduledFor <= Date.now() + RELEASE_BEFORE) newJobPush(order.service, order.id, order.customerId);
   return { ok: true };
 });
 
