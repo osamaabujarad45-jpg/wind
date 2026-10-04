@@ -1,13 +1,13 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage } from '../api';
 import { newBooking, readBooking, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Point, type Service } from '../model';
+import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta } from '../parts';
 import { useSession } from '../session';
 import { Button, Card, Choices, ErrorText, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
@@ -42,6 +42,12 @@ export default function Book() {
   const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
   const edit = (key: keyof typeof invalid, set: (v: string) => void) => (v: string) => { set(v); if (invalid[key]) setInvalid({ ...invalid, [key]: undefined }); };
+  // Saved and recent places: landmarks are the address here, so reuse them instead of retyping.
+  const isCustomer = me?.user.role === 'customer';
+  const [places, setPlaces] = useState<Places>({ saved: [], recent: [] });
+  useEffect(() => { if (isCustomer) api<Places>('/me/places').then(setPlaces).catch(() => undefined); }, [isCustomer]);
+  const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
+    .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
   async function locate() {
     setLocating(true);
@@ -190,7 +196,9 @@ export default function Book() {
 
       <Card>
         <Field label={c.pickupNote} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
+        {isCustomer && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={c.dropoffNote} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
+        {isCustomer && !locked && <SavePlace city={dropoffCity} note={dropoffNote} saved={places.saved} onSave={savePlace} />}
         <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         {service === 'ride'
           ? <Row style={{ justifyContent: 'space-between' }}>
@@ -224,6 +232,13 @@ export default function Book() {
     </Screen>
 
     <CityPicker open={picker !== null && !locked} title={picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
+      places={places} onForget={id => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e)))}
+      onPlace={(id, note) => {
+        haptic.tap();
+        if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
+        else { setDropoffCity(id); edit('dropoffNote', setDropoffNote)(note); }
+        setPicker(null);
+      }}
       onClose={() => setPicker(null)} onPick={id => {
         haptic.tap();
         if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); } else setDropoffCity(id);
@@ -232,8 +247,28 @@ export default function Book() {
   </KeyboardAvoidingView>;
 }
 
-// Searchable city list in a bottom sheet (Arabic and English names both match).
-function CityPicker({ open, title, selected, onClose, onPick }: { open: boolean; title: string; selected: CityId; onClose: () => void; onPick: (id: CityId) => void }) {
+const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
+
+// "Save to my places" under a landmark field: one tap reveals Home / Work / Other.
+function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; note: string; saved: SavedPlace[]; onSave: (label: SavedPlace['label'], city: CityId, note: string) => Promise<void> }) {
+  const { c, row } = useCopy();
+  const [open, setOpen] = useState(false);
+  const trimmed = note.trim();
+  if (!trimmed || saved.some(p => p.city === placeCity && p.note === trimmed)) return null;
+  if (!open) return <Press accessibilityLabel={c.savePlace} onPress={() => setOpen(true)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
+    <Row gap={6} style={styles.chip}><Ionicons name="bookmark-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.savePlace}</Txt></Row>
+  </Press>;
+  return <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8, marginTop: -6, marginBottom: 8 }}>
+    {(['home', 'work', 'other'] as const).map(label => <Press key={label} accessibilityLabel={`${c.savePlace}: ${c[`place_${label}`]}`}
+      onPress={() => { setOpen(false); void onSave(label, placeCity, trimmed); }}>
+      <Row gap={6} style={styles.chip}><Ionicons name={placeIcons[label]} size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c[`place_${label}`]}</Txt></Row>
+    </Press>)}
+  </View>;
+}
+
+// Searchable city list in a bottom sheet (Arabic and English names both match), with the customer's places first.
+function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, onForget }: { open: boolean; title: string; selected: CityId; onClose: () => void; onPick: (id: CityId) => void;
+  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void }) {
   const { c, language, row, align } = useCopy();
   const [query, setQuery] = useState('');
   const term = query.trim().toLowerCase();
@@ -249,6 +284,25 @@ function CityPicker({ open, title, selected, onClose, onPick }: { open: boolean;
           style={[styles.searchInput, { textAlign: align }]} autoCorrect={false} />
       </View>
       <ScrollView keyboardShouldPersistTaps="handled">
+        {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
+          <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
+          {[...places.saved.map(p => ({ ...p, key: `s${p.id}` })), ...places.recent.map((p, i) => ({ ...p, key: `r${i}`, id: 0, label: 'recent' as const }))].map(p => {
+            const name = p.label === 'recent' || p.label === 'other' ? p.note : c[`place_${p.label}`];
+            return <Row key={p.key} gap={4} style={styles.sheetRow}>
+              <Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={name === p.note ? `${name}, ${city(p.city)[language]}` : `${name}, ${city(p.city)[language]}, ${p.note}`} onPress={() => onPlace(p.city, p.note)}>
+                <Row gap={12} style={{ minHeight: 56 }}>
+                  <View style={styles.pin}><Ionicons name={p.label === 'recent' ? 'time-outline' : placeIcons[p.label]} size={15} color={palette.secondary} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Txt variant="title" numberOfLines={1}>{name}</Txt>
+                    <Txt variant="micro" numberOfLines={1}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}</Txt>
+                  </View>
+                </Row>
+              </Pressable>
+              {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
+            </Row>;
+          })}
+          <Txt variant="label" style={{ marginTop: 12 }}>{c.cities}</Txt>
+        </>}
         {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
         {list.map(item => {
           const on = item.id === selected;
