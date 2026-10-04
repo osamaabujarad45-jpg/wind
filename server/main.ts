@@ -9,7 +9,7 @@ import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { createBrotliCompress } from 'node:zlib';
 import {
   activeStatuses, cities, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  optionsFor, planForRole, quote, services, vehicleServices, vehicles,
+  optionsFor, orderCode, planForRole, quote, services, vehicleServices, vehicles,
   type Order, type Plan, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 
@@ -133,7 +133,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
 }
@@ -144,6 +144,7 @@ for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'
     db.exec(`ALTER TABLE users ADD COLUMN ${column} ${type}`);
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS orders_share_token ON orders(share_token_hash) WHERE share_token_hash IS NOT NULL');
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 
@@ -415,7 +416,7 @@ function deleteAccount(user: User) {
       fail(409, 'active_orders');
     run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL WHERE id = ?`, `deleted-${user.id}`, user.id);
-    run(`UPDATE orders SET contact = '', pickup_contact = '', handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL
+    run(`UPDATE orders SET contact = '', pickup_contact = '', handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
@@ -581,6 +582,34 @@ route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
   run('UPDATE orders SET rating = ? WHERE id = ?', Math.round(rating), order.id);
   return getOrder(order.id, user);
 });
+
+// Trip sharing: the customer hands a rotating link to a recipient who has no account. Only the token's hash is
+// stored, and the public view is an explicit allowlist — no phones, notes, codes, price or customer identity.
+const SHARE_GRACE = DAY; // a finished trip's final status stays readable for a day
+route('POST', '/api/orders/:id/share', ({ user, params }) => {
+  const r = one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id) ?? fail(404, 'not_found');
+  if (!['searching', ...activeStatuses].includes(r.status)) fail(409, 'cannot_share');
+  const token = randomBytes(32).toString('hex');
+  run('UPDATE orders SET share_token_hash = ?, share_created_at = ? WHERE id = ?', sha(token), Date.now(), r.id);
+  return { token, path: `/track/${token}` };
+});
+route('POST', '/api/orders/:id/share/revoke', ({ user, params }) => {
+  if (!run('UPDATE orders SET share_token_hash = NULL, share_created_at = NULL WHERE id = ? AND customer_id = ?', Number(params[0]), user.id).changes)
+    fail(404, 'not_found');
+  return { ok: true };
+});
+route('GET', '/api/track/([a-f0-9]{64})', ({ params }) => {
+  const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(params[0]!)) ?? fail(404, 'not_found');
+  const open = r.status === 'searching' || activeStatuses.includes(r.status);
+  if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
+  const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
+  return {
+    orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
+    updatedAt: r.updated_at,
+    driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null } : null,
+    driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at } : null,
+  };
+}, true);
 
 // One dispute per finished order, opened by its customer within a week. Resolution is a recorded
 // decision only; refunds and cash corrections belong to cash settlement.
