@@ -1,4 +1,4 @@
-# Tasks: in-app-chat
+# Tasks: promo-codes
 
-- [x] C1: Order messages API with windows, limits, privacy; tests.
-- [x] C2: Chat card, quick replies, admin view, copy, docs.
+- [ ] M1: Promo codes, redemption rules, discount on orders, ledger credit; tests.
+- [ ] M2: Booking/order/driver/admin UI; copy; docs.

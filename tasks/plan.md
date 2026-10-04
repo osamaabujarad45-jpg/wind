@@ -1,4 +1,4 @@
-# Plan: in-app-chat
+# Plan: promo-codes
 
-1. **C1 - API + tests.**
-2. **C2 - UI:** chat card with quick replies, admin read-only, copy, docs, screens.
+1. **M1 - API + ledger + tests.**
+2. **M2 - UI:** booking promo field, order/receipt amounts, driver collect line, admin promos card, copy, docs.
