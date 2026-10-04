@@ -567,7 +567,6 @@ function freshCode(prefix: string, length: number) {
     if (!codeTaken(code)) return code;
   }
 }
-/** The inviter's reward, once, when the friend's first order is delivered. */
 /** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (R…) and goodwill credits (C…). */
 function ownedCode(prefix: string, ownerId: number, amount: number, createdBy: number, now: number) {
   const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
@@ -575,6 +574,7 @@ function ownedCode(prefix: string, ownerId: number, amount: number, createdBy: n
   run('INSERT INTO promo_owners (promo_id, user_id) VALUES (?, ?)', promoId, ownerId);
   return promoId;
 }
+/** The inviter's reward, once, when the friend's first order is delivered. */
 export function rewardReferral(orderId: number, now: number) {
   const ref = one("SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = 'active'", orderId);
   if (!ref || one('SELECT COUNT(*) n FROM referrals r JOIN promo_codes p ON p.id = r.reward_promo_id WHERE r.referrer_id = ? AND p.created_at > ?',
@@ -836,6 +836,8 @@ route('POST', '/api/admin/disputes/:id/resolve', ({ user, params, body }) => {
   const credit = body.creditShekels == null ? null : Number.isInteger(body.creditShekels) && body.creditShekels >= 1 && body.creditShekels <= 50
     ? body.creditShekels as number : fail(400, 'invalid_input');
   const dispute = one('SELECT * FROM order_disputes WHERE id = ?', Number(params[0])) ?? fail(404, 'not_found');
+  // A blocked or deleted customer could never redeem it; resolve without a credit instead.
+  if (credit && one('SELECT status FROM users WHERE id = ?', dispute.customer_id)?.status !== 'active') fail(409, 'customer_inactive');
   db.exec('BEGIN IMMEDIATE');
   try {
     if (!run("UPDATE order_disputes SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'open'",

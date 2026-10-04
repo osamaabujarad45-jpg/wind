@@ -8,7 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-credit-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, promote } = await import('../server/main.ts');
+const { server, promote, db } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -49,6 +49,9 @@ try {
   await call(`/admin/disputes/${row.id}/resolve`, { token: customer.token, body: { resolution: 'Sorry about that', creditShekels: 15 }, expect: 403 });
   await call(`/admin/disputes/${row.id}/resolve`, { token: admin.token, body: { resolution: 'Sorry about that', creditShekels: 15 } });
   assert.equal((await call('/admin/disputes', { token: admin.token }))[0].creditAmount, 15);
+  await call(`/admin/disputes/${row.id}/resolve`, { token: admin.token, body: { resolution: 'Again', creditShekels: 15 }, expect: 409 });
+  assert.equal((await call('/me/referral', { token: customer.token })).credits.length, 1); // issued once
+  assert.equal((await call(`/orders/${order.id}`, { token: driver.token })).dispute, null); // the driver never sees it
 
   const { dispute } = await call(`/orders/${order.id}`, { token: customer.token });
   assert.equal(dispute.credit.amount, 15);
@@ -65,6 +68,19 @@ try {
   await call(`/admin/disputes/${open.id}/resolve`, { token: admin.token, body: { resolution: 'Explained the checkpoint delay' } });
   assert.equal((await call(`/orders/${second.id}`, { token: other.token })).dispute.credit, null);
   assert.deepEqual((await call('/me/referral', { token: other.token })).credits, []);
+
+  // Booking with the credit applies it once.
+  const booked = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: price, promoCode: dispute.credit.code, expectedDiscount: 15 } });
+  assert.equal(booked.discount, 15);
+  assert.deepEqual((await call('/me/referral', { token: customer.token })).credits, []);
+
+  // No credit for an account that can no longer use it.
+  const gone = await finished(other.token);
+  await call(`/orders/${gone.id}/dispute`, { token: other.token, body: { reason: 'Parcel arrived opened.' } });
+  const last = (await call('/admin/disputes', { token: admin.token })).find(d => d.status === 'open');
+  db.prepare("UPDATE users SET status = 'blocked' WHERE id = ?").run(other.user.id);
+  assert.equal((await call(`/admin/disputes/${last.id}/resolve`, { token: admin.token, body: { resolution: 'Checked', creditShekels: 5 }, expect: 409 })).error, 'customer_inactive');
+  await call(`/admin/disputes/${last.id}/resolve`, { token: admin.token, body: { resolution: 'Checked' } });
 
   console.log('credit: ok');
 } finally {

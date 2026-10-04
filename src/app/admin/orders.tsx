@@ -8,7 +8,7 @@ import { Button, Card, Empty, ErrorText, Field, FilterChips, Header, Loading, Sc
 
 type Filter = 'all' | 'disputes' | 'safety' | OrderStatus;
 const filters: Filter[] = ['all', 'safety', 'on_hold', 'disputes', 'searching', 'assigned', 'at_pickup', 'in_transit', 'returning', 'completed', 'returned', 'cancelled'];
-type DisputeRow = { id: number; orderId: number; reason: string; status: 'open' | 'resolved'; resolution: string | null; customerName: string; creditAmount: number | null };
+type DisputeRow = { id: number; orderId: number; reason: string; status: 'open' | 'resolved'; resolution: string | null; customerName: string };
 
 export default function AdminOrders() {
   const { c, err } = useCopy();
@@ -72,14 +72,14 @@ function Incidents() {
 
 // Blank = no credit; whole shekels 1–50 (Arabic-Indic digits allowed); undefined = invalid.
 function creditOf(text = '') {
-  const t = text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660));
+  const t = text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
   if (!t) return null;
   const n = Number(t);
   return Number.isInteger(n) && n >= 1 && n <= 50 ? n : undefined;
 }
 
 function Disputes() {
-  const { c, err } = useCopy();
+  const { c, err, money } = useCopy();
   const { data, error, reload } = useApi<DisputeRow[]>('/admin/disputes', 15_000);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [credits, setCredits] = useState<Record<number, string>>({});
@@ -104,10 +104,10 @@ function Disputes() {
       <Field label={c.resolution} value={drafts[d.id] ?? ''} multiline maxLength={1000} disabled={busy !== null}
         onChangeText={text => setDrafts(v => ({ ...v, [d.id]: text }))} />
       <Field label={c.creditField} value={credits[d.id] ?? ''} keyboardType="number-pad" maxLength={2} disabled={busy !== null}
-        error={creditOf(credits[d.id]) === undefined ? c.err_invalid_input : undefined} onChangeText={text => setCredits(v => ({ ...v, [d.id]: text }))} />
+        error={creditOf(credits[d.id]) === undefined ? c.creditInvalid : undefined} onChangeText={text => setCredits(v => ({ ...v, [d.id]: text }))} />
       <Txt variant="caption" style={{ marginTop: -6, marginBottom: 10 }}>{c.creditHint}</Txt>
       <View>
-        <Button title={c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
+        <Button title={creditOf(credits[d.id]) ? `${c.resolveDispute} + ${money(creditOf(credits[d.id])!)}` : c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
           disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5 || creditOf(credits[d.id]) === undefined} onPress={() => resolve(d.id)} />
       </View>
     </Card>)}
