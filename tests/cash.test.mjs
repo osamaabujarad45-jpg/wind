@@ -92,6 +92,29 @@ try {
   assert.ok(list[0].lastRemittanceAt > 0);
   assert.equal(list[1].owedCents, 0);
 
+  // ---- Ship review: exact rounding, returned jobs, no payouts, no leaving with debt, append-only ----
+  assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, asserted independently of the server formula
+  let returned = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  returned = await call(`/jobs/${returned.id}/accept`, { token: driver.token, body: {} });
+  returned = await advance(driver.token, await advance(driver.token, returned));
+  await call(`/orders/${returned.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${returned.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient not home' } });
+  const { returnCode } = await call(`/orders/${returned.id}`, { token: customer.token });
+  await advance(driver.token, { ...returned, status: 'returning' }, { code: returnCode });
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.equal(cash.commissionCents, 735 * 3);
+  const open = cash.owedCents;
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
+  await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
+  await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { role: 'customer' }, expect: 409 });
+  const { db } = await import('../server/main.ts');
+  assert.throws(() => db.prepare('DELETE FROM cash_entries').run(), /append-only/);
+  assert.throws(() => db.prepare("UPDATE cash_entries SET amount_cents = 1 WHERE kind = 'adjustment'").run(), /append-only/);
+  const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
+  await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  await call('/me/delete', { token: driver.token, body: {} }); // settled drivers may leave
+
   console.log('cash: ok');
 } finally {
   server.close();

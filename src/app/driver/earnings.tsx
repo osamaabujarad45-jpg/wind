@@ -40,7 +40,7 @@ export default function Earnings() {
 function CashCard() {
   const { c, money, err } = useCopy();
   const { time } = useFormat();
-  const { data, reload } = useApi<Cash>('/driver/cash');
+  const { data, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
   if (!data) return null;
@@ -70,7 +70,7 @@ function CashCard() {
       </View>
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
         <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
-        <Badge label={c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
+        <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
       </View>
     </Row>)}
   </Card>;

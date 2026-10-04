@@ -126,6 +126,11 @@ CREATE TABLE IF NOT EXISTS cash_entries (
   note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),
   recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER);
 CREATE INDEX IF NOT EXISTS cash_entries_driver ON cash_entries(driver_id, id);
+CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
+  BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
+  WHEN OLD.status <> 'pending' OR NEW.amount_cents <> OLD.amount_cents OR NEW.driver_id <> OLD.driver_id OR NEW.kind <> OLD.kind
+  BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
 for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT']]) {
@@ -405,6 +410,7 @@ function deleteAccount(user: User) {
   db.exec('BEGIN IMMEDIATE');
   try {
     if (one('SELECT role FROM users WHERE id = ?', user.id)?.role === 'admin') fail(409, 'cannot_change_self');
+    cashSettled(user.id);
     if (one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id))
       fail(409, 'active_orders');
     run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL,
@@ -778,10 +784,15 @@ function cashBalances(where: string, ...params: SQLInputValue[]) {
     ${sum("kind = 'adjustment'")} adjustments, ${sum("kind = 'remittance' AND status = 'confirmed'")} remitted,
     ${sum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
-    FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where} LIMIT 1000`, ...params)
+    FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params)
     .map(r => ({ driverId: r.id as number, name: r.name as string, phone: r.phone as string,
       commissionCents: r.commission as number, adjustmentsCents: r.adjustments as number, remittedCents: r.remitted as number,
       pendingCents: r.pending as number, owedCents: r.commission + r.adjustments - r.remitted, lastRemittanceAt: (r.last_remittance as number) ?? null }));
+}
+// A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
+function cashSettled(userId: number) {
+  const balance = cashBalances('u.id = ?', userId)[0];
+  if (balance && (balance.owedCents !== 0 || balance.pendingCents > 0)) fail(409, 'cash_outstanding');
 }
 const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
@@ -816,7 +827,9 @@ function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   db.exec('BEGIN IMMEDIATE');
   try {
     const balance = cashBalances('u.id = ?', Number(body.driverId))[0] ?? fail(404, 'not_found');
-    if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount'); // no overpayment
+    // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
+    if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
+    if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
     const id = Number(run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now()).lastInsertRowid);
     db.exec('COMMIT');
@@ -908,6 +921,7 @@ const editUser: Handler = ({ user, params, body }) => {
   const vehicleChanged = vehicle !== target.vehicle;
   if ((identityChanged || roleChanged || vehicleChanged || (status !== target.status && status === 'pending')) &&
     one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id)) fail(409, 'active_orders');
+  if (roleChanged && target.role === 'driver') cashSettled(target.id);
   if (selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
   if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at) fail(409, 'pending_approval');
   db.exec('BEGIN IMMEDIATE');

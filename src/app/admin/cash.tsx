@@ -16,7 +16,8 @@ export default function AdminCash() {
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
   // Shekels in the form, integer agorot on the wire.
-  const cents = (text: string) => Math.round(Number(text.replace(',', '.')) * 100);
+  // Arabic-Indic digits and the Arabic decimal separator are normal input on Palestinian keyboards.
+  const cents = (text: string) => Math.round(Number(text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[٫,]/, '.')) * 100);
 
   async function submit() {
     if (!open || busy) return;
