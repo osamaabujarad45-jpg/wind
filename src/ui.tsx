@@ -363,7 +363,7 @@ const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
 const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
 
 export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string }; icon?: IconName }) {
-  const t = tone ?? statusTone[status ?? 'completed'];
+  const t = tone ?? statusTone[status ?? 'completed'] ?? statusTone.completed; // a status newer than this build still renders
   return <View style={[styles.badge, { backgroundColor: t.bg }]}>
     {status && live.includes(status) && <Pulse color={t.fg} size={6} />}
     {icon && <Ionicons name={icon} size={12} color={t.fg} />}

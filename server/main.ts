@@ -675,7 +675,7 @@ function reportException(user: User, id: number, body: Row) {
   const now = Date.now();
   run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
   run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
-    user.id, r.id, JSON.stringify({ reason: body.reason, note: body.note }), now);
+    user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now);
   return getOrder(r.id, user);
 }
 
@@ -689,12 +689,15 @@ route('POST', '/api/orders/:id/exception', ({ user, params, body }) => {
 route('POST', '/api/admin/orders/:id/resolve', ({ user, params, body }) => {
   need(user, 'admin');
   const reason = text(body.reason, 500);
-  if (reason.length < 5 || !['reattempt', 'return'].includes(body.action)) fail(400, 'invalid_input');
+  // confirm_return is the way out when the sender cannot give the code: support verifies the handback and records why.
+  const from = { reattempt: 'on_hold', return: 'on_hold', confirm_return: 'returning' }[String(body.action)];
+  if (reason.length < 5 || !from) fail(400, 'invalid_input');
   const id = Number(params[0]);
   db.exec('BEGIN IMMEDIATE');
   try {
-    if ((one('SELECT status FROM orders WHERE id = ?', id) ?? fail(404, 'not_found')).status !== 'on_hold') fail(409, 'cannot_resolve');
+    if ((one('SELECT status FROM orders WHERE id = ?', id) ?? fail(404, 'not_found')).status !== from) fail(409, 'cannot_resolve');
     if (body.action === 'reattempt') run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id);
+    else if (body.action === 'confirm_return') run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id);
     else {
       run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), Date.now(), id);
       run('DELETE FROM proof_attempts WHERE order_id = ?', id); // the return gets its own five attempts

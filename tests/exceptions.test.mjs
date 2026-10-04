@@ -8,6 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-exc-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
+process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 const { server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -122,6 +123,43 @@ try {
   await call(`/admin/disputes/${open[0].id}/resolve`, { token: admin.token, body: { resolution: 'Second time' }, expect: 409 });
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).dispute.status, 'resolved');
   assert.equal((await call(`/orders/${order.id}`, { token: driver.token })).dispute, null);
+
+  // ---- Ship review: a return the sender cannot confirm has an audited admin exit ----
+  order = await inTransit();
+  const stuckReport = { ...report, requestId: randomUUID() };
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: stuckReport });
+  await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Sender verified' }, expect: 409 }); // not returning yet
+  await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient back home' } });
+  assert.equal((await call(`/orders/${order.id}/exception`, { token: driver.token, body: stuckReport })).status, 'in_transit'); // replay after resolve: no new hold
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'DELIVERY_EXCEPTION'").get(order.id).n, 1);
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID(), expectedStatus: 'on_hold' }, expect: 409 });
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID(), note: 'x'.repeat(201) }, expect: 400 });
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID() } });
+  await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused twice' } });
+  const confirmed = await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Sender confirmed by phone they have it' } });
+  assert.equal(confirmed.status, 'returned');
+  await call('/location', { token: driver.token, body: { latitude: 32.2, longitude: 35.2 }, expect: 409 }); // driver released
+
+  // ---- Ship review: Souq partner contract ----
+  const partnerKey = process.env.SOUQ_PARTNER_KEY;
+  const partnerCall = (path, body, expect = 200) => fetch(base + path, { method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', 'X-Partner-Key': partnerKey }, body: body && JSON.stringify(body) })
+    .then(async res => { const data = await res.json(); assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`); return data; });
+  const partnerInput = { externalRef: 'souq:test-return', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
+    pickupNote: 'Seller door', dropoffNote: 'Buyer door', contact: '0599100002', detail: 'Listing' };
+  const { price } = await partnerCall('/partner/quotes', { pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false });
+  let partnerOrder = await partnerCall('/partner/orders', { ...partnerInput, quotedPrice: price });
+  partnerOrder = await call(`/jobs/${partnerOrder.id}/accept`, { token: driver.token, body: {} });
+  partnerOrder = await advance(driver.token, await advance(driver.token, partnerOrder));
+  await call(`/orders/${partnerOrder.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID() } });
+  assert.equal((await partnerCall(`/partner/orders/${partnerOrder.id}`)).status, 'on_hold');
+  await partnerCall(`/partner/orders/${partnerOrder.id}/cancel`, {}, 409);
+  await call(`/admin/orders/${partnerOrder.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Buyer refused parcel' } });
+  const partnerView = await partnerCall(`/partner/orders/${partnerOrder.id}`);
+  assert.equal(partnerView.status, 'returning');
+  assert.match(partnerView.returnCode, /^\d{4}$/); // Souq routes it to its seller
+  assert.equal((await advance(driver.token, partnerView, { code: partnerView.returnCode })).status, 'returned');
+  assert.equal((await partnerCall(`/partner/orders/${partnerOrder.id}`)).returnCode, null);
 
   console.log('exceptions: ok');
 } finally {

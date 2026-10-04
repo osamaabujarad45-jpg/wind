@@ -23,3 +23,11 @@ assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
 assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
 assert.deepEqual(vehicleServices.bicycle, ['parcel']);
 console.log('Model checks passed');
+
+// Delivery exceptions: a held order waits for an admin; a return ends in `returned`; no state is both active and finished.
+{
+  const { activeStatuses, finishedStatuses, nextStatus } = await import('../src/model.ts');
+  assert.equal(nextStatus('on_hold'), 'on_hold');
+  assert.equal(nextStatus('returning'), 'returned');
+  assert.ok(activeStatuses.every(s => !finishedStatuses.includes(s)));
+}

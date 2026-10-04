@@ -98,6 +98,7 @@ export default function OrderScreen() {
     } catch (e) {
       if (key === 'advance' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)
         && e.message !== 'idempotency_conflict') { advanceAttempt.current = null; setAdvanceLocked(null); }
+      if (key === 'problem' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) problemAttempt.current = null;
       haptic.error();
       setActionError(err(e));
     } finally { setBusy(null); }
@@ -240,6 +241,17 @@ export default function OrderScreen() {
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.yes, c.no)} />)}
       </View>
+    </Card>}
+
+    {isAdmin && order.status === 'returning' && <Card tone="clay">
+      <Txt variant="title">{c.confirmReturn}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.confirmReturnHint}</Txt>
+      <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
+        onChangeText={reason => setDecision({ id, reason })} />
+      <Button title={c.confirmReturn} variant="outline" icon="checkmark-done-outline" loading={busy === 'confirm_return'}
+        disabled={!!busy || decisionReason.trim().length < 5}
+        onPress={() => confirm(c.confirmReturnHint, () => act('confirm_return', `/admin/orders/${order.id}/resolve`,
+          { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.yes, c.no)} />
     </Card>}
 
     {isAdmin && (order.status === 'returning' || (order.status === 'in_transit' && order.service !== 'ride')) && <Card>
