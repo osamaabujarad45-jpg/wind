@@ -15,8 +15,9 @@ type Stats = {
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
-// Validated with the dataviz palette checker (CVD-safe on the paper surface).
-const SERIES = { commission: '#2F6DB5', subscriptions: '#D9822B' };
+// Validated with the dataviz palette checker (CVD-safe on the paper surface);
+// both series hold ≥3:1 against the white card.
+const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
   const { me } = useSession();
@@ -68,7 +69,7 @@ function Shortcut({ label, count, onPress }: { label: string; count: number; onP
       <Row>
         <View style={styles.count}><Txt variant="title" style={{ color: '#FFFFFF' }} center>{count}</Txt></View>
         <Txt variant="title" style={{ flex: 1 }}>{label}</Txt>
-        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clay} />
+        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clayInk} />
       </Row>
     </Card>
   </Press>;
@@ -120,7 +121,7 @@ const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transform: [{ scaleY: 1 }], opacity: 1 } };
 
 const styles = StyleSheet.create({
-  count: { minWidth: 30, height: 30, borderRadius: 15, backgroundColor: palette.clay, justifyContent: 'center', paddingHorizontal: 6 },
+  count: { minWidth: 30, height: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
   plot: { height: 150, marginTop: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
   grid: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: palette.muted },

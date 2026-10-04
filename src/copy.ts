@@ -155,7 +155,10 @@ const ar = {
   youEarn: 'حصّتك',
   advance_assigned: 'وصلت لنقطة الاستلام',
   advance_at_pickup: 'استلمت — بدء التوصيل',
-  advance_in_transit: 'تم التسليم',
+  // Action label, not a claim: delivery is only recorded after the code
+  // verifies (parcels) or the driver ends the trip (rides).
+  advance_in_transit: 'تسليم الطرد',
+  advance_in_transit_ride: 'إنهاء الرحلة',
   codeFromCustomer: 'رمز التسليم من الزبون',
   proofResetTitle: 'محاولات رمز التسليم',
   proofResetHint: 'تحقّق من المستلم قبل فتح المحاولات.',
@@ -530,7 +533,8 @@ const en: Copy = {
   youEarn: 'Your share',
   advance_assigned: 'Arrived at pickup',
   advance_at_pickup: 'Picked up — start delivery',
-  advance_in_transit: 'Delivered',
+  advance_in_transit: 'Hand over the parcel',
+  advance_in_transit_ride: 'End trip',
   codeFromCustomer: 'Handover code from customer',
   proofResetTitle: 'Delivery code attempts',
   proofResetHint: 'Verify the recipient before reopening attempts.',

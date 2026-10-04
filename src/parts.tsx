@@ -65,7 +65,8 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
   const { time } = useFormat();
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
-      <Press accessibilityLabel={`${orderCode(order.id)} ${c[order.service]}`} onPress={() => router.push(`/order/${order.id}`)}>
+      {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
+      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${c[order.status]}`} onPress={() => router.push(`/order/${order.id}`)}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>

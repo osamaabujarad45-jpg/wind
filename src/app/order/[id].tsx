@@ -220,7 +220,8 @@ export default function OrderScreen() {
         {order.status === 'in_transit' && order.service !== 'ride' &&
           <Field label={c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
-        <Button title={c[`advance_${order.status}` as 'advance_assigned']} icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
+        <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+          icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
           onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const dropoff = order.status === 'in_transit';

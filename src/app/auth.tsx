@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Platform, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
@@ -26,6 +26,10 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [registrationOpen, setRegistrationOpen] = useState(false);
+  // Enter moves through the sign-up fields and submits from the password (web keyboard users).
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
   useEffect(() => {
     let active = true;
     void api<{ registrationOpen: boolean }>('/auth/options').then(options => {
@@ -81,14 +85,17 @@ export default function Auth() {
             {SUPPORT_URL && <Button title={c.support} icon="mail-outline" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
           </> : <>
           {mode === 'up' && <Appear>
-            <Field label={c.name} value={name} onChangeText={setName} autoComplete="name" maxLength={60} disabled={busy} />
-            <Field label={c.email} value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} />
+            <Field label={c.name} value={name} onChangeText={setName} autoComplete="name" maxLength={60} disabled={busy}
+              returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()} />
+            <Field label={c.email} inputRef={emailRef} value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy}
+              returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} />
           </Appear>}
-          <Field label={mode === 'in' ? c.identifier : c.phone} value={phone} onChangeText={setPhone}
+          <Field label={mode === 'in' ? c.identifier : c.phone} inputRef={phoneRef} value={phone} onChangeText={setPhone}
             placeholder={mode === 'up' ? c.phoneHint : undefined} keyboardType={mode === 'up' ? 'phone-pad' : 'default'}
-            autoComplete={mode === 'up' ? 'tel' : 'username'} maxLength={254} disabled={busy} />
-          <Field label={c.password} value={password} onChangeText={setPassword} placeholder={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
-            autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={mode === 'in' ? submit : undefined} />
+            autoComplete={mode === 'up' ? 'tel' : 'username'} maxLength={254} disabled={busy}
+            returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+          <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
+            autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
           {mode === 'up' && <Appear>
             <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
             <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />

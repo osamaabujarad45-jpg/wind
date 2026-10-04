@@ -291,10 +291,10 @@ export function FilterChips<K extends string>({ items, value, onChange }: { item
 }
 
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
-export function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, icon, error, disabled, maxLength }: {
+export function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username';
-  onSubmitEditing?: () => void; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
+  onSubmitEditing?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
   const { align, row } = useCopy();
   const inputAlign = keyboardType === 'phone-pad' || keyboardType === 'decimal-pad' || keyboardType === 'email-address' ? 'left' : align;
@@ -303,9 +303,9 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput accessibilityLabel={label} accessibilityHint={error} accessibilityState={{ disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={inputRef} accessibilityLabel={label} accessibilityHint={error} accessibilityState={{ disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
-        onSubmitEditing={onSubmitEditing} returnKeyType={onSubmitEditing ? 'go' : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, textAlignVertical: 'top', paddingTop: 12 }]} />
     </View>
     {!!error && <Row gap={5} style={{ marginTop: 5 }}>
@@ -387,7 +387,7 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
 }) {
   const { row, rtl, align } = useCopy();
   const t = danger ? tones.error : tones[tone];
-  return <Press accessibilityLabel={label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
+  return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
     <Text numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text style={styles.listValue}>{value}</Text>}
@@ -535,6 +535,6 @@ const styles = StyleSheet.create({
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   barText: { fontSize: 11, fontWeight: '600' },
-  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: palette.clay, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  barBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

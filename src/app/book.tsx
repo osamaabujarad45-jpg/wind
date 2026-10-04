@@ -218,7 +218,8 @@ export default function Book() {
         </Row>
       </Card>
 
-      <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32} />
+      <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32}
+        onSubmitEditing={submit} />
       <ErrorText>{error}</ErrorText>
     </Screen>
 

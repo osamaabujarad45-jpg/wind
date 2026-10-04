@@ -92,7 +92,7 @@ export default function Home() {
 
 function Promo({ tone, icon, title, body, onPress }: { tone: 'forest' | 'clay' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void }) {
   const t = { forest: [palette.forest, palette.lime, 'rgba(255,255,255,0.78)'], clay: [palette.clayPale, palette.clayInk, palette.ink], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
-  return <Press accessibilityLabel={title} onPress={onPress} style={[styles.promo, { backgroundColor: t[0] }]}>
+  return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, { backgroundColor: t[0] }]}>
     <Ionicons name={icon} size={20} color={t[1]} />
     <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>
     <Txt variant="caption" numberOfLines={2} style={{ color: t[2], opacity: tone === 'forest' ? 1 : 0.8 }}>{body}</Txt>
