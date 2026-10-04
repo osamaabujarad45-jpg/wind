@@ -10,7 +10,7 @@ import { newBooking, readBooking, type PendingBooking } from '../booking';
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta } from '../parts';
 import { useSession } from '../session';
-import { Button, Card, Choices, ErrorText, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string }>();
@@ -232,7 +232,8 @@ export default function Book() {
     </Screen>
 
     <CityPicker open={picker !== null && !locked} title={picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
-      places={places} onForget={id => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e)))}
+      places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
+        .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {
         haptic.tap();
         if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
