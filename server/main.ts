@@ -143,6 +143,13 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
   promo_id INTEGER NOT NULL REFERENCES promo_codes(id), customer_id INTEGER NOT NULL REFERENCES users(id),
   order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS promo_redemptions_promo ON promo_redemptions(promo_id, customer_id);
+CREATE TABLE IF NOT EXISTS promo_owners (promo_id INTEGER PRIMARY KEY REFERENCES promo_codes(id), user_id INTEGER NOT NULL REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS referral_codes (user_id INTEGER PRIMARY KEY REFERENCES users(id), code TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS referrals (
+  referee_id INTEGER PRIMARY KEY REFERENCES users(id), referrer_id INTEGER NOT NULL REFERENCES users(id),
+  order_id INTEGER NOT NULL REFERENCES orders(id), reward_promo_id INTEGER REFERENCES promo_codes(id), created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS referrals_referrer ON referrals(referrer_id);
+CREATE INDEX IF NOT EXISTS referrals_order ON referrals(order_id);
 CREATE TABLE IF NOT EXISTS order_messages (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), sender_id INTEGER NOT NULL REFERENCES users(id),
   driver_id INTEGER NOT NULL REFERENCES users(id), -- the assignment this thread belongs to
@@ -460,6 +467,7 @@ function deleteAccount(user: User) {
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
+    run('DELETE FROM referral_codes WHERE user_id = ?', user.id); // the invite code stops working
     run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
     run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
@@ -517,12 +525,21 @@ route('DELETE', '/api/me/places/:id', ({ user, params }) => {
 const promoUses = `SELECT COUNT(*) n FROM promo_redemptions pr JOIN orders o ON o.id = pr.order_id WHERE o.status <> 'cancelled' AND pr.promo_id = ?`;
 function promoFor(user: User, input: unknown, price: number) {
   const code = String(input ?? '').trim().toUpperCase();
-  const p = (/^[A-Z0-9]{4,16}$/.test(code) ? one('SELECT * FROM promo_codes WHERE code = ? AND active = 1 AND expires_at > ?', code, Date.now()) : undefined)
-    ?? fail(400, 'invalid_promo');
+  const valid = /^[A-Z0-9]{4,16}$/.test(code);
+  const p = valid ? one('SELECT * FROM promo_codes WHERE code = ? AND active = 1 AND expires_at > ?', code, Date.now()) : undefined;
+  if (!p) {
+    // A friend's invite code (SPEC-referral.md): first order only, never your own.
+    const ref = (valid ? one('SELECT user_id FROM referral_codes WHERE code = ?', code) : undefined) ?? fail(400, 'invalid_promo');
+    if (ref.user_id === user.id) fail(400, 'invalid_promo');
+    if (one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)) fail(409, 'promo_used');
+    if (price < 2) fail(409, 'promo_not_applicable');
+    return { id: null, referrerId: ref.user_id as number, code, discount: Math.min(REFERRAL_REWARD, price - 1) };
+  }
+  if ((one('SELECT user_id FROM promo_owners WHERE promo_id = ?', p.id)?.user_id ?? user.id) !== user.id) fail(400, 'invalid_promo'); // someone's reward
   if (one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id)!.n > 0 || one(promoUses, p.id)!.n >= p.max_uses
     || (p.first_order_only && one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id))) fail(409, 'promo_used');
   if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below ₪1, so nothing would be discounted
-  return { id: p.id as number, code, discount: Math.min(p.amount, price - 1) };
+  return { id: p.id as number, referrerId: null, code, discount: Math.min(p.amount, price - 1) };
 }
 route('POST', '/api/promos/check', ({ user, body }) => {
   need(user, 'customer');
@@ -533,24 +550,56 @@ route('POST', '/api/promos/check', ({ user, body }) => {
   const { code, discount } = promoFor(user, body.code, price);
   return { code, discount };
 });
+// Personal codes: invite codes (W…) and inviter rewards (R…) share the promo namespace.
+const REFERRAL_REWARD = 10;
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const codeTaken = (code: string) => !!(one('SELECT id FROM promo_codes WHERE code = ?', code) ?? one('SELECT user_id FROM referral_codes WHERE code = ?', code));
+function freshCode(prefix: string, length: number) {
+  for (;;) {
+    const code = prefix + Array.from({ length }, () => CODE_CHARS[randomInt(CODE_CHARS.length)]).join('');
+    if (!codeTaken(code)) return code;
+  }
+}
+/** The inviter's reward, once, when the friend's first order is delivered. */
+function rewardReferral(orderId: number, now: number) {
+  const ref = one('SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = \'active\'', orderId);
+  if (!ref) return;
+  const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
+    freshCode('R', 7), REFERRAL_REWARD, now + 90 * DAY, ref.referrer_id, now).lastInsertRowid);
+  run('INSERT INTO promo_owners (promo_id, user_id) VALUES (?, ?)', promoId, ref.referrer_id);
+  run('UPDATE referrals SET reward_promo_id = ? WHERE referee_id = ?', promoId, ref.referee_id);
+}
+route('GET', '/api/me/referral', ({ user }) => {
+  need(user, 'customer');
+  if (!one('SELECT code FROM referral_codes WHERE user_id = ?', user.id)) run('INSERT OR IGNORE INTO referral_codes (user_id, code) VALUES (?, ?)', user.id, freshCode('W', 5));
+  return {
+    code: one('SELECT code FROM referral_codes WHERE user_id = ?', user.id)!.code, reward: REFERRAL_REWARD,
+    joined: one("SELECT COUNT(*) n FROM referrals r JOIN orders o ON o.id = r.order_id WHERE r.referrer_id = ? AND o.status <> 'cancelled'", user.id)!.n,
+    earned: one('SELECT COUNT(*) n FROM referrals WHERE referrer_id = ? AND reward_promo_id IS NOT NULL', user.id)!.n,
+    credits: all(`SELECT p.code, p.amount, p.expires_at AS expiresAt FROM promo_owners w JOIN promo_codes p ON p.id = w.promo_id
+      WHERE w.user_id = ? AND p.active = 1 AND p.expires_at > ? AND NOT EXISTS(SELECT 1 FROM promo_redemptions pr JOIN orders o ON o.id = pr.order_id
+        WHERE pr.promo_id = p.id AND o.status <> 'cancelled') ORDER BY p.expires_at`, user.id, Date.now()),
+  };
+});
+const adminPromos = 'SELECT * FROM promo_codes WHERE id NOT IN (SELECT promo_id FROM promo_owners) ORDER BY active DESC, id DESC LIMIT 100';
 const promoRow = (p: Row) => ({ id: p.id, code: p.code, amount: p.amount, maxUses: p.max_uses, uses: one(promoUses, p.id)!.n,
   expiresAt: p.expires_at, firstOrderOnly: !!p.first_order_only, active: !!p.active,
   live: !!p.active && p.expires_at > Date.now() });
-route('GET', '/api/admin/promos', ({ user }) => { need(user, 'admin'); return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow); });
+route('GET', '/api/admin/promos', ({ user }) => { need(user, 'admin'); return all(adminPromos).map(promoRow); });
 route('POST', '/api/admin/promos', ({ user, body }) => {
   need(user, 'admin');
   const code = String(body.code ?? '').trim().toUpperCase();
   const whole = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
   if (!/^[A-Z0-9]{4,16}$/.test(code) || !whole(body.amount, 1, 100) || !whole(body.maxUses, 1, 10_000) || !whole(body.days, 1, 90)) fail(400, 'invalid_input');
-  if (one('SELECT id FROM promo_codes WHERE code = ?', code)) fail(409, 'promo_exists');
+  if (codeTaken(code)) fail(409, 'promo_exists');
   run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     code, body.amount, body.maxUses, Date.now() + body.days * DAY, body.firstOrderOnly ? 1 : 0, user.id, Date.now());
-  return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow);
+  return all(adminPromos).map(promoRow);
 });
 route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
   need(user, 'admin');
   if (!run('UPDATE promo_codes SET active = 0 WHERE id = ? AND active = 1', Number(params[0])).changes) fail(404, 'not_found');
-  return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow);
+  return all(adminPromos).map(promoRow);
 });
 
 // Customers
@@ -583,7 +632,10 @@ function createOrder(user: User, body: Row) {
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
     option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null).lastInsertRowid);
-  if (promo) run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now);
+  if (promo?.id) run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now);
+  // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
+  else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, now);
   return getOrder(id, user);
 }
 
@@ -957,6 +1009,7 @@ function advanceOrder(user: User, id: number, body: Row) {
     run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
       next, r.commission ?? commissionOn(r.price, rate), now, now, r.id);
     if (next === 'returned') run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now);
+    else rewardReferral(r.id, now);
   } else run('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', next, now, r.id);
   return getOrder(r.id, user);
 }
