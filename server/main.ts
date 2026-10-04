@@ -272,6 +272,7 @@ function toOrder(r: Row, viewer: User): Order {
     price: r.price, commission: r.commission ?? null, status: r.status,
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
+    sharing: viewer.id === r.customer_id && !!r.share_token_hash,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null } : null,

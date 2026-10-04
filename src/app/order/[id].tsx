@@ -1,11 +1,11 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
 import { useCallback, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { api, ApiError, useApi } from '../../api';
+import { api, API_URL, ApiError, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, statusFlow, type ExceptionReason, type Order, type Point } from '../../model';
@@ -42,6 +42,7 @@ export default function OrderScreen() {
   const problemAttempt = useRef<{ orderId: number; requestId: string } | null>(null);
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
+  const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   useFocusEffect(useCallback(() => {
@@ -302,6 +303,23 @@ export default function OrderScreen() {
         <Button title={c.viewReceipt} icon="receipt-outline" variant="outline" onPress={() => router.push(`/receipt/${order.id}`)} />}
 
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={rating => act('rate', `/orders/${order.id}/rate`, { rating })} />}
+
+      {isCustomer && live && <Card>
+        <Txt variant="caption" style={{ marginBottom: 8 }}>{c.shareHint}</Txt>
+        {sharedUrl?.id === id && <Txt variant="caption" selectable style={{ marginBottom: 8 }}>{sharedUrl.url}</Txt>}
+        <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy}
+          onPress={async () => {
+            setBusy('share'); setActionError('');
+            try {
+              const { path } = await api<{ path: string }>(`/orders/${order.id}/share`, {});
+              const url = `${API_URL}${path}`;
+              setSharedUrl({ id, url }); setData({ ...order, sharing: true });
+              await Share.share({ message: fill(c.shareMessage, { url }) }).catch(() => undefined); // the link stays visible to copy
+            } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
+          }} />
+        {order.sharing && <Button title={c.stopSharing} variant="ghost" size="sm" loading={busy === 'unshare'}
+          onPress={() => act('unshare', `/orders/${order.id}/share/revoke`, {}, () => { setSharedUrl(null); setData({ ...order, sharing: false }); })} />}
+      </Card>}
 
       {isCustomer && order.dispute && <Card tone={order.dispute.status === 'open' ? 'clay' : 'olive'}>
         <Txt variant="title">{order.dispute.status === 'open' ? c.disputeOpen : c.disputeResolved}</Txt>

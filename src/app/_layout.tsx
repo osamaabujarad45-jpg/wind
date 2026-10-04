@@ -76,5 +76,7 @@ function Routes() {
     </Stack.Protected>
     {/* Reachable signed in or out: store review requires support before sign-in. */}
     <Stack.Screen name="help" />
+    {/* A shared trip link opens for anyone, signed in or not. */}
+    <Stack.Screen name="track/[token]" />
   </Stack>;
 }
