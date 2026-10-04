@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS safety_incidents (
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
+CREATE TABLE IF NOT EXISTS order_messages (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), sender_id INTEGER NOT NULL REFERENCES users(id),
+  sender_role TEXT NOT NULL CHECK (sender_role IN ('customer','driver')), body TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS order_messages_order ON order_messages(order_id, id);
 CREATE TABLE IF NOT EXISTS checkpoints (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, cities TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS checkpoint_reports (
@@ -448,6 +452,7 @@ function deleteAccount(user: User) {
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
     run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
+    run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
     run('DELETE FROM sessions WHERE user_id = ?', user.id);
     db.exec('COMMIT');
@@ -764,6 +769,30 @@ route('POST', '/api/admin/incidents/:id/resolve', ({ user, params, body }) => {
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
+});
+
+// In-trip chat (SPEC-in-app-chat.md): the two parties write while the order is active and read for a day after;
+// administrators read for support. Never part of the public tracking view.
+function chatAccess(user: User, id: number) {
+  const r = one('SELECT id, status, customer_id, driver_id, updated_at FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
+  const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? 'admin' : fail(404, 'not_found');
+  return { r, role, active: activeStatuses.includes(r.status) };
+}
+const chat = (user: User, id: number) => all('SELECT id, sender_id, sender_role, body, created_at FROM order_messages WHERE order_id = ? ORDER BY id DESC LIMIT 200', id)
+  .reverse().map(m => ({ id: m.id, mine: m.sender_id === user.id, role: m.sender_role, body: m.body, createdAt: m.created_at }));
+route('GET', '/api/orders/:id/messages', ({ user, params }) => {
+  const { r, role, active } = chatAccess(user, Number(params[0]));
+  if (role !== 'admin' && !active && Date.now() - r.updated_at > DAY) fail(409, 'chat_closed');
+  return chat(user, r.id);
+});
+route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
+  const { r, role, active } = chatAccess(user, Number(params[0]));
+  if (role === 'admin') fail(403, 'forbidden');
+  const message = text(body.body, 500);
+  if (!active) fail(409, 'chat_closed');
+  limit(identityKey('chat', user.id), 30, 10 * 60_000);
+  run('INSERT INTO order_messages (order_id, sender_id, sender_role, body, created_at) VALUES (?, ?, ?, ?, ?)', r.id, user.id, role, message, Date.now());
+  return chat(user, r.id);
 });
 
 // Road status (SPEC-road-status.md): admin-managed checkpoints, crowd reports from drivers, fresh for two hours.
