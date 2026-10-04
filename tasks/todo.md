@@ -1,4 +1,4 @@
-# Tasks: trip-share-link
+# Tasks: safety-sos
 
-- [x] S1: Share/revoke/public track API with hashed rotating tokens, field allowlist, 24 h post-finish expiry.
-- [x] S2: Share button + revoke on order screen; public /track/[token] page (signed-out reachable).
+- [ ] X1: Safety report API, order freeze, admin list/resolve, tests.
+- [ ] X2: Safety card, hold notice, admin shortcut + list, copy, docs.

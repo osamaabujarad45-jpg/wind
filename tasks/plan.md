@@ -1,5 +1,6 @@
-# Plan: trip-share-link
+# Plan: safety-sos
 
-Spec: [SPEC-trip-share-link.md](../SPEC-trip-share-link.md). Previous plans complete; see git history.
-S1 (API: share/revoke/public track + tests) → S2 (order-screen share button, public /track page).
-Risk: leaking PII through the public view → build the response from an explicit allowlist, test absent keys.
+1. **X1 — API + tests:** table, `/sos`, admin list/resolve, freeze in `advanceOrder`, Order fields, stats count, `tests/safety.test.mjs`.
+2. **X2 — UI:** safety card (emergency calls + report) for customer/driver, hold notice, admin dashboard shortcut + Orders "Safety" filter, copy AR/EN, SYSTEM.md.
+
+Checkpoint after each: `npm test`, typecheck, lint.
