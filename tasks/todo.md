@@ -1,4 +1,4 @@
-# Tasks: saved-places
+# Tasks: scheduled-booking
 
-- [x] P1: Saved/recent places API with limits and privacy; tests.
-- [x] P2: Booking sheet places, save action, copy, docs.
+- [ ] B1: Scheduled orders API with release window; tests.
+- [ ] B2: Booking Now/Later, order + job display, copy, docs.

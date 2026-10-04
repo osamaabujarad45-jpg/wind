@@ -1,4 +1,4 @@
-# Plan: saved-places
+# Plan: scheduled-booking
 
-1. **P1 - API + tests:** table, GET/POST/DELETE, recent derivation, deletion cleanup.
-2. **P2 - UI:** "Your places" in the city sheet, save chips under landmark fields, copy, docs, screenshots.
+1. **B1 - API + tests:** column, validation, release window in jobs/getOrder, Order field.
+2. **B2 - UI:** Now/Later picker on booking, scheduled card on order, pickup time on driver job rows, copy, docs, screens.
