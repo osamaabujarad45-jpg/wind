@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, city, nearestCity, nextStatus, normalizePhone, quote, statusFlow } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, city, nearestCity, nextStatus, normalizePhone, quote, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -19,4 +19,7 @@ assert.equal(nextStatus('cancelled'), 'cancelled');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);
 assert.equal(nearestCity({ latitude: 31.9038, longitude: 35.2034 }), 'ramallah');
+assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
+assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
+assert.deepEqual(vehicleServices.bicycle, ['parcel']);
 console.log('Model checks passed');

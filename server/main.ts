@@ -4,8 +4,9 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
-import { accessSync, constants, readFileSync } from 'node:fs';
-import { dirname, isAbsolute } from 'node:path';
+import { accessSync, constants, createReadStream, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
+import { createBrotliCompress } from 'node:zlib';
 import {
   activeStatuses, cities, commissionOn, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
   optionsFor, planForRole, quote, services, vehicleServices, vehicles,
@@ -29,10 +30,50 @@ const enabledServices = services.filter(service => (process.env.WIND_ENABLED_SER
 const supportContact = (process.env.SUPPORT_CONTACT ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path => [path,
   readFileSync(new URL(`${path.slice(1)}.html`, import.meta.url), 'utf8').replaceAll('{{contact}}', supportContact)]));
+const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : null;
+const webContentTypes: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
+  '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2',
+};
+
+// The same HTTPS origin hosts the optional iPhone web app. API paths and legal pages stay authoritative here;
+// every other extension-free path falls back to Expo Router's single-page entry point.
+function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http').ServerResponse) {
+  if (!webRoot || pathname.startsWith('/api/')) return false;
+  let requested: string;
+  try { requested = decodeURIComponent(pathname === '/' ? '/index.html' : pathname); }
+  catch { return false; }
+  if (requested.includes('\0')) return false;
+  const candidate = resolve(webRoot, `.${requested}`);
+  const outside = relative(webRoot, candidate);
+  if (outside.startsWith('..') || isAbsolute(outside)) return false;
+  const file = (() => {
+    try { return statSync(candidate).isFile() ? candidate : undefined; } catch { return undefined; }
+  })() ?? (!extname(requested) ? (() => {
+    const entry = resolve(webRoot, 'index.html');
+    try { return statSync(entry).isFile() ? entry : undefined; } catch { return undefined; }
+  })() : undefined);
+  if (!file) return false;
+  const extension = extname(file).toLowerCase();
+  const contentType = webContentTypes[extension] ?? 'application/octet-stream';
+  const useBrotli = /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml)/.test(contentType)
+    && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Cache-Control': extension === '.html' || extension === '.webmanifest' ? 'no-cache' : 'public, max-age=604800, immutable',
+    ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
+  });
+  const stream = createReadStream(file).on('error', () => res.destroy());
+  (useBrotli ? stream.pipe(createBrotliCompress()) : stream).pipe(res);
+  return true;
+}
 
 export const db = new DatabaseSync(process.env.DB_PATH ?? 'wind.db');
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
-if (Number(db.prepare('PRAGMA user_version').get()!.user_version) > 2) throw new Error('Database schema is newer than this API');
+if (Number(db.prepare('PRAGMA user_version').get()!.user_version) > 3) throw new Error('Database schema is newer than this API');
 if (db.prepare('PRAGMA quick_check').get()!.quick_check !== 'ok') throw new Error('Database integrity check failed');
 db.exec('BEGIN IMMEDIATE');
 try { db.exec(`
@@ -40,7 +81,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('customer','driver','admin')),
   status TEXT NOT NULL CHECK (status IN ('active','pending','blocked')),
-  vehicle TEXT CHECK (vehicle IN ('car','van','truck')), created_at INTEGER NOT NULL);
+  vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS orders (
@@ -87,6 +128,41 @@ for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
+
+// SQLite cannot alter a CHECK constraint. Rebuild only the users table, preserving every id so child
+// rows (sessions, orders, locations, subscriptions and audit events) remain valid.
+function migrateVehicleChoices() {
+  const sql = String((db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'users'").get() as { sql?: string } | undefined)?.sql ?? '');
+  if (sql.includes("'motorcycle'") && sql.includes("'bicycle'")) return;
+  const columns = new Set((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map(column => column.name));
+  const existing = (name: string) => columns.has(name) ? name : 'NULL';
+  const vehicle = columns.has('vehicle') ? "CASE WHEN vehicle IN ('motorcycle','bicycle','car','van','truck') THEN vehicle ELSE NULL END" : 'NULL';
+  // A legacy driver with no recognized vehicle must be reviewed again instead of falling back to a car.
+  const status = `CASE WHEN role = 'driver' AND (${vehicle}) IS NULL THEN 'pending' ELSE status END`;
+  db.exec('PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE;');
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS users_vehicle_upgrade;
+      CREATE TABLE users_vehicle_upgrade (
+        id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('customer','driver','admin')),
+        status TEXT NOT NULL CHECK (status IN ('active','pending','blocked')),
+        vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), created_at INTEGER NOT NULL,
+        phone_verified_at INTEGER, email TEXT, email_verified_at INTEGER, approved_at INTEGER,
+        consent_at INTEGER, consent_version TEXT);
+      INSERT INTO users_vehicle_upgrade (id, phone, name, password, role, status, vehicle, created_at, phone_verified_at, email, email_verified_at, approved_at, consent_at, consent_version)
+        SELECT id, phone, name, password, role, ${status}, ${vehicle}, created_at, ${existing('phone_verified_at')}, ${existing('email')}, ${existing('email_verified_at')}, ${existing('approved_at')}, ${existing('consent_at')}, ${existing('consent_version')}
+        FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_vehicle_upgrade RENAME TO users;
+      COMMIT;
+    `);
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  finally { db.exec('PRAGMA foreign_keys = ON;'); }
+}
+migrateVehicleChoices();
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
+db.exec('BEGIN IMMEDIATE; PRAGMA user_version = 3; COMMIT');
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 type Row = Record<string, any>;
@@ -137,12 +213,14 @@ function toUser(r: Row): User {
 }
 
 function activePlan(userId: number): Plan | null {
-  return (one("SELECT plan FROM subscriptions WHERE user_id = ? AND status = 'active' AND ends_at > ?", userId, Date.now())?.plan as Plan) ?? null;
+  return (one(`SELECT s.plan FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?
+    AND s.status = 'active' AND s.ends_at > ? AND s.plan = CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END`, userId, Date.now())?.plan as Plan) ?? null;
 }
 
 function latestSubscription(userId: number): Subscription | null {
-  const r = one(`SELECT * FROM subscriptions WHERE user_id = ? AND (status = 'pending' OR (status = 'active' AND ends_at > ?))
-    ORDER BY id DESC LIMIT 1`, userId, Date.now());
+  const r = one(`SELECT s.* FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?
+    AND (s.status = 'pending' OR (s.status = 'active' AND s.ends_at > ?))
+    AND s.plan = CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END ORDER BY s.id DESC LIMIT 1`, userId, Date.now());
   return r ? toSubscription(r) : null;
 }
 
@@ -226,7 +304,7 @@ route('GET', '/api/ready', () => {
     db.exec('PRAGMA busy_timeout = 50; BEGIN IMMEDIATE; ROLLBACK;');
   } catch { fail(503, 'unavailable'); }
   finally { db.exec('PRAGMA busy_timeout = 5000'); }
-  return { ok: true, schema: 2 };
+  return { ok: true, schema: 3 };
 }, true);
 
 route('POST', '/api/auth/register', ({ body }) => {
@@ -678,6 +756,11 @@ const editUser: Handler = ({ user, params, body }) => {
       name, phone, email, status, role, vehicle, phone !== target.phone ? null : target.phone_verified_at ?? null,
       email !== (target.email ?? null) ? null : target.email_verified_at ?? null,
       identityChanged || roleChanged || vehicleChanged ? null : target.approved_at ?? null, target.id);
+    if (roleChanged) {
+      // Keep paid revenue history, but end benefits belonging to the previous role.
+      run("UPDATE subscriptions SET ends_at = MIN(ends_at, ?) WHERE user_id = ? AND status = 'active'", Date.now(), target.id);
+      run("UPDATE subscriptions SET status = 'rejected' WHERE user_id = ? AND status = 'pending'", target.id);
+    }
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) run('DELETE FROM sessions WHERE user_id = ?', target.id);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -724,7 +807,11 @@ route('GET', '/api/admin/subscriptions', ({ user }) => {
 route('POST', '/api/admin/subscriptions/:id', ({ user, params, body }) => {
   need(user, 'admin');
   const sub = one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0])) ?? fail(404, 'not_found');
-  if (body.action === 'activate') run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ?", Date.now(), Date.now() + 30 * DAY, sub.id);
+  if (body.action === 'activate') {
+    const target = one('SELECT role FROM users WHERE id = ?', sub.user_id)!;
+    if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
+    run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ?", Date.now(), Date.now() + 30 * DAY, sub.id);
+  }
   else if (body.action === 'reject') run("UPDATE subscriptions SET status = 'rejected' WHERE id = ?", sub.id);
   else fail(400, 'invalid_action');
   return { ok: true };
@@ -783,6 +870,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     if (draining) fail(503, 'unavailable');
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
     if (page) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page); return; }
+    if (req.method === 'GET' && serveWeb(url.pathname, req, res)) return;
     const match = routes.map(([method, pattern, handler, isPublic]) => ({ method, m: pattern.exec(url.pathname), handler, isPublic }))
       .find(r => r.method === req.method && r.m) ?? fail(404, 'not_found');
     if (!match.isPublic && !authenticate(req)) fail(401, 'unauthorized');

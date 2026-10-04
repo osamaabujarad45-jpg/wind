@@ -17,11 +17,12 @@ export default function Jobs() {
   const active = me?.user.status === 'active';
   const { data, error, reload } = useApi<Order[]>(active ? '/jobs' : null, 8000);
   const work = useDriverWork();
-  const { permission, requestPermission } = work;
+  const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
-  const located = !!permission?.granted;
+  const located = work.tracking === 'sharing';
+  const locating = work.tracking === 'starting';
   const currentOrder = work.order;
   const assigned = !!currentOrder;
 
@@ -30,6 +31,11 @@ export default function Jobs() {
     setBusy(order.id);
     setActionError('');
     try {
+      if (!await work.prepareTracking()) {
+        haptic.error();
+        setActionError(c.locationOff);
+        return;
+      }
       work.update(await api<Order>(`/jobs/${order.id}/accept`, {}));
       haptic.success();
       router.push(`/order/${order.id}`);
@@ -37,8 +43,14 @@ export default function Jobs() {
       haptic.error();
       setActionError(err(e));
       reload();
-    }
-    setBusy(null);
+    } finally { setBusy(null); }
+  }
+
+  async function enableTracking() {
+    try {
+      if (permission?.canAskAgain === false && !permission.granted) await Linking.openSettings();
+      else if (!await work.prepareTracking()) setActionError(c.locationOff);
+    } catch { setActionError(c.locationOff); }
   }
 
   if (!active) return <Screen onRefresh={refresh}>
@@ -56,14 +68,11 @@ export default function Jobs() {
           <Txt variant="caption" style={{ color: 'rgba(255,255,255,0.75)' }}>{c.onlineNote}</Txt>
         </View>
       </Row>
-      {assigned && work.known && <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} disabled={located} onPress={() => {
-        const action = permission?.canAskAgain === false ? Linking.openSettings() : requestPermission();
-        action.catch(() => setActionError(c.locationManual));
-      }}>
+      {assigned && work.known && <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
         <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.clayPale }]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.clayInk} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.clayInk }}>
-            {located ? c.sharingLocation : c.locationOff}
+            {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
         </Row>
       </Press>}

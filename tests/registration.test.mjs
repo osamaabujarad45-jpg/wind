@@ -38,7 +38,7 @@ async function call(path, token, body, expected = 200, method = body === undefin
 }
 const input = { name: 'Synthetic customer', email: ' CUSTOMER@Example.Test ', phone: '٠٥٩٩٠٠٠٠٠١', password, consent: true };
 try {
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(db.prepare('SELECT name FROM users WHERE id=1').get().name, 'Existing admin');
   assert.equal((await call('/me', legacyToken)).user.email, null);
   const admin = await call('/auth/login', null, { phone: '0599000090', password });
@@ -60,8 +60,9 @@ try {
   await call('/auth/register', null, { ...input, email: 'another@example.test' }, 409);
   await call('/auth/login', null, { identifier: 'CUSTOMER@EXAMPLE.TEST', password });
   await call('/auth/login', null, { identifier: '+970599000001', password });
-  const driver = await call('/auth/register', null, { ...input, name: 'Synthetic driver', phone: '0599000003', email: 'driver@example.test', registrationRole: 'driver', status: 'active', vehicle: 'van', permanentlyApprovedAt: Date.now() });
+  const driver = await call('/auth/register', null, { ...input, name: 'Synthetic driver', phone: '0599000003', email: 'driver@example.test', registrationRole: 'driver', status: 'active', vehicle: 'motorcycle', permanentlyApprovedAt: Date.now() });
   assert.equal(driver.user.status, 'pending'); assert.equal(driver.user.role, 'driver');
+  assert.equal(driver.user.vehicle, 'motorcycle');
   assert.equal(driver.user.permanentlyApprovedAt, null);
   await call('/auth/login', null, { identifier: 'driver@example.test', password });
   await call('/me', driver.token);
@@ -96,6 +97,23 @@ try {
   await call('/auth/login', null, { identifier: 'edited@example.test', password }, 403);
   await call(`/admin/users/${customer.user.id}`, admin.token, { status: 'active' }, 200, 'PATCH');
   const beforeDelete = await call('/auth/login', null, { identifier: 'edited@example.test', password });
+  const switching = await call('/auth/register', null, { ...input, email: 'switching@example.test', phone: '0599000015' });
+  const plus = (await call('/subscriptions', switching.token, {})).subscription;
+  await call(`/admin/subscriptions/${plus.id}`, admin.token, { action: 'activate' });
+  const revenue = db.prepare('SELECT SUM(price) value FROM subscriptions WHERE activated_at IS NOT NULL').get().value;
+  await call(`/admin/users/${switching.user.id}`, admin.token, { role: 'driver', vehicle: 'car' });
+  let switched = await call('/auth/login', null, { identifier: 'switching@example.test', password });
+  assert.equal((await call('/me', switched.token)).subscription, null);
+  // Already-converted legacy accounts can still have an unexpired subscription for the wrong role.
+  db.prepare('UPDATE subscriptions SET ends_at=? WHERE id=?').run(Date.now() + 86400000, plus.id);
+  assert.equal((await call('/me', switched.token)).plan, null);
+  assert.equal((await call('/me', switched.token)).subscription, null);
+  assert.equal((await call('/subscriptions', switched.token, {})).subscription.plan, 'pro');
+  assert.equal(db.prepare('SELECT SUM(price) value FROM subscriptions WHERE activated_at IS NOT NULL').get().value, revenue);
+  await call(`/admin/users/${switching.user.id}`, admin.token, { role: 'customer', status: 'active' });
+  switched = await call('/auth/login', null, { identifier: 'switching@example.test', password });
+  assert.equal((await call('/subscriptions', switched.token, {})).subscription.plan, 'plus');
+  assert.equal(db.prepare("SELECT status FROM subscriptions WHERE user_id=? AND plan='pro'").get(switching.user.id).status, 'rejected');
   for (const [suffix, body, method] of [['', { status: 'blocked' }, 'PATCH'], ['', undefined, 'DELETE'], ['/approve', {}, 'POST']]) await call('/admin/users/1' + suffix, admin.token, body, 409, method);
   await call(`/admin/users/${customer.user.id}`, admin.token, undefined, 200, 'DELETE');
   await call('/me', beforeDelete.token, undefined, 401);

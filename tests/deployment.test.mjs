@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,10 +10,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-deploy-'));
-const path = join(dir, 'test.db'), main = fileURLToPath(new URL('../server/main.ts', import.meta.url));
+const path = join(dir, 'test.db'), web = join(dir, 'web'), main = fileURLToPath(new URL('../server/main.ts', import.meta.url));
+mkdirSync(web);
+writeFileSync(join(web, 'index.html'), '<!doctype html><title>Wind web</title><div id="root"></div>');
+writeFileSync(join(web, 'manifest.webmanifest'), '{"name":"Wind"}');
 const moduleUrl = new URL('../server/main.ts', import.meta.url).href;
 const env = { ...process.env, NODE_ENV: 'production', DB_PATH: path, SUPPORT_CONTACT: 'Synthetic support +970599001234',
-  WIND_IDENTITY_MODE: 'operator-verified', HOST: '127.0.0.1', PORT: '0' };
+  WIND_IDENTITY_MODE: 'operator-verified', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
 const flags = ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'];
 const cli = (args, extra = {}, input) => spawnSync(process.execPath, [...flags, main, ...args], { env: { ...env, ...extra }, input, encoding: 'utf8', timeout: 10_000 });
 const code = source => [...flags, '--input-type=module', '-e', source];
@@ -58,6 +61,16 @@ try {
   inspect.close();
   service = await start();
   await call('/ready');
+  const webBase = service.base.replace(/\/api$/, '');
+  const webHome = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } });
+  assert.equal(webHome.status, 200); assert.match(webHome.headers.get('content-type'), /text\/html/);
+  assert.equal(webHome.headers.get('content-encoding'), 'br'); assert.equal(webHome.headers.get('vary'), 'Accept-Encoding');
+  assert.match(await webHome.text(), /Wind web/);
+  const webManifest = await fetch(`${webBase}/manifest.webmanifest`);
+  assert.equal(webManifest.status, 200); assert.match(webManifest.headers.get('content-type'), /application\/manifest\+json/);
+  const webRoute = await fetch(`${webBase}/driver/jobs`);
+  assert.equal(webRoute.status, 200); assert.match(await webRoute.text(), /Wind web/);
+  assert.equal((await fetch(`${webBase}/%2e%2e%2fserver%2fmain.ts`)).status, 404);
   assert.deepEqual(await call('/auth/options'), { registrationOpen: false });
   await call('/auth/register', null, { phone: '0599010093', password, name: 'Public signup' }, 403);
   await call('/auth/login', null, { phone: '0599010092', password }, 403);

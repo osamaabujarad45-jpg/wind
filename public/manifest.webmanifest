@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "Wind | ويند",
+  "short_name": "Wind",
+  "description": "Delivery and driver dispatch for West Bank cities.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F3F2EC",
+  "theme_color": "#12342A",
+  "icons": [
+    {
+      "src": "/wind-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -46,8 +46,13 @@ try {
   assert.throws(() => promote('0599999999'));
   const customer = await call('/auth/register', { body: { phone: '+970 59 900 0002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0569000003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  const motorcycle = await call('/auth/register', { body: { phone: '0599000006', name: 'Mona', password: 'secret1', role: 'driver', vehicle: 'motorcycle' } });
+  const bicycle = await call('/auth/register', { body: { phone: '0599000007', name: 'Basil', password: 'secret1', role: 'driver', vehicle: 'bicycle' } });
   assert.equal(customer.user.phone, '0599000002');
   assert.equal(driver.user.status, 'pending');
+  assert.equal(motorcycle.user.vehicle, 'motorcycle');
+  assert.equal(bicycle.user.vehicle, 'bicycle');
+  await call('/auth/register', { body: { phone: '0599000008', name: 'Invalid', password: 'secret1', role: 'driver', vehicle: 'scooter' }, expect: 400 });
   await call('/auth/register', { body: { phone: '0599000002', name: 'Dup', password: 'secret1' }, expect: 409 });
   await call('/auth/login', { body: { phone: '٠٥٩٩٠٠٠٠٠٢', password: 'secret1' } }); // Arabic-Indic digits
   await call('/auth/login', { body: { phone: '0599000002', password: 'nope' }, expect: 401 });

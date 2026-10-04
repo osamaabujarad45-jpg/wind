@@ -16,17 +16,21 @@ export const cities = [
 export type CityId = typeof cities[number]['id'];
 export type Service = 'parcel' | 'ride' | 'freight';
 export type Role = 'customer' | 'driver' | 'admin';
-export type Vehicle = 'car' | 'van' | 'truck';
+export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
 export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled';
 export type Plan = 'plus' | 'pro';
 export type Point = { latitude: number; longitude: number };
 
 export const services: Service[] = ['parcel', 'ride', 'freight'];
-export const vehicles: Vehicle[] = ['car', 'van', 'truck'];
+export const vehicles: Vehicle[] = ['motorcycle', 'bicycle', 'car', 'van', 'truck'];
 export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'completed'];
 export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit'];
-export const vehicleServices: Record<Vehicle, Service[]> = { car: ['parcel', 'ride'], van: ['parcel', 'freight'], truck: ['freight'] };
+// Motorcycles can carry small parcels and licensed passenger rides. Bicycles stay parcel-only:
+// they never enter the passenger-ride pool, so dispatch does not create an unsafe assignment.
+export const vehicleServices: Record<Vehicle, Service[]> = {
+  motorcycle: ['parcel', 'ride'], bicycle: ['parcel'], car: ['parcel', 'ride'], van: ['parcel', 'freight'], truck: ['freight'],
+};
 export const planForRole: Partial<Record<Role, Plan>> = { customer: 'plus', driver: 'pro' };
 export const sharedCapacity = 4;
 

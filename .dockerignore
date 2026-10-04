@@ -1,6 +1,20 @@
-# The API image needs only these; everything else (node_modules, app code) stays out of the build context.
+# Build the API and the small Expo web bundle; never upload local databases, keys or native output.
 *
 !Dockerfile
 !railway.json
-!server
-!src/model.ts
+!package.json
+!package-lock.json
+!app.json
+!app.config.js
+!tsconfig.json
+!expo-env.d.ts
+!server/
+!server/**
+!src/
+!src/**
+!assets/
+!assets/**
+!public/
+!public/**
+!plugins/
+!plugins/**

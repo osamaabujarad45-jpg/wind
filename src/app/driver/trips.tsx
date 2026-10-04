@@ -8,7 +8,8 @@ export default function Trips() {
   const { c, err } = useCopy();
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const active = (data ?? []).filter(o => activeStatuses.includes(o.status));
-  const past = (data ?? []).filter(o => !activeStatuses.includes(o.status));
+  const lastTrip = (data ?? []).filter(o => o.status === 'completed').sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const past = (data ?? []).filter(o => !activeStatuses.includes(o.status) && o.id !== lastTrip?.id);
   return <Screen onRefresh={reload}>
     <Header title={c.trips} />
     <ErrorText>{error && err(error)}</ErrorText>
@@ -17,8 +18,12 @@ export default function Trips() {
       : <>
         {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
         {active.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}
+        {lastTrip && <>
+          <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>
+          <OrderRow order={lastTrip} index={active.length} />
+        </>}
         {past.length > 0 && <Txt variant="h2" style={{ marginVertical: 12 }}>{c.history}</Txt>}
-        {past.map((order, i) => <OrderRow key={order.id} order={order} index={i + active.length} />)}
+        {past.map((order, i) => <OrderRow key={order.id} order={order} index={i + active.length + (lastTrip ? 1 : 0)} />)}
       </>}
   </Screen>;
 }

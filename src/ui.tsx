@@ -259,11 +259,11 @@ export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }:
   const { row, language } = useCopy();
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'قلّل' : 'Decrease'} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'إنقاص' : 'Decrease'} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
     <Text accessibilityLabel={`${label}: ${value}`} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'زِد' : 'Increase'} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'زيادة' : 'Increase'} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
   </View>;

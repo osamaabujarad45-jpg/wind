@@ -5,15 +5,16 @@ Arabic-first delivery app for West Bank cities. Parcel delivery is enabled by de
 One Expo app serves three roles, chosen by the account that signs in:
 
 - **Customer:** book, see the price before confirming, track the driver live, hand over with a 4-digit code, rate, Wind Plus plan.
-- **Driver:** register with a vehicle, wait for approval, accept jobs that fit the vehicle, advance the trip, see earnings, Wind Pro plan.
+- **Driver:** register with a motorcycle, bicycle, car, van or truck, wait for approval, accept matching jobs, see the latest completed trip and earnings, Wind Pro plan.
 - **Admin:** revenue dashboard, all orders, approve/block users, reset passwords, reopen delivery-code attempts after recipient verification, activate plans, edit tariffs and commissions.
 
 The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
 
-## Current release — 3 October 2026
+## Current release — 4 October 2026
 
 - **Live API:** `https://wind-production-72aa.up.railway.app`
-- **Android:** package `ps.wind.app`, version 1.0.2 / code 3.
+- **Android:** package `ps.wind.app`, version 1.0.4 / code 5.
+- **iPhone access:** [Wind web app](https://wind-production-72aa.up.railway.app) is installable from Safari's Share menu → **Add to Home Screen**. It uses the same account, API and foreground GPS flow; [iOS distribution notes](docs/IOS-ACCESS.md) cover the future native TestFlight release.
 - **Accounts:** `WIND_IDENTITY_MODE=self-service` accepts name, email,
   Palestinian mobile number and password. Customers are signed in immediately;
   driver applicants select a vehicle and wait for administrator approval. Admin
@@ -21,6 +22,11 @@ The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm 
   verification provider is added.
 - **Administration:** an administrator can search, approve, block, edit or delete
   customer and driver accounts. Identity, role and status changes revoke sessions.
+- **Driver GPS:** a driver enables foreground location before accepting a job. Wind
+  starts a high-accuracy point immediately after acceptance and labels sharing only
+  after the API receives it; collection stops when the active job or foreground app ends.
+- **Vehicle matching:** motorcycles can take parcels and licensed rides; bicycles are
+  parcel-only. The database upgrade preserves existing user, session, order and GPS data.
 - **Connection to Souq:** the two apps keep separate users, sessions and payments.
   Their delivery bridge is private server-to-server traffic.
 
@@ -105,7 +111,8 @@ docker exec -i <container> node server/main.ts enroll <verified-phone> admin "<o
 The command reads stdin until EOF. Use a private password file or secure pipe and
 destroy that temporary input afterwards. Use `customer` or `driver` for
 operator-created accounts; an optional `car`, `van` or `truck` argument follows
-`--phone-verified` for drivers (default `car`). Drivers remain pending until an
+`--phone-verified` for drivers (default `car`): `motorcycle`, `bicycle`, `car`, `van`
+or `truck`. Drivers remain pending until an
 administrator approves them. An existing pre-production account must be verified
 with `node server/main.ts verify-phone <phone> --phone-verified` before its old
 sessions or login work in production. `promote` also refuses an unverified
@@ -113,7 +120,7 @@ production account. No demo users are created by startup.
 
 `/api/health` checks process liveness; `/api/ready` checks readable schema, writable database/directory and a bounded SQLite writer reservation. Startup uses WAL, foreign keys, full synchronous commits, a five-second busy wait, atomic schema initialization and `user_version=1`. SQL write contention returns retryable 503. SIGTERM/SIGINT stop admission, drain requests for up to ten seconds, then close connections and the database. Use a stop grace period longer than ten seconds.
 
-Order advances require `requestId` (UUID) and `expectedStatus`; retries preserve the original code and request identity. A replay acknowledges the action with current server state; a new stale command is rejected. Wrong-proof retries under one identity count once. Upgrade clients before routing real users to this API.
+Order advances require `requestId` (UUID) and `expectedStatus`; retries preserve the original code and request identity. A replay acknowledges the action with current server state; a new stale command is rejected. Wrong-proof retries under one identity count once. The current database schema is `user_version=3`. Upgrade clients before routing real users to this API.
 
 Back up on a schedule with a consistent snapshot, then copy the file off the host. Never copy only `wind.db` while a live WAL may contain acknowledged commits:
 
@@ -147,12 +154,14 @@ npx eas-cli@latest submit --platform all
 - `EXPO_PUBLIC_SUPPORT_WHATSAPP` (international digits) shows "Contact support" in the app. Optional.
 - `GOOGLE_MAPS_API_KEY` (Maps SDK for Android, restricted to `ps.wind.app`) enables the Android map; without it Android shows the static route card. iOS uses Apple Maps.
 
-### 3. Web (optional)
+### 3. Web / iPhone access
 
 ```bash
 EXPO_PUBLIC_API_URL=https://<api> npx expo export --platform web
 npx eas-cli@latest deploy
 ```
+
+The Railway image also exports and serves this single-page web build at the API's HTTPS origin. On iPhone, open that URL in Safari and choose **Share → Add to Home Screen**. It is the free, installable access path until an Apple Developer Program membership is available for TestFlight/App Store distribution.
 
 ### Store submission notes
 

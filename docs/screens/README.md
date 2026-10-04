@@ -58,3 +58,4 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Users | `/admin/users` | `src/app/admin/users.tsx` | [admin-users.png](ar/admin-users.png) | [admin-users.png](en/admin-users.png) |
 | Subscriptions | `/admin/subscriptions` | `src/app/admin/subscriptions.tsx` | [admin-subscriptions.png](ar/admin-subscriptions.png) | [admin-subscriptions.png](en/admin-subscriptions.png) |
 | Tariffs & settings | `/admin/settings` | `src/app/admin/settings.tsx` | [admin-settings.png](ar/admin-settings.png) | [admin-settings.png](en/admin-settings.png) |
+

@@ -1,13 +1,24 @@
-# Upload only the API build inputs. Never send phone fixtures, native builds or secrets.
+# Upload only the API and web-build inputs. Never send phone fixtures, native builds or secrets.
 *
 !Dockerfile
 !.dockerignore
 !railway.json
+!package.json
+!package-lock.json
+!app.json
+!app.config.js
+!tsconfig.json
+!expo-env.d.ts
 !server/
 !server/**
 !src/
-src/*
-!src/model.ts
+!src/**
+!assets/
+!assets/**
+!public/
+!public/**
+!plugins/
+!plugins/**
 **/.env*
 **/*.db*
 **/*.log

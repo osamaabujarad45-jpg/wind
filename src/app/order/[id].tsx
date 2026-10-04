@@ -63,6 +63,10 @@ export default function OrderScreen() {
     setBusy(key);
     setActionError('');
     try {
+      if (key === 'accept' && !await work.prepareTracking()) {
+        setActionError(c.locationOff);
+        return;
+      }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
         if (advanceAttempt.current?.orderId !== order.id || advanceAttempt.current.body.expectedStatus !== order.status)
@@ -82,8 +86,7 @@ export default function OrderScreen() {
         && e.message !== 'idempotency_conflict') { advanceAttempt.current = null; setAdvanceLocked(null); }
       haptic.error();
       setActionError(err(e));
-    }
-    setBusy(null);
+    } finally { setBusy(null); }
   }
 
   const location = locationState(order.driverLocation, now);
