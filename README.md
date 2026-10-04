@@ -178,7 +178,9 @@ A parcel that cannot be delivered goes `on_hold` with the driver's reason; an
 administrator records a reattempt or return decision, and a return closes only with
 the sender's return code. Customers can open one dispute per finished order within
 seven days; resolution is a recorded decision with no automatic refund. Pickup
-evidence and the cash settlement ledger remain operational launch gaps; do not claim
+evidence remains an operational launch gap. Drivers' cash debt to Wind (commission on
+finished jobs) is an append-only ledger: the cashier records numbered handovers that count
+only after the driver confirms them, plus reasoned adjustments. Do not claim
 them as implemented. Details and the path past each are
 in [docs/SYSTEM.md §9](docs/SYSTEM.md).
 

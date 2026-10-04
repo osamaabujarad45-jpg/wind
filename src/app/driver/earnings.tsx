@@ -1,9 +1,14 @@
+import { useState } from 'react';
 import { View } from 'react-native';
-import { useApi } from '../../api';
-import { PlanCard } from '../../parts';
-import { Card, ErrorText, fill, Header, Loading, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { api, useApi } from '../../api';
+import { PlanCard, useFormat } from '../../parts';
+import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Stat, tones, Txt, useCopy } from '../../ui';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number };
+type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
+  status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
+type Cash = { owedCents: number; pendingCents: number; entries: CashEntry[] };
+const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
 
 export default function Earnings() {
   const { c, money, err } = useCopy();
@@ -26,6 +31,47 @@ export default function Earnings() {
           </Row>)}
       </Card>
     </>}
+    <CashCard />
     <View style={{ marginTop: 4 }}><PlanCard /></View>
   </Screen>;
+}
+
+// What the driver owes Wind in cash, and the cashier's handovers waiting for the driver's confirmation.
+function CashCard() {
+  const { c, money, err } = useCopy();
+  const { time } = useFormat();
+  const { data, reload } = useApi<Cash>('/driver/cash');
+  const [busy, setBusy] = useState<number | null>(null);
+  const [failure, setFailure] = useState('');
+  if (!data) return null;
+  async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
+    setBusy(entry.id); setFailure('');
+    try { await api(`/driver/cash/${entry.id}/confirm`, { decision }); haptic.success(); reload(); }
+    catch (e) { setFailure(err(e)); } finally { setBusy(null); }
+  }
+  return <Card tone={data.owedCents > 0 ? 'clay' : 'card'}>
+    <Row style={{ justifyContent: 'space-between' }}>
+      <Txt variant="title">{c.cashOwed}</Txt>
+      <Txt variant="h2">{money(data.owedCents / 100)}</Txt>
+    </Row>
+    <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
+    <ErrorText>{failure}</ErrorText>
+    {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
+      <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
+      <Button title={c.cashConfirm} icon="checkmark-circle-outline" loading={busy === entry.id} disabled={busy !== null} onPress={() => decide(entry, 'confirm')} />
+      <Button title={c.cashDispute} variant="ghost" size="sm" disabled={busy !== null}
+        onPress={() => confirm(c.cashDisputeConfirm, () => decide(entry, 'dispute'), c.cashDispute, c.no)} />
+    </View>)}
+    {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
+    {data.entries.slice(0, 10).map(entry => <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+      <View style={{ flex: 1 }}>
+        <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
+        <Txt variant="micro">{entry.note ? `${time(entry.createdAt)} · ${entry.note}` : time(entry.createdAt)}</Txt>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+        <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
+        <Badge label={c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
+      </View>
+    </Row>)}
+  </Card>;
 }
