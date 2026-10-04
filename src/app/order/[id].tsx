@@ -1,6 +1,6 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -205,7 +205,7 @@ export default function OrderScreen() {
     </Appear> : null}
 
     {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
-      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} />}
+      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
 
     {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
       <Card tone="clay">
@@ -415,17 +415,25 @@ type Message = { id: number; mine: boolean; role: 'customer' | 'driver'; body: s
 const quickReplies = ['qrOnMyWay', 'qrArrived', 'qrCallMe', 'qrLate'] as const;
 
 // In-trip chat: cheaper than calls on local plans and kept for support. Polls while the order screen is open.
-function Chat({ orderId, canWrite }: { orderId: number; canWrite: boolean }) {
-  const { c, err, row } = useCopy();
+function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean; live: boolean }) {
+  const { c, err, row, rtl } = useCopy();
   const { time } = useFormat();
-  const { data, error, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, 5000);
+  const { data, error, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, live ? 5000 : undefined);
+  // Announce only new messages from the other side; a live region around the list would re-read it every poll.
+  const seen = useRef<number | null>(null);
+  useEffect(() => {
+    const last = data?.at(-1);
+    if (!last) return;
+    if (seen.current !== null && last.id > seen.current && !last.mine) AccessibilityInfo.announceForAccessibility(`${c[last.role]}: ${last.body}`);
+    seen.current = last.id;
+  }, [data, c]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
   async function send(body: string) {
     if (!body.trim() || busy) return;
     setBusy(true); setFailure('');
-    try { setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: body.trim() })); setDraft(''); haptic.success(); }
+    try { setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: body.trim() })); if (body === draft) setDraft(''); haptic.success(); }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
   const recent = (data ?? []).slice(-20);
@@ -436,8 +444,8 @@ function Chat({ orderId, canWrite }: { orderId: number; canWrite: boolean }) {
     </Row>
     {error && !data ? <ErrorText>{err(error)}</ErrorText> : recent.length === 0
       ? <Txt variant="caption" style={{ marginBottom: 8 }}>{canWrite ? c.chatEmpty : c.chatNone}</Txt>
-      : <View accessibilityLiveRegion="polite" style={{ gap: 6, marginBottom: 8 }}>
-        {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
+      : <View style={{ gap: 6, marginBottom: 8 }}>
+        {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine === rtl ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
           accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${time(m.createdAt)}`}>
           {!m.mine && <Txt variant="micro">{c[m.role]}</Txt>}
           <Txt>{m.body}</Txt>
@@ -447,7 +455,7 @@ function Chat({ orderId, canWrite }: { orderId: number; canWrite: boolean }) {
     {canWrite && <>
       <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         {quickReplies.map(key => <Press key={key} accessibilityLabel={`${c.send}: ${c[key]}`} disabled={busy} onPress={() => send(c[key])} style={styles.quick}>
-          <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c[key]}</Txt>
+          <Txt variant="label" style={{ color: palette.olive }}>{c[key]}</Txt>
         </Press>)}
       </View>
       <Field label={c.chatMessage} value={draft} onChangeText={setDraft} maxLength={500} multiline disabled={busy} />

@@ -137,6 +137,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(orde
 CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
 CREATE TABLE IF NOT EXISTS order_messages (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), sender_id INTEGER NOT NULL REFERENCES users(id),
+  driver_id INTEGER NOT NULL REFERENCES users(id), -- the assignment this thread belongs to
   sender_role TEXT NOT NULL CHECK (sender_role IN ('customer','driver')), body TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS order_messages_order ON order_messages(order_id, id);
 CREATE TABLE IF NOT EXISTS checkpoints (
@@ -778,12 +779,15 @@ function chatAccess(user: User, id: number) {
   const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? 'admin' : fail(404, 'not_found');
   return { r, role, active: activeStatuses.includes(r.status) };
 }
-const chat = (user: User, id: number) => all('SELECT id, sender_id, sender_role, body, created_at FROM order_messages WHERE order_id = ? ORDER BY id DESC LIMIT 200', id)
+// A released job's conversation stays with that assignment: the next driver starts a fresh thread.
+const chat = (user: User, id: number, driverId: number | null) => (user.role === 'admin' && user.id !== driverId
+  ? all('SELECT id, sender_id, sender_role, body, created_at FROM order_messages WHERE order_id = ? ORDER BY id DESC LIMIT 50', id)
+  : all('SELECT id, sender_id, sender_role, body, created_at FROM order_messages WHERE order_id = ? AND driver_id IS ? ORDER BY id DESC LIMIT 50', id, driverId))
   .reverse().map(m => ({ id: m.id, mine: m.sender_id === user.id, role: m.sender_role, body: m.body, createdAt: m.created_at }));
 route('GET', '/api/orders/:id/messages', ({ user, params }) => {
   const { r, role, active } = chatAccess(user, Number(params[0]));
   if (role !== 'admin' && !active && Date.now() - r.updated_at > DAY) fail(409, 'chat_closed');
-  return chat(user, r.id);
+  return chat(user, r.id, r.driver_id);
 });
 route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
   const { r, role, active } = chatAccess(user, Number(params[0]));
@@ -791,8 +795,8 @@ route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
   const message = text(body.body, 500);
   if (!active) fail(409, 'chat_closed');
   limit(identityKey('chat', user.id), 30, 10 * 60_000);
-  run('INSERT INTO order_messages (order_id, sender_id, sender_role, body, created_at) VALUES (?, ?, ?, ?, ?)', r.id, user.id, role, message, Date.now());
-  return chat(user, r.id);
+  run('INSERT INTO order_messages (order_id, sender_id, driver_id, sender_role, body, created_at) VALUES (?, ?, ?, ?, ?, ?)', r.id, user.id, r.driver_id, role, message, Date.now());
+  return chat(user, r.id, r.driver_id);
 });
 
 // Road status (SPEC-road-status.md): admin-managed checkpoints, crowd reports from drivers, fresh for two hours.

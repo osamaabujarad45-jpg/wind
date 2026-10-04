@@ -50,6 +50,17 @@ try {
   assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token })).length, 2);
   await call(`/orders/${order.id}/messages`, { token: stranger.token, expect: 404 });
 
+  // A released job's thread stays with that assignment.
+  const other = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  const second = await call(`/jobs/${other.id}/accept`, { token: driver2.token, body: {} });
+  await call(`/orders/${other.id}/messages`, { token: driver2.token, body: { body: 'Gate code 4411' } });
+  await call(`/orders/${other.id}/release`, { token: driver2.token, body: {} });
+  await call(`/orders/${other.id}/messages`, { token: driver2.token, expect: 404 });
+  assert.deepEqual(await call(`/orders/${other.id}/messages`, { token: customer.token }), []); // unassigned: nothing shown
+  assert.equal((await call(`/orders/${other.id}/messages`, { token: admin.token })).length, 1); // support still sees it
+  void second;
+  await call(`/orders/${other.id}/cancel`, { token: customer.token, body: {} });
+
   // Not on the public tracking view.
   const share = await call(`/orders/${order.id}/share`, { token: customer.token, body: {} });
   assert.ok(!JSON.stringify(await call(`/track/${share.token}`)).includes('blue gate'));
