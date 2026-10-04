@@ -17,6 +17,10 @@ async function call(path, { token, body, expect = 200 } = {}) {
     headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
   const data = await res.json();
   assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
+  if (path.startsWith('/track/') || path.includes('/share')) {
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  }
   return data;
 }
 const advance = (token, order, extra = {}) =>

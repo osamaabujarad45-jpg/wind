@@ -304,10 +304,10 @@ export default function OrderScreen() {
 
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={rating => act('rate', `/orders/${order.id}/rate`, { rating })} />}
 
-      {isCustomer && live && <Card>
+      {isCustomer && (live || order.sharing) && <Card>
         <Txt variant="caption" style={{ marginBottom: 8 }}>{c.shareHint}</Txt>
         {sharedUrl?.id === id && <Txt variant="caption" selectable style={{ marginBottom: 8 }}>{sharedUrl.url}</Txt>}
-        <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy}
+        {live && <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy}
           onPress={async () => {
             setBusy('share'); setActionError('');
             try {
@@ -316,7 +316,7 @@ export default function OrderScreen() {
               setSharedUrl({ id, url }); setData({ ...order, sharing: true });
               await Share.share({ message: fill(c.shareMessage, { url }) }).catch(() => undefined); // the link stays visible to copy
             } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
-          }} />
+          }} />}
         {order.sharing && <Button title={c.stopSharing} variant="ghost" size="sm" loading={busy === 'unshare'}
           onPress={() => act('unshare', `/orders/${order.id}/share/revoke`, {}, () => { setSharedUrl(null); setData({ ...order, sharing: false }); })} />}
       </Card>}
