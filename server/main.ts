@@ -126,6 +126,13 @@ CREATE TABLE IF NOT EXISTS cash_entries (
   note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),
   recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER);
 CREATE INDEX IF NOT EXISTS cash_entries_driver ON cash_entries(driver_id, id);
+CREATE TABLE IF NOT EXISTS safety_incidents (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), reporter_id INTEGER NOT NULL REFERENCES users(id),
+  reporter_role TEXT NOT NULL CHECK (reporter_role IN ('customer','driver')),
+  kind TEXT NOT NULL CHECK (kind IN ('unsafe_driving','harassment','accident','threat','other')), note TEXT NOT NULL DEFAULT '',
+  lat REAL, lng REAL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')), resolution TEXT,
+  resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
+CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
@@ -253,7 +260,9 @@ const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
 const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
-  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution
+  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
+  (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
+  (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
   LEFT JOIN driver_locations l ON l.driver_id = o.driver_id LEFT JOIN order_disputes od ON od.order_id = o.id`;
 
@@ -275,6 +284,11 @@ function toOrder(r: Row, viewer: User): Order {
     sharing: viewer.id === r.customer_id && !!r.share_token_hash,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    // Both parties learn the order is paused; only the reporter sees their own report.
+    safetyHold: (owner || assigned) && r.safety_open > 0,
+    safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
+      ? one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id) as Order['safetyReport'] ?? null
+      : null,
     dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
@@ -647,6 +661,55 @@ route('POST', '/api/admin/disputes/:id/resolve', ({ user, params, body }) => {
   return { ok: true };
 });
 
+// Safety (SPEC-safety-sos.md): either party of a live trip can alert Wind's safety team. An open report
+// freezes the driver's steps until an administrator resolves it; the reporter stays anonymous to the other party.
+const safetyKinds = ['unsafe_driving', 'harassment', 'accident', 'threat', 'other'];
+const safetyFree = (orderId: number) => {
+  if (one("SELECT id FROM safety_incidents WHERE order_id = ? AND status = 'open'", orderId)) fail(409, 'safety_hold');
+};
+route('POST', '/api/orders/:id/sos', ({ user, params, body }) => {
+  if (!safetyKinds.includes(body.kind)) fail(400, 'invalid_input');
+  const note = text(body.note, 300, false);
+  const r = one('SELECT o.id, o.status, o.customer_id, o.driver_id, l.lat, l.lng, l.updated_at loc_at FROM orders o LEFT JOIN driver_locations l ON l.driver_id = o.driver_id WHERE o.id = ?',
+    Number(params[0])) ?? fail(404, 'not_found');
+  const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? null : fail(404, 'not_found');
+  if (!role || !activeStatuses.includes(r.status)) fail(409, 'cannot_report');
+  if (!one("SELECT id FROM safety_incidents WHERE order_id = ? AND reporter_id = ? AND status = 'open'", r.id, user.id)) {
+    const fresh = r.lat != null && Date.now() - r.loc_at <= 10 * 60_000;
+    const id = Number(run(`INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now()).lastInsertRowid);
+    run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_REPORTED', ?, ?)`,
+      user.id, r.id, JSON.stringify({ incident: id, kind: body.kind }), Date.now());
+  }
+  return getOrder(r.id, user);
+});
+
+route('GET', '/api/admin/incidents', ({ user }) => {
+  need(user, 'admin');
+  return all(`SELECT si.id, si.order_id orderId, si.kind, si.note, si.status, si.resolution, si.reporter_role reporterRole,
+    si.lat latitude, si.lng longitude, si.created_at createdAt, si.resolved_at resolvedAt, o.status orderStatus,
+    rp.name reporterName, rp.phone reporterPhone, c.name customerName, o.contact customerPhone, d.name driverName, d.phone driverPhone
+    FROM safety_incidents si JOIN orders o ON o.id = si.order_id JOIN users rp ON rp.id = si.reporter_id
+    JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
+    ORDER BY si.status = 'open' DESC, si.id DESC LIMIT 200`);
+});
+
+route('POST', '/api/admin/incidents/:id/resolve', ({ user, params, body }) => {
+  need(user, 'admin');
+  const resolution = text(body.resolution, 1000);
+  if (resolution.length < 5) fail(400, 'invalid_input');
+  const incident = one('SELECT * FROM safety_incidents WHERE id = ?', Number(params[0])) ?? fail(404, 'not_found');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!run("UPDATE safety_incidents SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'open'",
+      resolution, user.id, Date.now(), incident.id).changes) fail(409, 'cannot_resolve');
+    run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_RESOLVED', ?, ?)`,
+      user.id, incident.order_id, JSON.stringify({ incident: incident.id, resolution }), Date.now());
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return { ok: true };
+});
+
 // Drivers
 route('GET', '/api/jobs', ({ user }) => {
   need(user, 'driver');
@@ -682,6 +745,7 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
   need(user, 'driver'); needActive(user);
   const order = getOrder(Number(params[0]), user);
   if (order.driverId !== user.id || order.status !== 'assigned') fail(409, 'cannot_release');
+  safetyFree(order.id);
   run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', updated_at = ? WHERE id = ?", Date.now(), order.id);
   return { ok: true };
 });
@@ -691,7 +755,8 @@ function advanceOrder(user: User, id: number, body: Row) {
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
-  if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  if (next === r.status) fail(409, 'cannot_advance');
+  safetyFree(r.id); // on_hold waits for an administrator decision
   const now = Date.now();
   if (next === 'completed' || next === 'returned') {
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
@@ -923,6 +988,7 @@ route('GET', '/api/admin/stats', ({ user }) => {
     users: Object.fromEntries(all('SELECT role, COUNT(*) n FROM users GROUP BY role').map(r => [r.role, r.n])),
     pendingDrivers: one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'")!.n,
     pendingSubscriptions: one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'")!.n,
+    openIncidents: one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'")!.n,
     daily: [...byDay].map(([date, v]) => ({ date, ...v })),
   };
 });

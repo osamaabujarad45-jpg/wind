@@ -23,6 +23,8 @@ export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' 
 export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
 export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
 export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null };
+export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
+export const safetyKinds: SafetyKind[] = ['unsafe_driving', 'harassment', 'accident', 'threat', 'other'];
 export type Plan = 'plus' | 'pro';
 export type Point = { latitude: number; longitude: number };
 
@@ -79,6 +81,7 @@ export type Order = {
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean;
+  safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number }) | null;
