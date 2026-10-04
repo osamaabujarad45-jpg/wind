@@ -51,8 +51,8 @@ function CashCard() {
   }
   return <Card tone={data.owedCents > 0 ? 'clay' : 'card'}>
     <Row style={{ justifyContent: 'space-between' }}>
-      <Txt variant="title">{c.cashOwed}</Txt>
-      <Txt variant="h2">{money(data.owedCents / 100)}</Txt>
+      <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
+      <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
     </Row>
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
     {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}

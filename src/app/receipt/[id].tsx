@@ -65,6 +65,9 @@ export default function Receipt() {
         {role === 'driver' && <Row style={styles.sub}>
           <Txt>{c.commission}</Txt><Txt variant="title">{money(-commission)}</Txt>
         </Row>}
+        {role === 'driver' && order.discount > 0 && <Row style={styles.sub}>
+          <Txt>{c.promoCredit}</Txt><Txt variant="title">{`+${money(order.discount)}`}</Txt>
+        </Row>}
         {role === 'driver' && <Row style={styles.sub}>
           <Txt>{c.youEarn}</Txt><Txt variant="title" style={{ color: palette.olive }}>{money(order.price - commission)}</Txt>
         </Row>}

@@ -521,10 +521,13 @@ function promoFor(user: User, input: unknown, price: number) {
     ?? fail(400, 'invalid_promo');
   if (one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id)!.n > 0 || one(promoUses, p.id)!.n >= p.max_uses
     || (p.first_order_only && one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id))) fail(409, 'promo_used');
-  return { id: p.id as number, code, discount: Math.max(0, Math.min(p.amount, price - 1)) };
+  if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below ₪1, so nothing would be discounted
+  return { id: p.id as number, code, discount: Math.min(p.amount, price - 1) };
 }
 route('POST', '/api/promos/check', ({ user, body }) => {
   need(user, 'customer');
+  needActive(user);
+  limit(identityKey('promo', user.id), 20, 60 * 60_000); // codes are short words; no guessing at scale
   const price = Number(body.price);
   if (!Number.isFinite(price) || price < 1) fail(400, 'invalid_input');
   const { code, discount } = promoFor(user, body.code, price);
@@ -588,7 +591,10 @@ route('POST', '/api/orders', ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
   const { requestId, ...input } = body;
-  if (requestId == null) return createOrder(user, input);
+  if (requestId == null) {
+    db.exec('BEGIN IMMEDIATE');
+    try { const order = createOrder(user, input); db.exec('COMMIT'); return order; } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
   if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) fail(400, 'invalid_request_id');
   const hash = payloadHash(input);
   const existing = one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId);
@@ -654,7 +660,8 @@ route('POST', '/api/partner/orders', ({ req, body }) => {
   }
   db.exec('BEGIN');
   try {
-    const order = createOrder(partnerUser(), { ...body, service: 'parcel' });
+    const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
+    const order = createOrder(partnerUser(), { ...input, service: 'parcel' });
     run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id);
     db.exec('COMMIT');
     return order;

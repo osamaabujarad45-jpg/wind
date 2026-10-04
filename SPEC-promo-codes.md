@@ -38,3 +38,9 @@ non-admin 403; partner orders unaffected.
 ## Success criteria
 
 Tests, typecheck, lint, screenshots; browser check of applying a code and the driver collect amount.
+
+## Known limits (ship review)
+
+- A returned order counts its discount like it counts commission (`finishedSql`); revisit both once the return-fare policy in SYSTEM.md is decided.
+- A `searching` order that never matches keeps its code use until the customer cancels it.
+- When promos outweigh commission, Wind owes the driver; admins settle with "Pay driver" (a payout adjustment).

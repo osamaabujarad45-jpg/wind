@@ -8,6 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-promo-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
+process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 const { server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -45,12 +46,21 @@ try {
   await call('/admin/promos', { token: admin.token, body: { code: 'FIRST20', amount: 20, maxUses: 100, days: 7, firstOrderOnly: true } });
   await call('/admin/promos', { token: admin.token, body: { code: 'HUGE99', amount: 99, maxUses: 10, days: 7 } });
 
+  // Partner (Souq) orders never take a Wind promo.
+  const partner = await fetch(`${base}/partner/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Partner-Key': process.env.SOUQ_PARTNER_KEY },
+    body: JSON.stringify({ ...input, externalRef: 'souq:promo', quotedPrice: price, promoCode: 'HUGE99', expectedDiscount: price - 1 }) }).then(r => r.json());
+  assert.equal(partner.discount, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM promo_redemptions').get().n, 0);
+
   // Check and apply.
   assert.deepEqual(await call('/promos/check', { token: customer.token, body: { code: ' welcome10 ', price } }), { code: 'WELCOME10', discount: 10 });
   assert.equal((await call('/promos/check', { token: customer.token, body: { code: 'NOPE', price }, expect: 400 })).error, 'invalid_promo');
   assert.equal((await call('/promos/check', { token: customer.token, body: { code: 'HUGE99', price } })).discount, price - 1); // never below ₪1
   assert.equal((await book(customer.token, { promoCode: 'WELCOME10', expectedDiscount: 7 }, 409)).error, 'promo_changed');
-  let order = await book(customer.token, { promoCode: 'WELCOME10', expectedDiscount: 10 });
+  const requestId = randomUUID();
+  let order = await book(customer.token, { promoCode: 'WELCOME10', expectedDiscount: 10, requestId });
+  assert.equal((await book(customer.token, { promoCode: 'WELCOME10', expectedDiscount: 10, requestId })).id, order.id); // replay
+  assert.equal((await book(customer.token, { requestId }, 409)).error, 'idempotency_conflict');
   assert.equal(order.price, price);
   assert.equal(order.discount, 10);
   assert.equal((await call('/promos/check', { token: customer.token, body: { code: 'WELCOME10', price }, expect: 409 })).error, 'promo_used');
@@ -71,7 +81,10 @@ try {
   const first20 = promos.find(p => p.code === 'FIRST20');
   assert.equal(promos.find(p => p.code === 'WELCOME10').uses, 2);
   assert.deepEqual([promos.find(p => p.code === 'WELCOME10').live, promos.find(p => p.code === 'HUGE99').live], [true, false]);
+  await call(`/admin/promos/${first20.id}/deactivate`, { token: customer.token, body: {}, expect: 403 });
   await call(`/admin/promos/${first20.id}/deactivate`, { token: admin.token, body: {} });
+  await call(`/admin/promos/${first20.id}/deactivate`, { token: admin.token, body: {}, expect: 404 });
+  await call('/admin/promos', { token: customer.token, expect: 403 });
   assert.equal((await call('/promos/check', { token: third.token, body: { code: 'FIRST20', price }, expect: 400 })).error, 'invalid_promo');
 
   // The driver collects the discounted amount; the ledger credits the discount.
@@ -83,6 +96,10 @@ try {
   const cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.owedCents, Math.round(order.commission * 100) - 1000);
   assert.equal(cash.discountsCents, 1000);
+  // The promo outweighs the commission: Wind owes the driver, and an admin settles it with a payout adjustment.
+  assert.ok(cash.owedCents < 0);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -cash.owedCents, reason: 'Promo credits paid in cash' } });
+  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
 
   console.log('promo: ok');
 } finally {

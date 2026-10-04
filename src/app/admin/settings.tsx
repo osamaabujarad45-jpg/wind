@@ -61,13 +61,13 @@ export default function AdminSettings() {
 type Promo = { id: number; code: string; amount: number; maxUses: number; uses: number; expiresAt: number; firstOrderOnly: boolean; active: boolean; live: boolean };
 const blank = { code: '', amount: '10', maxUses: '100', days: '30', firstOrderOnly: false };
 // Arabic-Indic digits are normal input on Palestinian keyboards.
-const whole = (text: string) => Number(text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)));
+const whole = (text: string) => Number(text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0)));
 
 // Promo codes (SPEC-promo-codes.md): fixed shekel discounts Wind funds through the driver cash ledger.
 function Promos() {
   const { c, money, err } = useCopy();
   const { date } = useFormat();
-  const { data, reload } = useApi<Promo[]>('/admin/promos');
+  const { data, error: loadError, reload } = useApi<Promo[]>('/admin/promos');
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -85,22 +85,23 @@ function Promos() {
   return <Card>
     <Txt variant="h2" style={{ marginBottom: 4 }}>{c.promos}</Txt>
     <Txt variant="caption" style={{ marginBottom: 10 }}>{c.promosHint}</Txt>
+    {!!loadError && <ErrorText>{err(loadError)}</ErrorText>}
     {data?.length === 0 && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.noPromos}</Txt>}
     {data?.map(p => <Row key={p.id} gap={8} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.hair }}>
       <View style={{ flex: 1 }}>
         <Row gap={8}><Txt variant="title">{`${p.code} · ${money(p.amount)}`}</Txt>
-          <Badge label={p.live ? c.promoActive : c.promoEnded} status={p.live ? 'completed' : 'cancelled'} /></Row>
+          <Badge label={p.live ? c.promoActive : p.active ? c.promoExpired : c.promoEnded} status={p.live ? 'completed' : 'cancelled'} /></Row>
         <Txt variant="micro">{fill(c.promoUses, { n: p.uses, max: p.maxUses, t: date(p.expiresAt) })}{p.firstOrderOnly ? ` · ${c.promoFirstOnly}` : ''}</Txt>
       </View>
       {p.live && <IconButton icon="pause-circle-outline" tone="muted" label={`${c.promoDeactivate} ${p.code}`} onPress={() => stop(p)} />}
     </Row>)}
     <View style={{ marginTop: 12 }}>
       <Field label={c.promoCode} icon="pricetag-outline" value={form.code} onChangeText={set('code')} placeholder="WELCOME10" maxLength={16} />
-      <Field label={c.promoAmount} keyboardType="decimal-pad" value={form.amount} onChangeText={set('amount')} maxLength={3} />
-      <Field label={c.promoMaxUses} keyboardType="decimal-pad" value={form.maxUses} onChangeText={set('maxUses')} maxLength={5} />
-      <Field label={c.promoDays} keyboardType="decimal-pad" value={form.days} onChangeText={set('days')} maxLength={2} />
+      <Field label={c.promoAmount} keyboardType="number-pad" value={form.amount} onChangeText={set('amount')} maxLength={3} />
+      <Field label={c.promoMaxUses} keyboardType="number-pad" value={form.maxUses} onChangeText={set('maxUses')} maxLength={5} />
+      <Field label={c.promoDays} keyboardType="number-pad" value={form.days} onChangeText={set('days')} maxLength={2} />
       <Txt variant="label" style={{ marginBottom: 6 }}>{c.promoFirstOnly}</Txt>
-      <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} />
+      <Choices items={[{ key: 'no', label: `${c.promoFirstOnly}: ${c.no}` }, { key: 'yes', label: `${c.promoFirstOnly}: ${c.yes}` }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} />
       <ErrorText>{error}</ErrorText>
       {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 8 }}>{message}</Txt></View>}
       <Button title={c.promoCreate} icon="add-circle-outline" variant="soft" loading={busy} disabled={!form.code.trim()} onPress={create} />

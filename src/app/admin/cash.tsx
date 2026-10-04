@@ -47,7 +47,8 @@ export default function AdminCash() {
               {row.lastRemittanceAt != null && <Txt variant="micro">{fill(c.cashLast, { d: date(row.lastRemittanceAt) })}</Txt>}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Txt variant="h2">{money(row.owedCents / 100)}</Txt>
+              {row.owedCents < 0 && <Txt variant="micro">{c.cashWindOwes}</Txt>}
+              <Txt variant="h2">{money(Math.abs(row.owedCents) / 100)}</Txt>
               {row.pendingCents > 0 && <Txt variant="micro">{`${c.entry_pending}: ${money(row.pendingCents / 100)}`}</Txt>}
             </View>
           </Row>
@@ -63,6 +64,8 @@ export default function AdminCash() {
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={row.owedCents - row.pendingCents <= 0}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '' }); }} />
+            {row.owedCents - row.pendingCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft"
+              onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: String((row.pendingCents - row.owedCents) / 100), note: c.cashPayoutNote }); }} />}
             <Button title={c.cashAdjust} size="sm" variant="outline" onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '' }); }} />
           </Row>}
         </Card>
