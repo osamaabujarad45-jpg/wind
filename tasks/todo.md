@@ -1,4 +1,4 @@
-# Tasks: scheduled-booking
+# Tasks: road-status
 
-- [x] B1: Scheduled orders API with release window; tests.
-- [x] B2: Booking Now/Later, order + job display, copy, docs.
+- [ ] R1: Checkpoints and crowd reports API; tests.
+- [ ] R2: Roads screen, booking warning, links, copy, docs.
