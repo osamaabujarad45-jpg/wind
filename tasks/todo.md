@@ -1,4 +1,4 @@
-# Tasks: promo-codes
+# Tasks: referral
 
-- [x] M1: Promo codes, redemption rules, discount on orders, ledger credit; tests.
-- [x] M2: Booking/order/driver/admin UI; copy; docs.
+- [ ] R1: Invite codes, first-order discount, completion reward as an owned promo code; tests.
+- [ ] R2: Account invite card with share and credits; one-tap credit on booking; copy; docs; screens.
