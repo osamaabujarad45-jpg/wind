@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, View } from 'react-native';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
 import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
@@ -14,6 +14,7 @@ const FORM = FadeInDown.duration(300).delay(120);
 export default function Auth() {
   const { signIn, language, setLanguage } = useSession();
   const { c, err } = useCopy();
+  const still = useReducedMotion(); // reduced motion: render the auth card without entrance movement
   const [mode, setMode] = useState<'in' | 'up'>('in');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -60,17 +61,17 @@ export default function Auth() {
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen>
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
-        <Press accessibilityLabel={c.language} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
+        <Press accessibilityLabel={c.language} hitSlop={4} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
           style={{ paddingHorizontal: 14, height: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
           <Txt variant="label">{c.language}</Txt>
         </Press>
       </Row>
-      <Animated.View entering={HERO} style={{ alignItems: 'center', marginTop: 8, marginBottom: 20, gap: 8 }}>
+      <Animated.View entering={still ? undefined : HERO} style={{ alignItems: 'center', marginTop: 8, marginBottom: 20, gap: 8 }}>
         <Logo size={60} />
         <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 34 }}>{c.brand}</Txt>
         <Txt center>{c.tagline}</Txt>
       </Animated.View>
-      <Animated.View entering={FORM}>
+      <Animated.View entering={still ? undefined : FORM}>
         <Card>
           <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
             onChange={next => { setMode(next); setError(''); }} />

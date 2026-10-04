@@ -6,6 +6,7 @@ import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { PRIVACY_URL, SUPPORT_URL } from '../api';
+import { ltr } from '../model';
 import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
 
 const topics = ['price', 'code', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
@@ -19,7 +20,7 @@ export default function Help() {
 
   return <Screen>
     <Header title={c.help} back />
-    {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {orderRef}</Txt>}
+    {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {ltr(orderRef)}</Txt>}
     <Txt style={{ marginBottom: 16 }}>{c.helpIntro}</Txt>
 
     <Appear>

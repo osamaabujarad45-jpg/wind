@@ -2,7 +2,7 @@
 import { Platform, Share, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
-import { city, commissionOn, orderCode, type Order } from '../../model';
+import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Appear, Badge, Button, ErrorText, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
@@ -24,7 +24,7 @@ export default function Receipt() {
   const done = order.status === 'completed';
 
   const lines: [string, string][] = [
-    [c.receiptNo, orderCode(order.id)],
+    [c.receiptNo, ltr(orderCode(order.id))],
     [c.issued, time(order.updatedAt)],
     [c.service, `${c[order.service]} · ${order.shared ? c.shared : c.private}`],
     [c.route, `${from} ${arrow} ${to}`],

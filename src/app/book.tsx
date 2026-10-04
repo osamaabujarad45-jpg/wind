@@ -129,7 +129,9 @@ export default function Book() {
       router.replace(`/order/${order.id}`);
     } catch (e) {
       haptic.error();
-      if (!(e instanceof ApiError)) setError(c.bookingStorageError);
+      // The command was persisted above, so a transport failure is "saved,
+      // awaiting connection" — the pending card below is already on screen.
+      if (!(e instanceof ApiError)) setError(c.bookingOfflineSaved);
       else {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.

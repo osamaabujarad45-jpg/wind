@@ -141,7 +141,10 @@ const ar = {
   bookingPending: 'بانتظار تأكيد الطلب',
   bookingRetryHint: 'أكّد نفس الطلب قبل بدء طلب جديد.',
   confirmBooking: 'تابع التأكيد',
-  bookingStorageError: 'تعذّر حفظ تأكيد الطلب. يُرجى المحاولة مرة أخرى.',
+  // The command is saved to storage before the POST, so a transport failure
+  // means "saved, awaiting connection" — never claim the save itself failed.
+  bookingOfflineSaved: 'تعذّر الاتصال بالخادم. حُفظ طلبك على جهازك — بانتظار الاتصال.',
+  bookingStorageError: 'تعذّر الوصول إلى الطلب المحفوظ على جهازك. يُرجى المحاولة مرة أخرى.',
   serviceUnavailable: 'الخدمة غير متاحة حالياً',
   agoSeconds: '{n} ث',
   agoMinutes: '{n} د',
@@ -515,7 +518,9 @@ const en: Copy = {
   bookingPending: 'Awaiting booking confirmation',
   bookingRetryHint: 'Confirm this same request before starting a new one.',
   confirmBooking: 'Continue confirmation',
-  bookingStorageError: 'Could not save booking confirmation. Try again.',
+  // Mirrors the Arabic rationale: the command is saved before the POST.
+  bookingOfflineSaved: 'Could not reach the server. Your booking was saved on your device — awaiting connection.',
+  bookingStorageError: 'Could not access the booking saved on this device. Try again.',
   serviceUnavailable: 'This service is currently unavailable',
   agoSeconds: '{n}s',
   agoMinutes: '{n} min',

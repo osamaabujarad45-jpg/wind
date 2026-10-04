@@ -176,7 +176,8 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
 export function Section({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return <Row style={{ justifyContent: 'space-between', marginTop: 6, marginBottom: 10 }}>
     <Txt variant="h2">{title}</Txt>
-    {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={10}>
+    {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={13}>
+      {/* label variant is ~18px tall; 13px slop each side brings the target to 44pt */}
       <Txt variant="label" style={{ color: palette.olive }}>{action}</Txt>
     </Pressable>}
   </Row>;

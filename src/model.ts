@@ -138,3 +138,12 @@ export function nextStatus(status: OrderStatus): OrderStatus {
 export function orderCode(id: number): string {
   return `W-${String(id).padStart(5, '0')}`;
 }
+
+/**
+ * Wrap an LTR token (order code, receipt number) in Unicode isolates so
+ * first-strong bidi layout cannot visually reorder it inside an Arabic
+ * sentence; brief §8 requires codes to keep their direction.
+ */
+export function ltr(text: string): string {
+  return `\u2066${text}\u2069`;
+}
