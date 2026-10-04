@@ -51,6 +51,11 @@ export default function Book() {
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
   const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
+  const [promo, setPromo] = useState<{ code: string; discount: number; price: number } | null>(null);
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoError, setPromoError] = useState('');
+  const [checking, setChecking] = useState(false);
   const edit = (key: keyof typeof invalid, set: (v: string) => void) => (v: string) => { set(v); if (invalid[key]) setInvalid({ ...invalid, [key]: undefined }); };
   // Saved and recent places: landmarks are the address here, so reuse them instead of retyping.
   const isCustomer = me?.user.role === 'customer';
@@ -108,6 +113,19 @@ export default function Book() {
   const plus = me?.plan === 'plus';
   const price = pending?.payload.quotedPrice ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
   const km = distanceKm(city(pickupCity), city(dropoffCity));
+  // A checked code holds for the fare it was checked against; the server re-checks it on booking.
+  const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
+    : promo && promo.price === price ? promo : null;
+  const pay = price - (applied?.discount ?? 0);
+  async function applyPromo(code: string) {
+    if (checking || !code.trim()) return;
+    setChecking(true); setPromoError('');
+    try {
+      const r = await api<{ code: string; discount: number }>('/promos/check', { code, price });
+      setPromo({ ...r, price }); setPromoInput(''); haptic.success();
+      AccessibilityInfo.announceForAccessibility(fill(c.promoApplied, { code: r.code, d: money(r.discount) }));
+    } catch (e) { haptic.error(); setPromo(null); setPromoError(err(e)); } finally { setChecking(false); }
+  }
 
   function switchService(next: Service) {
     haptic.tap();
@@ -143,7 +161,8 @@ export default function Book() {
     setError('');
     try {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, pickupNote, dropoffNote,
-        contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }) });
+        contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }),
+        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
       setPending(command);
       const order = await api<Order>('/orders', { ...command.payload, requestId: command.requestId });
@@ -164,11 +183,13 @@ export default function Book() {
         }
       }
       if (errorCode(e) === 'price_changed') await refresh(); // re-render with the new tariff, customer confirms again
+      if (['invalid_promo', 'promo_used'].includes(errorCode(e) ?? '')) setPromo(null);
+      if (errorCode(e) === 'promo_changed' && applied) void applyPromo(applied.code); // show the new discount, customer confirms again
     } finally { sending.current = false; setBusy(false); }
   }
 
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(price)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
+    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
         {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
@@ -261,6 +282,28 @@ export default function Book() {
           </View>
           {plus && <Txt variant="label" style={{ color: palette.olive }}>{c.plusApplied}</Txt>}
         </Row>
+        {isCustomer && <View style={styles.promo}>
+          {applied ? <Row gap={8}>
+            <Ionicons name="pricetag" size={16} color={palette.olive} />
+            <View style={{ flex: 1 }}>
+              <Txt variant="title">{fill(c.promoApplied, { code: applied.code, d: money(applied.discount) })}</Txt>
+              <Txt variant="caption">{`${c.fare} ${money(price)} · ${c.youPayCash} ${money(pay)}`}</Txt>
+            </View>
+            {!pending && <IconButton icon="close" tone="muted" label={c.promoRemove} disabled={locked} onPress={() => { haptic.tap(); setPromo(null); }} />}
+          </Row>
+          : promo && !pending ? <Row gap={8}>
+            <Txt variant="caption" style={{ flex: 1 }}>{c.promoRecheck}</Txt>
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked} label={`${c.promoApply} ${promo.code}`} onPress={() => applyPromo(promo.code)} />
+          </Row>
+          : !pending && (promoOpen ? <>
+            <Field label={c.promoCode} icon="pricetag-outline" value={promoInput} onChangeText={v => { setPromoInput(v); setPromoError(''); }}
+              error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} onPress={() => applyPromo(promoInput)} />
+          </> : <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked} style={{ alignSelf: 'flex-start' }}>
+            <Row gap={6} style={styles.chip}><Ionicons name="pricetag-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.promoAdd}</Txt></Row>
+          </Press>)}
+          {!promoOpen && !!promoError && <ErrorText>{promoError}</ErrorText>}
+        </View>}
       </Card>
 
       <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32}
@@ -376,6 +419,7 @@ const styles = StyleSheet.create({
   serviceText: { fontSize: 12, fontWeight: '700', color: palette.secondary, flexShrink: 1 },
   swap: { position: 'absolute', top: 20 },
   chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 44 },
+  promo: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
   cash: { width: 36, height: 36, borderRadius: 11, backgroundColor: palette.olivePale, alignItems: 'center', justifyContent: 'center' },
   shade: { flex: 1, backgroundColor: '#0E1F1966' },
   sheet: { backgroundColor: palette.paper, maxHeight: '78%', paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },

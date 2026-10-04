@@ -102,6 +102,10 @@ export default function Jobs() {
                 <Txt variant="h2" style={{ color: palette.olive }}>{money(earn)}</Txt>
               </View>
             </Row>
+            {order.discount > 0 && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
+              <Ionicons name="cash-outline" size={15} color={palette.olive} />
+              <Txt variant="label" style={{ flex: 1 }}>{fill(c.collectCash, { p: money(order.price - order.discount) })}</Txt>
+            </Row>}
             {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>

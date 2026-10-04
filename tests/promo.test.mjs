@@ -70,6 +70,7 @@ try {
   const promos = await call('/admin/promos', { token: admin.token });
   const first20 = promos.find(p => p.code === 'FIRST20');
   assert.equal(promos.find(p => p.code === 'WELCOME10').uses, 2);
+  assert.deepEqual([promos.find(p => p.code === 'WELCOME10').live, promos.find(p => p.code === 'HUGE99').live], [true, false]);
   await call(`/admin/promos/${first20.id}/deactivate`, { token: admin.token, body: {} });
   assert.equal((await call('/promos/check', { token: third.token, body: { code: 'FIRST20', price }, expect: 400 })).error, 'invalid_promo');
 

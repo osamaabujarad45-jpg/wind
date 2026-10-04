@@ -8,8 +8,10 @@ const pending = newBooking(payload);
 assert.deepEqual(readBooking(JSON.stringify(pending)), pending); // restart keeps the same command and terms
 assert.notEqual(newBooking(payload).requestId, pending.requestId);
 assert.equal(readBooking(null), null);
+const promo = newBooking({ ...payload, promoCode: 'WELCOME10', expectedDiscount: 10 });
+assert.deepEqual(readBooking(JSON.stringify(promo)), promo);
 for (const saved of ['{', 'null', JSON.stringify({ ...pending, payload: { ...payload, pickupCity: 'outside' } }),
-  JSON.stringify({ ...pending, payload: { ...payload, quotedPrice: null } }), JSON.stringify({ ...pending, requestId: 'bad' })]) {
+  JSON.stringify({ ...pending, payload: { ...payload, quotedPrice: null } }), JSON.stringify({ ...pending, requestId: 'bad' }), JSON.stringify({ ...pending, payload: { ...payload, promoCode: 'WELCOME10' } })]) {
   assert.throws(() => readBooking(saved));
 }
 assert.equal(locationState(null, 180000), null);

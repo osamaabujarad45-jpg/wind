@@ -245,7 +245,9 @@ export default function OrderScreen() {
           {order.loadingHelp && <Detail label={c.loadingHelp} value={c.yes} />}
           <Detail label={c.payWith} value={c.cash} />
           <Detail label={c.issued} value={time(order.createdAt)} />
-          <Detail label={c.total} value={money(order.price)} strong />
+          <Detail label={order.discount > 0 ? c.fare : c.total} value={money(order.price)} strong={!order.discount} />
+          {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
+          {order.discount > 0 && !isAdmin && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
           {isDriver && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
         </View>

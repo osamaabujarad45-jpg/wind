@@ -4,6 +4,7 @@ export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null;
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
   option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
+  promoCode?: string; expectedDiscount?: number;
 };
 export type PendingBooking = { requestId: string; payload: BookingPayload };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,6 +27,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || !Number.isFinite(p.quotedPrice) || p.quotedPrice < 1
     || ['pickupNote', 'dropoffNote', 'contact', 'detail'].some(key => typeof p[key as 'detail'] !== 'string')
     || (p.scheduledFor !== undefined && !Number.isInteger(p.scheduledFor))
+    || (p.promoCode !== undefined && (typeof p.promoCode !== 'string' || !Number.isInteger(p.expectedDiscount)))
     || (p.pickupPoint !== null && (!Number.isFinite(p.pickupPoint?.latitude) || !Number.isFinite(p.pickupPoint?.longitude)))) {
     throw new Error('invalid_pending_booking');
   }

@@ -22,6 +22,7 @@ export default function Receipt() {
   const from = city(order.pickupCity)[language], to = city(order.dropoffCity)[language];
   const arrow = rtl ? '←' : '→';
   const done = order.status === 'completed';
+  const cash = order.price - order.discount; // promo discounts are paid by Wind, not in cash
 
   const lines: [string, string][] = [
     [c.receiptNo, ltr(orderCode(order.id))],
@@ -31,13 +32,14 @@ export default function Receipt() {
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
     ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}`] as [string, string]] : []),
+    ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
     [c.payWith, c.cash],
     [c.payment, c.paymentUnconfirmed],
     ...(done ? [[c.proof, order.service === 'ride' ? c.proofRide : c.proofCode] as [string, string]] : []),
   ];
 
   async function share() {
-    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(order!.price)}`].join('\n');
+    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
     try { await Share.share({ message: text }); } catch { /* dismissed or unsupported */ }
   }
 
@@ -58,7 +60,7 @@ export default function Receipt() {
         <View style={styles.tear} />
         <Row style={{ justifyContent: 'space-between', paddingTop: 14 }}>
           <Txt variant="title">{c.total}</Txt>
-          <Txt variant="h1" style={{ color: palette.olive }}>{money(order.price)}</Txt>
+          <Txt variant="h1" style={{ color: palette.olive }}>{money(cash)}</Txt>
         </Row>
         {role === 'driver' && <Row style={styles.sub}>
           <Txt>{c.commission}</Txt><Txt variant="title">{money(-commission)}</Txt>

@@ -531,7 +531,8 @@ route('POST', '/api/promos/check', ({ user, body }) => {
   return { code, discount };
 });
 const promoRow = (p: Row) => ({ id: p.id, code: p.code, amount: p.amount, maxUses: p.max_uses, uses: one(promoUses, p.id)!.n,
-  expiresAt: p.expires_at, firstOrderOnly: !!p.first_order_only, active: !!p.active });
+  expiresAt: p.expires_at, firstOrderOnly: !!p.first_order_only, active: !!p.active,
+  live: !!p.active && p.expires_at > Date.now() });
 route('GET', '/api/admin/promos', ({ user }) => { need(user, 'admin'); return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow); });
 route('POST', '/api/admin/promos', ({ user, body }) => {
   need(user, 'admin');

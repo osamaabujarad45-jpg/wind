@@ -7,7 +7,7 @@ import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading,
 type Bucket = { jobs: number; gross: number; commission: number; net: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
-type Cash = { owedCents: number; pendingCents: number; entries: CashEntry[] };
+type Cash = { owedCents: number; pendingCents: number; discountsCents: number; entries: CashEntry[] };
 const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
 
 export default function Earnings() {
@@ -55,6 +55,7 @@ function CashCard() {
       <Txt variant="h2">{money(data.owedCents / 100)}</Txt>
     </Row>
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
+    {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}
     <ErrorText>{failure}</ErrorText>
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
       <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
