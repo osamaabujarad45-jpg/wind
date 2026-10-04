@@ -1,4 +1,4 @@
 # Tasks: saved-places
 
-- [ ] P1: Saved/recent places API with limits and privacy; tests.
+- [x] P1: Saved/recent places API with limits and privacy; tests.
 - [ ] P2: Booking sheet places, save action, copy, docs.

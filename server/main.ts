@@ -134,6 +134,9 @@ CREATE TABLE IF NOT EXISTS safety_incidents (
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
+CREATE TABLE IF NOT EXISTS saved_places (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),
+  city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note));
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
@@ -435,6 +438,7 @@ function deleteAccount(user: User) {
     run(`UPDATE orders SET contact = '', pickup_contact = '', handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
+    run('DELETE FROM saved_places WHERE user_id = ?', user.id);
     run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id);
     run('DELETE FROM sessions WHERE user_id = ?', user.id);
     db.exec('COMMIT');
@@ -445,6 +449,45 @@ function deleteAccount(user: User) {
   return { ok: true };
 }
 route('POST', '/api/me/delete', ({ user }) => deleteAccount(user));
+
+// Saved and recent places (SPEC-saved-places.md): landmarks are the address here, so a repeat booking reuses them.
+const MAX_PLACES = 10;
+function places(user: User) {
+  const saved = all("SELECT id, label, city, note FROM saved_places WHERE user_id = ? ORDER BY CASE label WHEN 'home' THEN 0 WHEN 'work' THEN 1 ELSE 2 END, id", user.id);
+  const seen = new Set(saved.map(p => `${p.city}
+${p.note}`));
+  const recent: { city: string; note: string }[] = [];
+  for (const o of all('SELECT pickup_city, pickup_note, dropoff_city, dropoff_note FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 30', user.id))
+    for (const [city, note] of [[o.pickup_city, o.pickup_note], [o.dropoff_city, o.dropoff_note]]) {
+      const key = `${city}
+${note}`;
+      if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note }); }
+    }
+  return { saved, recent };
+}
+route('GET', '/api/me/places', ({ user }) => { need(user, 'customer'); return places(user); });
+route('POST', '/api/me/places', ({ user, body }) => {
+  need(user, 'customer');
+  if (!['home', 'work', 'other'].includes(body.label) || !isCity(body.city)) fail(400, 'invalid_input');
+  const note = text(body.note, 200);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const existing = one('SELECT id FROM saved_places WHERE user_id = ? AND city = ? AND note = ?', user.id, body.city, note);
+    if (body.label !== 'other') run('DELETE FROM saved_places WHERE user_id = ? AND label = ? AND id IS NOT ?', user.id, body.label, existing?.id ?? null); // one Home, one Work
+    if (existing) run('UPDATE saved_places SET label = ? WHERE id = ?', body.label, existing.id);
+    else {
+      if (one('SELECT COUNT(*) n FROM saved_places WHERE user_id = ?', user.id)!.n >= MAX_PLACES) fail(409, 'places_full');
+      run('INSERT INTO saved_places (user_id, label, city, note, created_at) VALUES (?, ?, ?, ?, ?)', user.id, body.label, body.city, note, Date.now());
+    }
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return places(user);
+});
+route('DELETE', '/api/me/places/:id', ({ user, params }) => {
+  need(user, 'customer');
+  if (!run('DELETE FROM saved_places WHERE id = ? AND user_id = ?', Number(params[0]), user.id).changes) fail(404, 'not_found');
+  return places(user);
+});
 
 // Customers
 function createOrder(user: User, body: Row) {
