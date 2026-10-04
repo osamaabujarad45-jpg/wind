@@ -126,7 +126,16 @@ export default function OrderScreen() {
     </Animated.View>}
 
     {/* Status stays visible even if native entering animations are interrupted. */}
-    {order.status === 'searching' && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
+    {order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 && <Card tone="olive">
+      <Row gap={10}>
+        <Ionicons name="calendar-outline" size={24} color={palette.olive} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="title">{fill(c.scheduledFor, { t: time(order.scheduledFor) })}</Txt>
+          <Txt variant="caption">{c.scheduledHint}</Txt>
+        </View>
+      </Row>
+    </Card>}
+    {order.status === 'searching' && !(order.scheduledFor && now < order.scheduledFor - 30 * 60_000) && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
       <Radar color={serviceMeta[order.service].color} size={110}>
         <ServiceIcon service={order.service} size={48} />
       </Radar>

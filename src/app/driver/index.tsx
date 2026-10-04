@@ -7,13 +7,14 @@ import { router } from 'expo-router';
 import { api, useApi } from '../../api';
 import { city, commissionOn, distanceKm, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
-import { RouteLine, ServiceIcon } from '../../parts';
+import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, haptic, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, fill, haptic, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
   const { c, money, err, language, rtl } = useCopy();
+  const { time } = useFormat();
   const active = me?.user.status === 'active';
   const { data, error, reload } = useApi<Order[]>(active ? '/jobs' : null, 8000);
   const work = useDriverWork();
@@ -101,6 +102,10 @@ export default function Jobs() {
                 <Txt variant="h2" style={{ color: palette.olive }}>{money(earn)}</Txt>
               </View>
             </Row>
+            {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
+              <Ionicons name="calendar-outline" size={14} color={palette.olive} />
+              <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
+            </Row>}
             <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} />
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />

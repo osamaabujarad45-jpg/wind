@@ -10,7 +10,7 @@ import { newBooking, readBooking, type PendingBooking } from '../booking';
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta } from '../parts';
 import { useSession } from '../session';
-import { Button, Card, Choices, confirm, ErrorText, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, FilterChips, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string }>();
@@ -33,6 +33,15 @@ export default function Book() {
   const [locationError, setLocationError] = useState('');
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [ready, setReady] = useState(false);
+  // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
+  const [when, setWhen] = useState<'now' | 'later'>('now');
+  const [slot, setSlot] = useState<number | null>(null);
+  const slots = scheduleSlots();
+  const days = [...new Set(slots.map(dayKey))];
+  const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
+  const [day, setDay] = useState<string | null>(null);
+  const shownDay = day && days.includes(day) ? day : chosen !== null ? dayKey(chosen) : days[0];
+  const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);
   const pendingKey = `booking.${me!.user.id}`;
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
@@ -126,7 +135,7 @@ export default function Book() {
     setError('');
     try {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, pickupNote, dropoffNote,
-        contact, detail, option, loadingHelp, shared: false, quotedPrice: price });
+        contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
       setPending(command);
       const order = await api<Order>('/orders', { ...command.payload, requestId: command.requestId });
@@ -151,7 +160,7 @@ export default function Book() {
   }
 
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : c.request} trailing={money(price)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
+    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(price)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt></Card>}
       {!available && !pending && <Card tone="clay">
@@ -215,6 +224,19 @@ export default function Book() {
         </>}
       </Card>
 
+      <Card>
+        <Txt variant="label" style={{ marginBottom: 6 }}>{c.whenTitle}</Txt>
+        <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
+          onChange={setWhen} disabled={locked} />
+        {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>
+          <FilterChips items={days.map(key => ({ key, label: dayLabel(key, language, c) }))} value={shownDay}
+            onChange={key => { setDay(key); setSlot(slots.find(s => dayKey(s) === key) ?? null); }} />
+          <FilterChips items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(chosen)}
+            onChange={key => setSlot(Number(key))} />
+          <Txt variant="caption">{c.scheduledHint}</Txt>
+        </View>}
+      </Card>
+
       <Card style={{ paddingVertical: 10 }}>
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="cash-outline" size={18} color={palette.olive} /></View>
@@ -247,6 +269,28 @@ export default function Book() {
       }} />
   </KeyboardAvoidingView>;
 }
+
+// Local calendar slots, every 30 minutes from 06:00 to 22:00, from one hour ahead to six days later.
+function scheduleSlots(now = Date.now()) {
+  const out: number[] = [];
+  const start = new Date(now + 60 * 60_000);
+  start.setMinutes(start.getMinutes() < 30 ? 30 : 60, 0, 0);
+  for (let t = start.getTime(); t <= now + 6.9 * 86_400_000; t += 30 * 60_000) {
+    const d = new Date(t);
+    const minutes = d.getHours() * 60 + d.getMinutes();
+    if (minutes >= 6 * 60 && minutes <= 22 * 60) out.push(t);
+  }
+  return out;
+}
+const dayKey = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+function dayLabel(key: string, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y!, m! - 1, d!);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+  return diff === 0 ? c.today : diff === 1 ? c.tomorrow : date.toLocaleDateString(language === 'ar' ? 'ar-PS' : 'en-GB', { weekday: 'short', day: 'numeric' });
+}
+const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(language === 'ar' ? 'ar-PS' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 
