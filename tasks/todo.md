@@ -1,4 +1,4 @@
-# Tasks: safety-sos
+# Tasks: saved-places
 
-- [x] X1: Safety report API, order freeze, admin list/resolve, tests.
-- [x] X2: Safety card, hold notice, admin shortcut + list, copy, docs.
+- [ ] P1: Saved/recent places API with limits and privacy; tests.
+- [ ] P2: Booking sheet places, save action, copy, docs.

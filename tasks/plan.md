@@ -1,6 +1,4 @@
-# Plan: safety-sos
+# Plan: saved-places
 
-1. **X1 — API + tests:** table, `/sos`, admin list/resolve, freeze in `advanceOrder`, Order fields, stats count, `tests/safety.test.mjs`.
-2. **X2 — UI:** safety card (emergency calls + report) for customer/driver, hold notice, admin dashboard shortcut + Orders "Safety" filter, copy AR/EN, SYSTEM.md.
-
-Checkpoint after each: `npm test`, typecheck, lint.
+1. **P1 - API + tests:** table, GET/POST/DELETE, recent derivation, deletion cleanup.
+2. **P2 - UI:** "Your places" in the city sheet, save chips under landmark fields, copy, docs, screenshots.
