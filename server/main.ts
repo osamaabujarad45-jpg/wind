@@ -783,7 +783,7 @@ route('POST', '/api/roads/:id/report', ({ user, params, body }) => {
   const note = text(body.note, 120, false);
   const id = Number(params[0]);
   if (!one('SELECT id FROM checkpoints WHERE id = ? AND active = 1', id)) fail(404, 'not_found');
-  if (one('SELECT id FROM checkpoint_reports WHERE checkpoint_id = ? AND reporter_id = ? AND created_at > ?', id, user.id, Date.now() - 10 * 60_000)) fail(429, 'rate_limited');
+  if (one('SELECT id FROM checkpoint_reports WHERE checkpoint_id = ? AND reporter_id = ? AND created_at > ?', id, user.id, Date.now() - 10 * 60_000)) fail(429, 'already_reported');
   run('INSERT INTO checkpoint_reports (checkpoint_id, reporter_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)', id, user.id, body.status, note, Date.now());
   return roads();
 });

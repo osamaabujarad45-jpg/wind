@@ -9,7 +9,7 @@ import { city, commissionOn, distanceKm, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, fill, haptic, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
@@ -59,7 +59,7 @@ export default function Jobs() {
   </Screen>;
 
   return <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
-    <Header title={c.jobs} />
+    <Header title={c.jobs} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
 
     <Card tone="forest" style={{ paddingVertical: 12 }}>
       <Row gap={10}>

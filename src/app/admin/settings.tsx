@@ -4,7 +4,8 @@ import { api } from '../../api';
 import { fractionSettings, type Settings } from '../../model';
 import { PasswordCard } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, confirm, ErrorText, Field, haptic, Header, ListGroup, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, confirm, ErrorText, Field, haptic, Header, IconButton, ListGroup, Screen, Txt, useCopy } from '../../ui';
+import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelBase', 'parcelPerKm', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp'] },
@@ -37,7 +38,7 @@ export default function AdminSettings() {
   }
 
   return <Screen>
-    <Header title={c.settings} />
+    <Header title={c.settings} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
     {groups.map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}

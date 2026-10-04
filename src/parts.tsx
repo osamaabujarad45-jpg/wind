@@ -232,6 +232,7 @@ export function AccountScreen() {
       <PasswordCard />
     </ListGroup>
     <ListGroup>
+      <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
       {SUPPORT_URL && <ListRow icon="chatbubble-ellipses-outline" label={c.support} tone="blue" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
       <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(PRIVACY_URL)} />

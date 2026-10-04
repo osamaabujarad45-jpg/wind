@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage } from '../api';
 import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type SavedPlace, type Service } from '../model';
+import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type Road, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
@@ -56,6 +56,9 @@ export default function Book() {
   const isCustomer = me?.user.role === 'customer';
   const [places, setPlaces] = useState<Places>({ saved: [], recent: [] });
   useEffect(() => { if (isCustomer) api<Places>('/me/places').then(setPlaces).catch(() => undefined); }, [isCustomer]);
+  const [roads, setRoads] = useState<Road[]>([]);
+  useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
+  const roadAlerts = roads.filter(r => (r.status === 'slow' || r.status === 'closed') && (r.cities.includes(pickupCity) || r.cities.includes(dropoffCity)));
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
@@ -206,6 +209,12 @@ export default function Book() {
         </Row>
         {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
       </Card>
+
+      {roadAlerts.length > 0 && <Card tone="clay">
+        <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
+        {roadAlerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
+        <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
+      </Card>}
 
       <Tip id="book-landmark" icon="flag-outline" title={c.tipBookTitle} body={c.tipBookBody} tone="blue" />
 

@@ -73,6 +73,7 @@ function Routes() {
       <Stack.Screen name="order/[id]" />
       <Stack.Screen name="receipt/[id]" />
       <Stack.Screen name="profile" />
+      <Stack.Screen name="roads" />
     </Stack.Protected>
     {/* Reachable signed in or out: store review requires support before sign-in. */}
     <Stack.Screen name="help" />
