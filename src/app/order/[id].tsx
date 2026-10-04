@@ -8,7 +8,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, statusFlow, type ExceptionReason, type Order, type Point } from '../../model';
+import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type SafetyKind } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
@@ -162,10 +162,18 @@ export default function OrderScreen() {
           <Txt variant="micro">{c.dropoff}</Txt>
         </Row>
         <Txt variant="caption" style={{ marginTop: 10 }}>{c[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}` as 'next_assigned']}</Txt>
+        {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
+          <Row gap={6} style={{ marginTop: 6 }}>
+            <Ionicons name="shield-outline" size={16} color={palette.clayInk} />
+            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{c.safetyPaused}</Txt>
+          </Row>
+        </View>}
         {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
           <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{`${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
       </Card>
     </Appear>}
+
+    {(isCustomer || mine) && activeStatuses.includes(order.status) && <View style={{ marginBottom: 12 }}><Safety order={order} onChange={setData} /></View>}
 
     {order.driverName && (isCustomer || isAdmin) ? <Appear index={3}>
       <Card>
@@ -277,7 +285,7 @@ export default function OrderScreen() {
         {needsCode &&
           <Field label={order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
-        {order.status !== 'on_hold' && <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+        {order.status !== 'on_hold' && !order.safetyHold && <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
           onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />}
         {order.status === 'in_transit' && order.service !== 'ride' && <Card tone="muted">
@@ -340,6 +348,48 @@ export default function OrderScreen() {
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
     </View>
   </Screen>;
+}
+
+// Uber-style safety toolkit: emergency numbers work without Wind's server; a report reaches Wind's safety team.
+const emergency = [['police', '100', 'shield-outline'], ['ambulance', '101', 'medkit-outline'], ['civilDefence', '102', 'flame-outline']] as const;
+function Safety({ order, onChange }: { order: Order; onChange: (order: Order) => void }) {
+  const { c, err } = useCopy();
+  const [open, setOpen] = useState(order.safetyReport?.status === 'open');
+  const [kind, setKind] = useState<SafetyKind>('unsafe_driving');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  const report = order.safetyReport;
+  async function send() {
+    setBusy(true); setFailure('');
+    try { onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote(''); }
+    catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
+  }
+  if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="outline" onPress={() => setOpen(true)} />;
+  return <Card tone="clay">
+    <Row gap={8} style={{ marginBottom: 4 }}>
+      <Ionicons name="shield-checkmark" size={22} color={palette.clayInk} />
+      <Txt variant="title" style={{ flex: 1 }}>{c.safety}</Txt>
+      <IconButton icon="close" label={c.close} onPress={() => setOpen(false)} />
+    </Row>
+    <Txt variant="caption" style={{ marginBottom: 10 }}>{c.safetyEmergencyHint}</Txt>
+    <View style={{ gap: 8, marginBottom: 14 }}>
+      {emergency.map(([key, number, icon]) => <Button key={key} title={c[key]} trailing={number} icon={icon} variant="danger"
+        onPress={() => { Linking.openURL(`tel:${number}`).catch(() => setFailure(c.callUnavailable)); }} />)}
+    </View>
+    {report?.status === 'open' ? <View accessibilityLiveRegion="assertive">
+      <Txt variant="title">{c.safetyReported}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4 }}>{c.safetyReportedHint}</Txt>
+    </View> : <>
+      {report && <Txt variant="caption" style={{ marginBottom: 10 }}>{`${c.safetyResolved}: ${report.resolution ?? ''}`}</Txt>}
+      <Txt variant="title" style={{ marginBottom: 8 }}>{c.safetyReport}</Txt>
+      <FilterChips items={safetyKinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} />
+      <Field label={c.problemNote} value={note} maxLength={300} multiline disabled={busy} onChangeText={setNote} />
+      <Button title={c.safetySend} icon="alert-circle-outline" variant="outline" loading={busy} disabled={busy}
+        onPress={() => confirm(c.safetyConfirm, send, c.yes, c.no)} />
+    </>}
+    <ErrorText>{failure}</ErrorText>
+  </Card>;
 }
 
 function Person({ title, name, sub, phone }: { title: string; name: string; sub?: string; phone?: string | null }) {

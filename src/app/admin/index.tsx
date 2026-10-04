@@ -11,7 +11,7 @@ import { Appear, Badge, Card, ErrorText, fill, Header, Loading, palette, Press, 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number;
+  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number;
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
@@ -29,6 +29,8 @@ export default function Dashboard() {
     <Txt style={{ marginTop: -12, marginBottom: 14 }}>{fill(c.hello, { name: me?.user.name ?? '' })}</Txt>
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading /> : <>
+      {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
+        onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
         <Stat index={0} tone="olive" label={c.profit} value={money(data.profit)} />
         <Stat index={1} label={c.commissionRevenue} value={money(data.commission)} />
