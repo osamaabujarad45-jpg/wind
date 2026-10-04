@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeInDown, useReducedMotion, ZoomIn } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
+import { InstallLink } from '../install-link';
 import { Button, fill, haptic, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
 
 const SLIDES = 3;
@@ -57,6 +58,7 @@ export default function Welcome() {
       </Row>
       <Button title={last ? c.start : c.next} icon={last ? 'flash-outline' : undefined}
         onPress={() => { haptic.tap(); if (last) finishOnboarding(); else setIndex(index + 1); }} />
+      <InstallLink />
     </View>
   </SafeAreaView>;
 }

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { PRIVACY_URL, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
+import { InstallLink } from '../install-link';
 import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
 
 const topics = ['price', 'code', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
@@ -55,6 +56,7 @@ export default function Help() {
     </Card>
 
     <Button title={c.privacy} icon="shield-checkmark-outline" variant="soft" onPress={() => Linking.openURL(PRIVACY_URL)} />
+    <InstallLink />
   </Screen>;
 }
 

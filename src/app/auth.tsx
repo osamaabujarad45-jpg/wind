@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
 import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
 import { HelpLinks } from '../parts';
+import { InstallLink } from '../install-link';
 import { useSession, type Me } from '../session';
 import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
@@ -124,6 +125,7 @@ export default function Auth() {
           </>}
         </Card>
         <HelpLinks />
+        <InstallLink />
       </Animated.View>
     </Screen>
   </KeyboardAvoidingView>;

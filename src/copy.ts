@@ -1,4 +1,5 @@
 const ar = {
+  installIphone: 'ثبّت على iPhone مجاناً',
   brand: 'ويند',
   tagline: 'توصيل واضح، من الاستلام للتسليم.',
   nis: '₪',
@@ -454,6 +455,7 @@ export type CopyKey = keyof typeof ar;
 export type Copy = Record<CopyKey, string>;
 
 const en: Copy = {
+  installIphone: 'Install on iPhone for free',
   brand: 'Wind',
   tagline: 'Clear delivery, from pickup to handover.',
   nis: '₪',
