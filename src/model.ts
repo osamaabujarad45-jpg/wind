@@ -22,7 +22,7 @@ export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' 
   | 'on_hold' | 'returning' | 'returned';
 export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
 export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
-export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null };
+export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null; credit?: { code: string; amount: number } | null };
 export type Road = { id: number; name: string; cities: CityId[]; status: 'open' | 'slow' | 'closed' | null; note: string; reportedAt: number | null; agreeing: number };
 export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string };
 export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string }[] };

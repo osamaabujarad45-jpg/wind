@@ -175,6 +175,8 @@ for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
 }
+if (!(db.prepare('PRAGMA table_info(order_disputes)').all() as Row[]).some(r => r.name === 'credit_promo_id'))
+  db.exec('ALTER TABLE order_disputes ADD COLUMN credit_promo_id INTEGER REFERENCES promo_codes(id)');
 if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === 'phone_verified_at'))
   db.exec('ALTER TABLE users ADD COLUMN phone_verified_at INTEGER');
 for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'], ['approved_at', 'INTEGER'], ['consent_at', 'INTEGER'], ['consent_version', 'TEXT']]) {
@@ -292,6 +294,7 @@ const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses)
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
+  (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
@@ -320,7 +323,8 @@ function toOrder(r: Row, viewer: User): Order {
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
       ? one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id) as Order['safetyReport'] ?? null
       : null,
-    dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null } : null,
+    dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null,
+      credit: r.dispute_credit_code ? { code: r.dispute_credit_code as string, amount: r.dispute_credit_amount as number } : null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)) } : null,
@@ -564,13 +568,18 @@ function freshCode(prefix: string, length: number) {
   }
 }
 /** The inviter's reward, once, when the friend's first order is delivered. */
+/** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (R…) and goodwill credits (C…). */
+function ownedCode(prefix: string, ownerId: number, amount: number, createdBy: number, now: number) {
+  const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
+    freshCode(prefix, 7), amount, now + 90 * DAY, createdBy, now).lastInsertRowid);
+  run('INSERT INTO promo_owners (promo_id, user_id) VALUES (?, ?)', promoId, ownerId);
+  return promoId;
+}
 export function rewardReferral(orderId: number, now: number) {
   const ref = one("SELECT r.referee_id, r.referrer_id FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.order_id = ? AND r.reward_promo_id IS NULL AND u.status = 'active'", orderId);
   if (!ref || one('SELECT COUNT(*) n FROM referrals r JOIN promo_codes p ON p.id = r.reward_promo_id WHERE r.referrer_id = ? AND p.created_at > ?',
     ref.referrer_id, now - 30 * DAY)!.n >= REFERRAL_REWARDS_PER_30_DAYS) return;
-  const promoId = Number(run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
-    freshCode('R', 7), REFERRAL_REWARD, now + 90 * DAY, ref.referrer_id, now).lastInsertRowid);
-  run('INSERT INTO promo_owners (promo_id, user_id) VALUES (?, ?)', promoId, ref.referrer_id);
+  const promoId = ownedCode('R', ref.referrer_id, REFERRAL_REWARD, ref.referrer_id, now);
   run('UPDATE referrals SET reward_promo_id = ? WHERE referee_id = ?', promoId, ref.referee_id);
 }
 route('GET', '/api/me/referral', ({ user }) => {
@@ -815,7 +824,7 @@ route('POST', '/api/orders/:id/dispute', ({ user, params, body }) => {
 route('GET', '/api/admin/disputes', ({ user }) => {
   need(user, 'admin');
   return all(`SELECT od.id, od.order_id orderId, od.reason, od.status, od.resolution, od.created_at createdAt, od.resolved_at resolvedAt,
-    o.status orderStatus, c.name customerName FROM order_disputes od JOIN orders o ON o.id = od.order_id JOIN users c ON c.id = od.customer_id
+    o.status orderStatus, c.name customerName, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) creditAmount FROM order_disputes od JOIN orders o ON o.id = od.order_id JOIN users c ON c.id = od.customer_id
     ORDER BY od.status = 'open' DESC, od.id DESC LIMIT 200`);
 });
 
@@ -823,13 +832,17 @@ route('POST', '/api/admin/disputes/:id/resolve', ({ user, params, body }) => {
   need(user, 'admin');
   const resolution = text(body.resolution, 1000);
   if (resolution.length < 5) fail(400, 'invalid_input');
+  // Optional goodwill credit for the next order (SPEC-dispute-credit.md), funded like every promo.
+  const credit = body.creditShekels == null ? null : Number.isInteger(body.creditShekels) && body.creditShekels >= 1 && body.creditShekels <= 50
+    ? body.creditShekels as number : fail(400, 'invalid_input');
   const dispute = one('SELECT * FROM order_disputes WHERE id = ?', Number(params[0])) ?? fail(404, 'not_found');
   db.exec('BEGIN IMMEDIATE');
   try {
     if (!run("UPDATE order_disputes SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'open'",
       resolution, user.id, Date.now(), dispute.id).changes) fail(409, 'cannot_resolve');
+    if (credit) run('UPDATE order_disputes SET credit_promo_id = ? WHERE id = ?', ownedCode('C', dispute.customer_id, credit, user.id, Date.now()), dispute.id);
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DISPUTE_RESOLVED', ?, ?)`,
-      user.id, dispute.order_id, JSON.stringify({ resolution }), Date.now());
+      user.id, dispute.order_id, JSON.stringify({ resolution, credit }), Date.now());
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
