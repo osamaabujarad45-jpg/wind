@@ -76,6 +76,32 @@ try {
   await call(`/orders/${ride.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID() }, expect: 409 });
   await advance(driver.token, ride);
 
+  // ---- T3: return to sender with the sender's code ----
+  order = await inTransit();
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID(), reason: 'refused' } });
+  const returning = await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused parcel' } });
+  assert.equal(returning.status, 'returning');
+  assert.equal(returning.returnCode, null); // admins see state, the sender holds the code
+  assert.equal((await call(`/orders/${order.id}`, { token: driver.token })).returnCode, null);
+  const { returnCode, handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
+  assert.match(returnCode, /^\d{4}$/);
+  const wrong = String((Number(returnCode) + 1) % 10000).padStart(4, '0');
+  for (let i = 0; i < 5; i++) await advance(driver.token, returning, { code: i === 0 ? handoverCode : wrong }, 400);
+  await advance(driver.token, returning, { code: returnCode }, 409); // locked
+  await call(`/admin/orders/${order.id}/proof-reset`, { token: admin.token, body: { reason: 'Sender verified by phone' } });
+  const returned = await advance(driver.token, returning, { code: returnCode });
+  assert.equal(returned.status, 'returned');
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).returnCode, null);
+  const other2 = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  await call(`/jobs/${other2.id}/accept`, { token: driver.token, body: {} }); // driver is free again
+  await call(`/orders/${other2.id}/release`, { token: driver.token, body: {} });
+  await call(`/orders/${other2.id}/cancel`, { token: customer.token, body: {} });
+  const earnings = await call('/driver/earnings', { token: driver.token });
+  assert.equal(earnings.all.jobs, 3); // delivered parcel, finished ride, returned parcel
+  const stats = await call('/admin/stats', { token: admin.token });
+  assert.equal(stats.completed, 3);
+  assert.equal(stats.statuses.returned, 1);
+
   console.log('exceptions: ok');
 } finally {
   server.close();

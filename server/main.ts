@@ -260,7 +260,7 @@ function toOrder(r: Row, viewer: User): Order {
     price: r.price, commission: r.commission ?? null, status: r.status,
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
-    returnCode: owner && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
+    returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
@@ -718,7 +718,7 @@ route('GET', '/api/driver/earnings', ({ user }) => {
   need(user, 'driver');
   const since = (from: number) => {
     const r = one(`SELECT COUNT(*) jobs, COALESCE(SUM(price), 0) gross, COALESCE(SUM(commission), 0) commission
-      FROM orders WHERE driver_id = ? AND status = 'completed' AND completed_at >= ?`, user.id, from)!;
+      FROM orders WHERE driver_id = ? AND status IN (${finishedSql}) AND completed_at >= ?`, user.id, from)!;
     return { jobs: r.jobs, gross: r.gross, commission: r.commission, net: Math.round((r.gross - r.commission) * 100) / 100 };
   };
   const midnight = new Date().setHours(0, 0, 0, 0);
@@ -741,7 +741,7 @@ route('POST', '/api/admin/orders/:id/proof-reset', ({ user, params, body }) => {
   const reason = text(body.reason, 500);
   if (reason.length < 5) fail(400, 'invalid_input');
   const order = getOrder(Number(params[0]), user);
-  if (order.status !== 'in_transit') fail(409, 'cannot_advance');
+  if (!['in_transit', 'returning'].includes(order.status)) fail(409, 'cannot_advance');
   db.exec('BEGIN IMMEDIATE');
   try {
     run('DELETE FROM proof_attempts WHERE order_id = ?', order.id);
@@ -753,7 +753,7 @@ route('POST', '/api/admin/orders/:id/proof-reset', ({ user, params, body }) => {
 route('GET', '/api/admin/stats', ({ user }) => {
   need(user, 'admin');
   const orders = one(`SELECT COUNT(*) completed, COALESCE(SUM(price), 0) gmv, COALESCE(SUM(commission), 0) commission
-    FROM orders WHERE status = 'completed'`)!;
+    FROM orders WHERE status IN (${finishedSql})`)!;
   const subs = one("SELECT COUNT(*) count, COALESCE(SUM(price), 0) revenue FROM subscriptions WHERE activated_at IS NOT NULL")!;
   // Calendar days in server local time (set TZ), built with setDate so DST changes don't shift the buckets.
   const start = new Date();
@@ -763,7 +763,7 @@ route('GET', '/api/admin/stats', ({ user }) => {
   const day = (ms: number) => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
   const byDay = new Map<string, { commission: number; subscriptions: number }>();
   for (let i = 0; i < 14; i++) byDay.set(day(new Date(start).setDate(start.getDate() + i)), { commission: 0, subscriptions: 0 });
-  for (const r of all("SELECT completed_at t, commission v FROM orders WHERE status = 'completed' AND completed_at >= ?", from)) {
+  for (const r of all(`SELECT completed_at t, commission v FROM orders WHERE status IN (${finishedSql}) AND completed_at >= ?`, from)) {
     const bucket = byDay.get(day(r.t));
     if (bucket) bucket.commission += r.v;
   }
@@ -775,7 +775,7 @@ route('GET', '/api/admin/stats', ({ user }) => {
     gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, profit: orders.commission + subs.revenue,
     completed: orders.completed, activeSubscriptions: one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'active' AND ends_at > ?", Date.now())!.n,
     statuses: Object.fromEntries(all('SELECT status, COUNT(*) n FROM orders GROUP BY status').map(r => [r.status, r.n])),
-    services: Object.fromEntries(all("SELECT service, COUNT(*) n FROM orders WHERE status = 'completed' GROUP BY service").map(r => [r.service, r.n])),
+    services: Object.fromEntries(all(`SELECT service, COUNT(*) n FROM orders WHERE status IN (${finishedSql}) GROUP BY service`).map(r => [r.service, r.n])),
     users: Object.fromEntries(all('SELECT role, COUNT(*) n FROM users GROUP BY role').map(r => [r.role, r.n])),
     pendingDrivers: one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'")!.n,
     pendingSubscriptions: one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'")!.n,
