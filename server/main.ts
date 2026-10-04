@@ -120,6 +120,12 @@ CREATE TABLE IF NOT EXISTS order_disputes (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), customer_id INTEGER NOT NULL REFERENCES users(id),
   reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')), resolution TEXT,
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
+CREATE TABLE IF NOT EXISTS cash_entries (
+  id INTEGER PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL CHECK (kind IN ('remittance','adjustment')), amount_cents INTEGER NOT NULL CHECK (amount_cents <> 0),
+  note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),
+  recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER);
+CREATE INDEX IF NOT EXISTS cash_entries_driver ON cash_entries(driver_id, id);
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
 for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT']]) {
@@ -762,6 +768,63 @@ route('GET', '/api/driver/earnings', ({ user }) => {
   const midnight = new Date().setHours(0, 0, 0, 0);
   return { today: since(midnight), week: since(Date.now() - 7 * DAY), all: since(0) };
 });
+
+// Cash settlement: drivers collect every fare in cash and owe Wind the commission snapshot of each finished job.
+// The ledger is append-only; a handover counts only after the driver confirms it (two-person check).
+function cashBalances(where: string, ...params: SQLInputValue[]) {
+  const sum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
+  return all(`SELECT u.id, u.name, u.phone,
+    COALESCE((SELECT SUM(CAST(ROUND(commission * 100) AS INTEGER)) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+    ${sum("kind = 'adjustment'")} adjustments, ${sum("kind = 'remittance' AND status = 'confirmed'")} remitted,
+    ${sum("kind = 'remittance' AND status = 'pending'")} pending,
+    (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
+    FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where} LIMIT 1000`, ...params)
+    .map(r => ({ driverId: r.id as number, name: r.name as string, phone: r.phone as string,
+      commissionCents: r.commission as number, adjustmentsCents: r.adjustments as number, remittedCents: r.remitted as number,
+      pendingCents: r.pending as number, owedCents: r.commission + r.adjustments - r.remitted, lastRemittanceAt: (r.last_remittance as number) ?? null }));
+}
+const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
+  reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
+
+route('GET', '/api/driver/cash', ({ user }) => {
+  need(user, 'driver');
+  const { owedCents, pendingCents, commissionCents, remittedCents, adjustmentsCents } = cashBalances('u.id = ?', user.id)[0]!;
+  return { owedCents, pendingCents, commissionCents, remittedCents, adjustmentsCents,
+    entries: all('SELECT * FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 50', user.id).map(cashEntry) };
+});
+
+route('POST', '/api/driver/cash/:id/confirm', ({ user, params, body }) => {
+  need(user, 'driver');
+  if (!['confirm', 'dispute'].includes(body.decision)) fail(400, 'invalid_input');
+  const entry = one("SELECT * FROM cash_entries WHERE id = ? AND driver_id = ? AND kind = 'remittance'", Number(params[0]), user.id) ?? fail(404, 'not_found');
+  if (!run("UPDATE cash_entries SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+    body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), entry.id).changes) fail(409, 'already_decided');
+  return cashEntry(one('SELECT * FROM cash_entries WHERE id = ?', entry.id)!);
+});
+
+route('GET', '/api/admin/cash', ({ user }) => {
+  need(user, 'admin');
+  return cashBalances('1 = 1').sort((a, b) => b.owedCents - a.owedCents || a.driverId - b.driverId);
+});
+
+function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
+  need(user, 'admin');
+  const amount = body.amountCents;
+  if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 1_000_000) fail(400, 'invalid_amount');
+  const note = kind === 'adjustment' ? text(body.reason, 500) : text(body.note, 200, false);
+  if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const balance = cashBalances('u.id = ?', Number(body.driverId))[0] ?? fail(404, 'not_found');
+    if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount'); // no overpayment
+    const id = Number(run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now()).lastInsertRowid);
+    db.exec('COMMIT');
+    return cashEntry(one('SELECT * FROM cash_entries WHERE id = ?', id)!);
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+route('POST', '/api/admin/cash/remittance', ({ user, body }) => recordCash(user, body, 'remittance'));
+route('POST', '/api/admin/cash/adjustment', ({ user, body }) => recordCash(user, body, 'adjustment'));
 
 // Subscriptions: requested in-app, paid in cash / bank transfer, activated by an admin.
 route('POST', '/api/subscriptions', ({ user }) => {
