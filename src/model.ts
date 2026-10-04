@@ -83,7 +83,7 @@ export type Order = {
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
-  returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null;
+  returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;

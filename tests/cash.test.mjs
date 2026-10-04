@@ -41,7 +41,7 @@ try {
   }
 
   // ---- C1: balance = commission on finished jobs ----
-  assert.deepEqual((await call('/driver/cash', { token: driver.token })), { owedCents: 0, pendingCents: 0, commissionCents: 0, remittedCents: 0, adjustmentsCents: 0, entries: [] });
+  assert.deepEqual((await call('/driver/cash', { token: driver.token })), { owedCents: 0, pendingCents: 0, commissionCents: 0, discountsCents: 0, remittedCents: 0, adjustmentsCents: 0, entries: [] });
   const a = await deliver(), b = await deliver();
   const commissionCents = Math.round(a.commission * 100) + Math.round(b.commission * 100);
   let cash = await call('/driver/cash', { token: driver.token });

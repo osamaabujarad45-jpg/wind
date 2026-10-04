@@ -135,6 +135,14 @@ CREATE TABLE IF NOT EXISTS safety_incidents (
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
+CREATE TABLE IF NOT EXISTS promo_codes (
+  id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount INTEGER NOT NULL CHECK (amount BETWEEN 1 AND 100),
+  max_uses INTEGER NOT NULL, expires_at INTEGER NOT NULL, first_order_only INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS promo_redemptions (
+  promo_id INTEGER NOT NULL REFERENCES promo_codes(id), customer_id INTEGER NOT NULL REFERENCES users(id),
+  order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS promo_redemptions_promo ON promo_redemptions(promo_id, customer_id);
 CREATE TABLE IF NOT EXISTS order_messages (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), sender_id INTEGER NOT NULL REFERENCES users(id),
   driver_id INTEGER NOT NULL REFERENCES users(id), -- the assignment this thread belongs to
@@ -156,7 +164,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
 }
@@ -297,7 +305,7 @@ function toOrder(r: Row, viewer: User): Order {
     price: r.price, commission: r.commission ?? null, status: r.status,
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
-    sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null,
+    sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     // Both parties learn the order is paused; only the reporter sees their own report.
@@ -504,6 +512,43 @@ route('DELETE', '/api/me/places/:id', ({ user, params }) => {
   return places(user);
 });
 
+// Promo codes (SPEC-promo-codes.md): fixed shekel discounts the customer does not pay in cash; Wind funds them
+// through the driver's cash ledger. A cancelled order frees its use.
+const promoUses = `SELECT COUNT(*) n FROM promo_redemptions pr JOIN orders o ON o.id = pr.order_id WHERE o.status <> 'cancelled' AND pr.promo_id = ?`;
+function promoFor(user: User, input: unknown, price: number) {
+  const code = String(input ?? '').trim().toUpperCase();
+  const p = (/^[A-Z0-9]{4,16}$/.test(code) ? one('SELECT * FROM promo_codes WHERE code = ? AND active = 1 AND expires_at > ?', code, Date.now()) : undefined)
+    ?? fail(400, 'invalid_promo');
+  if (one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id)!.n > 0 || one(promoUses, p.id)!.n >= p.max_uses
+    || (p.first_order_only && one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id))) fail(409, 'promo_used');
+  return { id: p.id as number, code, discount: Math.max(0, Math.min(p.amount, price - 1)) };
+}
+route('POST', '/api/promos/check', ({ user, body }) => {
+  need(user, 'customer');
+  const price = Number(body.price);
+  if (!Number.isFinite(price) || price < 1) fail(400, 'invalid_input');
+  const { code, discount } = promoFor(user, body.code, price);
+  return { code, discount };
+});
+const promoRow = (p: Row) => ({ id: p.id, code: p.code, amount: p.amount, maxUses: p.max_uses, uses: one(promoUses, p.id)!.n,
+  expiresAt: p.expires_at, firstOrderOnly: !!p.first_order_only, active: !!p.active });
+route('GET', '/api/admin/promos', ({ user }) => { need(user, 'admin'); return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow); });
+route('POST', '/api/admin/promos', ({ user, body }) => {
+  need(user, 'admin');
+  const code = String(body.code ?? '').trim().toUpperCase();
+  const whole = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
+  if (!/^[A-Z0-9]{4,16}$/.test(code) || !whole(body.amount, 1, 100) || !whole(body.maxUses, 1, 10_000) || !whole(body.days, 1, 90)) fail(400, 'invalid_input');
+  if (one('SELECT id FROM promo_codes WHERE code = ?', code)) fail(409, 'promo_exists');
+  run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    code, body.amount, body.maxUses, Date.now() + body.days * DAY, body.firstOrderOnly ? 1 : 0, user.id, Date.now());
+  return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow);
+});
+route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
+  need(user, 'admin');
+  if (!run('UPDATE promo_codes SET active = 0 WHERE id = ? AND active = 1', Number(params[0])).changes) fail(404, 'not_found');
+  return all('SELECT * FROM promo_codes ORDER BY active DESC, id DESC LIMIT 100').map(promoRow);
+});
+
 // Customers
 function createOrder(user: User, body: Row) {
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
@@ -521,17 +566,20 @@ function createOrder(user: User, body: Row) {
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
   if (body.quotedPrice != null && Number(body.quotedPrice) !== price) fail(409, 'price_changed');
   const now = Date.now();
+  const promo = body.promoCode == null ? null : promoFor(user, body.promoCode, price);
+  if (promo && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
   const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng,
-    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?)`,
+    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     validPoint ? Number(point.latitude) : null, validPoint ? Number(point.longitude) : null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
-    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor).lastInsertRowid);
+    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null).lastInsertRowid);
+  if (promo) run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now);
   return getOrder(id, user);
 }
 
@@ -1007,13 +1055,15 @@ function cashBalances(where: string, ...params: SQLInputValue[]) {
   const sum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
   return all(`SELECT u.id, u.name, u.phone,
     COALESCE((SELECT SUM(CAST(ROUND(commission * 100) AS INTEGER)) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+    COALESCE((SELECT SUM(CAST(ROUND(discount * 100) AS INTEGER)) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
     ${sum("kind = 'adjustment'")} adjustments, ${sum("kind = 'remittance' AND status = 'confirmed'")} remitted,
     ${sum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
     FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params)
     .map(r => ({ driverId: r.id as number, name: r.name as string, phone: r.phone as string,
-      commissionCents: r.commission as number, adjustmentsCents: r.adjustments as number, remittedCents: r.remitted as number,
-      pendingCents: r.pending as number, owedCents: r.commission + r.adjustments - r.remitted, lastRemittanceAt: (r.last_remittance as number) ?? null }));
+      commissionCents: r.commission as number, discountsCents: r.discounts as number, adjustmentsCents: r.adjustments as number, remittedCents: r.remitted as number,
+      // Promo discounts are Wind's cost: the driver collected that much less cash, so it comes off what they owe.
+      pendingCents: r.pending as number, owedCents: r.commission - r.discounts + r.adjustments - r.remitted, lastRemittanceAt: (r.last_remittance as number) ?? null }));
 }
 // A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
 function cashSettled(userId: number) {
@@ -1025,8 +1075,8 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
 
 route('GET', '/api/driver/cash', ({ user }) => {
   need(user, 'driver');
-  const { owedCents, pendingCents, commissionCents, remittedCents, adjustmentsCents } = cashBalances('u.id = ?', user.id)[0]!;
-  return { owedCents, pendingCents, commissionCents, remittedCents, adjustmentsCents,
+  const { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents } = cashBalances('u.id = ?', user.id)[0]!;
+  return { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents,
     entries: all('SELECT * FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 50', user.id).map(cashEntry) };
 });
 
