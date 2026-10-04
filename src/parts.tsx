@@ -1,9 +1,10 @@
 // Pieces shared by the customer, driver and admin screens.
-import { useState } from 'react';
-import { Linking, Platform, Share, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { disablePush, enablePush, pushState, pushSupported, type PushState } from './push';
 import { city, orderCode, type Order, type Referral, type Service } from './model';
 import { useSession } from './session';
 import {
@@ -86,6 +87,28 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
       </Press>
     </Card>
   </Appear>;
+}
+
+// Web Push on/off for this browser (SPEC-web-push.md); the result is announced.
+function PushRow() {
+  const { c, language } = useCopy();
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { pushState().then(setState).catch(() => setState('unsupported')); }, []);
+  if (!state || state === 'unsupported') return null;
+  async function toggle() {
+    if (busy) return;
+    if (state === 'denied') { window.alert(c.pushDeniedHelp); return; } // web only: the browser owns this permission
+    setBusy(true);
+    try {
+      const next = state === 'on' ? (await disablePush(), 'off' as const) : await enablePush(language);
+      setState(next);
+      haptic.success();
+      AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : next === 'off' ? c.pushDisabled : c.pushDeniedHelp);
+    } catch { haptic.error(); setState(await pushState().catch(() => 'off' as const)); } finally { setBusy(false); }
+  }
+  return <ListRow icon="notifications-outline" label={c.pushRow} tone="blue" onPress={toggle}
+    value={busy ? '…' : state === 'on' ? c.pushOn : state === 'denied' ? c.pushDenied : c.pushOff} />;
 }
 
 // Invite friends (SPEC-referral.md): the code, a share sheet where one exists, progress and ready reward codes.
@@ -264,6 +287,7 @@ export function AccountScreen() {
     <ListGroup>
       <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="clay" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
+      {pushSupported() && <PushRow />}
     </ListGroup>
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />

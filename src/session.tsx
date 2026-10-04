@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { AppState, Platform } from 'react-native';
 import { getLocales } from 'expo-localization';
 import { api, configureApi, errorCode, storage } from './api';
+import { disablePush } from './push';
 import type { Plan, Service, Settings, Subscription, User } from './model';
 
 export type Language = 'ar' | 'en';
@@ -87,6 +88,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setMe(data);
     },
     signOut: async () => {
+      await disablePush().catch(() => {}); // a shared browser stops alerting this account
       await api('/auth/logout', {}).catch(() => {});
       await forget();
     },

@@ -27,7 +27,7 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `road-status` | (Local) crowd-reported checkpoint/closure status per city pair, like Azmeh-style apps | None; ETA is straight-line × 1.3 | No | — |
 | `safety-sos` | Emergency button, incident report freezes completion | Support phone only | No | `trip-share-link` |
 | `in-app-chat` | Driver↔customer chat about the job | Phone only | No | — |
-| `push-offers` | Push job offers / status to closed app | Polling; drivers must keep app open | Expo push (free, needs EAS project + device tokens) | — |
+| `push-offers` | Push job offers / status to closed app | Web Push shipped for the web/home-screen app (SPEC-web-push.md); native still polls | Native: Expo push (needs EAS project + device tokens) | — |
 | `promo-referral` | Promo codes, referral credit | Shipped: SPEC-promo-codes.md, SPEC-referral.md | No | `cash-settlement` (discount accounting) |
 | `trip-issues` | Uber "Help with a trip": report an issue on a finished order, support reply, goodwill credit | Help page and support link only | No | `promo-referral` (credit codes) |
 | `sms-otp` | Verified phone via OTP | Unverified self-service | **Yes** — SMS gateway (Jawwal/Ooredoo bulk SMS) | — |
