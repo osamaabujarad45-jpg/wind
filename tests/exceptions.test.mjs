@@ -109,7 +109,7 @@ try {
   await call(`/orders/${order.id}/dispute`, { token: driver.token, body: { reason }, expect: 404 });
   await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'short' }, expect: 400 });
   const disputed = await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason } });
-  assert.deepEqual(disputed.dispute, { status: 'open', reason, resolution: null });
+  assert.deepEqual(disputed.dispute, { status: 'open', reason, resolution: null, credit: null });
   await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason }, expect: 409 }); // one per order
   db.prepare('UPDATE orders SET completed_at = ? WHERE id = ?').run(Date.now() - 8 * 86_400_000, retry.id);
   await call(`/orders/${retry.id}/dispute`, { token: customer.token, body: { reason }, expect: 409 }); // window closed

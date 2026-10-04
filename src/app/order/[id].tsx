@@ -350,6 +350,7 @@ export default function OrderScreen() {
       {isCustomer && order.dispute && <Card tone={order.dispute.status === 'open' ? 'clay' : 'olive'}>
         <Txt variant="title">{order.dispute.status === 'open' ? c.disputeOpen : c.disputeResolved}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{order.dispute.resolution ?? order.dispute.reason}</Txt>
+        {order.dispute.credit && <Txt variant="label" selectable style={{ marginTop: 6 }}>{fill(c.disputeCredit, { r: money(order.dispute.credit.amount), code: order.dispute.credit.code })}</Txt>}
       </Card>}
       {canDispute && !order.dispute && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
