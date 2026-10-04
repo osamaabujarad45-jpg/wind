@@ -8,7 +8,7 @@ import { accessSync, constants, createReadStream, readFileSync, statSync } from 
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { createBrotliCompress } from 'node:zlib';
 import {
-  activeStatuses, cities, commissionOn, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
+  activeStatuses, cities, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
   optionsFor, planForRole, quote, services, vehicleServices, vehicles,
   type Order, type Plan, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
@@ -116,9 +116,16 @@ CREATE TABLE IF NOT EXISTS proof_attempts (
 CREATE TABLE IF NOT EXISTS security_events (
   id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER NOT NULL REFERENCES orders(id),
   action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS order_disputes (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), customer_id INTEGER NOT NULL REFERENCES users(id),
+  reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')), resolution TEXT,
+  resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 `);
-if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'pickup_contact'))
-  db.exec('ALTER TABLE orders ADD COLUMN pickup_contact TEXT');
+// Additive columns only, without a user_version bump, so the previous build can still open this database.
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT']]) {
+  if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
+    db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
+}
 if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === 'phone_verified_at'))
   db.exec('ALTER TABLE users ADD COLUMN phone_verified_at INTEGER');
 for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'], ['approved_at', 'INTEGER'], ['consent_at', 'INTEGER'], ['consent_version', 'TEXT']]) {
@@ -230,10 +237,13 @@ function toSubscription(r: Row): Subscription {
     createdAt: r.created_at, userName: r.user_name, userPhone: r.user_phone };
 }
 
+const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
+const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
+
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
-  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at
+  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
-  LEFT JOIN driver_locations l ON l.driver_id = o.driver_id`;
+  LEFT JOIN driver_locations l ON l.driver_id = o.driver_id LEFT JOIN order_disputes od ON od.order_id = o.id`;
 
 function toOrder(r: Row, viewer: User): Order {
   const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
@@ -250,6 +260,9 @@ function toOrder(r: Row, viewer: User): Order {
     price: r.price, commission: r.commission ?? null, status: r.status,
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
+    returnCode: owner && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
+    exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)) } : null,
@@ -386,7 +399,7 @@ function deleteAccount(user: User) {
   db.exec('BEGIN IMMEDIATE');
   try {
     if (one('SELECT role FROM users WHERE id = ?', user.id)?.role === 'admin') fail(409, 'cannot_change_self');
-    if (one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching','assigned','at_pickup','in_transit')`, user.id, user.id))
+    if (one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id))
       fail(409, 'active_orders');
     run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL WHERE id = ?`, `deleted-${user.id}`, user.id);
@@ -576,7 +589,7 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
   if (!vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
-  if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN ('assigned','at_pickup','in_transit')`, user.id)) fail(409, 'vehicle_busy');
+  if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
   const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
   const changed = run("UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ? WHERE id = ? AND status = 'searching'",
     user.id, commissionOn(order.price, rate), Date.now(), order.id).changes;
@@ -601,28 +614,75 @@ function advanceOrder(user: User, id: number, body: Row) {
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
+  if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
   const now = Date.now();
-  if (next === 'completed') {
+  if (next === 'completed' || next === 'returned') {
+    // Delivery needs the recipient's handover code; a return needs the sender's return code.
+    const expected = next === 'completed' ? r.handover_code : r.return_code;
     if ((one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id)?.failures ?? 0) >= 5) fail(409, 'proof_locked');
-    if (r.handover_code && String(body.code ?? '').trim() !== r.handover_code) {
+    if (expected && String(body.code ?? '').trim() !== expected) {
       run(`INSERT INTO proof_attempts (order_id, failures) VALUES (?, 1) ON CONFLICT(order_id) DO UPDATE SET failures = failures + 1`, r.id);
       run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'PROOF_FAILED', ?)`, user.id, r.id, now);
       fail(400, 'wrong_code');
     }
     const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
-    run("UPDATE orders SET status = 'completed', commission = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-      r.commission ?? commissionOn(r.price, rate), now, now, r.id);
+    run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
+      next, r.commission ?? commissionOn(r.price, rate), now, now, r.id);
+    if (next === 'returned') run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now);
   } else run('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', next, now, r.id);
   return getOrder(r.id, user);
 }
 
+function reportException(user: User, id: number, body: Row) {
+  const r = one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
+  if (r.driver_id !== user.id || r.status !== 'in_transit' || r.service === 'ride') fail(409, 'cannot_report');
+  if (body.expectedStatus !== r.status) fail(409, 'order_changed');
+  const now = Date.now();
+  run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
+  run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
+    user.id, r.id, JSON.stringify({ reason: body.reason, note: body.note }), now);
+  return getOrder(r.id, user);
+}
+
+route('POST', '/api/orders/:id/exception', ({ user, params, body }) => {
+  need(user, 'driver'); needActive(user);
+  if (!exceptionReasons.includes(body.reason)) fail(400, 'invalid_input');
+  text(body.note, 200, false);
+  return driverCommand(user, Number(params[0]), body, reportException);
+});
+
+route('POST', '/api/admin/orders/:id/resolve', ({ user, params, body }) => {
+  need(user, 'admin');
+  const reason = text(body.reason, 500);
+  if (reason.length < 5 || !['reattempt', 'return'].includes(body.action)) fail(400, 'invalid_input');
+  const id = Number(params[0]);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if ((one('SELECT status FROM orders WHERE id = ?', id) ?? fail(404, 'not_found')).status !== 'on_hold') fail(409, 'cannot_resolve');
+    if (body.action === 'reattempt') run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id);
+    else {
+      run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), Date.now(), id);
+      run('DELETE FROM proof_attempts WHERE order_id = ?', id); // the return gets its own five attempts
+    }
+    run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
+      user.id, id, JSON.stringify({ action: body.action, reason }), Date.now());
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return getOrder(id, user);
+});
+
 route('POST', '/api/orders/:id/advance', ({ user, params, body }) => {
   need(user, 'driver'); needActive(user);
-  const id = Number(params[0]), { requestId, ...input } = body;
+  return driverCommand(user, Number(params[0]), body, advanceOrder);
+});
+
+// Lost acknowledgements replay the stored outcome instead of applying a driver command twice.
+function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Order) {
+  const { requestId, ...input } = body;
   if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) fail(400, 'invalid_request_id');
   if (!activeStatuses.includes(input.expectedStatus)) fail(400, 'invalid_status');
   getOrder(id, user); // reject nonexistent/inaccessible resources before storing a foreign-keyed outcome
-  const hash = payloadHash({ ...input, id });
+  const hash = payloadHash({ ...input, id }); // unchanged shape keeps pre-release advance retries replayable
   let result: Order | undefined, failure: HttpError | undefined;
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -632,7 +692,7 @@ route('POST', '/api/orders/:id/advance', ({ user, params, body }) => {
       if (saved.error) failure = new HttpError(saved.http_status, saved.error);
       else result = getOrder(id, user); // acknowledge the original action with the current authoritative state
     } else {
-      try { result = advanceOrder(user, id, input); }
+      try { result = apply(user, id, input); }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
         user.id, requestId, hash, id, failure?.status ?? 200, failure?.message ?? null);
@@ -641,12 +701,12 @@ route('POST', '/api/orders/:id/advance', ({ user, params, body }) => {
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   if (failure) throw failure;
   return result;
-});
+}
 
 route('POST', '/api/location', ({ user, body }) => {
   needActive(user);
   need(user, 'driver');
-  if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN ('assigned','at_pickup','in_transit')`, user.id)) fail(409, 'no_active_job');
+  if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'no_active_job');
   const lat = body.latitude, lng = body.longitude;
   if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng) || !(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) fail(400, 'invalid_location');
   run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at) VALUES (?, ?, ?, ?)
@@ -746,7 +806,7 @@ const editUser: Handler = ({ user, params, body }) => {
   const roleChanged = role !== target.role;
   const vehicleChanged = vehicle !== target.vehicle;
   if ((identityChanged || roleChanged || vehicleChanged || (status !== target.status && status === 'pending')) &&
-    one("SELECT id FROM orders WHERE (driver_id = ? AND status IN ('assigned','at_pickup','in_transit')) OR (customer_id = ? AND status IN ('searching','assigned','at_pickup','in_transit'))", target.id, target.id)) fail(409, 'active_orders');
+    one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id)) fail(409, 'active_orders');
   if (selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
   if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at) fail(409, 'pending_approval');
   db.exec('BEGIN IMMEDIATE');

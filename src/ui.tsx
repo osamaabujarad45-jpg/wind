@@ -356,8 +356,11 @@ const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
   in_transit: { bg: palette.olivePale, fg: palette.olive },
   completed: { bg: palette.muted, fg: palette.secondary },
   cancelled: { bg: palette.errorPale, fg: palette.error },
+  on_hold: { bg: palette.clayPale, fg: palette.clayInk },
+  returning: { bg: palette.clayPale, fg: palette.clayInk },
+  returned: { bg: palette.muted, fg: palette.secondary },
 };
-const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit'];
+const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
 
 export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string }; icon?: IconName }) {
   const t = tone ?? statusTone[status ?? 'completed'];

@@ -18,14 +18,21 @@ export type Service = 'parcel' | 'ride' | 'freight';
 export type Role = 'customer' | 'driver' | 'admin';
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
-export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled';
+export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled'
+  | 'on_hold' | 'returning' | 'returned';
+export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
+export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
+export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null };
 export type Plan = 'plus' | 'pro';
 export type Point = { latitude: number; longitude: number };
 
 export const services: Service[] = ['parcel', 'ride', 'freight'];
 export const vehicles: Vehicle[] = ['motorcycle', 'bicycle', 'car', 'van', 'truck'];
 export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'completed'];
-export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit'];
+// on_hold and returning keep the driver assigned: they still hold the item.
+export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
+// Both end states the driver is paid for: delivered, or handed back to the sender.
+export const finishedStatuses: OrderStatus[] = ['completed', 'returned'];
 // Motorcycles can carry small parcels and licensed passenger rides. Bicycles stay parcel-only:
 // they never enter the passenger-ride pool, so dispatch does not create an unsafe assignment.
 export const vehicleServices: Record<Vehicle, Service[]> = {
@@ -71,6 +78,7 @@ export type Order = {
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
+  returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null;
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number }) | null;
@@ -131,6 +139,7 @@ export function isValidPhone(input: string): boolean {
 }
 
 export function nextStatus(status: OrderStatus): OrderStatus {
+  if (status === 'returning') return 'returned';
   const index = statusFlow.indexOf(status);
   return index < 0 ? status : statusFlow[Math.min(index + 1, statusFlow.length - 1)];
 }
