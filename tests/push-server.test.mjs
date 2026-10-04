@@ -106,8 +106,10 @@ try {
   await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), scheduledFor: later } });
   await settle();
   assert.deepEqual(sent, []);
-  alertReleasedJobs(later);
-  alertReleasedJobs(later); // once only
+  const past = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), scheduledFor: later + 60_000 } });
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(later - 20 * 60_000, past.id); // pickup already passed by the check below
+  alertReleasedJobs(later - 10 * 60_000); // 10 minutes before pickup: released
+  alertReleasedJobs(later - 10 * 60_000); // once only
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('e')]);
   let mine = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
@@ -115,7 +117,7 @@ try {
   sent.length = 0;
   await call(`/orders/${mine.id}/release`, { token: second.token, body: {} });
   await settle();
-  assert.ok(sent.some(s => s.url === fcm('c')));
+  assert.deepEqual(sent.map(s => s.url), [fcm('c')]); // the driver who dropped it is not offered it again
   await call(`/jobs/${mine.id}/accept`, { token: second.token, body: {} });
   sent.length = 0;
   await call(`/orders/${mine.id}/cancel`, { token: customer.token, body: {} });

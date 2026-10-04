@@ -2,10 +2,10 @@
 const words = {
   ar: { title: 'ويند', assigned: 'قبل سائق طلبك', at_pickup: 'وصل السائق إلى نقطة الاستلام', in_transit: 'طلبك في الطريق',
     completed: 'تم التسليم', returned: 'أُعيد الطلب إلى المرسل', message: 'رسالة جديدة بخصوص الطلب', job: 'طلب جديد متاح لك',
-    released: 'اعتذر السائق؛ نبحث لك عن سائق آخر', cancelled: 'ألغى الزبون الطلب' },
+    released: 'اعتذر السائق؛ نبحث لك عن سائق آخر', cancelled: 'أُلغي الطلب' },
   en: { title: 'Wind', assigned: 'A driver accepted your order', at_pickup: 'Your driver is at pickup', in_transit: 'Your order is on its way',
     completed: 'Delivered', returned: 'Returned to the sender', message: 'New message about your order', job: 'A new job is available',
-    released: 'Your driver dropped out; finding another', cancelled: 'The customer cancelled the order' },
+    released: 'Your driver dropped out; finding another', cancelled: 'The order was cancelled' },
 };
 const code = id => `W-${String(id).padStart(5, '0')}`;
 const sameOrigin = value => {

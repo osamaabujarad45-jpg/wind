@@ -178,8 +178,11 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
 for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER']]) {
-  if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
+  if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
+    // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
+    if (column === 'job_alerted_at') db.prepare('UPDATE orders SET job_alerted_at = ? WHERE scheduled_for IS NOT NULL AND scheduled_for <= ?').run(Date.now(), Date.now() + 30 * 60_000);
+  }
 }
 if (!(db.prepare('PRAGMA table_info(order_disputes)').all() as Row[]).some(r => r.name === 'credit_promo_id'))
   db.exec('ALTER TABLE order_disputes ADD COLUMN credit_promo_id INTEGER REFERENCES promo_codes(id)');
@@ -663,24 +666,30 @@ async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   } catch { /* best effort: the app still shows everything on next open */ }
 }
 /** A new job reaches free, approved drivers whose vehicle can take it (at most 100 per order). */
-function newJobPush(service: Service, orderId: number, customerId: number) {
+function newJobPush(service: Service, orderId: number, customerId: number, exceptDriver = 0) {
   // Booking is never refused for this, but one account cannot keep 100 drivers' phones ringing: 5 job alerts per 10 minutes.
-  try { limit(identityKey('job-push', customerId), 5, 10 * 60_000); } catch { return; }
+  try { limit(identityKey('job-push', customerId), 5, 10 * 60_000); } catch { return false; }
   const fits = vehicles.filter(v => vehicleServices[v].includes(service));
   const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
-    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+    AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits, exceptDriver); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
+  return true;
 }
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 export function alertReleasedJobs(now = Date.now()) {
-  for (const o of all("SELECT id, service, customer_id FROM orders WHERE status = 'searching' AND scheduled_for IS NOT NULL AND scheduled_for <= ? AND job_alerted_at IS NULL LIMIT 50", now + RELEASE_BEFORE)) {
-    run('UPDATE orders SET job_alerted_at = ? WHERE id = ?', now, o.id);
-    newJobPush(o.service as Service, o.id as number, o.customer_id as number);
-  }
+  if (draining) return;
+  outbox.length = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // A pickup already past is not a new job; a throttled customer's order is retried next minute.
+    for (const o of all(`SELECT id, service, customer_id FROM orders WHERE status = 'searching' AND scheduled_for IS NOT NULL
+      AND scheduled_for <= ? AND scheduled_for > ? AND job_alerted_at IS NULL LIMIT 50`, now + RELEASE_BEFORE, now))
+      if (newJobPush(o.service as Service, o.id as number, o.customer_id as number)) run('UPDATE orders SET job_alerted_at = ? WHERE id = ? AND job_alerted_at IS NULL', now, o.id);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); outbox.length = 0; throw error; }
   flushPush();
 }
-setInterval(() => { try { alertReleasedJobs(); } catch (error) { outbox.length = 0; console.error(error); } }, 60_000).unref();
 route('GET', '/api/push/key', () => ({ key: b64url(pushKeys().publicRaw) }), true);
 route('POST', '/api/push/subscribe', ({ user, body }) => {
   const endpoint = pushEndpoint(body.endpoint) ?? fail(400, 'invalid_input');
@@ -837,6 +846,7 @@ route('POST', '/api/partner/orders/:id/cancel', ({ req, params }) => {
   if (order.status === 'cancelled') return order;
   if (!['searching', 'assigned'].includes(order.status)) fail(409, 'cannot_cancel');
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
+  if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
   return partnerOrder(req, order.id);
 }, true);
 
@@ -1093,9 +1103,9 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
   const order = getOrder(Number(params[0]), user);
   if (order.driverId !== user.id || order.status !== 'assigned') fail(409, 'cannot_release');
   safetyFree(order.id);
-  run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', updated_at = ? WHERE id = ?", Date.now(), order.id);
+  run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?", Date.now(), Date.now(), order.id);
   queuePush([order.customerId], 'released', order.id);
-  if (!order.scheduledFor || order.scheduledFor <= Date.now() + RELEASE_BEFORE) newJobPush(order.service, order.id, order.customerId);
+  newJobPush(order.service, order.id, order.customerId, user.id); // released orders are visible to drivers again right away
   return { ok: true };
 });
 
@@ -1585,6 +1595,7 @@ if (import.meta.main) {
     run('DELETE FROM request_limits WHERE until < ?', Date.now());
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
+    setInterval(() => { try { alertReleasedJobs(); } catch (error) { console.error(error); } }, 60_000).unref(); // scheduled-job release alerts
     process.once('SIGTERM', () => { shutdown().catch(error => { console.error(error); process.exitCode = 1; }); });
     process.once('SIGINT', () => { shutdown().catch(error => { console.error(error); process.exitCode = 1; }); });
   }
