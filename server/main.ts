@@ -14,6 +14,7 @@ import {
 } from '../src/model.ts';
 
 const DAY = 86_400_000;
+const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
 const SESSION_DAYS = 90;
 const production = process.env.NODE_ENV === 'production';
 const selfService = process.env.WIND_IDENTITY_MODE === 'self-service';
@@ -144,7 +145,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
 }
@@ -285,7 +286,7 @@ function toOrder(r: Row, viewer: User): Order {
     price: r.price, commission: r.commission ?? null, status: r.status,
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
-    sharing: viewer.id === r.customer_id && !!r.share_token_hash,
+    sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     // Both parties learn the order is paused; only the reporter sees their own report.
@@ -303,7 +304,8 @@ function toOrder(r: Row, viewer: User): Order {
 function getOrder(id: number, viewer: User): Order {
   const r = one(`${orderSelect} WHERE o.id = ?`, id) ?? fail(404, 'not_found');
   const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
-    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && vehicleServices[viewer.vehicle ?? 'car'].includes(r.service));
+    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && vehicleServices[viewer.vehicle ?? 'car'].includes(r.service)
+      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
   if (!canSee) fail(404, 'not_found');
   return toOrder(r, viewer);
 }
@@ -506,15 +508,17 @@ function createOrder(user: User, body: Row) {
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
   if (body.quotedPrice != null && Number(body.quotedPrice) !== price) fail(409, 'price_changed');
   const now = Date.now();
+  const scheduledFor = body.scheduledFor ?? null;
+  if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
   const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng,
-    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?)`,
+    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     validPoint ? Number(point.latitude) : null, validPoint ? Number(point.longitude) : null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
-    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now).lastInsertRowid);
+    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor).lastInsertRowid);
   return getOrder(id, user);
 }
 
@@ -761,7 +765,9 @@ route('GET', '/api/jobs', ({ user }) => {
   needActive(user);
   const allowed = vehicleServices[user.vehicle ?? 'car'].filter(service => enabledServices.includes(service));
   if (!allowed.length) return [];
-  return all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')}) ORDER BY o.id LIMIT 50`, ...allowed)
+  // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
+  return all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
+    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE)
     .map(r => toOrder(r, user));
 });
 

@@ -1,0 +1,62 @@
+// Scheduled bookings (SPEC-scheduled-booking.md): bounded times, hidden from drivers until 30 minutes before pickup.
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { defaultSettings, quote } from '../src/model.ts';
+
+process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-schedule-')), 'test.db');
+process.env.WIND_ENABLED_SERVICES = 'parcel';
+const { server, db, promote } = await import('../server/main.ts');
+await new Promise(resolve => server.listen(0, resolve));
+const base = `http://127.0.0.1:${server.address().port}/api`;
+const MIN = 60_000, DAY = 86_400_000;
+
+async function call(path, { token, body, expect = 200 } = {}) {
+  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
+  const data = await res.json();
+  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
+  return data;
+}
+
+try {
+  const admin = await call('/auth/register', { body: { phone: '0599800001', name: 'Admin', password: 'secret1' } });
+  promote('0599800001');
+  const customer = await call('/auth/register', { body: { phone: '0599800002', name: 'Maha', password: 'secret1' } });
+  const driver = await call('/auth/register', { body: { phone: '0599800003', name: 'Driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
+  const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
+    pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599800002', detail: 'Box' };
+  const book = (extra, expect) => call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), ...extra }, expect });
+
+  for (const scheduledFor of [Date.now() + 10 * MIN, Date.now() + 8 * DAY, 'tomorrow', Date.now() + 2 * 3_600_000 + 0.5])
+    assert.equal((await book({ scheduledFor }, 400)).error, 'invalid_schedule');
+
+  const now = await book({});
+  assert.equal(now.scheduledFor, null);
+  const at = Date.now() + 3 * 3_600_000;
+  const later = await book({ scheduledFor: at });
+  assert.equal(later.scheduledFor, at);
+  assert.equal(later.status, 'searching');
+
+  // Drivers only see it 30 minutes before pickup.
+  let jobs = await call('/jobs', { token: driver.token });
+  assert.deepEqual(jobs.map(j => j.id), [now.id]);
+  await call(`/orders/${later.id}`, { token: driver.token, expect: 404 });
+  await call(`/jobs/${later.id}/accept`, { token: driver.token, body: {}, expect: 404 });
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 20 * MIN, later.id);
+  jobs = await call('/jobs', { token: driver.token });
+  assert.deepEqual(jobs.map(j => j.id).sort(), [now.id, later.id].sort());
+  assert.ok(jobs.find(j => j.id === later.id).scheduledFor > Date.now());
+  const accepted = await call(`/jobs/${later.id}/accept`, { token: driver.token, body: {} });
+  assert.equal(accepted.status, 'assigned');
+
+  // The customer can still cancel a scheduled order before a driver takes it.
+  const another = await book({ scheduledFor: Date.now() + DAY });
+  assert.equal((await call(`/orders/${another.id}/cancel`, { token: customer.token, body: {} })).status, 'cancelled');
+
+  console.log('schedule: ok');
+} finally {
+  server.close();
+}
