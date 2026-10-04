@@ -135,6 +135,12 @@ CREATE TABLE IF NOT EXISTS safety_incidents (
   resolved_by INTEGER REFERENCES users(id), created_at INTEGER NOT NULL, resolved_at INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS safety_incidents_open ON safety_incidents(order_id, reporter_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS safety_incidents_order ON safety_incidents(order_id, status);
+CREATE TABLE IF NOT EXISTS checkpoints (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, cities TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS checkpoint_reports (
+  id INTEGER PRIMARY KEY, checkpoint_id INTEGER NOT NULL REFERENCES checkpoints(id), reporter_id INTEGER NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL CHECK (status IN ('open','slow','closed')), note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS checkpoint_reports_recent ON checkpoint_reports(checkpoint_id, created_at);
 CREATE TABLE IF NOT EXISTS saved_places (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),
   city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note));
@@ -757,6 +763,42 @@ route('POST', '/api/admin/incidents/:id/resolve', ({ user, params, body }) => {
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
+});
+
+// Road status (SPEC-road-status.md): admin-managed checkpoints, crowd reports from drivers, fresh for two hours.
+const ROAD_FRESH = 2 * 3_600_000;
+function roads() {
+  const since = Date.now() - ROAD_FRESH;
+  return all('SELECT id, name, cities FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
+    const latest = one('SELECT status, note, created_at FROM checkpoint_reports WHERE checkpoint_id = ? AND created_at > ? ORDER BY created_at DESC, id DESC LIMIT 1', c.id, since);
+    const agreeing = latest ? one('SELECT COUNT(*) n FROM checkpoint_reports WHERE checkpoint_id = ? AND created_at > ? AND status = ?', c.id, since, latest.status)!.n : 0;
+    return { id: c.id, name: c.name, cities: JSON.parse(c.cities), status: latest?.status ?? null, note: latest?.note ?? '', reportedAt: latest?.created_at ?? null, agreeing };
+  });
+}
+route('GET', '/api/roads', () => roads());
+route('POST', '/api/roads/:id/report', ({ user, params, body }) => {
+  if (user.role === 'customer') fail(403, 'forbidden');
+  needActive(user);
+  if (!['open', 'slow', 'closed'].includes(body.status)) fail(400, 'invalid_input');
+  const note = text(body.note, 120, false);
+  const id = Number(params[0]);
+  if (!one('SELECT id FROM checkpoints WHERE id = ? AND active = 1', id)) fail(404, 'not_found');
+  if (one('SELECT id FROM checkpoint_reports WHERE checkpoint_id = ? AND reporter_id = ? AND created_at > ?', id, user.id, Date.now() - 10 * 60_000)) fail(429, 'rate_limited');
+  run('INSERT INTO checkpoint_reports (checkpoint_id, reporter_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)', id, user.id, body.status, note, Date.now());
+  return roads();
+});
+route('POST', '/api/admin/roads', ({ user, body }) => {
+  need(user, 'admin');
+  const name = text(body.name, 80);
+  const list = Array.isArray(body.cities) ? [...new Set(body.cities)] : [];
+  if (name.length < 3 || !list.length || list.length > 3 || !list.every(isCity)) fail(400, 'invalid_input');
+  run('INSERT INTO checkpoints (name, cities, created_by, created_at) VALUES (?, ?, ?, ?)', name, JSON.stringify(list), user.id, Date.now());
+  return roads();
+});
+route('POST', '/api/admin/roads/:id/remove', ({ user, params }) => {
+  need(user, 'admin');
+  if (!run('UPDATE checkpoints SET active = 0 WHERE id = ? AND active = 1', Number(params[0])).changes) fail(404, 'not_found');
+  return roads();
 });
 
 // Drivers
