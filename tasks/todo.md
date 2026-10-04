@@ -1,4 +1,4 @@
-# Tasks: dispute-credit
+# Tasks: web-push
 
-- [x] C1: Goodwill credit on dispute resolution (server + test).
-- [x] C2: Admin credit field, customer card line; copy; docs; screens.
+- [x] W1: VAPID + aes128gcm, subscriptions, events after commit; tests.
+- [ ] W2: Service worker, account toggle, sign-out cleanup; copy; docs; screens.

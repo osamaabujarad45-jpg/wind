@@ -3,7 +3,7 @@
 // Run: node server/main.ts · Make an admin: node server/main.ts promote 0599XXXXXX
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { createBrotliCompress } from 'node:zlib';
@@ -12,6 +12,7 @@ import {
   optionsFor, orderCode, planForRole, quote, services, vehicleServices, vehicles,
   type Order, type Plan, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
+import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
@@ -64,7 +65,7 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
     && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   res.writeHead(200, {
     'Content-Type': contentType,
-    'Cache-Control': extension === '.html' || extension === '.webmanifest' ? 'no-cache' : 'public, max-age=604800, immutable',
+    'Cache-Control': extension === '.html' || extension === '.webmanifest' || file.endsWith('sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
     ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
   });
   const stream = createReadStream(file).on('error', () => res.destroy());
@@ -143,6 +144,11 @@ CREATE TABLE IF NOT EXISTS promo_redemptions (
   promo_id INTEGER NOT NULL REFERENCES promo_codes(id), customer_id INTEGER NOT NULL REFERENCES users(id),
   order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS promo_redemptions_promo ON promo_redemptions(promo_id, customer_id);
+CREATE TABLE IF NOT EXISTS push_keys (id INTEGER PRIMARY KEY CHECK (id = 1), private_jwk TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), p256dh TEXT NOT NULL, auth TEXT NOT NULL,
+  lang TEXT NOT NULL DEFAULT 'ar', created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user ON push_subscriptions(user_id, created_at);
 CREATE TABLE IF NOT EXISTS promo_owners (promo_id INTEGER PRIMARY KEY REFERENCES promo_codes(id), user_id INTEGER NOT NULL REFERENCES users(id));
 CREATE TABLE IF NOT EXISTS referral_codes (user_id INTEGER PRIMARY KEY REFERENCES users(id), code TEXT NOT NULL UNIQUE, active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS referrals (
@@ -471,6 +477,7 @@ function deleteAccount(user: User) {
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
+    run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id);
     run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id); // the code stops working and is never reissued
     run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
     run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id);
@@ -615,6 +622,66 @@ route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
   return all(adminPromos).map(promoRow);
 });
 
+// Web Push (SPEC-web-push.md): opt-in per browser, no provider account. The payload carries a kind and an order id,
+// never names or addresses; the service worker words it in the subscriber's language.
+type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job';
+// ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
+const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
+let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
+function pushKeys() {
+  if (pushKeyCache) return pushKeyCache;
+  if (!one('SELECT id FROM push_keys WHERE id = 1')) run('INSERT OR IGNORE INTO push_keys (id, private_jwk) VALUES (1, ?)',
+    JSON.stringify(generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ format: 'jwk' })));
+  const jwk = JSON.parse(one('SELECT private_jwk FROM push_keys WHERE id = 1')!.private_jwk as string);
+  pushKeyCache = { privateKey: createPrivateKey({ key: jwk, format: 'jwk' }),
+    publicRaw: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]) };
+  return pushKeyCache;
+}
+const outbox: { userIds: number[]; kind: PushKind; order: number }[] = [];
+const queuePush = (userIds: (number | null)[], kind: PushKind, order: number) => {
+  const ids = userIds.filter((id): id is number => id != null);
+  if (ids.length) outbox.push({ userIds: ids, kind, order });
+};
+function flushPush() {
+  for (const { userIds, kind, order } of outbox.splice(0)) {
+    const url = kind === 'job' ? '/driver' : `/order/${order}`;
+    for (const s of all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds))
+      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), kind === 'job' || kind === 'message' ? 'high' : 'normal');
+  }
+}
+async function deliver(s: Row, message: string, urgency: string) {
+  try {
+    const { privateKey, publicRaw } = pushKeys();
+    const res = await fetch(s.endpoint as string, { method: 'POST', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
+      headers: { TTL: '3600', Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT) } });
+    if (res.status === 404 || res.status === 410) run('DELETE FROM push_subscriptions WHERE endpoint = ?', s.endpoint); // the browser dropped it
+  } catch { /* best effort: the app still shows everything on next open */ }
+}
+/** A new job reaches free, approved drivers whose vehicle can take it (at most 100 per order). */
+function newJobPush(service: Service, orderId: number) {
+  const fits = vehicles.filter(v => vehicleServices[v].includes(service));
+  const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
+    AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
+    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) LIMIT 100`, ...fits);
+  queuePush(drivers.map(d => d.id as number), 'job', orderId);
+}
+route('GET', '/api/push/key', () => ({ key: b64url(pushKeys().publicRaw) }), true);
+route('POST', '/api/push/subscribe', ({ user, body }) => {
+  const endpoint = pushEndpoint(body.endpoint) ?? fail(400, 'invalid_input');
+  const key = Buffer.from(String(body.p256dh ?? ''), 'base64url'), auth = Buffer.from(String(body.auth ?? ''), 'base64url');
+  if (key.length !== 65 || key[0] !== 4 || auth.length !== 16) fail(400, 'invalid_input');
+  // A shared browser follows whoever signed in last; five browsers per person.
+  run(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lang, created_at) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, lang = excluded.lang, created_at = excluded.created_at`,
+  endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now());
+  run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint NOT IN (SELECT endpoint FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5)', user.id, user.id);
+  return { ok: true };
+});
+route('POST', '/api/push/unsubscribe', ({ user, body }) => {
+  run('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?', String(body.endpoint ?? ''), user.id);
+  return { ok: true };
+});
+
 // Customers
 function createOrder(user: User, body: Row) {
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
@@ -649,6 +716,7 @@ function createOrder(user: User, body: Row) {
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, now);
+  if (scheduledFor == null) newJobPush(service, id);
   return getOrder(id, user);
 }
 
@@ -924,6 +992,7 @@ route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
   if (!active) fail(409, 'chat_closed');
   limit(identityKey('chat', user.id), 30, 10 * 60_000);
   run('INSERT INTO order_messages (order_id, sender_id, driver_id, sender_role, body, created_at) VALUES (?, ?, ?, ?, ?, ?)', r.id, user.id, r.driver_id, role, message, Date.now());
+  queuePush([role === 'customer' ? r.driver_id : r.customer_id], 'message', r.id);
   return chat(user, r.id, r.driver_id);
 });
 
@@ -993,6 +1062,7 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
     user.id, commissionOn(order.price, rate), Date.now(), order.id).changes;
   if (!changed) fail(409, 'already_taken');
   run('DELETE FROM driver_locations WHERE driver_id = ?', user.id); // an older job's location is not this assignment's fix
+  queuePush([order.customerId], 'assigned', order.id);
   const result = getOrder(order.id, user);
   db.exec('COMMIT');
   return result;
@@ -1031,6 +1101,7 @@ function advanceOrder(user: User, id: number, body: Row) {
     if (next === 'returned') run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now);
     else rewardReferral(r.id, now);
   } else run('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', next, now, r.id);
+  if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') queuePush([r.customer_id], next, r.id);
   return getOrder(r.id, user);
 }
 
@@ -1417,8 +1488,11 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
       limit(identityKey(url.pathname, address), url.pathname.endsWith('register') ? 20 : 50, 10 * 60_000);
     }
+    outbox.length = 0;
     payload = match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
+    flushPush();
   } catch (error) {
+    outbox.length = 0;
     status = error instanceof HttpError ? error.status : (error as { errcode?: number }).errcode === 5 ? 503 : 500;
     payload = { error: error instanceof HttpError ? error.message : 'server_error' };
     if (status >= 500) console.error(error);
