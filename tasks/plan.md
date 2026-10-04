@@ -1,12 +1,7 @@
-# Plan: delivery-exceptions
+# Plan: cash-settlement
 
-Spec: [SPEC-delivery-exceptions.md](../SPEC-delivery-exceptions.md). Approved 2026-10-04.
+Spec: [SPEC-cash-settlement.md](../SPEC-cash-settlement.md). Previous plan (delivery-exceptions) is complete; see git history.
 
-Dependency graph: T1 (model statuses) → T2 (report + resolve API) → T3 (return completion) → T4 (disputes) → T5 (client UI). T5 depends on T2–T4 contracts.
-
-Vertical slices; each task ends green on `npm test && npm run typecheck`.
-
-Checkpoint A after T3: full exception→return path proven by API tests.
-Checkpoint B after T5: lint, typecheck, test, web export.
-
-Risks: hard-coded active-status SQL lists drift (mitigate: derive from `activeStatuses`); rollback (no `user_version` bump, additive columns only); Souq bridge terminal states (handled in Souq module).
+Graph: C1 (ledger + driver balance API) → C2 (admin remittance/adjustment + driver confirm) → C3 (UI: driver card, admin Cash tab).
+Checkpoint after C2: `tests/cash.test.mjs` proves the money rules. Checkpoint after C3: test, typecheck, lint, web export.
+Risk: floating-point fares (REAL) → convert once with ROUND(x*100) in SQL; never sum floats in JS.
