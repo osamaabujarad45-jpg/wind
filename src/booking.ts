@@ -1,7 +1,7 @@
 import { isCity, optionsFor, services, type CityId, type Point, type Service } from './model.ts';
 
 export type BookingPayload = {
-  service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null;
+  service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
   option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
   promoCode?: string; expectedDiscount?: number;
@@ -28,7 +28,8 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || ['pickupNote', 'dropoffNote', 'contact', 'detail'].some(key => typeof p[key as 'detail'] !== 'string')
     || (p.scheduledFor !== undefined && !Number.isInteger(p.scheduledFor))
     || (p.promoCode !== undefined && (typeof p.promoCode !== 'string' || !Number.isInteger(p.expectedDiscount)))
-    || (p.pickupPoint !== null && (!Number.isFinite(p.pickupPoint?.latitude) || !Number.isFinite(p.pickupPoint?.longitude)))) {
+    || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
+    || p.pickupPoint === undefined) {
     throw new Error('invalid_pending_booking');
   }
   return booking;

@@ -35,7 +35,7 @@ try {
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Secret landmark', dropoffNote: 'Private door', contact: '0599400002', detail: 'Gift',
-    pickupPoint: { latitude: 31.9, longitude: 35.2 } };
+    pickupPoint: { latitude: 31.9, longitude: 35.2 }, dropoffPoint: { latitude: 32.2222, longitude: 35.2611 } };
   let order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
 
   // Only the order's customer can share it.
@@ -63,13 +63,13 @@ try {
   assert.deepEqual(Object.keys(live).sort(),
     ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'service', 'status', 'updatedAt'].sort());
   assert.deepEqual(live.driver, { firstName: 'Sami', vehicle: 'van' });
-  assert.deepEqual(Object.keys(live.driverLocation).sort(), ['latitude', 'longitude', 'updatedAt']);
+  assert.deepEqual(Object.keys(live.driverLocation).sort(), ['heading', 'latitude', 'longitude', 'updatedAt']);
   assert.equal(live.driverLocation.latitude, 32);
   // Check the explicit public contract rather than matching numeric substrings in a timestamp.
   // For example, a legitimate `updatedAt` can happen to contain the price "49".
   assert.equal('price' in live, false);
   const body = JSON.stringify(live);
-  for (const secret of ['0599400002', '0599400003', 'Secret landmark', 'Private door', 'Lina', 'Khalil', 'Gift'])
+  for (const secret of ['0599400002', '0599400003', 'Secret landmark', 'Private door', 'Lina', 'Khalil', 'Gift', '32.2222', '35.2611'])
     assert.ok(!body.includes(secret), `public view leaked ${secret}`);
   db.prepare('UPDATE driver_locations SET updated_at = ?').run(Date.now() - 121_000);
   assert.equal((await call(`/track/${second.token}`)).driverLocation, null); // stale positions are not shown

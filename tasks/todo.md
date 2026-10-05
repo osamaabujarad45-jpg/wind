@@ -1,4 +1,7 @@
-# Tasks: web-push
+# Tasks: live-map
 
-- [x] W1: VAPID + aes128gcm, subscriptions, events after commit; tests.
-- [x] W2: Service worker, account toggle, sign-out cleanup; copy; docs; screens.
+- [ ] L1: dropoff point + heading/accuracy on the server; tests.
+- [ ] L2: MapLibre web map with live driver; fallback; helpers tested.
+- [ ] L3: map pin picker in booking (pickup + dropoff).
+- [ ] L4: order screen, driver navigate, public track page; copy; screens.
+- [ ] L5: bundle/perf measurement recorded in SPEC.

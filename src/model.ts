@@ -80,7 +80,7 @@ export type Subscription = { id: number; userId: number; plan: Plan; status: 'pe
 
 export type Order = {
   id: number; customerId: number; driverId: number | null; service: Service; shared: boolean;
-  pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null;
+  pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
@@ -88,7 +88,7 @@ export type Order = {
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
-  driverLocation?: (Point & { updatedAt: number; ageSeconds: number }) | null;
+  driverLocation?: (Point & { updatedAt: number; ageSeconds: number; heading?: number | null; accuracy?: number | null }) | null;
 };
 
 export function city(id: CityId) {

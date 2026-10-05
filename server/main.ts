@@ -182,12 +182,16 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
     if (column === 'job_alerted_at') db.prepare('UPDATE orders SET job_alerted_at = ? WHERE scheduled_for IS NOT NULL AND scheduled_for <= ?').run(Date.now(), Date.now() + 30 * 60_000);
   }
+}
+for (const column of ['heading', 'accuracy']) {
+  if (!(db.prepare('PRAGMA table_info(driver_locations)').all() as Row[]).some(r => r.name === column))
+    db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} REAL`);
 }
 if (!(db.prepare('PRAGMA table_info(order_disputes)').all() as Row[]).some(r => r.name === 'credit_promo_id'))
   db.exec('ALTER TABLE order_disputes ADD COLUMN credit_promo_id INTEGER REFERENCES promo_codes(id)');
@@ -307,7 +311,7 @@ const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
 const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
-  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
+  l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
   (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open
@@ -322,6 +326,7 @@ function toOrder(r: Row, viewer: User): Order {
     id: r.id, customerId: r.customer_id, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
     pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     pickupPoint: (owner || assigned) && r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null,
+    dropoffPoint: (owner || assigned) && r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null,
     pickupNote: owner || assigned ? r.pickup_note : '', dropoffNote: owner || assigned ? r.dropoff_note : '',
     detail: owner || assigned ? r.detail : '', option: r.option, loadingHelp: !!r.loading_help,
     contact: owner || assigned ? r.contact : null, // drivers see phones only after accepting
@@ -341,7 +346,8 @@ function toOrder(r: Row, viewer: User): Order {
       credit: r.dispute_credit_code ? { code: r.dispute_credit_code as string, amount: r.dispute_credit_amount as number } : null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
-    driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)) } : null,
+    driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)),
+      heading: r.loc_heading ?? null, accuracy: r.loc_accuracy ?? null } : null,
   };
 }
 
@@ -487,7 +493,7 @@ function deleteAccount(user: User) {
       fail(409, 'active_orders');
     run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL WHERE id = ?`, `deleted-${user.id}`, user.id);
-    run(`UPDATE orders SET contact = '', pickup_contact = '', handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, share_token_hash = NULL
+    run(`UPDATE orders SET contact = '', pickup_contact = '', handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
@@ -718,6 +724,14 @@ route('POST', '/api/push/unsubscribe', ({ user, body }) => {
 });
 
 // Customers
+const finite = (v: unknown, max: number, min = -max): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+// Optional map point: absent is fine, anything else must be a real coordinate.
+function pointOf(p: any): { latitude: number; longitude: number } | null {
+  if (p == null) return null;
+  if (!finite(p.latitude, 90) || !finite(p.longitude, 180)) fail(400, 'invalid_location');
+  return { latitude: p.latitude, longitude: p.longitude };
+}
+
 function createOrder(user: User, body: Row) {
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
@@ -725,9 +739,7 @@ function createOrder(user: User, body: Row) {
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
-  const point = body.pickupPoint;
-  const validPoint = point && typeof point.latitude === 'number' && typeof point.longitude === 'number' && Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180;
-  if (point != null && !validPoint) fail(400, 'invalid_location');
+  const point = pointOf(body.pickupPoint), dropoff = pointOf(body.dropoffPoint);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
   const price = quote(settings(), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
     plus: activePlan(user.id) === 'plus' });
@@ -738,11 +750,11 @@ function createOrder(user: User, body: Row) {
   if (promo && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
-  const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng,
+  const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
-    validPoint ? Number(point.latitude) : null, validPoint ? Number(point.longitude) : null,
+    point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
@@ -910,7 +922,7 @@ route('GET', '/api/track/([a-f0-9]{64})', ({ params }) => {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at,
     driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null } : null,
-    driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at } : null,
+    driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
   };
 }, true);
 
@@ -1234,10 +1246,13 @@ route('POST', '/api/location', ({ user, body }) => {
   needActive(user);
   need(user, 'driver');
   if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'no_active_job');
-  const lat = body.latitude, lng = body.longitude;
-  if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng) || !(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) fail(400, 'invalid_location');
-  run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at`, user.id, lat, lng, Date.now());
+  const { latitude: lat, longitude: lng } = pointOf({ latitude: body.latitude, longitude: body.longitude })!;
+  // Optional extras for a better marker; devices report -1 or nothing when unknown.
+  const heading = body.heading == null || body.heading === -1 ? null : finite(body.heading, 360, 0) ? body.heading : fail(400, 'invalid_location');
+  const accuracy = body.accuracy == null ? null : finite(body.accuracy, 5000, 0) ? body.accuracy : fail(400, 'invalid_location');
+  run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy`,
+  user.id, lat, lng, Date.now(), heading, accuracy);
   return { ok: true };
 });
 
