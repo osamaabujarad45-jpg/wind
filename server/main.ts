@@ -9,9 +9,9 @@ import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  activeStatuses, cities, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
+  activeStatuses, cities, city, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
   optionsFor, orderCode, planForRole, quote, services, vehicleServices, vehicles,
-  type Order, type Plan, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
+  type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
 
@@ -1281,6 +1281,48 @@ route('POST', '/api/location', ({ user, body }) => {
   return { ok: true };
 });
 
+// Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients keep straight lines.
+const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
+type RoadRoute = { km: number; minutes: number; line: [number, number][] };
+const roadCache = new Map<string, Promise<RoadRoute>>(); // ponytail: oldest-first eviction at 2000; LRU if hit rates matter
+function roadRoute(a: Point, b: Point): Promise<RoadRoute> {
+  if (!osrmUrl) fail(503, 'route_unavailable');
+  const at = (p: Point) => `${p.longitude.toFixed(4)},${p.latitude.toFixed(4)}`; // ~10 m: nearby fixes share an answer
+  const key = `${at(a)};${at(b)}`;
+  let found = roadCache.get(key);
+  if (!found) {
+    found = fetch(`${osrmUrl}/route/v1/driving/${key}?overview=simplified&geometries=geojson`, { signal: AbortSignal.timeout(3000) })
+      .then(res => res.json()).then((j: any) => {
+        const r = j?.code === 'Ok' ? j.routes?.[0] : null;
+        if (!r || !Array.isArray(r.geometry?.coordinates)) throw new HttpError(404, 'no_route');
+        return { km: Math.round(r.distance / 100) / 10, minutes: Math.max(1, Math.round(r.duration / 60)),
+          line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) };
+      })
+      .catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    roadCache.set(key, found);
+    if (roadCache.size > 2000) roadCache.delete(roadCache.keys().next().value!);
+  }
+  return found;
+}
+const queryPoint = (value: string | null) => {
+  const [lat, lng] = (value ?? '').split(',').map(Number);
+  return pointOf({ latitude: lat, longitude: lng })!;
+};
+route('GET', '/api/route', ({ user, query }) => {
+  limit(identityKey('route', user.id), 120, 10 * 60_000);
+  return roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')));
+});
+
+// Public trip page: minutes only, from the fresh driver fix to the next stop's city (it never sees exact pins).
+route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
+  const hash = sha(params[0]!);
+  limit(identityKey('track-eta', hash), 60, 10 * 60_000);
+  const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
+  if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
+  const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
+  return roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next).then(road => ({ minutes: road.minutes }));
+}, true);
+
 route('GET', '/api/driver/earnings', ({ user }) => {
   need(user, 'driver');
   const since = (from: number) => {
@@ -1580,7 +1622,8 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       limit(identityKey(url.pathname, address), url.pathname.endsWith('register') ? 20 : 50, 10 * 60_000);
     }
     outbox.length = 0;
-    payload = match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
+    const out = match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
+    payload = out instanceof Promise ? await out : out; // only road routing is async; the rest stay synchronous
     flushPush();
   } catch (error) {
     outbox.length = 0;

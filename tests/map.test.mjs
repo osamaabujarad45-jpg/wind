@@ -67,6 +67,9 @@ try {
   assert.equal(seen.heading, 12.5);
   assert.equal(seen.accuracy, 8);
 
+  // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
+  await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });
+
   // Pure helpers used by the map.
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.9, longitude: 35.2 })), 0);
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 31.9, longitude: 35.3 })), 90);
