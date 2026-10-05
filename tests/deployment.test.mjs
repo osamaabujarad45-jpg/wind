@@ -1,13 +1,30 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { request } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+
+// The runtime image copies src files one by one: every module the server reaches must be listed (5 Oct 2026: a deploy
+// failed its health check because server/main.ts started importing src/map-math.ts).
+{
+  const root = new URL('../', import.meta.url), read = rel => readFileSync(new URL(rel, root), 'utf8');
+  const runtime = read('Dockerfile').split(/^FROM /m).at(-1);
+  const needed = new Set(), queue = readdirSync(new URL('server/', root)).filter(f => f.endsWith('.ts')).map(f => `server/${f}`);
+  while (queue.length) {
+    const file = queue.pop(), base = file.slice(0, file.lastIndexOf('/') + 1);
+    for (const [, spec] of read(file).matchAll(/from '(\.{1,2}\/[^']+\.ts)'/g)) {
+      const target = new URL(spec, new URL(base, root)).pathname.slice(new URL(root).pathname.length);
+      if (target.startsWith('src/') && !needed.has(target)) { needed.add(target); queue.push(target); }
+    }
+  }
+  assert.ok(needed.has('src/model.ts'));
+  for (const file of needed) assert.ok(runtime.includes(`COPY ${file} ./${file}`) || /^COPY src \.\/src$/m.test(runtime), `Dockerfile runtime stage must copy ${file}`);
+}
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-deploy-'));
 const path = join(dir, 'test.db'), web = join(dir, 'web'), main = fileURLToPath(new URL('../server/main.ts', import.meta.url));

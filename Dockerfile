@@ -19,6 +19,7 @@ WORKDIR /app
 RUN mkdir -p /data && chown node:node /data
 COPY server ./server
 COPY src/model.ts ./src/model.ts
+COPY src/map-math.ts ./src/map-math.ts
 COPY --from=web-build /app/dist ./web
 COPY assets/icon.png ./web/wind-icon.png
 # TZ sets the calendar day for earnings and the admin dashboard.
