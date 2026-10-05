@@ -8,7 +8,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type SafetyKind } from '../../model';
+import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
@@ -53,6 +53,9 @@ export default function OrderScreen() {
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   const { road, eta } = useRoad(order);
+  // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
+  const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
+  const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
   useFocusEffect(useCallback(() => {
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -163,8 +166,17 @@ export default function OrderScreen() {
         </Row>}
         {live && eta && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="time" size={16} color={palette.olive} />
-          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status) ? c.etaToPickup : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
+          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status)
+            ? alerts.length ? c.etaToPickupSlow : c.etaToPickup
+            : alerts.length ? c.etaToDropoffSlow : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
         </Row>}
+        {live && eta && location && !location.stale && !error && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
+          onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          <Row gap={8}>
+            <Ionicons name="warning-outline" size={16} color={palette.clayInk} />
+            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
+          </Row>
+        </Press>}
       </View>
     </Appear>
 

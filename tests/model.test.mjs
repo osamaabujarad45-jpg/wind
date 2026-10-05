@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, city, nearestCity, nextStatus, normalizePhone, quote, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, city, nearestCity, nextStatus, normalizePhone, quote, roadAlerts, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -31,3 +31,9 @@ console.log('Model checks passed');
   assert.equal(nextStatus('returning'), 'returned');
   assert.ok(activeStatuses.every(s => !finishedStatuses.includes(s)));
 }
+
+// Road-aware ETA (SPEC-road-aware-eta.md): only slow/closed checkpoints touching either trip city.
+const road = (id, status, cities) => ({ id, name: `c${id}`, cities, status, note: '', reportedAt: 1, agreeing: 1 });
+const roads = [road(1, 'closed', ['nablus']), road(2, 'slow', ['ramallah', 'bireh']), road(3, 'open', ['nablus']), road(4, null, ['ramallah']), road(5, 'closed', ['hebron'])];
+assert.deepEqual(roadAlerts(roads, 'ramallah', 'nablus').map(r => r.id), [1, 2]);
+assert.deepEqual(roadAlerts(roads, 'jenin', 'jenin'), []);

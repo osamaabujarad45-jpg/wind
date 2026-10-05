@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage } from '../api';
 import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import RouteMap, { canPin, PinMap } from '../route-map';
 import { useSession } from '../session';
@@ -69,7 +69,7 @@ export default function Book() {
   useEffect(() => { if (isCustomer) api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); }, [isCustomer]);
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
-  const roadAlerts = roads.filter(r => (r.status === 'slow' || r.status === 'closed') && (r.cities.includes(pickupCity) || r.cities.includes(dropoffCity)));
+  const alerts = roadAlerts(roads, pickupCity, dropoffCity);
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
@@ -257,9 +257,9 @@ export default function Book() {
         {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
       </Card>
 
-      {roadAlerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
+      {alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
-        {roadAlerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
+        {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
       </Card></View>}
 

@@ -1,7 +1,5 @@
-# Plan: android-map (SPEC-android-map.md) — done; then web-bundle part 2 (SPEC-web-bundle.md) — done
+# Plan: road-aware-eta
 
-1. A1: `public/map.html` (route + pin modes, message protocol); headless check.
-2. A2: `src/route-map.android.tsx` (WebView, failure fallback, link policy); tests.
-3. A3: deploy Wind, APK 1.0.5, phone check, ship notes.
-4. W1: `src/motion.tsx` CSS stand-in + `motion.native.ts`; swap 8 imports; splash fade as CSS; guard test.
-5. W2: screens + intro frame comparison with production; bundle and LCP numbers; deploy.
+1. `roadAlerts()` in `src/road.ts` + unit test; book.tsx uses it.
+2. Order screen: poll `/roads` while ETA shows, wording `etaToPickupOpen`/`etaToDropoffOpen` + checkpoint line → Roads.
+3. Checks: npm test, tsc, lint, screens; phone check against local API (adb reverse), deploy, push, ship log.

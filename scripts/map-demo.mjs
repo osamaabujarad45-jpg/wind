@@ -25,6 +25,11 @@ const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'bireh',
   pickupPoint: { latitude: 31.9022, longitude: 35.2063 }, dropoffPoint: { latitude: 31.9106, longitude: 35.2167 } };
 const order = await call('/orders', customer.token, { ...input, quotedPrice: quote(defaultSettings, input), requestId: randomUUID() });
 await call(`/jobs/${order.id}/accept`, driver.token, {});
+// A closed checkpoint on the route turns the ETA into "N+ min" (SPEC-road-aware-eta.md); DEMO_ROADS=0 skips it.
+if (process.env.DEMO_ROADS !== '0') {
+  const [road] = await call('/admin/roads', admin.token, { name: 'Surda', cities: ['ramallah', 'bireh'] });
+  await call(`/roads/${road.id}/report`, driver.token, { status: 'closed' });
+}
 // Driver drives from Al-Tireh toward the pickup, one fix every 3 s.
 let lat = 31.9135, lng = 35.1955;
 setInterval(() => {

@@ -24,6 +24,9 @@ export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_addr
 export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
 export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null; credit?: { code: string; amount: number } | null };
 export type Road = { id: number; name: string; cities: CityId[]; status: 'open' | 'slow' | 'closed' | null; note: string; reportedAt: number | null; agreeing: number };
+/** Checkpoints touching either city with a recent slow/closed report: booking warning and live ETA wording. */
+export const roadAlerts = (roads: Road[], ...on: CityId[]) =>
+  roads.filter(r => (r.status === 'slow' || r.status === 'closed') && r.cities.some(c => on.includes(c)));
 export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string };
 export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string }[] };
 export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
