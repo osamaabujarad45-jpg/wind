@@ -32,7 +32,9 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `trip-issues` | Uber "Help with a trip": report an issue on a finished order, support reply, goodwill credit | Help page and support link only | No | `promo-referral` (credit codes) |
 | `sms-otp` | Verified phone via OTP | Unverified self-service | **Yes** — SMS gateway (Jawwal/Ooredoo bulk SMS) | — |
 | `digital-payments` | Card/wallet in app | Cash only | **Yes** — PMA-licensed provider (PalPay, Jawwal Pay…) + contract | `cash-settlement` |
-| `routing-eta` | Real routing + ETA ranges | Straight-line × 1.3 | **Yes** — OSRM self-host or Mapbox | `road-status` |
+| `live-map` | Real map, pin drop, moving car | **Shipped 2026-10-05** (SPEC-live-map.md): MapLibre + OpenFreeMap on web/home-screen app, pickup/dropoff pins, live driver with heading/accuracy, turn-by-turn to exact points | No | — |
+| `routing-eta` | Road-snapped route line + ETA ranges ("driver 6–9 min away") | Dashed straight line; ETA straight-line × 1.3 | Infra only — self-host OSRM with the Geofabrik Israel-and-Palestine extract as a second Railway service (~1 GB RAM for preprocessing, ~300 MB serving). No third-party API; coordinates never leave our infra | `live-map`, `road-status` |
+| `android-map` | Map inside the Android app | Diagram (no Google key) | No — render the same MapLibre page in a WebView (`react-native-webview`), needs a new APK build | `live-map` |
 
 Skipped on purpose: surge pricing (PRODUCT.md forbids unexplained surge), pooling,
 multi-stop, background GPS (Play policy), food delivery (Yummy owns it).
