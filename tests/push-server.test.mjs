@@ -118,11 +118,28 @@ try {
   await call(`/orders/${mine.id}/release`, { token: second.token, body: {} });
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('c')]); // the driver who dropped it is not offered it again
-  await call(`/jobs/${mine.id}/accept`, { token: second.token, body: {} });
+  assert.equal((await call('/jobs', { token: second.token })).some(job => job.id === mine.id), false);
+  await call(`/jobs/${mine.id}/accept`, { token: second.token, body: {}, expect: 404 });
+  const replacement = await call('/auth/register', { body: { phone: '0599150006', name: 'Nour', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${replacement.user.id}/approve`, { token: admin.token, body: {} });
+  assert.equal((await call('/jobs', { token: replacement.token })).some(job => job.id === mine.id), true);
+  await call('/push/subscribe', { token: replacement.token, body: { endpoint: fcm('f'), ...browserKeys() } });
+  await call(`/jobs/${mine.id}/accept`, { token: replacement.token, body: {} });
+  db.prepare('DELETE FROM request_limits').run(); // exercise the second release's job-alert fan-out, not its per-customer throttle
+  sent.length = 0;
+  await call(`/orders/${mine.id}/release`, { token: replacement.token, body: {} });
+  await settle();
+  assert.deepEqual(sent.map(s => s.url), [fcm('c')]); // every previous dropper stays excluded from push alerts too
+  assert.equal((await call('/jobs', { token: second.token })).some(job => job.id === mine.id), false);
+  assert.equal((await call('/jobs', { token: replacement.token })).some(job => job.id === mine.id), false);
+  const finalDriver = await call('/auth/register', { body: { phone: '0599150007', name: 'Rami', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${finalDriver.user.id}/approve`, { token: admin.token, body: {} });
+  await call('/push/subscribe', { token: finalDriver.token, body: { endpoint: fcm('g'), ...browserKeys() } });
+  await call(`/jobs/${mine.id}/accept`, { token: finalDriver.token, body: {} });
   sent.length = 0;
   await call(`/orders/${mine.id}/cancel`, { token: customer.token, body: {} });
   await settle();
-  assert.deepEqual(sent.map(s => s.url), [fcm('e')]);
+  assert.deepEqual(sent.map(s => s.url), [fcm('g')]);
 
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });

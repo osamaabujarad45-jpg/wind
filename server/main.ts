@@ -105,6 +105,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS partner_orders (
   external_ref TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id));
+-- A driver who returns a job must never be offered that same job again. Keep every
+-- release, not only the latest one, because multiple drivers can decline in turn.
+CREATE TABLE IF NOT EXISTS order_releases (
+  order_id INTEGER NOT NULL REFERENCES orders(id), driver_id INTEGER NOT NULL REFERENCES users(id), released_at INTEGER NOT NULL,
+  PRIMARY KEY(order_id, driver_id));
 CREATE TABLE IF NOT EXISTS order_commands (
   user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id), PRIMARY KEY(user_id, request_id));
@@ -342,10 +347,12 @@ function toOrder(r: Row, viewer: User): Order {
 
 function getOrder(id: number, viewer: User): Order {
   const r = one(`${orderSelect} WHERE o.id = ?`, id) ?? fail(404, 'not_found');
+  const released = viewer.role === 'driver' && r.status === 'searching' &&
+    !!one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id);
   const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
     (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && vehicleServices[viewer.vehicle ?? 'car'].includes(r.service)
       && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
-  if (!canSee) fail(404, 'not_found');
+  if (!canSee || released) fail(404, 'not_found');
   return toOrder(r, viewer);
 }
 
@@ -672,7 +679,8 @@ function newJobPush(service: Service, orderId: number, customerId: number, excep
   const fits = vehicles.filter(v => vehicleServices[v].includes(service));
   const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
-    AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits, exceptDriver); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+    AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = ? AND r.driver_id = u.id)
+    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
 }
@@ -1072,7 +1080,9 @@ route('GET', '/api/jobs', ({ user }) => {
   if (!allowed.length) return [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
   return all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
-    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE)
+    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?)
+    AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE, user.id)
     .map(r => toOrder(r, user));
 });
 
@@ -1087,8 +1097,9 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
   if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
   const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
-  const changed = run("UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ? WHERE id = ? AND status = 'searching'",
-    user.id, commissionOn(order.price, rate), Date.now(), order.id).changes;
+  const changed = run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?
+    WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
+  user.id, commissionOn(order.price, rate), Date.now(), order.id, order.id, user.id).changes;
   if (!changed) fail(409, 'already_taken');
   run('DELETE FROM driver_locations WHERE driver_id = ?', user.id); // an older job's location is not this assignment's fix
   queuePush([order.customerId], 'assigned', order.id);
@@ -1100,12 +1111,21 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
 
 route('POST', '/api/orders/:id/release', ({ user, params }) => {
   need(user, 'driver'); needActive(user);
-  const order = getOrder(Number(params[0]), user);
-  if (order.driverId !== user.id || order.status !== 'assigned') fail(409, 'cannot_release');
-  safetyFree(order.id);
-  run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?", Date.now(), Date.now(), order.id);
+  const order = (() => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const current = getOrder(Number(params[0]), user);
+      if (current.driverId !== user.id || current.status !== 'assigned') fail(409, 'cannot_release');
+      safetyFree(current.id);
+      const now = Date.now();
+      run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?", now, now, current.id);
+      run('INSERT OR IGNORE INTO order_releases (order_id, driver_id, released_at) VALUES (?, ?, ?)', current.id, user.id, now);
+      db.exec('COMMIT');
+      return current;
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  })();
   queuePush([order.customerId], 'released', order.id);
-  newJobPush(order.service, order.id, order.customerId, user.id); // released orders are visible to drivers again right away
+  newJobPush(order.service, order.id, order.customerId, user.id); // the releasing driver is excluded
   return { ok: true };
 });
 
