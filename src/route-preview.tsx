@@ -12,6 +12,8 @@ export type RouteMapProps = {
   road?: [number, number][] | null;
   /** Road geometry from the live driver to the next stop, drawn in the driver colour. */
   approach?: [number, number][] | null;
+  /** Closed checkpoints the route goes around (or still crosses), drawn as no-entry markers. */
+  closed?: Point[] | null;
 };
 export type PinMapProps = { center: Point; onChange: (point: Point) => void; height?: number };
 

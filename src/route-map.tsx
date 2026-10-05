@@ -73,6 +73,13 @@ function dot(color: string, square = false) {
   el.style.cssText = `width:18px;height:18px;border-radius:${square ? 5 : 9}px;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)`;
   return el;
 }
+// Closed checkpoint: a no-entry sign, the same everywhere drivers look.
+function noEntry() {
+  const el = document.createElement('div');
+  el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="#C62828" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>';
+  el.style.cssText = 'width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))';
+  return el;
+}
 function driverIcon(arrow: boolean) {
   const el = document.createElement('div');
   el.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="${palette.blue}" stroke="#fff" stroke-width="3"/>${
@@ -96,7 +103,7 @@ function LiveMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c, language } = useCopy();
   const host = useRef<View>(null);
-  const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number }>({});
+  const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[] }>({});
   const [moved, setMoved] = useState(false);
   const points = [pickup, dropoff, ...(driver ? [driver] : [])];
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
@@ -127,6 +134,14 @@ function LiveMap(props: RouteMapProps) {
     // Without a driver, frame the whole road route: it can bend outside the two pins.
     if (road && !driver && !moved) map.fitBounds(fitBounds(road.map(([longitude, latitude]) => ({ latitude, longitude }))), { padding, maxZoom: 16 });
   }, [map, lineKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
+  useEffect(() => {
+    const state = markers.current;
+    if (!map || !state.ml) return;
+    state.closed?.forEach(m => m.remove());
+    state.closed = (props.closed ?? []).map(p => new state.ml!.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
+  }, [map, closedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Driver: glide from the shown position to the new fix instead of jumping every poll.
   const heading = driver?.heading ?? null, accuracy = driver?.accuracy ?? null;

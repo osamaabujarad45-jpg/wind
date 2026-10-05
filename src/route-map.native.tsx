@@ -24,6 +24,9 @@ export default function RouteMap(props: RouteMapProps) {
     {props.approach && <Polyline coordinates={props.approach.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.blue} strokeWidth={5} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
     <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
+    {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
+      <Ionicons name="remove-circle" size={24} color="#C62828" />
+    </Marker>)}
     {driver && <Marker coordinate={driver} title={driverTitle} flat rotation={driver.heading ?? 0} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
     </Marker>}

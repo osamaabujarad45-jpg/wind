@@ -39,3 +39,31 @@ export const etaRange = (minutes: number): [number, number] => [minutes, Math.ro
 export const roadPath = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }, grid = 3, heading?: number | null) =>
   `/route?from=${a.latitude.toFixed(grid)},${a.longitude.toFixed(grid)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}${
     heading == null ? '' : `&heading=${Math.round(heading / 15) * 15 % 360}`}`; // heading lets the route start the way the car faces
+
+/** True when `p` lies within `metres` of the polyline `line` ([lng, lat][]); local flat-earth metres, fine below ~100 km. */
+export function nearLine(p: Point, line: [number, number][], metres: number): boolean {
+  const kx = 111_320 * Math.cos(rad(p.latitude)), ky = 110_540;
+  for (let i = 1; i < line.length; i++) {
+    const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
+    const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
+    const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
+    if (Math.hypot(ax + t * dx, ay + t * dy) <= metres) return true;
+  }
+  return line.length === 1 && Math.hypot((line[0][0] - p.longitude) * kx, (line[0][1] - p.latitude) * ky) <= metres;
+}
+
+/**
+ * True when the polyline drives back over itself: a point comes within `within` m of an earlier one after more than
+ * `loop` m of travel. Forced detours through a via point that snaps onto a dead-end road do this (out and back).
+ */
+export function backtracks(line: [number, number][], loop = 300, within = 25): boolean {
+  if (line.length < 3) return false;
+  const kx = 111_320 * Math.cos(rad(line[0][1])), ky = 110_540;
+  const p = line.map(([x, y]) => [x * kx, y * ky]), travelled = [0];
+  for (let i = 1; i < p.length; i++) travelled.push(travelled[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  // ponytail: O(n²) over full geometry (~1.5k points, ~10 candidates, cached); a grid index if routes get much longer
+  for (let i = 0; i < p.length; i++)
+    for (let k = i + 1; k < p.length; k++)
+      if (travelled[k] - travelled[i] > loop && Math.hypot(p[k][0] - p[i][0], p[k][1] - p[i][1]) < within) return true;
+  return false;
+}

@@ -12,7 +12,7 @@ import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses,
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
-import { useRoad } from '../../road';
+import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
@@ -52,7 +52,7 @@ export default function OrderScreen() {
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
-  const { road, approach, eta } = useRoad(order);
+  const { road, approach, eta, avoids, through, closed } = useRoad(order);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
@@ -157,7 +157,7 @@ export default function OrderScreen() {
     <Appear index={1}>
       <View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} />
+          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
@@ -177,6 +177,7 @@ export default function OrderScreen() {
             <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
           </Row>
         </Press>}
+        {live && <RouteCheckpoints avoids={avoids} through={through} />}
       </View>
     </Appear>
 

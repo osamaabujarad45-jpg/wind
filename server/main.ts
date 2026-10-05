@@ -9,10 +9,11 @@ import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  activeStatuses, cities, city, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
+  activeStatuses, cities, city, commissionOn, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
   optionsFor, orderCode, planForRole, quote, roadAlerts, services, vehicleServices, vehicles,
-  type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
+  type CityId, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
+import { backtracks, nearLine } from '../src/map-math.ts';
 import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
 
 const DAY = 86_400_000;
@@ -214,6 +215,10 @@ for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'
 for (const column of ['heading', 'accuracy']) {
   if (!(db.prepare('PRAGMA table_info(driver_locations)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} REAL`);
+}
+for (const column of ['lat', 'lng']) { // checkpoint position for routing (SPEC-checkpoint-routing.md)
+  if (!(db.prepare('PRAGMA table_info(checkpoints)').all() as Row[]).some(r => r.name === column))
+    db.exec(`ALTER TABLE checkpoints ADD COLUMN ${column} REAL`);
 }
 if (!(db.prepare('PRAGMA table_info(order_disputes)').all() as Row[]).some(r => r.name === 'credit_promo_id'))
   db.exec('ALTER TABLE order_disputes ADD COLUMN credit_promo_id INTEGER REFERENCES promo_codes(id)');
@@ -1074,12 +1079,13 @@ route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
 const ROAD_FRESH = 2 * 3_600_000;
 function roads() {
   const since = Date.now() - ROAD_FRESH;
-  return all('SELECT id, name, cities FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
+  return all('SELECT id, name, cities, lat, lng FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
     // Blocked (and deleted) accounts stop counting; each person counts once however often they report.
     const recent = `FROM checkpoint_reports r JOIN users u ON u.id = r.reporter_id WHERE r.checkpoint_id = ? AND r.created_at > ? AND u.status <> 'blocked'`;
     const latest = one(`SELECT r.status, r.note, r.created_at ${recent} ORDER BY r.created_at DESC, r.id DESC LIMIT 1`, c.id, since);
     const agreeing = latest ? one(`SELECT COUNT(DISTINCT r.reporter_id) n ${recent} AND r.status = ?`, c.id, since, latest.status)!.n : 0;
-    return { id: c.id, name: c.name, cities: JSON.parse(c.cities), status: latest?.status ?? null, note: latest?.note ?? '', reportedAt: latest?.created_at ?? null, agreeing };
+    return { id: c.id, name: c.name, cities: JSON.parse(c.cities), point: c.lat == null ? null : { latitude: c.lat, longitude: c.lng },
+      status: latest?.status ?? null, note: latest?.note ?? '', reportedAt: latest?.created_at ?? null, agreeing };
   });
 }
 route('GET', '/api/roads', () => roads());
@@ -1100,7 +1106,21 @@ route('POST', '/api/admin/roads', ({ user, body }) => {
   const name = text(body.name, 80);
   const list = Array.isArray(body.cities) ? [...new Set(body.cities)] : [];
   if (name.length < 3 || !list.length || list.length > 3 || !list.every(isCity)) fail(400, 'invalid_input');
-  run('INSERT INTO checkpoints (name, cities, created_by, created_at) VALUES (?, ?, ?, ?)', name, JSON.stringify(list), user.id, Date.now());
+  const point = checkpointPoint(body.point, list);
+  run('INSERT INTO checkpoints (name, cities, lat, lng, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', name, JSON.stringify(list), point?.latitude ?? null, point?.longitude ?? null, user.id, Date.now());
+  return roads();
+});
+// A position lets routing steer around the checkpoint while it is reported closed (SPEC-checkpoint-routing.md).
+function checkpointPoint(raw: unknown, list: CityId[]) {
+  const point = pointOf(raw);
+  if (point && !list.some(id => distanceKm(city(id), point) <= 25)) fail(400, 'checkpoint_too_far');
+  return point;
+}
+route('POST', '/api/admin/roads/:id/place', ({ user, params, body }) => {
+  need(user, 'admin');
+  const row = one('SELECT cities FROM checkpoints WHERE id = ? AND active = 1', Number(params[0])) ?? fail(404, 'not_found');
+  const point = checkpointPoint(body.point, JSON.parse(row.cities)) ?? fail(400, 'invalid_location');
+  run('UPDATE checkpoints SET lat = ?, lng = ? WHERE id = ?', point.latitude, point.longitude, Number(params[0]));
   return roads();
 });
 route('POST', '/api/admin/roads/:id/remove', ({ user, params }) => {
@@ -1281,28 +1301,69 @@ route('POST', '/api/location', ({ user, body }) => {
   return { ok: true };
 });
 
-// Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients keep straight lines.
+// Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
-type RoadRoute = { km: number; minutes: number; line: [number, number][] };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
+type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
 const roadCache = new Map<string, Promise<RoadRoute>>(); // ponytail: oldest-first eviction at 2000; LRU if hit rates matter
-// Fastest road route (OSRM, car profile, multi-level Dijkstra). A known driver heading is passed as a bearing hint so the
-// route starts the way the car is already moving instead of an impossible U-turn. Full geometry: simplified lines cut
-// corners through buildings at street zoom.
+// Calibrated on Route 60 (2026-10-05): at 150 m a road 234 m away counted as clear yet may be the same junction; 250 m
+// forced 94-minute detours where a 72-minute parallel road exists. Tune both with real checkpoint positions.
+const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpoint is taken to pass through it
+const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking checkpoint (10 parallel OSRM calls, cached)
+
+async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
+  const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
+    { signal: AbortSignal.timeout(3000) });
+  const j: any = await res.json();
+  if (j?.code !== 'Ok' || !Array.isArray(j.routes)) return [];
+  return j.routes.filter((r: any) => Array.isArray(r.geometry?.coordinates))
+    .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+}
+
+// Best road route (SPEC-checkpoint-routing.md): OSRM's fastest (car profile, multi-level Dijkstra), unless it crosses a
+// checkpoint drivers report closed — then the fastest alternative or forced detour that stays clear of every closed one.
+// A known driver heading is a bearing hint so the route starts the way the car moves. Full geometry: simplified lines
+// cut corners through buildings at street zoom.
 function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<RoadRoute> {
   if (!osrmUrl) fail(503, 'route_unavailable');
-  const at = (p: Point) => `${p.longitude.toFixed(4)},${p.latitude.toFixed(4)}`; // ~10 m: nearby fixes share an answer
-  const key = `${at(a)};${at(b)}`, bearing = heading == null ? '' : `&bearings=${Math.round(heading / 15) * 15 % 360},60;`;
-  let found = roadCache.get(key + bearing);
+  const closed = roads().filter(r => r.status === 'closed' && r.point) as { id: number; name: string; point: Point }[];
+  // ~10 m rounding: nearby fixes share one request and one cached answer.
+  const round = (p: Point) => ({ latitude: Math.round(p.latitude * 1e4) / 1e4, longitude: Math.round(p.longitude * 1e4) / 1e4 });
+  a = round(a); b = round(b);
+  const at = (p: Point) => `${p.longitude},${p.latitude}`;
+  const hint = heading == null ? null : Math.round(heading / 15) * 15 % 360;
+  // A new closure, or a closed checkpoint moved on the map, re-routes at once.
+  const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `${c.id}@${at(c.point)}`).join(',')}`;
+  let found = roadCache.get(key);
   if (!found) {
-    found = fetch(`${osrmUrl}/route/v1/driving/${key}?overview=full&geometries=geojson${bearing}`, { signal: AbortSignal.timeout(3000) })
-      .then(res => res.json()).then((j: any) => {
-        const r = j?.code === 'Ok' ? j.routes?.[0] : null;
-        if (!r || !Array.isArray(r.geometry?.coordinates)) throw new HttpError(404, 'no_route');
-        return { km: Math.round(r.distance / 100) / 10, minutes: Math.max(1, Math.round(r.duration / 60)),
-          line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) };
-      })
-      .catch(error => { roadCache.delete(key + bearing); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
-    roadCache.set(key + bearing, found);
+    found = (async () => {
+      const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
+      if (!routes.length) throw new HttpError(404, 'no_route');
+      const crossed = (r: OsrmRoute) => closed.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
+      const fastest = routes[0], blocked = crossed(fastest);
+      let chosen = fastest;
+      if (blocked.length) {
+        const usable = (r: OsrmRoute) => !crossed(r).length && !backtracks(r.line); // no out-and-back to a dead-end via point
+        let options = routes.filter(usable);
+        if (!options.length) {
+          // Perpendicular to the route at the first blocking checkpoint, 1–8 km to either side.
+          const c = blocked[0].point, gap = (p: [number, number]) => Math.hypot(p[0] - c.longitude, p[1] - c.latitude);
+          const i = fastest.line.reduce((best, p, k) => gap(p) < gap(fastest.line[best]) ? k : best, 0); // route point nearest the checkpoint
+          const p1 = fastest.line[Math.max(0, i - 3)], p2 = fastest.line[Math.min(fastest.line.length - 1, i + 3)];
+          const kx = 111_320 * Math.cos(c.latitude * Math.PI / 180), dx = (p2[0] - p1[0]) * kx, dy = (p2[1] - p1[1]) * 110_540, n = Math.hypot(dx, dy) || 1;
+          const vias = DETOUR_KM.flatMap(km => [1, -1].map(side => ({
+            latitude: c.latitude + side * (dx / n) * km * 1000 / 110_540, longitude: c.longitude - side * (dy / n) * km * 1000 / kx })));
+          const detours = await Promise.all(vias.map(v => osrmRoutes([a, v, b], hint == null ? '' : `&bearings=${hint},60;;`).then(r => r[0], () => undefined)));
+          options = detours.filter((r): r is OsrmRoute => !!r && usable(r));
+        }
+        chosen = options.sort((x, y) => x.duration - y.duration)[0] ?? fastest;
+      }
+      const through = crossed(chosen);
+      return { km: Math.round(chosen.distance / 100) / 10, minutes: Math.max(1, Math.round(chosen.duration / 60)), line: chosen.line,
+        avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name),
+        closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
+    })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    roadCache.set(key, found);
     if (roadCache.size > 2000) roadCache.delete(roadCache.keys().next().value!);
   }
   return found;

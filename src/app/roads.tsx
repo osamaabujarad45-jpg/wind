@@ -4,7 +4,9 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { AccessibilityInfo, View } from 'react-native';
 import { api, useApi } from '../api';
-import { cities, city, type CityId, type Road } from '../model';
+import { cities, city, type CityId, type Point, type Road } from '../model';
+import PinSheet from '../pin-sheet';
+import { canPin } from '../route-map';
 import { useSession } from '../session';
 import { Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
@@ -16,7 +18,9 @@ export default function Roads() {
   const { data, error, reload, setData } = useApi<Road[]>('/roads', 60_000);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState('');
-  const [draft, setDraft] = useState<{ name: string; cities: CityId[] }>({ name: '', cities: [] });
+  const [draft, setDraft] = useState<{ name: string; cities: CityId[]; point?: Point }>({ name: '', cities: [] });
+  // Pin sheet: an existing checkpoint (its id) or the new one being added ('draft').
+  const [pinFor, setPinFor] = useState<{ id: number | 'draft'; start: Point } | null>(null);
   const [now, setNow] = useState(Date.now);
   useFocusEffect(useCallback(() => { // report ages stay current while the screen is open
     setNow(Date.now());
@@ -58,6 +62,9 @@ export default function Roads() {
               onPress={() => send(`${road.id}${status}`, `/roads/${road.id}/report`, { status }, c.roadReported)} />
           </View>)}
         </Row>}
+        {isAdmin && <Txt variant="caption" style={{ marginTop: 8, color: road.point ? palette.olive : palette.clayInk }}>{road.point ? c.roadPlaced : c.roadUnplaced}</Txt>}
+        {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy}
+          loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: road.point ?? city(road.cities[0]) })} />}
         {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy}
           onPress={() => confirm(fill(c.roadRemoveConfirm, { name: road.name }), () => send(`rm${road.id}`, `/admin/roads/${road.id}/remove`, {}, c.roadRemoved))} />}
       </Card>)}
@@ -77,8 +84,18 @@ export default function Roads() {
           </Press>;
         })}
       </View>
+      {canPin && <Button title={draft.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="soft" disabled={!!busy || !draft.cities.length}
+        onPress={() => setPinFor({ id: 'draft', start: draft.point ?? city(draft.cities[0]) })} />}
+      {!!draft.point && <Txt variant="caption" style={{ marginBottom: 8, color: palette.olive }}>{c.roadPlaced}</Txt>}
       <Button title={c.roadAdd} icon="add-circle-outline" loading={busy === 'add'} disabled={!!busy || draft.name.trim().length < 3 || !draft.cities.length}
-        onPress={() => send('add', '/admin/roads', { name: draft.name.trim(), cities: draft.cities }).then(ok => ok && setDraft({ name: '', cities: [] }))} />
+        onPress={() => send('add', '/admin/roads', { name: draft.name.trim(), cities: draft.cities, ...(draft.point && { point: draft.point }) })
+          .then(ok => ok && setDraft({ name: '', cities: [] }))} />
     </Card>}
+    {pinFor && <PinSheet title={c.roadPinTitle} hint={c.roadPinHint} start={pinFor.start} onClose={() => setPinFor(null)} onConfirm={point => {
+      const target = pinFor.id;
+      setPinFor(null);
+      if (target === 'draft') setDraft(d => ({ ...d, point }));
+      else void send(`pin${target}`, `/admin/roads/${target}/place`, { point }, c.roadPlaceDone);
+    }} />}
   </Screen>;
 }

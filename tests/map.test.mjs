@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { bearing, ease, etaRange, fitBounds, labelField, roadPath } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, labelField, nearLine, roadPath } from '../src/map-math.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -82,6 +82,18 @@ try {
   assert.ok(e - w > 0.005 && n - s > 0.005);
   assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
   assert.deepEqual(etaRange(10), [10, 15]);
+// Checkpoint-on-route test (SPEC-checkpoint-routing.md): a west-east segment along latitude 32.
+const seg = [[35.20, 32.0], [35.22, 32.0]];
+assert.ok(nearLine({ latitude: 32.001, longitude: 35.21 }, seg, 150), '~110 m north of the middle');
+assert.ok(!nearLine({ latitude: 32.002, longitude: 35.21 }, seg, 150), '~220 m north');
+assert.ok(!nearLine({ latitude: 32.0, longitude: 35.2225 }, seg, 150), '~236 m past the end (clamped to the end point)');
+assert.ok(nearLine({ latitude: 32.0, longitude: 35.2214 }, [[35.2214, 32.0]], 10), 'single-point line');
+assert.ok(nearLine({ latitude: 32.0005, longitude: 35.2 }, [[35.2, 32.0], [35.2, 32.0], [35.2, 32.01]], 100), 'repeated point then a segment');
+// Out-and-back detours (via point on a dead end) are rejected; a straight drive or a short U-turn is not.
+assert.ok(!backtracks([[35.2, 32.0], [35.21, 32.0], [35.22, 32.0]]), 'straight ~1.9 km');
+assert.ok(backtracks([[35.2, 32.0], [35.21, 32.0], [35.22, 32.0], [35.21, 32.0], [35.23, 32.01]]), '~950 m out and back');
+assert.ok(!backtracks([[35.2, 32.0], [35.201, 32.0], [35.2, 32.0001], [35.19, 32.0]]), '~190 m loop: a U-turn, not a spur');
+assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
 

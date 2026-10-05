@@ -35,7 +35,21 @@ try {
   let roads = await call('/admin/roads', { token: admin.token, body: { name: ' Checkpoint A ', cities: ['ramallah', 'nablus', 'ramallah'] } });
   roads = await call('/admin/roads', { token: admin.token, body: { name: 'Checkpoint B', cities: ['hebron'] } });
   const a = roads.find(r => r.name === 'Checkpoint A');
-  assert.deepEqual(a, { id: a.id, name: 'Checkpoint A', cities: ['ramallah', 'nablus'], status: null, note: '', reportedAt: null, agreeing: 0 });
+  assert.deepEqual(a, { id: a.id, name: 'Checkpoint A', cities: ['ramallah', 'nablus'], point: null, status: null, note: '', reportedAt: null, agreeing: 0 });
+
+  // Position (SPEC-checkpoint-routing.md): optional, within 25 km of one of its cities, admin-only to set later.
+  for (const point of [{ latitude: 95, longitude: 35 }, { latitude: '32', longitude: 35 }])
+    assert.equal((await call('/admin/roads', { token: admin.token, body: { name: 'Checkpoint C', cities: ['ramallah'], point }, expect: 400 })).error, 'invalid_location');
+  assert.equal((await call('/admin/roads', { token: admin.token, body: { name: 'Checkpoint C', cities: ['ramallah'], point: { latitude: 31.5326, longitude: 35.0998 } }, expect: 400 })).error, 'checkpoint_too_far');
+  roads = await call('/admin/roads', { token: admin.token, body: { name: 'Checkpoint C', cities: ['ramallah'], point: { latitude: 31.95, longitude: 35.22 } } });
+  assert.deepEqual(roads.find(r => r.name === 'Checkpoint C').point, { latitude: 31.95, longitude: 35.22 });
+  await call(`/admin/roads/${a.id}/place`, { token: driver.token, body: { point: { latitude: 32.1, longitude: 35.25 } }, expect: 403 });
+  await call(`/admin/roads/${a.id}/place`, { token: admin.token, body: {}, expect: 400 });
+  assert.equal((await call(`/admin/roads/${a.id}/place`, { token: admin.token, body: { point: { latitude: 31.53, longitude: 35.1 } }, expect: 400 })).error, 'checkpoint_too_far'); // Hebron
+  await call('/admin/roads/999/place', { token: admin.token, body: { point: { latitude: 32.1, longitude: 35.25 } }, expect: 404 });
+  roads = await call(`/admin/roads/${a.id}/place`, { token: admin.token, body: { point: { latitude: 32.1, longitude: 35.25 } } });
+  assert.deepEqual(roads.find(r => r.id === a.id).point, { latitude: 32.1, longitude: 35.25 });
+  roads = await call(`/admin/roads/${roads.find(r => r.name === 'Checkpoint C').id}/remove`, { token: admin.token, body: {} });
 
   // Who may report.
   await call(`/roads/${a.id}/report`, { token: customer.token, body: { status: 'open' }, expect: 403 });

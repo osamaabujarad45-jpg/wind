@@ -10,7 +10,9 @@ import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBoo
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
-import RouteMap, { canPin, PinMap } from '../route-map';
+import PinSheet from '../pin-sheet';
+import RouteMap, { canPin } from '../route-map';
+import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
@@ -72,7 +74,7 @@ export default function Book() {
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
   // Road line for the preview map (never a straight line); absent while loading or without routing.
-  const preview = useApi<{ km: number; line: [number, number][] }>(roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5)).data;
+  const preview = useApi<RoadRoute>(roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5)).data;
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
@@ -227,7 +229,8 @@ export default function Book() {
       <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
         <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
           <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
-            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} />
+            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} closed={preview?.closed} />
+          <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
         </View>
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
           <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} />
@@ -381,25 +384,6 @@ function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorro
     : new Date(ms).toLocaleDateString(fmt(language), { weekday: 'short', day: 'numeric', timeZone: HEBRON });
 }
 const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(fmt(language), { hour: 'numeric', minute: '2-digit', timeZone: HEBRON });
-
-// Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
-function PinSheet({ title, start, onClose, onConfirm }: { title: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void }) {
-  const { c } = useCopy();
-  const [point, setPoint] = useState<Point>({ latitude: start.latitude, longitude: start.longitude });
-  return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-    <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
-    <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
-      <View style={styles.grip} />
-      <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
-      <Txt variant="caption" style={{ marginBottom: 10 }}>{c.pinHint}</Txt>
-      <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-        <PinMap center={start} onChange={setPoint} height={360} />
-      </View>
-      <Button title={c.confirmPin} icon="checkmark" onPress={() => onConfirm(point)} />
-      <Button title={c.cancel} variant="ghost" onPress={onClose} />
-    </SafeAreaView>
-  </Modal>;
-}
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 
