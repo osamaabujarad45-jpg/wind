@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { bearing, ease, fitBounds, labelField } from '../src/map-math.ts';
+import { bearing, ease, etaRange, fitBounds, labelField, roadPath } from '../src/map-math.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -80,6 +80,8 @@ try {
   const [[w, s], [e, n]] = fitBounds([{ latitude: 32, longitude: 35 }]);
   assert.ok(e - w > 0.005 && n - s > 0.005);
   assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+  assert.deepEqual(etaRange(10), [10, 15]);
+  assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).

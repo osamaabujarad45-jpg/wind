@@ -106,11 +106,24 @@ function LiveMap(props: RouteMapProps) {
     new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
     m.addSource('route', { type: 'geojson', data: line(pickup, dropoff) });
     m.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': palette.forest, 'line-width': 3, 'line-dasharray': [2, 1.5] } });
+    m.addSource('road', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    m.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': palette.forest, 'line-width': 4, 'line-opacity': 0.85 } });
     m.addSource('accuracy', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     m.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': palette.blue, 'circle-opacity': 0.12, 'circle-stroke-color': palette.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
     m.on('dragstart', () => setMoved(true));
     m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) setMoved(true); });
   });
+
+  // Road route arrives after the map: swap the dashed straight line for the solid road line (and back if it goes away).
+  const road = props.road;
+  const roadKey = road ? `${road.length}:${road[0]}:${road[road.length - 1]}` : '';
+  useEffect(() => {
+    if (!map) return;
+    (map.getSource('road') as GeoJSONSource | undefined)?.setData(road
+      ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: road } } : { type: 'FeatureCollection', features: [] });
+    map.setLayoutProperty('route', 'visibility', road ? 'none' : 'visible');
+  }, [map, roadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Driver: glide from the shown position to the new fix instead of jumping every poll.
   const heading = driver?.heading ?? null, accuracy = driver?.accuracy ?? null;

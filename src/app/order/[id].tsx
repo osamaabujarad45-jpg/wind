@@ -12,6 +12,7 @@ import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses,
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
+import { useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
@@ -51,6 +52,7 @@ export default function OrderScreen() {
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
+  const { road, eta } = useRoad(order);
   useFocusEffect(useCallback(() => {
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -152,12 +154,16 @@ export default function OrderScreen() {
     <Appear index={1}>
       <View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-          driver={order.driverLocation} driverTitle={order.driverName} />
+          driver={order.driverLocation} driverTitle={order.driverName} road={road} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
             ? fill(location.stale || error ? c.lastDriver : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
             : c.noDriverLocation}</Txt>
+        </Row>}
+        {live && eta && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          <Ionicons name="time" size={16} color={palette.olive} />
+          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status) ? c.etaToPickup : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
         </Row>}
       </View>
     </Appear>

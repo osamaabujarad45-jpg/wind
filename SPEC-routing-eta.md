@@ -20,11 +20,11 @@ route and an ETA that updates as the car moves. Straight-line distance is badly 
   exact pins), `{ minutes }` only, no geometry.
 - **Client**: the map draws the road line pickup→dropoff (solid) instead of the dashed straight one; the order
   screen shows "Driver ~7–10 min away" (to pickup before collection, to dropoff after). ETA refreshes when the
-  driver moved ≥ 150 m or 60 s passed. Range = OSRM minutes … ×1.3 + 2 (checkpoints make single numbers lie).
+  driver moved ~110 m (coordinates rounded to 3 decimals; a fresh fix within that cell reuses the answer). Range = OSRM minutes … ×1.3 + 2 (checkpoints make single numbers lie).
 
 ## Acceptance
 - AC1 `/api/route` validates coordinates (400), needs a session (401), returns 503 without OSRM, caches repeats.
 - AC2 Order screen and public page show an ETA range while a driver is live; nothing when stale or no OSRM.
 - AC3 Map draws the OSRM line when available, the straight dashed line otherwise.
-- AC4 OSRM is not publicly reachable; Wind reaches it privately. Live check: Ramallah→Nablus returns 55–75 km.
-- AC5 Existing suites green; web first-paint bundle growth ≤ 2 kB gzip.
+- AC4 OSRM is not publicly reachable; Wind reaches it privately. Live check: Ramallah→Nablus returns 45–70 km (measured 53.6 km, 62 min; straight line 46 km).
+- AC5 Existing suites green; web first-paint bundle growth ≤ 2 kB gzip. **Missed: +3.1 kB gzip (479.5 → 482.6 kB), accepted by lead** (road hook, ETA copy, road layer).

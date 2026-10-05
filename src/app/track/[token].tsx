@@ -5,6 +5,7 @@ import { Linking, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
 import { locationState } from '../../location-state';
+import { etaRange } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { RouteLine, ServiceIcon } from '../../parts';
 import RouteMap from '../../route-map';
@@ -18,6 +19,8 @@ export default function TrackScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { c, language } = useCopy();
   const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
+  const valid = /^[a-f0-9]{64}$/.test(token ?? '');
+  const eta = useApi<{ minutes: number | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data?.minutes;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
 
@@ -42,6 +45,8 @@ export default function TrackScreen() {
       </Row>
       <RouteLine from={from[language]} to={to[language]} />
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
+      {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit' ? c.etaToDropoff : c.etaToPickup,
+        { lo: etaRange(eta)[0], hi: etaRange(eta)[1] })}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6 }}>{fill(c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}
       {location && <Button title={c.navigate} icon="map-outline" variant="soft"
         onPress={() => { void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`).catch(() => undefined); }} />}

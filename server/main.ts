@@ -1629,7 +1629,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     outbox.length = 0;
     status = error instanceof HttpError ? error.status : (error as { errcode?: number }).errcode === 5 ? 503 : 500;
     payload = { error: error instanceof HttpError ? error.message : 'server_error' };
-    if (status >= 500) console.error(error);
+    if (status >= 500 && !(error instanceof HttpError && error.message === 'route_unavailable')) console.error(error); // routing off/down is expected; clients fall back
   }
   if (status === 429 || status === 503) res.setHeader('Retry-After', '60');
   res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));

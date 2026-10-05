@@ -31,3 +31,10 @@ export function fitBounds(points: Point[]): [[number, number], [number, number]]
 export const labelField = (language: 'ar' | 'en') => language === 'ar'
   ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
+
+/** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
+export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
+
+/** /api/route query for two points; coordinates rounded to ~110 m so a moving driver refetches only every ~110 m. */
+export const roadPath = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }, grid = 3) =>
+  `/route?from=${a.latitude.toFixed(grid)},${a.longitude.toFixed(grid)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}`;
