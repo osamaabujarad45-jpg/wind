@@ -62,3 +62,18 @@ So maps are not accurate and tracking is not visible on the platforms people act
 ## Constraints
 
 No new paid provider. No API keys in the client. Respect OpenFreeMap fair use (tiles cached by the browser; no prefetch storms). Accessibility: the map is decorative-plus; all information (status, freshness, cities, landmarks) stays in text next to it.
+
+## Result (2026-10-05)
+
+| Measure | Before | After |
+|---|---|---|
+| Web first-paint JS (gzip) | 670,327 B | 674,029 B (+3.7 kB, AC6 ✓) |
+| Render-blocking CSS | 0 | 0 (MapLibre CSS injected with the library) |
+| Map code, first map view only | — | 305 kB gzip (`maplibre-gl.mjs` 152 + shared 147 + worker 6), immutable-cached, shared module downloaded once for page + worker |
+| Order page → markers drawn (local, warm cache) | — | 3.8 s from navigation incl. app boot and order fetch |
+
+Implementation notes for later passes:
+- MapLibre is vendored under `public/vendor/maplibre-<version>/` and loaded with native `import()` (Metro cannot resolve the worker's `import.meta.url`). After `npm i maplibre-gl@x`, copy the four dist files to a new versioned folder and update `MAPLIBRE` in `src/route-map.tsx`; `tests/map.test.mjs` fails until you do.
+- `.maplibregl-map { position: relative }` collapses a React Native Web view, so the map gets its own inline-styled child div.
+- Readiness is `style.load` (the `load` event waits for every tile; it took >20 s once).
+- `scripts/map-demo.mjs`: local demo with a moving driver (export the web app with `EXPO_PUBLIC_API_URL=http://localhost:<PORT>` first).

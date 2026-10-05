@@ -24,7 +24,7 @@
   <ul>
     <li><b>Account:</b> your name, email, mobile number, account type, and for drivers the vehicle type. We record your privacy/terms consent and administrator approval separately from contact verification. Self-service registration does not verify your phone or email. Your password is stored only as a salted hash.</li>
     <li><b>Orders:</b> pickup and destination city, the landmarks and notes you type, the item or load description, a contact number, price, status, and your rating.</li>
-    <li><b>Customer location:</b> only if you allow it, one GPS point when you book, used as the pickup point.</li>
+    <li><b>Customer location:</b> only if you allow it, one GPS point when you book, used as the pickup point. You can also place exact pickup and drop-off pins on the map; they are shown only to you, your assigned driver and support, never on a shared tracking link.</li>
     <li><b>Driver location:</b> with permission, an approved driver shares precise GPS only during an assigned active order while the app is open, about every 10 seconds or after moving 30 metres. Collection stops in the background or when the order ends. Only the latest position is kept; no route history is stored.</li>
     <li><b>Partner shipping:</b> when you request shipping in Souq, Souq supplies the pickup and destination cities, landmarks, parcel description, and sender and receiver contact numbers. Status and assigned-driver details are returned to Souq for that shipment.</li>
   </ul>
@@ -35,10 +35,10 @@
     <li>Customers see the assigned driver's name, phone number and vehicle type in their order, including after it ends. A fresh driver position is shown only while the order is active.</li>
     <li>Wind staff see accounts and orders to run the service, approve drivers, and handle support.</li>
   </ul>
-  <p>We do not sell your data, show ads, or use third-party analytics. When maps are enabled, Apple Maps (iOS) or Google Maps (Android) receives map requests under its own policy. Android without a map key shows a route preview. Payment for transport is in cash; plans that discount transport prices or driver commissions are paid in cash or by bank transfer outside the app.</p>
+  <p>We do not sell your data, show ads, or use third-party analytics. When maps are enabled, Apple Maps (iOS) or Google Maps (Android) receives map requests under its own policy. In the browser and the iPhone home-screen app, map images come from OpenFreeMap (OpenStreetMap data), which sees the map area being viewed and your IP address, never your account or order. Android without a map key shows a route preview. Payment for transport is in cash; plans that discount transport prices or driver commissions are paid in cash or by bank transfer outside the app.</p>
 
   <h2>How long we keep it</h2>
-  <p>Account data is kept while your account exists. When you delete your account, your name, mobile number, password and vehicle are cleared, sessions and driver position are removed, and the personal fields of orders you placed (contact numbers, landmarks, description, GPS point) are cleared. Order and activated or rejected plan records (cities, price, dates, status and internal account identifier) remain, along with operational and security records: account role and timestamps, request identifiers and hashes, partner shipment references, ratings and proof-attempt records. Staff notes explaining a delivery-code reset also remain and may contain personal text. These retained records have no automatic expiry in the current system.</p>
+  <p>Account data is kept while your account exists. When you delete your account, your name, mobile number, password and vehicle are cleared, sessions and driver position are removed, and the personal fields of orders you placed (contact numbers, landmarks, description, map points) are cleared. Order and activated or rejected plan records (cities, price, dates, status and internal account identifier) remain, along with operational and security records: account role and timestamps, request identifiers and hashes, partner shipment references, ratings and proof-attempt records. Staff notes explaining a delivery-code reset also remain and may contain personal text. These retained records have no automatic expiry in the current system.</p>
   <p>Earlier backups may still contain data from before deletion; changing the live account does not erase those copies. Ask support about retention and deletion of retained records and backups. Deleting one account does not delete the other party's account or their orders. For a shipment requested through Souq, ask support about the data held by each service.</p>
 
   <h2>Delete your account</h2>
@@ -56,7 +56,7 @@
   <ul>
     <li><b>الحساب:</b> اسمك، بريدك الإلكتروني، رقم جوالك، نوع الحساب، ونوع المركبة للسائقين. نسجّل موافقتك على الخصوصية والشروط واعتماد الإدارة بشكل منفصل عن التحقق من وسائل التواصل. التسجيل لا يعني أن البريد أو الجوال موثّق. كلمة المرور تُحفظ مشفّرة بشكل لا يمكن استرجاعه.</li>
     <li><b>الطلبات:</b> مدينة الاستلام والوصول، المعالم والملاحظات التي تكتبها، وصف الغرض أو الحمولة، رقم التواصل، السعر، الحالة، وتقييمك.</li>
-    <li><b>موقع الزبون:</b> فقط إذا سمحت بذلك، نقطة واحدة عند الحجز تُستخدم كنقطة استلام.</li>
+    <li><b>موقع الزبون:</b> فقط إذا سمحت بذلك، نقطة واحدة عند الحجز تُستخدم كنقطة استلام. ويمكنك أيضاً تحديد نقطتي الاستلام والتسليم بدقة على الخريطة؛ لا يراهما إلا أنت والسائق المسند والدعم، ولا تظهران أبداً في رابط التتبع المشترك.</li>
     <li><b>موقع السائق:</b> بإذنه، يُرسل السائق المعتمد موقعه الدقيق خلال طلب جارٍ مسند إليه والتطبيق مفتوح، كل 10 ثوانٍ تقريباً أو بعد تحركه 30 متراً. يتوقف الجمع في الخلفية أو عند انتهاء الطلب. نحتفظ بآخر موقع فقط ولا نخزّن سجل المسار.</li>
     <li><b>شحن سوق:</b> عند طلب الشحن من سوق، تصلنا مدن الاستلام والوصول والمعالم ووصف الشحنة وأرقام المرسل والمستلم. نعيد حالة الشحنة وبيانات السائق المسند إليها إلى سوق.</li>
   </ul>
@@ -67,10 +67,10 @@
     <li>يرى الزبون اسم السائق ورقمه ونوع مركبته في طلبه، حتى بعد انتهائه. يظهر موقع السائق الحديث فقط خلال الطلب الجاري.</li>
     <li>يرى فريق ويند الحسابات والطلبات لتشغيل الخدمة واعتماد السائقين والدعم.</li>
   </ul>
-  <p>لا نبيع بياناتك ولا نعرض إعلانات ولا نستخدم أدوات تحليل خارجية. عند تفعيل الخرائط تصل طلباتها إلى خرائط Apple (آيفون) أو Google (أندرويد) وفق سياساتهم. يظهر مخطط للمسار على أندرويد دون مفتاح خرائط. النقل يُدفع نقداً، والخطط التي تخفّض أجرة النقل أو عمولة السائق تُدفع نقداً أو بتحويل بنكي خارج التطبيق.</p>
+  <p>لا نبيع بياناتك ولا نعرض إعلانات ولا نستخدم أدوات تحليل خارجية. عند تفعيل الخرائط تصل طلباتها إلى خرائط Apple (آيفون) أو Google (أندرويد) وفق سياساتهم. في المتصفح وتطبيق الشاشة الرئيسية على آيفون تأتي صور الخريطة من OpenFreeMap (بيانات OpenStreetMap)، ويرى منطقة الخريطة المعروضة وعنوان IP فقط، لا حسابك ولا طلبك. يظهر مخطط للمسار على أندرويد دون مفتاح خرائط. النقل يُدفع نقداً، والخطط التي تخفّض أجرة النقل أو عمولة السائق تُدفع نقداً أو بتحويل بنكي خارج التطبيق.</p>
 
   <h2>مدة الاحتفاظ</h2>
-  <p>نحتفظ ببيانات الحساب ما دام الحساب موجوداً. عند حذفه نمسح الاسم ورقم الجوال وكلمة المرور والمركبة والجلسات وموقع السائق، ونمسح بيانات الطلبات التي أنشأتها (أرقام التواصل، المعالم، الوصف، نقطة الموقع). تبقى سجلات الطلبات والخطط المفعّلة أو المرفوضة (المدن، السعر، التاريخ، الحالة ومعرّف الحساب الداخلي)، وسجلات التشغيل والأمان: نوع الحساب وتواريخه، معرّفات الطلبات وبصماتها الرقمية، مراجع الشحن لدى الشريك، التقييمات ومحاولات رمز التسليم. وتبقى ملاحظات الموظفين التي تشرح إعادة فتح محاولات الرمز، وقد تحتوي على بيانات شخصية. لا تنتهي مدة هذه السجلات تلقائياً في النظام الحالي.</p>
+  <p>نحتفظ ببيانات الحساب ما دام الحساب موجوداً. عند حذفه نمسح الاسم ورقم الجوال وكلمة المرور والمركبة والجلسات وموقع السائق، ونمسح بيانات الطلبات التي أنشأتها (أرقام التواصل، المعالم، الوصف، نقاط الموقع). تبقى سجلات الطلبات والخطط المفعّلة أو المرفوضة (المدن، السعر، التاريخ، الحالة ومعرّف الحساب الداخلي)، وسجلات التشغيل والأمان: نوع الحساب وتواريخه، معرّفات الطلبات وبصماتها الرقمية، مراجع الشحن لدى الشريك، التقييمات ومحاولات رمز التسليم. وتبقى ملاحظات الموظفين التي تشرح إعادة فتح محاولات الرمز، وقد تحتوي على بيانات شخصية. لا تنتهي مدة هذه السجلات تلقائياً في النظام الحالي.</p>
   <p>قد تحتفظ النسخ الاحتياطية الأقدم ببيانات من قبل الحذف؛ حذف الحساب الحالي لا يمسح تلك النسخ. اسأل الدعم عن الاحتفاظ بالسجلات والنسخ الاحتياطية وحذفها. حذف حسابك لا يحذف حساب الطرف الآخر أو طلباته. لشحنة طُلبت من سوق، تواصل مع الدعم بشأن البيانات لدى الخدمتين.</p>
 
   <h2>حذف الحساب</h2>
