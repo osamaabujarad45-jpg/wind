@@ -10,7 +10,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  optionsFor, orderCode, planForRole, quote, services, vehicleServices, vehicles,
+  optionsFor, orderCode, planForRole, quote, roadAlerts, services, vehicleServices, vehicles,
   type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
@@ -1320,7 +1320,9 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
-  return roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next).then(road => ({ minutes: road.minutes }));
+  // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
+  const delayed = roadAlerts(roads(), r.pickup_city, r.dropoff_city).length > 0;
+  return roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next).then(road => ({ minutes: road.minutes, delayed }));
 }, true);
 
 route('GET', '/api/driver/earnings', ({ user }) => {

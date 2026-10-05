@@ -63,7 +63,17 @@ try {
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } });
   calls = 0;
-  assert.deepEqual(await call(`/track/${token}/eta`), { minutes: 55 });
+  assert.deepEqual(await call(`/track/${token}/eta`), { minutes: 55, delayed: false });
+  assert.equal(calls, 1);
+  // A closed checkpoint touching either city flags the public ETA (SPEC-road-aware-eta.md); an open one does not.
+  const [far] = await call('/admin/roads', { token: admin.token, body: { name: 'Far', cities: ['hebron'] } });
+  await call(`/roads/${far.id}/report`, { token: driver.token, body: { status: 'closed' } });
+  assert.equal((await call(`/track/${token}/eta`)).delayed, false);
+  const [near] = (await call('/admin/roads', { token: admin.token, body: { name: 'Huwwara', cities: ['nablus'] } })).filter(r => r.name === 'Huwwara');
+  await call(`/roads/${near.id}/report`, { token: admin.token, body: { status: 'open' } });
+  assert.equal((await call(`/track/${token}/eta`)).delayed, false);
+  await call(`/roads/${near.id}/report`, { token: driver.token, body: { status: 'closed' } });
+  assert.deepEqual(await call(`/track/${token}/eta`), { minutes: 55, delayed: true });
   assert.equal(calls, 1);
   await call(`/track/${'0'.repeat(64)}/eta`, { expect: 404 });
 

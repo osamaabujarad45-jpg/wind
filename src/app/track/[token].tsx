@@ -9,7 +9,7 @@ import { etaRange } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { RouteLine, ServiceIcon } from '../../parts';
 import RouteMap from '../../route-map';
-import { Badge, Button, Card, Empty, fill, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number;
   driver: { firstName: string; vehicle: Vehicle | null } | null;
@@ -20,7 +20,8 @@ export default function TrackScreen() {
   const { c, language } = useCopy();
   const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
-  const eta = useApi<{ minutes: number | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data?.minutes;
+  const etaData = useApi<{ minutes: number | null; delayed?: boolean }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
+  const eta = etaData?.minutes, delayed = !!etaData?.delayed;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
 
@@ -45,8 +46,10 @@ export default function TrackScreen() {
       </Row>
       <RouteLine from={from[language]} to={to[language]} />
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
-      {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit' ? c.etaToDropoff : c.etaToPickup,
-        { lo: etaRange(eta)[0], hi: etaRange(eta)[1] })}</Txt>}
+      {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit'
+        ? delayed ? c.etaToDropoffSlow : c.etaToDropoff
+        : delayed ? c.etaToPickupSlow : c.etaToPickup, { lo: etaRange(eta)[0], hi: etaRange(eta)[1] })}</Txt>}
+      {location && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6 }}>{fill(c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}
       {location && <Button title={c.navigate} icon="map-outline" variant="soft"
         onPress={() => { void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`).catch(() => undefined); }} />}
