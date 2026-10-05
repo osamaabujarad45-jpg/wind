@@ -8,8 +8,10 @@ export type RouteMapProps = {
   driver?: (Point & { heading?: number | null; accuracy?: number | null }) | null; driverTitle?: string;
   /** Which stop the live view frames with the driver: pickup before collection, dropoff after. */
   focus?: 'pickup' | 'dropoff'; height?: number;
-  /** Road geometry [lng, lat][] from /api/route; without it the map draws a dashed straight line. */
+  /** Road geometry [lng, lat][] pickup→dropoff from /api/route. Without it no line is drawn (never a straight one). */
   road?: [number, number][] | null;
+  /** Road geometry from the live driver to the next stop, drawn in the driver colour. */
+  approach?: [number, number][] | null;
 };
 export type PinMapProps = { center: Point; onChange: (point: Point) => void; height?: number };
 

@@ -104,26 +104,29 @@ function LiveMap(props: RouteMapProps) {
     markers.current.ml = ml;
     new ml.Marker({ element: dot(palette.olive) }).setLngLat([pickup.longitude, pickup.latitude]).addTo(m);
     new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
-    m.addSource('route', { type: 'geojson', data: line(pickup, dropoff) });
-    m.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': palette.forest, 'line-width': 3, 'line-dasharray': [2, 1.5] } });
-    m.addSource('road', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    m.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': palette.forest, 'line-width': 4, 'line-opacity': 0.85 } });
+    // Lines follow roads only (OSRM geometry); a straight pickup→dropoff line would cut through buildings.
+    for (const [id, color] of [['road', palette.forest], ['approach', palette.blue]] as const) {
+      m.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      m.addLayer({ id, type: 'line', source: id, layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': color, 'line-width': id === 'road' ? 4 : 5, 'line-opacity': id === 'road' ? 0.85 : 0.9 } });
+    }
     m.addSource('accuracy', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     m.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': palette.blue, 'circle-opacity': 0.12, 'circle-stroke-color': palette.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
     m.on('dragstart', () => setMoved(true));
     m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) setMoved(true); });
   });
 
-  // Road route arrives after the map: swap the dashed straight line for the solid road line (and back if it goes away).
-  const road = props.road;
-  const roadKey = road ? `${road.length}:${road[0]}:${road[road.length - 1]}` : '';
+  // Road lines arrive after the map (and the driver leg changes as the car moves).
+  const { road, approach } = props;
+  const lineKey = [road, approach].map(l => l ? `${l.length}:${l[0]}:${l[l.length - 1]}` : '').join('|');
   useEffect(() => {
     if (!map) return;
-    (map.getSource('road') as GeoJSONSource | undefined)?.setData(road
-      ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: road } } : { type: 'FeatureCollection', features: [] });
-    map.setLayoutProperty('route', 'visibility', road ? 'none' : 'visible');
-  }, [map, roadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    for (const [id, l] of [['road', road], ['approach', approach]] as const)
+      (map.getSource(id) as GeoJSONSource | undefined)?.setData(l
+        ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: l } } : { type: 'FeatureCollection', features: [] });
+    // Without a driver, frame the whole road route: it can bend outside the two pins.
+    if (road && !driver && !moved) map.fitBounds(fitBounds(road.map(([longitude, latitude]) => ({ latitude, longitude }))), { padding, maxZoom: 16 });
+  }, [map, lineKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Driver: glide from the shown position to the new fix instead of jumping every poll.
   const heading = driver?.heading ?? null, accuracy = driver?.accuracy ?? null;
@@ -181,9 +184,6 @@ function LiveMap(props: RouteMapProps) {
     </Pressable>}
   </View>;
 }
-
-const line = (a: Point, b: Point) => ({ type: 'Feature' as const, properties: {},
-  geometry: { type: 'LineString' as const, coordinates: [[a.longitude, a.latitude], [b.longitude, b.latitude]] } });
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap({ center, onChange, height = 320 }: PinMapProps) {

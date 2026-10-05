@@ -20,7 +20,7 @@ export default function TrackScreen() {
   const { c, language } = useCopy();
   const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
-  const etaData = useApi<{ minutes: number | null; delayed?: boolean }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
+  const etaData = useApi<{ minutes: number | null; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
   const eta = etaData?.minutes, delayed = !!etaData?.delayed;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
@@ -37,7 +37,7 @@ export default function TrackScreen() {
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} right={<Badge label={c[data.status]} status={data.status} />} />
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
       <RouteMap pickup={from} dropoff={to} focus={data.status === 'in_transit' ? 'dropoff' : 'pickup'} pickupTitle={from[language]} dropoffTitle={to[language]}
-        driver={location} driverTitle={data.driver?.firstName} />
+        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location ? etaData?.approach : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>

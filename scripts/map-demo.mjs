@@ -30,10 +30,20 @@ if (process.env.DEMO_ROADS !== '0') {
   const [road] = await call('/admin/roads', admin.token, { name: 'Surda', cities: ['ramallah', 'bireh'] });
   await call(`/roads/${road.id}/report`, driver.token, { status: 'closed' });
 }
-// Driver drives from Al-Tireh toward the pickup, one fix every 3 s.
-let lat = 31.9135, lng = 35.1955;
+// Driver drives from Al-Tireh to the pickup along the road route when OSRM_URL is set (straight slide otherwise),
+// one fix every 3 s, ~80 m apart.
+const start = { latitude: 31.9135, longitude: 35.1955 }, pickup = input.pickupPoint;
+const roadLine = await call(`/route?from=${start.latitude},${start.longitude}&to=${pickup.latitude},${pickup.longitude}`, driver.token)
+  .then(r => r.line.map(([lng, lat]) => ({ latitude: lat, longitude: lng })), () => [start, pickup]);
+const path = [];
+for (let i = 1; i < roadLine.length; i++) {
+  const a = roadLine[i - 1], b = roadLine[i], steps = Math.max(1, Math.round(Math.hypot((b.latitude - a.latitude) * 111e3, (b.longitude - a.longitude) * 94e3) / 80));
+  for (let k = 0; k < steps; k++) path.push({ latitude: a.latitude + (b.latitude - a.latitude) * k / steps, longitude: a.longitude + (b.longitude - a.longitude) * k / steps });
+}
+path.push(pickup);
+let step = 0;
 setInterval(() => {
-  lat += (31.9022 - lat) * 0.15; lng += (35.2063 - lng) * 0.15;
-  call('/location', driver.token, { latitude: lat, longitude: lng, accuracy: 25 }).catch(e => console.error(e.message));
+  const at = path[Math.min(step++, path.length - 1)];
+  call('/location', driver.token, { ...at, accuracy: 25 }).catch(e => console.error(e.message));
 }, 3000);
 console.log(`ready http://localhost:${process.env.PORT ?? 4000}/order/${order.id} (customer 0599000001)`);

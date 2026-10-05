@@ -19,9 +19,9 @@ export default function RouteMap(props: RouteMapProps) {
     longitudeDelta: Math.max((Math.max(...lngs) - Math.min(...lngs)) * 1.6, 0.02),
   };
   return <MapView style={{ height, width: '100%' }} initialRegion={region} pitchEnabled={false} rotateEnabled={false}>
-    {props.road
-      ? <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />
-      : <Polyline coordinates={[pickup, dropoff]} strokeColor={palette.forest} strokeWidth={3} lineDashPattern={[8, 6]} />}
+    {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
+    {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
+    {props.approach && <Polyline coordinates={props.approach.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.blue} strokeWidth={5} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
     <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
     {driver && <Marker coordinate={driver} title={driverTitle} flat rotation={driver.heading ?? 0} anchor={{ x: 0.5, y: 0.5 }}>

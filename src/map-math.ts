@@ -36,5 +36,6 @@ export const labelField = (language: 'ar' | 'en') => language === 'ar'
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
 
 /** /api/route query for two points; coordinates rounded to ~110 m so a moving driver refetches only every ~110 m. */
-export const roadPath = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }, grid = 3) =>
-  `/route?from=${a.latitude.toFixed(grid)},${a.longitude.toFixed(grid)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}`;
+export const roadPath = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }, grid = 3, heading?: number | null) =>
+  `/route?from=${a.latitude.toFixed(grid)},${a.longitude.toFixed(grid)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}${
+    heading == null ? '' : `&heading=${Math.round(heading / 15) * 15 % 360}`}`; // heading lets the route start the way the car faces

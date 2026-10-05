@@ -52,7 +52,7 @@ export default function OrderScreen() {
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
-  const { road, eta } = useRoad(order);
+  const { road, approach, eta } = useRoad(order);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
@@ -157,7 +157,7 @@ export default function OrderScreen() {
     <Appear index={1}>
       <View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-          driver={order.driverLocation} driverTitle={order.driverName} road={road} />
+          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location

@@ -70,7 +70,7 @@ const map = new ml.Map({
 });
 map.touchZoomRotate.disableRotation();
 
-const state = { driver: null, road: null, focus: undefined };
+const state = { driver: null, road: null, approach: null, focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame;
 window.wind = update => { Object.assign(state, update); if (ready) draw(); };
 
@@ -111,35 +111,42 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   } else {
     new ml.Marker({ element: dot(C.olive) }).setLngLat([config.pickup.longitude, config.pickup.latitude]).addTo(map);
     new ml.Marker({ element: dot(C.clay, true) }).setLngLat([config.dropoff.longitude, config.dropoff.latitude]).addTo(map);
-    map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString',
-      coordinates: [[config.pickup.longitude, config.pickup.latitude], [config.dropoff.longitude, config.dropoff.latitude]] } } });
-    map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': C.forest, 'line-width': 3, 'line-dasharray': [2, 1.5] } });
-    map.addSource('road', { type: 'geojson', data: empty });
-    map.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': C.forest, 'line-width': 4, 'line-opacity': 0.85 } });
+    // Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line.
+    for (const [id, color] of [['road', C.forest], ['approach', C.blue]]) {
+      map.addSource(id, { type: 'geojson', data: empty });
+      map.addLayer({ id, type: 'line', source: id, layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': color, 'line-width': id === 'road' ? 4 : 5, 'line-opacity': id === 'road' ? 0.85 : 0.9 } });
+    }
     map.addSource('accuracy', { type: 'geojson', data: empty });
     map.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': C.blue, 'circle-opacity': 0.12,
       'circle-stroke-color': C.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
     const userMoved = () => { moved = true; recenter.style.display = 'flex'; };
     map.on('dragstart', userMoved);
     map.on('zoomstart', e => { if (e.originalEvent) userMoved(); });
-    recenter.onclick = () => {
-      moved = false; recenter.style.display = 'none';
-      map.fitBounds(fitBounds(state.driver ? [state.driver, ...nextStops()] : [config.pickup, config.dropoff]), { padding, maxZoom: 16 });
-    };
+    recenter.onclick = () => { moved = false; recenter.style.display = 'none'; refit(); };
+    // The WebView can lay out after the map is created (a 150 px booking preview framed nothing): frame again at real size.
+    addEventListener('resize', () => { if (!moved) refit(0); });
+    map.resize(); refit(0);
     draw();
   }
   send({ type: 'ready' });
 });
 
-let drawnRoad = '', drawnDriver = '';
+let drawnLines = '', drawnDriver = '';
+// Live: driver and next stop. Otherwise the whole road route (it can bend outside the two pins), or the pins.
+function refit(duration) {
+  const road = state.road?.map(([longitude, latitude]) => ({ latitude, longitude }));
+  map.fitBounds(fitBounds(state.driver ? [state.driver, ...nextStops()] : road ?? [config.pickup, config.dropoff]),
+    { padding, maxZoom: 16, ...(duration === 0 && { duration: 0 }) });
+}
 function draw() {
   if (pin) return;
-  const road = state.road, roadKey = road ? `${road.length}:${road[0]}:${road[road.length - 1]}` : '';
-  if (roadKey !== drawnRoad) {
-    drawnRoad = roadKey;
-    map.getSource('road').setData(road ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: road } } : empty);
-    map.setLayoutProperty('route', 'visibility', road ? 'none' : 'visible');
+  const linesKey = [state.road, state.approach].map(l => l ? `${l.length}:${l[0]}:${l[l.length - 1]}` : '').join('|');
+  if (linesKey !== drawnLines) {
+    drawnLines = linesKey;
+    for (const id of ['road', 'approach'])
+      map.getSource(id).setData(state[id] ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: state[id] } } : empty);
+    if (!moved && !state.driver && state.road) refit();
   }
   const driver = state.driver;
   const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy}` : '';

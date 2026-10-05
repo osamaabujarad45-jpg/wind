@@ -66,7 +66,7 @@ function LiveMap(props: RouteMapProps) {
   const config = { mode: 'route', language, pickup, dropoff, driver: driver ?? null, recenter: c.recenter,
     padding: Math.round(Math.min(56, height / 5)) }; // markers clear of the edges without zooming a short map out
   const update = { driver: driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null,
-    road: props.road ?? null, focus: props.focus };
+    road: props.road ?? null, approach: props.approach ?? null, focus: props.focus };
   if (failed) return <RoutePreview {...props} />;
   return <MapPage key={language} config={config} height={height} update={update} onFail={() => setFailed(true)}
     label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;

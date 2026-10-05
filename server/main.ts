@@ -1285,21 +1285,24 @@ route('POST', '/api/location', ({ user, body }) => {
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
 type RoadRoute = { km: number; minutes: number; line: [number, number][] };
 const roadCache = new Map<string, Promise<RoadRoute>>(); // ponytail: oldest-first eviction at 2000; LRU if hit rates matter
-function roadRoute(a: Point, b: Point): Promise<RoadRoute> {
+// Fastest road route (OSRM, car profile, multi-level Dijkstra). A known driver heading is passed as a bearing hint so the
+// route starts the way the car is already moving instead of an impossible U-turn. Full geometry: simplified lines cut
+// corners through buildings at street zoom.
+function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<RoadRoute> {
   if (!osrmUrl) fail(503, 'route_unavailable');
   const at = (p: Point) => `${p.longitude.toFixed(4)},${p.latitude.toFixed(4)}`; // ~10 m: nearby fixes share an answer
-  const key = `${at(a)};${at(b)}`;
-  let found = roadCache.get(key);
+  const key = `${at(a)};${at(b)}`, bearing = heading == null ? '' : `&bearings=${Math.round(heading / 15) * 15 % 360},60;`;
+  let found = roadCache.get(key + bearing);
   if (!found) {
-    found = fetch(`${osrmUrl}/route/v1/driving/${key}?overview=simplified&geometries=geojson`, { signal: AbortSignal.timeout(3000) })
+    found = fetch(`${osrmUrl}/route/v1/driving/${key}?overview=full&geometries=geojson${bearing}`, { signal: AbortSignal.timeout(3000) })
       .then(res => res.json()).then((j: any) => {
         const r = j?.code === 'Ok' ? j.routes?.[0] : null;
         if (!r || !Array.isArray(r.geometry?.coordinates)) throw new HttpError(404, 'no_route');
         return { km: Math.round(r.distance / 100) / 10, minutes: Math.max(1, Math.round(r.duration / 60)),
           line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) };
       })
-      .catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
-    roadCache.set(key, found);
+      .catch(error => { roadCache.delete(key + bearing); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    roadCache.set(key + bearing, found);
     if (roadCache.size > 2000) roadCache.delete(roadCache.keys().next().value!);
   }
   return found;
@@ -1310,10 +1313,12 @@ const queryPoint = (value: string | null) => {
 };
 route('GET', '/api/route', ({ user, query }) => {
   limit(identityKey('route', user.id), 120, 10 * 60_000);
-  return roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')));
+  const heading = query.get('heading') == null ? null : Number(query.get('heading'));
+  if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
+  return roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
 });
 
-// Public trip page: minutes only, from the fresh driver fix to the next stop's city (it never sees exact pins).
+// Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const hash = sha(params[0]!);
   limit(identityKey('track-eta', hash), 60, 10 * 60_000);
@@ -1322,7 +1327,10 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
   // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
   const delayed = roadAlerts(roads(), r.pickup_city, r.dropoff_city).length > 0;
-  return roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next).then(road => ({ minutes: road.minutes, delayed }));
+  // Road lines between city centres and from the (already shown) driver fix: nothing beyond what the page already reveals.
+  const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city)).then(t => t.line, () => null);
+  return Promise.all([roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null), trip])
+    .then(([leg, line]) => ({ minutes: leg.minutes, delayed, approach: leg.line, road: line }));
 }, true);
 
 route('GET', '/api/driver/earnings', ({ user }) => {

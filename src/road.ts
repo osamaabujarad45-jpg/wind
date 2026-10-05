@@ -7,7 +7,7 @@ type RoadRoute = { km: number; minutes: number; line: [number, number][] };
 
 /**
  * Road line pickup→dropoff and the live driver's ETA to the next stop (SPEC-routing-eta.md).
- * Both are null when routing is unavailable; the map then keeps its dashed straight line.
+ * All null when routing is unavailable; the map then shows pins without a line.
  */
 export function useRoad(order: Order | undefined) {
   const from = order && (order.pickupPoint ?? city(order.pickupCity));
@@ -17,10 +17,10 @@ export function useRoad(order: Order | undefined) {
   // Before collection (and when returning to the sender) the driver heads to pickup, otherwise to dropoff.
   const toPickup = !!order && ['assigned', 'at_pickup', 'returning'].includes(order.status);
   const driver = active ? order?.driverLocation : null;
-  const fetched = useApi<RoadRoute>(driver && from && to ? roadPath(driver, toPickup ? from : to) : null).data;
+  const fetched = useApi<RoadRoute>(driver && from && to ? roadPath(driver, toPickup ? from : to, 3, driver.heading) : null).data;
   // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched.
   const [kept, setKept] = useState<RoadRoute | undefined>();
   if (fetched && fetched !== kept) setKept(fetched);
   const eta = driver ? fetched ?? kept : undefined;
-  return { road: route?.line ?? null, eta: eta ? etaRange(eta.minutes) : null };
+  return { road: route?.line ?? null, approach: eta?.line ?? null, eta: eta ? etaRange(eta.minutes) : null };
 }

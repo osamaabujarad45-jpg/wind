@@ -5,9 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
-import { api, ApiError, errorCode, storage } from '../api';
+import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import RouteMap, { canPin, PinMap } from '../route-map';
 import { useSession } from '../session';
@@ -70,6 +71,8 @@ export default function Book() {
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
+  // Road line for the preview map (never a straight line); absent while loading or without routing.
+  const preview = useApi<{ km: number; line: [number, number][] }>(roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5)).data;
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
@@ -224,7 +227,7 @@ export default function Book() {
       <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
         <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
           <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
-            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} />
+            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} />
         </View>
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
           <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} />
@@ -240,7 +243,7 @@ export default function Book() {
               <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
             </Row>
           </Press>
-          <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `≈ ${km} ${c.km}`}</Txt>
+          <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `≈ ${preview?.km ?? km} ${c.km}`}</Txt>
         </Row>
         {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
           {(['pickup', 'dropoff'] as const).map(which => {
