@@ -66,6 +66,8 @@ try {
   assert.equal(webHome.status, 200); assert.match(webHome.headers.get('content-type'), /text\/html/);
   assert.equal(webHome.headers.get('content-encoding'), 'br'); assert.equal(webHome.headers.get('vary'), 'Accept-Encoding');
   assert.match(await webHome.text(), /Wind web/);
+  const again = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } }); // served from the compressed-once cache
+  assert.equal(again.headers.get('content-encoding'), 'br'); assert.match(await again.text(), /Wind web/);
   const webManifest = await fetch(`${webBase}/manifest.webmanifest`);
   assert.equal(webManifest.status, 200); assert.match(webManifest.headers.get('content-type'), /application\/manifest\+json/);
   const webRoute = await fetch(`${webBase}/driver/jobs`);

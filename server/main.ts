@@ -4,9 +4,10 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
-import { accessSync, constants, createReadStream, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
-import { createBrotliCompress } from 'node:zlib';
+import { brotliCompress } from 'node:zlib';
+import { promisify } from 'node:util';
 import {
   activeStatuses, cities, commissionOn, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
   optionsFor, orderCode, planForRole, quote, services, vehicleServices, vehicles,
@@ -61,17 +62,38 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   if (!file) return false;
   const extension = extname(file).toLowerCase();
   const contentType = webContentTypes[extension] ?? 'application/octet-stream';
-  const useBrotli = /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml)/.test(contentType)
-    && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
+  const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   res.writeHead(200, {
     'Content-Type': contentType,
     'Cache-Control': extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
     ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
   });
-  const stream = createReadStream(file).on('error', () => res.destroy());
-  (useBrotli ? stream.pipe(createBrotliCompress()) : stream).pipe(res);
+  if (useBrotli) compressed(file).then(body => res.end(body), () => res.destroy());
+  else createReadStream(file).on('error', () => res.destroy()).pipe(res);
   return true;
 }
+
+const compressible = (type: string) => /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml|font\/ttf)/.test(type);
+// The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
+// instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
+const brotliCache = new Map<string, Promise<Buffer>>();
+const compressed = (file: string) => {
+  let body = brotliCache.get(file);
+  if (!body) {
+    body = promisify(brotliCompress)(readFileSync(file));
+    body.catch(() => brotliCache.delete(file));
+    brotliCache.set(file, body);
+  }
+  return body;
+};
+if (webRoot && production) setImmediate(() => { // warm so the first visitor after a deploy does not pay either
+  try {
+    for (const name of readdirSync(webRoot, { recursive: true }) as string[]) {
+      const file = resolve(webRoot, name);
+      if (statSync(file).isFile() && compressible(webContentTypes[extname(file).toLowerCase()] ?? '')) void compressed(file).catch(() => {});
+    }
+  } catch { /* served lazily instead */ }
+});
 
 export const db = new DatabaseSync(process.env.DB_PATH ?? 'wind.db');
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
