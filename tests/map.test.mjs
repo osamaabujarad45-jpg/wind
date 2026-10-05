@@ -87,6 +87,10 @@ try {
     assert.equal(readFileSync(new URL(`../public/vendor/maplibre-${version}/${file}`, import.meta.url), 'utf8'),
       readFileSync(new URL(`../node_modules/maplibre-gl/dist/${file}`, import.meta.url), 'utf8'), `re-vendor ${file} after upgrading maplibre-gl`);
 
+  // The production web build is tree-shaken (SPEC-web-bundle.md); losing the flags silently re-adds ~190 kB gzip.
+  const docker = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
+  assert.match(docker, /EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1/);
+
   console.log('map: ok');
 } finally {
   server.close();

@@ -112,7 +112,8 @@ if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   rmSync(webDir, { recursive: true, force: true });
   const built = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--clear', '--output-dir', webDir], {
     cwd: root, stdio: 'inherit', shell: process.platform === 'win32',
-    env: { ...process.env, CI: '1', WIND_LOCAL_TEST: '1', EXPO_PUBLIC_API_URL: `http://localhost:${API_PORT}`, EXPO_PUBLIC_SUPPORT_WHATSAPP: '970590000000' },
+    env: { ...process.env, CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
+      EXPO_PUBLIC_API_URL: `http://localhost:${API_PORT}`, EXPO_PUBLIC_SUPPORT_WHATSAPP: '970590000000' },
   });
   if (built.status !== 0) throw new Error('expo export failed');
 }

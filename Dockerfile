@@ -9,6 +9,8 @@ COPY plugins ./plugins
 COPY src ./src
 COPY public ./public
 ENV EXPO_PUBLIC_API_URL=https://wind-production-72aa.up.railway.app WIND_RELEASE=1 WIND_LOCAL_TEST=0 NODE_ENV=production
+# Metro tree shaking: drops unused library exports (674 -> 482 kB gzip, SPEC-web-bundle.md).
+ENV EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1
 RUN npx expo export --platform web
 
 # Wind API. Node 24 runs the TypeScript directly (node:http + node:sqlite).
