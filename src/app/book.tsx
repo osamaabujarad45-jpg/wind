@@ -22,6 +22,7 @@ export default function Book() {
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>(isCity(params.to) ? params.to : 'nablus');
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
+  const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
   const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
@@ -90,7 +91,7 @@ export default function Book() {
           setLocationError(c.locationMismatch);
           return;
         }
-        setPickupPoint(point);
+        setPickupPoint(point); setGpsPoint(point);
       } else setLocationError(c.locationManual);
     } catch {
       setLocationError(c.locationManual);
@@ -196,6 +197,7 @@ export default function Book() {
     } finally { sending.current = false; setBusy(false); }
   }
 
+  const located = !!pickupPoint && pickupPoint === gpsPoint;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
       <Header title={c[service]} back />
@@ -234,8 +236,8 @@ export default function Book() {
         <Row gap={8} style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair, justifyContent: 'space-between' }}>
           <Press accessibilityLabel={c.useLocation} onPress={locate} disabled={locating || locked}>
             <Row gap={6} style={styles.chip}>
-              <Ionicons name={pickupPoint ? 'checkmark-circle' : 'navigate'} size={14} color={palette.olive} />
-              <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : pickupPoint ? c.located : c.useLocation}</Txt>
+              <Ionicons name={located ? 'checkmark-circle' : 'navigate'} size={14} color={palette.olive} />
+              <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
             </Row>
           </Press>
           <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `≈ ${km} ${c.km}`}</Txt>
