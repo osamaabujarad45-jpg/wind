@@ -12,7 +12,7 @@ import { Badge, Button, Card, Empty, fill, Header, Loading, Row, Screen, Txt, us
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number;
   driver: { firstName: string; vehicle: Vehicle | null } | null;
-  driverLocation: { latitude: number; longitude: number; updatedAt: number } | null };
+  driverLocation: { latitude: number; longitude: number; updatedAt: number; heading?: number | null } | null };
 
 export default function TrackScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -32,7 +32,7 @@ export default function TrackScreen() {
   return <Screen>
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} right={<Badge label={c[data.status]} status={data.status} />} />
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-      <RouteMap pickup={from} dropoff={to} pickupTitle={from[language]} dropoffTitle={to[language]}
+      <RouteMap pickup={from} dropoff={to} focus={data.status === 'in_transit' ? 'dropoff' : 'pickup'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} />
     </View>
     <Card>

@@ -1,6 +1,6 @@
 // Live map (SPEC-live-map.md): exact dropoff points with pickup-point visibility, driver heading/accuracy.
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -76,8 +76,16 @@ try {
   // A single point still produces a usable box instead of a zero-size one.
   const [[w, s], [e, n]] = fitBounds([{ latitude: 32, longitude: 35 }]);
   assert.ok(e - w > 0.005 && n - s > 0.005);
-  assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name']]);
+  assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+
+  // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
+  const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));
+  const route = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
+  assert.ok(route.includes(`'/vendor/maplibre-${version}'`), `route-map.tsx must point at /vendor/maplibre-${version}`);
+  for (const file of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'])
+    assert.equal(readFileSync(new URL(`../public/vendor/maplibre-${version}/${file}`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`../node_modules/maplibre-gl/dist/${file}`, import.meta.url), 'utf8'), `re-vendor ${file} after upgrading maplibre-gl`);
 
   console.log('map: ok');
 } finally {

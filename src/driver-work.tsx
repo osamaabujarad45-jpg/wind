@@ -126,11 +126,14 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     const setState = (value: Exclude<Tracking, 'idle'>) => {
       if (!stopped) setTrackingResult({ actor, orderId, value });
     };
-    const publish = async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
+    const publish = async ({ latitude, longitude, heading, accuracy }: Location.LocationObjectCoords) => {
       if (stopped || publishing) return;
       publishing = true;
       try {
-        await api('/location', { latitude, longitude });
+        // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
+        await api('/location', { latitude, longitude,
+          ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
+          ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
         setState('sharing');
       } catch {
         setState('starting');

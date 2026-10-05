@@ -9,6 +9,7 @@ import { api, ApiError, errorCode, storage } from '../api';
 import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
+import RouteMap, { canPin, PinMap } from '../route-map';
 import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
@@ -21,6 +22,8 @@ export default function Book() {
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>(isCity(params.to) ? params.to : 'nablus');
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
+  const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
+  const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
   const [picker, setPicker] = useState<'pickup' | 'dropoff' | null>(params.pick === 'to' ? 'dropoff' : null);
   const [pickupNote, setPickupNote] = useState('');
@@ -102,7 +105,7 @@ export default function Book() {
       if (existing) {
         const p = existing.payload;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
-        setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
+        setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
       }
@@ -114,7 +117,7 @@ export default function Book() {
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
   const price = pending?.payload.quotedPrice ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
-  const km = distanceKm(city(pickupCity), city(dropoffCity));
+  const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));
   // A checked code holds for the fare it was checked against; the server re-checks it on booking.
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
     : promo && promo.price === price ? promo : null;
@@ -162,7 +165,7 @@ export default function Book() {
     setBusy(true);
     setError('');
     try {
-      const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, pickupNote, dropoffNote,
+      const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
         contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }),
         ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
@@ -216,12 +219,16 @@ export default function Book() {
         })}
       </Row>
 
-      <Card>
+      <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
+        <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
+          <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
+            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} />
+        </View>
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
           <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} />
           <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
             <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked}
-              onPress={() => { haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(null); }} />
+              onPress={() => { haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint); }} />
           </View>
         </View>
         <Row gap={8} style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair, justifyContent: 'space-between' }}>
@@ -233,6 +240,18 @@ export default function Book() {
           </Press>
           <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `≈ ${km} ${c.km}`}</Txt>
         </Row>
+        {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
+          {(['pickup', 'dropoff'] as const).map(which => {
+            const set = which === 'pickup' ? pickupPoint : dropoffPoint;
+            const label = which === 'pickup' ? c.pickupOnMap : c.dropoffOnMap;
+            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { haptic.tap(); setLocationError(''); setPinFor(which); }}>
+              <Row gap={6} style={styles.chip}>
+                <Ionicons name={set ? 'checkmark-circle' : 'pin-outline'} size={14} color={palette.olive} />
+                <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{label}</Txt>
+              </Row>
+            </Press>;
+          })}
+        </Row>}
         {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
       </Card>
 
@@ -321,18 +340,30 @@ export default function Book() {
       <ErrorText>{error}</ErrorText>
     </Screen>
 
+    {pinFor && <PinSheet title={pinFor === 'pickup' ? c.pickupOnMap : c.dropoffOnMap}
+      start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
+      onClose={() => setPinFor(null)} onConfirm={point => {
+        const near = nearestCity(point);
+        // ponytail: 15km from a served city centre stands in for real service zones (same bound as GPS).
+        if (distanceKm(city(near), point) > 15) { setLocationError(c.locationMismatch); setPinFor(null); return; }
+        haptic.success();
+        if (pinFor === 'pickup') { setPickupCity(near); setPickupPoint(point); } else { setDropoffCity(near); setDropoffPoint(point); }
+        if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));
+        setPinFor(null);
+      }} />}
+
     <CityPicker open={picker !== null && !locked} title={picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
       places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
         .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {
         haptic.tap();
         if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
-        else { setDropoffCity(id); edit('dropoffNote', setDropoffNote)(note); }
+        else { setDropoffCity(id); setDropoffPoint(null); edit('dropoffNote', setDropoffNote)(note); }
         setPicker(null);
       }}
       onClose={() => setPicker(null)} onPick={id => {
         haptic.tap();
-        if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); } else setDropoffCity(id);
+        if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); } else { setDropoffCity(id); setDropoffPoint(null); }
         setPicker(null);
       }} />
   </KeyboardAvoidingView>;
@@ -345,6 +376,25 @@ function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorro
     : new Date(ms).toLocaleDateString(fmt(language), { weekday: 'short', day: 'numeric', timeZone: HEBRON });
 }
 const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(fmt(language), { hour: 'numeric', minute: '2-digit', timeZone: HEBRON });
+
+// Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
+function PinSheet({ title, start, onClose, onConfirm }: { title: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void }) {
+  const { c } = useCopy();
+  const [point, setPoint] = useState<Point>({ latitude: start.latitude, longitude: start.longitude });
+  return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
+    <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
+      <View style={styles.grip} />
+      <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
+      <Txt variant="caption" style={{ marginBottom: 10 }}>{c.pinHint}</Txt>
+      <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
+        <PinMap center={start} onChange={setPoint} height={360} />
+      </View>
+      <Button title={c.confirmPin} icon="checkmark" onPress={() => onConfirm(point)} />
+      <Button title={c.cancel} variant="ghost" onPress={onClose} />
+    </SafeAreaView>
+  </Modal>;
+}
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 

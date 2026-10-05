@@ -5,8 +5,11 @@ import { palette, useCopy } from './ui';
 
 export type RouteMapProps = {
   pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;
-  driver?: Point | null; driverTitle?: string;
+  driver?: (Point & { heading?: number | null; accuracy?: number | null }) | null; driverTitle?: string;
+  /** Which stop the live view frames with the driver: pickup before collection, dropoff after. */
+  focus?: 'pickup' | 'dropoff'; height?: number;
 };
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; height?: number };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 export default function RoutePreview({ pickupTitle, dropoffTitle }: RouteMapProps) {

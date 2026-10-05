@@ -27,6 +27,7 @@ export function fitBounds(points: Point[]): [[number, number], [number, number]]
 }
 
 /** Map label expression for the app language (OpenMapTiles name fields). */
+// Arabic falls back to the Latin name before the local one, so places without an Arabic name are still readable.
 export const labelField = (language: 'ar' | 'en') => language === 'ar'
-  ? ['coalesce', ['get', 'name:ar'], ['get', 'name']]
+  ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];

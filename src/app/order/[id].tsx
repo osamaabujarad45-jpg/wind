@@ -20,8 +20,14 @@ import {
 const DONE = ZoomIn.duration(300);
 const steps = statusFlow.slice(1); // assigned → completed
 
+// Exact pins open turn-by-turn directions; without one, a search for the landmark is the best we can do.
 function openMaps(point: Point | null, place: string, landmark: string) {
-  const q = encodeURIComponent(point ? `${point.latitude},${point.longitude}` : `${landmark}, ${place}, فلسطين`);
+  if (point) {
+    const at = `${point.latitude},${point.longitude}`;
+    if (Platform.OS === 'android') return Linking.openURL(`google.navigation:q=${at}`).catch(() => Linking.openURL(`geo:${at}?q=${at}`));
+    return Linking.openURL(Platform.select({ ios: `maps:?daddr=${at}&dirflg=d`, default: `https://www.google.com/maps/dir/?api=1&destination=${at}` }));
+  }
+  const q = encodeURIComponent(`${landmark}, ${place}, فلسطين`);
   return Linking.openURL(Platform.select({ ios: `maps:0,0?q=${q}`, android: `geo:0,0?q=${q}`, default: `https://www.google.com/maps/search/?api=1&query=${q}` }));
 }
 
@@ -57,7 +63,7 @@ export default function OrderScreen() {
   const isCustomer = role === 'customer', isDriver = role === 'driver', isAdmin = role === 'admin';
   const mine = isDriver && order.driverId === me.user.id;
   const from = city(order.pickupCity), to = city(order.dropoffCity);
-  const pickup = order.pickupPoint ?? from;
+  const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
@@ -145,7 +151,7 @@ export default function OrderScreen() {
 
     <Appear index={1}>
       <View style={styles.map}>
-        <RouteMap pickup={pickup} dropoff={to} pickupTitle={from[language]} dropoffTitle={to[language]}
+        <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
           driver={order.driverLocation} driverTitle={order.driverName} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
@@ -316,11 +322,11 @@ export default function OrderScreen() {
               { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), c.yes, c.no)} />
         </Card>}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
-          const dropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
-          openMaps(dropoff ? null : order.pickupPoint, (dropoff ? to : from)[language], dropoff ? order.dropoffNote : order.pickupNote)
+          const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
+          openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote)
             .catch(() => setActionError(c.mapUnavailable));
         }} />
-        {(order.status === 'in_transit' || !order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
+        {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
         {order.status === 'assigned' && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
       </>}

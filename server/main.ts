@@ -35,7 +35,7 @@ const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path
 const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : null;
 const webContentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
-  '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.map': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
   '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2',
