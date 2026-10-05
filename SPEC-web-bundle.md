@@ -29,3 +29,27 @@ Source-map attribution (`expo export --source-maps`):
 - Reanimated still weighs 447 kB after shaking. A web-only shim (`motion.web.ts` mapping `entering`/`exiting`
   presets to CSS keyframes) would remove most of it; touches 8 files — its own loop.
 - Lazy-load the inactive language from `copy.ts` (~20 kB gzip) — low value.
+
+## Part 2 (2026-10-05): Reanimated off the web bundle
+
+Scope: `src/motion.tsx` (web) maps the slice of Reanimated the app uses — `Animated.View` with `entering`
+(`FadeIn`, `FadeInDown`, `FadeInUp`, `ZoomIn` + `.duration().delay()`), CSS animations (`animationName` keyframe
+objects), `css.create` transitions, `cubicBezier`, `useReducedMotion` — onto browser CSS (keyframes injected once per
+shape). `src/motion.native.ts` re-exports the real library, so iOS/Android are unchanged. All 8 screens import `./motion`.
+Metro tries `motion.ts` before `motion.web.tsx`, so the web file is the base name (same pattern as `route-map.tsx`).
+
+Deliberate limits (`ponytail:` in motion.tsx): exit and layout animations do nothing on web (a tip disappears
+instantly, the help accordion reflows without gliding). The splash fade-out now uses a plain CSS animation in
+`_layout.tsx`, so it fades on every platform.
+
+Guard: `tests/map.test.mjs` fails if any file other than `motion.native.ts` imports Reanimated, or if the two motion
+files stop exporting the same names.
+
+| Measure (tree-shaken production export) | Part 1 | Part 2 |
+|---|---|---|
+| Entry JS raw | 1,964,027 B | 1,490,891 B (−24 %) |
+| Entry JS gzip -9 | 480,275 B | 388,519 B (−19 %) |
+
+Visual check: intro frames (gust, pin drop, rise, name, fade to welcome) match production frame for frame
+(Playwright, Pixel 7, ar); reduced motion holds the still splash then shows welcome; `npm run screens` passes
+(76 screenshots, driver UI assertions); remaining screenshot differences are mid-animation capture timing and seeded GPS age.

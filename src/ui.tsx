@@ -4,7 +4,7 @@ import {
   type ColorValue, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { css, cubicBezier, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
+import Animated, { css, cubicBezier, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from './motion';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';

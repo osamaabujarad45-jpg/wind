@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-native';
-import Animated, { FadeInDown, FadeInUp, useReducedMotion } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, useReducedMotion } from '../motion';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
 import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';

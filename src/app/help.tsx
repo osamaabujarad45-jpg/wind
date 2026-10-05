@@ -2,7 +2,7 @@
 // /help?topic=password opens that answer directly (linked from "Forgot password?" on sign-in).
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { PRIVACY_URL, SUPPORT_URL } from '../api';

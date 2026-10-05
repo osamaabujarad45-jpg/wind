@@ -2,7 +2,7 @@
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
-import Animated, { useReducedMotion, ZoomIn } from 'react-native-reanimated';
+import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';

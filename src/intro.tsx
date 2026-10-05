@@ -2,7 +2,7 @@
 // Its first frame is the native splash (same tile, same size, same place), so there is no jump:
 // a gust blows through the three trails, the pin drops onto its spot, then the tile rises and the name appears.
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { cubicBezier, useReducedMotion } from 'react-native-reanimated';
+import Animated, { cubicBezier, useReducedMotion } from './motion';
 import { logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, palette, useCopy } from './ui';
 
 export const INTRO_MS = 1600;

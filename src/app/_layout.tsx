@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import Animated, { FadeOut, useReducedMotion } from 'react-native-reanimated';
+import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
@@ -27,17 +27,27 @@ function DriverWorkRoutes() {
 
 // Covers the app from the native splash until the intro has played and the session is loaded,
 // then fades away over whatever screen the session resolved to.
+const FADE_MS = 280;
 function IntroOverlay() {
   const { ready } = useSession();
   const reduced = useReducedMotion();
   const [played, setPlayed] = useState(false);
+  const [gone, setGone] = useState(false);
   const hidden = useRef(false);
   useEffect(() => {
     const timer = setTimeout(() => setPlayed(true), reduced ? 0 : INTRO_MS);
     return () => clearTimeout(timer);
   }, [reduced]);
-  if (played && ready) return null;
-  return <Animated.View exiting={FadeOut.duration(280)} style={StyleSheet.absoluteFill}
+  const leaving = played && ready;
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => setGone(true), FADE_MS);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+  if (gone) return null;
+  // A CSS fade rather than an exit animation, so the web build (no Reanimated, see motion.tsx) fades too.
+  return <Animated.View pointerEvents={leaving ? 'none' : 'auto'} style={[StyleSheet.absoluteFill, leaving && {
+    animationName: { from: { opacity: 1 }, to: { opacity: 0 } }, animationDuration: `${FADE_MS}ms`, animationFillMode: 'forwards' }]}
     onLayout={() => { if (!hidden.current) { hidden.current = true; SplashScreen.hideAsync(); } }}>
     <Intro />
   </Animated.View>;

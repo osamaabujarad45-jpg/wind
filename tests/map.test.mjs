@@ -117,6 +117,20 @@ try {
   const docker = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
   assert.match(docker, /EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1/);
 
+  // Web bundle part 2: only motion.native.ts may import Reanimated (web gets the CSS stand-in, motion.tsx), and both
+  // files export the same names so a screen never works on one platform only.
+  const { readdirSync } = await import('node:fs');
+  const sources = readdirSync(new URL('../src', import.meta.url), { recursive: true }).filter(f => /\.tsx?$/.test(f));
+  const importers = sources.filter(f => readFileSync(new URL(`../src/${f.replaceAll('\\', '/')}`, import.meta.url), 'utf8').includes("from 'react-native-reanimated'"));
+  assert.deepEqual(importers, ['motion.native.ts'], 'import motion from ./motion instead of react-native-reanimated');
+  const names = file => {
+    const text = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+    const reexport = text.match(/export \{([^}]+)\} from 'react-native-reanimated'/);
+    return (reexport ? reexport[1].split(',').map(n => n.trim()) : [...text.matchAll(/^export (?:const|function|class) (\w+)/gm)].map(m => m[1])
+      .concat(/^export default/m.test(text) ? ['default'] : [])).sort();
+  };
+  assert.deepEqual(names('motion.tsx'), names('motion.native.ts'));
+
   console.log('map: ok');
 } finally {
   server.close();

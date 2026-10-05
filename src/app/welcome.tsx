@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown, useReducedMotion, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, useReducedMotion, ZoomIn } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
