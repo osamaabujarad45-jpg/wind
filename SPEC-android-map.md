@@ -34,4 +34,15 @@ Offline tiles, bundling MapLibre inside the APK, Google Maps.
 
 ## Result (2026-10-05)
 
-See SHIP-2026-10-04.md (android-map entry) for device evidence and the APK.
+- APK 1.0.5 (code 6), arm64, signed with the Wind upload key: `Deployment-2026-10-03/release/wind-release.apk` (+ `.aab`);
+  bundle checked to point at the production API. Installed over 1.0.2 on the Samsung A53 (Android 16, WebView 153), data kept.
+- On that phone (side-by-side debug build against a local API, test data only): order page shows streets, pickup/dropoff,
+  dashed route, live driver with heading arrow and auto-fit; a swipe that starts on the map scrolls the page; booking shows
+  "Pickup/Dropoff on map", the pin sheet drags and the confirmed point changes the trip distance; with `map.html` missing the
+  order page falls back to the diagram; the map credit link opens Chrome, not the WebView.
+- Headless (Pixel 7 profile) against local and production: route render, recenter after drag, pin `center` messages, blocked
+  library → `failed`.
+- Found on the phone and fixed: the GPS chip claimed "set from your location" for map pins too.
+- Build pitfall fixed in `deployment/build-store-android.ps1`: Metro reuses transformed modules across EXPO_PUBLIC values, so a
+  release once carried a local API URL; the script now clears the cache, rebundles, and refuses an APK whose bundle lacks the
+  production URL. It also pins `GRADLE_USER_HOME` (the scoop Gradle home's Kotlin script cache broke the build).

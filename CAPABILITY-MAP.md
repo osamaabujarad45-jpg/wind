@@ -34,7 +34,7 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `digital-payments` | Card/wallet in app | Cash only | **Yes** — PMA-licensed provider (PalPay, Jawwal Pay…) + contract | `cash-settlement` |
 | `live-map` | Real map, pin drop, moving car | **Shipped 2026-10-05** (SPEC-live-map.md): MapLibre + OpenFreeMap on web/home-screen app, pickup/dropoff pins, live driver with heading/accuracy, turn-by-turn to exact points | No | — |
 | `routing-eta` | Road-snapped route line + ETA ranges | **Shipped 2026-10-05** (SPEC-routing-eta.md): private self-hosted OSRM service, solid road line, "driver arrives in 3–6 min" on the order and public tracking pages | Infra only (Railway `osrm`) | — |
-| `android-map` | Map inside the Android app | Diagram (no Google key) | No — render the same MapLibre page in a WebView (`react-native-webview`), needs a new APK build | `live-map` |
+| `android-map` | Map inside the Android app | **Shipped 2026-10-05** (SPEC-android-map.md): MapLibre page `public/map.html` in a WebView, APK 1.0.5 | No | `live-map` |
 
 Skipped on purpose: surge pricing (PRODUCT.md forbids unexplained surge), pooling,
 multi-stop, background GPS (Play policy), food delivery (Yummy owns it).

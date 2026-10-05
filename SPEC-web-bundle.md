@@ -49,6 +49,11 @@ files stop exporting the same names.
 |---|---|---|
 | Entry JS raw | 1,964,027 B | 1,490,891 B (−24 %) |
 | Entry JS gzip -9 | 480,275 B | 388,519 B (−19 %) |
+| JS transferred (Brotli, served) | 378,633 B | 306,285 B (−19 %) |
+| LCP, same throttled profile, local server, median of 5 ×2 | 3.80 / 3.92 s | 3.20 / 3.12 s (≈ −0.7 s) |
+
+(Profile: Pixel 7, 150 ms latency, 1.6 Mbps, CPU ×4, cold cache. Production after deploy: median 4.2 s on the same profile,
+which adds real latency to Railway; the A/B above is the like-for-like comparison.)
 
 Visual check: intro frames (gust, pin drop, rise, name, fade to welcome) match production frame for frame
 (Playwright, Pixel 7, ar); reduced motion holds the still splash then shows welcome; `npm run screens` passes
