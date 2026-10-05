@@ -901,13 +901,16 @@ route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
 // Trip sharing: the customer hands a rotating link to a recipient who has no account. Only the token's hash is
 // stored, and the public view is an explicit allowlist — no phones, notes, codes, price or customer identity.
 const SHARE_GRACE = DAY; // a finished trip's final status stays readable for a day
-route('POST', '/api/orders/:id/share', ({ user, params }) => {
-  const r = one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id) ?? fail(404, 'not_found');
+function shareOrder(id: number, customerId: number) {
+  const r = one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', id, customerId) ?? fail(404, 'not_found');
   if (!['searching', ...activeStatuses].includes(r.status)) fail(409, 'cannot_share');
   const token = randomBytes(32).toString('hex');
   run('UPDATE orders SET share_token_hash = ?, share_created_at = ? WHERE id = ?', sha(token), Date.now(), r.id);
   return { token, path: `/track/${token}` };
-});
+}
+route('POST', '/api/orders/:id/share', ({ user, params }) => shareOrder(Number(params[0]), user.id));
+// Souq keeps the returned link for its buyer and seller; a new call rotates it.
+route('POST', '/api/partner/orders/:id/share', ({ req, params }) => shareOrder(partnerOrder(req, Number(params[0])).id, partnerUser().id), true);
 route('POST', '/api/orders/:id/share/revoke', ({ user, params }) => {
   if (!run('UPDATE orders SET share_token_hash = NULL, share_created_at = NULL WHERE id = ? AND customer_id = ?', Number(params[0]), user.id).changes)
     fail(404, 'not_found');

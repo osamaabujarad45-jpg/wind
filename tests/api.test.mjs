@@ -98,6 +98,12 @@ try {
   assert.equal((await call(`/partner/orders/${partnerOrder.id}`, { partnerKey })).status, 'searching');
   assert.equal((await call(`/partner/orders/by-reference?externalRef=${encodeURIComponent(delivery.externalRef)}`, { partnerKey })).id, partnerOrder.id);
   await call('/partner/orders/by-reference?externalRef=not-owned', { partnerKey, expect: 404 });
+  // Souq's buyer and seller follow the delivery on Wind's public live map (PII-free page).
+  await call(`/partner/orders/${partnerOrder.id}/share`, { body: {}, expect: 401 });
+  await call(`/partner/orders/${order.id}/share`, { partnerKey, body: {}, expect: 404 }); // not a partner order
+  const link = await call(`/partner/orders/${partnerOrder.id}/share`, { partnerKey, body: {} });
+  assert.match(link.path, /^\/track\/[a-f0-9]{64}$/);
+  assert.equal((await call(link.path)).status, 'searching');
   await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} })).status, 'cancelled');
 
