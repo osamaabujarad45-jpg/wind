@@ -1,17 +1,14 @@
-import { Platform, StyleSheet, View } from 'react-native';
-import Constants from 'expo-constants';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
+import type { PinMapProps, RouteMapProps } from './route-preview';
 import { palette } from './ui';
 
 export type { PinMapProps, RouteMapProps };
-// Google Maps on Android crashes without an API key baked into the build.
-const mapsAvailable = Platform.OS !== 'android' || Constants.expoConfig?.extra?.androidMaps === true;
-export const canPin = mapsAvailable;
+// iOS: Apple Maps, no key. Android uses route-map.android.tsx (no Google Maps key in the build).
+export const canPin = true;
 
 export default function RouteMap(props: RouteMapProps) {
-  if (!mapsAvailable) return <RoutePreview {...props} />;
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
   const points = driver ? [driver, ...(focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff])] : [pickup, dropoff];
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
@@ -34,7 +31,6 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
-  if (!mapsAvailable) return null;
   return <View style={{ height, width: '100%' }}>
     <MapView style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
       pitchEnabled={false} rotateEnabled={false} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />

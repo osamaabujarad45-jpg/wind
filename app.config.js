@@ -1,5 +1,5 @@
-// Extends app.json. Android Google Maps needs a key at build time; without one the
-// app falls back to the static route preview instead of crashing (see src/route-map.native.tsx).
+// Extends app.json. Android draws maps with MapLibre in a WebView (src/route-map.android.tsx), so no Google Maps key is needed;
+// one passed here is only written to the manifest.
 const key = process.env.GOOGLE_MAPS_API_KEY;
 
 // Store builds bake EXPO_PUBLIC_API_URL into the bundle. Missing or plain http would ship an app that
@@ -22,5 +22,4 @@ if (release) {
 module.exports = ({ config }) => ({
   ...config,
   plugins: [...config.plugins, ['react-native-maps', { androidGoogleMapsApiKey: key }], './plugins/with-release-guard'],
-  extra: { ...config.extra, androidMaps: Boolean(key) },
 });

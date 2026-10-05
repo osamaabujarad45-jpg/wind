@@ -1,6 +1,7 @@
 // Live map (SPEC-live-map.md): exact dropoff points with pickup-point visibility, driver heading/accuracy.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -91,6 +92,26 @@ try {
   for (const file of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'])
     assert.equal(readFileSync(new URL(`../public/vendor/maplibre-${version}/${file}`, import.meta.url), 'utf8'),
       readFileSync(new URL(`../node_modules/maplibre-gl/dist/${file}`, import.meta.url), 'utf8'), `re-vendor ${file} after upgrading maplibre-gl`);
+
+  // Android map page (SPEC-android-map.md): same vendored library, and its copy of the helpers behaves like map-math.ts.
+  const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
+  const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, labelField };`)();
+  const a = { latitude: 31.9, longitude: 35.2 }, b = { latitude: 32.22, longitude: 35.26 };
+  assert.equal(copy.bearing(a, b), bearing(a, b));
+  assert.deepEqual(copy.ease(a, b, 0.3), ease(a, b, 0.3));
+  assert.deepEqual(copy.ease(a, b, 3), ease(a, b, 3));
+  for (const points of [[a, b], [a]]) assert.deepEqual(copy.fitBounds(points), fitBounds(points));
+  for (const language of ['ar', 'en']) assert.deepEqual(copy.labelField(language), labelField(language));
+  // Served from the web root like the rest of the app (the APK loads it from the API origin).
+  const web = mkdtempSync(join(tmpdir(), 'wind-web-'));
+  writeFileSync(join(web, 'map.html'), page);
+  const child = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
+    `const { server } = await import(${JSON.stringify(new URL('../server/main.ts', import.meta.url).href)}); server.listen(0, async () => {
+      const r = await fetch('http://127.0.0.1:' + server.address().port + '/map.html'); console.log(r.status, r.headers.get('content-type'), r.headers.get('cache-control'), (await r.text()).includes('maplibre')); server.close(); });`],
+    { env: { ...process.env, WEB_ROOT: web, DB_PATH: join(web, 'w.db') }, encoding: 'utf8' });
+  assert.equal(child.stdout.trim(), '200 text/html; charset=utf-8 no-cache true', child.stderr);
 
   // The production web build is tree-shaken (SPEC-web-bundle.md); losing the flags silently re-adds ~190 kB gzip.
   const docker = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
