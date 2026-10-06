@@ -153,6 +153,24 @@ export default function OrderScreen() {
       <Txt variant="h2" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{c.findingBody}</Txt>
     </Card>}
+    {/* Driver offers (SPEC-driver-offers.md): cheapest first, with what the customer needs to choose a driver. */}
+    {isCustomer && order.status === 'searching' && order.offers && <Card>
+      <Txt variant="title">{c.driverOffers}</Txt>
+      {order.offers.length === 0 && <Txt variant="caption" style={{ marginTop: 4 }}>{fill(c.noOffers, { p: money(order.price) })}</Txt>}
+      {order.offers.map(offer => <Row key={offer.driverId} gap={10} style={styles.divider}>
+        <Avatar name={offer.name} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="title">{offer.name}</Txt>
+          <Txt variant="caption">{[offer.vehicle && c[offer.vehicle], offer.rating == null ? c.newDriver : `★ ${offer.rating}`,
+            offer.priceRating != null && fill(c.priceStars, { r: offer.priceRating }), fill(c.tripsCount, { n: offer.trips })].filter(Boolean).join(' · ')}</Txt>
+        </View>
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <Txt variant="h2">{money(offer.price)}</Txt>
+          <Button title={c.acceptOffer} size="sm" loading={busy === `offer${offer.driverId}`} disabled={!!busy}
+            onPress={() => act(`offer${offer.driverId}`, `/orders/${order.id}/offers/${offer.driverId}/accept`, {})} />
+        </View>
+      </Row>)}
+    </Card>}
 
     <Appear index={1}>
       <View style={styles.map}>
@@ -356,7 +374,7 @@ export default function OrderScreen() {
       {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
 
-      {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={rating => act('rate', `/orders/${order.id}/rate`, { rating })} />}
+      {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
 
       {isCustomer && (live || order.sharing) && <Card>
         <Txt variant="caption" style={{ marginBottom: 8 }}>{c.shareHint}</Txt>
@@ -518,18 +536,23 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
   </Row>;
 }
 
-function RateDriver({ order, onRate }: { order: Order; onRate: (rating: number) => void }) {
+// The driver and the price are rated separately (SPEC-driver-offers.md), each once.
+function RateDriver({ order, onRate }: { order: Order; onRate: (body: { rating: number } | { priceRating: number }) => void }) {
   const { c } = useCopy();
   return <Card tone="olive" style={{ marginTop: 4 }}>
     <Txt variant="title" center>{order.rating ? c.thanks : c.rateDriver}</Txt>
     <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
-      {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} on={n <= (order.rating ?? 0)} disabled={!!order.rating} onPress={() => onRate(n)} />)}
+      {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.rateDriver} on={n <= (order.rating ?? 0)} disabled={!!order.rating} onPress={() => onRate({ rating: n })} />)}
+    </Row>
+    <Txt variant="title" center style={{ marginTop: 8 }}>{order.priceRating ? c.thanksPrice : c.ratePrice}</Txt>
+    <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
+      {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.ratePrice} on={n <= (order.priceRating ?? 0)} disabled={!!order.priceRating} onPress={() => onRate({ priceRating: n })} />)}
     </Row>
   </Card>;
 }
 
-function IconStar({ n, on, disabled, onPress }: { n: number; on: boolean; disabled: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${n}/5`} disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
     <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.clay} />
   </Pressable>;
 }

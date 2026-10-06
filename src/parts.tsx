@@ -277,6 +277,8 @@ export function AccountScreen() {
                 <Badge label={c[user.role]} tone={tones.blue} />
                 {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
                 {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.clay} />}
+                {user.priceRating != null && <Badge label={fill(c.priceStars, { r: user.priceRating })} tone={tones.clay} />}
+                {user.role === 'driver' && !!user.trips && <Badge label={fill(c.tripsCount, { n: user.trips })} tone={tones.olive} />}
               </Row>
             </View>
             <Ionicons name="create-outline" size={19} color={palette.olive} />

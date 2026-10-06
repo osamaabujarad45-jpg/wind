@@ -5,11 +5,11 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, useApi } from '../../api';
-import { city, commissionOn, distanceKm, type Order } from '../../model';
+import { city, commissionOn, distanceKm, offerRange, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
@@ -21,6 +21,7 @@ export default function Jobs() {
   const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
+  const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
   const locating = work.tracking === 'starting';
@@ -45,6 +46,19 @@ export default function Jobs() {
       setActionError(err(e));
       reload();
     } finally { setBusy(null); }
+  }
+
+  // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
+  async function offer(order: Order, price: number) {
+    if (busy !== null || assigned) return;
+    setBusy(order.id);
+    setActionError('');
+    try {
+      await api<Order>(`/jobs/${order.id}/offer`, { price });
+      haptic.success();
+      setOffering(null);
+      reload();
+    } catch (e) { haptic.error(); setActionError(err(e)); reload(); } finally { setBusy(null); }
   }
 
   async function enableTracking() {
@@ -115,8 +129,27 @@ export default function Jobs() {
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
               <Txt variant="caption" numberOfLines={2} style={{ flex: 1 }}>{order.detail}</Txt>
             </Row>}
-            <View style={{ marginTop: 12 }}>
-              <Button title={c.accept} icon="checkmark-circle-outline" onPress={() => accept(order)} loading={busy === order.id} disabled={busy !== null || assigned || !work.known} />
+            {order.myOffer && <Row gap={6} style={styles.note}>
+              <Ionicons name="hourglass-outline" size={14} color={palette.olive} />
+              <Txt variant="label" style={{ flex: 1 }}>{fill(c.yourOffer, { p: money(order.myOffer.price) })}</Txt>
+            </Row>}
+            {offering?.id === order.id && order.recommendedPrice != null && (() => {
+              const [lo, hi] = offerRange(order.recommendedPrice), n = Number(offering.text);
+              const ok = Number.isInteger(n) && n >= lo && n <= hi;
+              return <View style={{ marginTop: 12 }}>
+                <Field label={` (₪)`} icon="cash-outline" keyboardType="number-pad" value={offering.text} maxLength={4}
+                  onChangeText={text => setOffering({ id: order.id, text: text.replace(/\D/g, '') })}
+                  error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
+                <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
+                <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
+                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || assigned} />
+              </View>;
+            })()}
+            <View style={{ marginTop: 12, gap: 8 }}>
+              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
+                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || assigned || !work.known} />
+              {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
+                disabled={busy !== null || assigned} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
             </View>
           </Card>
         </View>;

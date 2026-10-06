@@ -72,11 +72,17 @@ async function order(who, plus, o) {
   body.quotedPrice = quote(defaultSettings, { ...body, plus });
   return call('/orders', who.token, body);
 }
+// Smart pricing (SPEC-driver-offers.md): the server recommends, drivers may offer their own price.
+async function smartOrder(who, o) {
+  const body = { shared: false, option: 'small', contact: who.user.phone, detail: '', loadingHelp: false, pricing: 'smart', ...o };
+  body.quotedPrice = (await call('/price', who.token, body)).price;
+  return call('/orders', who.token, body);
+}
 const completed = await order(layla, true, { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus',
   pickupNote: 'محل الزهراء، شارع ركب', dropoffNote: 'دوار الشهداء، بجانب الصيدلية', detail: 'صندوق ملابس وهدية', option: 'medium' });
 const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
   pickupNote: 'دوار المنارة', dropoffNote: 'ساحة المهد', option: '2', detail: 'معي عربة أطفال' });
-const searching = await order(layla, true, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'tulkarm',
+const searching = await smartOrder(layla, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'tulkarm',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق', detail: 'كتب جامعية' });
 await order(omar, false, { service: 'ride', pickupCity: 'nablus', dropoffCity: 'jenin', pickupNote: 'مجمع الكراجات', dropoffNote: 'مستشفى جنين' });
 await order(omar, false, { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jericho', option: 'large', loadingHelp: true,
@@ -98,6 +104,7 @@ const recoveryDriver = await register('0599000006', 'يوسف عودة', { role:
 await call(`/admin/users/${recoveryDriver.user.id}/approve`, boss.token, {});
 const idleDriver = await register('0599000007', 'كريم علي', { role: 'driver', vehicle: 'car' });
 await call(`/admin/users/${idleDriver.user.id}/approve`, boss.token, {});
+await call(`/jobs/${searching.id}/offer`, idleDriver.token, { price: searching.price - 3 }); // Layla sees one driver offer
 const proofRecovery = await order(layla, true, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'nablus',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'دوار الشهداء', detail: 'طرد هدية', option: 'small' });
 await call(`/jobs/${proofRecovery.id}/accept`, recoveryDriver.token, {});

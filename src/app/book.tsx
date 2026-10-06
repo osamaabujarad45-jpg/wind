@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
@@ -135,7 +135,25 @@ export default function Book() {
 
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
-  const price = pending?.payload.quotedPrice ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
+  // Smart recommended price from the server (SPEC-driver-offers.md); without it (offline), the fixed tariff as before.
+  const [priceTick, setPriceTick] = useState(0);
+  // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
+  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, priceTick]);
+  const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null } | null>(null);
+  useEffect(() => {
+    if (!isCustomer || pending) return; // a pending booking keeps the price it was sent with
+    let live = true;
+    const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity,
+      ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(scheduledFor !== null && { scheduledFor }) })
+      .then(quote => quote, () => null).then(quote => { if (live) setQuoted({ key: priceKey, quote }); }), 300);
+    return () => { live = false; clearTimeout(timer); };
+  }, [isCustomer, pending, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor]);
+  const quoting = isCustomer && !pending && quoted?.key !== priceKey; // the Request button waits for it
+  const smart = quoted?.quote ?? null;
+  const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
+  const reasons = smart && [fill(c.tripSize, { km: `${smart.estimated ? '≈ ' : ''}${smart.km}`, min: smart.minutes }), smart.night && c.nightRate,
+    ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
+    .filter(Boolean).join(' · ');
   const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));
   // A checked code holds for the fare it was checked against; the server re-checks it on booking.
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
@@ -186,7 +204,7 @@ export default function Book() {
     try {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
         contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }),
-        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }) });
+        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
       setPending(command);
       const order = await api<Order>('/orders', { ...command.payload, requestId: command.requestId });
@@ -206,7 +224,7 @@ export default function Book() {
           catch { setError(c.bookingStorageError); }
         }
       }
-      if (errorCode(e) === 'price_changed') await refresh(); // re-render with the new tariff, customer confirms again
+      if (errorCode(e) === 'price_changed') { await refresh(); setPriceTick(n => n + 1); } // new tariff or road state: customer confirms again
       if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
         setPromo(null);
         api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
@@ -217,7 +235,7 @@ export default function Book() {
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || (!available && !pending)} />}>
+    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={quoting ? '…' : money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || quoting || (!available && !pending)} />}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
         {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
@@ -318,6 +336,18 @@ export default function Book() {
           <Txt variant="caption">{c.scheduledHint}</Txt>
         </View>}
       </Card>
+
+      {smart && !pending && <Card style={{ paddingVertical: 10 }}>
+        <Row gap={12}>
+          <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
+          <View style={{ flex: 1 }}>
+            <Txt variant="micro">{c.recommendedPrice}</Txt>
+            <Txt variant="title">{quoting ? '…' : money(smart.price)}</Txt>
+          </View>
+        </Row>
+        {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
+        <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
+      </Card>}
 
       <Card style={{ paddingVertical: 10 }}>
         <Row gap={12}>
