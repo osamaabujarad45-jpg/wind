@@ -209,7 +209,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
@@ -379,7 +379,7 @@ function toOrder(r: Row, viewer: User): Order {
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)),
       heading: r.loc_heading ?? null, accuracy: r.loc_accuracy ?? null } : null,
-    recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null,
+    recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null, routeKm: r.route_km ?? null,
     myOffer: viewer.role === 'driver' && r.status === 'searching' ? myOffer(r.id, viewer.id) : null,
     ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: offersFor(r.id) }),
   };
@@ -816,7 +816,8 @@ route('POST', '/api/price', ({ user, body }) => {
   return recommend(user, body);
 });
 
-function createOrder(user: User, body: Row, recommended?: number) {
+function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
+  const recommended = smart?.price;
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
@@ -836,15 +837,15 @@ function createOrder(user: User, body: Row, recommended?: number) {
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
   const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?)`,
+    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
     option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
-    recommended ?? null).lastInsertRowid);
+    recommended ?? null, smart?.km ?? null).lastInsertRowid); // the km the price used, shown on the driver's job card
   if (promo?.id) run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now);
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
@@ -859,7 +860,7 @@ route('POST', '/api/orders', async ({ user, body }) => {
   if (body.promoCode != null) limit(identityKey('promo', user.id), 20, 60 * 60_000); // no unlimited code guessing through booking
   const { requestId, ...input } = body;
   // Routing is async, so the recommendation is computed before the write transaction (SPEC-driver-offers.md).
-  const smart = async () => input.pricing === 'smart' ? (await recommend(user, input)).price : undefined;
+  const smart = async () => input.pricing === 'smart' ? await recommend(user, input) : undefined;
   if (requestId == null) {
     const recommended = await smart();
     db.exec('BEGIN IMMEDIATE');

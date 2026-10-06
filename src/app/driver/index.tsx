@@ -107,7 +107,8 @@ export default function Jobs() {
       ? <Empty icon="hourglass-outline" title={c.noJobs} body={c.noJobsDesc} />
       : data.map(order => {
         const earn = order.price - commissionOn(order.price, rate);
-        const km = distanceKm(city(order.pickupCity), city(order.dropoffCity));
+        // The road km the price used; fixed-price orders (Souq, old apps) only have the city-centre estimate.
+        const km = order.routeKm != null ? `${order.routeKm}` : `≈ ${distanceKm(city(order.pickupCity), city(order.dropoffCity))}`;
         // Native layout animation can retain a removed assignment panel's offset.
         return <View key={order.id}>
           <Card>
@@ -115,7 +116,7 @@ export default function Jobs() {
               <ServiceIcon service={order.service} size={38} />
               <View style={{ flex: 1 }}>
                 <Txt variant="title">{c[order.service]}</Txt>
-                <Txt variant="caption">{order.shared ? c.shared : c.private} · {order.pickupCity === order.dropoffCity ? c.sameCity : `≈ ${km} ${c.km}`}</Txt>
+                <Txt variant="caption">{order.shared ? c.shared : c.private} · {order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
               </View>
               <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
                 <Txt variant="micro">{c.earnLabel}</Txt>

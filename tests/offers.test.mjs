@@ -68,11 +68,13 @@ try {
   assert.equal(order.recommendedPrice, rec.price);
   assert.equal(order.price, rec.price);
   assert.deepEqual(order.offers, []);
-
+  // The job card shows the km the price used (pins), not the city-centre estimate.
+  assert.equal((await call('/jobs', { token: sami.token })).find(j => j.id === order.id).routeKm, rec.km);
   // ---- old apps and Souq keep the fixed tariff and cannot be offered on ----
   const legacyBody = { ...input, pricing: undefined, pickupPoint: undefined, dropoffPoint: undefined };
   const legacy = await call('/orders', { token: customer.token, body: { ...legacyBody, quotedPrice: quote(s, { ...trip, shared: false }), requestId: randomUUID() } });
   assert.equal(legacy.recommendedPrice, null);
+  assert.equal(legacy.routeKm, null);
   assert.equal(legacy.offers, undefined);
   await call(`/jobs/${legacy.id}/offer`, { token: sami.token, body: { price: legacy.price }, expect: 409 });
   const partnerKey = process.env.SOUQ_PARTNER_KEY;

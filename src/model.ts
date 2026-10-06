@@ -96,6 +96,7 @@ export type Order = {
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number; heading?: number | null; accuracy?: number | null }) | null;
   // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).
   recommendedPrice?: number | null; priceRating?: number | null;
+  routeKm?: number | null; // road km the recommended price used
   myOffer?: { price: number; createdAt: number } | null; // the viewing driver's pending offer
   offers?: Offer[]; // the customer's open offers, cheapest first
 };
