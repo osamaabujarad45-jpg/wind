@@ -20,7 +20,7 @@ export default function TrackScreen() {
   const { c, language } = useCopy();
   const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
-  const etaData = useApi<{ minutes: number | null; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
+  const etaData = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
   const eta = etaData?.minutes, delayed = !!etaData?.delayed;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
@@ -49,6 +49,7 @@ export default function TrackScreen() {
       {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit'
         ? delayed ? c.etaToDropoffSlow : c.etaToDropoff
         : delayed ? c.etaToPickupSlow : c.etaToPickup, { lo: etaRange(eta)[0], hi: etaRange(eta)[1] })}</Txt>}
+      {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
       {location && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6 }}>{fill(c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}
       {location && <Button title={c.navigate} icon="map-outline" variant="soft"

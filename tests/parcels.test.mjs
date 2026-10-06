@@ -68,11 +68,26 @@ try {
   const carried = (await call('/orders', { token: courier.token })).filter(o => o.driverId === courier.user.id && o.status === 'assigned');
   assert.equal(carried.length, 3);
 
+  // ---- a multi-parcel run gives no straight-to-you ETA (SPEC-courier-run-eta.md) ----
+  for (const o of orders) assert.equal((await call(`/orders/${o.id}`, { token: customer.token })).sharedRun, true);
+  const { token: shareToken } = await call(`/orders/${orders[0].id}/share`, { token: customer.token, body: {} });
+  const runEta = await call(`/track/${shareToken}/eta`);
+  assert.equal(runEta.minutes, null);
+  assert.equal(runEta.sharedRun, true);
+  assert.equal(runEta.approach, undefined); // no straight line to this stop
+  db.prepare("UPDATE orders SET status = 'cancelled' WHERE id IN (?, ?)").run(orders[1].id, orders[2].id);
+  assert.equal((await call(`/orders/${orders[0].id}`, { token: customer.token })).sharedRun, false); // last stop: normal ETA again
+  const lastEta = await (await realFetch(`${base}/track/${shareToken}/eta`)).json();
+  assert.equal(lastEta.sharedRun, undefined); // routed like a single job (no OSRM in this test, so no minutes either)
+  assert.equal((await call(`/orders/${orders[1].id}`, { token: customer.token })).sharedRun, false); // finished orders never say it
+  db.prepare("UPDATE orders SET status = 'assigned' WHERE id IN (?, ?)").run(orders[1].id, orders[2].id);
+
   // ---- rides are exclusive both ways ----
   const ride = { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'nablus', option: '1', shared: false, pickupNote: 'Gate', dropoffNote: 'Square', contact: '0599300002' };
   const rideOrder = await call('/orders', { token: customer.token, body: { ...ride, requestId: randomUUID() } });
   await call(`/jobs/${rideOrder.id}/accept`, { token: courier.token, body: {}, expect: 409 }); // carrying parcels
   await call(`/jobs/${rideOrder.id}/accept`, { token: taxi.token, body: {} });
+  assert.equal((await call(`/orders/${rideOrder.id}`, { token: customer.token })).sharedRun, false); // one job: unchanged
   db.prepare('DELETE FROM request_limits').run();
   sent.length = 0;
   const fourth = await book(near);

@@ -188,6 +188,10 @@ export default function OrderScreen() {
             ? alerts.length ? c.etaToPickupSlow : c.etaToPickup
             : alerts.length ? c.etaToDropoffSlow : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
         </Row>}
+        {live && order.sharedRun && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          <Ionicons name="layers-outline" size={16} color={palette.olive} />
+          <Txt variant="caption" style={{ flex: 1 }}>{c.courierRun}</Txt>
+        </Row>}
         {live && eta && location && !location.stale && !error && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
           onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Row gap={8}>

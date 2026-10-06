@@ -19,7 +19,8 @@ export function useRoad(order: Order | undefined) {
   const route = useApi<RoadRoute>(from && to && (active || order?.status === 'searching') ? roadPath(from, to, 5) : null).data;
   // Before collection (and when returning to the sender) the driver heads to pickup, otherwise to dropoff.
   const toPickup = !!order && ['assigned', 'at_pickup', 'returning'].includes(order.status);
-  const driver = active ? order?.driverLocation : null;
+  // A courier with other stops first is not heading straight here: no ETA or approach line (SPEC-courier-run-eta.md).
+  const driver = active && !order?.sharedRun ? order?.driverLocation : null;
   const fetched = useApi<RoadRoute>(driver && from && to ? roadPath(driver, toPickup ? from : to, 3, driver.heading) : null).data;
   // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched.
   const [kept, setKept] = useState<RoadRoute | undefined>();

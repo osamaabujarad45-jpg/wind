@@ -347,7 +347,8 @@ const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.pho
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
   (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
-  (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open
+  (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open,
+  EXISTS(SELECT 1 FROM orders x WHERE x.driver_id = o.driver_id AND x.id <> o.id AND x.status IN (${activeSql})) shared_run
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
   LEFT JOIN driver_locations l ON l.driver_id = o.driver_id LEFT JOIN order_disputes od ON od.order_id = o.id`;
 
@@ -382,6 +383,8 @@ function toOrder(r: Row, viewer: User): Order {
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)),
       heading: r.loc_heading ?? null, accuracy: r.loc_accuracy ?? null } : null,
     recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null, routeKm: r.route_km ?? null,
+    // The courier has other stops on this run, so a straight-to-you ETA would be wrong (SPEC-courier-run-eta.md).
+    sharedRun: (owner || assigned) && activeStatuses.includes(r.status) && !!r.shared_run,
     myOffer: viewer.role === 'driver' && r.status === 'searching' ? myOffer(r.id, viewer.id) : null,
     ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: offersFor(r.id) }),
   };
@@ -1510,6 +1513,9 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   limit(identityKey('track-eta', hash), 60, 10 * 60_000);
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
+  // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).
+  if (r.shared_run) return Promise.resolve().then(() => roadRoute(city(r.pickup_city), city(r.dropoff_city)))
+    .then(t => t.line, () => null).then(road => ({ minutes: null, sharedRun: true, road }));
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
   // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
   const delayed = roadAlerts(roads(), r.pickup_city, r.dropoff_city).length > 0;

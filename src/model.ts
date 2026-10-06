@@ -93,6 +93,7 @@ export type Order = {
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
+  sharedRun?: boolean; // the driver carries other orders right now: no straight-to-you ETA (SPEC-courier-run-eta.md)
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number; heading?: number | null; accuracy?: number | null }) | null;
   // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).
   recommendedPrice?: number | null; priceRating?: number | null;
