@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { CLOSED_MINUTES, commissionOn, defaultSettings as s, distanceKm, quote, SLOW_MINUTES, smartPrice } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-offers-')), 'test.db');
-process.env.WIND_ENABLED_SERVICES = 'parcel';
+process.env.WIND_ENABLED_SERVICES = 'parcel,ride'; // offers are for rides and freight; Souq partner orders are parcels
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 delete process.env.OSRM_URL; // no routing here: the straight-line estimate path
 const { server, db, promote } = await import('../server/main.ts');
@@ -36,9 +36,9 @@ try {
   const sami = await driver('0599200003', 'Sami'), rami = await driver('0599200004', 'Rami'), omar = await driver('0599200005', 'Omar');
 
   const pickupPoint = { latitude: 31.9022, longitude: 35.2063 }, dropoffPoint = { latitude: 32.2211, longitude: 35.2544 };
-  const trip = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', pickupPoint, dropoffPoint };
+  const trip = { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'nablus', option: '1', pickupPoint, dropoffPoint };
   const km = distanceKm(pickupPoint, dropoffPoint);
-  const expected = delayMinutes => smartPrice(s, { service: 'parcel', option: 'small', km, minutes: Math.round(km * 1.2), delayMinutes, at: Date.now() });
+  const expected = delayMinutes => smartPrice(s, { service: 'ride', option: '1', km, minutes: Math.round(km * 1.2), delayMinutes, at: Date.now() });
 
   // ---- recommended price and its reasons ----
   let rec = await call('/price', { token: customer.token, body: trip });

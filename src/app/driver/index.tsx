@@ -5,7 +5,7 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, useApi } from '../../api';
-import { city, commissionOn, distanceKm, offerRange, type Order } from '../../model';
+import { canTake, city, commissionOn, distanceKm, offerRange, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
@@ -25,11 +25,13 @@ export default function Jobs() {
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
   const locating = work.tracking === 'starting';
-  const currentOrder = work.order;
-  const assigned = !!currentOrder;
+  const carrying = work.orders;
+  const assigned = carrying.length > 0;
+  // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
+  const blocked = (order: Order) => !canTake(carrying, order.service);
 
   async function accept(order: Order) {
-    if (busy !== null || assigned || !work.known) return;
+    if (busy !== null || blocked(order) || !work.known) return;
     setBusy(order.id);
     setActionError('');
     try {
@@ -50,7 +52,7 @@ export default function Jobs() {
 
   // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
   async function offer(order: Order, price: number) {
-    if (busy !== null || assigned || !work.known) return;
+    if (busy !== null || blocked(order) || !work.known) return;
     setBusy(order.id);
     setActionError('');
     try {
@@ -99,7 +101,8 @@ export default function Jobs() {
       </Press>}
     </Card>
 
-    {currentOrder && <Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${currentOrder.id}`)} />}
+    {carrying.length === 1 && <Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} />}
+    {carrying.length > 1 && <Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} />}
     <Tip id="driver-earn" icon="trending-up-outline" title={c.tipDriverTitle} body={c.tipDriverBody} />
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
@@ -149,14 +152,14 @@ export default function Jobs() {
                   error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
-                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || assigned || !work.known} />
+                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
               <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
-                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || assigned || !work.known} />
+                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || blocked(order) || !work.known} />
               {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
-                disabled={busy !== null || assigned} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
+                disabled={busy !== null || blocked(order)} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
             </View>
           </Card>
         </View>;

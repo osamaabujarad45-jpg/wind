@@ -127,9 +127,9 @@ try {
   db.prepare('UPDATE driver_locations SET updated_at = ? WHERE driver_id = ?').run(Date.now() - 121000, driver.user.id);
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation, null);
 
-  // Private job can't be pooled with the active shared one
+  // A parcel courier carries more than one parcel at once (SPEC-parcel-standard.md)
   const privateOrder = await call('/orders', { token: customer.token, body: { ...orderInput, shared: false } });
-  await call(`/jobs/${privateOrder.id}/accept`, { token: driver.token, body: {}, expect: 409 });
+  await call(`/jobs/${privateOrder.id}/accept`, { token: driver.token, body: {} });
   const secondDriver = await call('/auth/register', { body: { phone: '0599000005', name: 'Rami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/orders/${privateOrder.id}`, { token: secondDriver.token, expect: 404 });
   await call(`/orders/${privateOrder.id}/cancel`, { token: customer.token, body: {} });

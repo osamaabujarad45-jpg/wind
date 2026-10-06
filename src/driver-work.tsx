@@ -6,7 +6,7 @@ import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
-type Work = { order: Order | null; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order | null) => void;
+type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
   permission: ReturnType<typeof Location.useForegroundPermissions>[0]; requestPermission: ReturnType<typeof Location.useForegroundPermissions>[1]; prepareTracking: () => Promise<boolean> };
 const Context = createContext<Work | null>(null);
 
@@ -16,7 +16,8 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
   const [lifecycle, setLifecycle] = useState({ active: AppState.currentState === 'active', revision: 0 });
   const foreground = lifecycle.active;
-  const [result, setResult] = useState<{ actor: number; revision: number; order: Order | null; error?: string }>();
+  // Every active order: one ride or freight load, or many parcels (SPEC-parcel-standard.md).
+  const [result, setResult] = useState<{ actor: number; revision: number; orders: Order[]; error?: string }>();
   const generation = useRef(0);
   const invalidate = useCallback(() => { generation.current++; }, []);
   const pending = useRef<{ generation: number; promise: Promise<void> } | null>(null);
@@ -89,10 +90,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     if (pending.current?.generation === current) return pending.current.promise;
     const promise = api<Order[]>('/orders').then(orders => {
       if (generation.current === current) setResult({ actor, revision: lifecycle.revision,
-        order: orders.find(order => order.driverId === actor && activeStatuses.includes(order.status)) ?? null });
+        orders: orders.filter(order => order.driverId === actor && activeStatuses.includes(order.status)) });
     }, error => {
       if (generation.current === current) setResult(previous => ({ actor, revision: lifecycle.revision,
-        order: previous?.actor === actor ? previous.order : null, error: errorCode(error) }));
+        orders: previous?.actor === actor ? previous.orders : [], error: errorCode(error) }));
     }).finally(() => { if (pending.current?.generation === current) pending.current = null; });
     pending.current = { generation: current, promise };
     return promise;
@@ -105,13 +106,17 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     return () => { invalidate(); if (timer) clearInterval(timer); };
   }, [actor, foreground, reload, invalidate]);
 
-  const update = (order: Order | null) => {
-    if (actor === null || order && order.driverId !== actor) return;
+  const update = (order: Order) => {
+    if (actor === null || order.driverId !== actor) return;
     generation.current++; // acknowledged mutations win over an earlier poll
-    setResult({ actor, revision: lifecycle.revision, order: order && activeStatuses.includes(order.status) ? order : null });
+    setResult(previous => {
+      const others = (previous?.actor === actor && previous.revision === lifecycle.revision ? previous.orders : []).filter(o => o.id !== order.id);
+      return { actor, revision: lifecycle.revision, orders: activeStatuses.includes(order.status) ? [order, ...others] : others };
+    });
   };
   const own = result?.actor === actor && result.revision === lifecycle.revision ? result : undefined;
-  const order = own?.order ?? null;
+  const orders = own?.orders ?? [];
+  const order = orders[0] ?? null; // one location stream serves every order the driver carries
   const servicesEnabled = servicesResult?.actor === actor && servicesResult.revision === lifecycle.revision && servicesResult.enabled;
 
   // Foreground only. Start a fresh high-accuracy fix as soon as a driver accepts, then keep the customer
@@ -153,7 +158,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const savedTracking = trackingResult?.actor === actor && trackingResult.orderId === order?.id ? trackingResult.value : undefined;
   const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ? 'off' : savedTracking ?? 'starting';
 
-  return <Context.Provider value={{ order, known: !!own && !own.error, error: own?.error, tracking, reload, update, permission, requestPermission, prepareTracking }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ order, orders, known: !!own && !own.error, error: own?.error, tracking, reload, update, permission, requestPermission, prepareTracking }}>{children}</Context.Provider>;
 }
 
 export function useDriverWork() {

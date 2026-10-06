@@ -55,7 +55,7 @@ export function optionsFor(service: Service): string[] {
 
 // Admin-editable; stored server-side. Discounts and commissions are fractions.
 export const defaultSettings = {
-  parcelBase: 12, parcelPerKm: 0.8, parcelLarge: 10,
+  parcelPrice: 20, parcelLarge: 10, // standard parcel, any distance (SPEC-parcel-standard.md)
   rideBase: 15, ridePerKm: 1.1,
   freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
   sharedDiscount: 0.4, plusDiscount: 0.15,
@@ -103,7 +103,8 @@ export type Order = {
 export type DriverStats = { rating: number | null; priceRating: number | null; trips: number };
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
-export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean };
+export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
+  standard?: boolean }; // a parcel: one standard price, no breakdown
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;
@@ -129,14 +130,24 @@ export function distanceKm(a: Point, b: Point): number {
   return Math.round(2 * 6371 * Math.asin(Math.sqrt(h)) * 1.3 * 10) / 10;
 }
 
+/** Parcels cost the standard price wherever they go; a large one adds its extra (SPEC-parcel-standard.md). */
+export function parcelFare(s: Settings, o: { option: string; plus?: boolean }): number {
+  return Math.max(1, Math.round((s.parcelPrice + (o.option === 'large' ? s.parcelLarge : 0)) * (o.plus ? 1 - s.plusDiscount : 1)));
+}
+
+/** Parcels a driver may carry at once; rides and freight are exclusive. */
+export const PARCEL_LOAD = 200; // ponytail: the owner said 100+; raise when a van route carries more
+export const canTake = (active: { service: Service }[], service: Service) =>
+  service === 'parcel' ? active.every(o => o.service === 'parcel') && active.length < PARCEL_LOAD : active.length === 0;
+
 export function quote(s: Settings, o: {
   service: Service; pickupCity: CityId; dropoffCity: CityId; option: string;
   loadingHelp?: boolean; shared: boolean; plus?: boolean;
 }): number {
+  if (o.service === 'parcel') return parcelFare(s, o);
   const km = distanceKm(city(o.pickupCity), city(o.dropoffCity));
   const large = o.option === 'large';
-  let total = o.service === 'parcel' ? s.parcelBase + s.parcelPerKm * km + (large ? s.parcelLarge : 0)
-    : o.service === 'ride' ? s.rideBase + s.ridePerKm * km
+  let total = o.service === 'ride' ? s.rideBase + s.ridePerKm * km
     : s.freightBase + s.freightPerKm * km + (large ? s.freightLarge : 0) + (o.loadingHelp ? s.loadingHelp : 0);
   if (o.shared) total *= (1 - s.sharedDiscount) * (o.service === 'ride' ? Number(o.option) || 1 : 1); // shared rides are per seat
   if (o.plus) total *= 1 - s.plusDiscount;
@@ -152,9 +163,9 @@ export const isNight = (at: number) => { const h = Number(hebronHour.format(at))
 export function smartPrice(s: Settings, o: {
   service: Service; option: string; loadingHelp?: boolean; km: number; minutes: number; delayMinutes: number; at: number; plus?: boolean;
 }): number {
+  if (o.service === 'parcel') return parcelFare(s, o);
   const large = o.option === 'large';
-  let total = o.service === 'parcel' ? s.parcelBase + s.parcelPerKm * o.km + (large ? s.parcelLarge : 0)
-    : o.service === 'ride' ? s.rideBase + s.ridePerKm * o.km
+  let total = o.service === 'ride' ? s.rideBase + s.ridePerKm * o.km
     : s.freightBase + s.freightPerKm * o.km + (large ? s.freightLarge : 0) + (o.loadingHelp ? s.loadingHelp : 0);
   total += s.perMinute * (Math.max(0, o.minutes - o.km * 1.2) + o.delayMinutes); // 1.2 min/km = 50 km/h, measured intercity
   if (isNight(o.at)) total *= 1 + s.nightExtra;

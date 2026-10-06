@@ -10,7 +10,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  CLOSED_MINUTES, isNight, offerRange, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  canTake, CLOSED_MINUTES, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
@@ -340,6 +340,8 @@ function toSubscription(r: Row): Subscription {
 
 const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
 const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
+/** What a driver is carrying right now (SPEC-parcel-standard.md: many parcels, or one ride / freight load). */
+const activeLoad = (driverId: number) => all(`SELECT service FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId) as { service: Service }[];
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
@@ -741,7 +743,10 @@ function newJobPush(service: Service, orderId: number, customerId: number, excep
   const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
     AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = ? AND r.driver_id = u.id)
-    AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+    AND ${service === 'parcel' // a parcel reaches couriers already carrying parcels, below the load limit
+    ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND o.service <> 'parcel')
+       AND (SELECT COUNT(*) FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) < ${PARCEL_LOAD}`
+    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
 }
@@ -809,7 +814,7 @@ async function recommend(user: User, b: Row) {
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice(settings(), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
     plus: activePlan(user.id) === 'plus' });
-  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip };
+  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel' };
 }
 route('POST', '/api/price', ({ user, body }) => {
   need(user, 'customer');
@@ -819,8 +824,9 @@ route('POST', '/api/price', ({ user, body }) => {
 });
 
 function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
-  const recommended = smart?.price;
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
+  // Parcels have one standard price: nothing to offer on, so no recommendation (SPEC-parcel-standard.md).
+  const recommended = service === 'parcel' ? undefined : smart?.price;
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity)) fail(400, 'invalid_city');
@@ -1225,14 +1231,16 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
   if (!vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
-  if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
+  const carrying = activeLoad(user.id);
+  if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
   const changed = run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), order.id, order.id, user.id).changes;
   if (!changed) fail(409, 'already_taken');
   run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id); // settled, and this driver is busy now
-  run('DELETE FROM driver_locations WHERE driver_id = ?', user.id); // an older job's location is not this assignment's fix
+  // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
+  if (!carrying.length) run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
   queuePush([order.customerId], 'assigned', order.id);
   const result = getOrder(order.id, user);
   db.exec('COMMIT');
@@ -1249,7 +1257,7 @@ route('POST', '/api/jobs/:id/offer', ({ user, params, body }) => {
   if (order.status !== 'searching') fail(409, 'already_taken');
   const recommended = order.recommendedPrice ?? fail(409, 'fixed_price'); // Souq and older apps: accept at the shown price
   if (!enabledServices.includes(order.service) || !vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
-  if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
+  if (!canTake(activeLoad(user.id), order.service)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
   // A driver changing their own live offer does not ring the customer again; a first or renewed one does.

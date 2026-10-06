@@ -58,7 +58,7 @@ try {
   await advance(driver.token, held, {}, 409); // on hold cannot be advanced by the driver
   await call('/location', { token: driver.token, body: { latitude: 32.2, longitude: 35.2 } }); // still an active job
   const other = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
-  await call(`/jobs/${other.id}/accept`, { token: driver.token, body: {}, expect: 409 }); // driver still busy
+  await call(`/jobs/${other.id}/accept`, { token: driver.token, body: {} }); // a courier holding one parcel still takes more (SPEC-parcel-standard.md)
   await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
   await call(`/admin/orders/${order.id}/resolve`, { token: driver.token, body: { action: 'reattempt', reason: 'Called recipient' }, expect: 403 });
   await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'x' }, expect: 400 });

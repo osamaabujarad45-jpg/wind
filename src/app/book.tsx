@@ -341,12 +341,16 @@ export default function Book() {
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>
-            <Txt variant="micro">{c.recommendedPrice}</Txt>
+            <Txt variant="micro">{smart.standard ? c.standardParcel : c.recommendedPrice}</Txt>
             <Txt variant="title">{quoting ? '…' : money(smart.price)}</Txt>
           </View>
         </Row>
-        {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
-        <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
+        {smart.standard
+          ? <Txt variant="caption" style={{ marginTop: 6 }}>{c.standardParcelHint}</Txt>
+          : <>
+            {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
+            <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
+          </>}
       </Card>}
 
       <Card style={{ paddingVertical: 10 }}>

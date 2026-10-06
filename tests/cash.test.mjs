@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultSettings, quote } from '../src/model.ts';
+import { defaultSettings as standard, quote } from '../src/model.ts';
+// The ledger maths below were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
+const defaultSettings = { ...standard, parcelPrice: 49 };
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-cash-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
@@ -29,6 +31,7 @@ try {
   const driver = await call('/auth/register', { body: { phone: '0599300003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599300004', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
   for (const d of [driver, other]) await call(`/admin/users/${d.user.id}/approve`, { token: admin.token, body: {} });
+  await call('/admin/settings', { token: admin.token, body: { parcelPrice: 49 } });
 
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'A', dropoffNote: 'B', contact: '0599300002', detail: 'Box' };

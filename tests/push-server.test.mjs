@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
-process.env.WIND_ENABLED_SERVICES = 'parcel';
+process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 delete process.env.OSRM_URL; // smart prices from the straight-line estimate
 const { server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
@@ -79,11 +79,12 @@ try {
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('d'), fcm('c')]);
 
-  // A busy driver hears about no new jobs; scheduled orders wait for their release.
+  // A courier carrying a parcel still hears about new parcels (SPEC-parcel-standard.md); scheduled orders wait for their release.
   sent.length = 0;
-  await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  const another = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   await settle();
-  assert.deepEqual(sent, []);
+  assert.deepEqual(sent.map(s => s.url), [fcm('d')]);
+  await call(`/orders/${another.id}/cancel`, { token: customer.token, body: {} });
 
   // 410 Gone removes the subscription; unsubscribe stops pushes.
   sent.length = 0; reply = 410;
@@ -143,7 +144,9 @@ try {
   assert.deepEqual(sent.map(s => s.url), [fcm('g')]);
 
   // Driver offers (SPEC-offer-alerts.md): a first offer rings the customer, a changed price does not; the chosen driver hears.
-  const smart = await call('/orders', { token: customer.token, body: { ...input, pricing: 'smart', requestId: randomUUID() } });
+  // Offers exist for rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
+  const smart = await call('/orders', { token: customer.token, body: { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'nablus', option: '1', shared: false,
+    pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599150002', pricing: 'smart', requestId: randomUUID() } });
   await settle();
   sent.length = 0;
   await call(`/jobs/${smart.id}/offer`, { token: replacement.token, body: { price: smart.recommendedPrice } });

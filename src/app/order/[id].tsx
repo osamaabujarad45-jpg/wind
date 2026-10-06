@@ -8,7 +8,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';
 import { canOrderAgain, newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
+import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
@@ -80,7 +80,7 @@ export default function OrderScreen() {
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
-    if (!order || busy || key === 'accept' && (!work.known || work.order)) return;
+    if (!order || busy || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
     setBusy(key);
     setActionError('');
     try {
@@ -105,7 +105,7 @@ export default function OrderScreen() {
       if ('id' in next) {
         setData(next);
         if (isDriver) work.update(next);
-      } else if (mine && key === 'release') work.update(null);
+      } else if (mine && key === 'release') work.update({ ...order, status: 'searching' }); // back in the pool: no longer carried
       after?.();
     } catch (e) {
       if (key === 'advance' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)
@@ -339,7 +339,7 @@ export default function OrderScreen() {
     </Card>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !!work.order}
+      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {mine && activeStatuses.includes(order.status) && <>

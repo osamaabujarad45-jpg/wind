@@ -8,7 +8,7 @@ import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, 
 import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)[] }[] = [
-  { title: 'pricing', keys: ['parcelBase', 'parcelPerKm', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
+  { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
   { title: 'discounts', keys: ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
 ];

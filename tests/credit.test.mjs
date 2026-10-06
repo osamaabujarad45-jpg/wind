@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultSettings, quote } from '../src/model.ts';
+import { defaultSettings as standard, quote } from '../src/model.ts';
+// Discount maths were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
+const defaultSettings = { ...standard, parcelPrice: 49 };
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-credit-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
@@ -26,6 +28,7 @@ const register = (phone, name, extra = {}) => call('/auth/register', { body: { p
 try {
   const admin = await register('0599140001', 'Admin');
   promote('0599140001');
+  await call('/admin/settings', { token: admin.token, body: { parcelPrice: 49 } });
   const customer = await register('0599140002', 'Rana');
   const other = await register('0599140005', 'Huda');
   const driver = await register('0599140004', 'Driver', { role: 'driver', vehicle: 'car' });
