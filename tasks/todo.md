@@ -9,4 +9,4 @@
 - [x] gate: npm test, tsc, lint
 - [x] phone (A53, local server, real OSRM): 2 parcels carried → "2 orders in your care", Accept enabled, no offer, share ₪17 of ₪20, Trips lists both
 - [x] screens 78 (book-parcel: "Standard parcel price")
-- [ ] ship (backup, deploy, live check, push, release notes; APK 1.0.9 for the driver changes)
+- [x] ship (backup, deploy, live check, push, release notes; APK 1.0.9 for the driver changes)
