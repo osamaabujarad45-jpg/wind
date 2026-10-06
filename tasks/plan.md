@@ -1,13 +1,11 @@
-# Plan: offer-alerts (SPEC-offer-alerts.md)
+# Plan: parcel-standard (SPEC-parcel-standard.md)
 
-One slice: two push kinds on the existing Web Push outbox (`queuePush` → `flushPush` after the request commits).
-
-1. `POST /api/jobs/:id/offer`: before the upsert, if this driver has no live offer (< `OFFER_TTL`) on the order, queue
-   `offer` to the customer. A price change on a live offer stays silent.
-2. `POST /api/orders/:id/offers/:driver/accept`: queue `offer_accepted` to the chosen driver inside the transaction.
-3. `flushPush`: both kinds high urgency; `offer` TTL = `OFFER_TTL` (an alert for an expired offer is noise).
-4. `public/sw.js`: Arabic and English words; tag stays `order-N`, so offers on one order collapse.
-5. Test in `tests/push-server.test.mjs`; mutation-check each rule.
-
-Verification: gate, then the phone sweep (also covers the release 27 items the ship pass did not re-run on the phone:
-job card road km and the offer flow).
+1. `src/model.ts`: `parcelPrice` (₪20) + `parcelLarge` replace base/per-km; `parcelFare()` used by `quote()` and
+   `smartPrice()`; `PARCEL_LOAD` and `canTake()` shared by API and app.
+2. `server/main.ts`: accept/offer via `canTake(activeLoad())`; parcel orders store no recommendation (no offers);
+   parcel job alerts reach couriers carrying parcels; an accept keeps the live location while other orders are on board.
+3. App: `useDriverWork()` holds every active order; jobs screen and order screen use `canTake`; "N orders in your care"
+   links to Trips; booking shows "Standard parcel price"; admin settings show the new key; driver tip rewritten.
+4. Tests: model (price, `canTake`), `tests/parcels.test.mjs` (price, multi-accept, exclusivity, alerts, location,
+   load limit); older suites updated where they encoded one-job or distance pricing; mutation checks.
+5. Phone: driver carrying 2 parcels sees Accept enabled, no offers, Trips lists both.

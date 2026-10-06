@@ -82,8 +82,9 @@ const completed = await order(layla, true, { service: 'parcel', pickupCity: 'ram
   pickupNote: 'محل الزهراء، شارع ركب', dropoffNote: 'دوار الشهداء، بجانب الصيدلية', detail: 'صندوق ملابس وهدية', option: 'medium' });
 const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
   pickupNote: 'دوار المنارة', dropoffNote: 'ساحة المهد', option: '2', detail: 'معي عربة أطفال' });
-const searching = await smartOrder(layla, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'tulkarm',
-  pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق', detail: 'كتب جامعية' });
+// A ride: drivers offer on rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
+const searching = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
+  pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
 await order(omar, false, { service: 'ride', pickupCity: 'nablus', dropoffCity: 'jenin', pickupNote: 'مجمع الكراجات', dropoffNote: 'مستشفى جنين' });
 await order(omar, false, { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jericho', option: 'large', loadingHelp: true,
   pickupNote: 'عين سارة، عمارة 4', dropoffNote: 'شارع عمّان', detail: 'ثلاجة وغسالة، الطابق الثاني' });
