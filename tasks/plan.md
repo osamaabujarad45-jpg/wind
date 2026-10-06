@@ -1,7 +1,9 @@
-# Plan: checkpoint-routing
+# Plan: order-again
 
-1. `nearLine` in map-math + test.
-2. Server: lat/lng columns, point on create, place endpoint, `point` in list; roads test.
-3. Server: alternatives + closed-checkpoint choice + avoids/through + cache key; route test.
-4. Client: pin sheet shared component; Roads "Set on map"; avoids/through lines on order + booking.
-5. Gate, phone check with real OSRM (EN + AR), deploy, live OSRM check, push, ship log.
+1. `againForm(order)` and `canOrderAgain(order, role)` in `src/booking.ts` + tests in `tests/presentation.test.mjs`.
+2. Copy keys (en/ar): `orderAgain`, `orderAgainFrom`.
+3. Order screen button; booking `again` param fills the form after the pending-booking check.
+4. Gate: `npm test`, tsc, lint, `npm run screens`; mutation-check the two rules.
+5. Phone: debug build against the local demo server with real OSRM; customer completes an order with the demo
+   driver, taps Order again (English and Arabic), books it; regression sweep of the core flows.
+6. Ship: backup, deploy web, live checks, APK 1.0.7 over 1.0.6, push, logs.

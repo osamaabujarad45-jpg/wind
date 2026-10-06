@@ -1,4 +1,4 @@
-import { isCity, optionsFor, services, type CityId, type Point, type Service } from './model.ts';
+import { isCity, optionsFor, services, type CityId, type Order, type Point, type Role, type Service } from './model.ts';
 
 export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
@@ -17,6 +17,20 @@ export function newRequestId(): string {
   });
 }
 export const newBooking = (payload: BookingPayload): PendingBooking => ({ requestId: newRequestId(), payload });
+
+// Order again (SPEC-order-again.md): a customer's ended order refills the booking form.
+export const canOrderAgain = (order: Pick<Order, 'status'>, role: Role | undefined) =>
+  role === 'customer' && ['completed', 'returned', 'cancelled'].includes(order.status);
+/** The route and item of an old order. Never its price, promo, time or request ID: those belong to the new booking. */
+export function againForm(order: Order) {
+  return {
+    service: order.service, pickupCity: order.pickupCity, dropoffCity: order.dropoffCity,
+    pickupPoint: order.pickupPoint ?? null, dropoffPoint: order.dropoffPoint ?? null,
+    pickupNote: order.pickupNote, dropoffNote: order.dropoffNote, detail: order.detail, contact: order.contact ?? '',
+    option: optionsFor(order.service).includes(order.option) ? order.option : optionsFor(order.service)[0],
+    loadingHelp: order.loadingHelp,
+  };
+}
 
 export function readBooking(saved: string | null): PendingBooking | null {
   if (saved === null) return null;

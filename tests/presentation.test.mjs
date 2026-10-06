@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { newBooking, readBooking } from '../src/booking.ts';
+import { againForm, canOrderAgain, newBooking, readBooking } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
@@ -14,6 +14,19 @@ for (const saved of ['{', 'null', JSON.stringify({ ...pending, payload: { ...pay
   JSON.stringify({ ...pending, payload: { ...payload, quotedPrice: null } }), JSON.stringify({ ...pending, requestId: 'bad' }), JSON.stringify({ ...pending, payload: { ...payload, promoCode: 'WELCOME10' } })]) {
   assert.throws(() => readBooking(saved));
 }
+// Order again (SPEC-order-again.md): route and item copy over; price, promo, time and identity never do.
+const old = { id: 7, service: 'freight', pickupCity: 'hebron', dropoffCity: 'jenin', pickupPoint: { latitude: 31.53, longitude: 35.09 },
+  dropoffPoint: { latitude: 32.46, longitude: 35.3 }, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001',
+  option: 'large', loadingHelp: true, price: 120, discount: 10, scheduledFor: 1_800_000_000_000, status: 'completed' };
+assert.deepEqual(againForm(old), { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jenin', pickupPoint: old.pickupPoint,
+  dropoffPoint: old.dropoffPoint, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001', option: 'large', loadingHelp: true });
+assert.deepEqual(againForm({ ...old, service: 'ride', option: 'large', contact: null, dropoffPoint: undefined }),
+  { ...againForm(old), service: 'ride', option: '1', contact: '', dropoffPoint: null }); // stale option → first valid one
+const again = newBooking({ ...againForm(old), shared: false, quotedPrice: 99 });
+assert.equal(readBooking(JSON.stringify(again)).payload.quotedPrice, 99); // the refilled form makes a valid, fresh command
+for (const status of ['completed', 'returned', 'cancelled']) assert.ok(canOrderAgain({ status }, 'customer'), status);
+for (const status of ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning']) assert.ok(!canOrderAgain({ status }, 'customer'), status);
+for (const role of ['driver', 'admin', undefined]) assert.ok(!canOrderAgain({ status: 'completed' }, role), String(role));
 assert.equal(locationState(null, 180000), null);
 const location = { latitude: 31.9, longitude: 35.2, updatedAt: 60000, ageSeconds: 0 };
 assert.deepEqual(locationState(location, 179000), { ageSeconds: 119, stale: false });
