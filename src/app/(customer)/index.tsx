@@ -9,7 +9,7 @@ import { OrderRow, ServiceIcon } from '../../parts';
 import { useSession } from '../../session';
 import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Screen, Section, shadow, Tip, Txt, useCopy, type IconName } from '../../ui';
 
-const book = (params: { service: Service; from?: string; to?: string; pick?: 'to' }) => router.push({ pathname: '/book', params });
+const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; again?: string }) => router.push({ pathname: '/book', params });
 
 export default function Home() {
   const { me } = useSession();
@@ -68,7 +68,7 @@ export default function Home() {
       <Section title={c.recent} action={c.seeAll} onAction={() => router.navigate('/orders')} />
       <ListGroup>
         {recent.map(o => <Press key={o.id} accessibilityLabel={`${c.request} ${city(o.pickupCity)[language]} ${city(o.dropoffCity)[language]}`}
-          onPress={() => book({ service: o.service, from: o.pickupCity, to: o.dropoffCity })} style={[styles.recent, { flexDirection: row }]}>
+          onPress={() => book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
           <View style={styles.clock}><Ionicons name="time-outline" size={17} color={palette.secondary} /></View>
           <View style={{ flex: 1 }}>
             <Txt variant="title" numberOfLines={1}>{city(o.pickupCity)[language]} {rtl ? '←' : '→'} {city(o.dropoffCity)[language]}</Txt>

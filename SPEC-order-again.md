@@ -24,6 +24,9 @@ retyping is slow and error-prone.
 
 - **Order screen** (`src/app/order/[id].tsx`): a customer sees **Order again** on their own order once it has
   ended (`completed`, `returned`, `cancelled`). It opens `/book?again=<id>`.
+- **Home "Recent routes"** (found on the phone check): it already said "book again" but copied only service and
+  cities, while showing the pickup landmark. It now passes `again=<id>` too, so both entry points fill the same form
+  (its `from`/`to` stay as the instant first values and the fallback if the order cannot be loaded).
 - **Booking** (`src/app/book.tsx`): with `again`, after the pending-booking check, it loads `/orders/<id>` and
   fills the form from it. A saved pending booking always wins (it is an in-flight command that may already be
   committed, so it must not be replaced).
@@ -48,4 +51,4 @@ retyping is slow and error-prone.
 
 ## Out of scope
 
-"Order again" on the orders list rows (one entry point is enough for now); Souq listings.
+"Order again" on the Orders tab rows (the order screen and home cover it); Souq listings.
