@@ -36,10 +36,11 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `routing-eta` | Road-snapped route line + ETA ranges | **Shipped 2026-10-05** (SPEC-routing-eta.md): private self-hosted OSRM service, solid road line, "driver arrives in 3–6 min" on the order and public tracking pages | Infra only (Railway `osrm`) | — |
 | `android-map` | Map inside the Android app | **Shipped 2026-10-05** (SPEC-android-map.md): MapLibre page `public/map.html` in a WebView, APK 1.0.5 | No | `live-map` |
 | `order-again` | Uber "Rebook", Careem "Book again" | **Shipped 2026-10-06** (SPEC-order-again.md): ended orders and home recent routes refill the whole booking form; price re-quoted; APK 1.0.7 | No | — |
-| `tipping` | Tip the driver after the trip | None | Needs `digital-payments` (a cash tip is handed over in person) | `digital-payments` |
-| `delivery-photo` | Uber Connect photo at drop-off | Handover code only | Native camera module; owner decides if needed | — |
-| `driver-documents` | Licence/ID upload during driver sign-up | Manual approval, "contact support" | **Owner decision**: storage of ID photos | — |
-| `cancellation-fee` | Fee for late cancellation | Free cancel before pickup | **Owner decision** (pricing) | — |
+| `driver-offers` | inDrive driver counter-offers; Careem/Uber distance+time fare, night rate, post-trip rating | **Shipped 2026-10-06** (SPEC-driver-offers.md): smart recommended price from road km, extra minutes, slow/closed checkpoints, night and Plus; drivers accept it or offer 50–200 %; customer picks an offer; price rated apart from the driver; job card shows the road km the price used; APK 1.0.8 | No | `routing-eta`, `road-status` |
+| `tipping` | Tip the driver after the trip | **Not built (owner, 6 Oct)**: cash only, the tip is handed over in person | Needs `digital-payments` | `digital-payments` |
+| `delivery-photo` | Uber Connect photo at drop-off | **Not built (owner, 6 Oct)**: the handover code is stronger proof | — | — |
+| `driver-documents` | Licence/ID upload during driver sign-up | **Deferred (owner, 6 Oct)**: ID scans are a privacy liability; admins approve after an in-person check | — | — |
+| `cancellation-fee` | Fee for late cancellation | **Not built (owner, 6 Oct)**: a cash fee cannot be collected after a cancel | — | — |
 
 Skipped on purpose: surge pricing (PRODUCT.md forbids unexplained surge), pooling,
 multi-stop, background GPS (Play policy), food delivery (Yummy owns it).
