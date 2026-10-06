@@ -176,6 +176,20 @@
     "session": "customer"
   },
   {
+    "id": "book-again",
+    "group": "Customer",
+    "name": "Order again (form copied from a delivered order)",
+    "route": "/book?again=1",
+    "file": "src/app/book.tsx",
+    "ar": [
+      "ar/book-again.png"
+    ],
+    "en": [
+      "en/book-again.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "orders",
     "group": "Customer",
     "name": "My orders",
