@@ -6,7 +6,7 @@ import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';
-import { newRequestId } from '../../booking';
+import { canOrderAgain, newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
@@ -352,6 +352,9 @@ export default function OrderScreen() {
 
       {order.status === 'completed' && (isCustomer || mine || isAdmin) &&
         <Button title={c.viewReceipt} icon="receipt-outline" variant="outline" onPress={() => router.push(`/receipt/${order.id}`)} />}
+
+      {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="soft"
+        onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
 
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={rating => act('rate', `/orders/${order.id}/rate`, { rating })} />}
 

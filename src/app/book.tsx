@@ -6,8 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { againForm, dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { cities, city, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, type CityId, type Order, type Places, type Point, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
@@ -17,7 +17,7 @@ import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
 
 export default function Book() {
-  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string }>();
+  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
@@ -41,6 +41,7 @@ export default function Book() {
   const [locationError, setLocationError] = useState('');
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [ready, setReady] = useState(false);
+  const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>('now');
   const [slot, setSlot] = useState<number | null>(null);
@@ -105,7 +106,7 @@ export default function Book() {
 
   useEffect(() => {
     let mounted = true;
-    storage.get(pendingKey).then(saved => {
+    storage.get(pendingKey).then(async saved => {
       const existing = readBooking(saved);
       if (!mounted) return;
       if (existing) {
@@ -114,11 +115,22 @@ export default function Book() {
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
+      } else if (params.again) {
+        // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
+        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
+        if (!mounted) return;
+        if (old) {
+          const f = againForm(old);
+          setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
+          setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp);
+          if (f.contact) setContact(f.contact);
+          setCopiedFrom(old.id);
+        }
       }
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [pendingKey, c.bookingStorageError]);
+  }, [pendingKey, c.bookingStorageError, params.again]);
 
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
@@ -213,6 +225,7 @@ export default function Book() {
         <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
       </Card>}
       {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
+      {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
       {/* Service switcher: the route stays, only the details change. */}
       <Row gap={8} style={{ marginBottom: 12 }}>

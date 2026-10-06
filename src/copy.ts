@@ -499,6 +499,8 @@ const ar = {
   // receipt
   receipt: 'الإيصال',
   viewReceipt: 'عرض الإيصال',
+  orderAgain: 'اطلب مرة أخرى',
+  orderAgainFrom: 'منسوخ من الطلب {code}. السعر حسب تعرفة اليوم.',
   receiptNo: 'رقم الإيصال',
   issued: 'التاريخ',
   service: 'الخدمة',
@@ -1096,6 +1098,8 @@ const en: Copy = {
   nameSaved: 'Name saved',
   receipt: 'Receipt',
   viewReceipt: 'View receipt',
+  orderAgain: 'Order again',
+  orderAgainFrom: 'Copied from order {code}. The price is today’s fare.',
   receiptNo: 'Receipt no.',
   issued: 'Date',
   service: 'Service',
