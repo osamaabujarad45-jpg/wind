@@ -61,10 +61,11 @@ export const defaultSettings = {
   sharedDiscount: 0.4, plusDiscount: 0.15,
   commission: 0.15, proCommission: 0.05,
   plusPrice: 29, proPrice: 99,
+  perMinute: 0.25, nightExtra: 0.2, // smart price (SPEC-driver-offers.md): extra minutes, night share
 };
 export type Settings = typeof defaultSettings;
 export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
-export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission'];
+export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission', 'nightExtra'];
 
 export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
@@ -131,6 +132,28 @@ export function quote(s: Settings, o: {
   if (o.plus) total *= 1 - s.plusDiscount;
   return Math.max(1, Math.round(total));
 }
+
+// Smart recommended price (SPEC-driver-offers.md): road km, minutes beyond 50 km/h (town traffic and checkpoint delays),
+// night, Plus. Drivers may accept it or offer their own price within OFFER_BAND of it.
+export const SLOW_MINUTES = 15, CLOSED_MINUTES = 30; // ponytail: per slow / crossed-closed checkpoint; tune with driver reports
+const hebronHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hebron', hour: '2-digit', hourCycle: 'h23' });
+/** 22:00–05:59 Palestine time. */
+export const isNight = (at: number) => { const h = Number(hebronHour.format(at)); return h >= 22 || h < 6; };
+export function smartPrice(s: Settings, o: {
+  service: Service; option: string; loadingHelp?: boolean; km: number; minutes: number; delayMinutes: number; at: number; plus?: boolean;
+}): number {
+  const large = o.option === 'large';
+  let total = o.service === 'parcel' ? s.parcelBase + s.parcelPerKm * o.km + (large ? s.parcelLarge : 0)
+    : o.service === 'ride' ? s.rideBase + s.ridePerKm * o.km
+    : s.freightBase + s.freightPerKm * o.km + (large ? s.freightLarge : 0) + (o.loadingHelp ? s.loadingHelp : 0);
+  total += s.perMinute * (Math.max(0, o.minutes - o.km * 1.2) + o.delayMinutes); // 1.2 min/km = 50 km/h, measured intercity
+  if (isNight(o.at)) total *= 1 + s.nightExtra;
+  if (o.plus) total *= 1 - s.plusDiscount;
+  return Math.max(1, Math.round(total));
+}
+export const OFFER_BAND = [0.5, 2] as const; // ponytail: against typos, not a fare policy
+export const offerRange = (recommended: number) =>
+  [Math.max(1, Math.ceil(recommended * OFFER_BAND[0])), Math.max(1, Math.floor(recommended * OFFER_BAND[1]))] as const;
 
 export function commissionOn(price: number, rate: number): number {
   return Math.round(price * rate * 100) / 100;

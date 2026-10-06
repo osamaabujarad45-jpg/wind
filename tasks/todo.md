@@ -1,8 +1,9 @@
-# Todo: order-again
+# Todo: driver-offers
 
-- [x] againForm / canOrderAgain + tests
-- [x] copy keys
-- [x] order screen button + booking prefill
-- [x] validation gate + mutation checks
-- [x] phone check (en + ar) + regression sweep
-- [x] ship
+- [ ] pricing.ts + tests + settings
+- [ ] server price endpoint + smart booking + compat
+- [ ] offers + accept + release + price rating + stats + integration test
+- [ ] client: booking, driver offer, customer offers, rating, stats, copy, screens
+- [ ] gate + mutation checks
+- [ ] phone check (en + ar)
+- [ ] ship
