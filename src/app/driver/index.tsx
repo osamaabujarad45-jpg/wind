@@ -50,10 +50,16 @@ export default function Jobs() {
 
   // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
   async function offer(order: Order, price: number) {
-    if (busy !== null || assigned) return;
+    if (busy !== null || assigned || !work.known) return;
     setBusy(order.id);
     setActionError('');
     try {
+      // An accepted offer is an assignment: location sharing must be ready, exactly as for Accept.
+      if (!await work.prepareTracking()) {
+        haptic.error();
+        setActionError(c.locationOff);
+        return;
+      }
       await api<Order>(`/jobs/${order.id}/offer`, { price });
       haptic.success();
       setOffering(null);
@@ -142,7 +148,7 @@ export default function Jobs() {
                   error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
-                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || assigned} />
+                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || assigned || !work.known} />
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
