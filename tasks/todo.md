@@ -1,8 +1,8 @@
 # Todo: order-again
 
-- [ ] againForm / canOrderAgain + tests
-- [ ] copy keys
-- [ ] order screen button + booking prefill
-- [ ] validation gate + mutation checks
-- [ ] phone check (en + ar) + regression sweep
-- [ ] ship
+- [x] againForm / canOrderAgain + tests
+- [x] copy keys
+- [x] order screen button + booking prefill
+- [x] validation gate + mutation checks
+- [x] phone check (en + ar) + regression sweep
+- [x] ship
