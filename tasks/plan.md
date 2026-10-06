@@ -1,13 +1,13 @@
-# Plan: driver-offers
+# Plan: offer-alerts (SPEC-offer-alerts.md)
 
-1. `src/pricing.ts`: pure `smartPrice()` + `isNight()` + offer band; unit tests (distance, extra time, slow/closed,
-   night, plus, fallback). Settings `perMinute`, `nightExtra` (+ admin labels).
-2. Server: `recommend()` (route + road state → smartPrice); `GET /api/price`; orders store `recommended_price`;
-   `pricing: "smart"` recomputes and 409s with the new price; legacy path untouched; partner untouched.
-3. Server: `order_offers`; `POST /api/jobs/:id/offer`; offers on the customer's order; `POST /api/orders/:id/offers/:driverId/accept`;
-   release resets the price; price rating on `/rate`; driver stats (price rating, trips) in `toUser` and offers.
-   Integration test `tests/offers.test.mjs` (band, expiry, busy driver, race, partner refused, discount cap, release, rating).
-4. Client: booking uses `/api/price` (+ reasons); driver job card Accept / Offer; customer offers list; price-fairness stars;
-   driver account stats. Copy en/ar. Screens.
-5. Gate + mutation checks; phone (customer/driver/admin, en+ar) against the local server with real OSRM.
-6. Ship: backup, deploy, live checks, APK 1.0.8, push, logs.
+One slice: two push kinds on the existing Web Push outbox (`queuePush` → `flushPush` after the request commits).
+
+1. `POST /api/jobs/:id/offer`: before the upsert, if this driver has no live offer (< `OFFER_TTL`) on the order, queue
+   `offer` to the customer. A price change on a live offer stays silent.
+2. `POST /api/orders/:id/offers/:driver/accept`: queue `offer_accepted` to the chosen driver inside the transaction.
+3. `flushPush`: both kinds high urgency; `offer` TTL = `OFFER_TTL` (an alert for an expired offer is noise).
+4. `public/sw.js`: Arabic and English words; tag stays `order-N`, so offers on one order collapse.
+5. Test in `tests/push-server.test.mjs`; mutation-check each rule.
+
+Verification: gate, then the phone sweep (also covers the release 27 items the ship pass did not re-run on the phone:
+job card road km and the offer flow).

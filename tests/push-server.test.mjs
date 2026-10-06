@@ -8,6 +8,7 @@ import { defaultSettings, quote } from '../src/model.ts';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
+delete process.env.OSRM_URL; // smart prices from the straight-line estimate
 const { server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -140,6 +141,23 @@ try {
   await call(`/orders/${mine.id}/cancel`, { token: customer.token, body: {} });
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('g')]);
+
+  // Driver offers (SPEC-offer-alerts.md): a first offer rings the customer, a changed price does not; the chosen driver hears.
+  const smart = await call('/orders', { token: customer.token, body: { ...input, pricing: 'smart', requestId: randomUUID() } });
+  await settle();
+  sent.length = 0;
+  await call(`/jobs/${smart.id}/offer`, { token: replacement.token, body: { price: smart.recommendedPrice } });
+  await settle();
+  assert.deepEqual(sent.map(s => s.url), [fcm('c')]);
+  assert.equal(sent[0].headers.Urgency, 'high');
+  assert.equal(sent[0].headers.TTL, '600'); // offers expire after 10 minutes
+  sent.length = 0;
+  await call(`/jobs/${smart.id}/offer`, { token: replacement.token, body: { price: smart.recommendedPrice + 1 } });
+  await settle();
+  assert.deepEqual(sent, []);
+  await call(`/orders/${smart.id}/offers/${replacement.user.id}/accept`, { token: customer.token, body: {} });
+  await settle();
+  assert.deepEqual(sent.map(s => s.url), [fcm('f')]);
 
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });

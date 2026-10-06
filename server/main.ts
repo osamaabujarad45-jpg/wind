@@ -697,7 +697,8 @@ route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
 
 // Web Push (SPEC-web-push.md): opt-in per browser, no provider account. The payload carries a kind and an order id,
 // never names or addresses; the service worker words it in the subscriber's language.
-type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled';
+type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
+  | 'offer' | 'offer_accepted'; // SPEC-offer-alerts.md
 // ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
 const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -719,7 +720,8 @@ function flushPush() {
   for (const { userIds, kind, order } of outbox.splice(0)) {
     const url = kind === 'job' ? '/driver' : `/order/${order}`;
     for (const s of all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds))
-      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), kind === 'job' || kind === 'message' ? 'high' : 'normal', kind === 'job' ? 300 : 3600);
+      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted'].includes(kind) ? 'high' : 'normal',
+        kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600);
   }
 }
 async function deliver(s: Row, message: string, urgency: string, ttl: number) {
@@ -1250,6 +1252,9 @@ route('POST', '/api/jobs/:id/offer', ({ user, params, body }) => {
   if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
+  // A driver changing their own live offer does not ring the customer again; a first or renewed one does.
+  if (!one('SELECT 1 FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', order.id, user.id, Date.now() - OFFER_TTL))
+    queuePush([order.customerId], 'offer', order.id);
   run(`INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(order_id, driver_id) DO UPDATE SET price = excluded.price, created_at = excluded.created_at`, order.id, user.id, body.price, Date.now());
   return getOrder(order.id, user);
@@ -1270,6 +1275,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', ({ user, params }) => {
       commission = ?, status = 'assigned', updated_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), r.id);
     run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', f.id);
+    queuePush([f.id as number], 'offer_accepted', r.id); // the driver has usually left the jobs screen
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return getOrder(Number(params[0]), user);
