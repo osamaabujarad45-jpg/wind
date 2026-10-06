@@ -42,6 +42,7 @@ export default function Book() {
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
+  const copied = useRef<string | null>(null); // copy once: a language switch re-runs the effect and must not undo edits
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>('now');
   const [slot, setSlot] = useState<number | null>(null);
@@ -115,7 +116,7 @@ export default function Book() {
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
-      } else if (params.again) {
+      } else if (params.again && copied.current !== params.again) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
         if (!mounted) return;
@@ -124,7 +125,7 @@ export default function Book() {
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
           setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp);
           if (f.contact) setContact(f.contact);
-          setCopiedFrom(old.id);
+          setCopiedFrom(old.id); copied.current = params.again;
         }
       }
       setReady(true);
