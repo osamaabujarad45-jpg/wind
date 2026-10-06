@@ -10,8 +10,8 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  optionsFor, orderCode, planForRole, quote, roadAlerts, services, vehicleServices, vehicles,
-  type CityId, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
+  CLOSED_MINUTES, isNight, offerRange, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
 import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
@@ -198,6 +198,10 @@ CREATE INDEX IF NOT EXISTS checkpoint_reports_recent ON checkpoint_reports(check
 CREATE TABLE IF NOT EXISTS saved_places (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),
   city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note));
+-- Driver offers (SPEC-driver-offers.md): one pending price per driver per order; accepted or expired offers are deleted.
+CREATE TABLE IF NOT EXISTS order_offers (
+  order_id INTEGER NOT NULL REFERENCES orders(id), driver_id INTEGER NOT NULL REFERENCES users(id), price INTEGER NOT NULL CHECK (price >= 1),
+  created_at INTEGER NOT NULL, PRIMARY KEY (order_id, driver_id));
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
@@ -205,7 +209,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
@@ -309,9 +313,9 @@ const canonical = (v: any): any => Array.isArray(v) ? v.map(canonical)
 const payloadHash = (body: Row) => sha(JSON.stringify(canonical(body)));
 
 function toUser(r: Row): User {
-  const rating = r.role === 'driver' ? one('SELECT AVG(rating) avg FROM orders WHERE driver_id = ? AND rating IS NOT NULL', r.id)?.avg : null;
+  const stats = r.role === 'driver' ? driverStats(r.id) : null;
   return { id: r.id, phone: r.phone, name: r.name, role: r.role, status: r.status, vehicle: r.vehicle ?? null,
-    rating: rating == null ? null : Math.round(rating * 10) / 10, createdAt: r.created_at,
+    rating: stats?.rating ?? null, ...(stats && { priceRating: stats.priceRating, trips: stats.trips }), createdAt: r.created_at,
     email: r.email ?? null, permanentlyApprovedAt: r.approved_at ?? null,
     phoneVerifiedAt: r.phone_verified_at ?? null, emailVerifiedAt: r.email_verified_at ?? null };
 }
@@ -375,8 +379,30 @@ function toOrder(r: Row, viewer: User): Order {
     driverPhone: owner || assigned ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)),
       heading: r.loc_heading ?? null, accuracy: r.loc_accuracy ?? null } : null,
+    recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null,
+    myOffer: viewer.role === 'driver' && r.status === 'searching' ? myOffer(r.id, viewer.id) : null,
+    ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: offersFor(r.id) }),
   };
 }
+
+// Driver offers (SPEC-driver-offers.md). An offer counts while it is fresh and its driver is active, free and has not
+// released the order; anything else is invisible and cannot be accepted.
+const OFFER_TTL = 10 * 60_000; // ponytail: inDrive-like window; tune from how long customers take to choose
+const offerOpen = `AND f.created_at > ? AND u.status = 'active'
+  AND NOT EXISTS(SELECT 1 FROM orders b WHERE b.driver_id = u.id AND b.status IN (${activeSql}))
+  AND NOT EXISTS(SELECT 1 FROM order_releases x WHERE x.order_id = f.order_id AND x.driver_id = u.id)`;
+function driverStats(id: number): DriverStats {
+  const r = one(`SELECT AVG(rating) rating, AVG(price_rating) price_rating, COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders WHERE driver_id = ?`, id)!;
+  const tenth = (v: unknown) => v == null ? null : Math.round(Number(v) * 10) / 10;
+  return { rating: tenth(r.rating), priceRating: tenth(r.price_rating), trips: Number(r.trips) };
+}
+const myOffer = (orderId: number, driverId: number) => {
+  const f = one('SELECT price, created_at FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', orderId, driverId, Date.now() - OFFER_TTL);
+  return f ? { price: f.price as number, createdAt: f.created_at as number } : null;
+};
+const offersFor = (orderId: number): Offer[] => all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
+  WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL)
+  .map(f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...driverStats(f.driver_id) }));
 
 function getOrder(id: number, viewer: User): Order {
   const r = one(`${orderSelect} WHERE o.id = ?`, id) ?? fail(404, 'not_found');
@@ -759,7 +785,38 @@ function pointOf(p: any): { latitude: number; longitude: number } | null {
   return { latitude: p.latitude, longitude: p.longitude };
 }
 
-function createOrder(user: User, body: Row) {
+// Smart recommended price (SPEC-driver-offers.md): the checkpoint-aware road route the map draws, plus Wind's own live
+// road reports (/api/roads). Without routing, straight km × 1.3 at 50 km/h.
+async function recommend(user: User, b: Row) {
+  const service = services.includes(b.service) ? b.service as Service : fail(400, 'invalid_service');
+  if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
+  if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
+  const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
+  const from = pointOf(b.pickupPoint) ?? city(b.pickupCity), to = pointOf(b.dropoffPoint) ?? city(b.dropoffCity);
+  const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
+  let trip: RoadRoute | null = null;
+  try { trip = await roadRoute(from, to); } catch { /* estimate */ }
+  const km = trip?.km ?? distanceKm(from, to), minutes = trip?.minutes ?? Math.round(km * 1.2);
+  const reports = roads();
+  // A positioned checkpoint counts when the route passes it; one without a position counts for its cities.
+  const onTrip = (r: ReturnType<typeof roads>[number]) => r.point && trip ? nearLine(r.point, trip.line, CHECKPOINT_RADIUS)
+    : r.cities.includes(b.pickupCity) || r.cities.includes(b.dropoffCity);
+  const slow = reports.filter(r => r.status === 'slow' && onTrip(r)).map(r => r.name as string);
+  // A closed one the route avoids already costs its detour; one it still crosses, or cannot be placed, costs waiting time.
+  const closed = [...(trip?.through ?? []), ...reports.filter(r => r.status === 'closed' && (!r.point || !trip) && onTrip(r)).map(r => r.name as string)];
+  const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
+  const price = smartPrice(settings(), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
+    plus: activePlan(user.id) === 'plus' });
+  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip };
+}
+route('POST', '/api/price', ({ user, body }) => {
+  need(user, 'customer');
+  needActive(user);
+  limit(identityKey('price', user.id), 120, 10 * 60_000);
+  return recommend(user, body);
+});
+
+function createOrder(user: User, body: Row, recommended?: number) {
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
@@ -768,7 +825,8 @@ function createOrder(user: User, body: Row) {
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
   const point = pointOf(body.pickupPoint), dropoff = pointOf(body.dropoffPoint);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
-  const price = quote(settings(), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
+  // Smart orders arrive with their recommendation; Souq and apps before 1.0.8 keep the fixed tariff.
+  const price = recommended ?? quote(settings(), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
     plus: activePlan(user.id) === 'plus' });
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
   if (body.quotedPrice != null && Number(body.quotedPrice) !== price) fail(409, 'price_changed');
@@ -778,14 +836,15 @@ function createOrder(user: User, body: Row) {
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
   const id = Number(run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?)`,
+    pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
-    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null).lastInsertRowid);
+    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
+    recommended ?? null).lastInsertRowid);
   if (promo?.id) run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now);
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
@@ -794,25 +853,33 @@ function createOrder(user: User, body: Row) {
   return getOrder(id, user);
 }
 
-route('POST', '/api/orders', ({ user, body }) => {
+route('POST', '/api/orders', async ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
   if (body.promoCode != null) limit(identityKey('promo', user.id), 20, 60 * 60_000); // no unlimited code guessing through booking
   const { requestId, ...input } = body;
+  // Routing is async, so the recommendation is computed before the write transaction (SPEC-driver-offers.md).
+  const smart = async () => input.pricing === 'smart' ? (await recommend(user, input)).price : undefined;
   if (requestId == null) {
+    const recommended = await smart();
     db.exec('BEGIN IMMEDIATE');
-    try { const order = createOrder(user, input); db.exec('COMMIT'); return order; } catch (error) { db.exec('ROLLBACK'); throw error; }
+    try { const order = createOrder(user, input, recommended); db.exec('COMMIT'); return order; } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
   if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) fail(400, 'invalid_request_id');
   const hash = payloadHash(input);
-  const existing = one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId);
-  if (existing) {
-    if (existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
-    return getOrder(existing.order_id, user);
-  }
+  const replay = () => {
+    const existing = one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId);
+    if (existing && existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
+    return existing ? getOrder(existing.order_id, user) : null;
+  };
+  const done = replay(); // a retried command returns its order even if today's price moved
+  if (done) return done;
+  const recommended = await smart();
   db.exec('BEGIN IMMEDIATE');
   try {
-    const order = createOrder(user, input);
+    const raced = replay(); // the same command may have committed while routing was awaited
+    if (raced) { db.exec('ROLLBACK'); return raced; }
+    const order = createOrder(user, input, recommended);
     run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id);
     db.exec('COMMIT');
     return order;
@@ -919,9 +986,12 @@ route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
 
 route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
   const order = getOrder(Number(params[0]), user);
-  const rating = Number(body.rating);
-  if (order.customerId !== user.id || order.status !== 'completed' || order.rating || !(rating >= 1 && rating <= 5)) fail(409, 'cannot_rate');
-  run('UPDATE orders SET rating = ? WHERE id = ?', Math.round(rating), order.id);
+  // The driver and the price (SPEC-driver-offers.md) are rated separately, each once.
+  const stars = (v: unknown) => v == null ? null : Number(v) >= 1 && Number(v) <= 5 ? Math.round(Number(v)) : fail(409, 'cannot_rate');
+  const rating = stars(body.rating), priceRating = stars(body.priceRating);
+  if (order.customerId !== user.id || order.status !== 'completed' || (rating == null && priceRating == null)
+    || (rating != null && order.rating) || (priceRating != null && order.priceRating)) fail(409, 'cannot_rate');
+  run('UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?', rating, priceRating, order.id);
   return getOrder(order.id, user);
 });
 
@@ -1158,12 +1228,50 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), order.id, order.id, user.id).changes;
   if (!changed) fail(409, 'already_taken');
+  run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id); // settled, and this driver is busy now
   run('DELETE FROM driver_locations WHERE driver_id = ?', user.id); // an older job's location is not this assignment's fix
   queuePush([order.customerId], 'assigned', order.id);
   const result = getOrder(order.id, user);
   db.exec('COMMIT');
   return result;
   } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+
+// Driver offers (SPEC-driver-offers.md): name a price within the band around the recommendation; the customer chooses.
+route('POST', '/api/jobs/:id/offer', ({ user, params, body }) => {
+  need(user, 'driver');
+  needActive(user);
+  limit(identityKey('offer', user.id), 30, 10 * 60_000);
+  const order = getOrder(Number(params[0]), user); // 404 unless an open job this driver may take
+  if (order.status !== 'searching') fail(409, 'already_taken');
+  const recommended = order.recommendedPrice ?? fail(409, 'fixed_price'); // Souq and older apps: accept at the shown price
+  if (!enabledServices.includes(order.service) || !vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
+  if (one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'vehicle_busy');
+  const [min, max] = offerRange(recommended);
+  if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
+  run(`INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(order_id, driver_id) DO UPDATE SET price = excluded.price, created_at = excluded.created_at`, order.id, user.id, body.price, Date.now());
+  return getOrder(order.id, user);
+});
+route('POST', '/api/orders/:id/offers/:driver/accept', ({ user, params }) => {
+  need(user, 'customer');
+  needActive(user);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const r = one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id) ?? fail(404, 'not_found');
+    if (r.status !== 'searching') fail(409, 'order_changed');
+    const f = one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
+      r.id, Number(params[1]), Date.now() - OFFER_TTL) ?? fail(409, 'offer_expired');
+    if (!vehicleServices[(f.vehicle ?? 'car') as Vehicle].includes(r.service)) fail(409, 'offer_expired');
+    const rate = activePlan(f.id) === 'pro' ? settings().proCommission : settings().commission;
+    // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
+    run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
+      commission = ?, status = 'assigned', updated_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), r.id);
+    run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id);
+    run('DELETE FROM driver_locations WHERE driver_id = ?', f.id);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return getOrder(Number(params[0]), user);
 });
 
 route('POST', '/api/orders/:id/release', ({ user, params }) => {
@@ -1175,7 +1283,9 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
       if (current.driverId !== user.id || current.status !== 'assigned') fail(409, 'cannot_release');
       safetyFree(current.id);
       const now = Date.now();
-      run("UPDATE orders SET driver_id = NULL, commission = NULL, status = 'searching', job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?", now, now, current.id);
+      // ponytail: a discount capped by a cheaper accepted offer stays capped; restore from the redemption if it matters.
+      run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = COALESCE(recommended_price, price), status = 'searching',
+        job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, now, now, current.id); // back to the recommendation
       run('INSERT OR IGNORE INTO order_releases (order_id, driver_id, released_at) VALUES (?, ?, ?)', current.id, user.id, now);
       db.exec('COMMIT');
       return current;

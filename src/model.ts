@@ -70,6 +70,7 @@ export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDisc
 export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; rating: number | null; createdAt: number;
+  priceRating?: number | null; trips?: number; // drivers only
   email?: string | null; permanentlyApprovedAt?: number | null;
   phoneVerifiedAt?: number | null; emailVerifiedAt?: number | null;
 };
@@ -93,7 +94,15 @@ export type Order = {
   createdAt: number; updatedAt: number;
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number; heading?: number | null; accuracy?: number | null }) | null;
+  // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).
+  recommendedPrice?: number | null; priceRating?: number | null;
+  myOffer?: { price: number; createdAt: number } | null; // the viewing driver's pending offer
+  offers?: Offer[]; // the customer's open offers, cheapest first
 };
+export type DriverStats = { rating: number | null; priceRating: number | null; trips: number };
+export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
+/** What booking shows next to the recommended price. */
+export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean };
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;
