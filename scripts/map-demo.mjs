@@ -25,6 +25,12 @@ const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'bireh',
   pickupPoint: { latitude: 31.9022, longitude: 35.2063 }, dropoffPoint: { latitude: 31.9106, longitude: 35.2167 } };
 const order = await call('/orders', customer.token, { ...input, quotedPrice: quote(defaultSettings, input), requestId: randomUUID() });
 await call(`/jobs/${order.id}/accept`, driver.token, {});
+// DEMO_RUN=1: the courier also carries a second parcel, so the order shows the run line instead of an ETA (SPEC-courier-run-eta.md).
+if (process.env.DEMO_RUN === '1') {
+  const second = await call('/orders', customer.token, { ...input, dropoffNote: 'Bus station', quotedPrice: quote(defaultSettings, input), requestId: randomUUID() });
+  await call(`/jobs/${second.id}/accept`, driver.token, {});
+  console.log(`track http://localhost:${process.env.PORT ?? 4000}${(await call(`/orders/${order.id}/share`, customer.token, {})).path}`);
+}
 // A closed checkpoint on the route turns the ETA into "N+ min" (SPEC-road-aware-eta.md); DEMO_ROADS=0 skips it.
 if (process.env.DEMO_ROADS !== '0') {
   const [road] = await call('/admin/roads', admin.token, { name: 'Surda', cities: ['ramallah', 'bireh'] });
