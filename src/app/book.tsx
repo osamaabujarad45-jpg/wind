@@ -278,7 +278,7 @@ export default function Book() {
               <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
             </Row>
           </Press>
-          <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `≈ ${preview?.km ?? km} ${c.km}`}</Txt>
+          <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `${preview ? preview.km : `≈ ${km}`} ${c.km}`}</Txt>
         </Row>
         {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
           {(['pickup', 'dropoff'] as const).map(which => {
