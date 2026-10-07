@@ -81,6 +81,7 @@ try {
   const webBase = service.base.replace(/\/api$/, '');
   const webHome = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } });
   assert.equal(webHome.status, 200); assert.match(webHome.headers.get('content-type'), /text\/html/);
+  assert.equal(webHome.headers.get('x-frame-options'), 'DENY');
   assert.equal(webHome.headers.get('content-encoding'), 'br'); assert.equal(webHome.headers.get('vary'), 'Accept-Encoding');
   assert.match(await webHome.text(), /Wind web/);
   const again = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } }); // served from the compressed-once cache

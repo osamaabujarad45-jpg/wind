@@ -1811,6 +1811,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
