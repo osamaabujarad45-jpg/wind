@@ -27,8 +27,8 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
     try { data = await res.json(); }
     catch { throw new ApiError(controller.signal.aborted ? 'network' : 'server_error', res.ok ? 502 : res.status); }
     if (requestToken !== token) throw new ApiError('session_changed', 401);
-    if (res.status === 401 && requestToken && data.error === 'unauthorized') unauthorized();
-    if (!res.ok) throw new ApiError(data.error ?? 'server_error', res.status);
+    if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();
+    if (!res.ok) throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status);
     return data as T;
   } finally { clearTimeout(timeout); }
 }

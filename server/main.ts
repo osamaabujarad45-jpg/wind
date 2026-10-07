@@ -865,15 +865,23 @@ function createOrder(user: User, body: Row, smart?: { price: number; km: number 
   return getOrder(id, user);
 }
 
-route('POST', '/api/orders', async ({ user, body }) => {
+route('POST', '/api/orders', async ({ user, body, req }) => {
   need(user, 'customer');
   needActive(user);
   if (body.promoCode != null) limit(identityKey('promo', user.id), 20, 60 * 60_000); // no unlimited code guessing through booking
   const { requestId, ...input } = body;
   // Routing is async, so the recommendation is computed before the write transaction (SPEC-driver-offers.md).
   const smart = async () => input.pricing === 'smart' ? await recommend(user, input) : undefined;
+  // Routing yields to logout and administrator changes. Recheck authority before any booking write.
+  const authorize = () => {
+    const current = authenticate(req) ?? fail(401, 'unauthorized');
+    need(current, 'customer');
+    needActive(current);
+    return current;
+  };
   if (requestId == null) {
     const recommended = await smart();
+    user = authorize();
     db.exec('BEGIN IMMEDIATE');
     try { const order = createOrder(user, input, recommended); db.exec('COMMIT'); return order; } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
@@ -887,6 +895,7 @@ route('POST', '/api/orders', async ({ user, body }) => {
   const done = replay(); // a retried command returns its order even if today's price moved
   if (done) return done;
   const recommended = await smart();
+  user = authorize();
   db.exec('BEGIN IMMEDIATE');
   try {
     const raced = replay(); // the same command may have committed while routing was awaited

@@ -23,6 +23,11 @@ try {
   await assert.rejects(request('https://test.invalid/api/me/password', { current: 'wrong', password: 'new' }), /wrong_password/);
   assert.equal(currentExpired, 1); // a rejected password confirmation does not expire the authenticated session
 
+  for (const body of [null, { error: { internal: 'unexpected shape' } }]) {
+    globalThis.fetch = () => new Response(JSON.stringify(body), { status: 502 });
+    await assert.rejects(request('https://test.invalid/api/me'), e => e instanceof ApiError && e.status === 502 && e.message === 'server_error');
+  }
+
   globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
   const lateData = request('https://test.invalid/api/orders');
   configureApi('another', () => {});
