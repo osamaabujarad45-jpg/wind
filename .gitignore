@@ -46,3 +46,4 @@ yarn-error.*
 *.db-wal
 .screens/
 .map-demo/
+/.artifacts/
