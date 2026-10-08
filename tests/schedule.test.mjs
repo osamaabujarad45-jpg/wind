@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { dayKey, scheduleSlots } from '../src/booking.ts';
+import { apiCaller } from './support/api.mjs';
 
 // Slots follow Palestine time even on a phone set elsewhere.
 process.env.TZ = 'Europe/London';
@@ -26,13 +27,7 @@ await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const MIN = 60_000, DAY = 86_400_000;
 
-async function call(path, { token, body, expect = 200 } = {}) {
-  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base);
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599800001', name: 'Admin', password: 'secret1' } });

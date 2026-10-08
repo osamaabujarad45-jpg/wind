@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
 import { backtracks, bearing, ease, etaRange, fitBounds, labelField, nearLine, roadPath } from '../src/map-math.ts';
+import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -19,13 +20,7 @@ const { server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
-async function call(path, { token, body, expect = 200 } = {}) {
-  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base);
 
 try {
   const columns = table => db.prepare(`PRAGMA table_info(${table})`).all().map(r => r.name);

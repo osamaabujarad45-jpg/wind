@@ -1,16 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
   type ColorValue, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { css, cubicBezier, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from './motion';
+import Animated, { css, cubicBezier, FadeInDown, LinearTransition, useReducedMotion } from './motion';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { copy, fill, type CopyKey } from './copy';
-import { errorCode, storage } from './api';
+import { errorCode } from './api';
 import { useSession } from './session';
 import type { OrderStatus } from './model';
 
@@ -322,31 +322,6 @@ export function ErrorText({ children }: { children?: string }) {
   </Animated.View>;
 }
 
-// ---------- help ----------
-
-// Help card: explains a feature where it's used. Dismissed once per device (storage key tip:<id>).
-export function Tip({ id, icon = 'bulb-outline', title, body, tone = 'olive' }: {
-  id: string; icon?: IconName; title: string; body: string; tone?: 'olive' | 'clay' | 'blue';
-}) {
-  const { c, row } = useCopy();
-  const [open, setOpen] = useState<boolean | null>(null);
-  useEffect(() => { storage.get(`tip:${id}`).then(v => setOpen(v !== '1'), () => setOpen(true)); }, [id]);
-  if (!open) return null;
-  const t = tones[tone];
-  return <Animated.View entering={FadeInDown.duration(220)} exiting={FadeOut.duration(160)} style={[styles.tip, { backgroundColor: t.bg, flexDirection: row }]}
-    accessibilityRole="summary">
-    <View style={[styles.tipIcon, { backgroundColor: palette.card }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
-    <View style={{ flex: 1, gap: 2 }}>
-      <Txt variant="label" style={{ color: palette.ink }}>{title}</Txt>
-      <Txt variant="caption" style={{ color: palette.ink, opacity: 0.8 }}>{body}</Txt>
-    </View>
-    <Pressable accessibilityRole="button" accessibilityLabel={c.gotIt} hitSlop={10}
-      onPress={() => { setOpen(false); storage.set(`tip:${id}`, '1'); }} style={styles.tipClose}>
-      <Ionicons name="close" size={16} color={palette.secondary} />
-    </Pressable>
-  </Animated.View>;
-}
-
 // ---------- display ----------
 
 const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
@@ -521,9 +496,6 @@ const styles = StyleSheet.create({
   fieldError: { flex: 1, color: palette.error, fontSize: 12, fontWeight: '700' },
   input: { flex: 1, minHeight: 44, paddingVertical: 10, color: palette.ink, fontSize: 15 },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
-  tip: { alignItems: 'flex-start', gap: 10, borderRadius: 14, padding: 12, marginBottom: 12 },
-  tipIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  tipClose: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800' },
   group: { backgroundColor: palette.card, borderRadius: size.radius, overflow: 'hidden', marginBottom: 12 },

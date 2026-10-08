@@ -5,6 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLOSED_MINUTES, commissionOn, defaultSettings as s, distanceKm, quote, SLOW_MINUTES, smartPrice } from '../src/model.ts';
+import { apiCaller } from './support/api.mjs';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-offers-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride'; // offers are for rides and freight; Souq partner orders are parcels
@@ -14,14 +15,7 @@ const { server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
-async function call(path, { token, partnerKey, body, expect = 200 } = {}) {
-  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }) },
-    body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base);
 const advance = (token, order, extra = {}) => call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra } });
 
 try {

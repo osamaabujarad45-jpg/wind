@@ -4,6 +4,7 @@ import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { apiCaller } from './support/api.mjs';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-parcels-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
@@ -24,14 +25,7 @@ const browserKeys = () => {
   return { p256dh: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]).toString('base64url'), auth: Buffer.alloc(16, 7).toString('base64url') };
 };
 
-async function call(path, { token, partnerKey, body, expect = 200 } = {}) {
-  const res = await realFetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }) },
-    body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base, realFetch);
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Admin', password: 'secret1' } });

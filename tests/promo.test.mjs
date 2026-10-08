@@ -5,6 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings as standard, quote } from '../src/model.ts';
+import { apiCaller } from './support/api.mjs';
 // Discount maths were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
 const defaultSettings = { ...standard, parcelPrice: 49 };
 
@@ -15,13 +16,7 @@ const { server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
-async function call(path, { token, body, expect = 200 } = {}) {
-  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base);
 const advance = (token, order, extra = {}) =>
   call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra } });
 

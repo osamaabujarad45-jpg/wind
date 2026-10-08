@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
+import { apiCaller } from './support/api.mjs';
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
@@ -22,13 +23,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 const b = s => Buffer.from(s, 'base64url');
 const fcm = name => `https://fcm.googleapis.com/fcm/send/${name}`;
 
-async function call(path, { token, body, expect = 200 } = {}) {
-  const res = await realFetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base, realFetch);
 const advance = (token, order, extra = {}) => call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra } });
 const browserKeys = () => {
   const jwk = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });

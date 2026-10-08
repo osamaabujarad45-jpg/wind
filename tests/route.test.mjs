@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defaultSettings, quote } from '../src/model.ts';
+import { apiCaller } from './support/api.mjs';
 
 // Fake OSRM: answers like /route/v1/driving, counts calls, can be told to fail.
 let calls = 0, mode = 'ok', lastUrl = '';
@@ -30,13 +31,7 @@ const { server, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
-async function call(path, { token, body, expect = 200 } = {}) {
-  const res = await fetch(base + path, { method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }, body: body && JSON.stringify(body) });
-  const data = await res.json();
-  assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
-  return data;
-}
+const call = apiCaller(() => base);
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599800001', name: 'Admin', password: 'secret1' } });
