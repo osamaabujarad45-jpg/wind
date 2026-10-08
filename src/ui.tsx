@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
   tip: { alignItems: 'flex-start', gap: 10, borderRadius: 14, padding: 12, marginBottom: 12 },
   tipIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   tipClose: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
+  badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800' },
   group: { backgroundColor: palette.card, borderRadius: size.radius, overflow: 'hidden', marginBottom: 12 },
   groupDivider: { borderTopWidth: 1, borderTopColor: palette.hair },

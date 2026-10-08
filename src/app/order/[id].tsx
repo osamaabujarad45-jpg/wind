@@ -261,7 +261,7 @@ export default function OrderScreen() {
             <Txt variant="title">{c.handoverCode}</Txt>
             <Txt variant="caption">{c.handoverHint}</Txt>
           </View>
-          <View style={[styles.code, { flexDirection: 'row' }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
+          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
             {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>
@@ -275,7 +275,7 @@ export default function OrderScreen() {
             <Txt variant="title">{c.returnCode}</Txt>
             <Txt variant="caption">{c.returnHint}</Txt>
           </View>
-          <View style={[styles.code, { flexDirection: 'row' }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
+          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
             {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>

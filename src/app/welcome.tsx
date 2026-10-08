@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.line },
   dotOn: { width: 24, backgroundColor: palette.olive },
   slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  saveBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: palette.forest, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
+  saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.forest, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
   saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.line, alignItems: 'center', justifyContent: 'center' },

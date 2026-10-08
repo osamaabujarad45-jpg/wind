@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, newBooking, readBooking } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
 
@@ -34,3 +35,10 @@ assert.deepEqual(locationState(location, 180000), { ageSeconds: 120, stale: true
 assert.deepEqual(locationState(location, 1000), { ageSeconds: 0, stale: false });
 assert.deepEqual(locationState({ ...location, ageSeconds: 130 }, 1000), { ageSeconds: 130, stale: true }); // server age survives a slow device clock
 console.log('Booking recovery and location freshness checks passed');
+
+// RTL: OS flipping is off, so a raw 'row' stays left-to-right in Arabic. Use `row` from useCopy(), or say why with `ltr:`.
+const sources = readdirSync(new URL('../src', import.meta.url), { recursive: true }).filter(f => /\.tsx?$/.test(f));
+const rawRows = sources.flatMap(f => readFileSync(new URL(`../src/${f.replaceAll('\\', '/')}`, import.meta.url), 'utf8').split('\n')
+  .map((line, i) => ({ f, i: i + 1, line })).filter(({ line }) => /flexDirection: 'row'/.test(line) && !/ltr:/.test(line)));
+assert.deepEqual(rawRows.map(({ f, i }) => `${f}:${i}`), [], 'raw left-to-right rows outside the RTL helper');
+console.log('RTL row check passed');
