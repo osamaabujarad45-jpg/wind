@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, dayKey, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { againForm, dayKey, pickupForm, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, useFormat } from '../parts';
@@ -17,7 +17,7 @@ import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
-  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string }>();
+  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string; keep?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
@@ -42,6 +42,7 @@ export default function Book() {
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
+  const [sameFrom, setSameFrom] = useState(false); // send another: only the pickup was copied
   const copied = useRef<string | null>(null); // copy once: a language switch re-runs the effect and must not undo edits
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>('now');
@@ -116,22 +117,27 @@ export default function Book() {
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
-      } else if (params.again && copied.current !== params.again) {
+      } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
         if (!mounted) return;
-        if (old) {
+        if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
+          const p = pickupForm(old);
+          setService(p.service); setPickupCity(p.pickupCity); setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setOption(p.option);
+          setSameFrom(true); setCopiedFrom(old.id);
+        } else if (old) {
           const f = againForm(old);
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
           setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp);
           if (f.contact) setContact(f.contact);
-          setCopiedFrom(old.id); copied.current = params.again;
+          setSameFrom(false); setCopiedFrom(old.id);
         }
+        if (old) copied.current = `${params.again}:${params.keep}`;
       }
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [pendingKey, c.bookingStorageError, params.again]);
+  }, [pendingKey, c.bookingStorageError, params.again, params.keep]);
 
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
@@ -244,7 +250,7 @@ export default function Book() {
         <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
       </Card>}
       {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
-      {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
+      {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
       {/* Service switcher: the route stays, only the details change. */}
       <Row gap={8} style={{ marginBottom: 12 }}>

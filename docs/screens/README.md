@@ -27,6 +27,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Book a ride | `/book?service=ride` | `src/app/book.tsx` | [book-ride.png](ar/book-ride.png) | [book-ride.png](en/book-ride.png) |
 | Book a load | `/book?service=freight` | `src/app/book.tsx` | [book-freight.png](ar/book-freight.png) | [book-freight.png](en/book-freight.png) |
 | Order again (form copied from a delivered order) | `/book?again=1` | `src/app/book.tsx` | [book-again.png](ar/book-again.png) | [book-again.png](en/book-again.png) |
+| Send another parcel (pickup copied, new recipient) | `/book?again=6&keep=pickup` | `src/app/book.tsx` | [book-send-another.png](ar/book-send-another.png) | [book-send-another.png](en/book-send-another.png) |
 | My orders | `/orders` | `src/app/(customer)/orders.tsx` | [orders.png](ar/orders.png) | [orders.png](en/orders.png) |
 | Order · finding a driver | `/order/3` | `src/app/order/[id].tsx` | [order-searching.png](ar/order-searching.png) | [order-searching.png](en/order-searching.png) |
 | Order · on the way | `/order/2` | `src/app/order/[id].tsx` | [order-live.png](ar/order-live.png) | [order-live.png](en/order-live.png) |

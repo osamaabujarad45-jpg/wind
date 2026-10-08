@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { againForm, canOrderAgain, newBooking, readBooking } from '../src/booking.ts';
+import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
@@ -28,6 +28,13 @@ assert.equal(readBooking(JSON.stringify(again)).payload.quotedPrice, 99); // the
 for (const status of ['completed', 'returned', 'cancelled']) assert.ok(canOrderAgain({ status }, 'customer'), status);
 for (const status of ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning']) assert.ok(!canOrderAgain({ status }, 'customer'), status);
 for (const role of ['driver', 'admin', undefined]) assert.ok(!canOrderAgain({ status: 'completed' }, role), String(role));
+// Send another (SPEC-send-another.md): only the pickup carries over; the last buyer's drop-off, phone and item never do.
+assert.deepEqual(pickupForm({ ...old, service: 'parcel', option: 'small' }),
+  { service: 'parcel', option: 'small', pickupCity: 'hebron', pickupPoint: old.pickupPoint, pickupNote: 'مخزن' });
+for (const status of ['searching', 'in_transit', 'completed', 'returned']) assert.ok(canSendAnother({ status, service: 'parcel' }, 'customer'), status);
+assert.ok(!canSendAnother({ status: 'cancelled', service: 'parcel' }, 'customer'));
+assert.ok(!canSendAnother({ status: 'completed', service: 'ride' }, 'customer'));
+for (const role of ['driver', 'admin', undefined]) assert.ok(!canSendAnother({ status: 'completed', service: 'parcel' }, role), String(role));
 assert.equal(locationState(null, 180000), null);
 const location = { latitude: 31.9, longitude: 35.2, updatedAt: 60000, ageSeconds: 0 };
 assert.deepEqual(locationState(location, 179000), { ageSeconds: 119, stale: false });

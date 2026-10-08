@@ -33,6 +33,14 @@ export function againForm(order: Order) {
   };
 }
 
+// Send another (SPEC-send-another.md): a shop's next parcel from the same place; the buyer's details never carry over.
+export const canSendAnother = (order: Pick<Order, 'status' | 'service'>, role: Role | undefined) =>
+  role === 'customer' && order.service === 'parcel' && order.status !== 'cancelled';
+export function pickupForm(order: Order) {
+  const { service, option, pickupCity, pickupPoint, pickupNote } = againForm(order);
+  return { service, option, pickupCity, pickupPoint, pickupNote };
+}
+
 export function readBooking(saved: string | null): PendingBooking | null {
   if (saved === null) return null;
   const booking: PendingBooking = JSON.parse(saved);

@@ -152,6 +152,7 @@ const screens = [
   { id: 'book-ride', group: 'Customer', name: 'Book a ride', route: '/book?service=ride', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-freight', group: 'Customer', name: 'Book a load', route: '/book?service=freight', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-again', group: 'Customer', name: 'Order again (form copied from a delivered order)', route: `/book?again=${completed.id}`, file: 'src/app/book.tsx', role: 'customer' },
+  { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },

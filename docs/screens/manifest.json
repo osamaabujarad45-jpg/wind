@@ -190,6 +190,20 @@
     "session": "customer"
   },
   {
+    "id": "book-send-another",
+    "group": "Customer",
+    "name": "Send another parcel (pickup copied, new recipient)",
+    "route": "/book?again=6&keep=pickup",
+    "file": "src/app/book.tsx",
+    "ar": [
+      "ar/book-send-another.png"
+    ],
+    "en": [
+      "en/book-send-another.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "orders",
     "group": "Customer",
     "name": "My orders",
