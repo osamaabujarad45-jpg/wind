@@ -136,7 +136,7 @@ Still simplified versus the plan above, in order of likely need:
   verified. Administrators cannot self-register, and the future contact gate must
   remain off until a proof or approval path is ready.
 - **No push notifications:** screens poll while open. Drivers must keep the app open to see new jobs.
-- **Driver location is foreground-only**, latest point only.
+- **Driver location:** native apps use an active-delivery background location task and visible Android location service. Browser tracking requires an open foreground page. Only the latest point is stored. See the 2026-10-07 deployment audit for phone evidence and OS limits.
 - **Cash only**; plans are paid offline and activated by an admin.
 - **Single instance:** SQLite on one local persistent volume with WAL, foreign keys, full synchronous commits and bounded busy waits. Authentication/password attempt budgets survive restart in SQLite. Move to a shared transactional store before running several API instances.
 - **Distance is straight-line × 1.3**, not a routing engine. Listed cities are accepted inputs; the code does not yet verify route coverage or geofence operating regions.

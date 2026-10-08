@@ -7,7 +7,7 @@ import { useApi } from '../../api';
 import { activeStatuses, city, defaultSettings, services, type Order, type Service } from '../../model';
 import { OrderRow, ServiceIcon } from '../../parts';
 import { useSession } from '../../session';
-import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Screen, Section, shadow, Tip, Txt, useCopy, type IconName } from '../../ui';
+import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Screen, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
 
 const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; again?: string }) => router.push({ pathname: '/book', params });
 
@@ -45,7 +45,6 @@ export default function Home() {
       </View>
     </Press>
 
-    <Tip id="home-first" icon="sparkles-outline" title={c.tipHomeTitle} body={c.tipHomeBody} />
 
     <Section title={c.services} />
     <Row gap={10} style={{ marginBottom: 18, alignItems: 'stretch' }}>

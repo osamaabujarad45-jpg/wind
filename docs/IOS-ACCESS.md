@@ -8,7 +8,7 @@ This is the free public access path. It avoids pretending that an unsigned `.ipa
 
 ## Native iPhone release
 
-The Expo configuration already reserves bundle identifier `ps.wind.app`, declares only foreground location, and has no non-exempt encryption. The native release path is:
+The Expo configuration already reserves bundle identifier `ps.wind.app`, declares foreground and background location for active driver deliveries, and has no non-exempt encryption. The native release path is:
 
 1. Enroll the account holder in the Apple Developer Program.
 2. Build the existing iOS target with the production HTTPS API URL.

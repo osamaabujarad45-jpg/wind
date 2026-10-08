@@ -2,8 +2,9 @@
 FROM node:24-slim AS web-build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 RUN npm ci
-COPY app.json app.config.js tsconfig.json expo-env.d.ts ./
+COPY app.json app.config.js tsconfig.json expo-env.d.ts index.js ./
 COPY assets ./assets
 COPY plugins ./plugins
 COPY src ./src

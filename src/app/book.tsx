@@ -14,7 +14,7 @@ import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
-import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Tip, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string }>();
@@ -301,7 +301,6 @@ export default function Book() {
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
       </Card></View>}
 
-      <Tip id="book-landmark" icon="flag-outline" title={c.tipBookTitle} body={c.tipBookBody} tone="blue" />
 
       <Card>
         <Field label={c.pickupNote} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />

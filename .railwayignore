@@ -9,6 +9,9 @@
 !app.config.js
 !tsconfig.json
 !expo-env.d.ts
+!index.js
+!vendor/
+!vendor/**
 !server/
 !server/**
 !src/

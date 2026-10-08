@@ -315,6 +315,9 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
   await page.getByText(copy.ar.driver_next_assigned, { exact: true }).waitFor();
   assert.equal(await page.getByText(copy.ar.next_assigned, { exact: true }).count(), 0);
+  const stationaryPublications = publications;
+  await page.waitForTimeout(31_000); // the watcher emits no movement after its initial fix
+  assert.ok(publications > stationaryPublications, 'a stationary driver must refresh their GPS fix');
   const visibility = hidden => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: hidden ? 'hidden' : 'visible' });
     document.dispatchEvent(new Event('visibilitychange'));

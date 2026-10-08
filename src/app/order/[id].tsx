@@ -15,7 +15,7 @@ import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Tip, Txt, useCopy,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -266,7 +266,6 @@ export default function OrderScreen() {
           </View>
         </Row>
       </Card>
-      <Tip id="order-code" icon="key-outline" title={c.tipCodeTitle} body={c.tipCodeBody} tone="clay" />
     </Appear>}
 
     {isCustomer && order.returnCode && <Appear index={4}>

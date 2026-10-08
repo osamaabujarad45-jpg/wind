@@ -40,10 +40,15 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Wind uses your location for pickup and, for drivers, to share your position during an active order while the app is open."
+          "locationWhenInUsePermission": "Wind uses your location for pickup and to share your position during active deliveries.",
+          "locationAlwaysAndWhenInUsePermission": "Wind shares the driver location during active deliveries, including when the screen is locked. Sharing stops when deliveries end or you sign out.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-font",
+      "expo-system-ui",
       [
         "expo-localization",
         {

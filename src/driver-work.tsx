@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { api, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
+import { backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
@@ -12,7 +13,7 @@ const Context = createContext<Work | null>(null);
 
 // One assignment source for offer availability and foreground tracking, including the order screen.
 export function DriverWorkProvider({ children }: { children: ReactNode }) {
-  const { me } = useSession();
+  const { me, ready, language } = useSession();
   const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
   const [lifecycle, setLifecycle] = useState({ active: AppState.currentState === 'active', revision: 0 });
   const foreground = lifecycle.active;
@@ -30,6 +31,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const servicesGeneration = useRef(0);
   const [servicesResult, setServicesResult] = useState<{ actor: number; revision: number; enabled: boolean }>();
   const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'> }>();
+  const [backgroundGranted, setBackgroundGranted] = useState(false);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => setLifecycle(previous => ({ active: state === 'active', revision: previous.revision + 1 })));
@@ -69,6 +71,13 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     if (permission?.granted) void Promise.resolve().then(refreshServices);
   }, [permission?.granted, refreshServices]);
 
+  useEffect(() => {
+    if (Platform.OS === 'web' || !foreground || actor === null) return;
+    let cancelled = false;
+    void Location.getBackgroundPermissionsAsync().then(value => { if (!cancelled) setBackgroundGranted(value.granted); });
+    return () => { cancelled = true; };
+  }, [actor, foreground, lifecycle.revision]);
+
   // Called only from an explicit driver action. It requests foreground permission at the point it is needed,
   // then lets Android offer its high-accuracy location dialog when services are off.
   const prepareTracking = useCallback(async () => {
@@ -81,8 +90,22 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       catch { return false; }
       enabled = await refreshServices();
     }
-    return enabled;
-  }, [actor, foreground, permission, refreshServices, requestPermission]);
+    if (!enabled || Platform.OS === 'web') return enabled;
+    if (!(await Location.getBackgroundPermissionsAsync()).granted) {
+      const proceed = await new Promise<boolean>(resolve => Alert.alert(
+        language === 'ar' ? 'مشاركة الموقع أثناء التوصيل' : 'Location during delivery',
+        language === 'ar' ? 'يلزم إذن الموقع طوال الوقت لمتابعة التوصيل عند قفل الهاتف أو فتح تطبيق آخر. تتوقف المشاركة بانتهاء الطلبات أو تسجيل الخروج.' : 'Allow location all the time to keep tracking when the phone locks or another app opens. Sharing stops when deliveries end or you sign out.',
+        [{ text: language === 'ar' ? 'إلغاء' : 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: language === 'ar' ? 'متابعة' : 'Continue', onPress: () => resolve(true) }],
+        { cancelable: true, onDismiss: () => resolve(false) }));
+      if (!proceed) return false;
+      const background = await Location.requestBackgroundPermissionsAsync();
+      setBackgroundGranted(background.granted);
+      return background.granted;
+    }
+    setBackgroundGranted(true);
+    return true;
+  }, [actor, foreground, permission, refreshServices, requestPermission, language]);
 
   const reload = useCallback((): Promise<void> => {
     if (actor === null || !foreground) return Promise.resolve();
@@ -123,11 +146,13 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   // updated from a subscription. The status reaches "sharing" only after the API accepts a coordinate.
   useEffect(() => {
     const orderId = order?.id;
-    if (actor === null || orderId === undefined) return;
+    if (Platform.OS !== 'web' || actor === null || orderId === undefined) return;
     if (!foreground || !permission?.granted || !servicesEnabled) return;
     let subscription: Location.LocationSubscription | undefined;
     let stopped = false;
     let publishing = false;
+    let locating = false;
+    let lastPublishedAt = 0;
     const setState = (value: Exclude<Tracking, 'idle'>) => {
       if (!stopped) setTrackingResult({ actor, orderId, value });
     };
@@ -139,6 +164,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
         await api('/location', { latitude, longitude,
           ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
           ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
+        lastPublishedAt = Date.now();
         setState('sharing');
       } catch {
         setState('starting');
@@ -147,16 +173,49 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     };
     const options = { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 30, mayShowUserSettingsDialog: true };
     setState('starting');
-    // A one-off reading avoids making the customer wait for the first movement event.
-    void Location.getCurrentPositionAsync(options).then(position => publish(position.coords)).catch(() => setState('starting'));
+    const readPosition = () => {
+      if (stopped || locating) return;
+      locating = true;
+      void Location.getCurrentPositionAsync(options).then(position => publish(position.coords))
+        .catch(() => setState('starting')).finally(() => { locating = false; });
+    };
+    readPosition();
+    // Movement subscriptions can stay silent at a stop. Obtain a new fix rather than re-stamping an old one.
+    const heartbeat = setInterval(() => { if (Date.now() - lastPublishedAt >= 25_000) readPosition(); }, 30_000);
     void Location.watchPositionAsync(options, position => { void publish(position.coords); }, () => setState('off'))
       .then(sub => { if (stopped) sub.remove(); else subscription = sub; })
       .catch(() => setState('off'));
-    return () => { stopped = true; subscription?.remove(); };
+    return () => { stopped = true; clearInterval(heartbeat); subscription?.remove(); };
   }, [actor, foreground, order?.id, permission?.granted, reload, servicesEnabled]);
 
+  // Reconcile only in the foreground. AppState changes must not tear down the native service.
+  const nativeOrderId = result?.actor === actor ? result.orders[0]?.id : undefined;
+  useEffect(() => {
+    if (Platform.OS === 'web' || !ready || !foreground) return;
+    if (actor === null || (result?.actor === actor && !nativeOrderId)) {
+      void stopBackgroundLocation().catch(() => {});
+      return;
+    }
+    if (nativeOrderId === undefined || permission === null) return;
+    if (!permission.granted || !backgroundGranted) {
+      void stopBackgroundLocation().catch(() => {});
+      return;
+    }
+    if (!servicesEnabled) return;
+    let cancelled = false;
+    const status = () => backgroundLocationState().then(value => {
+      if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value });
+    }).catch(() => {});
+    void startBackgroundLocation(actor, nativeOrderId).then(status).catch(() => {
+      if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value: 'off' });
+    });
+    const timer = setInterval(status, 3_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [actor, ready, foreground, nativeOrderId, result?.actor, permission, backgroundGranted, servicesEnabled]);
+
   const savedTracking = trackingResult?.actor === actor && trackingResult.orderId === order?.id ? trackingResult.value : undefined;
-  const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ? 'off' : savedTracking ?? 'starting';
+  const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ||
+    (Platform.OS !== 'web' && !backgroundGranted) ? 'off' : savedTracking ?? 'starting';
 
   return <Context.Provider value={{ order, orders, known: !!own && !own.error, error: own?.error, tracking, reload, update, permission, requestPermission, prepareTracking }}>{children}</Context.Provider>;
 }

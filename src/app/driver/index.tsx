@@ -9,7 +9,7 @@ import { canTake, city, commissionOn, distanceKm, offerRange, type Order } from 
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, Field, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Tip, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
@@ -103,7 +103,6 @@ export default function Jobs() {
 
     {carrying.length === 1 && <Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} />}
     {carrying.length > 1 && <Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} />}
-    <Tip id="driver-earn" icon="trending-up-outline" title={c.tipDriverTitle} body={c.tipDriverBody} />
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
     {!data ? <Loading /> : data.length === 0

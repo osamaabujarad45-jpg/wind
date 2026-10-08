@@ -9,6 +9,27 @@ import { request } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
+// New native entry points and local dependencies must survive both Railway upload and Docker's build context.
+{
+  const root = new URL('../', import.meta.url), read = rel => readFileSync(new URL(rel, root), 'utf8');
+  const pkg = JSON.parse(read('package.json')), docker = read('Dockerfile');
+  const build = docker.split(/^FROM /m)[1];
+  for (const file of [pkg.main, ...Object.values(pkg.dependencies).filter(value => value.startsWith('file:')).map(value => value.slice(5).replace(/^\.\//, ''))]) {
+    const isDirectory = !file.includes('.js');
+    for (const ignore of ['.dockerignore', '.railwayignore']) {
+      const rules = read(ignore).split(/\r?\n/);
+      const parent = file.split('/')[0];
+      assert.ok(rules.includes(`!${file}${isDirectory ? '/' : ''}`) || (isDirectory && rules.includes(`!${parent}/`) && rules.includes(`!${parent}/**`)), `${ignore} must upload ${file}`);
+    }
+    if (isDirectory) {
+      const parent = file.split('/')[0];
+      for (const ignore of ['.dockerignore', '.railwayignore']) assert.ok(read(ignore).includes(`!${parent}/**`), `${ignore} must include local dependency files`);
+      const copiedAt = build.indexOf(`COPY ${parent} ./${parent}`);
+      assert.ok(copiedAt >= 0 && copiedAt < build.indexOf('RUN npm ci'), 'Local dependencies must be copied before the frozen install');
+    } else assert.ok(build.split(/\r?\n/).some(line => line.startsWith('COPY ') && line.split(/\s+/).includes(file)), `Docker build must copy ${file}`);
+  }
+}
+
 // The runtime image copies src files one by one: every module the server reaches must be listed (5 Oct 2026: a deploy
 // failed its health check because server/main.ts started importing src/map-math.ts).
 {
