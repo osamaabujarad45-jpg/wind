@@ -2,6 +2,8 @@
 
 ## 1. Architecture
 
+> **Target design, not as built.** Wind runs today as one Node 24 process (`server/main.ts`) on SQLite (`node:sqlite`, WAL) with polling plus Web Push, OSRM for roads and cash only; see the as-built notes further down. The diagram below is the suggested end state.
+
 ```text
 Customer app (Expo) ─┐
 Driver app (Expo) ────┼── HTTPS API + authenticated real-time events
