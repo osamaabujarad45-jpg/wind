@@ -214,3 +214,23 @@ export function orderCode(id: number): string {
 export function ltr(text: string): string {
   return `\u2066${text}\u2069`;
 }
+
+// Run sheet (SPEC-run-sheet.md): a courier's active orders as courier companies print them, by stage then city.
+export type RunStage = 'pickup' | 'deliver' | 'return';
+export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 'dropoffCity'>>(orders: T[]) {
+  const stageOf = (o: T): RunStage | null => o.status === 'assigned' || o.status === 'at_pickup' ? 'pickup'
+    : o.status === 'in_transit' || o.status === 'on_hold' ? 'deliver' : o.status === 'returning' ? 'return' : null;
+  const groups = new Map<string, { stage: RunStage; city: CityId; orders: T[] }>();
+  for (const o of orders) {
+    const stage = stageOf(o);
+    if (!stage) continue;
+    const at = stage === 'deliver' ? o.dropoffCity : o.pickupCity; // returns go back to the sender's pickup
+    const key = `${stage}:${at}`;
+    if (!groups.has(key)) groups.set(key, { stage, city: at, orders: [] });
+    groups.get(key)!.orders.push(o);
+  }
+  const rank: Record<RunStage, number> = { pickup: 0, deliver: 1, return: 2 };
+  return [...groups.values()]
+    .map(g => ({ ...g, orders: g.orders.sort((a, b) => a.id - b.id) }))
+    .sort((a, b) => rank[a.stage] - rank[b.stage] || b.orders.length - a.orders.length || a.city.localeCompare(b.city));
+}

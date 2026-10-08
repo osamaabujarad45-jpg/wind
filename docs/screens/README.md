@@ -44,6 +44,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Awaiting approval | `/driver` | `src/app/driver/index.tsx` | [driver-pending.png](ar/driver-pending.png) | [driver-pending.png](en/driver-pending.png) |
 | Jobs | `/driver` | `src/app/driver/index.tsx` | [driver-jobs.png](ar/driver-jobs.png) | [driver-jobs.png](en/driver-jobs.png) |
 | Jobs · ready for an assignment | `/driver` | `src/app/driver/index.tsx` | [driver-idle.png](ar/driver-idle.png) | [driver-idle.png](en/driver-idle.png) |
+| Parcel run sheet (pickups and deliveries by city) | `/driver/trips` | `src/app/driver/trips.tsx` | [driver-run-sheet.png](ar/driver-run-sheet.png) | [driver-run-sheet.png](en/driver-run-sheet.png) |
 | Active trip | `/order/2` | `src/app/order/[id].tsx` | [driver-order.png](ar/driver-order.png) | [driver-order.png](en/driver-order.png) |
 | My trips | `/driver/trips` | `src/app/driver/trips.tsx` | [driver-trips.png](ar/driver-trips.png) | [driver-trips.png](en/driver-trips.png) |
 | Earnings | `/driver/earnings` | `src/app/driver/earnings.tsx` | [driver-earnings.png](ar/driver-earnings.png) | [driver-earnings.png](en/driver-earnings.png) |

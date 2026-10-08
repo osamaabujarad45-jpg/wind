@@ -1,11 +1,12 @@
+import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useApi } from '../../api';
-import { activeStatuses, type Order } from '../../model';
+import { activeStatuses, city, runSheet, type Order } from '../../model';
 import { OrderRow } from '../../parts';
-import { Button, Empty, ErrorText, Header, Loading, Screen, Txt, useCopy } from '../../ui';
+import { Button, Empty, ErrorText, fill, Header, Loading, Screen, Txt, useCopy } from '../../ui';
 
 export default function Trips() {
-  const { c, err } = useCopy();
+  const { c, err, language } = useCopy();
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const active = (data ?? []).filter(o => activeStatuses.includes(o.status));
   const lastTrip = (data ?? []).filter(o => o.status === 'completed').sort((a, b) => b.updatedAt - a.updatedAt)[0];
@@ -17,7 +18,12 @@ export default function Trips() {
       ? <Empty icon="navigate-outline" title={c.noTrips} body={c.noTripsDesc} action={<Button title={c.jobs} onPress={() => router.navigate('/driver')} />} />
       : <>
         {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
-        {active.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}
+        {/* Run sheet (SPEC-run-sheet.md): pickups, then deliveries by city (biggest first), then returns. */}
+        {runSheet(active).map(group => <View key={`${group.stage}:${group.city}`} style={{ marginBottom: 4 }}>
+          <Txt variant="label" style={{ marginBottom: 8 }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
+            { city: city(group.city)[language], n: group.orders.length })}</Txt>
+          {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)} />)}
+        </View>)}
         {lastTrip && <>
           <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>
           <OrderRow order={lastTrip} index={active.length} />

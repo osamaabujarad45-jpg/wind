@@ -358,6 +358,20 @@
     "session": "idle"
   },
   {
+    "id": "driver-run-sheet",
+    "group": "Driver",
+    "name": "Parcel run sheet (pickups and deliveries by city)",
+    "route": "/driver/trips",
+    "file": "src/app/driver/trips.tsx",
+    "ar": [
+      "ar/driver-run-sheet.png"
+    ],
+    "en": [
+      "en/driver-run-sheet.png"
+    ],
+    "session": "courier"
+  },
+  {
     "id": "driver-order",
     "group": "Driver",
     "name": "Active trip",

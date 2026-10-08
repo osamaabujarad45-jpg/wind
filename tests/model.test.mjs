@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -71,3 +71,12 @@ assert.ok(!canTake(Array(PARCEL_LOAD).fill(p), 'parcel') && canTake(Array(PARCEL
 assert.ok(PARCEL_LOAD >= 100);
 assert.deepEqual(offerRange(55), [28, 110]);
 assert.deepEqual(offerRange(1), [1, 2]);
+// Run sheet (SPEC-run-sheet.md): stage first, then the biggest city group, ids ascending; finished orders left out.
+const o = (id, status, pickupCity, dropoffCity) => ({ id, status, pickupCity, dropoffCity });
+const sheet = runSheet([o(9, 'in_transit', 'ramallah', 'nablus'), o(3, 'assigned', 'ramallah', 'jenin'), o(4, 'returning', 'hebron', 'nablus'),
+  o(5, 'on_hold', 'ramallah', 'nablus'), o(6, 'in_transit', 'ramallah', 'jenin'), o(7, 'completed', 'ramallah', 'nablus'), o(8, 'at_pickup', 'bireh', 'nablus'),
+  o(2, 'in_transit', 'bireh', 'nablus')]);
+assert.deepEqual(sheet.map(g => [g.stage, g.city, g.orders.map(x => x.id)]), [
+  ['pickup', 'bireh', [8]], ['pickup', 'ramallah', [3]], ['deliver', 'nablus', [2, 5, 9]], ['deliver', 'jenin', [6]], ['return', 'hebron', [4]]]);
+assert.deepEqual(runSheet([]), []);
+console.log('Run sheet checks passed');

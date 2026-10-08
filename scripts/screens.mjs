@@ -113,6 +113,13 @@ await call(`/orders/${proofRecovery.id}/advance`, recoveryDriver.token, {});
 await call(`/orders/${proofRecovery.id}/advance`, recoveryDriver.token, {});
 for (let attempt = 0; attempt < 5; attempt++)
   await call(`/orders/${proofRecovery.id}/advance`, recoveryDriver.token, { code: '0000' }, 400);
+// Yousef's van carries a parcel run (SPEC-run-sheet.md): two more for Nablus on board, one still to collect in Ramallah.
+for (const [pickupCity, dropoffCity, pickupNote, dropoffNote, onBoard] of [['ramallah', 'nablus', 'محل الزهراء', 'شارع فيصل', true],
+  ['bireh', 'nablus', 'مكتبة الجامعة', 'رفيديا', true], ['ramallah', 'jenin', 'دوار المنارة', 'مستشفى جنين', false]]) {
+  const parcel = await order(omar, false, { service: 'parcel', pickupCity, dropoffCity, pickupNote, dropoffNote, detail: 'طرد' });
+  await call(`/jobs/${parcel.id}/accept`, recoveryDriver.token, {});
+  if (onBoard) for (let step = 0; step < 2; step++) await call(`/orders/${parcel.id}/advance`, recoveryDriver.token, {});
+}
 
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
@@ -165,6 +172,7 @@ const screens = [
   { id: 'driver-pending', group: 'Driver', name: 'Awaiting approval', route: '/driver', file: 'src/app/driver/index.tsx', role: 'pending' },
   { id: 'driver-jobs', group: 'Driver', name: 'Jobs', route: '/driver', file: 'src/app/driver/index.tsx', role: 'driver' },
   { id: 'driver-idle', group: 'Driver', name: 'Jobs · ready for an assignment', route: '/driver', file: 'src/app/driver/index.tsx', role: 'idle' },
+  { id: 'driver-run-sheet', group: 'Driver', name: 'Parcel run sheet (pickups and deliveries by city)', route: '/driver/trips', file: 'src/app/driver/trips.tsx', role: 'courier' },
   { id: 'driver-order', group: 'Driver', name: 'Active trip', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'driver' },
   { id: 'driver-trips', group: 'Driver', name: 'My trips', route: '/driver/trips', file: 'src/app/driver/trips.tsx', role: 'driver' },
   { id: 'driver-earnings', group: 'Driver', name: 'Earnings', route: '/driver/earnings', file: 'src/app/driver/earnings.tsx', role: 'driver' },
@@ -178,7 +186,7 @@ const screens = [
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
-const tokens = { customer: layla.token, driver: ahmad.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
+const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
 
 // ---------- 4. capture ----------
 const { chromium } = await import('playwright');
