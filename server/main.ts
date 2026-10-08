@@ -341,6 +341,8 @@ function toSubscription(r: Row): Subscription {
 const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
 const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
 /** What a driver is carrying right now (SPEC-parcel-standard.md: many parcels, or one ride / freight load). */
+/** What a driver's vehicle may carry; no vehicle on file serves nothing (a NULL is never a car). */
+const servesFor = (vehicle: unknown): Service[] => vehicleServices[vehicle as Vehicle] ?? [];
 const activeLoad = (driverId: number) => all(`SELECT service FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId) as { service: Service }[];
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
@@ -357,7 +359,7 @@ function toOrder(r: Row, viewer: User): Order {
   const assigned = viewer.id === r.driver_id;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   return {
-    id: r.id, customerId: r.customer_id, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
+    id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
     pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     pickupPoint: (owner || assigned) && r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null,
     dropoffPoint: (owner || assigned) && r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null,
@@ -414,7 +416,7 @@ function getOrder(id: number, viewer: User): Order {
   const released = viewer.role === 'driver' && r.status === 'searching' &&
     !!one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id);
   const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
-    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && vehicleServices[viewer.vehicle ?? 'car'].includes(r.service)
+    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && servesFor(viewer.vehicle).includes(r.service)
       && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
   if (!canSee || released) fail(404, 'not_found');
   return toOrder(r, viewer);
@@ -1224,7 +1226,8 @@ route('POST', '/api/admin/roads/:id/remove', ({ user, params }) => {
 route('GET', '/api/jobs', ({ user }) => {
   need(user, 'driver');
   needActive(user);
-  const allowed = vehicleServices[user.vehicle ?? 'car'].filter(service => enabledServices.includes(service));
+  if (!servesFor(user.vehicle).length) fail(409, 'no_vehicle'); // say why the list is empty
+  const allowed = servesFor(user.vehicle).filter(service => enabledServices.includes(service));
   if (!allowed.length) return [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
   return all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
@@ -1241,7 +1244,7 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   try {
   const order = getOrder(Number(params[0]), user);
   if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
-  if (!vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
+  if (!servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
   const carrying = activeLoad(user.id);
   if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
@@ -1253,8 +1256,8 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id); // settled, and this driver is busy now
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
   if (!carrying.length) run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
-  queuePush([order.customerId], 'assigned', order.id);
   const result = getOrder(order.id, user);
+  queuePush([result.customerId!], 'assigned', order.id);
   db.exec('COMMIT');
   return result;
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -1268,13 +1271,13 @@ route('POST', '/api/jobs/:id/offer', ({ user, params, body }) => {
   const order = getOrder(Number(params[0]), user); // 404 unless an open job this driver may take
   if (order.status !== 'searching') fail(409, 'already_taken');
   const recommended = order.recommendedPrice ?? fail(409, 'fixed_price'); // Souq and older apps: accept at the shown price
-  if (!enabledServices.includes(order.service) || !vehicleServices[user.vehicle ?? 'car'].includes(order.service)) fail(409, 'wrong_vehicle');
+  if (!enabledServices.includes(order.service) || !servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
   if (!canTake(activeLoad(user.id), order.service)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
   // A driver changing their own live offer does not ring the customer again; a first or renewed one does.
   if (!one('SELECT 1 FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', order.id, user.id, Date.now() - OFFER_TTL))
-    queuePush([order.customerId], 'offer', order.id);
+    queuePush([one('SELECT customer_id FROM orders WHERE id = ?', order.id)!.customer_id as number], 'offer', order.id);
   run(`INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(order_id, driver_id) DO UPDATE SET price = excluded.price, created_at = excluded.created_at`, order.id, user.id, body.price, Date.now());
   return getOrder(order.id, user);
@@ -1288,7 +1291,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', ({ user, params }) => {
     if (r.status !== 'searching') fail(409, 'order_changed');
     const f = one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL) ?? fail(409, 'offer_expired');
-    if (!vehicleServices[(f.vehicle ?? 'car') as Vehicle].includes(r.service)) fail(409, 'offer_expired');
+    if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
     const rate = activePlan(f.id) === 'pro' ? settings().proCommission : settings().commission;
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
@@ -1318,8 +1321,8 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
       return current;
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   })();
-  queuePush([order.customerId], 'released', order.id);
-  newJobPush(order.service, order.id, order.customerId, user.id); // the releasing driver is excluded
+  queuePush([order.customerId!], 'released', order.id);
+  newJobPush(order.service, order.id, order.customerId!, user.id); // the releasing driver is excluded
   return { ok: true };
 });
 

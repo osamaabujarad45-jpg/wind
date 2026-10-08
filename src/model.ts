@@ -47,7 +47,6 @@ export const vehicleServices: Record<Vehicle, Service[]> = {
   motorcycle: ['parcel', 'ride'], bicycle: ['parcel'], car: ['parcel', 'ride'], van: ['parcel', 'freight'], truck: ['freight'],
 };
 export const planForRole: Partial<Record<Role, Plan>> = { customer: 'plus', driver: 'pro' };
-export const sharedCapacity = 4;
 
 export function optionsFor(service: Service): string[] {
   return service === 'ride' ? ['1', '2', '3', '4'] : ['small', 'medium', 'large'];
@@ -84,7 +83,7 @@ export function normalizeEmail(input: unknown): string | null {
 export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
 
 export type Order = {
-  id: number; customerId: number; driverId: number | null; service: Service; shared: boolean;
+  id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   option: string; loadingHelp: boolean; price: number; commission: number | null;
