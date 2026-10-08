@@ -5,11 +5,11 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, useApi } from '../../api';
-import { canTake, city, commissionOn, distanceKm, offerRange, type Order } from '../../model';
+import { canTake, cities, city, commissionOn, distanceKm, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, Field, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
@@ -69,6 +69,13 @@ export default function Jobs() {
     } catch (e) { haptic.error(); setActionError(err(e)); reload(); } finally { setBusy(null); }
   }
 
+  // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
+  async function head(target: CityId | 'any') {
+    setActionError('');
+    try { await api('/driver/heading', { city: target === 'any' ? null : target }); await refresh(); reload(); }
+    catch (e) { haptic.error(); setActionError(err(e)); }
+  }
+
   async function enableTracking() {
     try {
       if (permission?.canAskAgain === false && !permission.granted) await Linking.openSettings();
@@ -100,6 +107,11 @@ export default function Jobs() {
         </Row>
       </Press>}
     </Card>
+
+    <Txt variant="label" style={{ marginTop: 4 }}>{c.headingTo}</Txt>
+    <FilterChips items={[{ key: 'any' as const, label: c.headingAny }, ...cities.map(x => ({ key: x.id, label: x[language] }))]}
+      value={me?.user.heading?.city ?? 'any'} onChange={key => { void head(key); }} />
+    {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
     {carrying.length === 1 && <Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} />}
     {carrying.length > 1 && <Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} />}

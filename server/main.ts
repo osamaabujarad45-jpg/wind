@@ -269,6 +269,9 @@ function migrateVehicleChoices() {
   finally { db.exec('PRAGMA foreign_keys = ON;'); }
 }
 migrateVehicleChoices();
+// After the rebuild above, which keeps only the columns it lists (SPEC-driver-destination.md).
+for (const column of ['heading_city TEXT', 'heading_until INTEGER'])
+  if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE users ADD COLUMN ${column}`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
 db.exec('BEGIN IMMEDIATE; PRAGMA user_version = 3; COMMIT');
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
@@ -316,6 +319,7 @@ function toUser(r: Row): User {
   const stats = r.role === 'driver' ? driverStats(r.id) : null;
   return { id: r.id, phone: r.phone, name: r.name, role: r.role, status: r.status, vehicle: r.vehicle ?? null,
     rating: stats?.rating ?? null, ...(stats && { priceRating: stats.priceRating, trips: stats.trips }), createdAt: r.created_at,
+    ...(r.role === 'driver' && { heading: r.heading_city && r.heading_until > Date.now() ? { city: r.heading_city, until: r.heading_until } : null }),
     email: r.email ?? null, permanentlyApprovedAt: r.approved_at ?? null,
     phoneVerifiedAt: r.phone_verified_at ?? null, emailVerifiedAt: r.email_verified_at ?? null };
 }
@@ -528,6 +532,15 @@ route('POST', '/api/auth/logout', ({ user }) => {
   return { ok: true };
 });
 route('GET', '/api/me', ({ user }) => me(user));
+
+// Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
+const HEADING_FOR = 3 * 3_600_000; // ponytail: Uber-like window; tune from how long intercity drives home take
+route('POST', '/api/driver/heading', ({ user, body }) => {
+  need(user, 'driver');
+  const target = body.city == null ? null : isCity(body.city) ? body.city : fail(400, 'invalid_input');
+  run('UPDATE users SET heading_city = ?, heading_until = ? WHERE id = ?', target, target ? Date.now() + HEADING_FOR : null, user.id);
+  return me(toUser(one('SELECT * FROM users WHERE id = ?', user.id)!));
+});
 
 route('POST', '/api/me', ({ user, body }) => {
   run('UPDATE users SET name = ? WHERE id = ?', text(body.name, 60), user.id);
@@ -760,10 +773,11 @@ function newJobPush(service: Service, orderId: number, customerId: number, excep
   const drivers = all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
     AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = ? AND r.driver_id = u.id)
+    AND (u.heading_city IS NULL OR u.heading_until <= ? OR u.heading_city = (SELECT dropoff_city FROM orders WHERE id = ?))
     AND ${service === 'parcel' // a parcel reaches couriers already carrying parcels, below the load limit
     ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND o.service <> 'parcel')
        AND (SELECT COUNT(*) FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) < ${PARCEL_LOAD}`
-    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId, Date.now(), orderId); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
 }
@@ -1254,10 +1268,12 @@ route('GET', '/api/jobs', ({ user }) => {
   const allowed = servesFor(user.vehicle).filter(service => enabledServices.includes(service));
   if (!allowed.length) return [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
+  // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md).
+  const heading = user.heading?.city ?? '';
   return all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
-    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?)
+    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?)
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
-    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE, user.id)
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id)
     .map(r => toOrder(r, user));
 });
 

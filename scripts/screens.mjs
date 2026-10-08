@@ -303,7 +303,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   let publications = 0;
   page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/api/location')) publications++; });
   await page.goto(`http://localhost:${WEB_PORT}/driver`, { waitUntil: 'networkidle' });
-  const offer = (from, to) => page.getByText(from, { exact: true })
+  // Skip the destination chips (role radio), which carry the same city names (SPEC-driver-destination.md).
+  const offer = (from, to) => page.locator(`xpath=//*[normalize-space(text())="${from}" and not(ancestor-or-self::*[@role="radio"])]`)
     .locator(`xpath=ancestor::div[.//*[@role="button" and @aria-label="${copy.ar.accept}"]][1]`)
     .filter({ has: page.getByText(to, { exact: true }) }).getByRole('button', { name: copy.ar.accept, exact: true });
   await offer('رام الله', 'البيرة').waitFor();

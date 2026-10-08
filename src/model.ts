@@ -70,6 +70,7 @@ export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; rating: number | null; createdAt: number;
   priceRating?: number | null; trips?: number; // drivers only
+  heading?: { city: CityId; until: number } | null; // drivers only: destination filter (SPEC-driver-destination.md)
   email?: string | null; permanentlyApprovedAt?: number | null;
   phoneVerifiedAt?: number | null; emailVerifiedAt?: number | null;
 };
