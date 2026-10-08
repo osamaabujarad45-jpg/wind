@@ -34,6 +34,8 @@ export default function Book() {
   const [dropoffNote, setDropoffNote] = useState('');
   const [contact, setContact] = useState(me?.user.phone ?? '');
   const [detail, setDetail] = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
   const [option, setOption] = useState(optionsFor(service)[0]);
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -59,7 +61,7 @@ export default function Book() {
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
-  const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact', string>>>({});
+  const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
   const [promo, setPromo] = useState<{ code: string; discount: number; price: number } | null>(null);
   const [promoOpen, setPromoOpen] = useState(false);
@@ -116,6 +118,7 @@ export default function Book() {
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
+        setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
@@ -130,6 +133,7 @@ export default function Book() {
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
           setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp);
           if (f.contact) setContact(f.contact);
+          setRecipientName(f.recipientName); setRecipientPhone(f.recipientPhone);
           setSameFrom(false); setCopiedFrom(old.id);
         }
         if (old) copied.current = `${params.again}:${params.keep}`;
@@ -194,13 +198,14 @@ export default function Book() {
       dropoffNote: dropoffNote.trim() ? undefined : c.fieldRequired,
       detail: service === 'ride' || detail.trim() ? undefined : c.fieldRequired,
       contact: isValidPhone(contact) ? undefined : err('invalid_phone'),
+      recipientPhone: service === 'ride' || !recipientPhone.trim() || isValidPhone(recipientPhone) ? undefined : err('invalid_phone'),
     };
     if (Object.values(problems).some(Boolean)) {
       haptic.error();
       setInvalid(problems);
       setError(c.fixMarked);
       // The details sit near the top; the contact field is right above the button.
-      if (problems.pickupNote || problems.dropoffNote || problems.detail) scrollRef.current?.scrollTo({ y: 0, animated: true });
+      if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone) scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
     setInvalid({});
@@ -209,7 +214,8 @@ export default function Book() {
     setError('');
     try {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
-        contact, detail, option, loadingHelp, shared: false, quotedPrice: price, ...(scheduledFor !== null && { scheduledFor }),
+        contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
+        ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
         ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
       setPending(command);
@@ -313,6 +319,11 @@ export default function Book() {
         {isCustomer && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={c.dropoffNote} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
         {isCustomer && !locked && <SavePlace city={dropoffCity} note={dropoffNote} saved={places.saved} onSave={savePlace} />}
+        {service !== 'ride' && <>
+          <Field label={c.recipientPhone} icon="call-outline" value={recipientPhone} onChangeText={edit('recipientPhone', setRecipientPhone)} placeholder={c.recipientPhoneHint}
+            keyboardType="phone-pad" error={invalid.recipientPhone} disabled={locked} maxLength={20} />
+          <Field label={c.recipientName} icon="person-outline" value={recipientName} onChangeText={setRecipientName} disabled={locked} maxLength={60} />
+        </>}
         <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         {service === 'ride'
           ? <Row style={{ justifyContent: 'space-between' }}>

@@ -106,7 +106,7 @@ await call(`/admin/users/${recoveryDriver.user.id}/approve`, boss.token, {});
 const idleDriver = await register('0599000007', 'كريم علي', { role: 'driver', vehicle: 'car' });
 await call(`/admin/users/${idleDriver.user.id}/approve`, boss.token, {});
 await call(`/jobs/${searching.id}/offer`, idleDriver.token, { price: searching.price - 3 }); // Layla sees one driver offer
-const proofRecovery = await order(layla, true, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'nablus',
+const proofRecovery = await order(layla, true, { service: 'parcel', pickupCity: 'bireh', dropoffCity: 'nablus', recipientName: 'هدى سمارة', recipientPhone: '0599123456',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'دوار الشهداء', detail: 'طرد هدية', option: 'small' });
 await call(`/jobs/${proofRecovery.id}/accept`, recoveryDriver.token, {});
 await call(`/orders/${proofRecovery.id}/advance`, recoveryDriver.token, {});

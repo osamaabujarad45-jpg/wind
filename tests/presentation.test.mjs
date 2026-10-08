@@ -11,7 +11,8 @@ assert.notEqual(newBooking(payload).requestId, pending.requestId);
 assert.equal(readBooking(null), null);
 const promo = newBooking({ ...payload, promoCode: 'WELCOME10', expectedDiscount: 10 });
 assert.deepEqual(readBooking(JSON.stringify(promo)), promo);
-for (const saved of ['{', 'null', JSON.stringify({ ...pending, payload: { ...payload, pickupCity: 'outside' } }),
+assert.deepEqual(readBooking(JSON.stringify(newBooking({ ...payload, recipientName: 'هدى', recipientPhone: '0599000002' }))).payload.recipientPhone, '0599000002');
+for (const saved of [JSON.stringify({ ...pending, payload: { ...payload, recipientPhone: 5 } }), '{', 'null', JSON.stringify({ ...pending, payload: { ...payload, pickupCity: 'outside' } }),
   JSON.stringify({ ...pending, payload: { ...payload, quotedPrice: null } }), JSON.stringify({ ...pending, requestId: 'bad' }), JSON.stringify({ ...pending, payload: { ...payload, promoCode: 'WELCOME10' } })]) {
   assert.throws(() => readBooking(saved));
 }
@@ -20,7 +21,10 @@ const old = { id: 7, service: 'freight', pickupCity: 'hebron', dropoffCity: 'jen
   dropoffPoint: { latitude: 32.46, longitude: 35.3 }, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001',
   option: 'large', loadingHelp: true, price: 120, discount: 10, scheduledFor: 1_800_000_000_000, status: 'completed' };
 assert.deepEqual(againForm(old), { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jenin', pickupPoint: old.pickupPoint,
-  dropoffPoint: old.dropoffPoint, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001', option: 'large', loadingHelp: true });
+  dropoffPoint: old.dropoffPoint, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001', option: 'large', loadingHelp: true,
+  recipientName: '', recipientPhone: '' });
+assert.deepEqual([againForm({ ...old, recipientName: 'هدى', recipientPhone: '0599000002' }).recipientName, againForm({ ...old, recipientPhone: '0599000002' }).recipientPhone],
+  ['هدى', '0599000002']); // order again: same recipient (SPEC-parcel-recipient.md)
 assert.deepEqual(againForm({ ...old, service: 'ride', option: 'large', contact: null, dropoffPoint: undefined }),
   { ...againForm(old), service: 'ride', option: '1', contact: '', dropoffPoint: null }); // stale option → first valid one
 const again = newBooking({ ...againForm(old), shared: false, quotedPrice: 99 });

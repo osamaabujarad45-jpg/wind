@@ -248,6 +248,9 @@ export default function OrderScreen() {
         {order.pickupContact && order.pickupContact !== order.contact && <View style={styles.divider}>
           <Person title={c.pickupContact} name={order.pickupContact} phone={order.pickupContact} />
         </View>}
+        {!!order.recipientPhone && <View style={styles.divider}>
+          <Person title={c.recipient} name={order.recipientName || order.recipientPhone} phone={order.recipientPhone} />
+        </View>}
       </Card>
     </Appear> : null}
 
@@ -383,9 +386,9 @@ export default function OrderScreen() {
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
       {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
 
-      {isCustomer && (live || order.sharing) && <Card>
-        <Txt variant="caption" style={{ marginBottom: 8 }}>{c.shareHint}</Txt>
-        {sharedUrl?.id === id && <Txt variant="caption" selectable style={{ marginBottom: 8 }}>{sharedUrl.url}</Txt>}
+      {isCustomer && (live || order.sharing) && <Card style={{ gap: 8 }}>
+        <Txt variant="caption">{c.shareHint}</Txt>
+        {sharedUrl?.id === id && <Txt variant="caption" selectable>{sharedUrl.url}</Txt>}
         {live && <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy}
           onPress={async () => {
             setBusy('share'); setActionError('');
@@ -394,6 +397,16 @@ export default function OrderScreen() {
               const url = `${API_URL}${path}`;
               setSharedUrl({ id, url }); setData({ ...order, sharing: true });
               await Share.share({ message: fill(c.shareMessage, { url }) }).catch(() => undefined); // the link stays visible to copy
+            } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
+          }} />}
+        {live && !!order.recipientPhone && <Button title={c.shareRecipient} icon="logo-whatsapp" variant="soft" loading={busy === 'share-wa'} disabled={!!busy}
+          onPress={async () => { // the recipient gets the live link on WhatsApp, no SMS provider (SPEC-parcel-recipient.md)
+            setBusy('share-wa'); setActionError('');
+            try {
+              const { path } = await api<{ path: string }>(`/orders/${order.id}/share`, {});
+              const url = `${API_URL}${path}`;
+              setSharedUrl({ id, url }); setData({ ...order, sharing: true });
+              await Linking.openURL(`https://wa.me/970${order.recipientPhone!.slice(1)}?text=${encodeURIComponent(fill(c.shareMessage, { url }))}`);
             } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
           }} />}
         {order.sharing && <Button title={c.stopSharing} variant="ghost" size="sm" loading={busy === 'unshare'}

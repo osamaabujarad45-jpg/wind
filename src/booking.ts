@@ -5,6 +5,7 @@ export type BookingPayload = {
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
   option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
   promoCode?: string; expectedDiscount?: number;
+  recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
 };
 export type PendingBooking = { requestId: string; payload: BookingPayload };
@@ -28,6 +29,7 @@ export function againForm(order: Order) {
     service: order.service, pickupCity: order.pickupCity, dropoffCity: order.dropoffCity,
     pickupPoint: order.pickupPoint ?? null, dropoffPoint: order.dropoffPoint ?? null,
     pickupNote: order.pickupNote, dropoffNote: order.dropoffNote, detail: order.detail, contact: order.contact ?? '',
+    recipientName: order.recipientName ?? '', recipientPhone: order.recipientPhone ?? '',
     option: optionsFor(order.service).includes(order.option) ? order.option : optionsFor(order.service)[0],
     loadingHelp: order.loadingHelp,
   };
@@ -51,6 +53,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || ['pickupNote', 'dropoffNote', 'contact', 'detail'].some(key => typeof p[key as 'detail'] !== 'string')
     || (p.scheduledFor !== undefined && !Number.isInteger(p.scheduledFor))
     || (p.promoCode !== undefined && (typeof p.promoCode !== 'string' || !Number.isInteger(p.expectedDiscount)))
+    || ['recipientName', 'recipientPhone'].some(key => p[key as 'recipientName'] !== undefined && typeof p[key as 'recipientName'] !== 'string')
     || (p.pricing !== undefined && p.pricing !== 'smart')
     || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
     || p.pickupPoint === undefined) {

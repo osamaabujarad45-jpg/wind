@@ -87,6 +87,7 @@ export type Order = {
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
+  recipientName?: string; recipientPhone?: string | null; // parcels and loads (SPEC-parcel-recipient.md)
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
