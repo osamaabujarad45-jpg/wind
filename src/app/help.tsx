@@ -10,7 +10,7 @@ import { ltr } from '../model';
 import { InstallLink } from '../install-link';
 import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
 
-const topics = ['price', 'code', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
+const topics = ['price', 'code', 'recipient', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
 type Topic = typeof topics[number];
 
 export default function Help() {
