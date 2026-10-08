@@ -378,6 +378,7 @@ export default function OrderScreen() {
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
 
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
+      {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
 
       {isCustomer && (live || order.sharing) && <Card>
         <Txt variant="caption" style={{ marginBottom: 8 }}>{c.shareHint}</Txt>
@@ -550,6 +551,17 @@ function RateDriver({ order, onRate }: { order: Order; onRate: (body: { rating: 
     <Txt variant="title" center style={{ marginTop: 8 }}>{order.priceRating ? c.thanksPrice : c.ratePrice}</Txt>
     <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
       {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.ratePrice} on={n <= (order.priceRating ?? 0)} disabled={!!order.priceRating} onPress={() => onRate({ priceRating: n })} />)}
+    </Row>
+  </Card>;
+}
+
+// Drivers rate the customer once (SPEC-customer-rating.md); customers never see it.
+function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => void }) {
+  const { c } = useCopy();
+  return <Card tone="olive" style={{ marginTop: 4 }}>
+    <Txt variant="title" center>{order.customerRating ? c.thanks : c.rateCustomer}</Txt>
+    <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
+      {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.rateCustomer} on={n <= (order.customerRating ?? 0)} disabled={!!order.customerRating} onPress={() => onRate(n)} />)}
     </Row>
   </Card>;
 }

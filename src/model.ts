@@ -99,6 +99,8 @@ export type Order = {
   routeKm?: number | null; // road km the recommended price used
   myOffer?: { price: number; createdAt: number } | null; // the viewing driver's pending offer
   offers?: Offer[]; // the customer's open offers, cheapest first
+  customerRating?: number | null; // stars the driver gave the customer (driver and admin only)
+  customerStats?: { rating: number | null; trips: number }; // drivers only; rating from 3 ratings (SPEC-customer-rating.md)
 };
 export type DriverStats = { rating: number | null; priceRating: number | null; trips: number };
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };

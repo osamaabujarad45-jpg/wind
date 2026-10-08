@@ -119,6 +119,8 @@ export default function Jobs() {
               <View style={{ flex: 1 }}>
                 <Txt variant="title">{c[order.service]}</Txt>
                 <Txt variant="caption">{order.shared ? c.shared : c.private} · {order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
+                {order.customerStats && <Txt variant="caption">{order.customerStats.trips ? [order.customerStats.rating != null && fill(c.customerStars, { r: order.customerStats.rating }),
+                  fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(' · ') : c.newCustomer}</Txt>}
               </View>
               <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
                 <Txt variant="micro">{c.earnLabel}</Txt>

@@ -209,7 +209,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
@@ -388,6 +388,9 @@ function toOrder(r: Row, viewer: User): Order {
     // The courier has other stops on this run, so a straight-to-you ETA would be wrong (SPEC-courier-run-eta.md).
     sharedRun: (owner || assigned) && activeStatuses.includes(r.status) && !!r.shared_run,
     myOffer: viewer.role === 'driver' && r.status === 'searching' ? myOffer(r.id, viewer.id) : null,
+    // Drivers rate the customer; customers never see per-order or summary ratings (SPEC-customer-rating.md).
+    customerRating: assigned || viewer.role === 'admin' ? r.customer_rating ?? null : null,
+    ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: customerStats(r.customer_id) }),
     ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: offersFor(r.id) }),
   };
 }
@@ -402,6 +405,11 @@ function driverStats(id: number): DriverStats {
   const r = one(`SELECT AVG(rating) rating, AVG(price_rating) price_rating, COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders WHERE driver_id = ?`, id)!;
   const tenth = (v: unknown) => v == null ? null : Math.round(Number(v) * 10) / 10;
   return { rating: tenth(r.rating), priceRating: tenth(r.price_rating), trips: Number(r.trips) };
+}
+/** The customer's record as drivers see it; the average needs 3 ratings so no single driver's stars show. */
+function customerStats(id: number): { rating: number | null; trips: number } {
+  const r = one(`SELECT AVG(customer_rating) rating, COUNT(customer_rating) rated, COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders WHERE customer_id = ?`, id)!;
+  return { rating: Number(r.rated) >= 3 ? Math.round(Number(r.rating) * 10) / 10 : null, trips: Number(r.trips) };
 }
 const myOffer = (orderId: number, driverId: number) => {
   const f = one('SELECT price, created_at FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', orderId, driverId, Date.now() - OFFER_TTL);
@@ -1016,6 +1024,12 @@ route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
   const order = getOrder(Number(params[0]), user);
   // The driver and the price (SPEC-driver-offers.md) are rated separately, each once.
   const stars = (v: unknown) => v == null ? null : Number(v) >= 1 && Number(v) <= 5 ? Math.round(Number(v)) : fail(409, 'cannot_rate');
+  if (user.id === order.driverId && user.role === 'driver') { // the driver rates the customer, once (SPEC-customer-rating.md)
+    const customerRating = stars(body.customerRating);
+    if (order.status !== 'completed' || customerRating == null || order.customerRating) fail(409, 'cannot_rate');
+    run('UPDATE orders SET customer_rating = ? WHERE id = ?', customerRating, order.id);
+    return getOrder(order.id, user);
+  }
   const rating = stars(body.rating), priceRating = stars(body.priceRating);
   if (order.customerId !== user.id || order.status !== 'completed' || (rating == null && priceRating == null)
     || (rating != null && order.rating) || (priceRating != null && order.priceRating)) fail(409, 'cannot_rate');
