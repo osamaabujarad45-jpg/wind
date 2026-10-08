@@ -4,9 +4,11 @@ import Animated, { cubicBezier, useReducedMotion } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useApi } from '../../api';
+import { PushRow } from '../../parts';
+import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
 import { useSession } from '../../session';
-import { Appear, Badge, Card, ErrorText, fill, Header, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; profit: number; completed: number; activeSubscriptions: number;
@@ -27,6 +29,7 @@ export default function Dashboard() {
   return <Screen onRefresh={reload}>
     <Header title={c.dashboard} />
     <Txt style={{ marginTop: -12, marginBottom: 14 }}>{fill(c.hello, { name: me?.user.name ?? '' })}</Txt>
+    {pushSupported() && <ListGroup><PushRow /></ListGroup>}
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading /> : <>
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}

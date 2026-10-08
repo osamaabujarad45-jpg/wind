@@ -34,6 +34,9 @@ after the commit. A refused command still commits, so its pushes leave too (`dri
 
 Words for every new kind are in `public/sw.js` (Arabic and English). The push test fails if a kind lacks either language.
 
+Admins had no way to switch push on (the opt-in lived on the customer and driver account screens), so the admin dashboard
+now shows the same opt-in row (`src/app/admin/index.tsx`, `PushRow` from `src/parts.tsx`).
+
 ## Acceptance criteria
 
 1. Approving a pending driver queues `approved` to that driver only; re-approving an active driver queues nothing.

@@ -89,8 +89,9 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
   </Appear>;
 }
 
-// Web Push on/off for this browser (SPEC-web-push.md); the result is announced.
-function PushRow() {
+// Web Push on/off for this browser (SPEC-web-push.md); the result is announced. Admins reach it from their dashboard, since
+// the alerts they get (SPEC-notification-audit.md) would otherwise have no way to be switched on.
+export function PushRow() {
   const { c, language } = useCopy();
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
