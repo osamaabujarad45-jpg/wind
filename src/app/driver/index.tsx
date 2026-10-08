@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, useApi } from '../../api';
-import { canTake, cities, city, commissionOn, distanceKm, offerRange, type CityId, type Order } from '../../model';
+import { api, SUPPORT_URL, useApi } from '../../api';
+import { canTake, cities, city, commissionOn, distanceKm, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
@@ -84,7 +84,9 @@ export default function Jobs() {
   }
 
   if (!active) return <Screen onRefresh={refresh}>
-    <Empty icon="shield-checkmark-outline" title={c.pendingTitle} body={c.pendingDesc} />
+    {/* Without a configured support line there is nothing to contact: promise the call-back admins are now alerted for (SPEC-pending-driver-help.md). */}
+    <Empty icon="shield-checkmark-outline" title={c.pendingTitle} body={SUPPORT_URL ? c.pendingDesc : fill(c.pendingCallBack, { phone: ltr(me?.user.phone ?? '') })}
+      action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
   </Screen>;
 
   return <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
