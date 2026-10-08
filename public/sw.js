@@ -3,11 +3,13 @@ const words = {
   ar: { title: 'ويند', assigned: 'قبل سائق طلبك', at_pickup: 'وصل السائق إلى نقطة الاستلام', in_transit: 'طلبك في الطريق',
     completed: 'تم التسليم', returned: 'أُعيد الطلب إلى المرسل', message: 'رسالة جديدة بخصوص الطلب', job: 'طلب جديد متاح لك',
     released: 'اعتذر السائق؛ نبحث لك عن سائق آخر', cancelled: 'أُلغي الطلب',
-    offer: 'عرض سائق سعراً لطلبك', offer_accepted: 'قُبل سعرك: توجّه إلى الاستلام' },
+    offer: 'عرض سائق سعراً لطلبك', offer_accepted: 'قُبل سعرك: توجّه إلى الاستلام',
+    on_hold: 'تعذّر التسليم؛ سيتصل بك الدعم', returning: 'سيُعاد الطلب إلى المرسل؛ افتح التطبيق لرمز الإرجاع', decided: 'قرر الدعم في مشكلة التسليم' },
   en: { title: 'Wind', assigned: 'A driver accepted your order', at_pickup: 'Your driver is at pickup', in_transit: 'Your order is on its way',
     completed: 'Delivered', returned: 'Returned to the sender', message: 'New message about your order', job: 'A new job is available',
     released: 'Your driver dropped out; finding another', cancelled: 'The order was cancelled',
-    offer: 'A driver offered a price', offer_accepted: 'Your price was accepted: go to pickup' },
+    offer: 'A driver offered a price', offer_accepted: 'Your price was accepted: go to pickup',
+    on_hold: 'Delivery problem: support will contact you', returning: 'Your order is being returned: open the app for the return code', decided: 'Support decided on a delivery problem' },
 };
 const code = id => `W-${String(id).padStart(5, '0')}`;
 const sameOrigin = value => {

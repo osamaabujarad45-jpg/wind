@@ -1,7 +1,7 @@
 // Web Push server (SPEC-web-push.md): subscriptions and events, against a mocked push service.
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { createDecipheriv, createECDH, createHmac, generateKeyPairSync, randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
@@ -16,7 +16,7 @@ const realFetch = globalThis.fetch;
 const sent = [];
 let reply = 201;
 globalThis.fetch = (url, init) => String(url).startsWith('https://fcm.googleapis.com/')
-  ? (sent.push({ url: String(url), headers: init.headers }), Promise.resolve(new Response(null, { status: reply })))
+  ? (sent.push({ url: String(url), headers: init.headers, body: init.body }), Promise.resolve(new Response(null, { status: reply })))
   : realFetch(url, init);
 const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 const b = s => Buffer.from(s, 'base64url');
@@ -34,6 +34,26 @@ const browserKeys = () => {
   const jwk = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });
   return { p256dh: Buffer.concat([Buffer.from([4]), b(jwk.x), b(jwk.y)]).toString('base64url'), auth: Buffer.alloc(16, 7).toString('base64url') };
 };
+// A browser whose private key the test keeps, so it can read the kind of each push it was sent (RFC 8291 §3.4).
+const AUTH = Buffer.alloc(16, 7);
+const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
+function ownBrowser() {
+  const ecdh = createECDH('prime256v1');
+  ecdh.generateKeys();
+  return {
+    keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: AUTH.toString('base64url') },
+    read(body) {
+      const asPublic = body.subarray(21, 21 + body[20]), sealed = body.subarray(21 + body[20]);
+      const ikm = hmac(hmac(AUTH, ecdh.computeSecret(asPublic)), Buffer.concat([Buffer.from('WebPush: info\0'), ecdh.getPublicKey(), asPublic, Buffer.from([1])]));
+      const prk = hmac(body.subarray(0, 16), ikm);
+      const decipher = createDecipheriv('aes-128-gcm', hmac(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01')).subarray(0, 16),
+        hmac(prk, Buffer.from('Content-Encoding: nonce\0\x01')).subarray(0, 12));
+      decipher.setAuthTag(sealed.subarray(-16));
+      const plain = Buffer.concat([decipher.update(sealed.subarray(0, -16)), decipher.final()]);
+      return JSON.parse(plain.subarray(0, -1).toString()).kind; // the last byte is the record delimiter
+    },
+  };
+}
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599150001', name: 'Admin', password: 'secret1' } });
@@ -161,6 +181,45 @@ try {
   await call(`/orders/${smart.id}/offers/${replacement.user.id}/accept`, { token: customer.token, body: {} });
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('f')]);
+
+  // Delivery problems (SPEC-exception-push.md): the sender hears the hold and each new state, the driver hears every decision.
+  db.prepare('DELETE FROM request_limits').run(); // a fresh per-customer job-alert budget for this block
+  const courier = await call('/auth/register', { body: { phone: '0599150008', name: 'Hani', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${courier.user.id}/approve`, { token: admin.token, body: {} });
+  const courierBrowser = ownBrowser(), senderBrowser = ownBrowser();
+  await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('h'), ...courierBrowser.keys } });
+  await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+  const heard = () => sent.map(s => [s.url, (s.url === fcm('h') ? courierBrowser : senderBrowser).read(s.body)]);
+  let parcel = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  parcel = await call(`/jobs/${parcel.id}/accept`, { token: courier.token, body: {} });
+  parcel = await advance(courier.token, parcel);
+  parcel = await advance(courier.token, parcel);
+  assert.equal(parcel.status, 'in_transit');
+  sent.length = 0;
+  const report = { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' };
+  const resolve = (action, reason) => call(`/admin/orders/${parcel.id}/resolve`, { token: admin.token, body: { action, reason } });
+  await call(`/orders/${parcel.id}/exception`, { token: courier.token, body: report });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('c'), 'on_hold']]);
+  sent.length = 0;
+  await call(`/orders/${parcel.id}/exception`, { token: courier.token, body: report }); // a replayed report queues nothing
+  await settle();
+  assert.deepEqual(sent, []);
+  await resolve('reattempt', 'Recipient called back');
+  await settle();
+  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'in_transit']]);
+  sent.length = 0;
+  await call(`/orders/${parcel.id}/exception`, { token: courier.token, body: { ...report, requestId: randomUUID(), reason: 'refused' } });
+  sent.length = 0;
+  await resolve('return', 'Recipient refused the parcel');
+  await settle();
+  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'returning']]);
+  sent.length = 0;
+  await resolve('confirm_return', 'Sender handed it back at the shop');
+  await settle();
+  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'returned']]);
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  for (const kind of ['on_hold', 'returning', 'decided']) assert.equal(sw.split(`${kind}:`).length - 1, 2, `${kind} needs Arabic and English words`);
 
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });

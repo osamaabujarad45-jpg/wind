@@ -705,7 +705,8 @@ route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
 // Web Push (SPEC-web-push.md): opt-in per browser, no provider account. The payload carries a kind and an order id,
 // never names or addresses; the service worker words it in the subscriber's language.
 type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
-  | 'offer' | 'offer_accepted'; // SPEC-offer-alerts.md
+  | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
+  | 'on_hold' | 'returning' | 'decided'; // SPEC-exception-push.md
 // ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
 const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -727,7 +728,7 @@ function flushPush() {
   for (const { userIds, kind, order } of outbox.splice(0)) {
     const url = kind === 'job' ? '/driver' : `/order/${order}`;
     for (const s of all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds))
-      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted'].includes(kind) ? 'high' : 'normal',
+      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided'].includes(kind) ? 'high' : 'normal',
         kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600);
   }
 }
@@ -1362,6 +1363,7 @@ function reportException(user: User, id: number, body: Row) {
   run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
   run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
     user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now);
+  queuePush([r.customer_id], 'on_hold', r.id); // SPEC-exception-push.md
   return getOrder(r.id, user);
 }
 
@@ -1377,11 +1379,13 @@ route('POST', '/api/admin/orders/:id/resolve', ({ user, params, body }) => {
   const reason = text(body.reason, 500);
   // confirm_return is the way out when the sender cannot give the code: support verifies the handback and records why.
   const from = { reattempt: 'on_hold', return: 'on_hold', confirm_return: 'returning' }[String(body.action)];
+  const to = { reattempt: 'in_transit', return: 'returning', confirm_return: 'returned' }[String(body.action)] as PushKind;
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
   const id = Number(params[0]);
   db.exec('BEGIN IMMEDIATE');
   try {
-    if ((one('SELECT status FROM orders WHERE id = ?', id) ?? fail(404, 'not_found')).status !== from) fail(409, 'cannot_resolve');
+    const order = one('SELECT customer_id, driver_id, status FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
+    if (order.status !== from) fail(409, 'cannot_resolve');
     if (body.action === 'reattempt') run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id);
     else if (body.action === 'confirm_return') run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id);
     else {
@@ -1390,6 +1394,8 @@ route('POST', '/api/admin/orders/:id/resolve', ({ user, params, body }) => {
     }
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
       user.id, id, JSON.stringify({ action: body.action, reason }), Date.now());
+    queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
+    queuePush([order.customer_id], to, id);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return getOrder(id, user);
