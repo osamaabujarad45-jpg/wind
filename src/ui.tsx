@@ -364,7 +364,8 @@ const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit',
 
 export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string }; icon?: IconName }) {
   const t = tone ?? statusTone[status ?? 'completed'] ?? statusTone.completed; // a status newer than this build still renders
-  return <View style={[styles.badge, { backgroundColor: t.bg }]}>
+  const { row } = useCopy(); // the live dot leads the label in both languages
+  return <View style={[styles.badge, { backgroundColor: t.bg, flexDirection: row }]}>
     {status && live.includes(status) && <Pulse color={t.fg} size={6} />}
     {icon && <Ionicons name={icon} size={12} color={t.fg} />}
     <Text style={[styles.badgeText, { color: t.fg }]}>{label}</Text>

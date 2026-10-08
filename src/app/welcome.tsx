@@ -72,10 +72,10 @@ function ServicesArt() {
 }
 
 function PriceArt({ label }: { label: string }) {
-  const { c } = useCopy();
+  const { c, row } = useCopy();
   return <View style={{ alignItems: 'center', gap: 18 }}>
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
-    <View style={styles.saveBadge}>
+    <View style={[styles.saveBadge, { flexDirection: row }]}>
       <Ionicons name="pricetag" size={16} color="#FFFFFF" />
       <Text style={styles.saveText}>{label}</Text>
     </View>
