@@ -1,6 +1,6 @@
 // Live map (SPEC-live-map.md): exact dropoff points with pickup-point visibility, driver heading/accuracy.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ const legacy = new DatabaseSync(process.env.DB_PATH);
 legacy.exec('CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY, lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL)');
 legacy.close();
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -112,7 +112,8 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   for (const points of [[a, b], [a]]) assert.deepEqual(copy.fitBounds(points), fitBounds(points));
   for (const language of ['ar', 'en']) assert.deepEqual(copy.labelField(language), labelField(language));
   // Served from the web root like the rest of the app (the APK loads it from the API origin).
-  const web = mkdtempSync(join(tmpdir(), 'wind-web-'));
+  const web = join(dir, 'web');
+  mkdirSync(web);
   writeFileSync(join(web, 'map.html'), page);
   const child = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
     `const { server } = await import(${JSON.stringify(new URL('../server/main.ts', import.meta.url).href)}); server.listen(0, async () => {
@@ -140,5 +141,6 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
 
   console.log('map: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

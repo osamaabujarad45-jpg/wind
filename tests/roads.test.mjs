@@ -1,12 +1,13 @@
 // Crowd-reported checkpoint status (SPEC-road-status.md): admin-managed list, driver reports, 2-hour freshness.
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-roads-')), 'test.db');
-const { server, db, promote } = await import('../server/main.ts');
+const dir = mkdtempSync(join(tmpdir(), 'wind-roads-'));
+process.env.DB_PATH = join(dir, 'test.db');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -93,5 +94,6 @@ try {
 
   console.log('roads: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

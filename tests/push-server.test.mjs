@@ -1,16 +1,17 @@
 // Web Push server (SPEC-web-push.md): subscriptions and events, against a mocked push service.
 import assert from 'node:assert/strict';
 import { createDecipheriv, createECDH, createHmac, generateKeyPairSync, randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-push-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-push-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 delete process.env.OSRM_URL; // smart prices from the straight-line estimate
-const { server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
+const { shutdown, server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -297,6 +298,7 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM push_subscriptions WHERE user_id = ?').get(customer.user.id).n, 0);
   console.log('push server: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
   globalThis.fetch = realFetch;
 }

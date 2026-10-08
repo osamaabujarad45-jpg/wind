@@ -1,16 +1,17 @@
 // SPEC-parcel-standard.md: ₪20 standard parcels, couriers carry many, rides and freight stay exclusive.
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-parcels-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-parcels-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 delete process.env.OSRM_URL;
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -99,6 +100,7 @@ try {
   await call(`/jobs/${over.id}/accept`, { token: courier.token, body: {}, expect: 409 });
   console.log('parcels: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
   globalThis.fetch = realFetch;
 }

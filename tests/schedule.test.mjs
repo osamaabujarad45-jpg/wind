@@ -1,6 +1,6 @@
 // Scheduled bookings (SPEC-scheduled-booking.md): bounded times, hidden from drivers until 30 minutes before pickup.
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
@@ -20,9 +20,10 @@ process.env.TZ = 'Europe/London';
   assert.ok(slots.at(-1) <= now + 6.9 * 86_400_000);
 }
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-schedule-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-schedule-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const MIN = 60_000, DAY = 86_400_000;
@@ -72,5 +73,6 @@ try {
 
   console.log('schedule: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

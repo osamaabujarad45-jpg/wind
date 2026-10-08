@@ -1,6 +1,6 @@
 // Road routing (SPEC-routing-eta.md): OSRM proxy with cache, public ETA, and graceful absence.
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,9 +25,10 @@ const osrm = createServer((req, res) => {
 });
 await new Promise(r => osrm.listen(0, '127.0.0.1', r));
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}/`;
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-route-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-route-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -125,5 +126,7 @@ try {
 
   console.log('route: ok');
 } finally {
-  server.close(); osrm.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
+  osrm.close();
 }

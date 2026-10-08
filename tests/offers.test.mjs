@@ -1,17 +1,18 @@
 // Driver offers (SPEC-driver-offers.md): smart recommended price, driver-named prices, customer choice, price rating.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLOSED_MINUTES, commissionOn, defaultSettings as s, distanceKm, quote, SLOW_MINUTES, smartPrice } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-offers-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-offers-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride'; // offers are for rides and freight; Souq partner orders are parcels
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 delete process.env.OSRM_URL; // no routing here: the straight-line estimate path
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -165,5 +166,6 @@ try {
 
   console.log('Driver offers checks passed');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

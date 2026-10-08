@@ -1,7 +1,7 @@
 // Promo codes (SPEC-promo-codes.md): customer pays less cash, Wind funds the discount through the driver's ledger.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings as standard, quote } from '../src/model.ts';
@@ -9,10 +9,11 @@ import { apiCaller } from './support/api.mjs';
 // Discount maths were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
 const defaultSettings = { ...standard, parcelPrice: 49 };
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-promo-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-promo-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -101,5 +102,6 @@ try {
 
   console.log('promo: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

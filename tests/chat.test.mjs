@@ -1,15 +1,16 @@
 // In-trip chat (SPEC-in-app-chat.md): parties only, open while active, readable 24 h after, admins read-only.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-chat-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-chat-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -80,5 +81,6 @@ try {
 
   console.log('chat: ok');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }

@@ -1,15 +1,16 @@
 // A driver with no vehicle on file sees and takes no jobs; the customer's internal id stays with the order's parties.
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-driver-scope-')), 'test.db');
+const dir = mkdtempSync(join(tmpdir(), 'wind-driver-scope-'));
+process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 delete process.env.OSRM_URL;
-const { server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -70,5 +71,6 @@ try {
   assert.equal(taken.customerId, customer.user.id, 'the assigned driver may see it');
   console.log('Driver scope checks passed: no-vehicle drivers get no jobs; customer id stays with the order parties.');
 } finally {
-  server.close();
+  await shutdown();
+  rmSync(dir, { recursive: true, force: true });
 }
