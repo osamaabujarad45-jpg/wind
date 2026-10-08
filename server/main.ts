@@ -495,6 +495,8 @@ route('POST', '/api/auth/register', ({ body }) => {
   const id = Number(run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), email,
     selfService ? Date.now() : null, selfService ? '2026-10-03' : null).lastInsertRowid);
+  // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
+  if (role === 'driver') queuePush(adminIds(), 'attention', 0, '/admin/users');
   return startSession(id);
 }, true);
 
