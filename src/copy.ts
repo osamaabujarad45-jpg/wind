@@ -1032,7 +1032,7 @@ const en: Copy = {
   today: 'Today',
   week: 'Last 7 days',
   allTime: 'All time',
-  tripsCount: '{n} trips',
+  tripsCount: 'Trips: {n}',
   net: 'Net',
   gross: 'Gross',
   commission: 'Wind commission',
