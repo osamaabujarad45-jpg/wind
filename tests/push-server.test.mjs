@@ -186,10 +186,14 @@ try {
   db.prepare('DELETE FROM request_limits').run(); // a fresh per-customer job-alert budget for this block
   const courier = await call('/auth/register', { body: { phone: '0599150008', name: 'Hani', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${courier.user.id}/approve`, { token: admin.token, body: {} });
-  const courierBrowser = ownBrowser(), senderBrowser = ownBrowser();
+  const courierBrowser = ownBrowser(), senderBrowser = ownBrowser(), adminBrowser = ownBrowser();
+  const browsers = new Map([[fcm('h'), courierBrowser], [fcm('c'), senderBrowser], [fcm('a'), adminBrowser]]);
   await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('h'), ...courierBrowser.keys } });
   await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
-  const heard = () => sent.map(s => [s.url, (s.url === fcm('h') ? courierBrowser : senderBrowser).read(s.body)]);
+  await call('/push/subscribe', { token: admin.token, body: { endpoint: fcm('a'), ...adminBrowser.keys } });
+  // What each push said, read with the key of the browser it went to. The recipient order inside one fan-out is not part of the contract.
+  const heard = () => sent.map(s => [s.url, browsers.get(s.url).read(s.body)]);
+  const sortedPairs = pairs => pairs.slice().sort((x, y) => (x[0] < y[0] ? -1 : 1));
   let parcel = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   parcel = await call(`/jobs/${parcel.id}/accept`, { token: courier.token, body: {} });
   parcel = await advance(courier.token, parcel);
@@ -200,7 +204,7 @@ try {
   const resolve = (action, reason) => call(`/admin/orders/${parcel.id}/resolve`, { token: admin.token, body: { action, reason } });
   await call(`/orders/${parcel.id}/exception`, { token: courier.token, body: report });
   await settle();
-  assert.deepEqual(heard(), [[fcm('c'), 'on_hold']]);
+  assert.deepEqual(heard(), [[fcm('c'), 'on_hold'], [fcm('a'), 'attention']]);
   sent.length = 0;
   await call(`/orders/${parcel.id}/exception`, { token: courier.token, body: report }); // a replayed report queues nothing
   await settle();
@@ -218,8 +222,80 @@ try {
   await resolve('confirm_return', 'Sender handed it back at the shop');
   await settle();
   assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'returned']]);
+  // Support, money, safety and plans (SPEC-notification-audit.md): each change someone waits on reaches that person.
+  const newcomer = await call('/auth/register', { body: { phone: '0599150009', name: 'Yara', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  const newcomerBrowser = ownBrowser();
+  browsers.set(fcm('y'), newcomerBrowser);
+  await call('/push/subscribe', { token: newcomer.token, body: { endpoint: fcm('y'), ...newcomerBrowser.keys } });
+  sent.length = 0;
+  await call(`/admin/users/${newcomer.user.id}/approve`, { token: admin.token, body: {} });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('y'), 'approved']]);
+  sent.length = 0;
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: newcomer.user.id, amountCents: 500, reason: 'Fuel receipt not logged' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('y'), 'cash']]);
+  sent.length = 0;
+  const remittance = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: newcomer.user.id, amountCents: 200 } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('y'), 'cash']]);
+  sent.length = 0;
+  await call(`/driver/cash/${remittance.id}/confirm`, { token: newcomer.token, body: { decision: 'dispute' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('a'), 'attention']]); // the admin who recorded the remittance decides
+  sent.length = 0;
+  await call(`/orders/${parcel.id}/dispute`, { token: customer.token, body: { reason: 'The parcel arrived damaged' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('a'), 'attention']]);
+  const dispute = (await call('/admin/disputes', { token: admin.token })).find(d => d.orderId === parcel.id);
+  sent.length = 0;
+  await call(`/admin/disputes/${dispute.id}/resolve`, { token: admin.token, body: { resolution: 'Refunded in full by the sender' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('c'), 'support']]);
+  let safe = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  safe = await call(`/jobs/${safe.id}/accept`, { token: courier.token, body: {} });
+  safe = await advance(courier.token, safe);
+  safe = await advance(courier.token, safe);
+  sent.length = 0;
+  await call(`/orders/${safe.id}/sos`, { token: customer.token, body: { kind: 'threat', note: 'Someone is following' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('a'), 'safety']]);
+  const incident = (await call('/admin/incidents', { token: admin.token })).find(i => i.orderId === safe.id);
+  sent.length = 0;
+  await call(`/admin/incidents/${incident.id}/resolve`, { token: admin.token, body: { resolution: 'Checked with both parties' } });
+  await settle();
+  assert.deepEqual(sortedPairs(heard()), sortedPairs([[fcm('c'), 'support'], [fcm('h'), 'support']])); // the freeze lifts for the driver too
+  let locked = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  locked = await call(`/jobs/${locked.id}/accept`, { token: courier.token, body: {} });
+  locked = await advance(courier.token, locked);
+  locked = await advance(courier.token, locked);
+  sent.length = 0;
+  for (let miss = 0; miss < 5; miss += 1)
+    await call(`/orders/${locked.id}/advance`, { token: courier.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code: '0000' }, expect: 400 });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('a'), 'attention']]); // only the fifth wrong code reaches support
+  sent.length = 0;
+  await call(`/admin/orders/${locked.id}/proof-reset`, { token: admin.token, body: { reason: 'Driver read the code wrongly' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('h'), 'support']]);
+  const waiting = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } }); // before the plan changes the price
+  sent.length = 0;
+  await call('/subscriptions', { token: customer.token, body: {} });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('a'), 'attention']]);
+  const request = db.prepare("SELECT id FROM subscriptions WHERE user_id = ? AND status = 'pending'").get(customer.user.id);
+  sent.length = 0;
+  await call(`/admin/subscriptions/${request.id}`, { token: admin.token, body: { action: 'activate' } });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('c'), 'plan']]);
+  sent.length = 0;
+  await call(`/orders/${waiting.id}/cancel`, { token: admin.token, body: {} });
+  await settle();
+  assert.deepEqual(heard(), [[fcm('c'), 'cancelled']]); // support cancelled it for the sender
+
   const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
-  for (const kind of ['on_hold', 'returning', 'decided']) assert.equal(sw.split(`${kind}:`).length - 1, 2, `${kind} needs Arabic and English words`);
+  for (const kind of ['on_hold', 'returning', 'decided', 'approved', 'support', 'cash', 'attention', 'safety', 'plan'])
+    assert.equal(sw.split(`${kind}:`).length - 1, 2, `${kind} needs Arabic and English words`);
 
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });

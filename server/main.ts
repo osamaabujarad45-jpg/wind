@@ -706,7 +706,8 @@ route('POST', '/api/admin/promos/:id/deactivate', ({ user, params }) => {
 // never names or addresses; the service worker words it in the subscriber's language.
 type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
-  | 'on_hold' | 'returning' | 'decided'; // SPEC-exception-push.md
+  | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
+  | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'; // SPEC-notification-audit.md
 // ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
 const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -719,16 +720,18 @@ function pushKeys() {
     publicRaw: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]) };
   return pushKeyCache;
 }
-const outbox: { userIds: number[]; kind: PushKind; order: number }[] = [];
-const queuePush = (userIds: (number | null)[], kind: PushKind, order: number) => {
+const outbox: { userIds: number[]; kind: PushKind; order: number; path?: string }[] = [];
+// path opens a page that is not an order (order 0: cash, plans, admin queues); flushed only after the commit.
+const queuePush = (userIds: (number | null)[], kind: PushKind, order: number, path?: string) => {
   const ids = userIds.filter((id): id is number => id != null);
-  if (ids.length) outbox.push({ userIds: ids, kind, order });
+  if (ids.length) outbox.push({ userIds: ids, kind, order, path });
 };
+const adminIds = () => all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'").map(a => a.id as number);
 function flushPush() {
-  for (const { userIds, kind, order } of outbox.splice(0)) {
-    const url = kind === 'job' ? '/driver' : `/order/${order}`;
+  for (const { userIds, kind, order, path } of outbox.splice(0)) {
+    const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
     for (const s of all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds))
-      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided'].includes(kind) ? 'high' : 'normal',
+      void deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided', 'attention', 'safety'].includes(kind) ? 'high' : 'normal',
         kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600);
   }
 }
@@ -1005,6 +1008,7 @@ route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   if (!allowed) fail(409, 'cannot_cancel');
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
   if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
+  if (user.role === 'admin') queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
   return getOrder(order.id, user);
 });
 
@@ -1059,6 +1063,7 @@ route('POST', '/api/orders/:id/dispute', ({ user, params, body }) => {
   if (!finishedStatuses.includes(r.status) || Date.now() - (r.completed_at ?? r.updated_at) > 7 * DAY) fail(409, 'cannot_dispute');
   if (one('SELECT id FROM order_disputes WHERE order_id = ?', r.id)) fail(409, 'dispute_exists');
   run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?)', r.id, user.id, reason, Date.now());
+  queuePush(adminIds(), 'attention', r.id, '/admin/orders');
   return getOrder(r.id, user);
 });
 
@@ -1086,6 +1091,7 @@ route('POST', '/api/admin/disputes/:id/resolve', ({ user, params, body }) => {
     if (credit) run('UPDATE order_disputes SET credit_promo_id = ? WHERE id = ?', ownedCode('C', dispute.customer_id, credit, user.id, Date.now()), dispute.id);
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DISPUTE_RESOLVED', ?, ?)`,
       user.id, dispute.order_id, JSON.stringify({ resolution, credit }), Date.now());
+    queuePush([dispute.customer_id], 'support', dispute.order_id);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
@@ -1111,6 +1117,7 @@ route('POST', '/api/orders/:id/sos', ({ user, params, body }) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now()).lastInsertRowid);
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_REPORTED', ?, ?)`,
       user.id, r.id, JSON.stringify({ incident: id, kind: body.kind }), Date.now());
+    queuePush(adminIds(), 'safety', r.id, '/admin/orders'); // a report pages every administrator
   }
   return getOrder(r.id, user);
 });
@@ -1136,6 +1143,8 @@ route('POST', '/api/admin/incidents/:id/resolve', ({ user, params, body }) => {
       resolution, user.id, Date.now(), incident.id).changes) fail(409, 'cannot_resolve');
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_RESOLVED', ?, ?)`,
       user.id, incident.order_id, JSON.stringify({ incident: incident.id, resolution }), Date.now());
+    const parties = one('SELECT customer_id, driver_id FROM orders WHERE id = ?', incident.order_id)!;
+    queuePush([parties.customer_id, parties.driver_id], 'support', incident.order_id); // the frozen driver may continue
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
@@ -1342,6 +1351,7 @@ function advanceOrder(user: User, id: number, body: Row) {
     if (expected && String(body.code ?? '').trim() !== expected) {
       run(`INSERT INTO proof_attempts (order_id, failures) VALUES (?, 1) ON CONFLICT(order_id) DO UPDATE SET failures = failures + 1`, r.id);
       run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'PROOF_FAILED', ?)`, user.id, r.id, now);
+      if (one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id)?.failures === 5) queuePush(adminIds(), 'attention', r.id, '/admin/orders'); // the fifth miss locks it
       fail(400, 'wrong_code');
     }
     const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
@@ -1364,6 +1374,7 @@ function reportException(user: User, id: number, body: Row) {
   run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
     user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now);
   queuePush([r.customer_id], 'on_hold', r.id); // SPEC-exception-push.md
+  queuePush(adminIds(), 'attention', r.id, '/admin/orders'); // support calls both sides and decides
   return getOrder(r.id, user);
 }
 
@@ -1429,7 +1440,7 @@ function driverCommand(user: User, id: number, body: Row, apply: (user: User, id
     }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
-  if (failure) throw failure;
+  if (failure) { flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
   return result;
 }
 
@@ -1591,6 +1602,7 @@ route('POST', '/api/driver/cash/:id/confirm', ({ user, params, body }) => {
   const entry = one("SELECT * FROM cash_entries WHERE id = ? AND driver_id = ? AND kind = 'remittance'", Number(params[0]), user.id) ?? fail(404, 'not_found');
   if (!run("UPDATE cash_entries SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
     body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), entry.id).changes) fail(409, 'already_decided');
+  if (body.decision === 'dispute') queuePush([entry.recorded_by], 'attention', 0, '/admin/cash'); // the admin who recorded it decides
   return cashEntry(one('SELECT * FROM cash_entries WHERE id = ?', entry.id)!);
 });
 
@@ -1613,6 +1625,7 @@ function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
     if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
     const id = Number(run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now()).lastInsertRowid);
+    queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     db.exec('COMMIT');
     return cashEntry(one('SELECT * FROM cash_entries WHERE id = ?', id)!);
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -1627,6 +1640,7 @@ route('POST', '/api/subscriptions', ({ user }) => {
   const s = settings();
   run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
     user.id, plan, plan === 'plus' ? s.plusPrice : s.proPrice, Date.now());
+  queuePush(adminIds(), 'attention', 0, '/admin/subscriptions');
   return me(user);
 });
 
@@ -1641,6 +1655,7 @@ route('POST', '/api/admin/orders/:id/proof-reset', ({ user, params, body }) => {
   try {
     run('DELETE FROM proof_attempts WHERE order_id = ?', order.id);
     run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PROOF_RESET', ?, ?)`, user.id, order.id, JSON.stringify({ reason }), Date.now());
+    queuePush([order.driverId ?? null], 'support', order.id); // the driver can enter the code again
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true };
@@ -1721,6 +1736,7 @@ const editUser: Handler = ({ user, params, body }) => {
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) run('DELETE FROM sessions WHERE user_id = ?', target.id);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
+  if (role === 'driver' && status === 'active' && target.status !== 'active') queuePush([target.id], 'approved', 0, '/driver');
   return toUser(one('SELECT * FROM users WHERE id = ?', target.id)!);
 };
 route('POST', '/api/admin/users/:id', editUser); // existing clients
@@ -1730,6 +1746,7 @@ route('POST', '/api/admin/users/:id/approve', ({ user, params }) => {
   const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'", Number(params[0])) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
   run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id);
+  if (target.role === 'driver' && target.status !== 'active') queuePush([target.id], 'approved', 0, '/driver');
   return toUser(one('SELECT * FROM users WHERE id = ?', target.id)!);
 });
 route('DELETE', '/api/admin/users/:id', ({ user, params }) => {
@@ -1771,6 +1788,8 @@ route('POST', '/api/admin/subscriptions/:id', ({ user, params, body }) => {
   }
   else if (body.action === 'reject') run("UPDATE subscriptions SET status = 'rejected' WHERE id = ?", sub.id);
   else fail(400, 'invalid_action');
+  const holder = one('SELECT role FROM users WHERE id = ?', sub.user_id)!;
+  queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
   return { ok: true };
 });
 
