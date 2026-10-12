@@ -120,7 +120,7 @@ export default function OrderScreen() {
   const age = location?.ageSeconds ?? 0;
 
   return <Screen onRefresh={reload}>
-    <Header title={orderCode(order.id)} subtitle={`${c[order.service]} · ${order.shared ? c.shared : c.private}`} back
+    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
       right={order.status === 'completed' ? undefined : <Badge label={c[order.status]} status={order.status} />} />
     {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}

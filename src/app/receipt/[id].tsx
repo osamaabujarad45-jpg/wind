@@ -27,7 +27,7 @@ export default function Receipt() {
   const lines: [string, string][] = [
     [c.receiptNo, ltr(orderCode(order.id))],
     [c.issued, time(order.updatedAt)],
-    [c.service, `${c[order.service]} · ${order.shared ? c.shared : c.private}`],
+    [c.service, `${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`], // same rule as OrderRow: only shared, the exception, is marked
     [c.route, `${from} ${arrow} ${to}`],
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
