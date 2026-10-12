@@ -18,10 +18,11 @@ export default function Trips() {
       ? <Empty icon="navigate-outline" title={c.noTrips} body={c.noTripsDesc} action={<Button title={c.jobs} onPress={() => router.navigate('/driver')} />} />
       : <>
         {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
-        {/* Run sheet (SPEC-run-sheet.md): pickups, then deliveries by city (biggest first), then returns. */}
+        {/* Run sheet (SPEC-run-sheet.md): pickups, then deliveries by city (biggest first), then returns.
+            One trip needs no sheet: "deliver in X · 1" only repeated its card's route and status. */}
         {runSheet(active).map(group => <View key={`${group.stage}:${group.city}`} style={{ marginBottom: 4 }}>
-          <Txt variant="label" style={{ marginBottom: 8, color: palette.secondary }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
-            { city: city(group.city)[language], n: group.orders.length })}</Txt>
+          {active.length > 1 && <Txt variant="label" style={{ marginBottom: 8, color: palette.secondary }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
+            { city: city(group.city)[language], n: group.orders.length })}</Txt>}
           {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)} />)}
         </View>)}
         {lastTrip && <>
