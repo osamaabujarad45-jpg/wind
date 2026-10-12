@@ -115,8 +115,9 @@ export default function Jobs() {
       value={me?.user.heading?.city ?? 'any'} onChange={key => { void head(key); }} />
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
-    {carrying.length === 1 && <Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} />}
-    {carrying.length > 1 && <Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} />}
+    {/* gap keeps the shortcut from reading as the first offer's header */}
+    {carrying.length === 1 && <View style={{ marginBottom: 14 }}><Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} /></View>}
+    {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
     {!data ? <Loading /> : data.length === 0
