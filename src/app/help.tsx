@@ -24,16 +24,17 @@ export default function Help() {
     {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {ltr(orderRef)}</Txt>}
     <Txt style={{ marginBottom: 16 }}>{c.helpIntro}</Txt>
 
+    {/* the button already says "contact support"; the titled card only frames the no-line note */}
     <Appear>
-      <Card tone="olive">
-        <Row gap={12} style={{ marginBottom: 12 }}>
-          <View style={styles.icon}><Ionicons name="chatbubbles-outline" size={22} color={palette.olive} /></View>
-          <Txt variant="title" style={{ flex: 1 }}>{c.contactUs}</Txt>
-        </Row>
-        {SUPPORT_URL
-          ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
-          : <Txt variant="caption">{c.noSupportLine}</Txt>}
-      </Card>
+      {SUPPORT_URL
+        ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
+        : <Card tone="olive">
+          <Row gap={12} style={{ marginBottom: 12 }}>
+            <View style={styles.icon}><Ionicons name="chatbubbles-outline" size={22} color={palette.olive} /></View>
+            <Txt variant="title" style={{ flex: 1 }}>{c.contactUs}</Txt>
+          </Row>
+          <Txt variant="caption">{c.noSupportLine}</Txt>
+        </Card>}
     </Appear>
 
     <Txt variant="h2" style={{ marginVertical: 12 }}>{c.faq}</Txt>
