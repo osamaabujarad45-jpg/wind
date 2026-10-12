@@ -533,6 +533,7 @@ const ar = {
   a_delete: 'من «حسابي» ← حذف الحساب. تُحذف بياناتك الشخصية نهائياً، مع الاحتفاظ بسجلات المعاملات دون بياناتك الشخصية لأغراض المحاسبة القانونية.',
   // profile
   editProfile: 'تعديل الملف الشخصي',
+  editUser: 'تعديل البيانات', // half-width admin button; the long label wrapped
   profile: 'الملف الشخصي',
   phoneLocked: 'رقم الجوال هو هويتك في ويند ولا يمكن تغييره من التطبيق.',
   memberSince: 'عضو منذ',
@@ -1169,6 +1170,7 @@ const en: Copy = {
   q_delete: 'How do I delete my account?',
   a_delete: 'Account → Delete account. Your personal data is removed; order records stay without your name for accounting.',
   editProfile: 'Edit profile',
+  editUser: 'Edit details',
   profile: 'Profile',
   phoneLocked: 'Your mobile number is your Wind identity and can’t be changed in the app.',
   memberSince: 'Member since',

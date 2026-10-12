@@ -68,7 +68,7 @@ export default function Users() {
             {!user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null}
               onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
             <Row gap={8}>
-              <View style={{ flex: 1 }}><Button title={c.editProfile} variant="soft" disabled={busy !== null} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
+              <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
               <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null}
                 onPress={() => action(user, '', { status: user.status === 'blocked' ? user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' : 'blocked' }, 'PATCH')} /></View>
             </Row>
