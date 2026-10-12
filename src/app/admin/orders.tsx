@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, ScrollView, View } from 'react-native';
+import { Linking, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../api';
 import { ltr, orderCode, type Order, type OrderStatus, type SafetyKind } from '../../model';
@@ -17,9 +17,8 @@ export default function AdminOrders() {
   const { data, error, reload } = useApi<Order[]>(status === 'disputes' || status === 'safety' ? null : status === 'all' ? '/orders' : `/orders?status=${status}`, 15_000);
   return <Screen onRefresh={reload}>
     <Header title={c.allOrders} />
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, flexGrow: 0 }}>
-      <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={setStatus} />
-    </ScrollView>
+    {/* FilterChips is its own Rail; a ScrollView around it kept the Rail from scrolling, so Arabic opened on the list's far end with 'all' hidden */}
+    <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={setStatus} />
     {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading /> : data.length === 0
