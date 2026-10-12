@@ -276,8 +276,8 @@ export function AccountScreen() {
               <Txt variant="h2" numberOfLines={1}>{user.name}</Txt>
               <Txt variant="caption">{user.phone}</Txt>
               <Row gap={6} style={{ marginTop: 4 }}>
-                {/* a customer is told 'customer' on their own account; only other roles are marked */}
-                {user.role !== 'customer' && <Badge label={c[user.role]} tone={tones.blue} />}
+                {/* each role has its own app, so its own account restating 'customer' or 'driver' (beside the vehicle chip) said nothing; only admin is marked */}
+                {user.role === 'admin' &&<Badge label={c[user.role]} tone={tones.blue} />}
                 {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
                 {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.clay} />}
                 {user.priceRating != null && <Badge label={fill(c.priceStars, { r: user.priceRating })} tone={tones.clay} />}
