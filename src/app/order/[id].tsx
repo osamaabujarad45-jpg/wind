@@ -507,13 +507,15 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
   const recent = (data ?? []).slice(-20);
+  // a closed chat with nothing in it is a card that says "nothing here"; a closed one with history still shows
+  if (!canWrite && !recent.length && !error) return null;
   return <Card>
     <Row gap={8} style={{ marginBottom: 8 }}>
       <Ionicons name="chatbubbles-outline" size={20} color={palette.olive} />
       <Txt variant="title" style={{ flex: 1 }}>{c.messages}</Txt>
     </Row>
     {error && !data ? <ErrorText>{err(error)}</ErrorText> : recent.length === 0
-      ? <Txt variant="caption" style={{ marginBottom: 8 }}>{canWrite ? c.chatEmpty : c.chatNone}</Txt>
+      ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.chatEmpty}</Txt>
       : <View style={{ gap: 6, marginBottom: 8 }}>
         {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine === rtl ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
           accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${time(m.createdAt)}`}>
