@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useApi } from '../../api';
 import { activeStatuses, city, runSheet, type Order } from '../../model';
 import { OrderRow } from '../../parts';
-import { Button, Empty, ErrorText, fill, Header, Loading, Screen, Txt, useCopy } from '../../ui';
+import { Button, Empty, ErrorText, fill, Header, Loading, palette, Screen, Txt, useCopy } from '../../ui';
 
 export default function Trips() {
   const { c, err, language } = useCopy();
@@ -20,7 +20,7 @@ export default function Trips() {
         {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
         {/* Run sheet (SPEC-run-sheet.md): pickups, then deliveries by city (biggest first), then returns. */}
         {runSheet(active).map(group => <View key={`${group.stage}:${group.city}`} style={{ marginBottom: 4 }}>
-          <Txt variant="label" style={{ marginBottom: 8 }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
+          <Txt variant="label" style={{ marginBottom: 8, color: palette.secondary }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
             { city: city(group.city)[language], n: group.orders.length })}</Txt>
           {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)} />)}
         </View>)}
