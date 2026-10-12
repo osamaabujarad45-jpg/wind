@@ -65,7 +65,8 @@ export default function Users() {
           </Row>
           <Txt variant="micro" style={{ marginTop: 8 }}>{c.phone}: {user.phoneVerifiedAt ? c.verified : c.unverified}{user.email ? ` · ${c.email}: ${user.emailVerifiedAt ? c.verified : c.unverified}` : ''}</Txt>
           {user.role !== 'admin' && <View style={{ marginTop: 12, gap: 8 }}>
-            {!user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null}
+            {/* only drivers wait on approval (server needActive); on a customer it was the loudest button doing nothing */}
+            {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null}
               onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
             <Row gap={8}>
               <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
