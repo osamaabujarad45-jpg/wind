@@ -137,7 +137,8 @@ function InviteCard() {
         </View>
         {canShare && <Button title={c.inviteShare} size="sm" icon="share-social-outline" variant="soft" onPress={share} />}
       </Row>
-      <Txt variant="caption" style={{ marginTop: 8 }}>{fill(c.inviteStats, { joined: data.joined, earned: data.earned })}</Txt>
+      {/* "0 joined · 0 rewards" is noise until the first friend joins */}
+      {data.joined > 0 && <Txt variant="caption" style={{ marginTop: 8 }}>{fill(c.inviteStats, { joined: data.joined, earned: data.earned })}</Txt>}
       {data.credits.length > 0 && <View style={{ marginTop: 8 }}>
         <Txt variant="label">{c.inviteCredits}</Txt>
         {data.credits.map(cr => <View key={cr.code} accessible accessibilityLabel={fill(c.inviteCredit, { code: cr.code.split('').join(' '), r: money(cr.amount), t: date(cr.expiresAt) })}>
