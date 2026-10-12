@@ -180,7 +180,7 @@ export function PlanCard() {
           <Ionicons name="sparkles" size={18} color={palette.clay} />
           <Txt variant="title">{isPlus ? c.plusTitle : c.proTitle}</Txt>
         </Row>
-        {sub && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.clay} />}
+        {sub && !(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.clay} />}{/* "active until" below already says it */}
       </Row>
       <Txt>{sub?.status === 'active' && sub.endsAt ? fill(c.subActive, { date: date(sub.endsAt) }) : sub ? c.subPending : pitch}</Txt>
       {!sub && <View style={{ marginTop: 10, alignSelf: 'flex-start' }}><Button title={c.subscribe} size="sm" icon="sparkles-outline" onPress={subscribe} loading={busy} /></View>}
