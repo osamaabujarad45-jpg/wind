@@ -78,20 +78,24 @@ export default function Home() {
       </ListGroup>
     </>}
 
-    <Section title={c.waysToSave} />
-    <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingBottom: 4 }}>
-      <View style={{ width: 6 }} />
-      <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
-      {!me?.plan && <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
-        body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />}
-      <View style={{ width: 6 }} />
-    </Rail>
+    {/* One card left (Plus members): full width, not a half-empty rail. */}
+    {me?.plan ? <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
+      : <>
+        <Section title={c.waysToSave} />
+        <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingBottom: 4 }}>
+          <View style={{ width: 6 }} />
+          <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
+          <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
+            body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />
+          <View style={{ width: 6 }} />
+        </Rail>
+      </>}
   </Screen>;
 }
 
-function Promo({ tone, icon, title, body, onPress }: { tone: 'forest' | 'clay' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void }) {
+function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'clay' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void; wide?: boolean }) {
   const t = { forest: [palette.forest, palette.lime, 'rgba(255,255,255,0.78)'], clay: [palette.clayPale, palette.clayInk, palette.ink], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
-  return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, { backgroundColor: t[0] }]}>
+  return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, wide && styles.wide, { backgroundColor: t[0] }]}>
     <Ionicons name={icon} size={20} color={t[1]} />
     <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>
     <Txt variant="caption" numberOfLines={2} style={{ color: t[2], opacity: tone === 'forest' ? 1 : 0.8 }}>{body}</Txt>
@@ -108,4 +112,5 @@ const styles = StyleSheet.create({
   recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },
   clock: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
   promo: { width: 224, borderRadius: 16, padding: 14, minHeight: 118 },
+  wide: { width: 'auto', minHeight: 0, marginTop: 20 },
 });
