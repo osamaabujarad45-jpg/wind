@@ -133,7 +133,7 @@ export default function Jobs() {
               <ServiceIcon service={order.service} size={38} />
               <View style={{ flex: 1 }}>
                 <Txt variant="title">{c[order.service]}</Txt>
-                <Txt variant="caption">{order.shared ? c.shared : c.private} · {order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
+                <Txt variant="caption">{/* same rule as OrderRow: only shared, the exception, is marked */}{order.shared ? `${c.shared} · ` : ''}{order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
                 {order.customerStats && <Txt variant="caption">{order.customerStats.trips ? [order.customerStats.rating != null && fill(c.customerStars, { r: order.customerStats.rating }),
                   fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(' · ') : c.newCustomer}</Txt>}
               </View>
