@@ -19,7 +19,7 @@ export const serviceMeta: Record<Service, { icon: IconName; color: string; pale:
 
 export function useFormat() {
   const { language } = useCopy();
-  const locale = language === 'ar' ? 'ar-PS' : 'en-GB';
+  const locale = language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB'; // Latin digits, like prices and order codes
   return {
     date: (ms: number) => new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Hebron' }),
     time: (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' }),

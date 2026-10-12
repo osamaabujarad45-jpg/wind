@@ -86,7 +86,7 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
   const reduced = useReducedMotion();
   const [selected, setSelected] = useState(daily.length - 1);
   const max = Math.max(1, ...daily.map(d => d.commission + d.subscriptions));
-  const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(language === 'ar' ? 'ar-PS' : 'en-GB', { day: 'numeric', month: 'short' });
+  const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short' });
   const pick = daily[selected];
 
   return <Card>

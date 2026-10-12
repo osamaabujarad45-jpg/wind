@@ -443,7 +443,7 @@ export default function Book() {
   </KeyboardAvoidingView>;
 }
 
-const fmt = (language: 'ar' | 'en') => language === 'ar' ? 'ar-PS' : 'en-GB';
+const fmt = (language: 'ar' | 'en') => language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB';
 function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
   const key = dayKey(ms);
   return key === dayKey(Date.now()) ? c.today : key === dayKey(Date.now() + 86_400_000) ? c.tomorrow
