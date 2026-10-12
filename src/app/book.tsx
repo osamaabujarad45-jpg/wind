@@ -407,8 +407,10 @@ export default function Book() {
         </View>}
       </Card>
 
-      <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32}
-        onSubmitEditing={submit} />
+      <Card style={{ paddingBottom: 2 }}>{/* Field's own 12px bottom margin completes the 14px card padding */}
+        <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32}
+          onSubmitEditing={submit} />
+      </Card>
       <ErrorText>{error}</ErrorText>
     </Screen>
 
