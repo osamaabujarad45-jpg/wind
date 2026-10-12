@@ -41,7 +41,7 @@ export default function Profile() {
         <View style={{ alignItems: 'center', gap: 10, marginBottom: 18 }}>
           <Avatar name={name.trim() || user.name} size={72} />
           <Row gap={6} style={{ justifyContent: 'center' }}>
-            <Badge label={c[user.role]} tone={tones.blue} />
+            {user.role !== 'customer' && <Badge label={c[user.role]} tone={tones.blue} />}
             {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
           </Row>
         </View>
