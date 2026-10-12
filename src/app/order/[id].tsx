@@ -254,9 +254,6 @@ export default function OrderScreen() {
       </Card>
     </Appear> : null}
 
-    {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
-      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
-
     {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
       <Card tone="clay">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
@@ -284,6 +281,10 @@ export default function OrderScreen() {
         </Row>
       </Card>
     </Appear>}
+
+    {/* Codes sit above the chat: they are what the customer needs at the door. */}
+    {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
+      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
 
     <Appear index={5}>
       <Card>
