@@ -298,7 +298,7 @@ export function AccountScreen() {
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
-      {SUPPORT_URL && <ListRow icon="chatbubble-ellipses-outline" label={c.support} tone="blue" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
+      {/* support lives one tap in: Help leads with it, so a second row here only splits the same door */}
       <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(PRIVACY_URL)} />
     </ListGroup>
     <ErrorText>{deleteError}</ErrorText>
