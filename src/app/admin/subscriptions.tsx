@@ -38,7 +38,7 @@ export default function Subscriptions() {
                 <Txt variant="caption">{sub.userPhone} · {money(sub.price)} · {date(sub.createdAt)}</Txt>
                 {sub.status === 'active' && sub.endsAt && <Txt variant="caption">{fill(c.subActive, { date: date(sub.endsAt) })}</Txt>}
               </View>
-              <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : sub.status === 'pending' ? tones.clay : tones.muted} />
+              {!(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : sub.status === 'pending' ? tones.clay : tones.muted} />}{/* "active until" below already says it */}
             </Row>
             {sub.status === 'pending' && <Row gap={8} style={{ marginTop: 12 }}>
               <View style={{ flex: 1 }}><Button title={c.activate} loading={busy === `${sub.id}activate`} onPress={() => decide(sub, 'activate')} /></View>
