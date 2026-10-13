@@ -8,7 +8,7 @@ import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
 import { useSession } from '../../session';
-import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, tones, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; profit: number; completed: number; activeSubscriptions: number;
@@ -55,8 +55,8 @@ export default function Dashboard() {
           <Txt variant="title" style={{ marginBottom: 10 }}>{c.allOrders}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
             {(['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning', 'completed', 'returned', 'cancelled'] as const).map(s =>
-              // empty statuses go grey and still, so the counts that matter carry the colour
-              data.statuses[s] ? <Badge key={s} status={s} label={`${c[s]} · ${data.statuses[s]}`} /> : <Badge key={s} tone={tones.muted} label={`${c[s]} · 0`} />)}
+              // empty statuses say nothing; only the counts that exist show
+              data.statuses[s] ? <Badge key={s} status={s} label={`${c[s]} · ${data.statuses[s]}`} /> : null)}
           </Row>
           <Txt variant="title" style={{ marginVertical: 10 }}>{c.users}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
