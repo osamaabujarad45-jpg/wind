@@ -101,7 +101,7 @@ function Promos() {
       <Field label={c.promoMaxUses} keyboardType="number-pad" value={form.maxUses} onChangeText={set('maxUses')} maxLength={5} />
       <Field label={c.promoDays} keyboardType="number-pad" value={form.days} onChangeText={set('days')} maxLength={2} />
       <Txt variant="label" style={{ marginBottom: 6 }}>{c.promoFirstOnly}</Txt>
-      <Choices items={[{ key: 'no', label: `${c.promoFirstOnly}: ${c.no}` }, { key: 'yes', label: `${c.promoFirstOnly}: ${c.yes}` }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} />
+      <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} />
       <ErrorText>{error}</ErrorText>
       {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 8 }}>{message}</Txt></View>}
       <Button title={c.promoCreate} icon="add-circle-outline" variant="soft" loading={busy} disabled={!form.code.trim()} onPress={create} />
