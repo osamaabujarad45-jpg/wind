@@ -161,7 +161,7 @@ export default function Book() {
   const quoting = isCustomer && !pending && quoted?.key !== priceKey; // the Request button waits for it
   const smart = quoted?.quote ?? null;
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
-  const reasons = smart && [fill(c.tripSize, { km: `${smart.estimated ? '≈ ' : ''}${smart.km}`, min: smart.minutes }), smart.night && c.nightRate,
+  const reasons = smart && [fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${smart.minutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
     .filter(Boolean).join(' · ');
   const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));
