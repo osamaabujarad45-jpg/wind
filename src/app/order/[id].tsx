@@ -118,11 +118,13 @@ export default function OrderScreen() {
 
   const location = locationState(order.driverLocation, now);
   const age = location?.ageSeconds ?? 0;
+  const later = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 ? order.scheduledFor : 0; // booked ahead: the time
+  const finding = order.status === 'searching' && !later;
 
   return <Screen onRefresh={reload}>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={order.status === 'completed' || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
-    {/* completed: the banner below already says it, with the time; in a trip the progress card heads with the same words; a second badge one line above only echoes */}
+      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+    {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
 
     {order.status === 'completed' && <Animated.View entering={reduced ? undefined : DONE}>
@@ -138,16 +140,16 @@ export default function OrderScreen() {
     </Animated.View>}
 
     {/* Status stays visible even if native entering animations are interrupted. */}
-    {order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 && <Card tone="olive">
+    {!!later && <Card tone="olive">
       <Row gap={10}>
         <Ionicons name="calendar-outline" size={24} color={palette.olive} />
         <View style={{ flex: 1 }}>
-          <Txt variant="title">{fill(c.scheduledFor, { t: time(order.scheduledFor) })}</Txt>
+          <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>
           <Txt variant="caption">{c.scheduledHint}</Txt>
         </View>
       </Row>
     </Card>}
-    {order.status === 'searching' && !(order.scheduledFor && now < order.scheduledFor - 30 * 60_000) && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
+    {finding && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
       <Radar color={serviceMeta[order.service].color} size={110}>
         <ServiceIcon service={order.service} size={48} />
       </Radar>
@@ -163,7 +165,7 @@ export default function OrderScreen() {
         <View style={{ flex: 1 }}>
           <Txt variant="title">{offer.name}</Txt>
           <Txt variant="caption">{[offer.vehicle && c[offer.vehicle], offer.rating == null ? c.newDriver : `★ ${offer.rating}`,
-            offer.priceRating != null && fill(c.priceStars, { r: offer.priceRating }), fill(c.tripsCount, { n: offer.trips })].filter(Boolean).join(' · ')}</Txt>
+            offer.priceRating != null && fill(c.priceStars, { r: offer.priceRating }), !!offer.trips && fill(c.tripsCount, { n: offer.trips })].filter(Boolean).join(' · ')}</Txt>
         </View>
         <View style={{ alignItems: 'center', gap: 4 }}>
           <Txt variant="h2">{money(offer.price)}</Txt>
