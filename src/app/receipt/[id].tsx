@@ -3,7 +3,7 @@ import { Platform, Share, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
 import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
-import { useFormat } from '../../parts';
+import { statusText, useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Appear, Badge, Button, ErrorText, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -50,7 +50,7 @@ export default function Receipt() {
         <View style={{ alignItems: 'center', gap: 8, paddingBottom: 16 }}>
           <Logo size={44} />
           <Txt variant="h2" center>{c.brand}</Txt>
-          <View style={{ flexDirection: 'row' /* ltr: one centred badge, direction unused */ }}><Badge label={c[order.status]} status={order.status} /></View>
+          <View style={{ flexDirection: 'row' /* ltr: one centred badge, direction unused */ }}><Badge label={statusText(c, order)} status={order.status} /></View>
         </View>
         <View style={styles.tear} />
         {lines.map(([label, value]) => <Row key={label} gap={12} style={styles.line}>

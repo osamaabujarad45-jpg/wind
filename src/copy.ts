@@ -145,6 +145,9 @@ const ar = {
   at_pickup: 'السائق عند نقطة الاستلام',
   in_transit: 'في الطريق للتسليم',
   completed: 'تم التوصيل',
+  // a ride carries people: its trip states read as a trip, not a delivery (statusText in parts.tsx)
+  in_transit_ride: 'في الطريق إلى الوجهة',
+  completed_ride: 'انتهت الرحلة',
   cancelled: 'ملغي',
   on_hold: 'بانتظار قرار الدعم',
   returning: 'في الطريق للإرجاع للمرسل',
@@ -788,6 +791,8 @@ const en: Copy = {
   at_pickup: 'Driver at pickup',
   in_transit: 'On the way',
   completed: 'Delivered',
+  in_transit_ride: 'On the way',
+  completed_ride: 'Trip completed',
   cancelled: 'Cancelled',
   on_hold: 'On hold — support deciding',
   returning: 'Returning to sender',

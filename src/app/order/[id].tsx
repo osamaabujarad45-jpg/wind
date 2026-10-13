@@ -9,7 +9,7 @@ import { api, API_URL, ApiError, useApi } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
-import { RouteLine, ServiceIcon, serviceMeta, useFormat } from '../../parts';
+import { RouteLine, ServiceIcon, serviceMeta, statusText, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
@@ -135,7 +135,7 @@ export default function OrderScreen() {
         <Row gap={10}>
           <Ionicons name="checkmark-circle" size={26} color={palette.olive} />
           <View style={{ flex: 1 }}>
-            <Txt variant="title">{c.completed}</Txt>
+            <Txt variant="title">{statusText(c, order)}</Txt>
             <Txt variant="caption">{time(order.updatedAt)}</Txt>
           </View>
         </Row>
@@ -217,7 +217,7 @@ export default function OrderScreen() {
       <Card>
         <Row gap={8} style={{ marginBottom: 10 }}>
           <Pulse color={serviceMeta[order.service].color} size={8} />
-          <Txt variant="h2" style={{ flex: 1 }}>{c[order.status]}</Txt>
+          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order)}</Txt>
         </Row>
         <View style={[styles.progress, { flexDirection: row }]} accessibilityRole="progressbar" accessibilityLabel={c.tripProgress}
           accessibilityValue={{ min: 0, max: steps.length, now: step + 1 }}>

@@ -7,6 +7,7 @@ import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, orderCode, type Order, type Referral, type Service } from './model';
 import { useSession } from './session';
+import type { Copy } from './copy';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
@@ -16,6 +17,9 @@ export const serviceMeta: Record<Service, { icon: IconName; color: string; pale:
   ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
   freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
 };
+
+// A status in the order's own words: rides end as a trip, not a delivery.
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>) => (o.service === 'ride' && (c as Record<string, string | undefined>)[`${o.status}_ride`]) || c[o.status];
 
 export function useFormat() {
   const { language } = useCopy();
@@ -67,7 +71,7 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
-      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${c[order.status]}`} onPress={() => router.push(`/order/${order.id}`)}>
+      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${statusText(c, order)}`} onPress={() => router.push(`/order/${order.id}`)}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
@@ -79,7 +83,7 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             </Row>
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{/* private is the default and sat on every row; only shared, the exception, is marked */}{order.shared ? ` · ${c.shared}` : ''} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-              {status ? <Badge label={c[order.status]} status={order.status} /> : <View />}
+              {status ? <Badge label={statusText(c, order)} status={order.status} /> : <View />}
               <Txt variant="micro">{orderCode(order.id)}</Txt>
             </Row>
           </View>
