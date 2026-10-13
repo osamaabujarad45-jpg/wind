@@ -28,7 +28,7 @@ export default function Trips() {
         </View>)}
         {lastTrip && <>
           <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>
-          <OrderRow order={lastTrip} index={active.length} />
+          <OrderRow order={lastTrip} index={active.length} status={false} />{/* the heading already says completed */}
         </>}
         {past.length > 0 && <Txt variant="h2" style={{ marginVertical: 12 }}>{c.history}</Txt>}
         {past.map((order, i) => <OrderRow key={order.id} order={order} index={i + active.length + (lastTrip ? 1 : 0)} />)}
