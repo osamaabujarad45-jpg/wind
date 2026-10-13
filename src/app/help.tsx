@@ -26,7 +26,6 @@ export default function Help() {
   return <Screen>
     <Header title={c.help} back />
     {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {ltr(orderRef)}</Txt>}
-    <Txt style={{ marginBottom: 16 }}>{c.helpIntro}</Txt>
 
     {/* the button already says "contact support"; the titled card only frames the no-line note */}
     <Appear>

@@ -508,7 +508,6 @@ const ar = {
   findingBody: 'طلبك معروض الآن على السائقين المناسبين. ستظهر لك بيانات السائق فور قبول الطلب.',
   // help
   help: 'المساعدة والدعم',
-  helpIntro: 'إجابات وافية على الأسئلة الأكثر شيوعاً، ويسعدنا تواصلك مع الدعم دائماً.',
   faq: 'أسئلة شائعة',
   contactUs: 'تواصل معنا',
   whatsappSupport: 'راسلنا على واتساب',
@@ -1144,7 +1143,6 @@ const en: Copy = {
   err_invalid_schedule: 'Pick a time at least an hour ahead and within 7 days.',
   findingBody: 'Your request is visible to eligible drivers. Details appear after acceptance.',
   help: 'Help & support',
-  helpIntro: 'Quick answers to the common questions. If yours isn’t here, contact us.',
   faq: 'Common questions',
   contactUs: 'Contact us',
   whatsappSupport: 'Message us on WhatsApp',
