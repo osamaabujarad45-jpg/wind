@@ -71,6 +71,8 @@ export default function OrderScreen() {
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
+  // a ride under way needs no step: the bar shows it, and help sits at the foot
+  const next = (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const resetReason = proofReset.id === id ? proofReset.reason : '';
@@ -224,7 +226,7 @@ export default function OrderScreen() {
           <Txt variant="micro">{c.pickup}</Txt>
           <Txt variant="micro">{c.dropoff}</Txt>
         </Row>
-        <Txt variant="caption" style={{ marginTop: 10 }}>{c[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}` as 'next_assigned']}</Txt>
+        {next && <Txt variant="caption" style={{ marginTop: 10 }}>{next}</Txt>}
         {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
           <Row gap={6} style={{ marginTop: 6 }}>
             <Ionicons name="shield-outline" size={16} color={palette.clayInk} />

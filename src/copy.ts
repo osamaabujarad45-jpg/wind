@@ -251,7 +251,6 @@ const ar = {
   next_in_transit: 'يرجى إبقاء هاتفك قريباً.', // the handover-code card says when to give the code
   ride_next_assigned: 'انتظر السائق عند المعلم المتفق عليه.',
   ride_next_at_pickup: 'تأكد من السائق والمركبة قبل الركوب.',
-  ride_next_in_transit: 'تابع الرحلة. تواصل مع الدعم إذا احتجت مساعدة.',
   driver_next_assigned: 'أكد مكان الاستلام مع الزبون.',
   driver_next_at_pickup: 'تأكد من الغرض قبل الاستلام.',
   driver_next_in_transit: 'اطلب رمز التسليم من الزبون.',
@@ -896,7 +895,6 @@ const en: Copy = {
   next_in_transit: 'Keep your phone handy.',
   ride_next_assigned: 'Wait for the driver at the agreed landmark.',
   ride_next_at_pickup: 'Check the driver and vehicle before boarding.',
-  ride_next_in_transit: 'Follow the trip. Contact support if you need help.',
   driver_next_assigned: 'Confirm the pickup with the customer.',
   driver_next_at_pickup: 'Check the item before pickup.',
   driver_next_in_transit: 'Ask the customer for the handover code.',
