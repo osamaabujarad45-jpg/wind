@@ -224,8 +224,8 @@ export default function OrderScreen() {
           {steps.map((s, i) => <View key={s} style={[styles.segment, i <= step && { backgroundColor: palette.olive }]} />)}
         </View>
         <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-          <Txt variant="micro">{c.pickup}</Txt>
-          <Txt variant="micro">{c.dropoff}</Txt>
+          <Txt variant="micro">{order.service === 'ride' ? c.pickup_ride : c.pickup}</Txt>
+          <Txt variant="micro">{order.service === 'ride' ? c.dropoff_ride : c.dropoff}</Txt>
         </Row>
         {next && <Txt variant="caption" style={{ marginTop: 10 }}>{next}</Txt>}
         {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
@@ -294,7 +294,7 @@ export default function OrderScreen() {
 
     <Appear index={5}>
       <Card>
-        <RouteLine from={from[language]} to={to[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} />
+        <RouteLine from={from[language]} to={to[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
         <View style={styles.divider}>
           {!!order.detail && <Detail label={c.details} value={order.detail} />}
           <Detail label={order.service === 'ride' ? c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />

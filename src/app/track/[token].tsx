@@ -7,9 +7,9 @@ import { useApi } from '../../api';
 import { locationState } from '../../location-state';
 import { etaRange } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
-import { RouteLine, ServiceIcon } from '../../parts';
+import { RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
-import { Badge, Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number;
   driver: { firstName: string; vehicle: Vehicle | null } | null;
@@ -34,7 +34,7 @@ export default function TrackScreen() {
   const location = data.driverLocation && freshness && !freshness.stale ? { ...data.driverLocation, ageSeconds: freshness.ageSeconds } : null;
   const age = location?.ageSeconds ?? 0;
   return <Screen>
-    <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} right={<Badge label={c[data.status]} status={data.status} />} />
+    <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
       <RouteMap pickup={from} dropoff={to} focus={data.status === 'in_transit' ? 'dropoff' : 'pickup'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location ? etaData?.approach : null} />
@@ -42,9 +42,9 @@ export default function TrackScreen() {
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
         <ServiceIcon service={data.service} size={28} />
-        <Txt variant="h2" style={{ flex: 1 }}>{c[data.status]}</Txt>
+        <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, data)}</Txt>
       </Row>
-      <RouteLine from={from[language]} to={to[language]} />
+      <RouteLine from={from[language]} to={to[language]} ride={data.service === 'ride'} />
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
       {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit'
         ? delayed ? c.etaToDropoffSlow : c.etaToDropoff

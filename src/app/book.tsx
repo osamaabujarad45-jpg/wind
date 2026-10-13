@@ -22,6 +22,8 @@ export default function Book() {
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
   const [service, setService] = useState<Service>(params.service === 'ride' || params.service === 'freight' ? params.service : 'parcel');
+  // a ride meets its passenger and drops them off: its place words differ from a parcel's
+  const word = (k: 'pickupNote' | 'dropoffNote' | 'pickupOnMap' | 'dropoffOnMap') => service === 'ride' ? c[`${k}_ride` as const] : c[k];
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>(isCity(params.to) ? params.to : 'nablus');
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
@@ -277,7 +279,7 @@ export default function Book() {
           <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
         </View>
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
-          <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} />
+          <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
           <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
             <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked}
               onPress={() => { haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint); }} />
@@ -295,7 +297,7 @@ export default function Book() {
         {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
           {(['pickup', 'dropoff'] as const).map(which => {
             const set = which === 'pickup' ? pickupPoint : dropoffPoint;
-            const label = which === 'pickup' ? c.pickupOnMap : c.dropoffOnMap;
+            const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
             return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { haptic.tap(); setLocationError(''); setPinFor(which); }}>
               <Row gap={6} style={styles.chip}>
                 <Ionicons name={set ? 'checkmark-circle' : 'pin-outline'} size={14} color={palette.olive} />
@@ -315,9 +317,9 @@ export default function Book() {
 
 
       <Card>
-        <Field label={c.pickupNote} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
+        <Field label={word('pickupNote')} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
         {isCustomer && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
-        <Field label={c.dropoffNote} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
+        <Field label={word('dropoffNote')} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
         {isCustomer && !locked && <SavePlace city={dropoffCity} note={dropoffNote} saved={places.saved} onSave={savePlace} />}
         {service !== 'ride' && <>
           <Field label={c.recipientPhone} icon="call-outline" value={recipientPhone} onChangeText={edit('recipientPhone', setRecipientPhone)} placeholder={c.recipientPhoneHint}
@@ -414,7 +416,7 @@ export default function Book() {
       <ErrorText>{error}</ErrorText>
     </Screen>
 
-    {pinFor && <PinSheet title={pinFor === 'pickup' ? c.pickupOnMap : c.dropoffOnMap}
+    {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
       start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
       onClose={() => setPinFor(null)} onConfirm={point => {
         const near = nearestCity(point);
@@ -426,7 +428,7 @@ export default function Book() {
         setPinFor(null);
       }} />}
 
-    <CityPicker open={picker !== null && !locked} title={picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
+    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
       places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
         .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {

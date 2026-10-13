@@ -150,7 +150,7 @@ export default function Jobs() {
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
             </Row>}
-            <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} />
+            <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
               <Txt variant="caption" numberOfLines={2} style={{ flex: 1 }}>{order.detail}</Txt>

@@ -38,8 +38,8 @@ export function ServiceIcon({ service, size = 40 }: { service: Service; size?: n
 }
 
 // Pickup (olive dot) joined to drop-off (clay square): the route spine used on booking, trip and job screens.
-export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo }: {
-  from: string; to: string; fromNote?: string; toNote?: string; onFrom?: () => void; onTo?: () => void;
+export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
+  from: string; to: string; fromNote?: string; toNote?: string; onFrom?: () => void; onTo?: () => void; ride?: boolean;
 }) {
   const { c, row } = useCopy();
   const stop = (label: string, place: string, note: string | undefined, first: boolean, onPress?: () => void) => {
@@ -60,8 +60,8 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo }: {
     return onPress ? <Press accessibilityLabel={`${label}: ${place}`} onPress={onPress}>{body}</Press> : body;
   };
   return <View>
-    {stop(c.pickup, from, fromNote, true, onFrom)}
-    {stop(c.dropoff, to, toNote, false, onTo)}
+    {stop(ride ? c.pickup_ride : c.pickup, from, fromNote, true, onFrom)}
+    {stop(ride ? c.dropoff_ride : c.dropoff, to, toNote, false, onTo)}
   </View>;
 }
 
