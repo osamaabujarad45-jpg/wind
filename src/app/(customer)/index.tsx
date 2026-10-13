@@ -17,8 +17,10 @@ export default function Home() {
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
   const active = orders.filter(o => o.status === 'searching' || activeStatuses.includes(o.status));
-  // Latest distinct routes, newest first: the "book again" list.
-  const recent = orders.filter((o, i) => orders.findIndex(x => x.service === o.service && x.pickupCity === o.pickupCity && x.dropoffCity === o.dropoffCity) === i).slice(0, 3);
+  // Latest distinct routes, newest first: the "book again" list. Only finished trips, as Amazon's "Buy it again"
+  // skips what is still on its way; an in-flight route already shows above it.
+  const done = orders.filter(o => !active.includes(o));
+  const recent = done.filter((o, i) => done.findIndex(x => x.service === o.service && x.pickupCity === o.pickupCity && x.dropoffCity === o.dropoffCity) === i).slice(0, 3);
   const first = me?.user.name.split(' ')[0] ?? '';
   const greet = new Date().getHours() < 12 ? c.goodMorning : c.goodEvening;
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];

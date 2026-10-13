@@ -8,6 +8,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { PRIVACY_URL, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
 import { InstallLink } from '../install-link';
+import { useSession } from '../session';
 import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
 
 const topics = ['price', 'code', 'recipient', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
@@ -16,6 +17,9 @@ type Topic = typeof topics[number];
 export default function Help() {
   const { topic, order } = useLocalSearchParams<{ topic?: string; order?: string }>();
   const { c } = useCopy();
+  const { me } = useSession();
+  // a customer's own account is never a driver's (each role signs up apart), so 'when is a driver account activated' was not their question
+  const shown = me?.user.role === 'customer' ? topics.filter(t => t !== 'driver') : topics;
   const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) ? topic as Topic : null);
   const orderRef = typeof order === 'string' && /^W-\d+$/.test(order) ? order : undefined;
 
@@ -39,9 +43,9 @@ export default function Help() {
 
     <Txt variant="h2" style={{ marginVertical: 12 }}>{c.faq}</Txt>
     <Card style={{ paddingVertical: 4 }}>
-      {topics.map((key, i) => {
+      {shown.map((key, i) => {
         const expanded = open === key;
-        return <Animated.View key={key} layout={LinearTransition.duration(200)} style={[styles.item, i === topics.length - 1 && { borderBottomWidth: 0 }]}>
+        return <Animated.View key={key} layout={LinearTransition.duration(200)} style={[styles.item, i === shown.length - 1 && { borderBottomWidth: 0 }]}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={c[`q_${key}`]}
             onPress={() => setOpen(expanded ? null : key)}>
             <Row gap={10} style={{ minHeight: 52 }}>

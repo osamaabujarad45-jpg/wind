@@ -121,8 +121,8 @@ export default function OrderScreen() {
 
   return <Screen onRefresh={reload}>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={order.status === 'completed' ? undefined : <Badge label={c[order.status]} status={order.status} />} />
-    {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
+      right={order.status === 'completed' || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+    {/* completed: the banner below already says it, with the time; in a trip the progress card heads with the same words; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
 
     {order.status === 'completed' && <Animated.View entering={reduced ? undefined : DONE}>
