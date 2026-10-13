@@ -23,7 +23,8 @@ export default function Trips() {
         {runSheet(active).map(group => <View key={`${group.stage}:${group.city}`} style={{ marginBottom: 4 }}>
           {active.length > 1 && <Txt variant="label" style={{ marginBottom: 8, color: palette.secondary }}>{fill(c[group.stage === 'pickup' ? 'runPickup' : group.stage === 'deliver' ? 'runDeliver' : 'runReturn'],
             { city: city(group.city)[language], n: group.orders.length })}</Txt>}
-          {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)} />)}
+          {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)}
+            status={active.length === 1 || !['assigned', 'in_transit', 'returning'].includes(order.status)} /* the group already says it; only at-pickup and on-hold stand out */ />)}
         </View>)}
         {lastTrip && <>
           <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>

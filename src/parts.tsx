@@ -61,7 +61,7 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo }: {
   </View>;
 }
 
-export function OrderRow({ order, index = 0 }: { order: Order; index?: number }) {
+export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
   return <Appear index={index}>
@@ -79,7 +79,7 @@ export function OrderRow({ order, index = 0 }: { order: Order; index?: number })
             </Row>
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{/* private is the default and sat on every row; only shared, the exception, is marked */}{order.shared ? ` · ${c.shared}` : ''} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-              <Badge label={c[order.status]} status={order.status} />
+              {status ? <Badge label={c[order.status]} status={order.status} /> : <View />}
               <Txt variant="micro">{orderCode(order.id)}</Txt>
             </Row>
           </View>
