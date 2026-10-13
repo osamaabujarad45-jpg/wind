@@ -71,8 +71,9 @@ export default function OrderScreen() {
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
-  // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot
-  const next = (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
+  // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot.
+  // Steps speak to the customer or the assigned driver; an admin is neither.
+  const next = (isCustomer || mine) && (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const resetReason = proofReset.id === id ? proofReset.reason : '';
@@ -242,7 +243,7 @@ export default function OrderScreen() {
 
     {order.driverName && (isCustomer || isAdmin) ? <Appear index={3}>
       <Card>
-        <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
+        <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={order.driverVehicle ? c[order.driverVehicle] : undefined} />
       </Card>
     </Appear> : null}
