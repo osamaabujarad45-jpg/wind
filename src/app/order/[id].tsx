@@ -71,7 +71,7 @@ export default function OrderScreen() {
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
-  // a ride under way needs no step: the bar shows it, and help sits at the foot
+  // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot
   const next = (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
