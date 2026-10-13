@@ -124,7 +124,7 @@ export default function Auth() {
           </Press>}
           </>}
         </Card>
-        <HelpLinks />
+        <HelpLinks privacy={!(mode === 'up' && registrationOpen)} />{/* sign-up links privacy beside its consent box */}
         <InstallLink />
       </Animated.View>
     </Screen>
