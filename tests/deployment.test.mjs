@@ -112,6 +112,8 @@ try {
   const webRoute = await fetch(`${webBase}/driver/jobs`);
   assert.equal(webRoute.status, 200); assert.match(await webRoute.text(), /Wind web/);
   assert.equal((await fetch(`${webBase}/%2e%2e%2fserver%2fmain.ts`)).status, 404);
+  // A %-escape that is not UTF-8 is a miss, not a server fault.
+  for (const bad of ['/driver/%C3%28', '/api/orders/%C3%28']) assert.equal((await fetch(webBase + bad)).status, 404, bad);
   assert.deepEqual(await call('/auth/options'), { registrationOpen: false });
   await call('/auth/register', null, { phone: '0599010093', password, name: 'Public signup' }, 403);
   await call('/auth/login', null, { phone: '0599010092', password }, 403);
