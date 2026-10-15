@@ -90,7 +90,7 @@ const ar = {
   proTitle: 'ويند برو',
   proPitch: 'عمولة {pro}% بدل {base}% بـ {price} ₪ شهرياً.',
   subscribe: 'اشترك الآن',
-  subPending: 'اشتراكك بانتظار التفعيل. تواصل مع الدعم للدفع.',
+  subPending: 'تواصل مع الدعم للدفع وتفعيل اشتراكك.', // the badge already says it is pending
   subActive: 'فعّال حتى {date}',
   // booking
   from: 'من',
@@ -746,7 +746,7 @@ const en: Copy = {
   proTitle: 'Wind Pro',
   proPitch: '{pro}% commission instead of {base}% for ₪{price} a month.',
   subscribe: 'Subscribe',
-  subPending: 'Awaiting activation. Contact support to arrange payment.',
+  subPending: 'Contact support to pay and activate your subscription.',
   subActive: 'Active until {date}',
   from: 'From',
   to: 'To',
