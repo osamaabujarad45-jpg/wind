@@ -10,6 +10,7 @@ import { Button, palette, Txt, useCopy } from './ui';
 export default function PinSheet({ title, hint, start, onClose, onConfirm }: { title: string; hint?: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void }) {
   const { c } = useCopy();
   const [point, setPoint] = useState<Point>({ latitude: start.latitude, longitude: start.longitude });
+  const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
   return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
     <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
     <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
@@ -17,9 +18,10 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm }: { t
       <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{hint ?? c.pinHint}</Txt>
       <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-        <PinMap center={start} onChange={setPoint} height={360} />
+        <PinMap center={start} onChange={setPoint} onFail={() => setFailed(true)} height={360} />
       </View>
-      <Button title={c.confirmPin} icon="checkmark" onPress={() => onConfirm(point)} />
+      {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c.pinUnavailable}</Txt>
+        : <Button title={c.confirmPin} icon="checkmark" onPress={() => onConfirm(point)} />}
       <Button title={c.cancel} variant="ghost" onPress={onClose} />
     </SafeAreaView>
   </Modal>;

@@ -8,7 +8,7 @@ export default function Orders() {
   return <Screen onRefresh={reload}>
     <Header title={c.orders} />
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading /> : data.length === 0
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
       ? <Empty icon="receipt-outline" title={c.noOrders} body={c.noOrdersDesc} action={<Button title={c.home} onPress={() => router.navigate('/')} />} />
       : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}
   </Screen>;

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
+import { typedNumber } from '../../model';
 import { useFormat } from '../../parts';
 import { Appear, Button, Card, Empty, ErrorText, Field, fill, haptic, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -17,8 +18,7 @@ export default function AdminCash() {
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
   // Shekels in the form, integer agorot on the wire.
-  // Arabic-Indic digits and the Arabic decimal separator are normal input on Palestinian keyboards.
-  const cents = (text: string) => Math.round(Number(text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[٫,]/, '.')) * 100);
+  const cents = (text: string) => Math.round(typedNumber(text) * 100);
 
   async function submit() {
     if (!open || busy) return;
@@ -38,7 +38,7 @@ export default function AdminCash() {
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{message}</Txt></View>}
-    {!data ? <Loading /> : data.length === 0 ? <Empty icon="cash-outline" title={c.cashNoDrivers} />
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="cash-outline" title={c.cashNoDrivers} />
       : data.map((row, i) => <Appear key={row.driverId} index={i}>
         <Card>
           <Row style={{ justifyContent: 'space-between' }}>

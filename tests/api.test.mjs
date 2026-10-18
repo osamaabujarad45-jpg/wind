@@ -149,7 +149,7 @@ try {
   await call(`/orders/${order.id}/advance`, { token: driver.token, body: { ...arrival, requestId: randomUUID() }, expect: 409 }); // another stale command cannot skip pickup
   await call(`/orders/9999999/advance`, { token: driver.token, body: { ...arrival, requestId: randomUUID() }, expect: 404 });
   await call(`/orders/${order.id}/advance`, { token: driver.token, body: { expectedStatus: 'at_pickup' }, expect: 400 });
-  await call(`/orders/${order.id}/cancel`, { token: admin.token, body: {}, expect: 409 });
+  await call(`/orders/${order.id}/cancel`, { token: driver.token, body: {}, expect: 409 }); // the courier releases instead; sender and support may cancel until pickup (tests/pickup.test.mjs)
   await call('/admin/settings', { token: admin.token, body: { commission: 0.3 } });
   await call(`/orders/${order.id}/advance`, { token: driver.token, body: {} });
   const failedProof = { requestId: randomUUID(), expectedStatus: 'in_transit', code: '0000' };

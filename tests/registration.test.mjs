@@ -80,10 +80,13 @@ try {
   const order = await call('/orders', customer.token, { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) });
   await call(`/jobs/${order.id}/accept`, driver.token, {});
   for (const body of [{ role: 'customer' }, { vehicle: 'truck' }, { status: 'pending' }, { phone: '0599000008' }]) await call(`/admin/users/${driver.user.id}`, admin.token, body, 409, 'PATCH');
-  await call(`/admin/users/${driver.user.id}`, admin.token, { status: 'blocked' }, 200, 'PATCH');
+  // Blocking a courier who holds a job needs support to confirm its recovery (courier-block.test.mjs); the job returns to the pool.
+  await call(`/admin/users/${driver.user.id}`, admin.token, { status: 'blocked' }, 409, 'PATCH');
+  await call(`/admin/users/${driver.user.id}`, admin.token, { status: 'blocked', recovery: 'return' }, 200, 'PATCH');
   await call('/me', driver.token, undefined, 401);
   await call(`/admin/users/${driver.user.id}`, admin.token, { status: 'active' }, 200, 'PATCH');
   driver.token = (await call('/auth/login', null, { identifier: 'driver@example.test', password })).token;
+  await call(`/jobs/${order.id}/accept`, driver.token, {});
   await call(`/admin/users/${customer.user.id}`, admin.token, undefined, 409, 'DELETE');
   await call(`/orders/${order.id}/release`, driver.token, {});
   await call(`/orders/${order.id}/cancel`, customer.token, {});

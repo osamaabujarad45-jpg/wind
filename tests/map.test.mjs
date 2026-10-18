@@ -39,6 +39,13 @@ try {
   // AC5: malformed points are refused, absent ones are fine.
   for (const bad of [{ latitude: 91, longitude: 35 }, { latitude: '32', longitude: 35 }, { latitude: 32 }, 'nablus'])
     await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), dropoffPoint: bad }, expect: 400 });
+  // A pin must sit within its city's service bound: 0,0 or another city's centre is refused, for the price and the order.
+  for (const pickupPoint of [{ latitude: 0, longitude: 0 }, { latitude: 32.2211, longitude: 35.2544 }]) {
+    assert.equal((await call('/price', { token: customer.token, body: { ...input, pickupPoint }, expect: 400 })).error, 'outside_area');
+    assert.equal((await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), pickupPoint }, expect: 400 })).error, 'outside_area');
+  }
+  assert.equal((await book({ pickupPoint: { latitude: 31.9107, longitude: 35.2164 } })).pickupCity, 'ramallah'); // Al-Bireh's centre, 1.5 km away
+  await call('/price', { token: customer.token, body: { ...input, pickupPoint: { latitude: 31.9038, longitude: 35.0734 } } }); // 12 km out: inside the 15 km bound
   const plain = await book({});
   assert.equal(plain.dropoffPoint, null);
   await call(`/orders/${plain.id}/cancel`, { token: customer.token, body: {} });

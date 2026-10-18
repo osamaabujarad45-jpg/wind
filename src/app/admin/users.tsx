@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, ApiError, useApi } from '../../api';
 import { vehicles, type Role, type User, type Vehicle } from '../../model';
 import { useFormat } from '../../parts';
 import {
@@ -25,8 +25,11 @@ export default function Users() {
     try {
       await api(`/admin/users/${user.id}${suffix}`, body, method);
       haptic.success(); setEditing(null); setTemp(null); await reload();
-    } catch (e) { setActionError(err(e)); }
-    finally { setBusy(null); }
+    } catch (e) {
+      // A courier mid-job: support confirms what happens to the parcels before the block goes through.
+      if (e instanceof ApiError && e.message === 'carrying_parcels') confirm(c.blockCarrying, () => action(user, suffix, { ...body, recovery: 'return' }, method), c.block, c.cancel);
+      else setActionError(err(e));
+    } finally { setBusy(null); }
   }
 
   async function resetPassword(user: User) {
@@ -46,7 +49,7 @@ export default function Users() {
       <FilterChips items={(['all', 'customer', 'driver', 'admin'] as const).map(key => ({ key, label: key === 'all' ? c.all : c[key] }))} value={role} onChange={setRole} />
     </View>
     <ErrorText>{actionError || (error && err(error))}</ErrorText>
-    {!data ? <Loading /> : data.length === 0 ? <Empty icon="people-outline" title={c.nothingHere} />
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="people-outline" title={c.nothingHere} />
       : data.map((user, i) => <Appear key={user.id} index={i}>
         <Card>
           <Row style={{ justifyContent: 'space-between' }}>

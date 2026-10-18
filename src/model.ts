@@ -140,12 +140,24 @@ export function nearestCity(point: Point): CityId {
   }).id;
 }
 
-// ponytail: straight-line km x1.3 road factor; swap for a routing API once West Bank road data is validated.
-export function distanceKm(a: Point, b: Point): number {
+// ponytail: 15 km as the crow flies from a served city centre stands in for real service zones; the app and the API share the bound.
+export const SERVICE_KM = 15;
+export function servedCity(point: Point): CityId | null {
+  const near = nearestCity(point);
+  return crowKm(city(near), point) <= SERVICE_KM ? near : null;
+}
+
+/** Straight-line km (haversine). */
+export function crowKm(a: Point, b: Point): number {
   const rad = (deg: number) => deg * Math.PI / 180;
   const h = Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 +
     Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
-  return Math.round(2 * 6371 * Math.asin(Math.sqrt(h)) * 1.3 * 10) / 10;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+// ponytail: straight-line km x1.3 road factor; swap for a routing API once West Bank road data is validated.
+export function distanceKm(a: Point, b: Point): number {
+  return Math.round(crowKm(a, b) * 1.3 * 10) / 10;
 }
 
 /** Parcels cost the standard price wherever they go; a large one adds its extra (SPEC-parcel-standard.md). */
@@ -198,10 +210,16 @@ export function commissionOn(price: number, rate: number): number {
   return Math.round(price * rate * 100) / 100;
 }
 
+/** Arabic-Indic and Persian digits typed on an Arabic keyboard, as ASCII. */
+export const latinDigits = (text: string) =>
+  text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
+/** A number typed in a form: Arabic-Indic digits and the Arabic decimal separator (٫) or a comma are normal input here. */
+export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
+
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
 // and +970 / 00970 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
 export function normalizePhone(input: string): string | null {
-  const ascii = input.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[\s-]/g, '');
+  const ascii = latinDigits(input).replace(/[\s-]/g, '');
   const match = /^(?:(?:\+|00)?970|0)?(5[69]\d{7})$/.exec(ascii);
   return match ? `0${match[1]}` : null;
 }

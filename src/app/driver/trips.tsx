@@ -13,7 +13,7 @@ export default function Trips() {
   return <Screen onRefresh={reload}>
     <Header title={c.trips} />
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading /> : data.length === 0
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
       ? <Empty icon="navigate-outline" title={c.noTrips} body={c.noTripsDesc} action={<Button title={c.jobs} onPress={() => router.navigate('/driver')} />} />
       : <>
         {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}

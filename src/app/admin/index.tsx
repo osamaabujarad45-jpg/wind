@@ -31,7 +31,7 @@ export default function Dashboard() {
     <Txt style={{ marginTop: -12, marginBottom: 14 }}>{fill(c.hello, { name: me?.user.name ?? '' })}</Txt>
     {pushSupported() && <ListGroup><PushRow /></ListGroup>}
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading /> : <>
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>

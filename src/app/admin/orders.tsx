@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../api';
-import { ltr, orderCode, type OrderStatus, type SafetyKind } from '../../model';
+import { latinDigits, ltr, orderCode, type OrderStatus, type SafetyKind } from '../../model';
 import { MoreOrders, OrderRow, useFormat, useOrders } from '../../parts';
 import { Button, Card, Empty, ErrorText, Field, FilterChips, Header, Loading, Screen, Txt, useCopy } from '../../ui';
 
@@ -21,7 +21,7 @@ export default function AdminOrders() {
     <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={setStatus} />
     {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
-      {!data ? <Loading /> : data.length === 0
+      {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
         ? <Empty icon="receipt-outline" title={c.nothingHere} />
         : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}
     </>}
@@ -48,7 +48,7 @@ function Incidents() {
   const call = (phone: string) => () => { Linking.openURL(`tel:${phone}`).catch(() => setFailure(c.callUnavailable)); };
   return <>
     <ErrorText>{(error && err(error)) || failure}</ErrorText>
-    {!data ? <Loading /> : open.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : open.map(d => <Card key={d.id} tone="clay">
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : open.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : open.map(d => <Card key={d.id} tone="clay">
       <Txt variant="title">{`${c[`safety_${d.kind}`]} · ${time(d.createdAt)}`}</Txt>
       <Txt variant="caption" style={{ marginBottom: 6 }}>{`${c.reporter}: ${c[d.reporterRole]} · ${d.reporterName}`}</Txt>
       {!!d.note && <Txt variant="body" style={{ marginBottom: 8 }}>{d.note}</Txt>}
@@ -71,7 +71,7 @@ function Incidents() {
 
 // Blank = no credit; whole shekels 1–50 (Arabic-Indic digits allowed); undefined = invalid.
 function creditOf(text = '') {
-  const t = text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
+  const t = latinDigits(text.trim());
   if (!t) return null;
   const n = Number(t);
   return Number.isInteger(n) && n >= 1 && n <= 50 ? n : undefined;
@@ -96,7 +96,7 @@ function Disputes() {
   }
   return <>
     <ErrorText>{(error && err(error)) || failure}</ErrorText>
-    {!data ? <Loading /> : open.length === 0 ? <Empty icon="flag-outline" title={c.noDisputes} /> : open.map(d => <Card key={d.id}>
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : open.length === 0 ? <Empty icon="flag-outline" title={c.noDisputes} /> : open.map(d => <Card key={d.id}>
       <Button title={`${ltr(orderCode(d.orderId))} · ${d.customerName}`} variant="ghost" size="sm" icon="receipt-outline"
         onPress={() => router.push(`/order/${d.orderId}`)} />
       <Txt variant="body" style={{ marginBottom: 10 }}>{d.reason}</Txt>

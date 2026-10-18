@@ -97,6 +97,15 @@ try {
   assert.ok(list[0].lastRemittanceAt > 0);
   assert.equal(list[1].owedCents, 0);
 
+  // An older handover stays confirmable however many newer entries follow it.
+  const handover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1 } });
+  for (let i = 0; i < 50; i++) await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, reason: 'Fuel card top-up' } });
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.equal(cash.entries.filter(e => e.status !== 'pending').length, 50); // the history stays one page
+  assert.deepEqual(cash.entries.filter(e => e.status === 'pending').map(e => e.id), [handover.id]);
+  await call(`/driver/cash/${handover.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, reason: 'Undo the fuel top-ups' } }); // owed as before
+
   // ---- Ship review: exact rounding, returned jobs, no payouts, no leaving with debt, append-only ----
   assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, asserted independently of the server formula
   let returned = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });

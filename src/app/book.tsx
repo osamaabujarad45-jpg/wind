@@ -7,7 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
@@ -95,8 +95,7 @@ export default function Book() {
         ]);
         const point = { latitude: coords.latitude, longitude: coords.longitude };
         // GPS adds a pin to the chosen city; it does not silently turn an unsupported area into that city.
-        // ponytail: 15km GPS sanity bound; approved service zones must own actual coverage checks.
-        if (nearestCity(point) !== pickupCity || distanceKm(city(pickupCity), point) > 15) {
+        if (servedCity(point) !== pickupCity) {
           setLocationError(c.locationMismatch);
           return;
         }
@@ -281,7 +280,10 @@ export default function Book() {
           <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
           <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
             <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked}
-              onPress={() => { haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint); }} />
+              onPress={() => { // the landmark belongs to its place, so it travels with it
+                haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
+                setPickupNote(dropoffNote); setDropoffNote(pickupNote); setInvalid({ ...invalid, pickupNote: invalid.dropoffNote, dropoffNote: invalid.pickupNote });
+              }} />
           </View>
         </View>
         <Row gap={8} style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair, justifyContent: 'space-between' }}>
@@ -415,9 +417,8 @@ export default function Book() {
     {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
       start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
       onClose={() => setPinFor(null)} onConfirm={point => {
-        const near = nearestCity(point);
-        // ponytail: 15km from a served city centre stands in for real service zones (same bound as GPS).
-        if (distanceKm(city(near), point) > 15) { setLocationError(c.locationMismatch); setPinFor(null); return; }
+        const near = servedCity(point);
+        if (!near) { setLocationError(c.locationMismatch); setPinFor(null); return; }
         haptic.success();
         if (pinFor === 'pickup') { setPickupCity(near); setPickupPoint(point); } else { setDropoffCity(near); setDropoffPoint(point); }
         if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));

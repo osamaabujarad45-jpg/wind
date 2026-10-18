@@ -44,7 +44,7 @@ export default function Roads() {
     <Header title={c.roads} back />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.roadsIntro}</Txt>
     <ErrorText>{(error && err(error)) || failure}</ErrorText>
-    {!data ? <Loading /> : data.length === 0 ? <Empty icon="trail-sign-outline" title={c.noRoads} body={isAdmin ? c.noRoadsAdmin : undefined} />
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="trail-sign-outline" title={c.noRoads} body={isAdmin ? c.noRoadsAdmin : undefined} />
       : data.map(road => <Card key={road.id}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <View style={{ flex: 1 }}>

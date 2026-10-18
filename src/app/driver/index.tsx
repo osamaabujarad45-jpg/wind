@@ -5,7 +5,7 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, SUPPORT_URL, useApi } from '../../api';
-import { canTake, cities, city, commissionOn, distanceKm, ltr, offerRange, type CityId, type Order } from '../../model';
+import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { RouteLine, ServiceIcon, useFormat } from '../../parts';
 import { useSession } from '../../session';
@@ -120,7 +120,7 @@ export default function Jobs() {
     {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
-    {!data ? <Loading /> : data.length === 0
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
       ? <Empty icon="hourglass-outline" title={c.noJobs} body={c.noJobsDesc} />
       : data.map(order => {
         const earn = order.price - commissionOn(order.price, rate);
@@ -164,7 +164,7 @@ export default function Jobs() {
               const ok = Number.isInteger(n) && n >= lo && n <= hi;
               return <View style={{ marginTop: 12 }}>
                 <Field label={`${c.offerPrice} (₪)`} icon="cash-outline" keyboardType="number-pad" value={offering.text} maxLength={4}
-                  onChangeText={text => setOffering({ id: order.id, text: text.replace(/\D/g, '') })}
+                  onChangeText={text => setOffering({ id: order.id, text: latinDigits(text).replace(/\D/g, '') })}
                   error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"

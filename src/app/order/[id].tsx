@@ -46,7 +46,7 @@ export default function OrderScreen() {
   const advanceAttempt = useRef<{ orderId: number; body: { requestId: string; expectedStatus: string; code: string } } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
   const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
-  const problemAttempt = useRef<{ orderId: number; requestId: string } | null>(null);
+  const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
@@ -63,7 +63,7 @@ export default function OrderScreen() {
     return () => clearInterval(timer);
   }, []));
 
-  if (!order || !me) return <Screen><Header title={c.orders} back />{error ? <ErrorText>{err(error)}</ErrorText> : <Loading />}</Screen>;
+  if (!order || !me) return <Screen><Header title={c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
   const role = me.user.role;
   const isCustomer = role === 'customer', isDriver = role === 'driver', isAdmin = role === 'admin';
@@ -81,6 +81,7 @@ export default function OrderScreen() {
   const decisionReason = decision.id === id ? decision.reason : '';
   const disputeReason = dispute.id === id ? dispute.reason : '';
   const needsCode = (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
+  const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
@@ -99,8 +100,9 @@ export default function OrderScreen() {
         body = advanceAttempt.current.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
-        if (problemAttempt.current?.orderId !== order.id) problemAttempt.current = { orderId: order.id, requestId: newRequestId() };
-        body = { ...body, requestId: problemAttempt.current.requestId, expectedStatus: 'in_transit' };
+        if (problemAttempt.current?.orderId !== order.id || problemAttempt.current.status !== order.status)
+          problemAttempt.current = { orderId: order.id, status: order.status, requestId: newRequestId() };
+        body = { ...body, requestId: problemAttempt.current.requestId, expectedStatus: order.status };
       }
       const next = await api<Order | { ok: true }>(path, body);
       if (key === 'advance') { advanceAttempt.current = null; setAdvanceLocked(null); }
@@ -246,8 +248,9 @@ export default function OrderScreen() {
             <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{c.safetyPaused}</Txt>
           </Row>
         </View>}
-        {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
-          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{`${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
+        {order.exceptionReason && ['on_hold', 'returning', 'cancelled'].includes(order.status) &&
+          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{order.status === 'cancelled' // only a failed pickup cancels with a reason
+            ? `${c.pickupFailed}: ${c[`pickup_${order.exceptionReason}`]}` : `${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
       </Card>
     </Appear>}
 
@@ -374,13 +377,13 @@ export default function OrderScreen() {
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
           onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />}
-        {order.status === 'in_transit' && order.service !== 'ride' && <Card tone="muted">
-          <Txt variant="title" style={{ marginBottom: 8 }}>{c.reportProblem}</Txt>
-          <FilterChips items={exceptionReasons.map(key => ({ key, label: c[`reason_${key}`] }))} value={problem.reason}
+        {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
+          <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
+          <FilterChips items={exceptionReasons.map(key => ({ key, label: atPickup ? c[`pickup_${key}`] : c[`reason_${key}`] }))} value={problem.reason}
             onChange={reason => setProblem(p => ({ ...p, reason }))} />
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
-          <Button title={c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy}
-            onPress={() => confirm(c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
+          <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy}
+            onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
               { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), c.yes, c.no)} />
         </Card>}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
@@ -389,7 +392,7 @@ export default function OrderScreen() {
             .catch(() => setActionError(c.mapUnavailable));
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
-        {order.status === 'assigned' && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
+        {(order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
       </>}
 
@@ -446,7 +449,7 @@ export default function OrderScreen() {
           onPress={() => act('dispute', `/orders/${order.id}/dispute`, { reason: disputeReason.trim() }, () => setDispute({ id, reason: '' }))} />
       </Card>}
 
-      {((isCustomer || isAdmin) && ['searching', 'assigned'].includes(order.status)) &&
+      {((isCustomer || isAdmin) && ['searching', 'assigned', 'at_pickup'].includes(order.status)) && // until the courier holds it
         <Button title={c.cancelOrder} variant="danger" size="sm" icon="close-circle-outline" loading={busy === 'cancel'}
           onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />}
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
@@ -506,7 +509,7 @@ const quickReplies = ['qrOnMyWay', 'qrArrived', 'qrCallMe', 'qrLate'] as const;
 function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean; live: boolean }) {
   const { c, err, row, rtl } = useCopy();
   const { time } = useFormat();
-  const { data, error, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, live ? 5000 : undefined);
+  const { data, error, reload, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, live ? 5000 : undefined);
   // Announce only new messages from the other side; a live region around the list would re-read it every poll.
   const seen = useRef<number | null>(null);
   useEffect(() => {
@@ -551,6 +554,10 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
           <Txt variant="micro" style={styles.bubbleMeta}>{time(m.createdAt)}</Txt>
         </View>)}
       </View>}
+    {error && data && <>{/* the history and the draft stay; say newer messages may be missing */}
+      <ErrorText>{c.chatPaused}</ErrorText>
+      <Button title={c.retry} icon="refresh" variant="ghost" size="sm" onPress={reload} />
+    </>}
     {canWrite && <>
       <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         {quickReplies.map(key => <Press key={key} accessibilityLabel={`${c.send}: ${c[key]}`} disabled={busy} onPress={() => send(c[key])} style={styles.quick}>

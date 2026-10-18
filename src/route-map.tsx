@@ -125,7 +125,7 @@ function LiveMap(props: RouteMapProps) {
 
   // Road lines arrive after the map (and the driver leg changes as the car moves).
   const { road, approach } = props;
-  const lineKey = [road, approach].map(l => l ? `${l.length}:${l[0]}:${l[l.length - 1]}` : '').join('|');
+  const lineKey = JSON.stringify([road, approach]); // every point: a reroute can keep its length and ends
   useEffect(() => {
     if (!map) return;
     for (const [id, l] of [['road', road], ['approach', approach]] as const)
@@ -201,13 +201,14 @@ function LiveMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onFail, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);
   const { failed } = useMap(host, [center], language, { padding: 0, picker: true }, m => {
     m.jumpTo({ center: [center.longitude, center.latitude], zoom: 16 });
     m.on('moveend', () => { const p = m.getCenter(); onChange({ latitude: p.lat, longitude: p.lng }); }); // first callback wins; callers pass a state setter
   });
+  useEffect(() => { if (failed) onFail?.(); }, [failed]); // eslint-disable-line react-hooks/exhaustive-deps
   if (failed) return null;
   return <View style={{ height, width: '100%' }}>
     <View ref={host} style={StyleSheet.absoluteFill} />

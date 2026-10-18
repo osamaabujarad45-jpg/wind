@@ -12,9 +12,9 @@ export default function Receipt() {
   const { me } = useSession();
   const { c, language, money, err, rtl } = useCopy();
   const { time } = useFormat();
-  const { data: order, error } = useApi<Order>(`/orders/${id}`);
+  const { data: order, error, reload } = useApi<Order>(`/orders/${id}`);
 
-  if (!order || !me) return <Screen><Header title={c.receipt} back />{error ? <ErrorText>{err(error)}</ErrorText> : <Loading />}</Screen>;
+  if (!order || !me) return <Screen><Header title={c.receipt} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
   const role = me.user.role;
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;

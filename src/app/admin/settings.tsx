@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
-import { fractionSettings, type Settings } from '../../model';
+import { fractionSettings, typedNumber, type Settings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
@@ -26,7 +26,7 @@ export default function AdminSettings() {
     setError('');
     setMessage('');
     try {
-      await api('/admin/settings', Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v.replace(',', '.'))])));
+      await api('/admin/settings', Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)])));
       await refresh();
       haptic.success();
       setMessage(c.saved);
@@ -43,7 +43,7 @@ export default function AdminSettings() {
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad"
-        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(Number(values[key]) * 100) || 0}%)` : ' ₪'}`}
+        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
         value={values[key]} onChangeText={text => setValues(v => ({ ...v, [key]: text }))} />)}
     </Card>)}
     <Promos />
@@ -60,8 +60,6 @@ export default function AdminSettings() {
 
 type Promo = { id: number; code: string; amount: number; maxUses: number; uses: number; expiresAt: number; firstOrderOnly: boolean; active: boolean; live: boolean };
 const blank = { code: '', amount: '10', maxUses: '100', days: '30', firstOrderOnly: false };
-// Arabic-Indic digits are normal input on Palestinian keyboards.
-const whole = (text: string) => Number(text.trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0)));
 
 // Promo codes (SPEC-promo-codes.md): fixed shekel discounts Wind funds through the driver cash ledger.
 function Promos() {
@@ -76,7 +74,7 @@ function Promos() {
   async function create() {
     setBusy(true); setError(''); setMessage('');
     try {
-      await api('/admin/promos', { code: form.code.trim(), amount: whole(form.amount), maxUses: whole(form.maxUses), days: whole(form.days), firstOrderOnly: form.firstOrderOnly });
+      await api('/admin/promos', { code: form.code.trim(), amount: typedNumber(form.amount), maxUses: typedNumber(form.maxUses), days: typedNumber(form.days), firstOrderOnly: form.firstOrderOnly });
       haptic.success(); setForm(blank); setMessage(c.promoCreated); reload();
     } catch (e) { haptic.error(); setError(err(e)); } finally { setBusy(false); }
   }

@@ -7,7 +7,7 @@ import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
 import { HelpLinks } from '../parts';
 import { InstallLink } from '../install-link';
 import { useSession, type Me } from '../session';
-import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
 const HERO = FadeInUp.duration(400);
 const FORM = FadeInDown.duration(300).delay(120);
@@ -26,7 +26,9 @@ export default function Auth() {
   const [vehicle, setVehicle] = useState<Vehicle>('car');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [registrationOpen, setRegistrationOpen] = useState(false);
+  // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
+  const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
+  const [policyTry, setPolicyTry] = useState(0);
   // Enter moves through the sign-up fields and submits from the password (web keyboard users).
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
@@ -34,10 +36,10 @@ export default function Auth() {
   useEffect(() => {
     let active = true;
     void api<{ registrationOpen: boolean }>('/auth/options').then(options => {
-      if (active) setRegistrationOpen(options.registrationOpen);
-    }).catch(() => { /* Keep signup closed when the server cannot confirm its policy. */ });
+      if (active) setRegistration(options.registrationOpen ? 'open' : 'closed');
+    }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
-  }, []);
+  }, [policyTry]);
 
   async function submit() {
     if (busy) return;
@@ -81,7 +83,11 @@ export default function Auth() {
           <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
             onChange={next => { setMode(next); setError(''); }} />
           <View style={{ height: 10 }} />
-          {mode === 'up' && !registrationOpen ? <>
+          {mode === 'up' && registration === null ? <Loading />
+          : mode === 'up' && registration === 'failed' ? <>
+            <Txt center>{c.offlineDesc}</Txt>
+            <Loading failed onRetry={() => { setRegistration(null); setPolicyTry(n => n + 1); }} />
+          </> : mode === 'up' && registration === 'closed' ? <>
             <Txt center style={{ marginBottom: 12 }}>{c.err_registration_closed}</Txt>
             {SUPPORT_URL && <Button title={c.support} icon="mail-outline" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
           </> : <>
@@ -124,7 +130,7 @@ export default function Auth() {
           </Press>}
           </>}
         </Card>
-        <HelpLinks privacy={!(mode === 'up' && registrationOpen)} />{/* sign-up links privacy beside its consent box */}
+        <HelpLinks privacy={!(mode === 'up' && registration === 'open')} />{/* sign-up links privacy beside its consent box */}
         <InstallLink />
       </Animated.View>
     </Screen>

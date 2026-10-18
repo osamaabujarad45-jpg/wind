@@ -421,7 +421,10 @@ export function Stat({ label, value, tone = 'card', index = 0 }: { label: string
   </Appear>;
 }
 
-export function Loading() {
+/** The first load in flight; once it has failed, a retry instead of a spinner that never ends (the screen's ErrorText says why). */
+export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () => void }) {
+  const { c } = useCopy();
+  if (failed && onRetry) return <View style={{ paddingVertical: 16 }}><Button title={c.retry} icon="refresh" variant="soft" onPress={onRetry} /></View>;
   return <View style={{ padding: 32 }}><ActivityIndicator color={palette.olive} /></View>;
 }
 

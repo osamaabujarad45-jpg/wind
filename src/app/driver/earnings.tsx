@@ -17,7 +17,7 @@ export default function Earnings() {
     <Header title={c.earnings} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.earningsNote}</Txt>
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading /> : <>
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
         <Stat index={0} tone="olive" label={`${c.today} · ${fill(c.tripsCount, { n: data.today.jobs })}`} value={money(data.today.net)} />
         <Stat index={1} label={`${c.week} · ${fill(c.tripsCount, { n: data.week.jobs })}`} value={money(data.week.net)} />

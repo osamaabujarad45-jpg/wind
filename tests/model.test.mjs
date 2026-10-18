@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -24,6 +24,14 @@ assert.equal(nextStatus('cancelled'), 'cancelled');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);
 assert.equal(nearestCity({ latitude: 31.9038, longitude: 35.2034 }), 'ramallah');
+// A pin belongs to a city only within its 15 km service bound.
+assert.equal(servedCity({ latitude: 31.90, longitude: 35.19 }), 'ramallah');
+assert.equal(servedCity({ latitude: 0, longitude: 0 }), null);
+assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0734 }), 'ramallah'); // 12 km as the crow flies (16 by road)
+assert.equal(servedCity({ latitude: 31.40, longitude: 34.40 }), null); // nearest is Hebron, but 70 km out
+// Arabic keyboards type Arabic-Indic or Persian digits.
+assert.equal(latinDigits('٧١ ۴۵'), '71 45');
+assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5'), typedNumber('12')], [20, 0.5, 1.5, 12]);
 assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
 assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
 assert.deepEqual(vehicleServices.bicycle, ['parcel']);

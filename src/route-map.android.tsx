@@ -73,9 +73,9 @@ function LiveMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onFail, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const [failed, setFailed] = useState(false);
-  if (failed) return null; // like the web picker: the sheet keeps its confirm button and the starting point
-  return <MapPage key={language} config={{ mode: 'pin', language, center }} height={height} onCenter={onChange} onFail={() => setFailed(true)} />;
+  if (failed) return null; // the sheet says so and offers no pin to confirm
+  return <MapPage key={language} config={{ mode: 'pin', language, center }} height={height} onCenter={onChange} onFail={() => { setFailed(true); onFail?.(); }} />;
 }

@@ -9,8 +9,8 @@ import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  activeStatuses, cities, city, commissionOn, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
+  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
@@ -832,6 +832,13 @@ function pointOf(p: any): { latitude: number; longitude: number } | null {
   if (!finite(p.latitude, 90) || !finite(p.longitude, 180)) fail(400, 'invalid_location');
   return { latitude: p.latitude, longitude: p.longitude };
 }
+// A booking pin must sit within the service bound of the city it is booked under (the app also checks it is the nearest;
+// twin cities like Ramallah and Al-Bireh make that too strict to refuse here).
+function bookedPoint(p: unknown, id: CityId) {
+  const point = pointOf(p);
+  if (point && crowKm(city(id), point) > SERVICE_KM) fail(400, 'outside_area');
+  return point;
+}
 
 // Smart recommended price (SPEC-driver-offers.md): the checkpoint-aware road route the map draws, plus Wind's own live
 // road reports (/api/roads). Without routing, straight km × 1.3 at 50 km/h.
@@ -840,7 +847,7 @@ async function recommend(user: User, b: Row) {
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
-  const from = pointOf(b.pickupPoint) ?? city(b.pickupCity), to = pointOf(b.dropoffPoint) ?? city(b.dropoffCity);
+  const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
   let trip: RoadRoute | null = null;
   try { trip = await roadRoute(from, to); } catch { /* estimate */ }
@@ -873,7 +880,7 @@ function createOrder(user: User, body: Row, smart?: { price: number; km: number 
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
-  const point = pointOf(body.pickupPoint), dropoff = pointOf(body.dropoffPoint);
+  const point = bookedPoint(body.pickupPoint, body.pickupCity), dropoff = bookedPoint(body.dropoffPoint, body.dropoffCity);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
   // Who receives a parcel or load (SPEC-parcel-recipient.md); optional, never on a ride.
   const recipientPhone = body.recipientPhone == null || body.recipientPhone === '' ? null
@@ -1019,12 +1026,14 @@ route('GET', '/api/partner/orders/by-reference', ({ req, query }) => {
   return getOrder(mapping.order_id, partnerUser());
 }, true);
 route('GET', '/api/partner/orders/:id', ({ req, params }) => partnerOrder(req, Number(params[0])), true);
+// Until the courier holds the parcel the order can still be called off; at_pickup included, or a no-show strands both sides.
+const cancellable = ['searching', 'assigned', 'at_pickup'];
 route('POST', '/api/partner/orders/:id/cancel', ({ req, params }) => {
   const order = partnerOrder(req, Number(params[0]));
   if (order.status === 'cancelled') return order;
-  if (!['searching', 'assigned'].includes(order.status)) fail(409, 'cannot_cancel');
+  if (!cancellable.includes(order.status)) fail(409, 'cannot_cancel');
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
-  if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
+  if (order.driverId) queuePush([order.driverId], 'cancelled', order.id);
   return partnerOrder(req, order.id);
 }, true);
 
@@ -1051,10 +1060,10 @@ route('GET', '/api/orders/:id', ({ user, params }) => getOrder(Number(params[0])
 route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   const order = getOrder(Number(params[0]), user);
   if (order.status === 'cancelled' && (user.role === 'admin' || user.id === order.customerId)) return order;
-  const allowed = (user.role === 'admin' || user.id === order.customerId) && ['searching', 'assigned'].includes(order.status);
+  const allowed = (user.role === 'admin' || user.id === order.customerId) && cancellable.includes(order.status);
   if (!allowed) fail(409, 'cannot_cancel');
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
-  if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
+  if (order.driverId) queuePush([order.driverId], 'cancelled', order.id);
   if (user.role === 'admin') queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
   return getOrder(order.id, user);
 });
@@ -1399,7 +1408,7 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const current = getOrder(Number(params[0]), user);
-      if (current.driverId !== user.id || current.status !== 'assigned') fail(409, 'cannot_release');
+      if (current.driverId !== user.id || !['assigned', 'at_pickup'].includes(current.status)) fail(409, 'cannot_release'); // nothing collected yet
       safetyFree(current.id);
       const now = Date.now();
       // ponytail: a discount capped by a cheaper accepted offer stays capped; restore from the redemption if it matters.
@@ -1445,10 +1454,18 @@ function advanceOrder(user: User, id: number, body: Row) {
 
 function reportException(user: User, id: number, body: Row) {
   const r = one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
-  if (r.driver_id !== user.id || r.status !== 'in_transit' || r.service === 'ride') fail(409, 'cannot_report');
+  if (r.driver_id !== user.id || !['at_pickup', 'in_transit'].includes(r.status) || r.service === 'ride') fail(409, 'cannot_report');
   safetyFree(r.id);
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const now = Date.now();
+  if (r.status === 'at_pickup') {
+    // Nothing was collected, so there is nothing to hold or return: the pickup fails and the sender is told why.
+    run("UPDATE orders SET status = 'cancelled', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
+    run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
+      user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now);
+    queuePush([r.customer_id], 'cancelled', r.id);
+    return getOrder(r.id, user);
+  }
   run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id);
   run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
     user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now);
@@ -1672,7 +1689,9 @@ route('GET', '/api/driver/cash', ({ user }) => {
   need(user, 'driver');
   const { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents } = cashBalances('u.id = ?', user.id)[0]!;
   return { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents,
-    entries: all('SELECT * FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 50', user.id).map(cashEntry) };
+    // The latest 50, plus every handover still waiting on the courier, so an older one is never lost behind newer history.
+    entries: all(`SELECT * FROM cash_entries WHERE driver_id = ? AND (status = 'pending' OR id >= COALESCE(
+      (SELECT id FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 1 OFFSET 49), 0)) ORDER BY id DESC`, user.id, user.id).map(cashEntry) };
 });
 
 route('POST', '/api/driver/cash/:id/confirm', ({ user, params, body }) => {
@@ -1812,8 +1831,14 @@ const editUser: Handler = ({ user, params, body }) => {
   if (roleChanged && target.role === 'driver') cashSettled(target.id);
   if (selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
   if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at) fail(409, 'pending_approval');
+  let carrying: Row[] = [];
   db.exec('BEGIN IMMEDIATE');
   try {
+    // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
+    if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
+      carrying = all(`SELECT id, status, service, customer_id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+    }
     run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?,
       phone_verified_at = ?, email_verified_at = ?, approved_at = ? WHERE id = ?`,
       name, phone, email, status, role, vehicle, phone !== target.phone ? null : target.phone_verified_at ?? null,
@@ -1825,8 +1850,24 @@ const editUser: Handler = ({ user, params, body }) => {
       run("UPDATE subscriptions SET status = 'rejected' WHERE user_id = ? AND status = 'pending'", target.id);
     }
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) run('DELETE FROM sessions WHERE user_id = ?', target.id);
+    const now = Date.now();
+    for (const o of carrying) {
+      if (o.status === 'assigned' || o.status === 'at_pickup') // not collected yet: back to the pool, as a release would
+        run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = COALESCE(recommended_price, price), status = 'searching',
+          job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, now, now, o.id);
+      else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
+        run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id);
+        run('DELETE FROM proof_attempts WHERE order_id = ?', o.id);
+      }
+      run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
+        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status }), now);
+    }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
+  for (const o of carrying) {
+    if (o.status === 'assigned' || o.status === 'at_pickup') { queuePush([o.customer_id], 'released', o.id); newJobPush(o.service, o.id, o.customer_id, target.id); }
+    else if (o.status !== 'returning') queuePush([o.customer_id], 'returning', o.id);
+  }
   if (role === 'driver' && status === 'active' && target.status !== 'active') queuePush([target.id], 'approved', 0, '/driver');
   return toUser(one('SELECT * FROM users WHERE id = ?', target.id)!);
 };
