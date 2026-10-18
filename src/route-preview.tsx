@@ -44,10 +44,10 @@ export default function RoutePreview({ pickupTitle, dropoffTitle }: RouteMapProp
 
 const styles = StyleSheet.create({
   preview: { height: 156, backgroundColor: '#E6ECE3', overflow: 'hidden' },
-  road: { position: 'absolute', backgroundColor: '#FFFFFF', opacity: 0.75, borderRadius: 4 },
+  road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
-  pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: '#FFFFFF' },
-  dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: '#FFFFFF' },
+  pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
+  dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
   label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
   diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
 });

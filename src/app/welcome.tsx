@@ -76,7 +76,7 @@ function PriceArt({ label }: { label: string }) {
   return <View style={{ alignItems: 'center', gap: 18 }}>
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
     <View style={[styles.saveBadge, { flexDirection: row }]}>
-      <Ionicons name="pricetag" size={16} color="#FFFFFF" />
+      <Ionicons name="pricetag" size={16} color={palette.onFill} />
       <Text style={styles.saveText}>{label}</Text>
     </View>
     <Txt variant="caption">{c.cash}</Txt>
@@ -91,7 +91,7 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
       {steps.map((step, i) => <Animated.View key={step} entering={reduced ? undefined : FadeInDown.duration(280).delay(100 + i * 110)}>
         <Row gap={10} style={{ paddingVertical: 5 }}>
           <View style={[styles.stepDot, i < 2 && { backgroundColor: palette.olive }]}>
-            {i < 2 && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+            {i < 2 && <Ionicons name="checkmark" size={12} color={palette.onFill} />}
           </View>
           <Txt variant={i < 2 ? 'title' : 'body'} style={{ flex: 1, fontSize: 14 }}>{step}</Txt>
         </Row>
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   dotOn: { width: 24, backgroundColor: palette.olive },
   slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.forest, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
-  saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  saveText: { color: palette.onFill, fontSize: 16, fontWeight: '900' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.line, alignItems: 'center', justifyContent: 'center' },
   code: { fontSize: 28, fontWeight: '900', color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },

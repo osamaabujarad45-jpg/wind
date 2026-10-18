@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking } from '../src/booking.ts';
+import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
@@ -8,6 +8,12 @@ const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablu
 const pending = newBooking(payload);
 assert.deepEqual(readBooking(JSON.stringify(pending)), pending); // restart keeps the same command and terms
 assert.notEqual(newBooking(payload).requestId, pending.requestId);
+// Chat retry: text A fails (reply lost), quick reply B goes out, A is resent with its first id.
+const chatIds = retryIds(), firstA = chatIds.for('A');
+chatIds.for('B'); chatIds.sent('B');
+assert.equal(chatIds.for('A'), firstA, 'a failed text keeps its id after another text was sent');
+chatIds.sent('A');
+assert.notEqual(chatIds.for('A'), firstA, 'the same text sent again after success is a new message');
 assert.equal(readBooking(null), null);
 const promo = newBooking({ ...payload, promoCode: 'WELCOME10', expectedDiscount: 10 });
 assert.deepEqual(readBooking(JSON.stringify(promo)), promo);

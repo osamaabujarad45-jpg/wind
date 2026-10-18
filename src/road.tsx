@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApi } from './api';
-import { etaRange, roadPath } from './map-math';
+import { etaRange, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
@@ -21,11 +21,16 @@ export function useRoad(order: Order | undefined) {
   const toPickup = !!order && ['assigned', 'at_pickup', 'returning'].includes(order.status);
   // A courier with other stops first is not heading straight here: no ETA or approach line (SPEC-courier-run-eta.md).
   const driver = active && !order?.sharedRun ? order?.driverLocation : null;
-  const fetched = useApi<RoadRoute>(driver && from && to ? roadPath(driver, toPickup ? from : to, 3, driver.heading) : null).data;
-  // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched.
-  const [kept, setKept] = useState<RoadRoute | undefined>();
-  if (fetched && fetched !== kept) setKept(fetched);
-  const eta = driver ? fetched ?? kept : undefined;
+  const target = toPickup ? from : to;
+  const approach = useApi<RoadRoute>(driver && target ? roadPath(driver, target, 3, driver.heading) : null);
+  // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
+  const fetched = approach.error ? undefined : approach.data;
+  // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched, but only to the same stop:
+  // a new stop or a failed fetch drops it rather than show an ETA to somewhere the driver is no longer heading.
+  const stop = order && target ? `${order.id}:${target.latitude},${target.longitude}` : '';
+  const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
+  if (fetched && (fetched !== kept?.route || kept.stop !== stop)) setKept({ stop, route: fetched });
+  const eta = driver ? shownApproach(fetched, !!approach.error, kept, stop) : undefined;
   // Closed checkpoints the shown routes steer around, or still cross (SPEC-checkpoint-routing.md).
   const shown = [route, driver ? eta : undefined];
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];

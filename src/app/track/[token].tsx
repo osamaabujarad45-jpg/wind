@@ -20,8 +20,10 @@ export default function TrackScreen() {
   const { c, language } = useCopy();
   const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
-  const etaData = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000).data;
-  const eta = etaData?.minutes, delayed = !!etaData?.delayed;
+  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000);
+  // useApi keeps the last answer when a refresh fails: show no estimate (or approach line) rather than an old one.
+  const etaData = etaApi.data, etaFresh = !etaApi.error;
+  const eta = etaFresh ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
 
@@ -37,7 +39,7 @@ export default function TrackScreen() {
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
       <RouteMap pickup={from} dropoff={to} focus={data.status === 'in_transit' ? 'dropoff' : 'pickup'} pickupTitle={from[language]} dropoffTitle={to[language]}
-        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location ? etaData?.approach : null} />
+        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location && etaFresh ? etaData?.approach : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>

@@ -70,7 +70,13 @@ try {
   assert.equal(cash.owedCents, commissionCents - 500);
   assert.equal(cash.remittedCents, 500);
 
-  const wrong = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 300 } });
+  // A retried handover replays the first entry; the same id for a different handover is refused.
+  const retry = { driverId: driver.user.id, amountCents: 300, requestId: randomUUID() };
+  const wrong = await call('/admin/cash/remittance', { token: admin.token, body: retry });
+  assert.equal((await call('/admin/cash/remittance', { token: admin.token, body: retry })).id, wrong.id);
+  await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, amountCents: 301 }, expect: 409 });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...retry, reason: 'Same id, other form' }, expect: 409 });
+  await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, requestId: 'not-a-uuid' }, expect: 400 });
   await call(`/driver/cash/${wrong.id}/confirm`, { token: driver.token, body: { decision: 'dispute' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.owedCents, commissionCents - 500); // disputed never counts

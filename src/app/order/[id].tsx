@@ -6,10 +6,10 @@ import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi } from '../../api';
-import { canOrderAgain, canSendAnother, newRequestId } from '../../booking';
+import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
-import { RouteLine, ServiceIcon, serviceMeta, statusText, useFormat } from '../../parts';
+import { RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { locationState } from '../../location-state';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
@@ -50,6 +50,7 @@ export default function OrderScreen() {
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
+  const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   const { road, approach, eta, avoids, through, closed } = useRoad(order);
@@ -151,6 +152,17 @@ export default function OrderScreen() {
           <Txt variant="caption">{c.scheduledHint}</Txt>
         </View>
       </Row>
+      {isCustomer && order.service === 'parcel' && (moving === null
+        ? <View style={{ marginTop: 10 }}><Button title={c.changeTime} variant="outline" size="sm" icon="time-outline"
+          onPress={() => { const slots = scheduleSlots(); setMoving(slots.includes(later) ? later : slots[0] ?? null); }} /></View>
+        : <View style={{ marginTop: 10, gap: 8 }}>
+          <SlotPicker slots={scheduleSlots()} value={moving} onChange={setMoving} />
+          <Row gap={8}>
+            <Button title={c.saveTime} size="sm" loading={busy === 'schedule'} disabled={!!busy || moving === later}
+              onPress={() => act('schedule', `/orders/${order.id}/schedule`, { scheduledFor: moving }, () => setMoving(null))} />
+            <Button title={c.keepTime} variant="ghost" size="sm" disabled={!!busy} onPress={() => setMoving(null)} />
+          </Row>
+        </View>)}
     </Card>}
     {finding && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
       <Radar color={serviceMeta[order.service].color} size={110}>
@@ -506,10 +518,19 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
+  // Resending a text after a failure reuses its id, so a reply lost in transit never posts it twice,
+  // even when a quick reply went out in between.
+  const [attempts] = useState(retryIds);
   async function send(body: string) {
-    if (!body.trim() || busy) return;
+    const text = body.trim();
+    if (!text || busy) return;
     setBusy(true); setFailure('');
-    try { setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: body.trim() })); if (body === draft) setDraft(''); haptic.success(); }
+    try {
+      setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: text, requestId: attempts.for(text) }));
+      attempts.sent(text);
+      if (body === draft) setDraft('');
+      haptic.success();
+    }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
   const recent = (data ?? []).slice(-20);
@@ -525,9 +546,9 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
       : <View style={{ gap: 6, marginBottom: 8 }}>
         {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine === rtl ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
           accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${time(m.createdAt)}`}>
-          {!m.mine && <Txt variant="micro">{c[m.role]}</Txt>}
+          {!m.mine && <Txt variant="micro" style={styles.bubbleMeta}>{c[m.role]}</Txt>}
           <Txt>{m.body}</Txt>
-          <Txt variant="micro">{time(m.createdAt)}</Txt>
+          <Txt variant="micro" style={styles.bubbleMeta}>{time(m.createdAt)}</Txt>
         </View>)}
       </View>}
     {canWrite && <>
@@ -606,5 +627,6 @@ const styles = StyleSheet.create({
   digit: { width: 30, height: 40, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', lineHeight: 40, fontSize: 22, fontWeight: '900', color: palette.clayInk, overflow: 'hidden' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
   quick: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 22, backgroundColor: palette.olivePale },
 });

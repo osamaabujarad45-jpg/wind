@@ -11,7 +11,7 @@ import { useSession } from '../../session';
 import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 
 type Stats = {
-  gmv: number; commission: number; subscriptions: number; profit: number; completed: number; activeSubscriptions: number;
+  gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
   pendingDrivers: number; pendingSubscriptions: number; openIncidents: number;
   daily: { date: string; commission: number; subscriptions: number }[];
@@ -38,19 +38,20 @@ export default function Dashboard() {
         <Stat index={0} tone="olive" label={c.profit} value={money(data.profit)} />
         <Stat index={1} label={c.commissionRevenue} value={money(data.commission)} />
         <Stat index={2} label={c.subscriptionRevenue} value={money(data.subscriptions)} />
-        <Stat index={3} label={c.gmv} value={money(data.gmv)} />
-        <Stat index={4} label={c.completedCount} value={String(data.completed)} />
-        <Stat index={5} label={c.activeSubs} value={String(data.activeSubscriptions)} />
+        <Stat index={3} label={c.promoCost} value={money(data.discounts)} />
+        <Stat index={4} label={c.gmv} value={money(data.gmv)} />
+        <Stat index={5} label={c.completedCount} value={String(data.completed)} />
+        <Stat index={6} label={c.activeSubs} value={String(data.activeSubscriptions)} />
       </Row>
 
-      <Appear index={6}><ProfitChart daily={data.daily} /></Appear>
+      <Appear index={7}><ProfitChart daily={data.daily} /></Appear>
 
-      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0) && <Appear index={7}>
+      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0) && <Appear index={8}>
         {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/users')} />}
         {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/subscriptions')} />}
       </Appear>}
 
-      <Appear index={8}>
+      <Appear index={9}>
         <Card>
           <Txt variant="title" style={{ marginBottom: 10 }}>{c.allOrders}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
@@ -73,7 +74,7 @@ function Shortcut({ label, count, onPress }: { label: string; count: number; onP
   return <Press accessibilityLabel={`${label}: ${count}`} onPress={onPress}>
     <Card tone="clay">
       <Row>
-        <View style={styles.count}><Txt variant="title" style={{ color: '#FFFFFF' }} center>{count}</Txt></View>
+        <View style={styles.count}><Txt variant="title" style={{ color: palette.onFill }} center>{count}</Txt></View>
         <Txt variant="title" style={{ flex: 1 }}>{label}</Txt>
         <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clayInk} />
       </Row>

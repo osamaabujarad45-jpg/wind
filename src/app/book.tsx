@@ -6,15 +6,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, dayKey, pickupForm, HEBRON, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { againForm, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, nearestCity, optionsFor, orderCode, quote, roadAlerts, services, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
-import { RouteLine, serviceMeta, useFormat } from '../parts';
+import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
-import { Button, Card, Choices, confirm, ErrorText, FilterChips, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string; keep?: string }>();
@@ -52,10 +52,7 @@ export default function Book() {
   const [when, setWhen] = useState<'now' | 'later'>('now');
   const [slot, setSlot] = useState<number | null>(null);
   const slots = scheduleSlots();
-  const days = [...new Set(slots.map(dayKey))];
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
-  const [day, setDay] = useState<string | null>(null);
-  const shownDay = day && days.includes(day) ? day : chosen !== null ? dayKey(chosen) : days[0];
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);
   const pendingKey = `booking.${me!.user.id}`;
@@ -214,12 +211,14 @@ export default function Book() {
     sending.current = true;
     setBusy(true);
     setError('');
+    let saved = !!pending; // a pending command is already on the device
     try {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
         contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
         ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
         ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
+      saved = true;
       setPending(command);
       const order = await api<Order>('/orders', { ...command.payload, requestId: command.requestId });
       await storage.set(pendingKey, null, true).catch(() => {}); // a retained successful command safely replays
@@ -227,9 +226,9 @@ export default function Book() {
       router.replace(`/order/${order.id}`);
     } catch (e) {
       haptic.error();
-      // The command was persisted above, so a transport failure is "saved,
-      // awaiting connection" — the pending card below is already on screen.
-      if (!(e instanceof ApiError)) setError(c.bookingOfflineSaved);
+      // Once the command is persisted, a transport failure is "saved, awaiting connection" —
+      // the pending card below is already on screen. A failed write never claims it was saved.
+      if (!(e instanceof ApiError)) setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
       else {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
@@ -267,7 +266,7 @@ export default function Book() {
           return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={c[s]} onPress={() => switchService(s)}
             style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
             <Ionicons name={serviceMeta[s].icon} size={16} color={on ? palette.lime : palette.secondary} />
-            <Text numberOfLines={1} style={[styles.serviceText, on && { color: '#FFFFFF' }]}>{c[s]}</Text>
+            <Text numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
           </Press>;
         })}
       </Row>
@@ -347,10 +346,7 @@ export default function Book() {
         <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
           onChange={setWhen} disabled={locked} />
         {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>
-          <FilterChips items={days.map(key => ({ key, label: dayLabel(slots.find(s => dayKey(s) === key)!, language, c) }))} value={shownDay}
-            onChange={key => { setDay(key); setSlot(slots.find(s => dayKey(s) === key) ?? null); }} />
-          <FilterChips items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(chosen)}
-            onChange={key => setSlot(Number(key))} />
+          <SlotPicker slots={slots} value={chosen} onChange={setSlot} />
           <Txt variant="caption">{c.scheduledHint}</Txt>
         </View>}
       </Card>
@@ -444,14 +440,6 @@ export default function Book() {
       }} />
   </KeyboardAvoidingView>;
 }
-
-const fmt = (language: 'ar' | 'en') => language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB';
-function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
-  const key = dayKey(ms);
-  return key === dayKey(Date.now()) ? c.today : key === dayKey(Date.now() + 86_400_000) ? c.tomorrow
-    : new Date(ms).toLocaleDateString(fmt(language), { weekday: 'short', day: 'numeric', timeZone: HEBRON });
-}
-const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(fmt(language), { hour: 'numeric', minute: '2-digit', timeZone: HEBRON });
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 

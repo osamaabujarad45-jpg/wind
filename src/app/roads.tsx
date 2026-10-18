@@ -80,7 +80,7 @@ export default function Roads() {
             disabled={!on && draft.cities.length >= 3}
             onPress={() => setDraft(d => ({ ...d, cities: on ? d.cities.filter(x => x !== item.id) : [...d.cities, item.id] }))}
             style={{ minHeight: 44, paddingHorizontal: 14, borderRadius: 22, justifyContent: 'center', backgroundColor: on ? palette.forest : palette.card }}>
-            <Txt variant="label" style={{ color: on ? '#FFFFFF' : palette.ink }}>{item[language]}</Txt>
+            <Txt variant="label" style={{ color: on ? palette.onFill : palette.ink }}>{item[language]}</Txt>
           </Press>;
         })}
       </View>

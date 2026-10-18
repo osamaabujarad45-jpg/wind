@@ -233,6 +233,12 @@ for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'
     db.exec(`ALTER TABLE users ADD COLUMN ${column} ${type}`);
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
+if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === 'request_id'))
+  db.exec('ALTER TABLE cash_entries ADD COLUMN request_id TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS cash_entries_request ON cash_entries(request_id) WHERE request_id IS NOT NULL');
+if (!(db.prepare('PRAGMA table_info(order_messages)').all() as Row[]).some(r => r.name === 'request_id'))
+  db.exec('ALTER TABLE order_messages ADD COLUMN request_id TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS order_messages_request ON order_messages(sender_id, request_id) WHERE request_id IS NOT NULL');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS orders_share_token ON orders(share_token_hash) WHERE share_token_hash IS NOT NULL');
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -342,6 +348,7 @@ function toSubscription(r: Row): Subscription {
     createdAt: r.created_at, userName: r.user_name, userPhone: r.user_phone };
 }
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const inList = (statuses: string[]) => statuses.map(s => `'${s}'`).join(',');
 const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses);
 /** What a driver is carrying right now (SPEC-parcel-standard.md: many parcels, or one ride / freight load). */
@@ -921,7 +928,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     db.exec('BEGIN IMMEDIATE');
     try { const order = createOrder(user, input, recommended); db.exec('COMMIT'); return order; } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
-  if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) fail(400, 'invalid_request_id');
+  if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   const hash = payloadHash(input);
   const replay = () => {
     const existing = one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId);
@@ -1026,7 +1033,10 @@ route('GET', '/api/orders', ({ user, query }) => {
   const where = user.role === 'admin' ? '1 = 1' : user.role === 'driver' ? 'o.driver_id = ?' : 'o.customer_id = ?';
   const args: SQLInputValue[] = user.role === 'admin' ? [] : [user.id];
   const filter = status ? (args.push(status), ' AND o.status = ?') : '';
-  return all(`${orderSelect} WHERE ${where}${filter} ORDER BY o.id DESC LIMIT 200`, ...args).map(r => toOrder(r, user));
+  // Open work always comes back, however much newer history there is; history is capped at the newest 200.
+  const newest = `SELECT o.id FROM orders o WHERE ${where}${filter} ORDER BY o.id DESC LIMIT 1 OFFSET 199`;
+  return all(`${orderSelect} WHERE ${where}${filter} AND (o.status IN ('searching',${activeSql}) OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args)
+    .map(r => toOrder(r, user));
 });
 
 route('GET', '/api/orders/:id', ({ user, params }) => getOrder(Number(params[0]), user));
@@ -1039,6 +1049,20 @@ route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?", Date.now(), order.id);
   if (order.status === 'assigned') queuePush([order.driverId], 'cancelled', order.id);
   if (user.role === 'admin') queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
+  return getOrder(order.id, user);
+});
+
+// A scheduled parcel moves to another time until drivers can see it (RELEASE_BEFORE ahead of pickup).
+// ponytail: parcels only, their standard price ignores the time; rides and freight re-price by time of day, so they cancel and rebook.
+route('POST', '/api/orders/:id/schedule', ({ user, params, body }) => {
+  const order = getOrder(Number(params[0]), user);
+  const now = Date.now(), at = body.scheduledFor;
+  if (user.id !== order.customerId) fail(409, 'cannot_reschedule');
+  if (order.scheduledFor === at) return order; // a resend after a lost reply
+  if (order.service !== 'parcel' || order.status !== 'searching' || order.scheduledFor == null || order.scheduledFor <= now + RELEASE_BEFORE)
+    fail(409, 'cannot_reschedule');
+  if (!(Number.isInteger(at) && at >= now + RELEASE_BEFORE && at <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  run('UPDATE orders SET scheduled_for = ?, updated_at = ? WHERE id = ?', at, now, order.id);
   return getOrder(order.id, user);
 });
 
@@ -1207,9 +1231,19 @@ route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
   const { r, role, active } = chatAccess(user, Number(params[0]));
   if (role === 'admin') fail(403, 'forbidden');
   const message = text(body.body, 500);
+  // A resend after a lost reply replays instead of posting twice, even once the chat has closed.
+  // ponytail: optional so older app builds still send; require it once every client runs this one.
+  const requestId = body.requestId ?? null;
+  if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
+  const saved = requestId && one('SELECT order_id, body FROM order_messages WHERE sender_id = ? AND request_id = ?', user.id, requestId);
+  if (saved) {
+    if (saved.order_id !== r.id || saved.body !== message) fail(409, 'idempotency_conflict');
+    return chat(user, r.id, r.driver_id);
+  }
   if (!active) fail(409, 'chat_closed');
   limit(identityKey('chat', user.id), 30, 10 * 60_000);
-  run('INSERT INTO order_messages (order_id, sender_id, driver_id, sender_role, body, created_at) VALUES (?, ?, ?, ?, ?, ?)', r.id, user.id, r.driver_id, role, message, Date.now());
+  run('INSERT INTO order_messages (order_id, sender_id, driver_id, sender_role, body, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    r.id, user.id, r.driver_id, role, message, Date.now(), requestId);
   queuePush([role === 'customer' ? r.driver_id : r.customer_id], 'message', r.id);
   return chat(user, r.id, r.driver_id);
 });
@@ -1458,7 +1492,7 @@ route('POST', '/api/orders/:id/advance', ({ user, params, body }) => {
 // Lost acknowledgements replay the stored outcome instead of applying a driver command twice.
 function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Order) {
   const { requestId, ...input } = body;
-  if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) fail(400, 'invalid_request_id');
+  if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   if (!activeStatuses.includes(input.expectedStatus)) fail(400, 'invalid_status');
   getOrder(id, user); // reject nonexistent/inaccessible resources before storing a foreign-keyed outcome
   const hash = payloadHash({ ...input, id }); // unchanged shape keeps pre-release advance retries replayable
@@ -1655,14 +1689,23 @@ function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 1_000_000) fail(400, 'invalid_amount');
   const note = kind === 'adjustment' ? text(body.reason, 500) : text(body.note, 200, false);
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
+  // A retried form replays the entry it already recorded instead of booking the cash twice.
+  // ponytail: optional so an older admin build still records; require it once every admin runs this one.
+  const requestId = body.requestId ?? null;
+  if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
+  const saved = requestId && one('SELECT * FROM cash_entries WHERE request_id = ?', requestId);
+  if (saved) {
+    if (saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
+    return cashEntry(saved);
+  }
   db.exec('BEGIN IMMEDIATE');
   try {
     const balance = cashBalances('u.id = ?', Number(body.driverId))[0] ?? fail(404, 'not_found');
     // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
     if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
     if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
-    const id = Number(run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now()).lastInsertRowid);
+    const id = Number(run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId).lastInsertRowid);
     queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     db.exec('COMMIT');
     return cashEntry(one('SELECT * FROM cash_entries WHERE id = ?', id)!);
@@ -1700,8 +1743,8 @@ route('POST', '/api/admin/orders/:id/proof-reset', ({ user, params, body }) => {
 });
 route('GET', '/api/admin/stats', ({ user }) => {
   need(user, 'admin');
-  const orders = one(`SELECT COUNT(*) completed, COALESCE(SUM(price), 0) gmv, COALESCE(SUM(commission), 0) commission
-    FROM orders WHERE status IN (${finishedSql})`)!;
+  const orders = one(`SELECT COUNT(*) completed, COALESCE(SUM(price), 0) gmv, COALESCE(SUM(commission), 0) commission,
+    COALESCE(SUM(discount), 0) discounts FROM orders WHERE status IN (${finishedSql})`)!;
   const subs = one("SELECT COUNT(*) count, COALESCE(SUM(price), 0) revenue FROM subscriptions WHERE activated_at IS NOT NULL")!;
   // Calendar days in server local time (set TZ), built with setDate so DST changes don't shift the buckets.
   const start = new Date();
@@ -1720,7 +1763,9 @@ route('GET', '/api/admin/stats', ({ user }) => {
     if (bucket) bucket.subscriptions += r.v;
   }
   return {
-    gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, profit: orders.commission + subs.revenue,
+    gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, discounts: orders.discounts,
+    // Promo discounts are Wind's cost (the driver's ledger credits them), so they come off the profit.
+    profit: orders.commission - orders.discounts + subs.revenue,
     completed: orders.completed, activeSubscriptions: one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'active' AND ends_at > ?", Date.now())!.n,
     statuses: Object.fromEntries(all('SELECT status, COUNT(*) n FROM orders GROUP BY status').map(r => [r.status, r.n])),
     services: Object.fromEntries(all(`SELECT service, COUNT(*) n FROM orders WHERE status IN (${finishedSql}) GROUP BY service`).map(r => [r.service, r.n])),
@@ -1735,13 +1780,14 @@ route('GET', '/api/admin/stats', ({ user }) => {
 route('GET', '/api/admin/users', ({ user, query }) => {
   need(user, 'admin');
   const role = query.get('role'), q = `%${query.get('q') ?? ''}%`;
-  return all(`SELECT * FROM users WHERE (? IS NULL OR role = ?) AND (name LIKE ? OR phone LIKE ? OR email LIKE ?) AND phone NOT LIKE 'deleted-%'
+  return all(`SELECT * FROM users WHERE (? IS NULL OR role = ?) AND (name LIKE ? OR phone LIKE ? OR email LIKE ?) AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'
     ORDER BY status = 'pending' DESC, id DESC LIMIT 200`, role, role, q, q, q).map(toUser);
 });
 
+// The partner:souq account owns every Souq delivery, so the admin user routes never list, edit, reset or delete it.
 const editUser: Handler = ({ user, params, body }) => {
   need(user, 'admin');
-  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'", Number(params[0])) ?? fail(404, 'not_found');
+  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0])) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
   const name = body.name === undefined ? target.name : text(body.name, 60);
   const phone = body.phone === undefined ? target.phone : normalizePhone(String(body.phone)) ?? fail(400, 'invalid_phone');
@@ -1781,7 +1827,7 @@ route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
 route('POST', '/api/admin/users/:id/approve', ({ user, params }) => {
   need(user, 'admin');
-  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'", Number(params[0])) ?? fail(404, 'not_found');
+  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0])) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
   run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id);
   if (target.role === 'driver' && target.status !== 'active') queuePush([target.id], 'approved', 0, '/driver');
@@ -1789,7 +1835,7 @@ route('POST', '/api/admin/users/:id/approve', ({ user, params }) => {
 });
 route('DELETE', '/api/admin/users/:id', ({ user, params }) => {
   need(user, 'admin');
-  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'", Number(params[0])) ?? fail(404, 'not_found');
+  const target = one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0])) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
   return deleteAccount(toUser(target));
 });
@@ -1798,7 +1844,7 @@ route('DELETE', '/api/admin/users/:id', ({ user, params }) => {
 route('POST', '/api/admin/users/:id/password', ({ user, params }) => {
   need(user, 'admin');
   limit(identityKey('support-password', user.id), 20, 60 * 60_000);
-  const target = one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%'", Number(params[0])) ?? fail(404, 'not_found');
+  const target = one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0])) ?? fail(404, 'not_found');
   const password = randomBytes(12).toString('base64url');
   const hashed = hashPassword(password);
   db.exec('BEGIN IMMEDIATE');

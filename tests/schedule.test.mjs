@@ -67,6 +67,19 @@ try {
   assert.equal((await call('/orders', { token: customer.token, body: stale, expect: 400 })).error, 'invalid_schedule');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM order_commands WHERE request_id = ?').get(stale.requestId).n, 0);
 
+  // A parcel moves to another time until drivers can see it; a taken or released one keeps its time.
+  const move = await book({ scheduledFor: Date.now() + DAY });
+  const moved = Date.now() + 2 * DAY;
+  const reschedule = (order, scheduledFor, expect, token = customer.token) => call(`/orders/${order.id}/schedule`, { token, body: { scheduledFor }, expect });
+  assert.equal((await reschedule(move, moved)).scheduledFor, moved);
+  assert.equal((await reschedule(move, moved)).scheduledFor, moved); // a resend replays
+  for (const scheduledFor of [Date.now() + 10 * MIN, Date.now() + 8 * DAY, 'soon'])
+    assert.equal((await reschedule(move, scheduledFor, 400)).error, 'invalid_schedule');
+  await reschedule(move, moved + DAY, 404, driver.token); // drivers cannot see it yet
+  assert.equal((await reschedule(later, moved, 409)).error, 'cannot_reschedule'); // a driver took it
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 20 * MIN, move.id);
+  assert.equal((await reschedule(move, moved, 409)).error, 'cannot_reschedule'); // drivers can see it now
+
   // The customer can still cancel a scheduled order before a driver takes it.
   const another = await book({ scheduledFor: Date.now() + DAY });
   assert.equal((await call(`/orders/${another.id}/cancel`, { token: customer.token, body: {} })).status, 'cancelled');

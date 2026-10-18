@@ -33,6 +33,7 @@ process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 const { db, server, promote } = await import('../server/main.ts');
 const { quote, defaultSettings } = await import('../src/model.ts');
+const { scheduleSlots } = await import('../src/booking.ts');
 const { copy } = await import('../src/copy.ts');
 await new Promise(resolve => server.listen(API_PORT, resolve));
 const api = `http://localhost:${API_PORT}/api`;
@@ -85,6 +86,9 @@ const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramal
 // A ride: drivers offer on rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
 const searching = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
+// Booked for tomorrow: the customer can still move it until drivers see it.
+const scheduled = await order(layla, true, { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'hebron', pickupNote: 'مكتب البريد', dropoffNote: 'باب الزاوية',
+  detail: 'أوراق جامعية', scheduledFor: scheduleSlots().find(s => s > Date.now() + 20 * 3_600_000) });
 await order(omar, false, { service: 'ride', pickupCity: 'nablus', dropoffCity: 'jenin', pickupNote: 'مجمع الكراجات', dropoffNote: 'مستشفى جنين' });
 await order(omar, false, { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jericho', option: 'large', loadingHelp: true,
   pickupNote: 'عين سارة، عمارة 4', dropoffNote: 'شارع عمّان', detail: 'ثلاجة وغسالة، الطابق الثاني' });
@@ -162,6 +166,7 @@ const screens = [
   { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
+  { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, labelField, nearLine, roadPath } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, labelField, nearLine, roadPath, shownApproach } from '../src/map-math.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -77,6 +77,12 @@ try {
   assert.ok(e - w > 0.005 && n - s > 0.005);
   assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
   assert.deepEqual(etaRange(10), [10, 15]);
+  // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
+  const kept = { stop: 'o1:32,35', route: 'kept' };
+  assert.equal(shownApproach('fresh', false, kept, 'o1:32,35'), 'fresh');
+  assert.equal(shownApproach(undefined, false, kept, 'o1:32,35'), 'kept');
+  assert.equal(shownApproach(undefined, false, kept, 'o1:31,35'), undefined);
+  assert.equal(shownApproach('stale', true, kept, 'o1:32,35'), undefined);
 // Checkpoint-on-route test (SPEC-checkpoint-routing.md): a west-east segment along latitude 32.
 const seg = [[35.20, 32.0], [35.22, 32.0]];
 assert.ok(nearLine({ latitude: 32.001, longitude: 35.21 }, seg, 150), '~110 m north of the middle');

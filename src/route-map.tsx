@@ -76,7 +76,7 @@ function dot(color: string, square = false) {
 // Closed checkpoint: a no-entry sign, the same everywhere drivers look.
 function noEntry() {
   const el = document.createElement('div');
-  el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="#C62828" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>';
+  el.innerHTML = `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="${palette.error}" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>`;
   el.style.cssText = 'width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))';
   return el;
 }
@@ -218,6 +218,6 @@ export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
 });

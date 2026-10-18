@@ -40,7 +40,7 @@ export default function Earnings() {
 function CashCard() {
   const { c, money, err } = useCopy();
   const { time } = useFormat();
-  const { data, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
+  const { data, error, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
   if (!data) return null;
@@ -56,7 +56,7 @@ function CashCard() {
     </Row>
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
     {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}
-    <ErrorText>{failure}</ErrorText>
+    <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
       <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
       <Button title={c.cashConfirm} icon="checkmark-circle-outline" loading={busy === entry.id} disabled={busy !== null} onPress={() => decide(entry, 'confirm')} />

@@ -45,6 +45,13 @@ try {
   assert.deepEqual((await call(`/orders/${order.id}/messages`, { token: customer.token })).map(m => m.mine), [true, false]);
   assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token })).length, 2);
   await call(`/orders/${order.id}/messages`, { token: stranger.token, expect: 404 });
+  // A resend after a lost reply replays instead of posting twice.
+  const resend = { body: 'At the gate now', requestId: randomUUID() };
+  const once = await call(`/orders/${order.id}/messages`, { token: customer.token, body: resend });
+  assert.deepEqual(await call(`/orders/${order.id}/messages`, { token: customer.token, body: resend }), once);
+  assert.equal(once.length, 3);
+  await call(`/orders/${order.id}/messages`, { token: customer.token, body: { ...resend, body: 'Somewhere else' }, expect: 409 });
+  await call(`/orders/${order.id}/messages`, { token: customer.token, body: { body: 'hi', requestId: 'not-a-uuid' }, expect: 400 });
 
   // A released job's thread stays with that assignment.
   const other = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
@@ -70,10 +77,11 @@ try {
   const { handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
   await advance(driver.token, order, { code: handoverCode });
   assert.equal((await say(customer.token, 'Thanks!', 409)).error, 'chat_closed');
-  assert.equal((await call(`/orders/${order.id}/messages`, { token: customer.token })).length, 31);
+  assert.equal((await call(`/orders/${order.id}/messages`, { token: customer.token })).length, 32);
+  assert.deepEqual(await call(`/orders/${order.id}/messages`, { token: customer.token, body: resend }), await call(`/orders/${order.id}/messages`, { token: customer.token }));
   db.prepare('UPDATE orders SET updated_at = ? WHERE id = ?').run(Date.now() - 25 * 3_600_000, order.id);
   await call(`/orders/${order.id}/messages`, { token: customer.token, expect: 409 });
-  assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token })).length, 31);
+  assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token })).length, 32);
 
   // Deleting an account replaces that person's words.
   await call('/me/delete', { token: customer.token, body: {} });

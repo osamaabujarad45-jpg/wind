@@ -193,7 +193,7 @@
     "id": "book-send-another",
     "group": "Customer",
     "name": "Send another parcel (pickup copied, new recipient)",
-    "route": "/book?again=6&keep=pickup",
+    "route": "/book?again=7&keep=pickup",
     "file": "src/app/book.tsx",
     "ar": [
       "ar/book-send-another.png"
@@ -232,6 +232,20 @@
     "session": "customer"
   },
   {
+    "id": "order-scheduled",
+    "group": "Customer",
+    "name": "Parcel · scheduled, changing its time",
+    "route": "/order/4",
+    "file": "src/app/order/[id].tsx",
+    "ar": [
+      "ar/order-scheduled.png"
+    ],
+    "en": [
+      "en/order-scheduled.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "order-live",
     "group": "Customer",
     "name": "Order · on the way",
@@ -249,7 +263,7 @@
     "id": "order-parcel-live",
     "group": "Customer",
     "name": "Parcel · awaiting handover",
-    "route": "/order/6",
+    "route": "/order/7",
     "file": "src/app/order/[id].tsx",
     "ar": [
       "ar/order-parcel-live.png"
@@ -473,7 +487,7 @@
     "id": "admin-order",
     "group": "Admin",
     "name": "Parcel · delivery code recovery",
-    "route": "/order/6",
+    "route": "/order/7",
     "file": "src/app/order/[id].tsx",
     "ar": [
       "ar/admin-order.png"

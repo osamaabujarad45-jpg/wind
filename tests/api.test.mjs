@@ -106,6 +106,13 @@ try {
   assert.equal((await call(link.path)).status, 'searching');
   await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} })).status, 'cancelled');
+  // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
+  const souq = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get();
+  assert.ok(!(await call('/admin/users?q=partner', { token: admin.token })).some(u => u.id === souq.id));
+  await call(`/admin/users/${souq.id}`, { token: admin.token, body: { phone: '0599000777' }, expect: 404 });
+  await call(`/admin/users/${souq.id}/approve`, { token: admin.token, body: {}, expect: 404 });
+  await call(`/admin/users/${souq.id}/password`, { token: admin.token, body: {}, expect: 404 });
+  assert.equal((await fetch(`${base}/admin/users/${souq.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin.token}` } })).status, 404);
 
   // Driver sees the job without private details, accepts, shares location
   const jobs = await call('/jobs', { token: driver.token });

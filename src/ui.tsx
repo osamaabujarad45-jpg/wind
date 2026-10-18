@@ -34,6 +34,7 @@ export const palette = {
   hair: '#ECEBE4',
   muted: '#EAE8DF',
   error: '#A3392A',
+  onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills
   errorPale: '#F8E6E2',
 };
 
@@ -208,7 +209,7 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // Press feedback: 3% scale over 120ms on the UI thread.
 export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { selected?: boolean; checked?: boolean };
+  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { selected?: boolean; checked?: boolean; busy?: boolean };
   hitSlop?: number; // for controls drawn smaller than 44pt
 }) {
   const [pressed, setPressed] = useState(false);
@@ -224,13 +225,13 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
 }) {
   const { row } = useCopy();
   const tone = {
-    primary: { bg: palette.forest, fg: '#FFFFFF' }, soft: { bg: palette.olivePale, fg: palette.olive },
+    primary: { bg: palette.forest, fg: palette.onFill }, soft: { bg: palette.olivePale, fg: palette.olive },
     danger: { bg: palette.errorPale, fg: palette.error }, ghost: { bg: 'transparent', fg: palette.secondary },
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
   const small = s === 'sm';
   return <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading}
-    style={[styles.button, small && styles.buttonSmall, { backgroundColor: tone.bg, flexDirection: row }, variant === 'outline' && styles.outline,
+    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: tone.bg, flexDirection: row }, variant === 'outline' && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={tone.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={tone.fg} />}
@@ -285,7 +286,7 @@ export function FilterChips<K extends string>({ items, value, onChange }: { item
   return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }}>
     {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value }} accessibilityLabel={item.label}
       onPress={() => onChange(item.key)} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn]}>
-      <Text style={[styles.chipText, item.key === value && { color: '#FFFFFF' }]}>{item.label}</Text>
+      <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
   </Rail>;
 }
@@ -370,7 +371,7 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
     <Text numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text style={styles.listValue}>{value}</Text>}
-    {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color="#A3ABA6" />}
+    {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
 }
 
@@ -512,5 +513,5 @@ const styles = StyleSheet.create({
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   barText: { fontSize: 11, fontWeight: '600' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
+  barBadgeText: { color: palette.onFill, fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

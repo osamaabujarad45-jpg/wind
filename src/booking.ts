@@ -18,6 +18,15 @@ export function newRequestId(): string {
     return (c === 'x' ? n : (n & 3) | 8).toString(16);
   });
 }
+
+/** One retry id per unsent text: a failed text keeps its id when resent, even after other texts went out in between. */
+export function retryIds() {
+  const ids = new Map<string, string>();
+  return {
+    for(text: string) { let id = ids.get(text); if (!id) ids.set(text, id = newRequestId()); return id; },
+    sent(text: string) { ids.delete(text); },
+  };
+}
 export const newBooking = (payload: BookingPayload): PendingBooking => ({ requestId: newRequestId(), payload });
 
 // Order again (SPEC-order-again.md): a customer's ended order refills the booking form.

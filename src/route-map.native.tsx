@@ -25,7 +25,7 @@ export default function RouteMap(props: RouteMapProps) {
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
     <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
-      <Ionicons name="remove-circle" size={24} color="#C62828" />
+      <Ionicons name="remove-circle" size={24} color={palette.error} />
     </Marker>)}
     {driver && <Marker coordinate={driver} title={driverTitle} flat rotation={driver.heading ?? 0} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />

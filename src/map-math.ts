@@ -35,6 +35,10 @@ export const labelField = (language: 'ar' | 'en') => language === 'ar'
 /** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
 
+/** The approach route to show: the fresh one, else the one kept for the same stop; nothing while the last fetch failed. */
+export const shownApproach = <R>(fetched: R | undefined, failed: boolean, kept: { stop: string; route: R } | undefined, stop: string) =>
+  failed ? undefined : fetched ?? (kept?.stop === stop ? kept.route : undefined);
+
 /** /api/route query for two points; coordinates rounded to ~110 m so a moving driver refetches only every ~110 m. */
 export const roadPath = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }, grid = 3, heading?: number | null) =>
   `/route?from=${a.latitude.toFixed(grid)},${a.longitude.toFixed(grid)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}${

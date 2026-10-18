@@ -6,10 +6,11 @@ import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, orderCode, type Order, type Referral, type Service } from './model';
+import { dayKey, HEBRON } from './booking';
 import { useSession } from './session';
 import type { Copy } from './copy';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
 
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
@@ -28,6 +29,26 @@ export function useFormat() {
     date: (ms: number) => new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Hebron' }),
     time: (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' }),
   };
+}
+
+const fmt = (language: 'ar' | 'en') => language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB';
+function dayLabel(ms: number, language: 'ar' | 'en', c: { today: string; tomorrow: string }) {
+  const key = dayKey(ms);
+  return key === dayKey(Date.now()) ? c.today : key === dayKey(Date.now() + 86_400_000) ? c.tomorrow
+    : new Date(ms).toLocaleDateString(fmt(language), { weekday: 'short', day: 'numeric', timeZone: HEBRON });
+}
+const timeLabel = (ms: number, language: 'ar' | 'en') => new Date(ms).toLocaleTimeString(fmt(language), { hour: 'numeric', minute: '2-digit', timeZone: HEBRON });
+
+// Day chips over that day's slots (scheduleSlots); picking a day picks its first slot. Booking and a parcel's reschedule share it.
+export function SlotPicker({ slots, value, onChange }: { slots: number[]; value: number; onChange: (slot: number) => void }) {
+  const { c, language } = useCopy();
+  const shownDay = dayKey(value);
+  return <>
+    <FilterChips items={[...new Set(slots.map(dayKey))].map(key => ({ key, label: dayLabel(slots.find(s => dayKey(s) === key)!, language, c) }))} value={shownDay}
+      onChange={key => onChange(slots.find(s => dayKey(s) === key)!)} />
+    <FilterChips items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(value)}
+      onChange={key => onChange(Number(key))} />
+  </>;
 }
 
 export function ServiceIcon({ service, size = 40 }: { service: Service; size?: number }) {

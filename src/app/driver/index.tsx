@@ -96,7 +96,7 @@ export default function Jobs() {
       <Row gap={10}>
         <Pulse color={palette.lime} size={9} />
         <View style={{ flex: 1 }}>
-          <Txt variant="title" style={{ color: '#FFFFFF' }}>{c.online}</Txt>
+          <Txt variant="title" style={{ color: palette.onFill }}>{c.online}</Txt>
           <Txt variant="caption" style={{ color: 'rgba(255,255,255,0.75)' }}>{c.onlineNote}</Txt>
         </View>
       </Row>

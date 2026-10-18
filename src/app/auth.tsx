@@ -67,7 +67,7 @@ export default function Auth() {
     <Screen>
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <Press accessibilityLabel={c.language} hitSlop={4} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
-          style={{ paddingHorizontal: 14, height: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
+          style={{ paddingHorizontal: 14, height: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.card }}>
           <Txt variant="label">{c.language}</Txt>
         </Press>
       </Row>
