@@ -10,7 +10,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
@@ -1029,13 +1029,20 @@ route('POST', '/api/partner/orders/:id/cancel', ({ req, params }) => {
 }, true);
 
 route('GET', '/api/orders', ({ user, query }) => {
-  const status = query.get('status');
+  const status = query.get('status'), before = query.get('before');
   const where = user.role === 'admin' ? '1 = 1' : user.role === 'driver' ? 'o.driver_id = ?' : 'o.customer_id = ?';
   const args: SQLInputValue[] = user.role === 'admin' ? [] : [user.id];
   const filter = status ? (args.push(status), ' AND o.status = ?') : '';
-  // Open work always comes back, however much newer history there is; history is capped at the newest 200.
-  const newest = `SELECT o.id FROM orders o WHERE ${where}${filter} ORDER BY o.id DESC LIMIT 1 OFFSET 199`;
-  return all(`${orderSelect} WHERE ${where}${filter} AND (o.status IN ('searching',${activeSql}) OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args)
+  const open = `o.status IN ('searching',${activeSql})`;
+  // Load more: the next page of ended orders below the oldest one the client holds. Open work is never paged.
+  if (before !== null) {
+    const id = /^[1-9]\d{0,14}$/.test(before) ? Number(before) : fail(400, 'invalid_input');
+    return all(`${orderSelect} WHERE ${where}${filter} AND NOT (${open}) AND o.id < ? ORDER BY o.id DESC LIMIT ${HISTORY_PAGE}`, ...args, id)
+      .map(r => toOrder(r, user));
+  }
+  // First page: every open order, however much newer history there is, plus the newest page of ended ones.
+  const newest = `SELECT o.id FROM orders o WHERE ${where}${filter} AND NOT (${open}) ORDER BY o.id DESC LIMIT 1 OFFSET ${HISTORY_PAGE - 1}`;
+  return all(`${orderSelect} WHERE ${where}${filter} AND (${open} OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args)
     .map(r => toOrder(r, user));
 });
 

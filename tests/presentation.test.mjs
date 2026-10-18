@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
+import { isOpen, keepOlder, withOlder } from '../src/model.ts';
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
   pickupNote: 'محل', dropoffNote: 'الدوار', contact: '0599123456', detail: 'كتب', option: 'small', loadingHelp: false, shared: false, quotedPrice: 48 };
@@ -14,6 +15,20 @@ chatIds.for('B'); chatIds.sent('B');
 assert.equal(chatIds.for('A'), firstA, 'a failed text keeps its id after another text was sent');
 chatIds.sent('A');
 assert.notEqual(chatIds.for('A'), firstA, 'the same text sent again after success is a new message');
+// Orders "show older": the hook keeps every ended order it showed plus the loaded page, so when order 11 ends
+// and the polled first page drops 8 off its window, 8 stays listed; the polled copy wins for an order in both.
+const o = (id, status = 'completed') => ({ id, status });
+const shown = withOlder([o(10), o(9), o(8), o(2, 'assigned')], []);
+const older = [...shown.filter(x => !isOpen(x)), o(7), o(6)];
+const later = withOlder([o(11), o(10), o(9, 'returned'), o(2, 'assigned')], older);
+assert.deepEqual(later.map(x => x.id), [11, 10, 9, 8, 7, 6, 2]);
+assert.equal(later.find(x => x.id === 9).status, 'returned');
+// Each poll carries forward what the window moved past, also orders that ended after the load (Sol 09 F1: 12 here).
+const poll1 = [o(12), o(11), o(10), o(2, 'assigned')], poll2 = [o(14), o(13), o(12), o(2, 'assigned')], poll3 = [o(16), o(15), o(14), o(2, 'assigned')];
+const carried = keepOlder(poll2, poll3, keepOlder(poll1, poll2, [o(9), o(8)]));
+assert.deepEqual(withOlder(poll3, carried).map(x => x.id), [16, 15, 14, 13, 12, 11, 10, 9, 8, 2]);
+// An open order that leaves the first page ended below its window: the loaded pages may have passed it, so start over.
+assert.equal(keepOlder(poll3, [o(17), o(16), o(15)], carried), null);
 assert.equal(readBooking(null), null);
 const promo = newBooking({ ...payload, promoCode: 'WELCOME10', expectedDiscount: 10 });
 assert.deepEqual(readBooking(JSON.stringify(promo)), promo);

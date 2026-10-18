@@ -107,6 +107,30 @@ try {
   const listed = await call('/orders', { token: courier.token });
   assert.ok(listed.some(o => o.id === orders[0].id && o.status === 'assigned'));
   assert.equal(listed.filter(o => o.status === 'completed').length, 200);
+
+  // ---- load more: each page continues exactly below the last, open work is never paged out ----
+  const { isOpen, HISTORY_PAGE } = await import('../src/model.ts');
+  const open = db.prepare("SELECT id FROM orders WHERE driver_id = ? AND status IN ('searching','assigned','at_pickup','in_transit','on_hold','returning') ORDER BY id DESC")
+    .all(courier.user.id).map(r => r.id);
+  const history = db.prepare("SELECT id FROM orders WHERE driver_id = ? AND status NOT IN ('searching','assigned','at_pickup','in_transit','on_hold','returning') ORDER BY id DESC")
+    .all(courier.user.id).map(r => r.id);
+  assert.ok(open.length > 0 && history.length > 2 * HISTORY_PAGE && history.length % HISTORY_PAGE > 0); // a full middle page and a short last one
+  assert.deepEqual(listed.filter(o => isOpen(o)).map(o => o.id), open);
+  let shown = listed.filter(o => !isOpen(o)).map(o => o.id), pages = 0, page;
+  assert.deepEqual(shown, history.slice(0, HISTORY_PAGE));
+  do {
+    page = await call(`/orders?before=${Math.min(...shown)}`, { token: courier.token });
+    assert.ok(page.every(o => !isOpen(o)), 'open work only comes on the first page');
+    shown = [...shown, ...page.map(o => o.id)];
+    pages++;
+  } while (page.length === HISTORY_PAGE);
+  assert.equal(pages, Math.ceil(history.length / HISTORY_PAGE) - 1);
+  assert.deepEqual(shown, history, 'pages neither overlap nor skip an order');
+  assert.deepEqual(await call(`/orders?before=${Math.min(...history)}`, { token: courier.token }), []);
+  // The sender pages their own history the same way; a bad cursor is refused.
+  const customerOlder = await call(`/orders?before=${history[HISTORY_PAGE]}`, { token: customer.token });
+  assert.ok(customerOlder.length > 0 && customerOlder.every(o => o.id < history[HISTORY_PAGE] && !isOpen(o)));
+  for (const bad of ['0', '-1', 'abc', '1.5', '99999999999999999']) await call(`/orders?before=${bad}`, { token: courier.token, expect: 400 });
   console.log('parcels: ok');
 } finally {
   await shutdown();

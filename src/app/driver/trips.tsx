@@ -1,13 +1,12 @@
 import { View } from 'react-native';
 import { router } from 'expo-router';
-import { useApi } from '../../api';
-import { activeStatuses, city, runSheet, type Order } from '../../model';
-import { OrderRow } from '../../parts';
+import { activeStatuses, city, runSheet } from '../../model';
+import { MoreOrders, OrderRow, useOrders } from '../../parts';
 import { Button, Empty, ErrorText, fill, Header, Loading, palette, Screen, Txt, useCopy } from '../../ui';
 
 export default function Trips() {
   const { c, err, language } = useCopy();
-  const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
+  const { data, error, reload, more } = useOrders('/orders', 10_000);
   const active = (data ?? []).filter(o => activeStatuses.includes(o.status));
   const lastTrip = (data ?? []).filter(o => o.status === 'completed').sort((a, b) => b.updatedAt - a.updatedAt)[0];
   const past = (data ?? []).filter(o => !activeStatuses.includes(o.status) && o.id !== lastTrip?.id);
@@ -32,6 +31,7 @@ export default function Trips() {
         </>}
         {past.length > 0 && <Txt variant="h2" style={{ marginVertical: 12 }}>{c.history}</Txt>}
         {past.map((order, i) => <OrderRow key={order.id} order={order} index={i + active.length + (lastTrip ? 1 : 0)} />)}
+        <MoreOrders more={more} />
       </>}
   </Screen>;
 }

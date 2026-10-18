@@ -419,6 +419,7 @@ const ar = {
   // customer orders
   noOrders: 'لا توجد طلبات بعد',
   noOrdersDesc: 'اطلب أول توصيلة من الرئيسية.',
+  loadOlder: 'عرض الأقدم',
   // account
   language: 'English',
   languageTitle: 'اللغة',
@@ -1072,6 +1073,7 @@ const en: Copy = {
   commission: 'Wind commission',
   noOrders: 'No orders yet',
   noOrdersDesc: 'Book your first delivery from Home.',
+  loadOlder: 'Show older',
   language: 'العربية',
   languageTitle: 'Language',
   logout: 'Sign out',

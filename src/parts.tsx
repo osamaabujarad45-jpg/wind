@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { api, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
-import { city, orderCode, type Order, type Referral, type Service } from './model';
+import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { useSession } from './session';
 import type { Copy } from './copy';
@@ -83,6 +83,51 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
   return <View>
     {stop(ride ? c.pickup_ride : c.pickup, from, fromNote, true, onFrom)}
     {stop(ride ? c.dropoff_ride : c.dropoff, to, toNote, false, onTo)}
+  </View>;
+}
+
+/** An orders list that can load older history page by page (GET /orders?before=<oldest ended id shown>). */
+export function useOrders(path: string | null, pollMs: number) {
+  const latest = useApi<Order[]>(path, pollMs);
+  const [pages, setPages] = useState<{ path: string | null; older: Order[]; more: boolean; request?: object }>();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<{ path: string | null; code: string }>();
+  const [seen, setSeen] = useState<{ path: string | null; data: Order[] }>();
+  if (latest.data && latest.data !== seen?.data) {
+    // A poll replaced the first page: carry what its window moved past into the loaded pages, or start over (keepOlder,
+    // or the polls of this list were interrupted by another path, so what moved past meanwhile is unknown).
+    setSeen({ path, data: latest.data });
+    if (pages?.path === path) {
+      const older = seen?.path === path && keepOlder(seen.data, latest.data, pages.older);
+      setPages(older ? { ...pages, older } : undefined);
+    }
+  }
+  const own = pages?.path === path ? pages : undefined;
+  const data = latest.data && withOlder(latest.data, own?.older ?? []);
+  const ended = (data ?? []).filter(o => !isOpen(o));
+  async function load() {
+    if (!path || busy || ended.length === 0) return;
+    // The pages carry this request; a poll that starts over drops it, and with it this answer for the old cursor (Sol 10b F2).
+    const request = {};
+    setPages(p => ({ path, older: p?.path === path ? p.older : [], more: true, request }));
+    setBusy(true); setFailure(undefined);
+    try {
+      const page = await api<Order[]>(`${path}${path.includes('?') ? '&' : '?'}before=${Math.min(...ended.map(o => o.id))}`);
+      // Keep the ended orders on screen; later polls carry forward whatever the first page's window moves past.
+      setPages(p => p?.request !== request ? p : { path, older: withOlder([...ended, ...page], p.older), more: page.length === HISTORY_PAGE });
+    } catch (e) { setFailure({ path, code: errorCode(e) }); } finally { setBusy(false); }
+  }
+  const more = data && (own ? own.more : ended.length >= HISTORY_PAGE);
+  return { ...latest, data, more: more ? { load, busy, failure: failure?.path === path ? failure.code : undefined } : null };
+}
+
+/** "Show older" under an orders list, with its own loading and error state. */
+export function MoreOrders({ more }: { more: ReturnType<typeof useOrders>['more'] }) {
+  const { c, err } = useCopy();
+  if (!more) return null;
+  return <View style={{ marginTop: 8, gap: 8 }}>
+    <ErrorText>{more.failure && err(more.failure)}</ErrorText>
+    <Button title={c.loadOlder} icon="time-outline" variant="outline" loading={more.busy} onPress={more.load} />
   </View>;
 }
 

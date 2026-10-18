@@ -41,6 +41,20 @@ export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 
 export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
 // Both end states the driver is paid for: delivered, or handed back to the sender.
 export const finishedStatuses: OrderStatus[] = ['completed', 'returned'];
+export const isOpen = (o: Pick<Order, 'status'>) => o.status === 'searching' || activeStatuses.includes(o.status);
+/** Ended orders per orders-list page (GET /orders, then ?before=<oldest ended id>); open work only comes on the first page. */
+export const HISTORY_PAGE = 200;
+/** The polled first page plus the older pages loaded below it: the first page wins for any order it still holds. */
+export const withOlder = (latest: Order[], older: Order[]) => {
+  const seen = new Set(latest.map(o => o.id));
+  return [...latest, ...older.filter(o => !seen.has(o.id))].sort((a, b) => b.id - a.id);
+};
+/** Loaded older pages after a poll replaced the first page `was` with `now`: ended orders its window moved past stay listed.
+ *  Null when an open order left it: that order ended below the window, maybe inside pages already loaded, so start over. */
+export const keepOlder = (was: Order[], now: Order[], older: Order[]) => {
+  const ids = new Set(now.map(o => o.id));
+  return was.some(o => isOpen(o) && !ids.has(o.id)) ? null : withOlder(was.filter(o => !isOpen(o)), older);
+};
 // Motorcycles can carry small parcels and licensed passenger rides. Bicycles stay parcel-only:
 // they never enter the passenger-ride pool, so dispatch does not create an unsafe assignment.
 export const vehicleServices: Record<Vehicle, Service[]> = {

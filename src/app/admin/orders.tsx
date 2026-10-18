@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../api';
-import { ltr, orderCode, type Order, type OrderStatus, type SafetyKind } from '../../model';
-import { OrderRow, useFormat } from '../../parts';
+import { ltr, orderCode, type OrderStatus, type SafetyKind } from '../../model';
+import { MoreOrders, OrderRow, useFormat, useOrders } from '../../parts';
 import { Button, Card, Empty, ErrorText, Field, FilterChips, Header, Loading, Screen, Txt, useCopy } from '../../ui';
 
 type Filter = 'all' | 'disputes' | 'safety' | OrderStatus;
@@ -14,7 +14,7 @@ export default function AdminOrders() {
   const { c, err } = useCopy();
   const { filter } = useLocalSearchParams<{ filter?: string }>();
   const [status, setStatus] = useState<Filter>(filter === 'safety' ? 'safety' : 'all');
-  const { data, error, reload } = useApi<Order[]>(status === 'disputes' || status === 'safety' ? null : status === 'all' ? '/orders' : `/orders?status=${status}`, 15_000);
+  const { data, error, reload, more } = useOrders(status === 'disputes' || status === 'safety' ? null : status === 'all' ? '/orders' : `/orders?status=${status}`, 15_000);
   return <Screen onRefresh={reload}>
     <Header title={c.allOrders} />
     {/* FilterChips is its own Rail; a ScrollView around it kept the Rail from scrolling, so Arabic opened on the list's far end with 'all' hidden */}
@@ -23,7 +23,7 @@ export default function AdminOrders() {
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading /> : data.length === 0
         ? <Empty icon="receipt-outline" title={c.nothingHere} />
-        : data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}
+        : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}
     </>}
   </Screen>;
 }
