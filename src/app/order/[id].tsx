@@ -1,7 +1,7 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -63,11 +63,12 @@ export default function OrderScreen() {
     return () => clearInterval(timer);
   }, []));
 
-  if (!order || !me) return <Screen><Header title={c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
+  if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
   const role = me.user.role;
   const isCustomer = role === 'customer', isDriver = role === 'driver', isAdmin = role === 'admin';
   const mine = isDriver && order.driverId === me.user.id;
+  const cancelled = order.status === 'cancelled';
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
@@ -199,12 +200,13 @@ export default function OrderScreen() {
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
-            ? fill(location.stale || error ? c.lastDriver : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
-            : c.noDriverLocation}</Txt>
+            ? fill(location.stale || error ? c.lastDriver : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
+            : mine ? c.noYourLocation : c.noDriverLocation}</Txt>
         </Row>}
         {live && eta && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="time" size={16} color={palette.olive} />
-          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status)
+          {/* "the driver arrives" is for the other parties; the driver reads the neutral arrival line */}
+          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine
             ? alerts.length ? c.etaToPickupSlow : c.etaToPickup
             : alerts.length ? c.etaToDropoffSlow : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
         </Row>}
@@ -227,6 +229,11 @@ export default function OrderScreen() {
       <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>
     </Card>}
     {order.status === 'searching' && order.scheduledFor && now >= order.scheduledFor - 30 * 60_000 && <Txt variant="caption" center>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>}
+    {order.status === 'cancelled' && order.exceptionReason && <Card tone="clay" style={{ paddingVertical: 12 }}>
+      {/* only a failed pickup cancels with a reason; the status card is gone once cancelled */}
+      <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.clayInk} />
+        <Txt variant="title" style={{ flex: 1, color: palette.clayInk }}>{`${c.pickupFailed}: ${c[`pickup_${order.exceptionReason}`]}`}</Txt></Row>
+    </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
         <Row gap={8} style={{ marginBottom: 10 }}>
@@ -248,13 +255,12 @@ export default function OrderScreen() {
             <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{c.safetyPaused}</Txt>
           </Row>
         </View>}
-        {order.exceptionReason && ['on_hold', 'returning', 'cancelled'].includes(order.status) &&
-          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{order.status === 'cancelled' // only a failed pickup cancels with a reason
-            ? `${c.pickupFailed}: ${c[`pickup_${order.exceptionReason}`]}` : `${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
+        {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
+          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{`${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
       </Card>
     </Appear>}
 
-    {(isCustomer || mine) && activeStatuses.includes(order.status) && <View style={{ marginBottom: 12 }}><Safety order={order} onChange={setData} /></View>}
+    {(isCustomer || mine) && activeStatuses.includes(order.status) && <View style={{ marginBottom: 12 }}><Safety order={order} driver={mine} onChange={setData} /></View>}
 
     {order.driverName && (isCustomer || isAdmin) ? <Appear index={3}>
       <Card>
@@ -316,10 +322,11 @@ export default function OrderScreen() {
           {order.loadingHelp && <Detail label={c.loadingHelp} value={c.yes} />}
           <Detail label={c.payWith} value={c.cash} />
           <Detail label={c.issued} value={time(order.createdAt)} />
-          <Detail label={order.discount > 0 ? c.fare : c.total} value={money(order.price)} strong={!order.discount} />
+          {/* a cancelled order was never charged and pays the driver nothing (earnings count finished jobs only) */}
+          <Detail label={order.discount > 0 || cancelled ? c.fare : c.total} value={money(order.price)} strong={!order.discount && !cancelled} />
           {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
-          {order.discount > 0 && !isAdmin && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
-          {isDriver && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
+          {order.discount > 0 && !isAdmin && !cancelled && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
+          {isDriver && !cancelled && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
         </View>
       </Card>
@@ -337,7 +344,7 @@ export default function OrderScreen() {
           variant={action === 'reattempt' ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
-            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.yes, c.no)} />)}
+            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}
       </View>
     </Card>}
 
@@ -349,7 +356,7 @@ export default function OrderScreen() {
       <Button title={c.confirmReturn} variant="outline" icon="checkmark-done-outline" loading={busy === 'confirm_return'}
         disabled={!!busy || decisionReason.trim().length < 5}
         onPress={() => confirm(c.confirmReturnHint, () => act('confirm_return', `/admin/orders/${order.id}/resolve`,
-          { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.yes, c.no)} />
+          { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.confirmReturn, c.no)} />
     </Card>}
 
     {isAdmin && (order.status === 'returning' || (order.status === 'in_transit' && order.service !== 'ride')) && <Card>
@@ -360,7 +367,7 @@ export default function OrderScreen() {
       <Button title={c.proofResetAction} variant="outline" icon="refresh-outline" loading={busy === 'proof-reset'}
         disabled={!!busy || resetReason.trim().length < 5}
         onPress={() => confirm(c.proofResetConfirm, () => act('proof-reset', `/admin/orders/${order.id}/proof-reset`,
-          { reason: resetReason.trim() }, () => setProofReset({ id, reason: '', done: true })), c.yes, c.no)} />
+          { reason: resetReason.trim() }, () => setProofReset({ id, reason: '', done: true })), c.proofResetAction, c.no)} />
       {proofReset.id === id && proofReset.done && <View accessibilityLiveRegion="polite" style={{ marginTop: 10 }}>
         <Txt variant="caption" style={{ color: palette.olive }}>{c.proofResetDone}</Txt>
       </View>}
@@ -384,7 +391,7 @@ export default function OrderScreen() {
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
           <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy}
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
-              { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), c.yes, c.no)} />
+              { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
@@ -459,10 +466,12 @@ export default function OrderScreen() {
 
 // Uber-style safety toolkit: emergency numbers work without Wind's server; a report reaches Wind's safety team.
 const emergency = [['police', '100', 'shield-outline'], ['ambulance', '101', 'medkit-outline'], ['civilDefence', '102', 'flame-outline']] as const;
-function Safety({ order, onChange }: { order: Order; onChange: (order: Order) => void }) {
+function Safety({ order, driver, onChange }: { order: Order; driver: boolean; onChange: (order: Order) => void }) {
   const { c, err } = useCopy();
   const [open, setOpen] = useState(order.safetyReport?.status === 'open');
-  const [kind, setKind] = useState<SafetyKind>('unsafe_driving');
+  // only a ride passenger sits through the driving; nothing is preselected but the neutral "other"
+  const kinds = order.service === 'ride' && !driver ? safetyKinds : safetyKinds.filter(key => key !== 'unsafe_driving');
+  const [kind, setKind] = useState<SafetyKind>('other');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
@@ -493,10 +502,10 @@ function Safety({ order, onChange }: { order: Order; onChange: (order: Order) =>
     </View> : <>
       {report && <Txt variant="caption" style={{ marginBottom: 10 }}>{`${c.safetyResolved}: ${report.resolution ?? ''}`}</Txt>}
       <Txt variant="title" style={{ marginBottom: 8 }}>{c.safetyReport}</Txt>
-      <FilterChips items={safetyKinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} />
+      <FilterChips items={kinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} />
       <Field label={c.problemNote} value={note} maxLength={300} multiline disabled={busy} onChangeText={setNote} />
       <Button title={c.safetySend} icon="alert-circle-outline" variant="outline" loading={busy} disabled={busy}
-        onPress={() => confirm(c.safetyConfirm, send, c.yes, c.no)} />
+        onPress={() => confirm(c.safetyConfirm, send, c.safetySend, c.no)} />
     </>}
     <ErrorText>{failure}</ErrorText>
   </Card>;
@@ -508,7 +517,7 @@ const quickReplies = ['qrOnMyWay', 'qrArrived', 'qrCallMe', 'qrLate'] as const;
 // In-trip chat: cheaper than calls on local plans and kept for support. Polls while the order screen is open.
 function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean; live: boolean }) {
   const { c, err, row, rtl } = useCopy();
-  const { time } = useFormat();
+  const { stamp } = useFormat();
   const { data, error, reload, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, live ? 5000 : undefined);
   // Announce only new messages from the other side; a live region around the list would re-read it every poll.
   const seen = useRef<number | null>(null);
@@ -548,10 +557,10 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
       ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.chatEmpty}</Txt>
       : <View style={{ gap: 6, marginBottom: 8 }}>
         {recent.map(m => <View key={m.id} style={[styles.bubble, { alignSelf: m.mine === rtl ? 'flex-start' : 'flex-end', backgroundColor: m.mine ? palette.olivePale : palette.muted }]}
-          accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${time(m.createdAt)}`}>
+          accessible accessibilityLabel={`${m.mine ? c.you : c[m.role]}: ${m.body}, ${stamp(m.createdAt)}`}>
           {!m.mine && <Txt variant="micro" style={styles.bubbleMeta}>{c[m.role]}</Txt>}
           <Txt>{m.body}</Txt>
-          <Txt variant="micro" style={styles.bubbleMeta}>{time(m.createdAt)}</Txt>
+          <Txt variant="micro" style={styles.bubbleMeta}>{stamp(m.createdAt)}</Txt>
         </View>)}
       </View>}
     {error && data && <>{/* the history and the draft stay; say newer messages may be missing */}
@@ -564,8 +573,14 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
           <Txt variant="label" style={{ color: palette.olive }}>{c[key]}</Txt>
         </Press>)}
       </View>
-      <Field label={c.chatMessage} value={draft} onChangeText={setDraft} maxLength={500} multiline disabled={busy} />
-      <Button title={c.send} icon="send-outline" variant="soft" loading={busy} disabled={busy || !draft.trim()} onPress={() => send(draft)} />
+      {/* Send sits beside the field, as in messaging apps: below it, the keyboard would cover it while typing. */}
+      <Row gap={8} style={{ alignItems: 'flex-end' }}>
+        <View style={{ flex: 1 }}><Field label={c.chatMessage} value={draft} onChangeText={setDraft} maxLength={500} multiline disabled={busy} /></View>
+        <Press accessibilityLabel={c.send} accessibilityState={{ busy }} disabled={busy || !draft.trim()} onPress={() => send(draft)} style={styles.send}>
+          {busy ? <ActivityIndicator size="small" color={palette.lime} />
+            : <Ionicons name="send" size={19} color={palette.lime} style={rtl ? { transform: [{ scaleX: -1 }] } : undefined} />}
+        </Press>
+      </Row>
     </>}
     <ErrorText>{failure}</ErrorText>
   </Card>;
@@ -635,5 +650,6 @@ const styles = StyleSheet.create({
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
+  send: { width: 46, height: 46, borderRadius: 23, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 22, backgroundColor: palette.olivePale },
 });

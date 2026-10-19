@@ -66,7 +66,7 @@ export default function Roads() {
         {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy}
           loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: road.point ?? city(road.cities[0]) })} />}
         {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy}
-          onPress={() => confirm(fill(c.roadRemoveConfirm, { name: road.name }), () => send(`rm${road.id}`, `/admin/roads/${road.id}/remove`, {}, c.roadRemoved))} />}
+          onPress={() => confirm(fill(c.roadRemoveConfirm, { name: road.name }), () => send(`rm${road.id}`, `/admin/roads/${road.id}/remove`, {}, c.roadRemoved), c.roadRemove, c.no)} />}
       </Card>)}
 
     {isAdmin && <Card tone="muted">

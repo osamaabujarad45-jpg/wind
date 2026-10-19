@@ -1,7 +1,7 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
@@ -418,7 +418,7 @@ export default function Book() {
       start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
       onClose={() => setPinFor(null)} onConfirm={point => {
         const near = servedCity(point);
-        if (!near) { setLocationError(c.locationMismatch); setPinFor(null); return; }
+        if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
         haptic.success();
         if (pinFor === 'pickup') { setPickupCity(near); setPickupPoint(point); } else { setDropoffCity(near); setDropoffPoint(point); }
         if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));
@@ -468,54 +468,58 @@ function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, o
   const [query, setQuery] = useState('');
   const term = query.trim().toLowerCase();
   const list = cities.filter(item => !term || item.ar.includes(term) || item.en.toLowerCase().includes(term));
+  const insets = useSafeAreaInsets();
+  // The keyboard never resizes a modal window: lift the sheet above it, leaving the sheet's own bottom inset behind the keyboard.
   return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setQuery('')}>
-    <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
-    <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
-      <View style={styles.grip} />
-      <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
-      <View style={[styles.searchBox, { flexDirection: row }]}>
-        <Ionicons name="search" size={17} color={palette.faint} />
-        <TextInput value={query} onChangeText={setQuery} placeholder={c.chooseCity} placeholderTextColor={palette.faint} accessibilityLabel={c.chooseCity}
-          style={[styles.searchInput, { textAlign: align }]} autoCorrect={false} />
-      </View>
-      <ScrollView keyboardShouldPersistTaps="handled">
-        {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
-          <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
-          {[...places.saved.map(p => ({ ...p, key: `s${p.id}` })), ...places.recent.map((p, i) => ({ ...p, key: `r${i}`, id: 0, label: 'recent' as const }))].map(p => {
-            const name = p.label === 'recent' || p.label === 'other' ? p.note : c[`place_${p.label}`];
-            return <Row key={p.key} gap={4} style={styles.sheetRow}>
-              <Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={name === p.note ? `${name}, ${city(p.city)[language]}` : `${name}, ${city(p.city)[language]}, ${p.note}`} onPress={() => onPlace(p.city, p.note)}>
-                <Row gap={12} style={{ minHeight: 56 }}>
-                  <View style={styles.pin}><Ionicons name={p.label === 'recent' ? 'time-outline' : placeIcons[p.label]} size={15} color={palette.secondary} /></View>
-                  <View style={{ flex: 1 }}>
-                    <Txt variant="title" numberOfLines={1}>{name}</Txt>
-                    <Txt variant="micro" numberOfLines={1}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}</Txt>
-                  </View>
-                </Row>
-              </Pressable>
-              {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
-            </Row>;
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={-insets.bottom}>
+      <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
+      <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
+        <View style={styles.grip} />
+        <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
+        <View style={[styles.searchBox, { flexDirection: row }]}>
+          <Ionicons name="search" size={17} color={palette.faint} />
+          <TextInput value={query} onChangeText={setQuery} placeholder={c.chooseCity} placeholderTextColor={palette.faint} accessibilityLabel={c.chooseCity}
+            style={[styles.searchInput, { textAlign: align }]} autoCorrect={false} />
+        </View>
+        <ScrollView keyboardShouldPersistTaps="handled">
+          {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
+            <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
+            {[...places.saved.map(p => ({ ...p, key: `s${p.id}` })), ...places.recent.map((p, i) => ({ ...p, key: `r${i}`, id: 0, label: 'recent' as const }))].map(p => {
+              const name = p.label === 'recent' || p.label === 'other' ? p.note : c[`place_${p.label}`];
+              return <Row key={p.key} gap={4} style={styles.sheetRow}>
+                <Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={name === p.note ? `${name}, ${city(p.city)[language]}` : `${name}, ${city(p.city)[language]}, ${p.note}`} onPress={() => onPlace(p.city, p.note)}>
+                  <Row gap={12} style={{ minHeight: 56 }}>
+                    <View style={styles.pin}><Ionicons name={p.label === 'recent' ? 'time-outline' : placeIcons[p.label]} size={15} color={palette.secondary} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Txt variant="title" numberOfLines={1}>{name}</Txt>
+                      <Txt variant="micro" numberOfLines={1}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}</Txt>
+                    </View>
+                  </Row>
+                </Pressable>
+                {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
+              </Row>;
+            })}
+            <Txt variant="label" style={{ marginTop: 12 }}>{c.cities}</Txt>
+          </>}
+          {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
+          {list.map(item => {
+            const on = item.id === selected;
+            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item[language]} accessibilityState={{ selected: on }} onPress={() => onPick(item.id)}>
+              <Row gap={12} style={styles.sheetRow}>
+                <View style={[styles.pin, on && { backgroundColor: palette.forest }]}>
+                  <Ionicons name="location" size={15} color={on ? palette.lime : palette.secondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Txt variant="title">{item[language]}</Txt>
+                  <Txt variant="micro">{item[language === 'ar' ? 'en' : 'ar']}</Txt>
+                </View>
+                {on && <Ionicons name="checkmark" size={18} color={palette.olive} />}
+              </Row>
+            </Pressable>;
           })}
-          <Txt variant="label" style={{ marginTop: 12 }}>{c.cities}</Txt>
-        </>}
-        {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
-        {list.map(item => {
-          const on = item.id === selected;
-          return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item[language]} accessibilityState={{ selected: on }} onPress={() => onPick(item.id)}>
-            <Row gap={12} style={styles.sheetRow}>
-              <View style={[styles.pin, on && { backgroundColor: palette.forest }]}>
-                <Ionicons name="location" size={15} color={on ? palette.lime : palette.secondary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Txt variant="title">{item[language]}</Txt>
-                <Txt variant="micro">{item[language === 'ar' ? 'en' : 'ar']}</Txt>
-              </View>
-              {on && <Ionicons name="checkmark" size={18} color={palette.olive} />}
-            </Row>
-          </Pressable>;
-        })}
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   </Modal>;
 }
 

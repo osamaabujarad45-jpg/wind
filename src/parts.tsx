@@ -25,9 +25,12 @@ export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>) => (o.
 export function useFormat() {
   const { language } = useCopy();
   const locale = language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB'; // Latin digits, like prices and order codes
+  const time = (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' });
   return {
     date: (ms: number) => new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Hebron' }),
-    time: (ms: number) => new Date(ms).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' }),
+    time,
+    // chat bubbles: today's messages carry the time alone, older ones the date too
+    stamp: (ms: number) => dayKey(ms) === dayKey(Date.now()) ? timeLabel(ms, language) : time(ms),
   };
 }
 
@@ -145,7 +148,8 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
               <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
                 {city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}
               </Txt>
-              <Txt variant="title">{money(order.price)}</Txt>
+              {/* a cancelled order was never charged and pays the driver nothing */}
+              <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>
             </Row>
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{/* private is the default and sat on every row; only shared, the exception, is marked */}{order.shared ? ` · ${c.shared}` : ''} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
   type ColorValue, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +8,7 @@ import Animated, { css, cubicBezier, FadeInDown, LinearTransition, useReducedMot
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import type { BottomTabBarProps } from 'expo-router/js-tabs';
+import { BottomTabBarHeightContext, type BottomTabBarProps } from 'expo-router/js-tabs';
 import { copy, fill, type CopyKey } from './copy';
 import { errorCode } from './api';
 import { useSession } from './session';
@@ -63,9 +63,10 @@ export function useCopy() {
 export { fill };
 
 // Native confirm on iOS/Android; window.confirm on web where Alert buttons don't render.
-export function confirm(message: string, onYes: () => void, yes = 'OK', no = '×') {
+// The action names the dialog and the message goes in the body: Android cuts alert titles at two lines.
+export function confirm(message: string, onYes: () => void, yes: string, no: string) {
   if (Platform.OS === 'web') { if (window.confirm(message)) onYes(); return; }
-  Alert.alert(message, undefined, [{ text: no, style: 'cancel' }, { text: yes, style: 'destructive', onPress: onYes }]);
+  Alert.alert(yes, message, [{ text: no, style: 'cancel' }, { text: yes, style: 'destructive', onPress: onYes }]);
 }
 
 // One haptic per committed action, always alongside a visual change. No-op on web.
@@ -119,12 +120,18 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const refresh = onRefresh && (async () => { setRefreshing(true); await onRefresh(); setRefreshing(false); });
-  return <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-    <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-      refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}>
-      {children}
-    </ScrollView>
-    {footer && <View style={styles.footer}>{footer}</View>}
+  // Inside tabs the TabBar already clears the system navigation bar; a second bottom inset left a dead band (A53).
+  const inTabs = useContext(BottomTabBarHeightContext) !== undefined;
+  // Android is edge-to-edge, so the keyboard no longer resizes the window: pad by the overlap instead. The ScrollView then
+  // shrinks and Android scrolls the focused field into view, and the footer rides on the keyboard. iOS screens wrap their own.
+  return <SafeAreaView edges={inTabs ? ['top'] : ['top', 'bottom']} style={styles.safe}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+        refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}>
+        {children}
+      </ScrollView>
+      {footer && <View style={styles.footer}>{footer}</View>}
+    </KeyboardAvoidingView>
   </SafeAreaView>;
 }
 
@@ -234,7 +241,8 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: tone.bg, flexDirection: row }, variant === 'outline' && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
-      {loading ? <ActivityIndicator size="small" color={tone.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={tone.fg} />}
+      {loading ? <ActivityIndicator size="small" color={tone.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={tone.fg}
+        style={row === 'row-reverse' && /^(arrow-(forward|back)|send)/.test(icon) ? { transform: [{ scaleX: -1 }] } : undefined} /* point the way Arabic reads */ />}
       <Text style={[styles.buttonText, small && { fontSize: 13 }, { color: tone.fg, flexShrink: 1 }]}>{title}</Text>
     </View>
     {trailing && <Text style={[styles.buttonText, { color: variant === 'primary' ? palette.lime : tone.fg }]}>{trailing}</Text>}
@@ -298,16 +306,33 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
   onSubmitEditing?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
   const { align, row } = useCopy();
-  const inputAlign = keyboardType === 'phone-pad' || keyboardType === 'decimal-pad' || keyboardType === 'email-address' ? 'left' : align;
+  const inputAlign = keyboardType === 'phone-pad' || keyboardType === 'decimal-pad' || keyboardType === 'number-pad' || keyboardType === 'email-address' ? 'left' : align;
   const [focused, setFocused] = useState(false);
+  // Android 15 draws a line in the Arabic locale taller than layout measures it, so a multiline field grew short and hid its
+  // first line (A53); size the box from the text the field actually drew.
+  const [textHeight, setTextHeight] = useState(0);
+  const ownRef = React.useRef<TextInput>(null);
+  const ref = inputRef ?? ownRef;
+  // Android keeps focus when the keyboard is closed with Back; blur so the touch layer below returns and a drag scrolls again.
+  React.useEffect(() => {
+    if (!focused || Platform.OS !== 'android') return;
+    const sub = Keyboard.addListener('keyboardDidHide', () => ref.current?.blur());
+    return () => sub.remove();
+  }, [focused, ref]);
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={inputRef} accessibilityLabel={label} accessibilityHint={error} accessibilityState={{ disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} accessibilityState={{ disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, textAlignVertical: 'top', paddingTop: 12 }]} />
+        onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
+        autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+      {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
+          the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
+          font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
+      {Platform.OS === 'android' && !focused && <Pressable style={StyleSheet.absoluteFill} accessible={false} importantForAccessibility="no" disabled={disabled}
+        onPress={() => { ref.current?.focus(); ref.current?.setSelection(value.length, value.length); }} />}
     </View>
     {!!error && <Row gap={5} style={{ marginTop: 5 }}>
       <Ionicons name="alert-circle" size={14} color={palette.error} />
@@ -445,7 +470,8 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
         }} style={styles.barItem}>
-        <View style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
+        {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
+        <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>

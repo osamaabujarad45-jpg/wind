@@ -1,6 +1,6 @@
 // Receipt for a finished order (requirement U7): what was moved, where, by whom, what it cost, and how it was handed over.
 import { Platform, Share, StyleSheet, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
 import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
 import { statusText, useFormat } from '../../parts';
@@ -16,12 +16,15 @@ export default function Receipt() {
 
   if (!order || !me) return <Screen><Header title={c.receipt} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
+  // a receipt exists only for a completed order (the order screen links it only then): a deep link to any other order
+  // opens the order itself, so a cancelled job never shows earnings
+  if (order.status !== 'completed') return <Redirect href={`/order/${order.id}`} />;
+
   const role = me.user.role;
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const commission = order.commission ?? commissionOn(order.price, rate);
   const from = city(order.pickupCity)[language], to = city(order.dropoffCity)[language];
   const arrow = rtl ? '←' : '→';
-  const done = order.status === 'completed';
   const cash = order.price - order.discount; // promo discounts are paid by Wind, not in cash
 
   const lines: [string, string][] = [
@@ -35,7 +38,7 @@ export default function Receipt() {
     ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
     [c.payWith, c.cash],
     [c.payment, c.paymentUnconfirmed],
-    ...(done ? [[c.proof, order.service === 'ride' ? c.proofRide : c.proofCode] as [string, string]] : []),
+    [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
   async function share() {
