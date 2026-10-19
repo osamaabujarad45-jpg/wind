@@ -50,8 +50,8 @@ export default function Welcome() {
 
     <View style={styles.footer}>
       <Row gap={8} style={{ justifyContent: 'center' }}>
-        {Array.from({ length: SLIDES }, (_, i) => <Pressable key={i} accessibilityRole="button" style={styles.slideKey}
-          accessibilityLabel={fill(c.stepOf, { n: i + 1, total: SLIDES })} accessibilityState={{ selected: i === index }}
+        {Array.from({ length: SLIDES }, (_, i) => <Pressable key={i} accessibilityRole="radio" style={styles.slideKey}
+          accessibilityLabel={fill(c.stepOf, { n: i + 1, total: SLIDES })} aria-checked={i === index}
           onPress={() => setIndex(i)}>
           <View style={[styles.dot, i === index && styles.dotOn]} />
         </Pressable>)}

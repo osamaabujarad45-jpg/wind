@@ -139,7 +139,7 @@ export default function OrderScreen() {
         <Row gap={10}>
           <Ionicons name="checkmark-circle" size={26} color={palette.olive} />
           <View style={{ flex: 1 }}>
-            <Txt variant="title">{statusText(c, order)}</Txt>
+            <Txt variant="title">{statusText(c, order, mine)}</Txt>
             <Txt variant="caption">{time(order.updatedAt)}</Txt>
           </View>
         </Row>
@@ -238,7 +238,7 @@ export default function OrderScreen() {
       <Card>
         <Row gap={8} style={{ marginBottom: 10 }}>
           <Pulse color={serviceMeta[order.service].color} size={8} />
-          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order)}</Txt>
+          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
         </Row>
         <View style={[styles.progress, { flexDirection: row }]} accessibilityRole="progressbar" accessibilityLabel={c.tripProgress}
           accessibilityValue={{ min: 0, max: steps.length, now: step + 1 }}>
@@ -635,7 +635,7 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 }
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
     <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.clay} />
   </Pressable>;
 }

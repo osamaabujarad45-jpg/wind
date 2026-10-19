@@ -30,7 +30,8 @@ export const roadAlerts = (roads: Road[], ...on: CityId[]) =>
 export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string };
 export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string }[] };
 export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
-export const safetyKinds: SafetyKind[] = ['unsafe_driving', 'harassment', 'accident', 'threat', 'other'];
+// "other" leads: it is the preselected chip, and a chip rail's far end starts off-screen (Safety in order/[id].tsx)
+export const safetyKinds: SafetyKind[] = ['other', 'unsafe_driving', 'harassment', 'accident', 'threat'];
 export type Plan = 'plus' | 'pro';
 export type Point = { latitude: number; longitude: number };
 

@@ -8,7 +8,7 @@ import { disablePush, enablePush, pushState, pushSupported, refreshPush, type Pu
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { useSession } from './session';
-import type { Copy } from './copy';
+import { statusText } from './copy';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
@@ -19,8 +19,7 @@ export const serviceMeta: Record<Service, { icon: IconName; color: string; pale:
   freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
 };
 
-// A status in the order's own words: rides end as a trip, not a delivery.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>) => (o.service === 'ride' && (c as Record<string, string | undefined>)[`${o.status}_ride`]) || c[o.status];
+export { statusText };
 
 export function useFormat() {
   const { language } = useCopy();
@@ -137,10 +136,12 @@ export function MoreOrders({ more }: { more: ReturnType<typeof useOrders>['more'
 export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
+  const { me } = useSession();
+  const mine = me?.user.role === 'driver' && order.driverId === me.user.id;
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
-      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${statusText(c, order)}`} onPress={() => router.push(`/order/${order.id}`)}>
+      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
@@ -153,7 +154,7 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             </Row>
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{/* private is the default and sat on every row; only shared, the exception, is marked */}{order.shared ? ` · ${c.shared}` : ''} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-              {status ? <Badge label={statusText(c, order)} status={order.status} /> : <View />}
+              {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
               <Txt variant="micro">{orderCode(order.id)}</Txt>
             </Row>
           </View>

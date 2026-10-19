@@ -1,7 +1,7 @@
 import React, { useContext, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
-  type ColorValue, type StyleProp, type TextStyle, type ViewStyle,
+  type ColorValue, type LayoutRectangle, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { css, cubicBezier, FadeInDown, LinearTransition, useReducedMotion } from './motion';
@@ -152,7 +152,7 @@ export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
   const bg = { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} accessibilityState={{ disabled }} hitSlop={HIT}
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} aria-disabled={disabled} hitSlop={HIT}
     style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
     <Ionicons name={icon} size={19} color={tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
@@ -216,12 +216,12 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // Press feedback: 3% scale over 120ms on the UI thread.
 export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { selected?: boolean; checked?: boolean; busy?: boolean };
+  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
   hitSlop?: number; // for controls drawn smaller than 44pt
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    accessibilityState={{ disabled, ...accessibilityState }} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+    aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
@@ -254,7 +254,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
   return <View style={[styles.choices, { flexDirection: row }]} accessibilityRole="radiogroup">
     {items.map(item => {
       const on = item.key === value;
-      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled }} disabled={disabled}
+      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} aria-checked={on} aria-disabled={disabled} disabled={disabled}
         onPress={() => onChange(item.key)} style={{ flex: 1 }} hitSlop={{ top: 4, bottom: 4 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
@@ -269,30 +269,46 @@ export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }:
   const { row, language } = useCopy();
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'إنقاص' : 'Decrease'} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'إنقاص' : 'Decrease'} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
     <Text accessibilityLabel={`${label}: ${value}`} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'زيادة' : 'Increase'} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'زيادة' : 'Increase'} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
   </View>;
 }
 
-// Horizontal scroller that starts at the reading start: in Arabic the first item sits at the right edge.
-export function Rail({ children, gap = 8, style, contentStyle }: { children: React.ReactNode; gap?: number; style?: StyleProp<ViewStyle>; contentStyle?: StyleProp<ViewStyle> }) {
+// Horizontal scroller that starts at the reading start: in Arabic the first item sits at the right edge. `reveal` (a child's
+// layout) scrolls just far enough to show that child when the start would leave it off-screen.
+export function Rail({ children, gap = 8, style, contentStyle, reveal }: { children: React.ReactNode; gap?: number; style?: StyleProp<ViewStyle>; contentStyle?: StyleProp<ViewStyle>; reveal?: LayoutRectangle }) {
   const { row, rtl } = useCopy();
   const ref = React.useRef<ScrollView>(null);
+  const size = React.useRef({ view: 0, content: 0 });
+  const place = React.useCallback(() => {
+    const { view, content } = size.current, end = Math.max(0, content - view), start = rtl ? end : 0;
+    if (!view || !content) return;
+    const x = !reveal || (reveal.x >= start && reveal.x + reveal.width <= start + view) ? start
+      : Math.min(end, Math.max(0, rtl ? reveal.x - 16 : reveal.x + reveal.width + 16 - view));
+    ref.current?.scrollTo({ x, animated: false });
+  }, [reveal, rtl]);
+  // Only a new reveal scrolls: losing it (another chip tapped) leaves the rail where the finger put it.
+  React.useEffect(() => { if (reveal) place(); }, [place, reveal]);
   return <ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={false} style={[{ flexGrow: 0 }, style]}
     contentContainerStyle={[{ flexDirection: row, gap }, contentStyle]}
-    onContentSizeChange={() => { if (rtl) ref.current?.scrollToEnd({ animated: false }); }}>
+    onLayout={e => { size.current.view = e.nativeEvent.layout.width; place(); }}
+    onContentSizeChange={w => { size.current.content = w; place(); }}>
     {children}
   </ScrollView>;
 }
 
 export function FilterChips<K extends string>({ items, value, onChange }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void }) {
-  return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }}>
-    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value }} accessibilityLabel={item.label}
+  // The selected chip's box as laid out, so a rail that opens on a later choice (a driver's far heading, a reschedule slot)
+  // shows it. A tap only recolours chips, so it never relays out and never scrolls.
+  const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
+  return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
+    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" aria-checked={item.key === value} accessibilityLabel={item.label}
+      onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
       onPress={() => onChange(item.key)} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn]}>
       <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
@@ -323,7 +339,7 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} accessibilityState={{ disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
@@ -465,7 +481,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
       const focused = state.index === index;
       const color = focused ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
-      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: focused }}
+      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={focused}
         onPress={() => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }

@@ -1,3 +1,5 @@
+import type { Order } from './model';
+
 const ar = {
   installIphone: 'ثبّت على iPhone مجاناً',
   brand: 'ويند',
@@ -150,6 +152,11 @@ const ar = {
   at_pickup_ride: 'السائق عند نقطة الالتقاء',
   in_transit_ride: 'في الطريق إلى الوجهة',
   completed_ride: 'انتهت الرحلة',
+  // the assigned driver reads their own trip, not "the driver …" (statusText's driver flag)
+  driver_assigned: 'في الطريق للاستلام',
+  driver_at_pickup: 'وصلت لنقطة الاستلام',
+  driver_assigned_ride: 'في الطريق لنقطة الالتقاء',
+  driver_at_pickup_ride: 'وصلت لنقطة الالتقاء',
   cancelled: 'ملغي',
   on_hold: 'بانتظار قرار الدعم',
   returning: 'في الطريق للإرجاع للمرسل',
@@ -823,6 +830,10 @@ const en: Copy = {
   at_pickup_ride: 'Driver at pickup',
   in_transit_ride: 'On the way',
   completed_ride: 'Trip completed',
+  driver_assigned: 'Heading to pickup',
+  driver_at_pickup: 'At pickup',
+  driver_assigned_ride: 'Heading to pickup',
+  driver_at_pickup_ride: 'At pickup',
   cancelled: 'Cancelled',
   on_hold: 'On hold — support deciding',
   returning: 'Returning to sender',
@@ -1338,3 +1349,9 @@ export const copy = { ar: ar as Copy, en };
 export function fill(template: string, values: Record<string, string | number>) {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 }
+
+// A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>, driver = false) => {
+  const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
+  return (driver && k[`driver_${o.status}${ride}`]) || (ride && k[`${o.status}${ride}`]) || c[o.status];
+};

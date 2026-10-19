@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
-import { isOpen, keepOlder, withOlder } from '../src/model.ts';
+import { copy, statusText } from '../src/copy.ts';
+import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
   pickupNote: 'محل', dropoffNote: 'الدوار', contact: '0599123456', detail: 'كتب', option: 'small', loadingHelp: false, shared: false, quotedPrice: 48 };
@@ -74,3 +75,22 @@ const rawRows = sources.flatMap(f => readFileSync(new URL(`../src/${f.replaceAll
   .map((line, i) => ({ f, i: i + 1, line })).filter(({ line }) => /flexDirection: 'row'/.test(line) && !/ltr:/.test(line)));
 assert.deepEqual(rawRows.map(({ f, i }) => `${f}:${i}`), [], 'raw left-to-right rows outside the RTL helper');
 console.log('RTL row check passed');
+
+// Status perspective: the assigned driver reads their own move ("heading to pickup"), everyone else "the driver …";
+// rides keep trip words, and a status with no driver wording falls back to the shared one.
+for (const c of [copy.ar, copy.en]) {
+  const parcel = status => ({ service: 'parcel', status }), ride = status => ({ service: 'ride', status });
+  assert.equal(statusText(c, parcel('assigned')), c.assigned);
+  assert.equal(statusText(c, parcel('assigned'), true), c.driver_assigned);
+  assert.equal(statusText(c, parcel('at_pickup'), true), c.driver_at_pickup);
+  assert.equal(statusText(c, ride('assigned')), c.assigned_ride);
+  assert.equal(statusText(c, ride('assigned'), true), c.driver_assigned_ride);
+  assert.equal(statusText(c, ride('at_pickup'), true), c.driver_at_pickup_ride);
+  assert.equal(statusText(c, ride('in_transit'), true), c.in_transit_ride);
+  assert.equal(statusText(c, parcel('in_transit'), true), c.in_transit);
+  assert.equal(statusText(c, parcel('returning'), true), c.returning);
+}
+assert.ok(!statusText(copy.ar, { service: 'parcel', status: 'assigned' }, true).includes('السائق'), 'a driver never reads "the driver" about themself');
+// The safety card preselects 'other': it leads the chips so it is on screen when the card opens.
+assert.equal(safetyKinds[0], 'other');
+console.log('Status perspective and safety default checks passed');

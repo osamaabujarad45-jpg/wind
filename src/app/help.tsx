@@ -45,7 +45,7 @@ export default function Help() {
       {shown.map((key, i) => {
         const expanded = open === key;
         return <Animated.View key={key} layout={LinearTransition.duration(200)} style={[styles.item, i === shown.length - 1 && { borderBottomWidth: 0 }]}>
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={c[`q_${key}`]}
+          <Pressable accessibilityRole="button" aria-expanded={expanded} accessibilityLabel={c[`q_${key}`]}
             onPress={() => setOpen(expanded ? null : key)}>
             <Row gap={10} style={{ minHeight: 52 }}>
               <Txt variant="title" style={{ flex: 1, fontSize: 15 }}>{c[`q_${key}`]}</Txt>

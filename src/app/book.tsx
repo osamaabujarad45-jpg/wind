@@ -504,7 +504,7 @@ function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, o
           {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
           {list.map(item => {
             const on = item.id === selected;
-            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item[language]} accessibilityState={{ selected: on }} onPress={() => onPick(item.id)}>
+            return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={item[language]} aria-checked={on} onPress={() => onPick(item.id)}>
               <Row gap={12} style={styles.sheetRow}>
                 <View style={[styles.pin, on && { backgroundColor: palette.forest }]}>
                   <Ionicons name="location" size={15} color={on ? palette.lime : palette.secondary} />
