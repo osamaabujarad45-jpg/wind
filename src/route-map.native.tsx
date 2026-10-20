@@ -1,8 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
+import { useReducedMotion } from './motion';
 import type { PinMapProps, RouteMapProps } from './route-preview';
-import { palette } from './ui';
+import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
 // iOS: Apple Maps, no key. Android uses route-map.android.tsx (no Google Maps key in the build).
@@ -18,7 +20,15 @@ export default function RouteMap(props: RouteMapProps) {
     latitudeDelta: Math.max((Math.max(...lats) - Math.min(...lats)) * 1.6, 0.02),
     longitudeDelta: Math.max((Math.max(...lngs) - Math.min(...lngs)) * 1.6, 0.02),
   };
-  return <MapView style={{ height, width: '100%' }} initialRegion={region} pitchEnabled={false} rotateEnabled={false}>
+  // Follow the driver like web/Android: reframe on every fix until the user touches the map, then offer recenter.
+  const view = useRef<MapView>(null);
+  const [moved, setMoved] = useState(false);
+  const still = useReducedMotion();
+  const key = JSON.stringify(region);
+  useEffect(() => { if (!moved) view.current?.animateToRegion(region, still ? 0 : 800); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { c } = useCopy();
+  return <View style={{ height, width: '100%' }}>
+  <MapView ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false} onTouchStart={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     {props.approach && <Polyline coordinates={props.approach.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.blue} strokeWidth={5} />}
@@ -27,15 +37,26 @@ export default function RouteMap(props: RouteMapProps) {
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name="remove-circle" size={24} color={palette.error} />
     </Marker>)}
+    {/* Accuracy halo like web/Android: a coarse fix reads as "somewhere here", not a precise dot. */}
+    {!!driver?.accuracy && <Circle center={driver} radius={driver.accuracy} fillColor={`${palette.blue}1F`} strokeColor={`${palette.blue}4D`} strokeWidth={1} />}
     {driver && <Marker coordinate={driver} title={driverTitle} flat rotation={driver.heading ?? 0} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
     </Marker>}
-  </MapView>;
+  </MapView>
+  {moved && <Pressable onPress={() => { setMoved(false); view.current?.animateToRegion(region, still ? 0 : 800); }}
+    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
+    <Ionicons name="locate" size={20} color={palette.blue} />
+  </Pressable>}
+  </View>;
 }
+
+const styles = StyleSheet.create({
+  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+});
 
 export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
   return <View style={{ height, width: '100%' }}>
-    <MapView style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
+    <MapView style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
       pitchEnabled={false} rotateEnabled={false} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />

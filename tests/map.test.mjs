@@ -69,6 +69,13 @@ try {
   seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
   assert.equal(seen.heading, 12.5);
   assert.equal(seen.accuracy, 8);
+  // -1 accuracy means unknown; 0,0 and out-of-range ages are refused; an older fix uploaded late never wins.
+  for (const bad of [{ latitude: 0, longitude: 0 }, { age: -1 }, { age: 60_001 }])
+    await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, ...bad }, expect: 400 });
+  await call('/location', { token: driver.token, body: { latitude: 31.97, longitude: 35.23, accuracy: -1, age: 0 } });
+  await call('/location', { token: driver.token, body: { latitude: 31.5, longitude: 35.5, age: 30_000 } });
+  seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
+  assert.deepEqual([seen.latitude, seen.accuracy], [31.97, null]);
 
   // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
   await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });

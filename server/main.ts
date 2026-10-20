@@ -1546,14 +1546,20 @@ function driverCommand(user: User, id: number, body: Row, apply: (user: User, id
 route('POST', '/api/location', ({ user, body }) => {
   needActive(user);
   need(user, 'driver');
+  limit(identityKey('location', user.id), 60, 60_000); // real clients post a few times a minute
   if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'no_active_job');
   const { latitude: lat, longitude: lng } = pointOf({ latitude: body.latitude, longitude: body.longitude })!;
+  if (lat === 0 && lng === 0) fail(400, 'invalid_location'); // a location stub's default, never a road here
   // Optional extras for a better marker; devices report -1 or nothing when unknown.
   const heading = body.heading == null || body.heading === -1 ? null : finite(body.heading, 360, 0) ? body.heading : fail(400, 'invalid_location');
-  const accuracy = body.accuracy == null ? null : finite(body.accuracy, 5000, 0) ? body.accuracy : fail(400, 'invalid_location');
+  const accuracy = body.accuracy == null || body.accuracy === -1 ? null : finite(body.accuracy, 5000, 0) ? body.accuracy : fail(400, 'invalid_location');
+  // Fix age (ms) as the device measured it: no clock skew. The stamp is when the fix was taken, and a late
+  // upload of an older fix never replaces a newer one.
+  const age = body.age == null ? 0 : finite(body.age, 60_000, 0) ? body.age : fail(400, 'invalid_location');
   run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy`,
-  user.id, lat, lng, Date.now(), heading, accuracy);
+    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy
+    WHERE excluded.updated_at >= driver_locations.updated_at`,
+  user.id, lat, lng, Date.now() - age, heading, accuracy);
   return { ok: true };
 });
 
@@ -1638,7 +1644,7 @@ route('GET', '/api/route', ({ user, query }) => {
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const hash = sha(params[0]!);
-  limit(identityKey('track-eta', hash), 60, 10 * 60_000);
+  limit(identityKey('track-eta', hash), 300, 10 * 60_000); // per link, and a family may watch one link together
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
   // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).

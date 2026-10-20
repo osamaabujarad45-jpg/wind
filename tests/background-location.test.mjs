@@ -13,11 +13,17 @@ function harness() {
 }
 {
   const h = harness(); await deliverDriverFix(fix, h.io, now);
-  assert.deepEqual(h.posts, [{ key: original.token, body: { latitude: 32, longitude: 35 } }]);
+  assert.deepEqual(h.posts, [{ key: original.token, body: { latitude: 32, longitude: 35, age: 0 } }]);
   assert.equal(h.receipt().lastSentAt, now);
   await deliverDriverFix(fix, h.io, now + 1); assert.equal(h.posts.length, 1, 'duplicate cached fix cannot refresh freshness');
   await deliverDriverFix({ ...fix, timestamp: now + 20_000 }, h.io, now + 20_000);
   assert.equal(h.posts.length, 2, 'stationary but newly measured coordinates do refresh freshness');
+}
+{
+  // Overlapping task callbacks: one upload per measurement, and an older fix never follows a newer one.
+  const h = harness(); const late = { ...fix, timestamp: now + 1_000 };
+  await Promise.all([deliverDriverFix(late, h.io, now + 1_000), deliverDriverFix(late, h.io, now + 1_000), deliverDriverFix(fix, h.io, now + 1_000)]);
+  assert.equal(h.posts.length, 1); assert.equal(h.receipt().fixAt, now + 1_000);
 }
 for (const invalid of [{ ...fix, timestamp: now - 60_001 }, { ...fix, timestamp: now + 6_000 },
   { ...fix, coords: { latitude: NaN, longitude: 35 } }, { ...fix, coords: { latitude: 32, longitude: 181 } }]) {

@@ -161,7 +161,7 @@ function draw() {
     closedMarkers = (state.closed ?? []).map(p => new ml.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
   }
   const driver = state.driver;
-  const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy}` : '';
+  const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${state.focus}` : '';
   if (key === drawnDriver) return;
   drawnDriver = key;
   const source = map.getSource('accuracy');

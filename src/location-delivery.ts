@@ -2,8 +2,16 @@ export type TrackingContext = { id: string; token: string; actor: number; orderI
 export type DriverFix = { timestamp: number; coords: { latitude: number; longitude: number; heading?: number | null; accuracy?: number | null } };
 export type TrackingReceipt = { id: string; lastSentAt: number; fixAt: number; failed?: boolean };
 
+// Background callbacks can overlap; one at a time, so the receipt check orders and dedups fixes.
+let queue: Promise<void> = Promise.resolve();
+export function deliverDriverFix(...args: Parameters<typeof deliverOnce>) {
+  const run = queue.then(() => deliverOnce(...args));
+  queue = run.catch(() => {});
+  return run;
+}
+
 // A headless task can outlive a screen or login. Check persisted authority before every upload.
-export async function deliverDriverFix(fix: DriverFix, io: {
+async function deliverOnce(fix: DriverFix, io: {
   context: () => Promise<TrackingContext | null>;
   token: () => Promise<string | null>;
   receipt: () => Promise<TrackingReceipt | null>;
@@ -22,7 +30,7 @@ export async function deliverDriverFix(fix: DriverFix, io: {
   if ((await io.context())?.id !== context.id || await io.token() !== context.token) return;
   let status = 0;
   try {
-    status = await io.post(context.token, { latitude, longitude,
+    status = await io.post(context.token, { latitude, longitude, age: Math.max(0, now - fix.timestamp),
       ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
       ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
   } catch { /* The next fresh fix retries; stale coordinates are never queued. */ }

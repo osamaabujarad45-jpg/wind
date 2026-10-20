@@ -145,7 +145,7 @@ function LiveMap(props: RouteMapProps) {
 
   // Driver: glide from the shown position to the new fix instead of jumping every poll.
   const heading = driver?.heading ?? null, accuracy = driver?.accuracy ?? null;
-  const driverKey = driver ? `${driver.latitude},${driver.longitude},${heading},${accuracy}` : '';
+  const driverKey = driver ? `${driver.latitude},${driver.longitude},${heading},${accuracy},${props.focus}` : '';
   useEffect(() => {
     if (!map) return;
     const state = markers.current;

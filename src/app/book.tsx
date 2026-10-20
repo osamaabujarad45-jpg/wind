@@ -1,6 +1,6 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -89,9 +89,11 @@ export default function Book() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.granted) {
+        // Web defaults maximumAge to Infinity: a fix from another place must not become the pickup. Native ignores it.
+        const fresh = { maximumAge: 60_000 };
         const { coords } = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-          new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('location_timeout')), 10_000); }),
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, ...fresh }),
+          new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('location_timeout')), 20_000); }), // cold GPS start
         ]);
         const point = { latitude: coords.latitude, longitude: coords.longitude };
         // GPS adds a pin to the chosen city; it does not silently turn an unsupported area into that city.
@@ -100,7 +102,11 @@ export default function Book() {
           return;
         }
         setPickupPoint(point); setGpsPoint(point);
-      } else setLocationError(c.locationManual);
+      } else {
+        setLocationError(c.locationManual);
+        // Denied for good: the system will not ask again, so the only way back is Settings.
+        if (!permission.canAskAgain && Platform.OS !== 'web') void Linking.openSettings().catch(() => {});
+      }
     } catch {
       setLocationError(c.locationManual);
     } finally { if (timeout) clearTimeout(timeout); setLocating(false); }

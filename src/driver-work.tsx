@@ -152,16 +152,18 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     let stopped = false;
     let publishing = false;
     let locating = false;
-    let lastPublishedAt = 0;
+    let lastPublishedAt = 0, lastTriedAt = 0;
     const setState = (value: Exclude<Tracking, 'idle'>) => {
       if (!stopped) setTrackingResult({ actor, orderId, value });
     };
-    const publish = async ({ latitude, longitude, heading, accuracy }: Location.LocationObjectCoords) => {
-      if (stopped || publishing) return;
-      publishing = true;
+    const publish = async ({ coords: { latitude, longitude, heading, accuracy }, timestamp }: Location.LocationObject) => {
+      const age = Math.max(0, Date.now() - timestamp);
+      // Browsers fire watch callbacks without honouring timeInterval; at most one upload per 5 s keeps under the API limit.
+      if (stopped || publishing || age > 60_000 || Date.now() - lastTriedAt < 5_000) return;
+      publishing = true; lastTriedAt = Date.now();
       try {
         // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
-        await api('/location', { latitude, longitude,
+        await api('/location', { latitude, longitude, age,
           ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
           ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
         lastPublishedAt = Date.now();
@@ -171,18 +173,20 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
         void reload();
       } finally { publishing = false; }
     };
-    const options = { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 30, mayShowUserSettingsDialog: true };
+    // Web defaults maximumAge to Infinity, so the heartbeat would re-read one cached fix forever. Native ignores it.
+    const fresh = { maximumAge: 10_000 };
+    const options = { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 30, mayShowUserSettingsDialog: true, ...fresh };
     setState('starting');
     const readPosition = () => {
       if (stopped || locating) return;
       locating = true;
-      void Location.getCurrentPositionAsync(options).then(position => publish(position.coords))
+      void Location.getCurrentPositionAsync(options).then(publish)
         .catch(() => setState('starting')).finally(() => { locating = false; });
     };
     readPosition();
     // Movement subscriptions can stay silent at a stop. Obtain a new fix rather than re-stamping an old one.
     const heartbeat = setInterval(() => { if (Date.now() - lastPublishedAt >= 25_000) readPosition(); }, 30_000);
-    void Location.watchPositionAsync(options, position => { void publish(position.coords); }, () => setState('off'))
+    void Location.watchPositionAsync(options, position => { void publish(position); }, () => setState('off'))
       .then(sub => { if (stopped) sub.remove(); else subscription = sub; })
       .catch(() => setState('off'));
     return () => { stopped = true; clearInterval(heartbeat); subscription?.remove(); };

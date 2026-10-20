@@ -38,7 +38,7 @@ export default function TrackScreen() {
   return <Screen>
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-      <RouteMap pickup={from} dropoff={to} focus={data.status === 'in_transit' ? 'dropoff' : 'pickup'} pickupTitle={from[language]} dropoffTitle={to[language]}
+      <RouteMap pickup={from} dropoff={to} focus={['assigned', 'at_pickup', 'returning'].includes(data.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location && etaFresh ? etaData?.approach : null} />
     </View>
     <Card>
