@@ -144,7 +144,6 @@ npx eas-cli@latest login
 npx eas-cli@latest init                                   # links the project, writes projectId
 npx eas-cli@latest env:create --name EXPO_PUBLIC_API_URL --value https://<api> --environment preview --environment production --visibility plaintext
 npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPPORT_WHATSAPP --value 970599000000 --environment preview --environment production --visibility plaintext
-npx eas-cli@latest env:create --name GOOGLE_MAPS_API_KEY --value <key> --environment preview --environment production --visibility sensitive
 npx eas-cli@latest build --profile preview --platform all      # internal install links
 npx eas-cli@latest build --profile production --platform all   # store builds, build numbers auto-increment
 npx eas-cli@latest submit --platform all
@@ -152,7 +151,7 @@ npx eas-cli@latest submit --platform all
 
 - `EXPO_PUBLIC_API_URL` is required and must be `https`; the EAS build fails fast otherwise.
 - `EXPO_PUBLIC_SUPPORT_WHATSAPP` (international digits) shows "Contact support" in the app. Optional.
-- `GOOGLE_MAPS_API_KEY` (Maps SDK for Android, restricted to `ps.wind.app`) enables the Android map; without it Android shows the static route card. iOS uses Apple Maps.
+- Maps need no key: Android shows MapLibre + OpenFreeMap in a WebView loading `<EXPO_PUBLIC_API_URL>/map.html` (falls back to the route card if it can't load), iOS uses Apple Maps.
 
 ### 3. Web / iPhone access
 

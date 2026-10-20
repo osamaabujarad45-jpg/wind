@@ -6,6 +6,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
@@ -34,7 +35,9 @@ const enabledServices = services.filter(service => (process.env.WIND_ENABLED_SER
 const supportContact = (process.env.SUPPORT_CONTACT ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path => [path,
   readFileSync(new URL(`${path.slice(1)}.html`, import.meta.url), 'utf8').replaceAll('{{contact}}', supportContact)]));
-const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : null;
+// Dev (`npm run server`): serve public/ so the Android app's map page (/map.html + /vendor) loads; without it the WebView 404s
+// and every Android map falls back to the diagram.
+const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : production ? null : fileURLToPath(new URL('../public', import.meta.url));
 const webContentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',

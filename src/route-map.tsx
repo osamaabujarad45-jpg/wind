@@ -54,15 +54,15 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
       created.touchZoomRotate.disableRotation();
       created.once('style.load', () => { // style parsed: draw now, tiles stream in after
         if (disposed) return;
-        ready = true;
         for (const layer of created!.getStyle().layers)
           if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
             created!.setLayoutProperty(layer.id, 'text-field', labelField(language) as ExpressionSpecification);
         created!.once('load', () => container?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show')); // (i) button; credits one tap away
         first.current.onReady(created!, ml);
+        ready = true; // after drawing: a throw above leaves the timer to show the fallback
         setMap(created!);
       });
-    }, () => { if (!disposed) setFailed(true); });
+    }).catch(() => { if (!disposed) setFailed(true); }); // import failed, or no WebGL (new Map throws)
     return () => { disposed = true; clearTimeout(timer); created?.remove(); container?.remove(); };
   }, [host, language]);
   return { map, failed };
@@ -108,7 +108,7 @@ function LiveMap(props: RouteMapProps) {
   const points = [pickup, dropoff, ...(driver ? [driver] : [])];
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
   const { map, failed } = useMap(host, points, language, { padding }, (m, ml) => {
-    markers.current.ml = ml;
+    markers.current = { ml }; // a language change rebuilds the map: forget the old map's driver marker
     new ml.Marker({ element: dot(palette.olive) }).setLngLat([pickup.longitude, pickup.latitude]).addTo(m);
     new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
     // Lines follow roads only (OSRM geometry); a straight pickup→dropoff line would cut through buildings.
