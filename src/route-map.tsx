@@ -196,6 +196,9 @@ function LiveMap(props: RouteMapProps) {
     if (!moved) map.fitBounds(fitBounds([origin, target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
   }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it every render.
+  useEffect(() => { const el = markers.current.driver?.getElement(); if (el) el.style.opacity = props.stale ? '0.45' : ''; });
+
   function nextStops() { return props.focus === 'pickup' ? [pickup] : props.focus === 'dropoff' ? [dropoff] : [pickup, dropoff]; }
   function recenter() {
     setMoved(false);

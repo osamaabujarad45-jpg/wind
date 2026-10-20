@@ -9,7 +9,7 @@ import { api, API_URL, ApiError, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
-import { RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { locationState, newerFix } from '../../location-state';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
@@ -56,7 +56,7 @@ export default function OrderScreen() {
   const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
-  const { road, approach, eta, avoids, through, closed } = useRoad(order);
+  const { road, approach, eta, km, avoids, through, closed } = useRoad(order);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
@@ -199,20 +199,18 @@ export default function OrderScreen() {
     <Appear index={1}>
       <View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} />
+          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed}
+          stale={!!location?.stale || !!error} height={live && order.driverLocation ? 300 : undefined} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
             ? fill(location.stale || error ? c.lastDriver : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
             : mine ? c.noYourLocation : c.noDriverLocation}</Txt>
         </Row>}
-        {live && eta && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
-          <Ionicons name="time" size={16} color={palette.olive} />
+        {live && eta && location && !location.stale && !error && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           {/* "the driver arrives" is for the other parties; the driver reads the neutral arrival line */}
-          <Txt variant="title" style={{ flex: 1 }}>{fill(['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine
-            ? alerts.length ? c.etaToPickupSlow : c.etaToPickup
-            : alerts.length ? c.etaToDropoffSlow : c.etaToDropoff, { lo: eta[0], hi: eta[1] })}</Txt>
-        </Row>}
+          <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine} />
+        </View>}
         {live && order.sharedRun && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1 }}>{c.courierRun}</Txt>

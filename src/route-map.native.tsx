@@ -39,7 +39,7 @@ export default function RouteMap(props: RouteMapProps) {
     </Marker>)}
     {/* Accuracy halo like web/Android: a coarse fix reads as "somewhere here", not a precise dot. */}
     {!!driver?.accuracy && <Circle center={driver} radius={driver.accuracy} fillColor={`${palette.blue}1F`} strokeColor={`${palette.blue}4D`} strokeWidth={1} />}
-    {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} />}
+    {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} stale={!!props.stale} />}
   </MapView>
   {moved && <Pressable onPress={() => { setMoved(false); view.current?.animateToRegion(region, still ? 0 : 800); }}
     accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
@@ -52,7 +52,7 @@ export default function RouteMap(props: RouteMapProps) {
 // lands, no hop-and-wait. Driven from JS, not animateMarkerToCoordinate: on iOS that drops a request while one runs
 // and truncates its duration to whole seconds. Own component so a frame re-renders the marker, not the map.
 // ponytail: one setState per frame on one marker; Reanimated if low-end phones drop frames.
-function Car({ driver, title, approach, still }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean }) {
+function Car({ driver, title, approach, still, stale }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean; stale: boolean }) {
   const [glide] = useState(() => glider({ latitude: driver.latitude, longitude: driver.longitude, rotation: driver.heading ?? 0 }));
   const [pose, setPose] = useState(() => glide.frame(0).now);
   const [lineAt, setLineAt] = useState(pose); // the approach line's first point: the marker, redrawn ~10x/s like web/Android
@@ -71,7 +71,7 @@ function Car({ driver, title, approach, still }: { driver: NonNullable<RouteMapP
   const line = useMemo(() => approach && [lineAt, ...approach.map(([longitude, latitude]) => ({ latitude, longitude }))], [approach, lineAt]);
   return <>
     {line && <Polyline coordinates={line} strokeColor={palette.blue} strokeWidth={5} />}
-    <Marker coordinate={pose} title={title} flat rotation={pose.rotation} anchor={{ x: 0.5, y: 0.5 }}>
+    <Marker coordinate={pose} title={title} flat rotation={pose.rotation} anchor={{ x: 0.5, y: 0.5 }} opacity={stale ? 0.45 : 1}>
       <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
     </Marker>
   </>;

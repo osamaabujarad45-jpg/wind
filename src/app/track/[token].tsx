@@ -7,7 +7,7 @@ import { useApi, useLiveFix } from '../../api';
 import { locationState, newerFix } from '../../location-state';
 import { etaRange, fromDriver } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
-import { RouteLine, ServiceIcon, statusText } from '../../parts';
+import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
 import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -42,7 +42,7 @@ export default function TrackScreen() {
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
       <RouteMap pickup={from} dropoff={to} focus={['assigned', 'at_pickup', 'returning'].includes(data.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
+        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={location ? 300 : undefined} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
@@ -51,9 +51,7 @@ export default function TrackScreen() {
       </Row>
       <RouteLine from={from[language]} to={to[language]} ride={data.service === 'ride'} />
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
-      {location && eta != null && <Txt variant="title" style={{ marginTop: 10 }}>{fill(data.status === 'in_transit'
-        ? delayed ? c.etaToDropoffSlow : c.etaToDropoff
-        : delayed ? c.etaToPickupSlow : c.etaToPickup, { lo: etaRange(eta)[0], hi: etaRange(eta)[1] })}</Txt>}
+      {location && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaRange(eta)} now={now} slow={delayed} toPickup={data.status !== 'in_transit'} /></View>}
       {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
       {location && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6 }}>{fill(c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}

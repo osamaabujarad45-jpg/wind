@@ -68,6 +68,9 @@ export const labelField = (language: 'ar' | 'en') => language === 'ar'
 /** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
 
+/** Road distance left, as trackers show it: one decimal close by, whole km further out. */
+export const kmLabel = (km: number) => Math.round(km * 10) < 100 ? (Math.round(km * 10) / 10).toFixed(1) : String(Math.round(km));
+
 /** The approach route to show: the fresh one, else the one kept for the same stop; nothing while the last fetch failed. */
 export const shownApproach = <R>(fetched: R | undefined, failed: boolean, kept: { stop: string; route: R } | undefined, stop: string) =>
   failed ? undefined : fetched ?? (kept?.stop === stop ? kept.route : undefined);

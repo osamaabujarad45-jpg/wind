@@ -77,7 +77,9 @@ map.touchZoomRotate.disableRotation();
 
 const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0;
-window.wind = update => { Object.assign(state, update); if (ready) draw(); };
+window.wind = update => { Object.assign(state, update); if (ready) draw(); fade(); };
+// Faded while the fix is old (lost signal): "last seen here", not live.
+const fade = () => { if (marker) marker.getElement().style.opacity = state.stale ? '0.45' : ''; };
 
 function dot(color, square) {
   const el = document.createElement('div');
@@ -138,7 +140,7 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
     // The WebView can lay out after the map is created (a 150 px booking preview framed nothing): frame again at real size.
     addEventListener('resize', () => { if (!moved) refit(0); });
     map.resize(); refit(0);
-    draw();
+    draw(); fade();
   }
   send({ type: 'ready' });
 });

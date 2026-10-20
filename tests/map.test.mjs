@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, fromDriver, glideMs, glider, labelField, nearLine, roadPath, shownApproach, turn } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, shownApproach, turn } from '../src/map-math.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -109,6 +109,7 @@ try {
   assert.ok(e - w > 0.005 && n - s > 0.005);
   assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
   assert.deepEqual(etaRange(10), [10, 15]);
+  assert.equal(kmLabel(0.84), '0.8'); assert.equal(kmLabel(9.96), '10'); assert.equal(kmLabel(12.6), '13');
   // Live marker: glides for the fix gap (continuous motion), catches up quickly after a long gap, turns the short way.
   assert.equal(glideMs(3_000), 3_000); assert.equal(glideMs(200), 600); assert.equal(glideMs(30_000), 1_200); assert.equal(glideMs(0), 1_200);
   assert.equal(turn(350, 10, 0.5), 0); assert.equal(turn(10, 350, 0.5), 0); assert.equal(turn(90, 180, 1), 180); assert.equal(turn(90, 180, 0), 90);

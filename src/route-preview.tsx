@@ -6,6 +6,8 @@ import { palette, useCopy } from './ui';
 export type RouteMapProps = {
   pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;
   driver?: (Point & { heading?: number | null; accuracy?: number | null }) | null; driverTitle?: string;
+  /** The fix is old (lost signal): the marker fades so it reads as "last seen here", not live. */
+  stale?: boolean;
   /** Which stop the live view frames with the driver: pickup before collection, dropoff after. */
   focus?: 'pickup' | 'dropoff'; height?: number;
   /** Road geometry [lng, lat][] pickup→dropoff from /api/route. Without it no line is drawn (never a straight one). */

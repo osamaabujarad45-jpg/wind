@@ -7,6 +7,7 @@ import { api, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
+import { kmLabel } from './map-math';
 import { useSession } from './session';
 import { statusText } from './copy';
 import {
@@ -86,6 +87,27 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
     {stop(ride ? c.pickup_ride : c.pickup, from, fromNote, true, onFrom)}
     {stop(ride ? c.dropoff_ride : c.dropoff, to, toNote, false, onTo)}
   </View>;
+}
+
+/**
+ * Live ETA headline like ride trackers: minutes as the headline ("Arriving now" in the last minute), then road distance
+ * left and the latest arrival clock time. A slow-checkpoint estimate has no upper bound, so no clock time either.
+ */
+export function EtaLine({ eta, toPickup, slow, km, now }: { eta: [number, number]; toPickup: boolean; slow: boolean; km?: number | null; now: number }) {
+  const { c } = useCopy();
+  const { stamp } = useFormat();
+  const [lo, hi] = eta, here = lo <= 1 && !slow; // a checkpoint delay keeps its "or more" wording to the end
+  const head = here ? toPickup ? c.arrivingPickup : c.arrivingDropoff
+    : fill(toPickup ? slow ? c.etaToPickupSlow : c.etaToPickup : slow ? c.etaToDropoffSlow : c.etaToDropoff, { lo, hi });
+  const detail = [km != null && fill(c.kmAway, { km: kmLabel(km) }), !here && !slow && fill(c.arriveBy, { t: stamp(now + hi * 60_000) })].filter(Boolean).join(' · ');
+  // polite: a screen reader hears a new estimate when it changes, without interrupting
+  return <View accessibilityLiveRegion="polite"><Row gap={10}>
+    <Ionicons name={here ? 'flag' : 'time'} size={22} color={palette.olive} />
+    <View style={{ flex: 1 }}>
+      <Txt variant="h2">{head}</Txt>
+      {!!detail && <Txt variant="caption">{detail}</Txt>}
+    </View>
+  </Row></View>;
 }
 
 /** An orders list that can load older history page by page (GET /orders?before=<oldest ended id shown>). */
