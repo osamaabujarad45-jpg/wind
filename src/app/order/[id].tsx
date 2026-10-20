@@ -41,7 +41,14 @@ export default function OrderScreen() {
   const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}`, 4000);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
   const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}` : null);
-  const order = useMemo(() => polled && pushed !== undefined ? { ...polled, driverLocation: newerFix(pushed, polled.driverLocation) } : polled, [polled, pushed]);
+  // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
+  // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
+  const fresh = polled && pushed !== undefined ? newerFix(pushed, polled.driverLocation) : polled?.driverLocation;
+  const assignment = polled && `${polled.id}:${polled.driverId}`;
+  const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
+  if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
+  const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
+  const order = useMemo(() => polled && { ...polled, driverLocation: shown }, [polled, shown]);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [code, setCode] = useState('');
@@ -62,7 +69,7 @@ export default function OrderScreen() {
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
   useFocusEffect(useCallback(() => {
     setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    const timer = setInterval(() => setNow(Date.now()), 5_000); // location age and arrival clock stay current
     return () => clearInterval(timer);
   }, []));
 

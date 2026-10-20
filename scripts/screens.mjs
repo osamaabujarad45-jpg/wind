@@ -167,7 +167,7 @@ const screens = [
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
   { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
-  { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
+  { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'receipt', group: 'Customer', name: 'Receipt', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'customer' },
@@ -228,6 +228,8 @@ for (const language of ['ar', 'en']) {
       continue;
     }
 
+    // The server drops a driver fix after 120 s; send a fresh one so the live screen never depends on run time.
+    if (screen.fix) await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
     await page.goto(base + screen.route, { waitUntil: 'networkidle' });
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
     for (const click of screen.clicks ?? []) {

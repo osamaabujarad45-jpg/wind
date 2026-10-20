@@ -99,7 +99,8 @@ export function EtaLine({ eta, toPickup, slow, km, now }: { eta: [number, number
   const [lo, hi] = eta, here = lo <= 1 && !slow; // a checkpoint delay keeps its "or more" wording to the end
   const head = here ? toPickup ? c.arrivingPickup : c.arrivingDropoff
     : fill(toPickup ? slow ? c.etaToPickupSlow : c.etaToPickup : slow ? c.etaToDropoffSlow : c.etaToDropoff, { lo, hi });
-  const detail = [km != null && fill(c.kmAway, { km: kmLabel(km) }), !here && !slow && fill(c.arriveBy, { t: stamp(now + hi * 60_000) })].filter(Boolean).join(' · ');
+  // Arriving: no distance (a road route from a rounded origin still reads 0.2 km at the pin). "By" rounds up a minute.
+  const detail = here ? '' : [km != null && fill(c.kmAway, { km: kmLabel(km) }), !slow && fill(c.arriveBy, { t: stamp(Math.ceil((now + hi * 60_000) / 60_000) * 60_000) })].filter(Boolean).join(' · ');
   // polite: a screen reader hears a new estimate when it changes, without interrupting
   return <View accessibilityLiveRegion="polite"><Row gap={10}>
     <Ionicons name={here ? 'flag' : 'time'} size={22} color={palette.olive} />
