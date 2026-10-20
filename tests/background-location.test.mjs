@@ -25,6 +25,11 @@ function harness() {
   await Promise.all([deliverDriverFix(late, h.io, now + 1_000), deliverDriverFix(late, h.io, now + 1_000), deliverDriverFix(fix, h.io, now + 1_000)]);
   assert.equal(h.posts.length, 1); assert.equal(h.receipt().fixAt, now + 1_000);
 }
+{ // iOS has no time interval: fixes about once a second are thinned to one upload per 2 s.
+  const h = harness(); await deliverDriverFix(fix, h.io, now);
+  await deliverDriverFix({ ...fix, timestamp: now + 1_500 }, h.io, now + 1_500); assert.equal(h.posts.length, 1, 'within 2 s: skipped');
+  await deliverDriverFix({ ...fix, timestamp: now + 2_000 }, h.io, now + 2_000); assert.equal(h.posts.length, 2, 'after 2 s: sent');
+}
 for (const invalid of [{ ...fix, timestamp: now - 60_001 }, { ...fix, timestamp: now + 6_000 },
   { ...fix, coords: { latitude: NaN, longitude: 35 } }, { ...fix, coords: { latitude: 32, longitude: 181 } }]) {
   const h = harness(); await deliverDriverFix(invalid, h.io, now); assert.equal(h.posts.length, 0);

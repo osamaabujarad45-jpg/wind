@@ -4,7 +4,7 @@ const native = { store:new Map(), registered:true, foreground:false, starts:[], 
 globalThis.__windNative = native;
 const modules = {
   'react-native': `export const Platform={OS:'android'};`,
-  'expo-location': `const n=globalThis.__windNative;export const Accuracy={High:6};
+  'expo-location': `const n=globalThis.__windNative;export const Accuracy={High:6};export const ActivityType={AutomotiveNavigation:2};
     export const hasStartedLocationUpdatesAsync=async()=>n.registered;
     export async function startLocationUpdatesAsync(task,options){n.starts.push({task,options});if(n.fail)throw Error('Native start failed');n.registered=true;n.foreground=true;}
     export async function stopLocationUpdatesAsync(){n.stops++;n.registered=false;n.foreground=false;}`,

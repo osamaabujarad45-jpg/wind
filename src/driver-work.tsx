@@ -5,6 +5,7 @@ import { api, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 import { backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
+import { MIN_GAP } from './location-delivery';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
@@ -158,8 +159,8 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     };
     const publish = async ({ coords: { latitude, longitude, heading, accuracy }, timestamp }: Location.LocationObject) => {
       const age = Math.max(0, Date.now() - timestamp);
-      // Browsers fire watch callbacks without honouring timeInterval; at most one upload per 5 s keeps under the API limit.
-      if (stopped || publishing || age > 60_000 || Date.now() - lastTriedAt < 5_000) return;
+      // Browsers fire watch callbacks without honouring timeInterval; at most one upload per 2 s keeps under the API limit.
+      if (stopped || publishing || age > 60_000 || Date.now() - lastTriedAt < MIN_GAP) return;
       publishing = true; lastTriedAt = Date.now();
       try {
         // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
@@ -175,7 +176,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     };
     // Web defaults maximumAge to Infinity, so the heartbeat would re-read one cached fix forever. Native ignores it.
     const fresh = { maximumAge: 10_000 };
-    const options = { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 30, mayShowUserSettingsDialog: true, ...fresh };
+    const options = { accuracy: Location.Accuracy.High, timeInterval: 3_000, distanceInterval: 5, mayShowUserSettingsDialog: true, ...fresh };
     setState('starting');
     const readPosition = () => {
       if (stopped || locating) return;

@@ -3,23 +3,26 @@
 import { useEffect, useState } from 'react';
 import { Linking, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { useApi } from '../../api';
-import { locationState } from '../../location-state';
-import { etaRange } from '../../map-math';
+import { useApi, useLiveFix } from '../../api';
+import { locationState, newerFix } from '../../location-state';
+import { etaRange, fromDriver } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
 import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number;
-  driver: { firstName: string; vehicle: Vehicle | null } | null;
+  driver: { firstName: string; vehicle: Vehicle | null; ref: string } | null;
   driverLocation: { latitude: number; longitude: number; updatedAt: number; heading?: number | null } | null };
 
 export default function TrackScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { c, language } = useCopy();
-  const { data, error } = useApi<Tracking>(/^[a-f0-9]{64}$/.test(token ?? '') ? `/track/${token}` : null, 10_000);
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
+  const { data: polled, error } = useApi<Tracking>(valid ? `/track/${token}` : null, 10_000);
+  // Driver position over the live push; the 10 s poll carries status and revocation.
+  const live = useLiveFix<NonNullable<Tracking['driverLocation']>>(valid && polled?.driver ? `/track/${token}/live?driver=${polled.driver.ref}` : null);
+  const data = polled && live !== undefined ? { ...polled, driverLocation: newerFix(live, polled.driverLocation) } : polled;
   const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && data?.driverLocation ? `/track/${token}/eta` : null, 30_000);
   // useApi keeps the last answer when a refresh fails: show no estimate (or approach line) rather than an old one.
   const etaData = etaApi.data, etaFresh = !etaApi.error;
@@ -39,7 +42,7 @@ export default function TrackScreen() {
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
       <RouteMap pickup={from} dropoff={to} focus={['assigned', 'at_pickup', 'returning'].includes(data.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location && etaFresh ? etaData?.approach : null} />
+        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>

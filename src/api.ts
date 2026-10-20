@@ -67,3 +67,30 @@ export function useApi<T>(path: string | null, pollMs?: number) {
   };
   return { data: data?.path === path ? data.value : undefined, error: error?.path === path ? error.value : undefined, reload: load, setData };
 }
+
+// Live driver fix over the server's long-poll (`.../live?since=`): each answer arrives as soon as the driver's next fix
+// is stored, so the map moves within network latency of the upload. undefined until the first answer. Put the driver
+// in the path (`?driver=`) so a reassignment starts clean instead of keeping the previous driver's fix.
+// ponytail: long-poll over fetch (auth header, no native module); SSE/WebSocket if one stream must carry more.
+export function useLiveFix<T extends { updatedAt: number }>(path: string | null) {
+  const [fix, setFix] = useState<{ path: string; value: T | null }>();
+  useFocusEffect(useCallback(() => {
+    if (!path) return;
+    let stopped = false, since = 0;
+    setFix(undefined); // a new watch never shows a fix from an earlier one
+    void (async () => {
+      while (!stopped) {
+        let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
+        try {
+          const { driverLocation } = await api<{ driverLocation: T | null }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
+          if (stopped) return;
+          if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
+          setFix({ path, value: driverLocation });
+        } catch { pause = 5_000; } // offline or refused: the screen's own poll still shows the last state
+        if (pause) await new Promise(resolve => setTimeout(resolve, pause));
+      }
+    })();
+    return () => { stopped = true; };
+  }, [path]));
+  return fix?.path === path ? fix.value : undefined;
+}

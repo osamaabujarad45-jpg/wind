@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
+import { glider } from './map-math';
 import { useReducedMotion } from './motion';
 import type { PinMapProps, RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -31,7 +32,6 @@ export default function RouteMap(props: RouteMapProps) {
   <MapView ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false} onTouchStart={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
-    {props.approach && <Polyline coordinates={props.approach.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.blue} strokeWidth={5} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
     <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
@@ -39,15 +39,42 @@ export default function RouteMap(props: RouteMapProps) {
     </Marker>)}
     {/* Accuracy halo like web/Android: a coarse fix reads as "somewhere here", not a precise dot. */}
     {!!driver?.accuracy && <Circle center={driver} radius={driver.accuracy} fillColor={`${palette.blue}1F`} strokeColor={`${palette.blue}4D`} strokeWidth={1} />}
-    {driver && <Marker coordinate={driver} title={driverTitle} flat rotation={driver.heading ?? 0} anchor={{ x: 0.5, y: 0.5 }}>
-      <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
-    </Marker>}
+    {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} />}
   </MapView>
   {moved && <Pressable onPress={() => { setMoved(false); view.current?.animateToRegion(region, still ? 0 : 800); }}
     accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
     <Ionicons name="locate" size={20} color={palette.blue} />
   </Pressable>}
   </View>;
+}
+
+// The driver marker glides to each fix over the gap between fixes, like web/Android: still moving when the next fix
+// lands, no hop-and-wait. Driven from JS, not animateMarkerToCoordinate: on iOS that drops a request while one runs
+// and truncates its duration to whole seconds. Own component so a frame re-renders the marker, not the map.
+// ponytail: one setState per frame on one marker; Reanimated if low-end phones drop frames.
+function Car({ driver, title, approach, still }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean }) {
+  const [glide] = useState(() => glider({ latitude: driver.latitude, longitude: driver.longitude, rotation: driver.heading ?? 0 }));
+  const [pose, setPose] = useState(() => glide.frame(0).now);
+  const [lineAt, setLineAt] = useState(pose); // the approach line's first point: the marker, redrawn ~10x/s like web/Android
+  useEffect(() => {
+    glide.fix(driver, Date.now(), still);
+    let frame = 0, drawn = -Infinity;
+    const step = () => {
+      const t = Date.now(), { now, done } = glide.frame(t);
+      setPose(now);
+      if (done || t - drawn >= 100) { drawn = t; setLineAt(now); }
+      if (!done) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [driver.latitude, driver.longitude, driver.heading, still]); // eslint-disable-line react-hooks/exhaustive-deps
+  const line = useMemo(() => approach && [lineAt, ...approach.map(([longitude, latitude]) => ({ latitude, longitude }))], [approach, lineAt]);
+  return <>
+    {line && <Polyline coordinates={line} strokeColor={palette.blue} strokeWidth={5} />}
+    <Marker coordinate={pose} title={title} flat rotation={pose.rotation} anchor={{ x: 0.5, y: 0.5 }}>
+      <Ionicons name={driver.heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
+    </Marker>
+  </>;
 }
 
 const styles = StyleSheet.create({

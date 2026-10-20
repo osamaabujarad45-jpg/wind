@@ -42,8 +42,10 @@ export function startBackgroundLocation(actor: number, orderId: number) {
     // Re-register from the foreground so Expo refreshes the consumer and restarts that service.
     try {
       await Location.startLocationUpdatesAsync(TASK, {
-        accuracy: Location.Accuracy.High, timeInterval: 20_000, distanceInterval: 0,
-        deferredUpdatesInterval: 20_000, deferredUpdatesDistance: 0,
+        // A fix every ~3 s while the job is active: the customer's marker can move continuously, not hop every 20 s.
+        // Automotive navigation is iOS's profile for vehicle tracking (fixes filtered for road travel).
+        accuracy: Location.Accuracy.High, timeInterval: 3_000, distanceInterval: 0, activityType: Location.ActivityType.AutomotiveNavigation,
+        deferredUpdatesInterval: 3_000, deferredUpdatesDistance: 0,
         pausesUpdatesAutomatically: false, showsBackgroundLocationIndicator: true,
         foregroundService: { notificationTitle: 'Wind',
           notificationBody: 'مشاركة الموقع أثناء التوصيل · Sharing location during delivery',

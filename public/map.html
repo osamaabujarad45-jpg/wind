@@ -48,6 +48,11 @@ function fitBounds(points) {
   if (n - s < 2 * pad) { const m = (s + n) / 2; s = m - pad; n = m + pad; }
   return [[w, s], [e, n]];
 }
+const glideMs = gap => gap > 0 && gap <= 6000 ? Math.max(600, gap) : 1200;
+function turn(a, b, t) {
+  const d = ((b - a) % 360 + 540) % 360 - 180;
+  return (a + d * Math.min(1, Math.max(0, t)) + 360) % 360;
+}
 const labelField = language => language === 'ar'
   ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
@@ -71,7 +76,7 @@ const map = new ml.Map({
 map.touchZoomRotate.disableRotation();
 
 const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
-let ready = false, moved = false, marker, arrow, shown, frame;
+let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0;
 window.wind = update => { Object.assign(state, update); if (ready) draw(); };
 
 function dot(color, square) {
@@ -150,8 +155,10 @@ function draw() {
   const linesKey = JSON.stringify([state.road, state.approach]); // every point: a reroute can keep its length and ends
   if (linesKey !== drawnLines) {
     drawnLines = linesKey;
-    for (const id of ['road', 'approach'])
-      map.getSource(id).setData(state[id] ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: state[id] } } : empty);
+    for (const id of ['road', 'approach']) {
+      const line = id === 'approach' && state.approach && shown ? [[shown.longitude, shown.latitude], ...state.approach] : state[id];
+      map.getSource(id).setData(line ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } } : empty);
+    }
     if (!moved && !state.driver && state.road) refit();
   }
   const closedKey = (state.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
@@ -166,11 +173,12 @@ function draw() {
   drawnDriver = key;
   const source = map.getSource('accuracy');
   if (!driver) {
-    marker?.remove(); marker = undefined; shown = undefined;
+    marker?.remove(); marker = undefined; shown = undefined; at = undefined; turned = undefined;
     source.setData(empty);
     return;
   }
-  // Glide from the shown position to the new fix instead of jumping every poll.
+  // Glide to each new fix over the gap between fixes (still moving when the next lands), turn smoothly,
+  // and keep the approach line starting under the marker.
   const target = { latitude: driver.latitude, longitude: driver.longitude };
   const from = shown;
   const moving = from && Math.abs(from.latitude - target.latitude) + Math.abs(from.longitude - target.longitude) > 0.0001;
@@ -179,23 +187,30 @@ function draw() {
     marker?.remove();
     marker = new ml.Marker({ element: driverIcon(rotation !== null), rotationAlignment: 'map' })
       .setLngLat([(from ?? target).longitude, (from ?? target).latitude]).addTo(map);
-    arrow = rotation !== null;
+    arrow = rotation !== null; turned = undefined;
   }
-  if (rotation !== null) marker.setRotation(rotation);
+  const turnFrom = turned ?? rotation;
   source.setData(driver.accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} } : empty);
   if (driver.accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(driver.accuracy, target.latitude));
   if (frame) cancelAnimationFrame(frame);
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
   const start = performance.now(), origin = from ?? target;
+  const span = glideMs(at === undefined ? 0 : start - at);
+  at = start;
   const step = t => {
-    const k = still ? 1 : (t - start) / 1200;
+    const k = still ? 1 : (t - start) / span;
     const p = ease(origin, target, k);
     marker?.setLngLat([p.longitude, p.latitude]);
+    if (rotation !== null) marker?.setRotation(turned = turn(turnFrom, rotation, still ? 1 : (t - start) / 500));
     shown = p;
+    if (state.approach?.length && (k >= 1 || t - lineAt > 100)) { // ~10 line redraws a second is smooth and cheap
+      lineAt = t;
+      map.getSource('approach').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...state.approach] } });
+    }
     if (k < 1) frame = requestAnimationFrame(step);
   };
   frame = requestAnimationFrame(step);
-  if (!moved) map.fitBounds(fitBounds([target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
+  if (!moved) map.fitBounds(fitBounds([origin, target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
 }
 </script>
 </body>

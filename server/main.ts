@@ -1059,6 +1059,9 @@ route('GET', '/api/orders', ({ user, query }) => {
 });
 
 route('GET', '/api/orders/:id', ({ user, params }) => getOrder(Number(params[0]), user));
+// Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
+route('GET', '/api/orders/:id/live', ({ user, params, query, req }) =>
+  liveFix(() => { const o = getOrder(Number(params[0]), user); return { driverId: o.driverId, fix: o.driverLocation ?? null }; }, query, req));
 
 route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   const order = getOrder(Number(params[0]), user);
@@ -1120,18 +1123,22 @@ route('POST', '/api/orders/:id/share/revoke', ({ user, params }) => {
     fail(404, 'not_found');
   return { ok: true };
 });
-route('GET', '/api/track/([a-f0-9]{64})', ({ params }) => {
-  const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(params[0]!)) ?? fail(404, 'not_found');
+route('GET', '/api/track/([a-f0-9]{64})', ({ params }) => trackView(params[0]!).view, true);
+route('GET', '/api/track/([a-f0-9]{64})/live', ({ params, query, req }) =>
+  liveFix(() => { const t = trackView(params[0]!); return { driverId: t.driverId, fix: t.view.driverLocation }; }, query, req), true);
+function trackView(token: string) {
+  const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(token)) ?? fail(404, 'not_found');
   const open = r.status === 'searching' || activeStatuses.includes(r.status);
   if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
   const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
-  return {
+  return { driverId: r.driver_id as number | null, view: {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at,
-    driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null } : null,
+    driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
+      ref: sha(`${token}:${r.driver_id}`).slice(0, 12) } : null, // opaque per link: tells a reassignment apart, names no one
     driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
-  };
-}, true);
+  } };
+}
 
 // One dispute per finished order, opened by its customer within a week. Resolution is a recorded
 // decision only; refunds and cash corrections belong to cash settlement.
@@ -1546,7 +1553,7 @@ function driverCommand(user: User, id: number, body: Row, apply: (user: User, id
 route('POST', '/api/location', ({ user, body }) => {
   needActive(user);
   need(user, 'driver');
-  limit(identityKey('location', user.id), 60, 60_000); // real clients post a few times a minute
+  limit(identityKey('location', user.id), 60, 60_000); // clients post at most every 2 s (MIN_GAP): 30 a minute
   if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'no_active_job');
   const { latitude: lat, longitude: lng } = pointOf({ latitude: body.latitude, longitude: body.longitude })!;
   if (lat === 0 && lng === 0) fail(400, 'invalid_location'); // a location stub's default, never a road here
@@ -1556,12 +1563,39 @@ route('POST', '/api/location', ({ user, body }) => {
   // Fix age (ms) as the device measured it: no clock skew. The stamp is when the fix was taken, and a late
   // upload of an older fix never replaces a newer one.
   const age = body.age == null ? 0 : finite(body.age, 60_000, 0) ? body.age : fail(400, 'invalid_location');
-  run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
+  const stored = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy
     WHERE excluded.updated_at >= driver_locations.updated_at`,
-  user.id, lat, lng, Date.now() - age, heading, accuracy);
+  user.id, lat, lng, Date.now() - age, heading, accuracy).changes;
+  if (stored) fixWaiters.get(user.id)?.forEach(wake => wake());
   return { ok: true };
 });
+
+// Push for the live map (Uber moved riders from polling to a server push channel for the same reason): a watcher's
+// request waits here and returns as soon as the driver's next fix is stored, so the marker moves within network
+// latency of the upload instead of up to a poll interval later. Held under the clients' 20 s request timeout.
+// ponytail: in-process waiters, one API process; several instances need shared pub/sub (e.g. Redis) here.
+const LIVE_HOLD = 12_000, LIVE_WATCHERS = 20; // per driver: a family on one link, not a socket flood
+const fixWaiters = new Map<number, Set<() => void>>();
+async function liveFix(read: () => { driverId: number | null; fix: { updatedAt: number } | null }, query: URLSearchParams, req: IncomingMessage) {
+  const since = Number(query.get('since')) || 0;
+  const now = read();
+  if (!now.driverId || (now.fix && now.fix.updatedAt > since)) return { driverLocation: now.fix };
+  const driverId = now.driverId;
+  if ((fixWaiters.get(driverId)?.size ?? 0) >= LIVE_WATCHERS) return { driverLocation: now.fix }; // answer, don't hold
+  await new Promise<void>(done => {
+    const set = fixWaiters.get(driverId) ?? new Set();
+    fixWaiters.set(driverId, set);
+    const finish = () => {
+      clearTimeout(timer); set.delete(finish); req.socket.off('close', finish);
+      if (!set.size && fixWaiters.get(driverId) === set) fixWaiters.delete(driverId);
+      done();
+    };
+    const timer = setTimeout(finish, LIVE_HOLD);
+    set.add(finish); req.socket.once('close', finish); // a watcher that left frees its slot at once
+  });
+  return { driverLocation: read().fix }; // re-read: access, status and freshness are checked again
+}
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
@@ -2023,6 +2057,7 @@ server.maxHeadersCount = 50;
 export async function shutdown() {
   if (draining) return;
   draining = true;
+  fixWaiters.forEach(set => set.forEach(wake => wake())); // live watchers answer now instead of holding the close
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }

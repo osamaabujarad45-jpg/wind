@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, labelField, nearLine, roadPath, shownApproach } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, fromDriver, glideMs, glider, labelField, nearLine, roadPath, shownApproach, turn } from '../src/map-math.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -77,6 +77,24 @@ try {
   seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
   assert.deepEqual([seen.latitude, seen.accuracy], [31.97, null]);
 
+  // Live long-poll: a fix newer than `since` answers at once; otherwise the request holds until the driver's next
+  // stored fix (a late, older upload does not wake it), and shutdown releases held requests instead of waiting.
+  const live = `/orders/${order.id}/live`;
+  const stranger = await call('/auth/register', { body: { phone: '0599700009', name: 'Omar', password: 'secret1' } });
+  await call(live, { token: stranger.token, expect: 404 });
+  assert.equal((await call(`${live}?since=0`, { token: customer.token })).driverLocation.updatedAt, seen.updatedAt);
+  const pending = (since, ms = 300) => Promise.race([call(`${live}?since=${since}`, { token: customer.token }),
+    new Promise(resolve => setTimeout(() => resolve('held'), ms))]);
+  const held = call(`${live}?since=${seen.updatedAt}`, { token: customer.token });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await call('/location', { token: driver.token, body: { latitude: 31.4, longitude: 35.4, age: 50_000 } }); // older: ignored
+  assert.equal(await pending(seen.updatedAt), 'held');
+  let at = Date.now();
+  await call('/location', { token: driver.token, body: { latitude: 31.98, longitude: 35.24 } });
+  const woke = (await held).driverLocation;
+  assert.ok(Date.now() - at < 1_000, 'a new fix answers the held request within network latency');
+  assert.equal(woke.latitude, 31.98);
+
   // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
   await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });
 
@@ -91,6 +109,27 @@ try {
   assert.ok(e - w > 0.005 && n - s > 0.005);
   assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
   assert.deepEqual(etaRange(10), [10, 15]);
+  // Live marker: glides for the fix gap (continuous motion), catches up quickly after a long gap, turns the short way.
+  assert.equal(glideMs(3_000), 3_000); assert.equal(glideMs(200), 600); assert.equal(glideMs(30_000), 1_200); assert.equal(glideMs(0), 1_200);
+  assert.equal(turn(350, 10, 0.5), 0); assert.equal(turn(10, 350, 0.5), 0); assert.equal(turn(90, 180, 1), 180); assert.equal(turn(90, 180, 0), 90);
+  // Interruptible glide (iOS drops a native glide request mid-flight; this never does): A→B, C lands halfway on a turn.
+  const A = { latitude: 32, longitude: 35, rotation: 90 }, B = { latitude: 32, longitude: 35.01 }, C = { latitude: 32.01, longitude: 35.01 };
+  const g = glider(A); g.fix(A, 1_000); g.fix(B, 4_000);
+  const mid = g.frame(5_500).now; // 1500 of a 3000 ms glide: fractional seconds count
+  assert.ok(Math.abs(mid.longitude - 35.005) < 1e-9 && mid.latitude === 32, 'halfway A→B at half the gap');
+  g.fix(C, 5_500);
+  assert.deepEqual(g.frame(5_500).now, mid, 'the new glide starts where the marker is drawn, not at A or B');
+  let last = mid, worst = 0;
+  for (let t = 5_516; t <= 7_100; t += 16) { const { now } = g.frame(t); worst = Math.max(worst, Math.hypot(now.latitude - last.latitude, now.longitude - last.longitude)); last = now; }
+  const steady = Math.hypot(C.latitude - mid.latitude, C.longitude - mid.longitude) * 16 / 1_500; // 1500 ms: the C−B gap
+  assert.ok(worst <= steady * 1.01, 'constant speed, no frame jumps'); assert.deepEqual([last.latitude, last.longitude], [C.latitude, C.longitude]);
+  assert.equal(g.frame(7_100).done, true); assert.equal(glider(A).frame(0).done, true);
+  const still = glider(A); still.fix(A, 1_000, true); still.fix({ ...C, heading: 0 }, 4_000, true);
+  assert.deepEqual(still.frame(4_000), { now: { ...C, rotation: 0 }, done: true }, 'reduced motion lands at once');
+  // Approach line starts under the car: points behind the driver are dropped.
+  const way = [[35.2, 32], [35.21, 32], [35.22, 32], [35.23, 32]];
+  assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32.0001], [35.22, 32], [35.23, 32]]);
+  assert.deepEqual(fromDriver(way, { latitude: 32, longitude: 35.199 }), [[35.199, 32], ...way], 'before the start: nothing dropped');
   // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
   const kept = { stop: 'o1:32,35', route: 'kept' };
   assert.equal(shownApproach('fresh', false, kept, 'o1:32,35'), 'fresh');
@@ -124,13 +163,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
   const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
-  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, labelField };`)();
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, turn };`)();
   const a = { latitude: 31.9, longitude: 35.2 }, b = { latitude: 32.22, longitude: 35.26 };
   assert.equal(copy.bearing(a, b), bearing(a, b));
   assert.deepEqual(copy.ease(a, b, 0.3), ease(a, b, 0.3));
   assert.deepEqual(copy.ease(a, b, 3), ease(a, b, 3));
   for (const points of [[a, b], [a]]) assert.deepEqual(copy.fitBounds(points), fitBounds(points));
   for (const language of ['ar', 'en']) assert.deepEqual(copy.labelField(language), labelField(language));
+  for (const gap of [0, 200, 3_000, 9_000]) assert.equal(copy.glideMs(gap), glideMs(gap));
+  for (const [x, y, t] of [[350, 10, 0.5], [10, 350, 0.25], [90, 270, 1]]) assert.equal(copy.turn(x, y, t), turn(x, y, t));
   // Served from the web root like the rest of the app (the APK loads it from the API origin).
   const web = join(dir, 'web');
   mkdirSync(web);
@@ -159,6 +200,16 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   };
   assert.deepEqual(names('motion.tsx'), names('motion.native.ts'));
 
+  // At most 20 held watchers per driver (a public link must not pin sockets); the next one is answered at once.
+  const future = `${live}?since=${Date.now() + 60_000}`;
+  const holds = Array.from({ length: 20 }, () => call(future, { token: customer.token }));
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.notEqual(await pending(Date.now() + 60_000), 'held', 'the 21st watcher is answered, not held');
+  const draining = Promise.all(holds).then(all => all[0]);
+  at = Date.now();
+  await shutdown();
+  assert.equal((await draining).driverLocation.latitude, 31.98);
+  assert.ok(Date.now() - at < 5_000, 'shutdown answers held live requests instead of waiting out the hold');
   console.log('map: ok');
 } finally {
   await shutdown();

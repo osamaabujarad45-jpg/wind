@@ -63,7 +63,10 @@ try {
   assert.equal(live.status, 'assigned');
   assert.deepEqual(Object.keys(live).sort(),
     ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'service', 'status', 'updatedAt'].sort());
-  assert.deepEqual(live.driver, { firstName: 'Sami', vehicle: 'van' });
+  const { ref, ...shownDriver } = live.driver;
+  assert.deepEqual(shownDriver, { firstName: 'Sami', vehicle: 'van' });
+  assert.match(ref, /^[a-f0-9]{12}$/); // opaque per link, never the driver id
+  assert.equal((await call(`/track/${second.token}`)).driver.ref, ref); // stable while the driver stays
   assert.deepEqual(Object.keys(live.driverLocation).sort(), ['heading', 'latitude', 'longitude', 'updatedAt']);
   assert.equal(live.driverLocation.latitude, 32);
   // Check the explicit public contract rather than matching numeric substrings in a timestamp.

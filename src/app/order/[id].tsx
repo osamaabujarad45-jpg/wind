@@ -1,16 +1,16 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { api, API_URL, ApiError, useApi } from '../../api';
+import { api, API_URL, ApiError, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
-import { locationState } from '../../location-state';
+import { locationState, newerFix } from '../../location-state';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
@@ -38,7 +38,10 @@ export default function OrderScreen() {
   const work = useDriverWork();
   const { c, language, money, err, row } = useCopy();
   const { time } = useFormat();
-  const { data: order, error, reload, setData } = useApi<Order>(`/orders/${id}`, 4000);
+  const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}`, 4000);
+  // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
+  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}` : null);
+  const order = useMemo(() => polled && pushed !== undefined ? { ...polled, driverLocation: newerFix(pushed, polled.driverLocation) } : polled, [polled, pushed]);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [code, setCode] = useState('');

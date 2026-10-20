@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
-import { bearing, ease, fitBounds, labelField } from './map-math';
+import { bearing, ease, fitBounds, glideMs, labelField, turn } from './map-math';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -103,7 +103,8 @@ function LiveMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c, language } = useCopy();
   const host = useRef<View>(null);
-  const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[] }>({});
+  const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
+    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number }>({});
   const [moved, setMoved] = useState(false);
   const points = [pickup, dropoff, ...(driver ? [driver] : [])];
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
@@ -128,7 +129,9 @@ function LiveMap(props: RouteMapProps) {
   const lineKey = JSON.stringify([road, approach]); // every point: a reroute can keep its length and ends
   useEffect(() => {
     if (!map) return;
-    for (const [id, l] of [['road', road], ['approach', approach]] as const)
+    const shown = markers.current.shown;
+    markers.current.approach = approach;
+    for (const [id, l] of [['road', road], ['approach', approach && shown ? [[shown.longitude, shown.latitude], ...approach] : approach]] as const)
       (map.getSource(id) as GeoJSONSource | undefined)?.setData(l
         ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: l } } : { type: 'FeatureCollection', features: [] });
     // Without a driver, frame the whole road route: it can bend outside the two pins.
@@ -143,7 +146,8 @@ function LiveMap(props: RouteMapProps) {
     state.closed = (props.closed ?? []).map(p => new state.ml!.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
   }, [map, closedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Driver: glide from the shown position to the new fix instead of jumping every poll.
+  // Driver: glide from the shown position to each new fix over the gap between fixes, so the marker is still moving
+  // when the next one lands (no hop-and-wait), turn smoothly, and keep the approach line starting under the marker.
   const heading = driver?.heading ?? null, accuracy = driver?.accuracy ?? null;
   const driverKey = driver ? `${driver.latitude},${driver.longitude},${heading},${accuracy},${props.focus}` : '';
   useEffect(() => {
@@ -151,7 +155,7 @@ function LiveMap(props: RouteMapProps) {
     const state = markers.current;
     const source = map.getSource('accuracy') as GeoJSONSource | undefined;
     if (!driver) {
-      state.driver?.remove(); state.driver = undefined; state.shown = undefined;
+      state.driver?.remove(); state.driver = undefined; state.shown = undefined; state.at = undefined; state.rotation = undefined;
       source?.setData({ type: 'FeatureCollection', features: [] });
       return;
     }
@@ -163,24 +167,33 @@ function LiveMap(props: RouteMapProps) {
       state.driver?.remove();
       state.driver = new state.ml!.Marker({ element: driverIcon(rotation !== null), rotationAlignment: 'map' })
         .setLngLat([(from ?? target).longitude, (from ?? target).latitude]).addTo(map);
-      state.arrow = rotation !== null;
+      state.arrow = rotation !== null; state.rotation = undefined;
     }
-    if (rotation !== null) state.driver.setRotation(rotation);
+    const turnFrom = state.rotation ?? rotation;
     source?.setData(accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} }
       : { type: 'FeatureCollection', features: [] });
     if (accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
     if (state.frame) cancelAnimationFrame(state.frame);
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const start = performance.now(), origin = from ?? target;
+    const span = glideMs(state.at === undefined ? 0 : start - state.at);
+    state.at = start;
     const step = (t: number) => {
-      const k = still ? 1 : (t - start) / 1200;
+      const k = still ? 1 : (t - start) / span;
       const p = ease(origin, target, k);
       state.driver?.setLngLat([p.longitude, p.latitude]);
+      if (rotation !== null) state.driver?.setRotation(state.rotation = turn(turnFrom ?? rotation, rotation, still ? 1 : (t - start) / 500));
       state.shown = p;
+      const line = state.approach;
+      if (line?.length && (k >= 1 || t - (state.lineAt ?? 0) > 100)) { // ~10 line redraws a second is smooth and cheap
+        state.lineAt = t;
+        (map.getSource('approach') as GeoJSONSource | undefined)?.setData({ type: 'Feature', properties: {},
+          geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...line] } });
+      }
       if (k < 1) state.frame = requestAnimationFrame(step);
     };
     state.frame = requestAnimationFrame(step);
-    if (!moved) map.fitBounds(fitBounds([target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
+    if (!moved) map.fitBounds(fitBounds([origin, target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
   }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function nextStops() { return props.focus === 'pickup' ? [pickup] : props.focus === 'dropoff' ? [dropoff] : [pickup, dropoff]; }

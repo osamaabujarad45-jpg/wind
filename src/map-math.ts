@@ -16,6 +16,39 @@ export function ease(a: Point, b: Point, t: number): Point {
   return { latitude: a.latitude + (b.latitude - a.latitude) * k, longitude: a.longitude + (b.longitude - a.longitude) * k };
 }
 
+/**
+ * How long the driver marker glides to a new fix: the time since the previous one, so it is still moving when the
+ * next fix lands (continuous, no stop-and-go; the standard live-tracking technique). After a gap, a short catch-up.
+ */
+export const glideMs = (gap: number) => gap > 0 && gap <= 6_000 ? Math.max(600, gap) : 1_200;
+
+/** Heading from a to b (degrees) at t in 0..1, turning the short way round. */
+export function turn(a: number, b: number, t: number): number {
+  const d = ((b - a) % 360 + 540) % 360 - 180;
+  return (a + d * Math.min(1, Math.max(0, t)) + 360) % 360;
+}
+
+export type Pose = Point & { rotation: number };
+/**
+ * Live marker motion: each fix starts a glide from where the marker is drawn now (never dropped mid-glide, never
+ * restarted from the last fix), over glideMs of the gap since the previous fix, turning the short way in 500 ms.
+ * still (reduced motion): it lands on the fix at once.
+ */
+export function glider(start: Pose) {
+  let now = start, from = start, to = start, at = 0, span = 0;
+  return {
+    fix(fix: Point & { heading?: number | null }, t: number, still = false) {
+      span = still ? 0 : glideMs(at ? t - at : 0);
+      from = now; to = { latitude: fix.latitude, longitude: fix.longitude, rotation: fix.heading ?? now.rotation }; at = t;
+    },
+    frame(t: number) {
+      const e = t - at;
+      now = { ...ease(from, to, span ? e / span : 1), rotation: span ? turn(from.rotation, to.rotation, e / 500) : to.rotation };
+      return { now, done: e >= (span ? Math.max(span, 500) : 0) };
+    },
+  };
+}
+
 /** [[west, south], [east, north]] around the points, never smaller than ~1 km so one point still frames a street. */
 export function fitBounds(points: Point[]): [[number, number], [number, number]] {
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
@@ -70,4 +103,19 @@ export function backtracks(line: [number, number][], loop = 300, within = 25): b
     for (let k = i + 1; k < p.length; k++)
       if (travelled[k] - travelled[i] > loop && Math.hypot(p[k][0] - p[i][0], p[k][1] - p[i][1]) < within) return true;
   return false;
+}
+
+/** The road line from the driver's point on: the part behind them is dropped, so the line starts under the car. */
+export function fromDriver(line: [number, number][], p: Point): [number, number][] {
+  if (line.length < 2) return line;
+  const kx = 111_320 * Math.cos(rad(p.latitude)), ky = 110_540;
+  let best = Infinity, next = 1;
+  for (let i = 1; i < line.length; i++) {
+    const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
+    const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
+    const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) { best = d; next = t === 0 ? i - 1 : i; } // before a segment's start: keep that vertex, it is ahead
+  }
+  return [[p.longitude, p.latitude], ...line.slice(next)];
 }

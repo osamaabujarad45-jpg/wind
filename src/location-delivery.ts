@@ -10,6 +10,8 @@ export function deliverDriverFix(...args: Parameters<typeof deliverOnce>) {
   return run;
 }
 
+export const MIN_GAP = 2_000;
+
 // A headless task can outlive a screen or login. Check persisted authority before every upload.
 async function deliverOnce(fix: DriverFix, io: {
   context: () => Promise<TrackingContext | null>;
@@ -27,6 +29,8 @@ async function deliverOnce(fix: DriverFix, io: {
       !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return;
   const receipt = await io.receipt();
   if (receipt?.id === context.id && receipt.fixAt >= fix.timestamp) return;
+  // iOS reports about once a second while moving (it has no time interval); one upload per 2 s stays under the API limit.
+  if (receipt?.id === context.id && !receipt.failed && now - receipt.lastSentAt < MIN_GAP) return;
   if ((await io.context())?.id !== context.id || await io.token() !== context.token) return;
   let status = 0;
   try {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApi } from './api';
-import { etaRange, roadPath, shownApproach } from './map-math';
+import { etaRange, fromDriver, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
@@ -36,7 +36,7 @@ export function useRoad(order: Order | undefined) {
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];
   const avoids = [...new Set(shown.flatMap(r => r?.avoids ?? []))].filter(n => !through.includes(n));
   const closed = shown.flatMap(r => r?.closed ?? []).filter((p, i, all) => all.findIndex(q => q.latitude === p.latitude && q.longitude === p.longitude) === i);
-  return { road: route?.line ?? null, approach: eta?.line ?? null, eta: eta ? etaRange(eta.minutes) : null, avoids, through, closed };
+  return { road: route?.line ?? null, approach: eta?.line && driver ? fromDriver(eta.line, driver) : null, eta: eta ? etaRange(eta.minutes) : null, avoids, through, closed };
 }
 
 /** One line per outcome under a route map: the route goes around closed checkpoints, or cannot. */
