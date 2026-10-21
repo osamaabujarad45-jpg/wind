@@ -1216,8 +1216,13 @@ route('GET', '/api/orders', ({ user, query }) => {
 
 route('GET', '/api/orders/:id', ({ user, params }) => getOrder(Number(params[0]), user));
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
-route('GET', '/api/orders/:id/live', ({ user, params, query, req }) =>
-  liveFix(() => { const o = getOrder(Number(params[0]), user); return { driverId: o.driverId, fix: o.driverLocation ?? null }; }, query, req));
+route('GET', '/api/orders/:id/live', ({ params, query, req }) =>
+  liveFix(() => {
+    // A held request must not retain a session revoked while waiting for the next fix.
+    const viewer = authenticate(req) ?? fail(401, 'unauthorized');
+    const o = getOrder(Number(params[0]), viewer);
+    return { driverId: o.driverId, fix: o.driverLocation ?? null };
+  }, query, req));
 
 route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   const order = getOrder(Number(params[0]), user);

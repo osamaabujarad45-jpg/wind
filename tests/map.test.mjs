@@ -103,6 +103,15 @@ try {
   assert.ok(Date.now() - at < 1_000, 'a new fix answers the held request within network latency');
   assert.equal(woke.latitude, 31.9602);
 
+  // A live request authorized before logout cannot receive a new exact fix after its session is revoked.
+  const revoked = call(`${live}?since=${woke.updatedAt}`, { token: customer.token, expect: 401 });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await call('/auth/logout', { token: customer.token, body: {} });
+  await call(`/orders/${order.id}`, { token: customer.token, expect: 401 });
+  await call('/location', { token: driver.token, body: { latitude: 31.9602, longitude: 35.2202, accuracy: 5 } });
+  assert.equal((await revoked).error, 'unauthorized', 'held live request rechecks session authority before returning coordinates');
+  customer.token = (await call('/auth/login', { body: { phone: '0599700002', password: 'secret1' } })).token;
+
   // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
   await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });
 
