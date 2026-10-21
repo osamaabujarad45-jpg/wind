@@ -26,7 +26,7 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors }))}`);
   useEffect(() => {
     if (state !== 'loading') return;
-    const timer = setTimeout(() => failed.current(), 15_000);
+    const timer = setTimeout(() => failed.current(), 25_000); // after the page's own 20 s deadline, like web
     return () => clearTimeout(timer);
   }, [state]);
   const json = update ? JSON.stringify(update) : '';

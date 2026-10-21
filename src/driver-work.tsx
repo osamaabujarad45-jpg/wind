@@ -143,7 +143,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     const later = () => { if (!wait && queued && !stopped) wait = setTimeout(flush, Math.max(0, MIN_GAP - (Date.now() - lastTriedAt))); };
     const flush = () => { wait = undefined; const next = queued; queued = null; if (next) void publish(next); };
     const publish = async (position: GeolocationPosition) => {
-      const { timestamp, coords: { latitude, longitude, accuracy } } = position, heading = movingHeading(position.coords.heading, position.coords.speed);
+      const { timestamp, coords: { latitude, longitude, accuracy } } = position, heading = movingHeading(position.coords.heading, position.coords.speed, position.coords.accuracy);
       // A late or replayed fix must not move the driver backward.
       if (stopped || timestamp <= lastFixAt || !Number.isFinite(timestamp) || Date.now() - timestamp > 60_000 || timestamp > Date.now() + 5_000) return;
       // Browsers fire watch callbacks as often as they like; at most one upload per 2 s keeps under the API limit.

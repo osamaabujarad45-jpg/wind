@@ -21,6 +21,7 @@ export default function Auth() {
   const [emailReset, setEmailReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState('');
+  const [notice, setNotice] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -60,10 +61,11 @@ export default function Auth() {
         return;
       }
       await api('/auth/reset', { identifier: phone, code, password });
-      // Then a normal sign-in, through every login gate.
-      const data = await api<Me & { token: string }>('/auth/login', { identifier: phone, password });
+      // Then a normal sign-in, through every login gate. The code is spent either way: if this fails, say so on sign-in.
+      const data = await api<Me & { token: string }>('/auth/login', { identifier: phone, password }).catch(() => null);
       haptic.success();
-      await signIn(data);
+      if (data) return await signIn(data);
+      setMode('in'); setResetSent(false); setCode(''); setNotice(c.resetDone); setBusy(false);
     } catch (e) {
       haptic.error();
       setError(err(e));
@@ -175,6 +177,7 @@ export default function Auth() {
               <Press accessibilityRole="link" accessibilityLabel={c.terms} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}
+          {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
           {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}

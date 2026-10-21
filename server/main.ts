@@ -3,7 +3,7 @@
 // Run: node server/main.ts · Make an admin: node server/main.ts promote 0599XXXXXX
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -526,6 +526,8 @@ route('POST', '/api/auth/register', ({ body }) => {
   const role: Role = requestedRole === 'driver' ? 'driver' : 'customer'; // admins only through operator enrollment
   const vehicle = role === 'driver' ? (vehicles.includes(body.vehicle ?? 'car') ? (body.vehicle ?? 'car') as Vehicle : fail(400, 'invalid_vehicle')) : null;
   if (one('SELECT id FROM users WHERE phone = ?', phone)) fail(409, 'phone_taken');
+  // ponytail: an unverified address still blocks a second sign-up with it; taking it over would silently strip email
+  // sign-in from the first account while most addresses are unverified. Support edits the address if it is squatted.
   if (email && one('SELECT id FROM users WHERE email = ? COLLATE NOCASE', email)) fail(409, 'email_taken');
   const id = Number(run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), email,
@@ -597,13 +599,19 @@ async function sendEmail(to: string, subject: string, lines: string[]) {
         html: `<div dir="auto" style="font-family:sans-serif;font-size:16px">${lines.map(l => l ? `<p>${l}</p>` : '<hr>').join('')}</div>` }),
     });
     const j = await res.json().catch(() => null) as { success?: boolean; errors?: unknown; result?: { permanent_bounces?: string[] } } | null;
-    sent = res.ok && j?.success === true && !(j.result?.permanent_bounces ?? []).includes(to);
+    if (res.ok && j?.success === true && (j.result?.permanent_bounces ?? []).includes(to)) fail(422, 'email_bounced'); // a wrong address
+    sent = res.ok && j?.success === true;
     if (!sent) console.error('email not sent', res.status, JSON.stringify(j?.errors ?? null));
-  } catch (error) { console.error('email not sent', (error as Error).message); }
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    console.error('email not sent', (error as Error).message);
+  }
   if (!sent) fail(503, 'email_unavailable');
 }
 
-const codeHash = (r: Row, purpose: CodePurpose, code: string) => sha(`${purpose}:${r.id}:${String(r.email).toLowerCase()}:${code}`);
+const codeKey = randomBytes(32); // in memory only: a database copy cannot recover live codes; a restart voids pending ones
+const codeHash = (r: Row, purpose: CodePurpose, code: string) =>
+  createHmac('sha256', codeKey).update(`${purpose}:${r.id}:${String(r.email).toLowerCase()}:${code}`).digest('hex');
 async function sendCode(r: Row, purpose: CodePurpose) {
   if (!r.email) fail(409, 'no_email');
   const last = one('SELECT sent_at FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose);
@@ -636,6 +644,15 @@ route('POST', '/api/me/email/code', async ({ user }) => {
   await sendCode(r, 'verify');
   return { sent: true };
 });
+route('POST', '/api/me/email', ({ user, body }) => {
+  const r = one('SELECT * FROM users WHERE id = ?', user.id)!;
+  if (r.email_verified_at) fail(409, 'already_verified'); // a verified address changes through support
+  const email = normalizeEmail(body.email) ?? fail(400, 'invalid_email');
+  if (one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, r.id)) fail(409, 'email_taken');
+  run('UPDATE users SET email = ? WHERE id = ?', email, r.id);
+  run('DELETE FROM email_codes WHERE user_id = ?', r.id);
+  return me(toUser(one('SELECT * FROM users WHERE id = ?', r.id)!));
+});
 route('POST', '/api/me/email/verify', ({ user, body }) => {
   const r = one('SELECT * FROM users WHERE id = ?', user.id)!;
   if (!r.email_verified_at) {
@@ -652,10 +669,11 @@ const accountFor = (identifier: unknown) => {
   const r = phone ? one('SELECT * FROM users WHERE phone = ?', phone) : email ? one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email) : undefined;
   return r && r.email_verified_at && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
 };
-route('POST', '/api/auth/reset/code', async ({ body }) => {
+route('POST', '/api/auth/reset/code', ({ body }) => {
   if (!emailReady) fail(503, 'email_unavailable');
   const r = accountFor(body.identifier);
-  if (r) await sendCode(r, 'reset').catch(() => {}); // a cooldown or a bounce must not reveal the account either
+  // Not awaited: the reply time must not tell a real account (provider call) from none; errors stay silent too.
+  if (r) void sendCode(r, 'reset').catch(() => {});
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', ({ body }) => {
@@ -668,6 +686,7 @@ route('POST', '/api/auth/reset', ({ body }) => {
   try {
     run('UPDATE users SET password = ? WHERE id = ?', password, r.id);
     run('DELETE FROM sessions WHERE user_id = ?', r.id); // a reset ends the session on every device
+    for (const id of [r.phone, r.email].filter(Boolean)) run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase()));
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return { ok: true }; // the app then signs in normally, through every login gate

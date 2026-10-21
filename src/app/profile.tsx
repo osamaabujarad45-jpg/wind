@@ -80,6 +80,7 @@ function EmailCard() {
   const { c, err } = useCopy();
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  const [changing, setChanging] = useState<string | null>(null); // a new address being typed
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (!me?.user.email) return null;
@@ -94,6 +95,11 @@ function EmailCard() {
   }
   const send = () => run(async () => { await api('/me/email/code', {}); setSent(true); setCode(''); });
   const verify = () => run(async () => { await api<Me>('/me/email/verify', { code: code.trim() }); await refresh(); });
+  const change = () => run(async () => {
+    await api<Me>('/me/email', { email: changing?.trim() });
+    await refresh(); setChanging(null); setSent(false); setCode('');
+    await api('/me/email/code', {}); setSent(true); // the new address gets its code at once
+  });
 
   return <Card>
     <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
@@ -111,6 +117,12 @@ function EmailCard() {
       <ErrorText>{error}</ErrorText>
       <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} />
       <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={send} disabled={busy} />
+      {changing === null
+        ? <Button title={c.emailChange} icon="create-outline" variant="ghost" onPress={() => setChanging(email)} disabled={busy} />
+        : <View style={{ marginTop: 8 }}>
+          <Field label={c.email} value={changing} onChangeText={setChanging} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} onSubmitEditing={change} />
+          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email} />
+        </View>}
     </View>}
   </Card>;
 }

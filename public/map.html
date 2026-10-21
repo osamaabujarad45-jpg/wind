@@ -66,7 +66,7 @@ const labelField = language => language === 'ar'
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
 // End of helpers.
 
-const timer = setTimeout(() => send({ type: 'failed' }), 12000); // map never became usable: blocked or offline
+const timer = setTimeout(() => send({ type: 'failed' }), 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
 catch (e) { clearTimeout(timer); send({ type: 'failed' }); throw e; }
@@ -115,7 +115,7 @@ function driverIcon(withArrow) {
   return el;
 }
 const halo = (meters, lat) => {
-  const base = meters / (156543.03 * Math.cos(lat * Math.PI / 180));
+  const base = meters / (78271.52 * Math.cos(lat * Math.PI / 180)); // MapLibre zoom levels use 512 px tiles
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 const empty = { type: 'FeatureCollection', features: [] };
@@ -191,6 +191,7 @@ function drawDriver() {
   drawnDriver = key;
   const source = map.getSource('accuracy');
   if (!driver) {
+    if (frame) cancelAnimationFrame(frame); // a glide still running would bring back the old position
     marker?.remove(); marker = undefined; shown = undefined; at = undefined; turned = undefined;
     source.setData(empty);
     return;

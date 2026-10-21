@@ -75,10 +75,25 @@ try {
   await mailTo('user3@mail.example');
   assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
   mode = 'bounce';
-  assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
+  assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 422 })).error, 'email_bounced');
   mode = 'ok';
   assert.deepEqual(await call('/me/email/code', { token: third.token, body: {} }), { sent: true });
   await mailTo('user3@mail.example', 4);
+
+  // A mistyped address is not a dead end: an unverified account changes it, and a new code goes to the new one.
+  assert.equal((await call('/me/email', { token: third.token, body: { email: 'broken' }, expect: 400 })).error, 'invalid_email');
+  assert.equal((await call('/me/email', { token: third.token, body: { email: 'user1@mail.example' }, expect: 409 })).error, 'email_taken'); // verified elsewhere
+  assert.equal((await call('/me/email', { token: third.token, body: { email: 'User3b@mail.example' } })).user.email, 'user3b@mail.example');
+  await call('/me/email/code', { token: third.token, body: {} });
+  const moved3 = await mailTo('user3b@mail.example');
+  assert.ok((await call('/me/email/verify', { token: third.token, body: { code: moved3.code } })).user.emailVerifiedAt);
+  assert.equal((await call('/me/email', { token: third.token, body: { email: 'user3c@mail.example' }, expect: 409 })).error, 'already_verified');
+
+  // A taken address (verified or not) cannot be signed up or switched to again.
+  const owner = await register(4, { email: 'owner@mail.example' });
+  await call('/auth/register', { body: { name: 'Late', email: 'OWNER@mail.example', phone: '0599700006', password, consent: true }, expect: 409 });
+  assert.equal((await call('/me/email', { token: third.token, body: { email: 'owner@mail.example' }, expect: 409 })).error, 'already_verified');
+  assert.equal((await call('/me/email', { token: owner.token, body: { email: 'user3b@mail.example' }, expect: 409 })).error, 'email_taken');
 
   // Password reset: only a verified address receives a code, and the answer never says whether an account exists.
   const sent = inbox.length;
@@ -91,6 +106,8 @@ try {
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: other(reset.code), password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700002', code: reset.code, password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599709999', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password', 'checked before any lookup');
+  for (let i = 0; i < 5; i++) await call('/auth/login', { body: { identifier: '0599700001', password: 'not-it-at-all' }, expect: 401 });
+  await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 429 }); // a forgetful owner hit the limit
   assert.deepEqual(await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' } }), { ok: true });
   await call('/me', { token: customer.token, expect: 401 }); // every old session ended
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 401 });
@@ -114,7 +131,7 @@ try {
   // A changed address is unverified, and a code sent to the old one no longer works.
   await new Promise(resolve => setTimeout(resolve, 0));
   const pending = inbox.length;
-  await call(`/admin/users/${third.user.id}/identity-code`, { token: admin.token, body: {}, expect: 409 }); // never verified
+  await call(`/admin/users/${owner.user.id}/identity-code`, { token: admin.token, body: {}, expect: 409 }); // never verified
   assert.equal(inbox.length, pending);
   const edited = await call(`/admin/users/${id}`, { token: admin.token, method: 'PATCH', body: { email: 'moved@mail.example' } });
   assert.equal(edited.emailVerifiedAt, null);

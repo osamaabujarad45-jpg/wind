@@ -32,8 +32,10 @@ function harness() {
 }
 { // Android reports bearing 0 and speed 0 when it has neither: a parked car sends no heading; a moving one does.
   const h = harness(); await deliverDriverFix({ ...fix, coords: { ...fix.coords, heading: 0, speed: 0 } }, h.io, now);
-  await deliverDriverFix({ timestamp: now + 3_000, coords: { ...fix.coords, heading: 200, speed: 9 } }, h.io, now + 3_000);
-  assert.deepEqual(h.posts.map(p => p.body.heading), [undefined, 200]);
+  await deliverDriverFix({ timestamp: now + 3_000, coords: { ...fix.coords, heading: 192, speed: 1.8, accuracy: 33 } }, h.io, now + 3_000); // indoor jitter
+  await deliverDriverFix({ timestamp: now + 6_000, coords: { ...fix.coords, heading: 200, speed: 9, accuracy: 120 } }, h.io, now + 6_000); // coarse fix
+  await deliverDriverFix({ timestamp: now + 9_000, coords: { ...fix.coords, heading: 200, speed: 9, accuracy: 10 } }, h.io, now + 9_000);
+  assert.deepEqual(h.posts.map(p => p.body.heading), [undefined, undefined, undefined, 200]);
 }
 {
   const h = harness(); await deliverDriverFix({ ...fix, timestamp: now - 30_000 }, h.io, now);

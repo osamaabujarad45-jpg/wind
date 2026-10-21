@@ -131,7 +131,7 @@ function driverIcon(arrow: boolean) {
 }
 // Accuracy halo radius in pixels for `meters` at every zoom (web-mercator metres per pixel halve per zoom level).
 const halo = (meters: number, lat: number) => {
-  const base = meters / (156543.03 * Math.cos(lat * Math.PI / 180));
+  const base = meters / (78271.52 * Math.cos(lat * Math.PI / 180)); // MapLibre zoom levels use 512 px tiles
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 

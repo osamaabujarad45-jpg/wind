@@ -2,11 +2,13 @@ export type TrackingContext = { id: string; token: string; actor: number; orderI
 export type DriverFix = { timestamp: number; coords: { latitude: number; longitude: number; heading?: number | null; accuracy?: number | null; speed?: number | null } };
 
 /**
- * Heading worth sending: only while moving. Android reports bearing 0 (north) and speed 0 when it has neither, so a
- * parked car would point north and the route would be forced to start northward.
+ * Heading worth sending: only while clearly moving on a decent fix. Android reports bearing 0 (north) and speed 0 when
+ * it has neither, and indoor GPS jitter reads as 1-2 m/s with a random course (seen on the A53 at a 33 m fix), so a
+ * parked car would point anywhere and force the route to start that way.
+ * ponytail: 2.5 m/s (9 km/h) and 50 m; tune from real driving traces.
  */
-export const movingHeading = (heading?: number | null, speed?: number | null) =>
-  heading != null && speed != null && speed > 1 && heading >= 0 && heading <= 360 ? heading : undefined;
+export const movingHeading = (heading?: number | null, speed?: number | null, accuracy?: number | null) =>
+  heading != null && speed != null && speed > 2.5 && (accuracy == null || accuracy <= 50) && heading >= 0 && heading <= 360 ? heading : undefined;
 export type TrackingReceipt = { id: string; lastSentAt: number; fixAt: number; failed?: boolean };
 
 // Background callbacks can overlap; one at a time, so the receipt check orders and dedups fixes.
@@ -31,7 +33,7 @@ async function deliverOnce(fix: DriverFix, io: {
   const context = await io.context();
   if (!context) return;
   if (await io.token() !== context.token) { await io.stop(context.id); return; }
-  const { latitude, longitude, accuracy } = fix.coords, heading = movingHeading(fix.coords.heading, fix.coords.speed);
+  const { latitude, longitude, accuracy } = fix.coords, heading = movingHeading(fix.coords.heading, fix.coords.speed, fix.coords.accuracy);
   if (!Number.isFinite(fix.timestamp) || now - fix.timestamp > 60_000 || fix.timestamp > now + 5_000 ||
       !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return;
   const receipt = await io.receipt();
