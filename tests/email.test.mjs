@@ -89,12 +89,13 @@ try {
   assert.match(reset.text, /password reset code/);
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: other(reset.code), password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
-  assert.equal((await call('/auth/reset', { body: { identifier: '0599700002', code: reset.code, password: 'New-Password-123' }, expect: 400 })).error, 'code_expired');
+  assert.equal((await call('/auth/reset', { body: { identifier: '0599700002', code: reset.code, password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
+  assert.equal((await call('/auth/reset', { body: { identifier: '0599709999', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password', 'checked before any lookup');
   assert.deepEqual(await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' } }), { ok: true });
   await call('/me', { token: customer.token, expect: 401 }); // every old session ended
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 401 });
   const signedIn = await call('/auth/login', { body: { identifier: 'user1@mail.example', password: 'New-Password-123' } });
-  assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'Another-Pass-123' }, expect: 400 })).error, 'code_expired');
+  assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'Another-Pass-123' }, expect: 400 })).error, 'wrong_email_code', 'spent');
 
   // Support identity check: code to the verified email, read back by the caller; admins only; verified emails only.
   await call('/auth/register', { body: { name: 'Admin', email: 'admin@mail.example', phone: '0599700009', password, consent: true } });

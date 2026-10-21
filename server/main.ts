@@ -659,9 +659,11 @@ route('POST', '/api/auth/reset/code', async ({ body }) => {
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', ({ body }) => {
-  const r = accountFor(body.identifier) ?? fail(400, 'code_expired');
-  const password = hashPassword(newPassword(body.password));
-  useCode(r, 'reset', body.code);
+  const password = hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
+  // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
+  const r = accountFor(body.identifier) ?? fail(400, 'wrong_email_code');
+  try { useCode(r, 'reset', body.code); }
+  catch (error) { throw error instanceof HttpError && error.status === 400 ? new HttpError(400, 'wrong_email_code') : error; }
   db.exec('BEGIN IMMEDIATE');
   try {
     run('UPDATE users SET password = ? WHERE id = ?', password, r.id);
