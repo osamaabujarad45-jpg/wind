@@ -207,7 +207,9 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
   const t = { forest: [palette.forest, palette.lime], olive: [palette.olivePale, palette.olive], blue: [palette.bluePale, palette.blue] }[tone];
   return <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
     style={{ width: s, height: s, borderRadius: s / 2, backgroundColor: t[0], alignItems: 'center', justifyContent: 'center' }}>
-    <Text style={{ color: t[1], fontSize: s * 0.42, fontWeight: '800' }}>{name.trim().slice(0, 1) || '•'}</Text>
+    {/* A contact known only by phone number gets a person, not its first digit. */}
+    {/^[+\d٠-٩]/.test(name.trim()) ? <Ionicons name="person" size={s * 0.45} color={t[1]} />
+      : <Text style={{ color: t[1], fontSize: s * 0.42, fontWeight: '800' }}>{name.trim().slice(0, 1) || '•'}</Text>}
   </View>;
 }
 

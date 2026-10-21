@@ -381,7 +381,8 @@ export default function OrderScreen() {
         {needsCode &&
           <Field label={order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
-        {order.status !== 'on_hold' && !order.safetyHold && <Button title={c[order.status === 'in_transit' && order.service === 'ride' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+        {order.status !== 'on_hold' && !order.safetyHold && <Button title={c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
+          : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
           onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />}
         {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">

@@ -89,6 +89,14 @@ try {
   const other2 = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   await call(`/jobs/${other2.id}/accept`, { token: driver.token, body: {} }); // driver is free again
   await call(`/orders/${other2.id}/release`, { token: driver.token, body: {} });
+  await call(`/orders/${other2.id}/release`, { token: driver.token, body: {} }); // acknowledge a lost response without another release/notification
+  assert.equal((await call(`/orders/${other2.id}`, { token: customer.token })).status, 'searching');
+  const replacement = await call('/auth/register', { body: { phone: '0599100004', name: 'Replacement', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${replacement.user.id}/approve`, { token: admin.token, body: {} });
+  await call(`/jobs/${other2.id}/accept`, { token: replacement.token, body: {} });
+  await call(`/orders/${other2.id}/release`, { token: driver.token, body: {} });
+  assert.equal((await call(`/orders/${other2.id}`, { token: customer.token })).driverId, replacement.user.id, 'retrying the old release cannot unassign a new driver');
+  await call(`/orders/${other2.id}/release`, { token: replacement.token, body: {} });
   await call(`/orders/${other2.id}/cancel`, { token: customer.token, body: {} });
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 3); // delivered parcel, finished ride, returned parcel

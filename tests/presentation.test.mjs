@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import './customer-location.test.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';

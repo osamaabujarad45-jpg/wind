@@ -15,7 +15,7 @@ export type RouteMapProps = {
   /** Closed checkpoints the route goes around (or still crosses), drawn as no-entry markers. */
   closed?: Point[] | null;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onFail?: () => void; height?: number };
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 export default function RoutePreview({ pickupTitle, dropoffTitle }: RouteMapProps) {

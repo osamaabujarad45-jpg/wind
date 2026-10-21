@@ -73,8 +73,8 @@ if (Platform.OS !== 'web' && !TaskManager.isTaskDefined(TASK)) TaskManager.defin
       try {
         const response = await fetch(`${API_URL}/api/location`, { method: 'POST', signal: controller.signal,
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        await response.text();
-        return response.status;
+        const receipt = await response.json().catch(() => null) as { accepted?: boolean } | null;
+        return { status: response.ok && !receipt ? 502 : response.status, accepted: receipt?.accepted };
       } finally { clearTimeout(timer); }
     },
   });

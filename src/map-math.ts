@@ -26,6 +26,19 @@ export function fitBounds(points: Point[]): [[number, number], [number, number]]
   return [[w, s], [e, n]];
 }
 
+/** Keep the actual stops and every bend of the visible road in frame, including after the trip changes phase. */
+export function routeFramePoints({ pickup, dropoff, driver, focus, road, approach }: {
+  pickup: Point; dropoff: Point; driver?: Point | null; focus?: 'pickup' | 'dropoff';
+  road?: [number, number][] | null; approach?: [number, number][] | null;
+}): Point[] {
+  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
+  const line = driver ? approach : road;
+  return [
+    ...(driver ? [driver, ...stops] : [pickup, dropoff]),
+    ...(line ?? []).map(([longitude, latitude]) => ({ latitude, longitude })),
+  ];
+}
+
 /** Map label expression for the app language (OpenMapTiles name fields). */
 // Arabic falls back to the Latin name before the local one, so places without an Arabic name are still readable.
 export const labelField = (language: 'ar' | 'en') => language === 'ar'

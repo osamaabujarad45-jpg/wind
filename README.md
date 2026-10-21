@@ -1,6 +1,6 @@
 # Wind / ويند
 
-Arabic-first delivery app for West Bank cities. Parcel delivery is enabled by default; licensed passenger rides and large loads need explicit operational opt-in. Each driver handles one active job. The Souqna integration and any co-branding need a written agreement with Souqna first.
+Arabic-first delivery app for West Bank cities. Parcel delivery is enabled by default; licensed passenger rides and large loads need explicit operational opt-in. Couriers can carry multiple parcels; rides and freight remain exclusive jobs. The Souqna integration and any co-branding need a written agreement with Souqna first.
 
 One Expo app serves three roles, chosen by the account that signs in:
 
@@ -10,7 +10,14 @@ One Expo app serves three roles, chosen by the account that signs in:
 
 The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
 
-## Current release — 4 October 2026
+## Current workspace verification — 21 October 2026
+
+The workspace targets Android 1.0.12 / code 13 and Expo SDK 57. The connected A53
+still had 1.0.11 / code 12 during this review. Local changes have not been deployed.
+See [the scenario QA report](docs/QA-2026-10-21.md) for customer, driver, recipient,
+administrator and map coverage, fixes, evidence and remaining native/provider checks.
+
+## Release reference — 4 October 2026 (historical)
 
 - **Live API:** `https://wind-production-72aa.up.railway.app`
 - **Android:** package `ps.wind.app`, version 1.0.4 / code 5.
@@ -50,8 +57,29 @@ The app finds the API on the Metro host at port 4000, so a phone on the same Wi-
 npm run typecheck
 npm run lint
 npm test                            # model + full API flow against a temp database
+npm run test:scenarios               # build web, then real browser role journeys + map checks
+npm run test:location                # customer GPS edge cases; reuses that web export
 npx expo-doctor
 ```
+
+Browser checks require Playwright Chromium (`npx playwright install chromium`).
+They use throwaway databases and localhost:4188; run them sequentially. Map tiles
+load from OpenFreeMap. The role suite controls GPS and OSRM responses for repeatable
+failure/retry checks. Results and screenshots are under `.expo/scenarios/`.
+
+For an attached, unlocked Android phone with Chrome and USB debugging enabled,
+after `test:scenarios`:
+
+```bash
+adb reverse tcp:4188 tcp:4188
+adb forward tcp:9228 localabstract:chrome_devtools_remote
+npm run test:android-browser
+adb reverse --remove tcp:4188
+adb forward --remove tcp:9228
+```
+
+This opens and closes its own local test tab. It validates physical Chrome and the
+Android map HTML, not a rebuilt native APK or locked-screen background location.
 
 ## Screens
 
@@ -144,7 +172,6 @@ npx eas-cli@latest login
 npx eas-cli@latest init                                   # links the project, writes projectId
 npx eas-cli@latest env:create --name EXPO_PUBLIC_API_URL --value https://<api> --environment preview --environment production --visibility plaintext
 npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPPORT_WHATSAPP --value 970599000000 --environment preview --environment production --visibility plaintext
-npx eas-cli@latest env:create --name GOOGLE_MAPS_API_KEY --value <key> --environment preview --environment production --visibility sensitive
 npx eas-cli@latest build --profile preview --platform all      # internal install links
 npx eas-cli@latest build --profile production --platform all   # store builds, build numbers auto-increment
 npx eas-cli@latest submit --platform all
@@ -152,7 +179,7 @@ npx eas-cli@latest submit --platform all
 
 - `EXPO_PUBLIC_API_URL` is required and must be `https`; the EAS build fails fast otherwise.
 - `EXPO_PUBLIC_SUPPORT_WHATSAPP` (international digits) shows "Contact support" in the app. Optional.
-- `GOOGLE_MAPS_API_KEY` (Maps SDK for Android, restricted to `ps.wind.app`) enables the Android map; without it Android shows the static route card. iOS uses Apple Maps.
+- Android loads the hosted `public/map.html` in a WebView using MapLibre/OpenFreeMap; no Google Maps key is needed. The API must serve that page and the vendored map assets. iOS uses Apple Maps.
 
 ### 3. Web / iPhone access
 
@@ -172,17 +199,20 @@ The Railway image also exports and serves this single-page web build at the API'
 ## Known limits
 
 Registration does not prove phone or email ownership yet; public SMS signup is
-unavailable. There are no push notifications (screens poll while open), driver
-location is foreground-only, payment is cash, and the API is a single instance.
+unavailable. Web Push is implemented; native push still needs EAS/FCM setup and
+integration. Browser GPS runs in the foreground. Native background location is
+implemented, but the latest workspace changes still need a rebuilt-device test
+with the screen locked. Payment is cash, and the API is a single instance.
 A parcel that cannot be delivered goes `on_hold` with the driver's reason; an
 administrator records a reattempt or return decision, and a return closes only with
 the sender's return code. Customers can open one dispute per finished order within
 seven days; resolution is a recorded decision with no automatic refund. Pickup
 evidence remains an operational launch gap. Drivers' cash debt to Wind (commission on
 finished jobs) is an append-only ledger: the cashier records numbered handovers that count
-only after the driver confirms them, plus reasoned adjustments. Do not claim
-them as implemented. Details and the path past each are
-in [docs/SYSTEM.md §9](docs/SYSTEM.md).
+only after the driver confirms them, plus reasoned adjustments. The scenario suite
+tests these handovers; collecting and paying out the goods price to senders is not
+implemented. Historical requirements are in [docs/SYSTEM.md §9](docs/SYSTEM.md);
+the [current QA report](docs/QA-2026-10-21.md) separates tested behavior from remaining work.
 
 ## Product documents
 

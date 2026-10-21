@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { api, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
@@ -13,7 +13,7 @@ const Context = createContext<Work | null>(null);
 
 // One assignment source for offer availability and foreground tracking, including the order screen.
 export function DriverWorkProvider({ children }: { children: ReactNode }) {
-  const { me, ready, language } = useSession();
+  const { me, ready } = useSession();
   const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
   const [lifecycle, setLifecycle] = useState({ active: AppState.currentState === 'active', revision: 0 });
   const foreground = lifecycle.active;
@@ -31,7 +31,6 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const servicesGeneration = useRef(0);
   const [servicesResult, setServicesResult] = useState<{ actor: number; revision: number; enabled: boolean }>();
   const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'> }>();
-  const [backgroundGranted, setBackgroundGranted] = useState(false);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => setLifecycle(previous => ({ active: state === 'active', revision: previous.revision + 1 })));
@@ -71,15 +70,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     if (permission?.granted) void Promise.resolve().then(refreshServices);
   }, [permission?.granted, refreshServices]);
 
-  useEffect(() => {
-    if (Platform.OS === 'web' || !foreground || actor === null) return;
-    let cancelled = false;
-    void Location.getBackgroundPermissionsAsync().then(value => { if (!cancelled) setBackgroundGranted(value.granted); });
-    return () => { cancelled = true; };
-  }, [actor, foreground, lifecycle.revision]);
-
   // Called only from an explicit driver action. It requests foreground permission at the point it is needed,
-  // then lets Android offer its high-accuracy location dialog when services are off.
+  // then lets Android offer its high-accuracy location dialog when services are off. No "all the time"
+  // permission: the native tracker is a foreground service started while the app is open, which Android
+  // and iOS let keep reading location after the phone locks.
   const prepareTracking = useCallback(async () => {
     if (actor === null || !foreground) return false;
     const value = permission?.granted ? permission : await requestPermission();
@@ -90,22 +84,8 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       catch { return false; }
       enabled = await refreshServices();
     }
-    if (!enabled || Platform.OS === 'web') return enabled;
-    if (!(await Location.getBackgroundPermissionsAsync()).granted) {
-      const proceed = await new Promise<boolean>(resolve => Alert.alert(
-        language === 'ar' ? 'مشاركة الموقع أثناء التوصيل' : 'Location during delivery',
-        language === 'ar' ? 'يلزم إذن الموقع طوال الوقت لمتابعة التوصيل عند قفل الهاتف أو فتح تطبيق آخر. تتوقف المشاركة بانتهاء الطلبات أو تسجيل الخروج.' : 'Allow location all the time to keep tracking when the phone locks or another app opens. Sharing stops when deliveries end or you sign out.',
-        [{ text: language === 'ar' ? 'إلغاء' : 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: language === 'ar' ? 'متابعة' : 'Continue', onPress: () => resolve(true) }],
-        { cancelable: true, onDismiss: () => resolve(false) }));
-      if (!proceed) return false;
-      const background = await Location.requestBackgroundPermissionsAsync();
-      setBackgroundGranted(background.granted);
-      return background.granted;
-    }
-    setBackgroundGranted(true);
-    return true;
-  }, [actor, foreground, permission, refreshServices, requestPermission, language]);
+    return enabled;
+  }, [actor, foreground, permission, refreshServices, requestPermission]);
 
   const reload = useCallback((): Promise<void> => {
     if (actor === null || !foreground) return Promise.resolve();
@@ -142,50 +122,60 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const order = orders[0] ?? null; // one location stream serves every order the driver carries
   const servicesEnabled = servicesResult?.actor === actor && servicesResult.revision === lifecycle.revision && servicesResult.enabled;
 
-  // Foreground only. Start a fresh high-accuracy fix as soon as a driver accepts, then keep the customer
-  // updated from a subscription. The status reaches "sharing" only after the API accepts a coordinate.
+  // Web, foreground only. The browser's own watch, not Expo's: Expo 57 on web drops errors and high accuracy,
+  // clears the wrong watch ID and serves a cached first fix of any age. "sharing" only after the API accepts a fix.
   useEffect(() => {
     const orderId = order?.id;
     if (Platform.OS !== 'web' || actor === null || orderId === undefined) return;
     if (!foreground || !permission?.granted || !servicesEnabled) return;
-    let subscription: Location.LocationSubscription | undefined;
+    const geolocation = navigator.geolocation;
     let stopped = false;
     let publishing = false;
-    let locating = false;
+    let queued: GeolocationPosition | null = null;
+    let lastFixAt = 0;
     let lastPublishedAt = 0;
     const setState = (value: Exclude<Tracking, 'idle'>) => {
       if (!stopped) setTrackingResult({ actor, orderId, value });
     };
-    const publish = async ({ latitude, longitude, heading, accuracy }: Location.LocationObjectCoords) => {
-      if (stopped || publishing) return;
+    const publish = async (position: GeolocationPosition) => {
+      const { timestamp, coords: { latitude, longitude, heading, accuracy } } = position;
+      // A late or replayed fix must not move the driver backward.
+      if (stopped || timestamp <= lastFixAt || !Number.isFinite(timestamp) || Date.now() - timestamp > 60_000 || timestamp > Date.now() + 5_000) return;
+      if (publishing) {
+        if (!queued || timestamp > queued.timestamp) queued = position;
+        return;
+      }
       publishing = true;
       try {
         // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
-        await api('/location', { latitude, longitude,
+        const receipt = await api<{ accepted?: boolean }>('/location', { latitude, longitude, age: Math.max(0, Date.now() - timestamp),
           ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
           ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
-        lastPublishedAt = Date.now();
-        setState('sharing');
+        if (receipt.accepted !== false) {
+          lastFixAt = timestamp;
+          lastPublishedAt = Date.now();
+          setState('sharing');
+        }
       } catch {
         setState('starting');
         void reload();
-      } finally { publishing = false; }
+      } finally {
+        publishing = false;
+        const next = queued;
+        queued = null;
+        if (next && !stopped) void publish(next);
+      }
     };
-    const options = { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 30, mayShowUserSettingsDialog: true };
+    // Timeouts and lost signal keep the last state; the heartbeat retries. Only a denial turns sharing off.
+    const fail = (error: GeolocationPositionError) => { if (error.code === 1) setState('off'); };
+    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 };
     setState('starting');
-    const readPosition = () => {
-      if (stopped || locating) return;
-      locating = true;
-      void Location.getCurrentPositionAsync(options).then(position => publish(position.coords))
-        .catch(() => setState('starting')).finally(() => { locating = false; });
-    };
-    readPosition();
-    // Movement subscriptions can stay silent at a stop. Obtain a new fix rather than re-stamping an old one.
-    const heartbeat = setInterval(() => { if (Date.now() - lastPublishedAt >= 25_000) readPosition(); }, 30_000);
-    void Location.watchPositionAsync(options, position => { void publish(position.coords); }, () => setState('off'))
-      .then(sub => { if (stopped) sub.remove(); else subscription = sub; })
-      .catch(() => setState('off'));
-    return () => { stopped = true; clearInterval(heartbeat); subscription?.remove(); };
+    const watch = geolocation.watchPosition(position => { void publish(position); }, fail, options);
+    // Watches can stay silent at a stop. Obtain a new fix rather than re-stamping an old one.
+    const heartbeat = setInterval(() => {
+      if (Date.now() - lastPublishedAt >= 25_000) geolocation.getCurrentPosition(position => { void publish(position); }, fail, options);
+    }, 30_000);
+    return () => { stopped = true; clearInterval(heartbeat); geolocation.clearWatch(watch); };
   }, [actor, foreground, order?.id, permission?.granted, reload, servicesEnabled]);
 
   // Reconcile only in the foreground. AppState changes must not tear down the native service.
@@ -197,7 +187,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (nativeOrderId === undefined || permission === null) return;
-    if (!permission.granted || !backgroundGranted) {
+    if (!permission.granted) {
       void stopBackgroundLocation().catch(() => {});
       return;
     }
@@ -211,11 +201,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     });
     const timer = setInterval(status, 3_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [actor, ready, foreground, nativeOrderId, result?.actor, permission, backgroundGranted, servicesEnabled]);
+  }, [actor, ready, foreground, nativeOrderId, result?.actor, permission, servicesEnabled]);
 
   const savedTracking = trackingResult?.actor === actor && trackingResult.orderId === order?.id ? trackingResult.value : undefined;
-  const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ||
-    (Platform.OS !== 'web' && !backgroundGranted) ? 'off' : savedTracking ?? 'starting';
+  const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ? 'off' : savedTracking ?? 'starting';
 
   return <Context.Provider value={{ order, orders, known: !!own && !own.error, error: own?.error, tracking, reload, update, permission, requestPermission, prepareTracking }}>{children}</Context.Provider>;
 }

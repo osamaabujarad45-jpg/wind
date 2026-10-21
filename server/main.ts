@@ -66,6 +66,8 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   res.writeHead(200, {
     'Content-Type': contentType,
+    // map.html (the Android WebView map) runs an inline module, so it keeps the frame/sniff headers only.
+    ...(extension === '.html' && file !== resolve(webRoot, 'map.html') && { 'Content-Security-Policy': webCsp }),
     'Cache-Control': extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
     ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
   });
@@ -74,6 +76,10 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   return true;
 }
 
+// Same-origin app; OpenFreeMap serves the map style, tiles, glyphs and sprites. React Native Web injects <style> tags.
+const webCsp = ["default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://tiles.openfreemap.org",
+  "font-src 'self' data:", "connect-src 'self' https://tiles.openfreemap.org", "worker-src 'self' blob:", "manifest-src 'self'",
+  "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
 const compressible = (type: string) => /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml|font\/ttf)/.test(type);
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
@@ -209,13 +215,18 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
     if (column === 'job_alerted_at') db.prepare('UPDATE orders SET job_alerted_at = ? WHERE scheduled_for IS NOT NULL AND scheduled_for <= ?').run(Date.now(), Date.now() + 30 * 60_000);
   }
 }
+// Covering indexes: driver and customer stats run on every driver request, so they read the index, never the rows.
+// A table older than the rating column (it only ever lived in development) keeps the plain indexes.
+if ((db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'rating'))
+  db.exec(`CREATE INDEX IF NOT EXISTS orders_driver_stats ON orders(driver_id, status, rating, price_rating);
+    CREATE INDEX IF NOT EXISTS orders_customer_stats ON orders(customer_id, status, customer_rating);`);
 for (const column of ['heading', 'accuracy']) {
   if (!(db.prepare('PRAGMA table_info(driver_locations)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} REAL`);
@@ -283,9 +294,18 @@ db.exec('BEGIN IMMEDIATE; PRAGMA user_version = 3; COMMIT');
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 type Row = Record<string, any>;
+// Driver and customer stats aggregate whole order histories and every poll asks for them, so they are memoized until
+// the next write that touches orders (location pings and other writes keep them). Reads inside a transaction skip the
+// memo so a rollback cannot leave uncommitted stats behind. ponytail: one process owns the DB; a second writer needs a TTL.
+const statsMemo = new Map<string, unknown>();
+const memoStats = <T>(key: string, load: () => T): T => {
+  if (db.isTransaction) return load();
+  if (!statsMemo.has(key)) { if (statsMemo.size >= 10_000) statsMemo.clear(); statsMemo.set(key, load()); }
+  return statsMemo.get(key) as T;
+};
 const one = (sql: string, ...p: SQLInputValue[]) => db.prepare(sql).get(...p) as Row | undefined;
 const all = (sql: string, ...p: SQLInputValue[]) => db.prepare(sql).all(...p) as Row[];
-const run = (sql: string, ...p: SQLInputValue[]) => db.prepare(sql).run(...p);
+const run = (sql: string, ...p: SQLInputValue[]) => { if (/\borders\b/i.test(sql)) statsMemo.clear(); return db.prepare(sql).run(...p); };
 
 class HttpError extends Error {
   status: number;
@@ -413,16 +433,16 @@ const OFFER_TTL = 10 * 60_000; // ponytail: inDrive-like window; tune from how l
 const offerOpen = `AND f.created_at > ? AND u.status = 'active'
   AND NOT EXISTS(SELECT 1 FROM orders b WHERE b.driver_id = u.id AND b.status IN (${activeSql}))
   AND NOT EXISTS(SELECT 1 FROM order_releases x WHERE x.order_id = f.order_id AND x.driver_id = u.id)`;
-function driverStats(id: number): DriverStats {
+const driverStats = (id: number): DriverStats => memoStats(`d${id}`, () => {
   const r = one(`SELECT AVG(rating) rating, AVG(price_rating) price_rating, COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders WHERE driver_id = ?`, id)!;
   const tenth = (v: unknown) => v == null ? null : Math.round(Number(v) * 10) / 10;
   return { rating: tenth(r.rating), priceRating: tenth(r.price_rating), trips: Number(r.trips) };
-}
+});
 /** The customer's record as drivers see it; the average needs 3 ratings so no single driver's stars show. */
-function customerStats(id: number): { rating: number | null; trips: number } {
+const customerStats = (id: number): { rating: number | null; trips: number } => memoStats(`c${id}`, () => {
   const r = one(`SELECT AVG(customer_rating) rating, COUNT(customer_rating) rated, COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders WHERE customer_id = ?`, id)!;
   return { rating: Number(r.rated) >= 3 ? Math.round(Number(r.rating) * 10) / 10 : null, trips: Number(r.trips) };
-}
+});
 const myOffer = (orderId: number, driverId: number) => {
   const f = one('SELECT price, created_at FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', orderId, driverId, Date.now() - OFFER_TTL);
   return f ? { price: f.price as number, createdAt: f.created_at as number } : null;
@@ -987,6 +1007,8 @@ route('POST', '/api/partner/quotes', ({ req, body }) => {
   if (!enabledServices.includes('parcel')) fail(409, 'service_unavailable');
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity) || !['small', 'medium', 'large'].includes(String(body.option))) fail(400, 'invalid_input');
+  // Optional pins are refused here, before the seller agrees, rather than at booking where the buyer can no longer fix them.
+  bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity);
   return { currency: 'ILS', price: quote(settings(), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
     option: body.option, shared: body.shared === true }) };
 }, true);
@@ -1088,13 +1110,15 @@ route('POST', '/api/orders/:id/rate', ({ user, params, body }) => {
   const stars = (v: unknown) => v == null ? null : Number(v) >= 1 && Number(v) <= 5 ? Math.round(Number(v)) : fail(409, 'cannot_rate');
   if (user.id === order.driverId && user.role === 'driver') { // the driver rates the customer, once (SPEC-customer-rating.md)
     const customerRating = stars(body.customerRating);
-    if (order.status !== 'completed' || customerRating == null || order.customerRating) fail(409, 'cannot_rate');
+    if (order.status !== 'completed' || customerRating == null || (order.customerRating && order.customerRating !== customerRating)) fail(409, 'cannot_rate');
+    if (order.customerRating === customerRating) return order; // a lost response must not make a saved rating look rejected
     run('UPDATE orders SET customer_rating = ? WHERE id = ?', customerRating, order.id);
     return getOrder(order.id, user);
   }
   const rating = stars(body.rating), priceRating = stars(body.priceRating);
   if (order.customerId !== user.id || order.status !== 'completed' || (rating == null && priceRating == null)
-    || (rating != null && order.rating) || (priceRating != null && order.priceRating)) fail(409, 'cannot_rate');
+    || (rating != null && order.rating && order.rating !== rating)
+    || (priceRating != null && order.priceRating && order.priceRating !== priceRating)) fail(409, 'cannot_rate');
   run('UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?', rating, priceRating, order.id);
   return getOrder(order.id, user);
 });
@@ -1347,9 +1371,9 @@ route('POST', '/api/jobs/:id/accept', ({ user, params }) => {
   const carrying = activeLoad(user.id);
   if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = activePlan(user.id) === 'pro' ? settings().proCommission : settings().commission;
-  const changed = run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?
+  const changed = run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
-  user.id, commissionOn(order.price, rate), Date.now(), order.id, order.id, user.id).changes;
+  user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id).changes;
   if (!changed) fail(409, 'already_taken');
   run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id); // settled, and this driver is busy now
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
@@ -1393,7 +1417,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', ({ user, params }) => {
     const rate = activePlan(f.id) === 'pro' ? settings().proCommission : settings().commission;
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
-      commission = ?, status = 'assigned', updated_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), r.id);
+      commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id);
     run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', f.id);
     queuePush([f.id as number], 'offer_accepted', r.id); // the driver has usually left the jobs screen
@@ -1407,6 +1431,10 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
   const order = (() => {
     db.exec('BEGIN IMMEDIATE');
     try {
+      if (one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', Number(params[0]), user.id)) {
+        db.exec('COMMIT');
+        return null; // the original release succeeded, possibly before the connection dropped
+      }
       const current = getOrder(Number(params[0]), user);
       if (current.driverId !== user.id || !['assigned', 'at_pickup'].includes(current.status)) fail(409, 'cannot_release'); // nothing collected yet
       safetyFree(current.id);
@@ -1419,6 +1447,7 @@ route('POST', '/api/orders/:id/release', ({ user, params }) => {
       return current;
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   })();
+  if (!order) return { ok: true };
   queuePush([order.customerId!], 'released', order.id);
   newJobPush(order.service, order.id, order.customerId!, user.id); // the releasing driver is excluded
   return { ok: true };
@@ -1543,15 +1572,25 @@ function driverCommand(user: User, id: number, body: Row, apply: (user: User, id
 route('POST', '/api/location', ({ user, body }) => {
   needActive(user);
   need(user, 'driver');
-  if (!one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)) fail(409, 'no_active_job');
+  // Legacy rows without an assignment time count as assigned at 0.
+  const since = one(`SELECT MIN(COALESCE(assigned_at, 0)) since FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id)!.since;
+  if (since == null) fail(409, 'no_active_job');
   const { latitude: lat, longitude: lng } = pointOf({ latitude: body.latitude, longitude: body.longitude })!;
   // Optional extras for a better marker; devices report -1 or nothing when unknown.
   const heading = body.heading == null || body.heading === -1 ? null : finite(body.heading, 360, 0) ? body.heading : fail(400, 'invalid_location');
   const accuracy = body.accuracy == null ? null : finite(body.accuracy, 5000, 0) ? body.accuracy : fail(400, 'invalid_location');
-  run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy`,
-  user.id, lat, lng, Date.now(), heading, accuracy);
-  return { ok: true };
+  // Devices send how old the fix is, not a clock time, so a wrong phone clock cannot reorder fixes.
+  // Older builds send no age: their fixes are taken as current, as before.
+  const age = body.age == null ? 0 : finite(body.age, 86_400_000, 0) ? Math.round(body.age) : fail(400, 'invalid_location');
+  const fixAt = Date.now() - age;
+  // A late upload must not move the driver backward or show a fix from before this job on it.
+  // Still 2xx: a background task stops on 409, and newer fixes keep coming.
+  if (age > 60_000 || fixAt < Number(since)) return { ok: true, accepted: false };
+  const written = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy
+    WHERE excluded.updated_at > driver_locations.updated_at`,
+  user.id, lat, lng, fixAt, heading, accuracy);
+  return { ok: true, accepted: Number(written.changes) > 0 };
 });
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
@@ -1635,8 +1674,8 @@ route('GET', '/api/route', ({ user, query }) => {
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const hash = sha(params[0]!);
-  limit(identityKey('track-eta', hash), 60, 10 * 60_000);
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
+  limit(identityKey('track-eta', hash), 60, 10 * 60_000); // after the lookup: a made-up token must not leave a row behind
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
   // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).
   if (r.shared_run) return Promise.resolve().then(() => roadRoute(city(r.pickup_city), city(r.dropoff_city)))
@@ -2065,9 +2104,13 @@ if (import.meta.main) {
     catch (error) { console.error((error as Error).message); process.exitCode = 1; }
     finally { db.close(); }
   } else {
-    run('DELETE FROM sessions WHERE created_at < ?', Date.now() - SESSION_DAYS * DAY);
     run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY); // only the last two hours are ever shown
-    run('DELETE FROM request_limits WHERE until < ?', Date.now());
+    const prune = () => {
+      run('DELETE FROM sessions WHERE created_at < ?', Date.now() - SESSION_DAYS * DAY);
+      run('DELETE FROM request_limits WHERE until < ?', Date.now());
+    };
+    prune();
+    setInterval(() => { try { prune(); } catch (error) { console.error(error); } }, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(() => { try { alertReleasedJobs(); } catch (error) { console.error(error); } }, 60_000).unref(); // scheduled-job release alerts

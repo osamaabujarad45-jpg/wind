@@ -305,8 +305,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       const tracking = window.trackingCheck;
       const id = ++tracking.next;
       tracking.active.add(id);
-      const emit = () => success({ coords: { latitude: 31.9, longitude: 35.2, accuracy: 1, altitude: null,
-        altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });
+      const emit = (timestamp = Date.now()) => success({ coords: { latitude: 31.9, longitude: 35.2, accuracy: 1, altitude: null,
+        altitudeAccuracy: null, heading: null, speed: null }, timestamp });
       tracking.callbacks.set(id, emit);
       queueMicrotask(emit);
       return id;
@@ -314,8 +314,10 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
     navigator.geolocation.clearWatch = id => { window.trackingCheck.active.delete(id); };
   }, { token: idleDriver.token });
   const page = await context.newPage();
-  let publications = 0;
-  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/api/location')) publications++; });
+  let publications = 0, lastLocation;
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/location')) { publications++; lastLocation = request.postDataJSON(); }
+  });
   await page.goto(`http://localhost:${WEB_PORT}/driver`, { waitUntil: 'networkidle' });
   // Skip the destination chips (role radio), which carry the same city names (SPEC-driver-destination.md).
   const offer = (from, to) => page.locator(`xpath=//*[normalize-space(text())="${from}" and not(ancestor-or-self::*[@role="radio"])]`)
@@ -333,6 +335,12 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   const stationaryPublications = publications;
   await page.waitForTimeout(31_000); // the watcher emits no movement after its initial fix
   assert.ok(publications > stationaryPublications, 'a stationary driver must refresh their GPS fix');
+  assert.ok(Number.isInteger(lastLocation.age) && lastLocation.age >= 0 && lastLocation.age < 5_000, 'web sends how old the fix is');
+  const beforeLate = publications;
+  // A replayed, out-of-order or minutes-old fix must not move the driver backward.
+  await page.evaluate(() => { for (const emit of window.trackingCheck.callbacks.values()) { emit(Date.now() - 30_000); emit(Date.now() - 120_000); } });
+  await page.waitForTimeout(200);
+  assert.equal(publications, beforeLate);
   const visibility = hidden => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: hidden ? 'hidden' : 'visible' });
     document.dispatchEvent(new Event('visibilitychange'));

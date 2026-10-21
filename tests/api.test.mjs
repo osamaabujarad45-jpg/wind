@@ -106,6 +106,16 @@ try {
   assert.equal((await call(link.path)).status, 'searching');
   await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} })).status, 'cancelled');
+  // Souq pins are optional; given, the courier gets the real points like a Wind booking. A pin outside its city fails at quote time.
+  const pinned = { ...orderInput, pickupPoint: { latitude: 31.905, longitude: 35.205 }, dropoffPoint: { latitude: 32.222, longitude: 35.255 } };
+  await call('/partner/quotes', { partnerKey, body: { ...pinned, dropoffPoint: pinned.pickupPoint }, expect: 400 });
+  await call('/partner/quotes', { partnerKey, body: { ...pinned, pickupPoint: { latitude: '31.9', longitude: 35.2 } }, expect: 400 });
+  const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
+    quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });
+  await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: {} });
+  const pinnedJob = await call(`/orders/${pinnedOrder.id}`, { token: driver.token });
+  assert.deepEqual([pinnedJob.pickupPoint, pinnedJob.dropoffPoint], [pinned.pickupPoint, pinned.dropoffPoint]);
+  await call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
   // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
   const souq = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get();
   assert.ok(!(await call('/admin/users?q=partner', { token: admin.token })).some(u => u.id === souq.id));
@@ -125,9 +135,18 @@ try {
   assert.equal(job.customerName, '');
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {}, expect: 409 });
-  await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } });
+  // A late upload of a fix taken before this assignment never shows on this job.
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 5000 } })).accepted, false);
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation, null);
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } })).accepted, true);
   await call('/location', { token: driver.token, body: { latitude: null, longitude: 35.21 }, expect: 400 });
+  await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: -1 }, expect: 400 });
+  // An older fix arriving late never moves the driver backward; a stale one is dropped, not refused.
+  db.prepare('UPDATE orders SET assigned_at = ? WHERE id = ?').run(Date.now() - 90_000, order.id);
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 10_000 } })).accepted, false);
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 61_000 } })).accepted, false);
   const tracked = await call(`/orders/${order.id}`, { token: customer.token });
+  assert.ok(tracked.driverLocation.ageSeconds <= 1);
   assert.equal(tracked.status, 'assigned');
   assert.equal(tracked.driverName, 'Sami');
   assert.equal(tracked.driverLocation.latitude, 31.95);

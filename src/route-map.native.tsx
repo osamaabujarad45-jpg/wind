@@ -33,10 +33,10 @@ export default function RouteMap(props: RouteMapProps) {
   </MapView>;
 }
 
-export function PinMap({ center, onChange, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onReady, height = 320 }: PinMapProps) {
   return <View style={{ height, width: '100%' }}>
     <MapView style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-      pitchEnabled={false} rotateEnabled={false} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
+      pitchEnabled={false} rotateEnabled={false} onMapReady={onReady} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>
