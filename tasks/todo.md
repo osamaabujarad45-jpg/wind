@@ -1,3 +1,12 @@
+# Second pass — 21 October 2026
+
+- [x] Merge the unfinished scenario review and live-tracking branch; resolve conflicts.
+- [x] Tracking: heading only while moving, GPS jump gate, clock-skew freshness, ETA without a driver route, LRU route cache.
+- [x] Email codes over Cloudflare: verify, self-service reset, support caller check.
+- [x] Signed 1.0.13 on the A53; native tracking tested against this API (foreground, background, screen off, relaunch).
+- [ ] Owner: deploy the API to Railway (map page, live push, email routes).
+- [ ] Owner: add a domain to Cloudflare DNS, onboard it for Email Sending, set WIND_EMAIL_FROM, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_EMAIL_TOKEN.
+
 # Scenario review — 21 October 2026
 
 - [x] Audit current capabilities and stale backlog against implementation.
