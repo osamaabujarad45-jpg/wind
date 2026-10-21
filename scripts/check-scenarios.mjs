@@ -21,7 +21,8 @@ process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 if (!process.argv.includes('--no-build')) {
-  const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--output-dir', process.env.WEB_ROOT], {
+  // --clear: Metro's cache does not key on EXPO_PUBLIC_* values, so another build's API URL could be baked in.
+  const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--clear', '--output-dir', process.env.WEB_ROOT], {
     cwd: root, encoding: 'utf8', env: { ...process.env, EXPO_PUBLIC_API_URL: base, EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1' },
   });
   writeFileSync(join(output, 'build.log'), build.stdout + build.stderr);
