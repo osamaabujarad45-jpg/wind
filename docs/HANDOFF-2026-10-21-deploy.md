@@ -11,9 +11,17 @@ Earlier main-checkout edits are preserved in a named Git stash.
 Production-owner browser and CLI login are restored. The private backup script
 now uses renewable CLI OAuth and removes both expired token overrides. Existing
 encrypted snapshots from 06:23 UTC restore successfully; a new export has not
-succeeded yet. Railway CLI 4.36.1 omitted the new `ssh_keys` scope. Version 5.71.0
-is available in the local npm cache; its additional SSH-key permission is awaiting
-the owner's specific approval in this chat. No SSH keys have been created.
+succeeded yet. The owner explicitly approved the new `ssh_keys` scope, which was
+absent from CLI 4.36.1 login. CLI 5.71.0 authorization and workspace-scoped public
+key registration succeeded. The private key is outside the repository with ACLs
+limited to the Windows user and SYSTEM. A stable copy of CLI 5.71.0 is at
+`%LOCALAPPDATA%/SouqWindPrivate/tools/railway-5.71.0.exe`.
+
+Backup transport is still unavailable: current native SSH times out on
+`ssh.railway.com:22`, the legacy CLI cannot connect, and Railway's browser Console
+disconnects. Port 443 is reachable, but no supported SSH-over-443 alternative was
+established. The scheduled script retains its original executable path until the
+new transport can be verified; do not report automated backups as restored yet.
 
 Railway is also blocking deployments platform-wide. Its [incident
 update](https://status.railway.com/incident/QH8L8B3E) at 13:40 UTC says builds remain
@@ -21,11 +29,13 @@ paused and some API features are unavailable. Wind's service screen confirms
 “Deploys have been paused temporarily.” Existing production deployment
 `88654339-9a08-4db4-9a5c-8dba7ea7af38` remains healthy and serves the old code.
 
-Next: finish the pending SSH-scope authorization, verify current-CLI SSH and a
-fresh encrypted backup/restore, then deploy after Railway resumes builds. Keep
+Next: after SSH connectivity returns, verify current-CLI SSH, update the private
+backup script's executable/identity arguments as needed, and verify a fresh
+encrypted backup/restore. Deploy after Railway resumes builds. Keep
 using the project/environment/service IDs and smoke checks below. Evidence:
 `.expo/release-*.log`, `.expo/release-production-before.json` and
-`.expo/release-rollback.json`. The source-only release archive is outside the repo
+`.expo/release-rollback.json`. Transport evidence is in
+`.expo/release-backup-transport.json`. The source-only release archive is outside the repo
 at `../Release-2026-10-21/wind-api-f7f8629.zip`.
 
 The original handoff below is historical. Its expired-authentication and static

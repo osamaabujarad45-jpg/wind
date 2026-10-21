@@ -3,7 +3,8 @@
 - [x] Recover the completed 1.0.13 checkout; preserve earlier workspace edits; push the held-live-session privacy fix.
 - [x] Rerun 39 test files, lint/typecheck, 15 browser groups, customer-location checks and 21 Expo Doctor checks.
 - [x] Restore production login, remove stale backup credential overrides and verify existing encrypted snapshots restore.
-- [ ] Finish current Railway CLI SSH permission and fresh backup; deploy when the provider's build pause ends. See [resumed handoff](../docs/HANDOFF-2026-10-21-deploy.md).
+- [x] Authorize current Railway CLI SSH permission and register the protected, workspace-scoped backup key.
+- [ ] Obtain a fresh verified backup once SSH connectivity returns; deploy when the provider's build pause ends. See [resumed handoff](../docs/HANDOFF-2026-10-21-deploy.md).
 
 - [x] Merge the unfinished scenario review and live-tracking branch; resolve conflicts.
 - [x] Tracking: heading only while moving, GPS jump gate, clock-skew freshness, ETA without a driver route, LRU route cache.
