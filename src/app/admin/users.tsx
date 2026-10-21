@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSession } from '../../session';
 import { View } from 'react-native';
 import { api, ApiError, useApi } from '../../api';
 import { vehicles, type Role, type User, type Vehicle } from '../../model';
@@ -9,7 +10,8 @@ import {
 
 export default function Users() {
   const { c, err } = useCopy();
-  const { date } = useFormat();
+  const { date, time } = useFormat();
+  const { me } = useSession();
   const [role, setRole] = useState<'all' | Role>('all');
   const [q, setQ] = useState('');
   const path = `/admin/users?q=${encodeURIComponent(q.trim())}${role === 'all' ? '' : `&role=${role}`}`;
@@ -17,6 +19,8 @@ export default function Users() {
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const [temp, setTemp] = useState<{ id: number; password: string } | null>(null);
+  // Support caller check: a one-time code goes to the user's verified email and the caller reads it back.
+  const [identity, setIdentity] = useState<{ id: number; code: string; confirmedAt?: number } | null>(null);
   const [editing, setEditing] = useState<{ id: number; name: string; email: string; phone: string; role: 'customer' | 'driver'; vehicle: Vehicle } | null>(null);
 
   async function action(user: User, suffix: string, body?: object, method?: 'POST' | 'PATCH' | 'DELETE') {
@@ -40,6 +44,24 @@ export default function Users() {
       haptic.success(); setTemp({ id: user.id, password });
     } catch (e) { setActionError(err(e)); }
     finally { setBusy(null); }
+  }
+
+  async function identityStep(user: User) {
+    if (busy !== null) return;
+    setBusy(user.id); setActionError('');
+    try {
+      if (identity?.id !== user.id) {
+        await api(`/admin/users/${user.id}/identity-code`, {});
+        setIdentity({ id: user.id, code: '' });
+      } else {
+        const { at } = await api<{ at: number }>(`/admin/users/${user.id}/identity-check`, { code: identity.code });
+        setIdentity({ ...identity, confirmedAt: at });
+      }
+      haptic.success();
+    } catch (e) {
+      haptic.error(); setActionError(err(e));
+      if (e instanceof ApiError && e.message === 'code_expired') setIdentity(null); // the button sends a fresh one
+    } finally { setBusy(null); }
   }
 
   return <Screen onRefresh={reload}>
@@ -67,6 +89,18 @@ export default function Users() {
             {user.permanentlyApprovedAt && <Badge label={c.permanentlyApproved} tone={tones.olive} />}
           </Row>
           <Txt variant="micro" style={{ marginTop: 8 }}>{c.phone}: {user.phoneVerifiedAt ? c.verified : c.unverified}{user.email ? ` · ${c.email}: ${user.emailVerifiedAt ? c.verified : c.unverified}` : ''}</Txt>
+          {user.role !== 'admin' && me?.capabilities?.emailVerification && user.email && user.emailVerifiedAt && <View style={{ marginTop: 12 }}>
+            <Txt variant="label">{c.identityTitle}</Txt>
+            {identity?.id === user.id && identity.confirmedAt
+              ? <Txt variant="title" style={{ color: palette.olive, marginTop: 6 }}>{fill(c.identityConfirmed, { time: time(identity.confirmedAt) })}</Txt>
+              : <>
+                <Txt variant="caption" style={{ marginVertical: 6 }}>{fill(c.identityBody, { email: user.email })}</Txt>
+                {identity?.id === user.id && <Field label={c.emailCodeLabel} value={identity.code} keyboardType="number-pad" maxLength={6} disabled={busy !== null}
+                  onChangeText={code => setIdentity({ id: user.id, code: code.replace(/\D/g, '').slice(0, 6) })} />}
+                <Button title={identity?.id === user.id ? c.identityCheck : c.identitySend} icon={identity?.id === user.id ? 'shield-checkmark-outline' : 'mail-outline'} variant="soft"
+                  loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} onPress={() => identityStep(user)} />
+              </>}
+          </View>}
           {user.role !== 'admin' && <View style={{ marginTop: 12, gap: 8 }}>
             {/* only drivers wait on approval (server needActive); on a customer it was the loudest button doing nothing */}
             {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null}

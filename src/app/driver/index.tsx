@@ -7,7 +7,7 @@ import { router } from 'expo-router';
 import { api, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
-import { RouteLine, ServiceIcon, useFormat } from '../../parts';
+import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -84,6 +84,7 @@ export default function Jobs() {
   }
 
   if (!active) return <Screen onRefresh={refresh}>
+    <VerifyEmailNudge />
     {/* Without a configured support line there is nothing to contact: promise the call-back admins are now alerted for (SPEC-pending-driver-help.md). */}
     <Empty icon="shield-checkmark-outline" title={c.pendingTitle} body={SUPPORT_URL ? c.pendingDesc : fill(c.pendingCallBack, { phone: ltr(me?.user.phone ?? '') })}
       action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
@@ -91,6 +92,7 @@ export default function Jobs() {
 
   return <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
     <Header title={c.jobs} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
+    <VerifyEmailNudge />
 
     <Card tone="forest" style={{ paddingVertical: 12 }}>
       <Row gap={10}>

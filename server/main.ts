@@ -23,7 +23,7 @@ const SESSION_DAYS = 90;
 const production = process.env.NODE_ENV === 'production';
 const selfService = process.env.WIND_IDENTITY_MODE === 'self-service';
 const contactVerificationRequired = selfService && process.env.WIND_CONTACT_VERIFICATION_REQUIRED === 'true';
-const contactAllowed = (r: Row) => !contactVerificationRequired || r.role === 'admin' || r.phone_verified_at || r.approved_at;
+const contactAllowed = (r: Row) => !contactVerificationRequired || r.role === 'admin' || r.phone_verified_at || r.email_verified_at || r.approved_at;
 const registrationOpen = selfService || (!production && process.env.WIND_IDENTITY_MODE !== 'operator-verified');
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
@@ -208,6 +208,11 @@ CREATE TABLE IF NOT EXISTS saved_places (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),
   city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note));
 -- Driver offers (SPEC-driver-offers.md): one pending price per driver per order; accepted or expired offers are deleted.
+-- One-time email codes (verify the address, reset a password, support identity check); the hash binds the address.
+CREATE TABLE IF NOT EXISTS email_codes (
+  user_id INTEGER NOT NULL REFERENCES users(id), purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset','support')),
+  code_hash TEXT NOT NULL, sent_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, purpose));
 CREATE TABLE IF NOT EXISTS order_offers (
   order_id INTEGER NOT NULL REFERENCES orders(id), driver_id INTEGER NOT NULL REFERENCES users(id), price INTEGER NOT NULL CHECK (price >= 1),
   created_at INTEGER NOT NULL, PRIMARY KEY (order_id, driver_id));
@@ -496,7 +501,7 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
 route('GET', '/api/health', () => ({ ok: true }), true);
-route('GET', '/api/auth/options', () => ({ registrationOpen }), true);
+route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady }), true);
 route('GET', '/api/ready', () => {
   try {
     accessSync(dirname(process.env.DB_PATH ?? 'wind.db'), constants.W_OK);
@@ -527,7 +532,11 @@ route('POST', '/api/auth/register', ({ body }) => {
     selfService ? Date.now() : null, selfService ? '2026-10-03' : null).lastInsertRowid);
   // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
   if (role === 'driver') queuePush(adminIds(), 'attention', 0, '/admin/users');
-  return startSession(id);
+  const session = startSession(id);
+  if (!emailReady || !email) return session;
+  // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
+  void sendCode(one('SELECT * FROM users WHERE id = ?', id)!, 'verify').catch(() => {});
+  return { ...session, emailCode: 'sent' };
 }, true);
 
 route('POST', '/api/auth/login', ({ body }) => {
@@ -556,8 +565,111 @@ function startSession(userId: number) {
 }
 
 function me(user: User) {
-  return { user, subscription: latestSubscription(user.id), plan: activePlan(user.id), settings: settings(), capabilities: { enabledServices, pooling: false } };
+  return { user, subscription: latestSubscription(user.id), plan: activePlan(user.id), settings: settings(), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
 }
+
+// Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
+// support confirm a caller owns the account. Off until all three settings exist; the app then shows these flows.
+const emailFrom = process.env.WIND_EMAIL_FROM?.trim();
+const cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID?.trim(), cloudflareToken = process.env.CLOUDFLARE_EMAIL_TOKEN?.trim();
+const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
+const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
+const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
+type CodePurpose = 'verify' | 'reset' | 'support';
+const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
+  verify: code => [`رمز ويند ${code} · Wind code`, [`رمز تأكيد بريدك في ويند: ${code}`, 'ينتهي خلال 15 دقيقة. إن لم تطلبه فتجاهل هذه الرسالة.', '',
+    `Your Wind email confirmation code: ${code}`, 'It expires in 15 minutes. If you did not ask for it, ignore this email.']],
+  reset: code => [`رمز إعادة كلمة المرور ${code} · Wind password code`, [`رمز إعادة تعيين كلمة مرور ويند: ${code}`, 'ينتهي خلال 15 دقيقة. لا تشاركه مع أحد، فريق ويند لن يطلبه منك.', '',
+    `Your Wind password reset code: ${code}`, 'It expires in 15 minutes. Never share it; Wind staff will never ask for it.']],
+  support: code => [`رمز التحقق للدعم ${code} · Wind support check`, [`دعم ويند يتحقق من هويتك. الرمز: ${code}`, 'اقرأه لموظف الدعم فقط إن كنت أنت من تواصل مع ويند. ينتهي خلال 15 دقيقة.', '',
+    `Wind support is confirming it is you. Code: ${code}`, 'Read it to the agent only if you contacted Wind support yourself. It expires in 15 minutes.']],
+};
+
+async function sendEmail(to: string, subject: string, lines: string[]) {
+  if (!emailReady) fail(503, 'email_unavailable');
+  let sent = false;
+  try {
+    const res = await fetch(`${cloudflareApi}/accounts/${cloudflareAccount}/email/sending/send`, {
+      method: 'POST', signal: AbortSignal.timeout(10_000),
+      headers: { Authorization: `Bearer ${cloudflareToken}`, 'Content-Type': 'application/json' },
+      // Every line is fixed text plus digits: nothing user-supplied reaches the HTML.
+      body: JSON.stringify({ to, from: emailFrom, subject, text: lines.join('\n'),
+        html: `<div dir="auto" style="font-family:sans-serif;font-size:16px">${lines.map(l => l ? `<p>${l}</p>` : '<hr>').join('')}</div>` }),
+    });
+    const j = await res.json().catch(() => null) as { success?: boolean; errors?: unknown; result?: { permanent_bounces?: string[] } } | null;
+    sent = res.ok && j?.success === true && !(j.result?.permanent_bounces ?? []).includes(to);
+    if (!sent) console.error('email not sent', res.status, JSON.stringify(j?.errors ?? null));
+  } catch (error) { console.error('email not sent', (error as Error).message); }
+  if (!sent) fail(503, 'email_unavailable');
+}
+
+const codeHash = (r: Row, purpose: CodePurpose, code: string) => sha(`${purpose}:${r.id}:${String(r.email).toLowerCase()}:${code}`);
+async function sendCode(r: Row, purpose: CodePurpose) {
+  if (!r.email) fail(409, 'no_email');
+  const last = one('SELECT sent_at FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose);
+  if (last && Date.now() - last.sent_at < CODE_GAP) fail(429, 'code_recently_sent');
+  limit(identityKey(`email-${purpose}`, r.id), 5, 60 * 60_000);
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0'), now = Date.now();
+  run(`INSERT INTO email_codes (user_id, purpose, code_hash, sent_at, expires_at, tries) VALUES (?, ?, ?, ?, ?, 0)
+    ON CONFLICT(user_id, purpose) DO UPDATE SET code_hash = excluded.code_hash, sent_at = excluded.sent_at, expires_at = excluded.expires_at, tries = 0`,
+  r.id, purpose, codeHash(r, purpose, code), now, now + CODE_TTL);
+  const [subject, lines] = codeMail[purpose](code);
+  try { await sendEmail(r.email, subject, lines); }
+  catch (error) { run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND sent_at = ?', r.id, purpose, now); throw error; }
+}
+// A code works once, for 15 minutes, for the address it was sent to; five wrong tries void it.
+function useCode(r: Row, purpose: CodePurpose, input: unknown) {
+  const row = one('SELECT * FROM email_codes WHERE user_id = ? AND purpose = ? AND expires_at > ?', r.id, purpose, Date.now()) ?? fail(400, 'code_expired');
+  const code = typeof input === 'string' ? input.trim() : '';
+  if (!/^\d{6}$/.test(code) || !timingSafeEqual(Buffer.from(codeHash(r, purpose, code), 'hex'), Buffer.from(row.code_hash, 'hex'))) {
+    const spent = row.tries + 1 >= CODE_TRIES;
+    if (spent) run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose);
+    else run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose);
+    fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
+  }
+  run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose);
+}
+
+route('POST', '/api/me/email/code', async ({ user }) => {
+  const r = one('SELECT * FROM users WHERE id = ?', user.id)!;
+  if (r.email_verified_at) fail(409, 'already_verified');
+  await sendCode(r, 'verify');
+  return { sent: true };
+});
+route('POST', '/api/me/email/verify', ({ user, body }) => {
+  const r = one('SELECT * FROM users WHERE id = ?', user.id)!;
+  if (!r.email_verified_at) {
+    useCode(r, 'verify', body.code);
+    run('UPDATE users SET email_verified_at = ? WHERE id = ?', Date.now(), r.id);
+  }
+  return me(toUser(one('SELECT * FROM users WHERE id = ?', user.id)!));
+});
+
+// Forgotten password, self-service: only to an already verified address (a typed one could be someone else's), never
+// for administrators (operator shell only). The same answer whether or not the account exists.
+const accountFor = (identifier: unknown) => {
+  const value = String(identifier ?? '').trim(), phone = normalizePhone(value), email = normalizeEmail(value);
+  const r = phone ? one('SELECT * FROM users WHERE phone = ?', phone) : email ? one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email) : undefined;
+  return r && r.email_verified_at && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
+};
+route('POST', '/api/auth/reset/code', async ({ body }) => {
+  if (!emailReady) fail(503, 'email_unavailable');
+  const r = accountFor(body.identifier);
+  if (r) await sendCode(r, 'reset').catch(() => {}); // a cooldown or a bounce must not reveal the account either
+  return { ok: true };
+}, true);
+route('POST', '/api/auth/reset', ({ body }) => {
+  const r = accountFor(body.identifier) ?? fail(400, 'code_expired');
+  const password = hashPassword(newPassword(body.password));
+  useCode(r, 'reset', body.code);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    run('UPDATE users SET password = ? WHERE id = ?', password, r.id);
+    run('DELETE FROM sessions WHERE user_id = ?', r.id); // a reset ends the session on every device
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return { ok: true }; // the app then signs in normally, through every login gate
+}, true);
 
 route('POST', '/api/auth/logout', ({ user }) => {
   run('DELETE FROM sessions WHERE user_id = ?', user.id);
@@ -611,6 +723,7 @@ function deleteAccount(user: User) {
       WHERE customer_id = ?`, user.id);
     run('DELETE FROM driver_locations WHERE driver_id = ?', user.id);
     run('DELETE FROM saved_places WHERE user_id = ?', user.id);
+    run('DELETE FROM email_codes WHERE user_id = ?', user.id);
     run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id);
     run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id); // the code stops working and is never reissued
     run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id);
@@ -1994,6 +2107,23 @@ route('POST', '/api/admin/users/:id/password', ({ user, params }) => {
   return { password };
 });
 
+// Caller identity for support: a one-time code goes to the account's verified email; the caller reads it back.
+const supportTarget = (id: unknown) => one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(id)) ?? fail(404, 'not_found');
+route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => {
+  need(user, 'admin');
+  const target = supportTarget(params[0]);
+  if (!target.email_verified_at) fail(409, 'email_not_verified');
+  await sendCode(target, 'support');
+  return { sent: true };
+});
+route('POST', '/api/admin/users/:id/identity-check', ({ user, params, body }) => {
+  need(user, 'admin');
+  const target = supportTarget(params[0]);
+  if (!target.email_verified_at) fail(409, 'email_not_verified');
+  useCode(target, 'support', body.code);
+  return { confirmed: true, at: Date.now() };
+});
+
 route('GET', '/api/admin/subscriptions', ({ user }) => {
   need(user, 'admin');
   return all(`SELECT s.*, u.name user_name, u.phone user_phone FROM subscriptions s JOIN users u ON u.id = s.user_id
@@ -2055,6 +2185,8 @@ function authenticate(req: IncomingMessage): User | null {
 }
 
 let draining = false;
+// Per client address, per 10 minutes, before any password or email work.
+const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/auth/register': 20, '/api/auth/reset/code': 10, '/api/auth/reset': 20 };
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // bearer tokens, no cookies: open CORS is safe
@@ -2078,10 +2210,11 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {};
     const user = authenticate(req); // a slow body cannot retain authority revoked while it was uploading
     if (!match.isPublic && !user) fail(401, 'unauthorized');
-    if (['/api/auth/login', '/api/auth/register'].includes(url.pathname)) {
+    const perAddress = publicAuthLimits[url.pathname];
+    if (perAddress) {
       const forwarded = req.headers['x-real-ip'];
       const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
-      limit(identityKey(url.pathname, address), url.pathname.endsWith('register') ? 20 : 50, 10 * 60_000);
+      limit(identityKey(url.pathname, address), perAddress, 10 * 60_000);
     }
     outbox.length = 0;
     const out = match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
@@ -2091,7 +2224,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     outbox.length = 0;
     status = error instanceof HttpError ? error.status : (error as { errcode?: number }).errcode === 5 ? 503 : 500;
     payload = { error: error instanceof HttpError ? error.message : 'server_error' };
-    if (status >= 500 && !(error instanceof HttpError && error.message === 'route_unavailable')) console.error(error); // routing off/down is expected; clients fall back
+    if (status >= 500 && !(error instanceof HttpError && ['route_unavailable', 'email_unavailable'].includes(error.message))) console.error(error); // routing or email off/down is expected and logged where it happens
   }
   if (status === 429 || status === 503) res.setHeader('Retry-After', '60');
   res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));

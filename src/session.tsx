@@ -8,7 +8,7 @@ import type { Plan, Service, Settings, Subscription, User } from './model';
 
 export type Language = 'ar' | 'en';
 export type Me = { user: User; plan: Plan | null; subscription: Subscription | null; settings: Settings;
-  capabilities?: { enabledServices: Service[]; pooling: boolean } };
+  capabilities?: { enabledServices: Service[]; pooling: boolean; emailVerification?: boolean } };
 
 type Session = {
   ready: boolean;

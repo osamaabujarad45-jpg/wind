@@ -116,6 +116,9 @@ docker run -d -p 127.0.0.1:4000:4000 -v wind-data:/data \
 | `WIND_IDENTITY_MODE` | required in production | Current launch: `self-service`; use `operator-verified` only to close public registration deliberately |
 | `WIND_CONTACT_VERIFICATION_REQUIRED` | `false` | Future verification gate. Leave false until a real proof or approval process can admit new users. |
 | `WIND_TRUST_PROXY` | `0` | Set `1` only behind a private proxy that overwrites `X-Real-IP`; used by durable public authentication limits |
+| `WIND_EMAIL_FROM` | unset | Sender on a domain onboarded in Cloudflare → Email Service → Email Sending, e.g. `no-reply@your-domain`. With the two below it turns on email codes: verify the address, self-service password reset, and the admin caller identity check |
+| `CLOUDFLARE_ACCOUNT_ID` | unset | Cloudflare account that owns that domain |
+| `CLOUDFLARE_EMAIL_TOKEN` | unset | Server-only API token with **Email Sending: Edit**; never in mobile build variables |
 
 For an approved operator, `WIND_ENABLED_SERVICES=parcel,ride,freight` exposes all three services. New bookings use `shared:false`; pooling is disabled and a driver may hold only one active job. Existing assigned trips can finish if their service is later disabled.
 

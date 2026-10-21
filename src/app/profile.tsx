@@ -1,11 +1,12 @@
 // Edit profile: display name (POST /api/me). Phone is the account identity and stays read-only.
+// Email: verified with an emailed 6-digit code when the server can send email (capabilities.emailVerification).
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../api';
 import { useFormat } from '../parts';
 import { useSession, type Me } from '../session';
-import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
+import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
 
 export default function Profile() {
   const { me, refresh } = useSession();
@@ -58,7 +59,8 @@ export default function Profile() {
           <Txt variant="caption" style={{ marginTop: 8 }}>{c.phoneLocked}</Txt>
         </Card>
       </Appear>
-      <Appear index={2}>
+      {user.email && <Appear index={2}><EmailCard /></Appear>}
+      <Appear index={3}>
         <Card tone="muted">
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt>{c.memberSince}</Txt>
@@ -71,6 +73,46 @@ export default function Profile() {
       <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} />
     </Screen>
   </KeyboardAvoidingView>;
+}
+
+function EmailCard() {
+  const { me, refresh } = useSession();
+  const { c, err } = useCopy();
+  const [code, setCode] = useState('');
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!me?.user.email) return null;
+  const { email, emailVerifiedAt } = me.user;
+  const canVerify = !emailVerifiedAt && !!me.capabilities?.emailVerification;
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true); setError('');
+    try { await action(); haptic.success(); }
+    catch (e) { haptic.error(); setError(err(e)); }
+    setBusy(false);
+  }
+  const send = () => run(async () => { await api('/me/email/code', {}); setSent(true); setCode(''); });
+  const verify = () => run(async () => { await api<Me>('/me/email/verify', { code: code.trim() }); await refresh(); });
+
+  return <Card>
+    <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
+    <Row gap={10} style={styles.locked}>
+      <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
+      <Txt variant="title" selectable style={{ flex: 1, color: palette.secondary }}>{email}</Txt>
+      <Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.clay} />
+    </Row>
+    {emailVerifiedAt ? <Txt variant="caption" style={{ marginTop: 8 }}>{c.emailVerifiedNote}</Txt> : canVerify && <View style={{ marginTop: 12 }}>
+      <Txt variant="title" style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>
+      <Txt variant="caption" style={{ marginBottom: 10 }}>{sent ? fill(c.emailCodeSent, { email }) : fill(c.emailVerifyBody, { email })}</Txt>
+      {/* sign-up already emailed a code, so the field comes first */}
+      <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
+        autoComplete="one-time-code" maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? verify : undefined} />
+      <ErrorText>{error}</ErrorText>
+      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} />
+      <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={send} disabled={busy} />
+    </View>}
+  </Card>;
 }
 
 const styles = StyleSheet.create({

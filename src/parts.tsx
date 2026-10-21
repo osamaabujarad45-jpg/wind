@@ -331,6 +331,24 @@ export function PasswordCard() {
 }
 
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
+/** Unverified email while the server can send codes: one row that opens the profile, where the code goes in. */
+export function VerifyEmailNudge() {
+  const { me } = useSession();
+  const { c } = useCopy();
+  if (!me?.capabilities?.emailVerification || !me.user.email || me.user.emailVerifiedAt) return null;
+  return <Press accessibilityLabel={c.emailVerifyTitle} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
+    <Card tone="clay" style={{ marginBottom: 0 }}>
+      <Row gap={10}>
+        <Ionicons name="mail-unread-outline" size={22} color={palette.clayInk} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="title">{c.emailVerifyTitle}</Txt>
+          <Txt variant="caption">{c.emailVerifyNudge}</Txt>
+        </View>
+      </Row>
+    </Card>
+  </Press>;
+}
+
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
   const { c } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
@@ -387,6 +405,7 @@ export function AccountScreen() {
         </Press>
       </Card>
     </Appear>
+    <VerifyEmailNudge />
     <PlanCard />
     {user.role === 'customer' && <InviteCard />}
     <ListGroup>

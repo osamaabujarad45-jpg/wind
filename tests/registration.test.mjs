@@ -42,7 +42,7 @@ try {
   assert.equal(db.prepare('SELECT name FROM users WHERE id=1').get().name, 'Existing admin');
   assert.equal((await call('/me', legacyToken)).user.email, null);
   const admin = await call('/auth/login', null, { phone: '0599000090', password });
-  assert.deepEqual(await call('/auth/options'), { registrationOpen: true });
+  assert.deepEqual(await call('/auth/options'), { registrationOpen: true, emailReset: false });
   await call('/auth/register', null, { ...input, password: 'short' }, 400);
   await call('/auth/register', null, { ...input, password: 'a'.repeat(101) }, 400);
   await call('/auth/register', null, { ...input, email: 'broken' }, 400);

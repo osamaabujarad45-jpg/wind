@@ -16,7 +16,11 @@ export default function Auth() {
   const { signIn, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const still = useReducedMotion(); // reduced motion: render the auth card without entrance movement
-  const [mode, setMode] = useState<'in' | 'up'>('in');
+  const [mode, setMode] = useState<'in' | 'up' | 'reset'>('in');
+  // Forgot password by email (server has email): ask for a code, then code + new password.
+  const [emailReset, setEmailReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [code, setCode] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -35,14 +39,41 @@ export default function Auth() {
   const passwordRef = useRef<TextInput>(null);
   useEffect(() => {
     let active = true;
-    void api<{ registrationOpen: boolean }>('/auth/options').then(options => {
-      if (active) setRegistration(options.registrationOpen ? 'open' : 'closed');
+    void api<{ registrationOpen: boolean; emailReset?: boolean }>('/auth/options').then(options => {
+      if (active) { setRegistration(options.registrationOpen ? 'open' : 'closed'); setEmailReset(!!options.emailReset); }
     }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
   }, [policyTry]);
 
+  async function reset() {
+    if (busy) return;
+    if (!phone.trim()) return setError(err('invalid_input'));
+    if (resetSent && code.length !== 6) return setError(err('wrong_email_code'));
+    if (resetSent && (password.length < 12 || password.length > 100)) return setError(err('weak_password'));
+    setBusy(true);
+    setError('');
+    try {
+      if (!resetSent) {
+        await api('/auth/reset/code', { identifier: phone });
+        setResetSent(true);
+        setBusy(false);
+        return;
+      }
+      await api('/auth/reset', { identifier: phone, code, password });
+      // Then a normal sign-in, through every login gate.
+      const data = await api<Me & { token: string }>('/auth/login', { identifier: phone, password });
+      haptic.success();
+      await signIn(data);
+    } catch (e) {
+      haptic.error();
+      setError(err(e));
+      setBusy(false);
+    }
+  }
+
   async function submit() {
     if (busy) return;
+    if (mode === 'reset') return reset();
     if (mode === 'in' && (!phone.trim() || !password)) return setError(err('invalid_input'));
     if (mode === 'up') {
       if (!name.trim()) return setError(err('invalid_input'));
@@ -80,6 +111,27 @@ export default function Auth() {
       </Animated.View>
       <Animated.View entering={still ? undefined : FORM}>
         <Card>
+          {mode === 'reset' ? <>
+            <Txt variant="h2" style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
+            <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : c.resetBody}</Txt>
+            <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
+              maxLength={254} disabled={busy} onSubmitEditing={resetSent ? undefined : submit} />
+            {resetSent && <Appear>
+              <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
+                autoComplete="one-time-code" maxLength={6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+              <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={c.passwordMinimum} secureTextEntry
+                maxLength={100} disabled={busy} autoComplete="new-password" onSubmitEditing={submit} />
+            </Appear>}
+            <ErrorText>{error}</ErrorText>
+            <Button title={resetSent ? c.resetSave : c.resetSend} icon={resetSent ? 'key-outline' : 'mail-outline'} onPress={submit} loading={busy} />
+            {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} onPress={() => { setResetSent(false); setCode(''); }} />}
+            <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
+              <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.resetNoEmail}</Txt>
+            </Press>
+            <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
+              <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
+            </Press>
+          </> : <>
           <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
             onChange={next => { setMode(next); setError(''); }} />
           <View style={{ height: 10 }} />
@@ -125,9 +177,11 @@ export default function Auth() {
           </Appear>}
           <ErrorText>{error}</ErrorText>
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
-          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={c.forgotPassword} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
-            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.forgotPassword}</Txt>
+          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}
+            onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
+            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
+          </>}
           </>}
         </Card>
         <HelpLinks privacy={!(mode === 'up' && registration === 'open')} />{/* sign-up links privacy beside its consent box */}

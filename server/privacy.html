@@ -22,7 +22,7 @@
 
   <h2>What we collect</h2>
   <ul>
-    <li><b>Account:</b> your name, email, mobile number, account type, and for drivers the vehicle type. We record your privacy/terms consent and administrator approval separately from contact verification. Self-service registration does not verify your phone or email. Your password is stored only as a salted hash.</li>
+    <li><b>Account:</b> your name, email, mobile number, account type, and for drivers the vehicle type. We record your privacy/terms consent and administrator approval separately from contact verification. Your phone number is not verified by SMS. When email is enabled, we email you one-time codes to verify your address, reset your password, or let support confirm a call really comes from you; Cloudflare Email Service delivers these emails and sees your email address and the code, nothing else about your account or orders. Your password is stored only as a salted hash.</li>
     <li><b>Orders:</b> pickup and destination city, the landmarks and notes you type, the item or load description, a contact number, price, status, and your rating.</li>
     <li><b>Customer location:</b> only if you allow it, one GPS point when you book, used as the pickup point. You can also place exact pickup and drop-off pins on the map; they are shown only to you, your assigned driver and support, never on a shared tracking link.</li>
     <li><b>Driver location:</b> with permission, an approved driver shares precise GPS only during assigned active orders. The native app continues sharing when the screen is locked or another app is open, requesting a fresh fix about every 20 seconds; actual delivery depends on the operating system, GPS and network. Browser tracking requires the page to stay open. Collection stops when all assigned orders end, permission is withdrawn, or the driver signs out. Only the latest position is kept; no route history is stored.</li>
@@ -54,7 +54,7 @@
 
   <h2>ما الذي نجمعه</h2>
   <ul>
-    <li><b>الحساب:</b> اسمك، بريدك الإلكتروني، رقم جوالك، نوع الحساب، ونوع المركبة للسائقين. نسجّل موافقتك على الخصوصية والشروط واعتماد الإدارة بشكل منفصل عن التحقق من وسائل التواصل. التسجيل لا يعني أن البريد أو الجوال موثّق. كلمة المرور تُحفظ مشفّرة بشكل لا يمكن استرجاعه.</li>
+    <li><b>الحساب:</b> اسمك، بريدك الإلكتروني، رقم جوالك، نوع الحساب، ونوع المركبة للسائقين. نسجّل موافقتك على الخصوصية والشروط واعتماد الإدارة بشكل منفصل عن التحقق من وسائل التواصل. لا نتحقق من رقم الجوال برسالة SMS. عند تفعيل البريد نرسل إليك رموزًا لمرة واحدة لتأكيد بريدك أو استعادة كلمة المرور أو ليتأكد الدعم أن الاتصال منك فعلًا؛ تُسلَّم هذه الرسائل عبر خدمة البريد من Cloudflare التي ترى عنوان بريدك والرمز فقط، لا شيء آخر عن حسابك أو طلباتك. كلمة المرور تُحفظ مشفّرة بشكل لا يمكن استرجاعه.</li>
     <li><b>الطلبات:</b> مدينة الاستلام والوصول، المعالم والملاحظات التي تكتبها، وصف الغرض أو الحمولة، رقم التواصل، السعر، الحالة، وتقييمك.</li>
     <li><b>موقع الزبون:</b> فقط إذا سمحت بذلك، نقطة واحدة عند الحجز تُستخدم كنقطة استلام. ويمكنك أيضاً تحديد نقطتي الاستلام والتسليم بدقة على الخريطة؛ لا يراهما إلا أنت والسائق المسند والدعم، ولا تظهران أبداً في رابط التتبع المشترك.</li>
     <li><b>موقع السائق:</b> بإذنه، يُرسل السائق المعتمد موقعه الدقيق خلال الطلبات الجارية المسندة إليه فقط. يستمر التطبيق الأصلي عند قفل الهاتف أو فتح تطبيق آخر، ويطلب قياساً جديداً كل 20 ثانية تقريباً؛ يعتمد وصوله على نظام الهاتف وإشارة الموقع والشبكة. يتطلب التتبع في المتصفح بقاء الصفحة مفتوحة. يتوقف الجمع بانتهاء جميع الطلبات المسندة أو سحب الإذن أو تسجيل الخروج. نحتفظ بآخر موقع فقط ولا نخزّن سجل المسار.</li>
