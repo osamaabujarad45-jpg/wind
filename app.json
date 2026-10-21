@@ -3,7 +3,7 @@
     "name": "Wind",
     "slug": "wind",
     "scheme": "wind",
-    "version": "1.0.12",
+    "version": "1.0.13",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "ps.wind.app",
-      "versionCode": 13,
+      "versionCode": 14,
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
