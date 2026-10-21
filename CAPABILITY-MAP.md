@@ -1,6 +1,8 @@
 # Capability Map: Wind → Uber/Careem parity for the Palestinian market
 
-Phase 0 of spec-driven development (agent-skills). Status: **awaiting approval**. Date: 2026-10-04.
+Historical capability plan, started 2026-10-04 and updated through later modules.
+For current verification and remaining work, see [QA — 21 October 2026](docs/QA-2026-10-21.md).
+The original build order below is retained as history, not a list of unimplemented features.
 
 ## What Wind already has
 
@@ -51,7 +53,8 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 | `cancellation-fee` | Fee for late cancellation | **Not built (owner, 6 Oct)**: a cash fee cannot be collected after a cancel | — | — |
 
 Skipped on purpose: surge pricing (PRODUCT.md forbids unexplained surge), pooling,
-multi-stop, background GPS (Play policy), food delivery (Yummy owns it).
+customer-defined multi-stop routes, food delivery (Yummy owns it).
+Native background GPS is now implemented; current build/device validation is tracked in the QA report.
 
 ## Proposed build order
 

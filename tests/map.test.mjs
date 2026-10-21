@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, shownApproach, turn } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -156,6 +156,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));
   const route = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
   assert.ok(route.includes(`'/vendor/maplibre-${version}'`), `route-map.tsx must point at /vendor/maplibre-${version}`);
+  // Our loader lives beside the copy (route-map.tsx adds it as a module script: the web CSP allows no eval).
+  assert.match(readFileSync(new URL(`../public/vendor/maplibre-${version}/load.mjs`, import.meta.url), 'utf8'), /from '\.\/maplibre-gl\.mjs'/, 're-vendoring must keep load.mjs');
+  assert.ok(!route.includes('new Function') && route.includes('/load.mjs'), 'route-map.tsx must load MapLibre through load.mjs, not eval');
   for (const file of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'])
     assert.equal(readFileSync(new URL(`../public/vendor/maplibre-${version}/${file}`, import.meta.url), 'utf8'),
       readFileSync(new URL(`../node_modules/maplibre-gl/dist/${file}`, import.meta.url), 'utf8'), `re-vendor ${file} after upgrading maplibre-gl`);
@@ -164,7 +167,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
   const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
-  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, turn };`)();
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, routeFramePoints, turn };`)();
   const a = { latitude: 31.9, longitude: 35.2 }, b = { latitude: 32.22, longitude: 35.26 };
   assert.equal(copy.bearing(a, b), bearing(a, b));
   assert.deepEqual(copy.ease(a, b, 0.3), ease(a, b, 0.3));
@@ -173,6 +176,12 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   for (const language of ['ar', 'en']) assert.deepEqual(copy.labelField(language), labelField(language));
   for (const gap of [0, 200, 3_000, 9_000]) assert.equal(copy.glideMs(gap), glideMs(gap));
   for (const [x, y, t] of [[350, 10, 0.5], [10, 350, 0.25], [90, 270, 1]]) assert.equal(copy.turn(x, y, t), turn(x, y, t));
+  // Camera frame: live = driver, next stop and the road to it; otherwise both pins and the whole road.
+  const d = { latitude: 31.95, longitude: 35.21 }, line = [[35.3, 32.3]], bend = { latitude: 32.3, longitude: 35.3 };
+  const frames = [{ pickup: a, dropoff: b, road: line }, { pickup: a, dropoff: b, driver: d, focus: 'pickup', road: line, approach: line },
+    { pickup: a, dropoff: b, driver: d, focus: 'dropoff', approach: null }, { pickup: a, dropoff: b, driver: d }];
+  assert.deepEqual(frames.map(routeFramePoints), [[a, b, bend], [d, a, bend], [d, b], [d, a, b]]);
+  for (const f of frames) assert.deepEqual(copy.routeFramePoints(f), routeFramePoints(f));
   // Served from the web root like the rest of the app (the APK loads it from the API origin).
   const web = join(dir, 'web');
   mkdirSync(web);

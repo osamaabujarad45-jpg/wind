@@ -53,12 +53,20 @@ function turn(a, b, t) {
   const d = ((b - a) % 360 + 540) % 360 - 180;
   return (a + d * Math.min(1, Math.max(0, t)) + 360) % 360;
 }
+function routeFramePoints({ pickup, dropoff, driver, focus, road, approach }) {
+  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
+  const line = driver ? approach : road;
+  return [
+    ...(driver ? [driver, ...stops] : [pickup, dropoff]),
+    ...(line ?? []).map(([longitude, latitude]) => ({ latitude, longitude })),
+  ];
+}
 const labelField = language => language === 'ar'
   ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
 // End of helpers.
 
-const timer = setTimeout(() => send({ type: 'failed' }), 12000); // style never arrived: blocked or offline
+const timer = setTimeout(() => send({ type: 'failed' }), 12000); // map never became usable: blocked or offline
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
 catch (e) { clearTimeout(timer); send({ type: 'failed' }); throw e; }
@@ -74,6 +82,13 @@ const map = new ml.Map({
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
+map.on('webglcontextlost', () => send({ type: 'failed' })); // a lost GPU context never draws again; the app retries
+map.once('load', () => {
+  clearTimeout(timer);
+  document.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
+  // The pin sheet must wait for tiles, not just a parsed style and DOM markers.
+  send({ type: 'ready' });
+});
 
 const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0;
@@ -104,7 +119,7 @@ const halo = (meters, lat) => {
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 const empty = { type: 'FeatureCollection', features: [] };
-const nextStops = () => state.focus === 'pickup' ? [config.pickup] : state.focus === 'dropoff' ? [config.dropoff] : [config.pickup, config.dropoff];
+const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
 const recenter = document.getElementById('recenter');
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
 recenter.style.color = C.blue;
@@ -112,11 +127,9 @@ document.querySelector('#pin path').setAttribute('fill', C.clay);
 
 map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   ready = true;
-  clearTimeout(timer);
   for (const layer of map.getStyle().layers)
     if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
       map.setLayoutProperty(layer.id, 'text-field', labelField(config.language));
-  map.once('load', () => document.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show'));
   if (pin) {
     document.getElementById('pin').hidden = false;
     map.jumpTo({ center: [config.center.longitude, config.center.latitude], zoom: 16 });
@@ -142,15 +155,15 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
     map.resize(); refit(0);
     draw(); fade();
   }
-  send({ type: 'ready' });
 });
 
-let drawnLines = '', drawnDriver = '', drawnClosed = '', closedMarkers = [];
-// Live: driver and next stop. Otherwise the whole road route (it can bend outside the two pins), or the pins.
+let drawnLines = '', drawnDriver = '', drawnClosed = '', framed = '', closedMarkers = [];
+// Live: driver, next stop and the road to it. Otherwise both pins and the whole road route (it can bend outside them).
+const framePoints = () => routeFramePoints({ ...state, pickup: config.pickup, dropoff: config.dropoff });
 function refit(duration) {
-  const road = state.road?.map(([longitude, latitude]) => ({ latitude, longitude }));
-  map.fitBounds(fitBounds(state.driver ? [state.driver, ...nextStops()] : road ?? [config.pickup, config.dropoff]),
-    { padding, maxZoom: 16, ...(duration === 0 && { duration: 0 }) });
+  const points = framePoints();
+  framed = JSON.stringify(points);
+  map.fitBounds(fitBounds(points), { padding, maxZoom: 16, ...(duration != null && { duration }) });
 }
 function draw() {
   if (pin) return;
@@ -161,7 +174,6 @@ function draw() {
       const line = id === 'approach' && state.approach && shown ? [[shown.longitude, shown.latitude], ...state.approach] : state[id];
       map.getSource(id).setData(line ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } } : empty);
     }
-    if (!moved && !state.driver && state.road) refit();
   }
   const closedKey = (state.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   if (closedKey !== drawnClosed) {
@@ -169,6 +181,10 @@ function draw() {
     closedMarkers.forEach(m => m.remove());
     closedMarkers = (state.closed ?? []).map(p => new ml.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
   }
+  drawDriver();
+  if (!moved && JSON.stringify(framePoints()) !== framed) refit(still() ? 0 : 800);
+}
+function drawDriver() {
   const driver = state.driver;
   const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${state.focus}` : '';
   if (key === drawnDriver) return;
@@ -195,15 +211,14 @@ function draw() {
   source.setData(driver.accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} } : empty);
   if (driver.accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(driver.accuracy, target.latitude));
   if (frame) cancelAnimationFrame(frame);
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
-  const start = performance.now(), origin = from ?? target;
+  const start = performance.now(), origin = from ?? target, instant = still();
   const span = glideMs(at === undefined ? 0 : start - at);
   at = start;
   const step = t => {
-    const k = still ? 1 : (t - start) / span;
+    const k = instant ? 1 : (t - start) / span;
     const p = ease(origin, target, k);
     marker?.setLngLat([p.longitude, p.latitude]);
-    if (rotation !== null) marker?.setRotation(turned = turn(turnFrom, rotation, still ? 1 : (t - start) / 500));
+    if (rotation !== null) marker?.setRotation(turned = turn(turnFrom, rotation, instant ? 1 : (t - start) / 500));
     shown = p;
     if (state.approach?.length && (k >= 1 || t - lineAt > 100)) { // ~10 line redraws a second is smooth and cheap
       lineAt = t;
@@ -212,7 +227,6 @@ function draw() {
     if (k < 1) frame = requestAnimationFrame(step);
   };
   frame = requestAnimationFrame(step);
-  if (!moved) map.fitBounds(fitBounds([origin, target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
 }
 </script>
 </body>

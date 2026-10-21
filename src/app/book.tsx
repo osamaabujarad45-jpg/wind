@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { browserPickupWatch, findPickup, withPickupPermission } from '../customer-location';
 import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
@@ -26,6 +27,9 @@ export default function Book() {
   const word = (k: 'pickupNote' | 'dropoffNote' | 'pickupOnMap' | 'dropoffOnMap') => service === 'ride' ? c[`${k}_ride` as const] : c[k];
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
   const [dropoffCity, setDropoffCity] = useState<CityId>(isCity(params.to) ? params.to : 'nablus');
+  const [pickupChosen, setPickupChosen] = useState(isCity(params.from));
+  const [dropoffChosen, setDropoffChosen] = useState(isCity(params.to));
+  const routeChosen = pickupChosen && dropoffChosen;
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
@@ -43,6 +47,8 @@ export default function Book() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [locationError, setLocationError] = useState('');
+  const locationRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
@@ -78,38 +84,38 @@ export default function Book() {
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
   // Road line for the preview map (never a straight line); absent while loading or without routing.
-  const preview = useApi<RoadRoute>(roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5)).data;
+  const preview = useApi<RoadRoute>(routeChosen ? roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5) : null).data;
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
+  // Denied for good: the system will not ask again, so the only way back is Settings.
+  async function askLocation() {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted && !permission.canAskAgain) void Linking.openSettings().catch(() => {});
+    return permission;
+  }
+
   async function locate() {
+    locationRequest.current?.abort();
+    const request = new AbortController();
+    locationRequest.current = request;
     setLocating(true);
     setLocationError('');
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.granted) {
-        // Web defaults maximumAge to Infinity: a fix from another place must not become the pickup. Native ignores it.
-        const fresh = { maximumAge: 60_000 };
-        const { coords } = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, ...fresh }),
-          new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('location_timeout')), 20_000); }), // cold GPS start
-        ]);
-        const point = { latitude: coords.latitude, longitude: coords.longitude };
-        // GPS adds a pin to the chosen city; it does not silently turn an unsupported area into that city.
-        if (servedCity(point) !== pickupCity) {
-          setLocationError(c.locationMismatch);
-          return;
-        }
-        setPickupPoint(point); setGpsPoint(point);
-      } else {
-        setLocationError(c.locationManual);
-        // Denied for good: the system will not ask again, so the only way back is Settings.
-        if (!permission.canAskAgain && Platform.OS !== 'web') void Linking.openSettings().catch(() => {});
-      }
-    } catch {
-      setLocationError(c.locationManual);
-    } finally { if (timeout) clearTimeout(timeout); setLocating(false); }
+      // Permission setup shares the timeout: dismissing/backgrounding a native
+      // prompt must not leave the booking form locked indefinitely.
+      const result = await findPickup(Platform.OS === 'web' ? browserPickupWatch(navigator.geolocation)
+        : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
+      if (request.signal.aborted) return;
+      if (result.city !== pickupCity) setPickupNote('');
+      setPickupCity(result.city); setPickupChosen(true);
+      setPickupPoint(result.point); setGpsPoint(result.point);
+      setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
+    } catch (e) {
+      if (!request.signal.aborted) setLocationError(e instanceof Error && e.message === 'outside' ? c.pinOutsideArea
+        : e instanceof Error && e.message === 'inaccurate' ? c.locationInaccurate : c.locationManual);
+    } finally { if (!request.signal.aborted) setLocating(false); }
   }
 
   useEffect(() => {
@@ -120,6 +126,7 @@ export default function Book() {
       if (existing) {
         const p = existing.payload;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
+        setPickupChosen(true); setDropoffChosen(true);
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
@@ -132,6 +139,7 @@ export default function Book() {
           const p = pickupForm(old);
           setService(p.service); setPickupCity(p.pickupCity); setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setOption(p.option);
           setSameFrom(true); setCopiedFrom(old.id);
+          setPickupChosen(true);
         } else if (old) {
           const f = againForm(old);
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
@@ -139,6 +147,7 @@ export default function Book() {
           if (f.contact) setContact(f.contact);
           setRecipientName(f.recipientName); setRecipientPhone(f.recipientPhone);
           setSameFrom(false); setCopiedFrom(old.id);
+          setPickupChosen(true); setDropoffChosen(true);
         }
         if (old) copied.current = `${params.again}:${params.keep}`;
       }
@@ -155,14 +164,14 @@ export default function Book() {
   const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null } | null>(null);
   useEffect(() => {
-    if (!isCustomer || pending) return; // a pending booking keeps the price it was sent with
+    if (!isCustomer || pending || !routeChosen) return; // a pending booking keeps the price it was sent with
     let live = true;
     const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity,
       ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(scheduledFor !== null && { scheduledFor }) })
       .then(quote => quote, () => null).then(quote => { if (live) setQuoted({ key: priceKey, quote }); }), 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [isCustomer, pending, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor]);
-  const quoting = isCustomer && !pending && quoted?.key !== priceKey; // the Request button waits for it
+  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor]);
+  const quoting = isCustomer && !pending && routeChosen && quoted?.key !== priceKey; // the Request button waits for it
   const smart = quoted?.quote ?? null;
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
   const reasons = smart && [fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${smart.minutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
@@ -194,6 +203,7 @@ export default function Book() {
 
   async function submit() {
     if (!ready || sending.current || (!available && !pending)) return;
+    if (!pending && !routeChosen) { setPicker(pickupChosen ? 'dropoff' : 'pickup'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
       haptic.error(); setSlot(null); setError(c.err_invalid_schedule); return;
     }
@@ -253,7 +263,7 @@ export default function Book() {
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={quoting ? '…' : money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || quoting || (!available && !pending)} />}>
+    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={!routeChosen || quoting ? '…' : money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || quoting || (!available && !pending)} />}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
         {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
@@ -277,17 +287,18 @@ export default function Book() {
       </Row>
 
       <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
-        <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
+        {routeChosen && <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
           <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
             pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} closed={preview?.closed} />
           <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
-        </View>
+        </View>}
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
-          <RouteLine from={city(pickupCity)[language]} to={city(dropoffCity)[language]} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
+          <RouteLine from={pickupChosen ? city(pickupCity)[language] : c.chooseCity} to={dropoffChosen ? city(dropoffCity)[language] : c.chooseCity} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
           <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
             <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked}
               onPress={() => { // the landmark belongs to its place, so it travels with it
                 haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
+                setPickupChosen(dropoffChosen); setDropoffChosen(pickupChosen);
                 setPickupNote(dropoffNote); setDropoffNote(pickupNote); setInvalid({ ...invalid, pickupNote: invalid.dropoffNote, dropoffNote: invalid.pickupNote });
               }} />
           </View>
@@ -299,7 +310,7 @@ export default function Book() {
               <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
             </Row>
           </Press>
-          <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `${preview ? preview.km : `≈ ${km}`} ${c.km}`}</Txt>
+          {routeChosen && <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `${preview ? preview.km : `≈ ${km}`} ${c.km}`}</Txt>}
         </Row>
         {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
           {(['pickup', 'dropoff'] as const).map(which => {
@@ -316,7 +327,7 @@ export default function Book() {
         {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
       </Card>
 
-      {alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
+      {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
         {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
@@ -325,9 +336,9 @@ export default function Book() {
 
       <Card>
         <Field label={word('pickupNote')} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
-        {isCustomer && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
+        {isCustomer && pickupChosen && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={word('dropoffNote')} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
-        {isCustomer && !locked && <SavePlace city={dropoffCity} note={dropoffNote} saved={places.saved} onSave={savePlace} />}
+        {isCustomer && dropoffChosen && !locked && <SavePlace city={dropoffCity} note={dropoffNote} saved={places.saved} onSave={savePlace} />}
         {service !== 'ride' && <>
           <Field label={c.recipientPhone} icon="call-outline" value={recipientPhone} onChangeText={edit('recipientPhone', setRecipientPhone)} placeholder={c.recipientPhoneHint}
             keyboardType="phone-pad" error={invalid.recipientPhone} disabled={locked} maxLength={20} />
@@ -426,23 +437,30 @@ export default function Book() {
         const near = servedCity(point);
         if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
         haptic.success();
-        if (pinFor === 'pickup') { setPickupCity(near); setPickupPoint(point); } else { setDropoffCity(near); setDropoffPoint(point); }
+        if (pinFor === 'pickup') {
+          if (near !== pickupCity) setPickupNote('');
+          setPickupCity(near); setPickupPoint(point); setPickupChosen(true);
+        } else {
+          if (near !== dropoffCity) setDropoffNote('');
+          setDropoffCity(near); setDropoffPoint(point); setDropoffChosen(true);
+        }
         if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));
         setPinFor(null);
       }} />}
 
-    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? pickupCity : dropoffCity}
+    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? (pickupChosen ? pickupCity : null) : (dropoffChosen ? dropoffCity : null)}
       places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
         .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {
         haptic.tap();
-        if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
-        else { setDropoffCity(id); setDropoffPoint(null); edit('dropoffNote', setDropoffNote)(note); }
+        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
+        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); edit('dropoffNote', setDropoffNote)(note); }
         setPicker(null);
       }}
       onClose={() => setPicker(null)} onPick={id => {
         haptic.tap();
-        if (picker === 'pickup') { setPickupCity(id); setPickupPoint(null); } else { setDropoffCity(id); setDropoffPoint(null); }
+        if (picker === 'pickup') { if (id !== pickupCity) setPickupNote(''); setPickupCity(id); setPickupChosen(true); setPickupPoint(null); }
+        else { if (id !== dropoffCity) setDropoffNote(''); setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); }
         setPicker(null);
       }} />
   </KeyboardAvoidingView>;
@@ -468,7 +486,7 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
 }
 
 // Searchable city list in a bottom sheet (Arabic and English names both match), with the customer's places first.
-function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, onForget }: { open: boolean; title: string; selected: CityId; onClose: () => void; onPick: (id: CityId) => void;
+function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, onForget }: { open: boolean; title: string; selected: CityId | null; onClose: () => void; onPick: (id: CityId) => void;
   places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void }) {
   const { c, language, row, align } = useCopy();
   const [query, setQuery] = useState('');

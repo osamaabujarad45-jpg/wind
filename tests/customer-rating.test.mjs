@@ -59,6 +59,7 @@ try {
   await call(`/orders/${order.id}/rate`, { token: customer.token, body: { customerRating: 1 }, expect: 409 });
   await call(`/orders/${order.id}/rate`, { token: rami.token, body: { customerRating: 1 }, expect: 404 });
   assert.equal((await call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 5 } })).customerRating, 5);
+  assert.equal((await call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 5 } })).customerRating, 5, 'retry after a lost rating response acknowledges the saved rating');
   await call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 2 }, expect: 409 });
   const own = await call(`/orders/${order.id}`, { token: customer.token });
   assert.equal(own.customerRating, null, 'customers never see the stars');
@@ -66,6 +67,11 @@ try {
   assert.equal((await call(`/orders/${order.id}`, { token: admin.token })).customerRating, 5);
   // The customer's own driver rating still works beside it.
   assert.equal((await call(`/orders/${order.id}/rate`, { token: customer.token, body: { rating: 4 } })).rating, 4);
+  assert.equal((await call(`/orders/${order.id}/rate`, { token: customer.token, body: { rating: 4 } })).rating, 4);
+  await call(`/orders/${order.id}/rate`, { token: customer.token, body: { rating: 2 }, expect: 409 });
+  const both = await call(`/orders/${order.id}/rate`, { token: customer.token, body: { rating: 4, priceRating: 3 } });
+  assert.equal(both.priceRating, 3, 'a replayed driver rating may accompany a new price rating');
+  assert.equal((await call(`/orders/${order.id}/rate`, { token: customer.token, body: { rating: 4, priceRating: 3 } })).priceRating, 3);
 
   // ---- the average shows from 3 ratings ----
   order = await finish(await book());

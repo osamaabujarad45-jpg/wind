@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 const native = { store:new Map(), registered:true, foreground:false, starts:[], stops:0, fail:false };
+const originalFetch = globalThis.fetch;
 globalThis.__windNative = native;
 const modules = {
   'react-native': `export const Platform={OS:'android'};`,
@@ -44,5 +45,14 @@ try {
   native.store.set('token','next-driver');native.fail=true;
   await assert.rejects(location.startBackgroundLocation(2,3),/Native start failed/);
   assert.equal(native.store.has('wind.tracking'),false,'Failed registration cannot retain upload authority');
+  native.fail=false;
+  await location.startBackgroundLocation(2,3);
+  const fix={timestamp:Date.now(),coords:{latitude:32,longitude:35,accuracy:10}};
+  globalThis.fetch=async()=>new Response(JSON.stringify({ok:true,accepted:false}));
+  await native.task({data:{locations:[fix]}});
+  assert.equal(await location.backgroundLocationState(),'starting','Ignored upload cannot claim native GPS sharing');
+  globalThis.fetch=async()=>new Response(JSON.stringify({ok:true,accepted:true}));
+  await native.task({data:{locations:[fix]}});
+  assert.equal(await location.backgroundLocationState(),'sharing','Accepted upload confirms native GPS sharing');
   console.log('PASS restored native task restarts its foreground service; authority, logout and start failure remain safe');
-} finally {hooks.deregister();delete globalThis.__windNative;}
+} finally {globalThis.fetch=originalFetch;hooks.deregister();delete globalThis.__windNative;}

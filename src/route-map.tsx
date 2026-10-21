@@ -1,10 +1,10 @@
 // Web map (browser and iPhone home-screen app): MapLibre GL + OpenFreeMap vector tiles — OSM data, no key.
 // The library is fetched on first use so screens without a map never pay for it; any failure shows the diagram.
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
-import { bearing, ease, fitBounds, glideMs, labelField, turn } from './map-math';
+import { bearing, ease, fitBounds, glideMs, labelField, routeFramePoints, turn } from './map-math';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -16,7 +16,6 @@ const STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 // not by Metro: the worker and the main thread then share one cached copy of maplibre-gl-shared.mjs.
 export const MAPLIBRE = '/vendor/maplibre-6.12.0';
 type Lib = typeof import('maplibre-gl');
-const nativeImport = new Function('url', 'return import(url)') as (url: string) => Promise<Lib>;
 let lib: Promise<Lib> | null = null;
 function loadMap(): Promise<Lib> {
   if (!document.querySelector('link[data-maplibre]')) {
@@ -24,7 +23,24 @@ function loadMap(): Promise<Lib> {
     css.dataset.maplibre = '';
     document.head.appendChild(css);
   }
-  return lib ??= nativeImport(`${MAPLIBRE}/maplibre-gl.mjs`).then(ml => {
+  // Fetch the files first: a failed module load stays in the browser's module map, so a retry would never request it
+  // again, while a failed fetch simply runs again. The module script then reads them from the HTTP cache (immutable
+  // vendor path). ponytail: a drop between the fetch and the script still needs a page reload; tiny window.
+  return lib ??= Promise.all(['load.mjs', 'maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs'].map(async file => {
+    const response = await fetch(`${MAPLIBRE}/${file}`);
+    if (!response.ok) throw new Error(`maplibre ${file}: ${response.status}`);
+    await response.arrayBuffer();
+  })).then(() => new Promise<Lib>((resolve, reject) => {
+    // A module script from our origin (the CSP forbids eval, so no runtime import()); load fires after it has run.
+    const script = Object.assign(document.createElement('script'), { type: 'module', src: `${MAPLIBRE}/load.mjs` });
+    script.onload = () => {
+      const loaded = (globalThis as unknown as { maplibregl?: Lib }).maplibregl;
+      if (loaded?.Map) resolve(loaded);
+      else reject(new Error('maplibre module did not initialize'));
+    };
+    script.onerror = () => { script.remove(); reject(new Error('maplibre failed to load')); };
+    document.head.appendChild(script);
+  })).then(ml => {
     // Arabic shaping; fetched only when a right-to-left label is first drawn.
     ml.setRTLTextPlugin('/vendor/mapbox-gl-rtl-text.js', true).catch(() => undefined);
     return ml;
@@ -33,12 +49,22 @@ function loadMap(): Promise<Lib> {
 
 /** Creates a map in `host`, labels it in the app language, and reports failure if the style never loads. */
 function useMap(host: React.RefObject<View | null>, points: Point[], language: 'ar' | 'en', { padding, picker }: { padding: number; picker?: boolean }, onReady: (map: MlMap, ml: Lib) => void) {
-  const [failed, setFailed] = useState(false);
-  const [map, setMap] = useState<MlMap | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // Tagged with the map it describes, so a retry or language change starts clean without resetting state in the effect.
+  const run = `${language}:${attempt}`;
+  const [result, setResult] = useState<{ run: string; map?: MlMap; failed?: boolean; loaded?: boolean }>();
+  const { map = null, failed = false, loaded = false } = result?.run === run ? result : {};
   const first = useRef({ points, onReady, padding, picker });
+  useEffect(() => { first.current = { points, onReady, padding, picker }; });
   useEffect(() => {
-    let disposed = false, ready = false, created: MlMap | undefined, container: HTMLElement | undefined;
-    const timer = setTimeout(() => { if (!ready) setFailed(true); }, 12_000); // style never arrived: blocked or offline
+    let disposed = false, created: MlMap | undefined, container: HTMLElement | undefined, observer: ResizeObserver | undefined;
+    const run = `${language}:${attempt}`;
+    const patch = (value: { map?: MlMap; failed?: boolean; loaded?: boolean }) => {
+      if (!disposed) setResult(previous => ({ ...(previous?.run === run && previous), run, ...value }));
+    };
+    const fail = () => patch({ failed: true });
+    // A parsed style is not yet a usable map: workers/tiles may still fail. Leave the host mounted so a slow load can recover.
+    const timer = setTimeout(fail, 25_000);
     loadMap().then(ml => {
       if (disposed || !host.current) return;
       // Our own node: MapLibre's `.maplibregl-map { position: relative }` would collapse a React Native Web view.
@@ -52,20 +78,36 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
         cooperativeGestures: !first.current.picker, dragRotate: false, pitchWithRotate: false, maxZoom: 18,
       });
       created.touchZoomRotate.disableRotation();
+      created.once('load', () => {
+        if (disposed) return;
+        clearTimeout(timer);
+        patch({ failed: false, loaded: true });
+        container?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
+      });
+      created.on('webglcontextlost', fail);
+      // Parent sheets/cards can change size without a window resize.
+      observer = new ResizeObserver(() => created?.resize());
+      observer.observe(container);
       created.once('style.load', () => { // style parsed: draw now, tiles stream in after
         if (disposed) return;
-        for (const layer of created!.getStyle().layers)
-          if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
-            created!.setLayoutProperty(layer.id, 'text-field', labelField(language) as ExpressionSpecification);
-        created!.once('load', () => container?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show')); // (i) button; credits one tap away
-        first.current.onReady(created!, ml);
-        ready = true; // after drawing: a throw above leaves the timer to show the fallback
-        setMap(created!);
+        try {
+          for (const layer of created!.getStyle().layers)
+            if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
+              created!.setLayoutProperty(layer.id, 'text-field', labelField(language) as ExpressionSpecification);
+          first.current.onReady(created!, ml);
+          patch({ map: created! });
+        } catch { fail(); }
       });
-    }).catch(() => { if (!disposed) setFailed(true); }); // import failed, or no WebGL (new Map throws)
-    return () => { disposed = true; clearTimeout(timer); created?.remove(); container?.remove(); };
-  }, [host, language]);
-  return { map, failed };
+    }).catch(fail);
+    return () => { disposed = true; clearTimeout(timer); observer?.disconnect(); created?.remove(); container?.remove(); };
+  }, [host, language, attempt]);
+  useEffect(() => {
+    if (!failed) return;
+    const recover = () => setAttempt(n => n + 1);
+    window.addEventListener('online', recover);
+    return () => window.removeEventListener('online', recover);
+  }, [failed]);
+  return { map, failed, loaded, retry: () => setAttempt(n => n + 1) };
 }
 
 function dot(color: string, square = false) {
@@ -106,10 +148,12 @@ function LiveMap(props: RouteMapProps) {
   const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
     at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number }>({});
   const [moved, setMoved] = useState(false);
-  const points = [pickup, dropoff, ...(driver ? [driver] : [])];
+  const points = routeFramePoints(props);
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
-  const { map, failed } = useMap(host, points, language, { padding }, (m, ml) => {
-    markers.current = { ml }; // a language change rebuilds the map: forget the old map's driver marker
+  const { map, failed, retry } = useMap(host, points, language, { padding }, (m, ml) => {
+    // A retried or relabelled map is new: markers of the old one went with it, and its camera follows the route again.
+    markers.current = { ml };
+    setMoved(false);
     new ml.Marker({ element: dot(palette.olive) }).setLngLat([pickup.longitude, pickup.latitude]).addTo(m);
     new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
     // Lines follow roads only (OSRM geometry); a straight pickup→dropoff line would cut through buildings.
@@ -134,8 +178,6 @@ function LiveMap(props: RouteMapProps) {
     for (const [id, l] of [['road', road], ['approach', approach && shown ? [[shown.longitude, shown.latitude], ...approach] : approach]] as const)
       (map.getSource(id) as GeoJSONSource | undefined)?.setData(l
         ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: l } } : { type: 'FeatureCollection', features: [] });
-    // Without a driver, frame the whole road route: it can bend outside the two pins.
-    if (road && !driver && !moved) map.fitBounds(fitBounds(road.map(([longitude, latitude]) => ({ latitude, longitude }))), { padding, maxZoom: 16 });
   }, [map, lineKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
@@ -153,6 +195,7 @@ function LiveMap(props: RouteMapProps) {
   useEffect(() => {
     if (!map) return;
     const state = markers.current;
+    if (state.frame) cancelAnimationFrame(state.frame);
     const source = map.getSource('accuracy') as GeoJSONSource | undefined;
     if (!driver) {
       state.driver?.remove(); state.driver = undefined; state.shown = undefined; state.at = undefined; state.rotation = undefined;
@@ -173,7 +216,6 @@ function LiveMap(props: RouteMapProps) {
     source?.setData(accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} }
       : { type: 'FeatureCollection', features: [] });
     if (accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
-    if (state.frame) cancelAnimationFrame(state.frame);
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const start = performance.now(), origin = from ?? target;
     const span = glideMs(state.at === undefined ? 0 : start - state.at);
@@ -193,22 +235,36 @@ function LiveMap(props: RouteMapProps) {
       if (k < 1) state.frame = requestAnimationFrame(step);
     };
     state.frame = requestAnimationFrame(step);
-    if (!moved) map.fitBounds(fitBounds([origin, target, ...nextStops()]), { padding, maxZoom: 16, duration: still ? 0 : 800 });
+    return () => { if (state.frame) cancelAnimationFrame(state.frame); };
   }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it every render.
   useEffect(() => { const el = markers.current.driver?.getElement(); if (el) el.style.opacity = props.stale ? '0.45' : ''; });
 
-  function nextStops() { return props.focus === 'pickup' ? [pickup] : props.focus === 'dropoff' ? [dropoff] : [pickup, dropoff]; }
+  // Camera follows the frame (driver, next stop, the road to it) as it changes; instant on resize or reduced motion.
+  const frameKey = JSON.stringify(points);
+  useEffect(() => {
+    if (!map || moved) return;
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const refit = (duration: number) => map.fitBounds(fitBounds(points), { padding, maxZoom: 16, duration });
+    const resized = () => refit(0);
+    refit(still ? 0 : 800);
+    map.on('resize', resized);
+    return () => { map.off('resize', resized); };
+  }, [map, moved, frameKey, padding]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function recenter() {
     setMoved(false);
-    map?.fitBounds(fitBounds(driver ? [driver, ...nextStops()] : [pickup, dropoff]), { padding, maxZoom: 16 });
+    map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
   }
 
-  if (failed) return <RoutePreview {...props} />;
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
     accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
     <View ref={host} style={StyleSheet.absoluteFill} />
+    {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
+      <RoutePreview {...props} />
+      <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}><Text>{c.retry}</Text></Pressable>
+    </View>}
     {map && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
       style={[styles.recenter, shadow]}>
       <Ionicons name="locate" size={20} color={palette.blue} />
@@ -217,24 +273,38 @@ function LiveMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);
-  const { failed } = useMap(host, [center], language, { padding: 0, picker: true }, m => {
+  const callbacks = useRef({ onChange, onFail, onReady });
+  useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
+  const { map, failed, loaded, retry } = useMap(host, [center], language, { padding: 0, picker: true }, m => {
     m.jumpTo({ center: [center.longitude, center.latitude], zoom: 16 });
-    m.on('moveend', () => { const p = m.getCenter(); onChange({ latitude: p.lat, longitude: p.lng }); }); // first callback wins; callers pass a state setter
+    m.on('moveend', () => { const p = m.getCenter(); callbacks.current.onChange({ latitude: p.lat, longitude: p.lng }); });
   });
-  useEffect(() => { if (failed) onFail?.(); }, [failed]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (failed) return null;
+  useEffect(() => { if (failed) callbacks.current.onFail?.(); }, [failed]);
+  useEffect(() => { if (loaded && !failed) callbacks.current.onReady?.(); }, [loaded, failed]);
+  useEffect(() => {
+    if (!map) return;
+    const p = map.getCenter();
+    if (Math.abs(p.lat - center.latitude) + Math.abs(p.lng - center.longitude) > 0.000001)
+      map.jumpTo({ center: [center.longitude, center.latitude] });
+  }, [map, center.latitude, center.longitude]);
+  const { c } = useCopy();
   return <View style={{ height, width: '100%' }}>
     <View ref={host} style={StyleSheet.absoluteFill} />
-    <View pointerEvents="none" style={styles.pin}>
+    <View pointerEvents="none" style={[styles.pin, failed && { opacity: 0 }]}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>
+    {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
+      <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}><Text>{c.retry}</Text></Pressable>
+    </View>}
   </View>;
 }
 
 const styles = StyleSheet.create({
   recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
+  failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },
+  retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },
 });

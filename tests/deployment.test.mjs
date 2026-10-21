@@ -103,6 +103,13 @@ try {
   const webHome = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } });
   assert.equal(webHome.status, 200); assert.match(webHome.headers.get('content-type'), /text\/html/);
   assert.equal(webHome.headers.get('x-frame-options'), 'DENY');
+  const csp = webHome.headers.get('content-security-policy') ?? '';
+  for (const rule of ["script-src 'self'", "object-src 'none'", "frame-ancestors 'none'", 'https://tiles.openfreemap.org']) assert.ok(csp.includes(rule), `CSP has ${rule}`);
+  // A made-up tracking token is a 404 and leaves no throttle row behind (unauthenticated storage growth).
+  for (let i = 0; i < 5; i++) await call(`/track/${randomBytes(32).toString('hex')}/eta`, undefined, undefined, 404);
+  inspect = new DatabaseSync(path);
+  assert.equal(inspect.prepare("SELECT COUNT(*) count FROM request_limits WHERE key LIKE 'track-eta:%'").get().count, 0);
+  inspect.close();
   assert.equal(webHome.headers.get('content-encoding'), 'br'); assert.equal(webHome.headers.get('vary'), 'Accept-Encoding');
   assert.match(await webHome.text(), /Wind web/);
   const again = await fetch(`${webBase}/`, { headers: { 'Accept-Encoding': 'br' } }); // served from the compressed-once cache

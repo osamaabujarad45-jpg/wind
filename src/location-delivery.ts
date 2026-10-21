@@ -17,7 +17,7 @@ async function deliverOnce(fix: DriverFix, io: {
   context: () => Promise<TrackingContext | null>;
   token: () => Promise<string | null>;
   receipt: () => Promise<TrackingReceipt | null>;
-  post: (token: string, body: object) => Promise<number>;
+  post: (token: string, body: object) => Promise<{ status: number; accepted?: boolean }>;
   acknowledge: (receipt: TrackingReceipt) => Promise<void>;
   stop: (id: string) => Promise<void>;
 }, now = Date.now()) {
@@ -33,13 +33,20 @@ async function deliverOnce(fix: DriverFix, io: {
   if (receipt?.id === context.id && !receipt.failed && now - receipt.lastSentAt < MIN_GAP) return;
   if ((await io.context())?.id !== context.id || await io.token() !== context.token) return;
   let status = 0;
+  let accepted: boolean | undefined;
   try {
-    status = await io.post(context.token, { latitude, longitude, age: Math.max(0, now - fix.timestamp),
+    // Age, not the phone's clock time: the API orders fixes by it and drops late or replayed ones.
+    const response = await io.post(context.token, { latitude, longitude, age: Math.max(0, now - fix.timestamp),
       ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
       ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
+    status = response.status;
+    accepted = response.accepted;
   } catch { /* The next fresh fix retries; stale coordinates are never queued. */ }
   if ((await io.context())?.id !== context.id) return;
   if ([401, 403, 409].includes(status)) { await io.stop(context.id); return; }
+  // An old/replayed fix can be intentionally ignored with HTTP 200. It must not
+  // refresh the sharing indicator or consume the next fresh measurement.
+  if (status >= 200 && status < 300 && accepted === false) return;
   await io.acknowledge(status >= 200 && status < 300
     ? { id: context.id, lastSentAt: now, fixAt: fix.timestamp }
     : { id: context.id, lastSentAt: receipt?.id === context.id ? receipt.lastSentAt : 0,

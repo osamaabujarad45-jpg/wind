@@ -117,6 +117,16 @@ try {
   await advance(driver.token, { ...returned, status: 'returning' }, { code: returnCode });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 3);
+  let supportReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  supportReturn = await call(`/jobs/${supportReturn.id}/accept`, { token: driver.token, body: {} });
+  supportReturn = await advance(driver.token, await advance(driver.token, supportReturn));
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
+  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Sender confirmed receipt by phone' } });
+  assert.equal(confirmedReturn.commission, 7.35, 'support-confirmed returns record the same commission as code-confirmed returns');
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.equal(cash.commissionCents, 735 * 4);
+  assert.equal((await call('/driver/earnings', { token: driver.token })).all.jobs, 4);
   const open = cash.owedCents;
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
   await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
