@@ -1,5 +1,36 @@
 # Handoff — deploy Wind API 1.0.13 and verify maps on the A53 (21 October 2026)
 
+## Resumed status
+
+The main `Fastship` checkout is recovered and clean at `5770dab`, pushed to
+`origin/master`. It includes `f7f8629`, which reauthenticates held live requests
+after logout. All 39 test files pass on that implementation; lint, typecheck,
+15 browser scenario groups, customer-location checks and Expo Doctor also pass.
+Earlier main-checkout edits are preserved in a named Git stash.
+
+Production-owner browser and CLI login are restored. The private backup script
+now uses renewable CLI OAuth and removes both expired token overrides. Existing
+encrypted snapshots from 06:23 UTC restore successfully; a new export has not
+succeeded yet. Railway CLI 4.36.1 omitted the new `ssh_keys` scope. Version 5.71.0
+is available in the local npm cache; its additional SSH-key permission is awaiting
+the owner's specific approval in this chat. No SSH keys have been created.
+
+Railway is also blocking deployments platform-wide. Its [incident
+update](https://status.railway.com/incident/QH8L8B3E) at 13:40 UTC says builds remain
+paused and some API features are unavailable. Wind's service screen confirms
+“Deploys have been paused temporarily.” Existing production deployment
+`88654339-9a08-4db4-9a5c-8dba7ea7af38` remains healthy and serves the old code.
+
+Next: finish the pending SSH-scope authorization, verify current-CLI SSH and a
+fresh encrypted backup/restore, then deploy after Railway resumes builds. Keep
+using the project/environment/service IDs and smoke checks below. Evidence:
+`.expo/release-*.log`, `.expo/release-production-before.json` and
+`.expo/release-rollback.json`. The source-only release archive is outside the repo
+at `../Release-2026-10-21/wind-api-f7f8629.zip`.
+
+The original handoff below is historical. Its expired-authentication and static
+token renewal steps are superseded by the resumed status above.
+
 Owner approved: **deploy the new API to Railway production and verify maps on the phone against it.**
 Read `AGENTS.md`, `CLAUDE.md` and [the QA report](QA-2026-10-21.md) first.
 
