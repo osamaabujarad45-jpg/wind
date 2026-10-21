@@ -69,9 +69,11 @@ try {
   seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
   assert.equal(seen.heading, 12.5);
   assert.equal(seen.accuracy, 8);
-  // -1 accuracy means unknown; 0,0 and out-of-range ages are refused; an older fix uploaded late never wins.
-  for (const bad of [{ latitude: 0, longitude: 0 }, { age: -1 }, { age: 60_001 }])
+  // -1 accuracy means unknown; 0,0 and negative ages are refused; a fix over a minute old is ignored (still 2xx, so a
+  // background task keeps running); an older fix uploaded late never wins.
+  for (const bad of [{ latitude: 0, longitude: 0 }, { age: -1 }])
     await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, ...bad }, expect: 400 });
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, age: 60_001 } })).accepted, false);
   await call('/location', { token: driver.token, body: { latitude: 31.97, longitude: 35.23, accuracy: -1, age: 0 } });
   await call('/location', { token: driver.token, body: { latitude: 31.5, longitude: 35.5, age: 30_000 } });
   seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
