@@ -5,7 +5,7 @@ import { api, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 import { backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
-import { MIN_GAP } from './location-delivery';
+import { MIN_GAP, movingHeading } from './location-delivery';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
@@ -143,7 +143,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     const later = () => { if (!wait && queued && !stopped) wait = setTimeout(flush, Math.max(0, MIN_GAP - (Date.now() - lastTriedAt))); };
     const flush = () => { wait = undefined; const next = queued; queued = null; if (next) void publish(next); };
     const publish = async (position: GeolocationPosition) => {
-      const { timestamp, coords: { latitude, longitude, heading, accuracy } } = position;
+      const { timestamp, coords: { latitude, longitude, accuracy } } = position, heading = movingHeading(position.coords.heading, position.coords.speed);
       // A late or replayed fix must not move the driver backward.
       if (stopped || timestamp <= lastFixAt || !Number.isFinite(timestamp) || Date.now() - timestamp > 60_000 || timestamp > Date.now() + 5_000) return;
       // Browsers fire watch callbacks as often as they like; at most one upload per 2 s keeps under the API limit.
@@ -156,7 +156,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       try {
         // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
         const receipt = await api<{ accepted?: boolean }>('/location', { latitude, longitude, age: Math.max(0, Date.now() - timestamp),
-          ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
+          ...(heading != null && { heading }),
           ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
         if (receipt.accepted !== false) {
           lastFixAt = timestamp;

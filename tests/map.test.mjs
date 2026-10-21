@@ -74,10 +74,16 @@ try {
   for (const bad of [{ latitude: 0, longitude: 0 }, { age: -1 }])
     await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, ...bad }, expect: 400 });
   assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, age: 60_001 } })).accepted, false);
-  await call('/location', { token: driver.token, body: { latitude: 31.97, longitude: 35.23, accuracy: -1, age: 0 } });
+  await call('/location', { token: driver.token, body: { latitude: 31.9601, longitude: 35.2201, accuracy: -1, age: 0 } });
   await call('/location', { token: driver.token, body: { latitude: 31.5, longitude: 35.5, age: 30_000 } });
   seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
-  assert.deepEqual([seen.latitude, seen.accuracy], [31.97, null]);
+  assert.deepEqual([seen.latitude, seen.accuracy], [31.9601, null]);
+  // GPS outlier: a 5 km jump in a moment from a fix no more precise is ignored; a more precise one always wins.
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 32.0051, longitude: 35.2201, accuracy: 60 } })).accepted, false);
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 32.0051, longitude: 35.2201, accuracy: 10 } })).accepted, true);
+  await call('/location', { token: driver.token, body: { latitude: 31.9601, longitude: 35.2201, accuracy: 5, age: 0 } });
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation.latitude, 31.9601);
+  seen = (await call(`/orders/${order.id}`, { token: customer.token })).driverLocation;
 
   // Live long-poll: a fix newer than `since` answers at once; otherwise the request holds until the driver's next
   // stored fix (a late, older upload does not wake it), and shutdown releases held requests instead of waiting.
@@ -92,10 +98,10 @@ try {
   await call('/location', { token: driver.token, body: { latitude: 31.4, longitude: 35.4, age: 50_000 } }); // older: ignored
   assert.equal(await pending(seen.updatedAt), 'held');
   let at = Date.now();
-  await call('/location', { token: driver.token, body: { latitude: 31.98, longitude: 35.24 } });
+  await call('/location', { token: driver.token, body: { latitude: 31.9602, longitude: 35.2202, accuracy: 5 } });
   const woke = (await held).driverLocation;
   assert.ok(Date.now() - at < 1_000, 'a new fix answers the held request within network latency');
-  assert.equal(woke.latitude, 31.98);
+  assert.equal(woke.latitude, 31.9602);
 
   // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
   await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });
@@ -220,7 +226,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const draining = Promise.all(holds).then(all => all[0]);
   at = Date.now();
   await shutdown();
-  assert.equal((await draining).driverLocation.latitude, 31.98);
+  assert.equal((await draining).driverLocation.latitude, 31.9602);
   assert.ok(Date.now() - at < 5_000, 'shutdown answers held live requests instead of waiting out the hold');
   console.log('map: ok');
 } finally {

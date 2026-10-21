@@ -3,6 +3,7 @@ import './customer-location.test.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
+import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
 import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
 
@@ -68,6 +69,12 @@ assert.deepEqual(locationState(location, 179000), { ageSeconds: 119, stale: fals
 assert.deepEqual(locationState(location, 180000), { ageSeconds: 120, stale: true });
 assert.deepEqual(locationState(location, 1000), { ageSeconds: 0, stale: false });
 assert.deepEqual(locationState({ ...location, ageSeconds: 130 }, 1000), { ageSeconds: 130, stale: true }); // server age survives a slow device clock
+// A phone clock 2 minutes ahead (server Date header) still sees a 10 s old fix as live; small header jitter is ignored.
+noteServerDate(new Date(70_000).toUTCString(), 190_000);
+assert.deepEqual(locationState(location, 190_000), { ageSeconds: 10, stale: false });
+noteServerDate(new Date(190_000).toUTCString(), 192_000);
+assert.deepEqual(locationState(location, 179_000), { ageSeconds: 119, stale: false });
+noteServerDate(null);
 console.log('Booking recovery and location freshness checks passed');
 
 // RTL: OS flipping is off, so a raw 'row' stays left-to-right in Arabic. Use `row` from useCopy(), or say why with `ltr:`.

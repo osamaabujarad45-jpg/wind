@@ -1,5 +1,12 @@
 export type TrackingContext = { id: string; token: string; actor: number; orderId: number };
-export type DriverFix = { timestamp: number; coords: { latitude: number; longitude: number; heading?: number | null; accuracy?: number | null } };
+export type DriverFix = { timestamp: number; coords: { latitude: number; longitude: number; heading?: number | null; accuracy?: number | null; speed?: number | null } };
+
+/**
+ * Heading worth sending: only while moving. Android reports bearing 0 (north) and speed 0 when it has neither, so a
+ * parked car would point north and the route would be forced to start northward.
+ */
+export const movingHeading = (heading?: number | null, speed?: number | null) =>
+  heading != null && speed != null && speed > 1 && heading >= 0 && heading <= 360 ? heading : undefined;
 export type TrackingReceipt = { id: string; lastSentAt: number; fixAt: number; failed?: boolean };
 
 // Background callbacks can overlap; one at a time, so the receipt check orders and dedups fixes.
@@ -24,7 +31,7 @@ async function deliverOnce(fix: DriverFix, io: {
   const context = await io.context();
   if (!context) return;
   if (await io.token() !== context.token) { await io.stop(context.id); return; }
-  const { latitude, longitude, heading, accuracy } = fix.coords;
+  const { latitude, longitude, accuracy } = fix.coords, heading = movingHeading(fix.coords.heading, fix.coords.speed);
   if (!Number.isFinite(fix.timestamp) || now - fix.timestamp > 60_000 || fix.timestamp > now + 5_000 ||
       !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return;
   const receipt = await io.receipt();
@@ -37,7 +44,7 @@ async function deliverOnce(fix: DriverFix, io: {
   try {
     // Age, not the phone's clock time: the API orders fixes by it and drops late or replayed ones.
     const response = await io.post(context.token, { latitude, longitude, age: Math.max(0, now - fix.timestamp),
-      ...(heading != null && heading >= 0 && heading <= 360 && { heading }),
+      ...(heading != null && { heading }),
       ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
     status = response.status;
     accepted = response.accepted;

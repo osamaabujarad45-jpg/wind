@@ -30,6 +30,11 @@ function harness() {
   await deliverDriverFix({ ...fix, timestamp: now + 1_500 }, h.io, now + 1_500); assert.equal(h.posts.length, 1, 'within 2 s: skipped');
   await deliverDriverFix({ ...fix, timestamp: now + 2_000 }, h.io, now + 2_000); assert.equal(h.posts.length, 2, 'after 2 s: sent');
 }
+{ // Android reports bearing 0 and speed 0 when it has neither: a parked car sends no heading; a moving one does.
+  const h = harness(); await deliverDriverFix({ ...fix, coords: { ...fix.coords, heading: 0, speed: 0 } }, h.io, now);
+  await deliverDriverFix({ timestamp: now + 3_000, coords: { ...fix.coords, heading: 200, speed: 9 } }, h.io, now + 3_000);
+  assert.deepEqual(h.posts.map(p => p.body.heading), [undefined, 200]);
+}
 {
   const h = harness(); await deliverDriverFix({ ...fix, timestamp: now - 30_000 }, h.io, now);
   assert.equal(h.posts[0].body.age, 30_000, 'a late batch reports its real age so the API cannot treat it as current');

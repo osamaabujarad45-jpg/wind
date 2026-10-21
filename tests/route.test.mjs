@@ -85,6 +85,14 @@ try {
   assert.equal((await call(`/track/${token}/eta`)).delayed, true);
   assert.equal(calls, 1);
   await call(`/track/${'0'.repeat(64)}/eta`, { expect: 404 });
+  // A driver fix no road reaches (or OSRM down) gives no minutes, not an error; the cached trip line still shows.
+  await call('/location', { token: driver.token, body: { latitude: 31.9502, longitude: 35.2102, accuracy: 5 } });
+  for (const failing of ['none', 'down']) {
+    mode = failing;
+    const lost = await call(`/track/${token}/eta`);
+    assert.deepEqual([lost.minutes, lost.approach, lost.road?.length], [null, undefined, 3], failing);
+  }
+  mode = 'ok';
 
   // Checkpoint-aware routing (SPEC-checkpoint-routing.md). Closed checkpoints without a position ('Far', 'Huwwara' above)
   // cannot steer routing: the fastest route stands.

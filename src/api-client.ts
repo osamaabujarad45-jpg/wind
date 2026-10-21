@@ -4,6 +4,15 @@ export class ApiError extends Error {
 }
 
 let token: string | null = null;
+// Phone clock minus server clock, from each response's Date header (whole seconds). Server timestamps (driver fix
+// times) are compared with Date.now() + this, so a phone set minutes ahead does not see a live driver as stale.
+let clockOffset = 0;
+export const serverOffset = () => clockOffset;
+export function noteServerDate(date: string | null, now = Date.now()) {
+  const server = date ? Date.parse(date) : NaN;
+  // Under 5 s is header rounding and latency, not a wrong clock.
+  if (Number.isFinite(server)) clockOffset = Math.abs(server - now) > 5_000 ? server - now : 0;
+}
 let onUnauthorized = () => {};
 export function configureApi(nextToken: string | null, unauthorized: () => void) {
   token = nextToken;
@@ -23,6 +32,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
         body: body && JSON.stringify(body),
       });
     } catch { throw new ApiError('network'); }
+    noteServerDate(res.headers.get('date'));
     let data;
     try { data = await res.json(); }
     catch { throw new ApiError(controller.signal.aborted ? 'network' : 'server_error', res.ok ? 502 : res.status); }

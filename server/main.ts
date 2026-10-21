@@ -1598,6 +1598,14 @@ route('POST', '/api/location', ({ user, body }) => {
   // A late upload must not move the driver backward or show a fix from before this job on it.
   // Still 2xx: a background task stops on 409, and newer fixes keep coming.
   if (age > 60_000 || fixAt < Number(since)) return { ok: true, accepted: false };
+  // A jump no vehicle can make (over 70 m/s, ~250 km/h, beyond both fixes' error) from a fix at least as precise is a
+  // GPS outlier (urban multipath, a network fix): keep the last good one. A more precise fix always wins.
+  const last = one('SELECT lat, lng, updated_at, accuracy FROM driver_locations WHERE driver_id = ?', user.id);
+  if (last && fixAt > last.updated_at && (accuracy ?? 50) >= (last.accuracy ?? 50)) {
+    const metres = crowKm({ latitude: last.lat, longitude: last.lng }, { latitude: lat, longitude: lng }) * 1000
+      - (accuracy ?? 50) - (last.accuracy ?? 50);
+    if (metres / Math.max(1, (fixAt - last.updated_at) / 1000) > 70) return { ok: true, accepted: false };
+  }
   const written = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy
     WHERE excluded.updated_at > driver_locations.updated_at`,
@@ -1637,7 +1645,7 @@ async function liveFix(read: () => { driverId: number | null; fix: { updatedAt: 
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
 type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
-const roadCache = new Map<string, Promise<RoadRoute>>(); // ponytail: oldest-first eviction at 2000; LRU if hit rates matter
+const roadCache = new Map<string, Promise<RoadRoute>>(); // least recently used evicted at 2000 entries
 // Calibrated on Route 60 (2026-10-05): at 150 m a road 234 m away counted as clear yet may be the same junction; 250 m
 // forced 94-minute detours where a 72-minute parallel road exists. Tune both with real checkpoint positions.
 const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpoint is taken to pass through it
@@ -1667,7 +1675,8 @@ function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<R
   // A new closure, or a closed checkpoint moved on the map, re-routes at once.
   const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `${c.id}@${at(c.point)}`).join(',')}`;
   let found = roadCache.get(key);
-  if (!found) {
+  if (found) { roadCache.delete(key); roadCache.set(key, found); } // recently used stays: the trip line outlives driver churn
+  else {
     found = (async () => {
       const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
       if (!routes.length) throw new HttpError(404, 'no_route');
@@ -1725,8 +1734,10 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const delayed = roadAlerts(roads(), r.pickup_city, r.dropoff_city).length > 0;
   // Road lines between city centres and from the (already shown) driver fix: nothing beyond what the page already reveals.
   const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city)).then(t => t.line, () => null);
-  return Promise.all([roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null), trip])
-    .then(([leg, line]) => ({ minutes: leg.minutes, delayed, approach: leg.line, road: line }));
+  // A fix off any road (or OSRM down) gives no minutes, not an error: the page still shows the car and the trip line.
+  const leg = Promise.resolve().then(() => roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null)).catch(() => null);
+  return Promise.all([leg, trip])
+    .then(([leg, line]) => leg ? { minutes: leg.minutes, delayed, approach: leg.line, road: line } : { minutes: null, delayed, road: line });
 }, true);
 
 route('GET', '/api/driver/earnings', ({ user }) => {
