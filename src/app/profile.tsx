@@ -106,7 +106,7 @@ function EmailCard() {
     <Row gap={10} style={styles.locked}>
       <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
       <Txt variant="title" selectable style={{ flex: 1, color: palette.secondary }}>{email}</Txt>
-      <Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.clay} />
+      <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.clay} /></View>
     </Row>
     {emailVerifiedAt ? <Txt variant="caption" style={{ marginTop: 8 }}>{c.emailVerifiedNote}</Txt> : canVerify && <View style={{ marginTop: 12 }}>
       <Txt variant="title" style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>

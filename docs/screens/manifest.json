@@ -251,6 +251,7 @@
     "name": "Order · on the way",
     "route": "/order/2",
     "file": "src/app/order/[id].tsx",
+    "fix": true,
     "ar": [
       "ar/order-live.png"
     ],

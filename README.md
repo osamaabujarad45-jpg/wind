@@ -12,10 +12,11 @@ The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm 
 
 ## Current workspace verification — 21 October 2026
 
-The workspace targets Android 1.0.12 / code 13 and Expo SDK 57. The connected A53
-still had 1.0.11 / code 12 during this review. Local changes have not been deployed.
-See [the scenario QA report](docs/QA-2026-10-21.md) for customer, driver, recipient,
-administrator and map coverage, fixes, evidence and remaining native/provider checks.
+The workspace targets Android 1.0.13 / code 14 and Expo SDK 57; that signed build is
+installed on the connected A53 and was tested there, including native background
+tracking against this branch's API. The API changes have not been deployed. Email
+codes (Cloudflare Email Service) need a sending domain first. See
+[the QA report](docs/QA-2026-10-21.md) for device evidence, fixes and what remains.
 
 ## Release reference — 4 October 2026 (historical)
 

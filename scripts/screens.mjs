@@ -314,6 +314,9 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       return id;
     };
     navigator.geolocation.clearWatch = id => { window.trackingCheck.active.delete(id); };
+    // The 30 s heartbeat reads a new fix; Playwright's emulated read reuses an old timestamp, which the app rightly drops.
+    navigator.geolocation.getCurrentPosition = success => queueMicrotask(() => success({ coords: { latitude: 31.9, longitude: 35.2, accuracy: 1,
+      altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() }));
   }, { token: idleDriver.token });
   const page = await context.newPage();
   let publications = 0, lastLocation;
