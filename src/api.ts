@@ -101,7 +101,7 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
   const [fix, setFix] = useState<{ path: string; value: T | null }>();
   useFocusEffect(useCallback(() => {
     if (!path) return;
-    let stopped = false, since = 0, failures = 0, foreground = true;
+    let stopped = false, since = 0, failures = 0, foreground = true, changes = 0;
     let watch = path; // the driver this watch asks for; the server names the one it has
     setFix(undefined); // a new watch never shows a fix from an earlier one
     const subscription = AppState.addEventListener('change', state => { foreground = state === 'active'; });
@@ -119,9 +119,12 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
           // carries the car that is actually driving instead of waiting for the next poll.
           if (answer.driverChanged) {
             since = 0;
+            failures = 0;
             setFix({ path, value: null });
             if (answer.driverKey) watch = path.replace(/([?&]driver=)[^&]*/, `$1${encodeURIComponent(answer.driverKey)}`);
-            pause = 0;
+            // The first re-ask is immediate (the new car is one request away); a driver that keeps changing
+            // must not spin the endpoint.
+            pause = changes++ ? 2_000 : 0;
           } else {
             const { driverLocation } = answer;
             if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
@@ -144,4 +147,4 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
 }
 
 // A refusal that polling cannot fix: the session is gone, the link was revoked, the order was deleted.
-const terminal = (code: string) => code === 'unauthorized' || code === 'forbidden' || code === 'not_found' || code === 'session_changed';
+const terminal = (code: string) => code === 'unauthorized' || code === 'forbidden' || code === 'not_found' || code === 'session_changed' || code === 'aborted';

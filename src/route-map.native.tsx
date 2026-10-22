@@ -28,14 +28,17 @@ export default function RouteMap(props: RouteMapProps) {
   // Follow the driver like web/Android: the camera rides with the car until the user touches the map, then recenter.
   const view = useRef<MapView>(null);
   const [moved, setMoved] = useState(false);
+  // The zoom the camera was last asked for: a settled zoom that differs from it is the user's own pinch.
+  const followDelta = useRef(region.latitudeDelta);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
-  useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!moved && !driver && !failed) { followDelta.current = region.latitudeDelta; view.current?.animateToRegion(region, still ? 0 : 800); } }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!driver || moved || failed) return;
+    followDelta.current = FOLLOW_DELTA;
     view.current?.animateToRegion({ latitude: driver.latitude, longitude: driver.longitude,
       latitudeDelta: FOLLOW_DELTA, longitudeDelta: FOLLOW_DELTA }, still ? 0 : 800);
   }, [driver?.latitude, driver?.longitude, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -56,8 +59,9 @@ export default function RouteMap(props: RouteMapProps) {
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
     onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}
-    // A pinch changes the zoom without a pan: the camera must stop following then too.
-    onRegionChange={next => { if (Math.abs(next.latitudeDelta - region.latitudeDelta) > region.latitudeDelta / 20) setMoved(true); }}>
+    // A pinch changes the zoom without a pan. It is only a gesture when the settled zoom differs from the one the
+    // app asked for: the app's own follow animation moves the zoom too, and must not stop the camera.
+    onRegionChangeComplete={next => { if (Math.abs(next.latitudeDelta - followDelta.current) > followDelta.current / 20) setMoved(true); }}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -67,7 +71,7 @@ export default function RouteMap(props: RouteMapProps) {
     </Marker>)}
     {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} stale={!!props.stale} />}
   </MapView>
-  {moved && <Pressable onPress={() => { setMoved(false); view.current?.animateToRegion(driver
+  {moved && <Pressable onPress={() => { setMoved(false); followDelta.current = driver ? FOLLOW_DELTA : region.latitudeDelta; view.current?.animateToRegion(driver
     ? { latitude: driver.latitude, longitude: driver.longitude, latitudeDelta: FOLLOW_DELTA, longitudeDelta: FOLLOW_DELTA }
     : region, still ? 0 : 800); }}
     accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>

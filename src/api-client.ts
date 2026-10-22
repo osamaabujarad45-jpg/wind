@@ -26,6 +26,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
   // The caller can give up early (a long-poll that nobody watches any more): the socket is freed at once.
   const abandon = () => controller.abort();
   signal?.addEventListener('abort', abandon);
+  if (signal?.aborted) abandon();
   try {
     let res: Response;
     try {
@@ -34,7 +35,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
         headers: { 'Content-Type': 'application/json', ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
         body: body && JSON.stringify(body),
       });
-    } catch { throw new ApiError('network'); }
+    } catch { throw new ApiError(signal?.aborted ? 'aborted' : 'network'); }
     noteServerDate(res.headers.get('date'));
     let data;
     try { data = await res.json(); }
