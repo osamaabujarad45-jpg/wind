@@ -29,7 +29,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
   const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
   const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  return <View style={styles.preview} onLayout={e => setW(e.nativeEvent.layout.width)} accessible={!plain}
+  return <View style={[styles.preview, plain && styles.fill]} onLayout={e => setW(e.nativeEvent.layout.width)} accessible={!plain}
     accessibilityLabel={plain ? undefined : `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}`}>
     <View style={[styles.road, { top: h * 0.22, left: -20, right: -20, height: 10 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
@@ -50,6 +50,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
 
 const styles = StyleSheet.create({
   preview: { height: 156, backgroundColor: '#E6ECE3', overflow: 'hidden' },
+  fill: { height: '100%' },
   road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },

@@ -5,7 +5,10 @@
 - [x] 42 test files, lint, typecheck, 21/21 Expo Doctor, 15 browser groups, 9 readiness groups, customer-location
       group and the local load test pass on the new code; the load script is now a documented command.
 - [x] Leftovers closed: profile password length (12-100), the dead shared-discount control, 23 untranslated API
-      refusals, the orphaned load script, the hardcoded phone serial, stale claims in README/SYSTEM/CAPABILITY-MAP.
+      refusals, the orphaned load script (now `npm run test:load`), the phone serial is overridable with
+      `WIND_PHONE_SERIAL` (the default is still the owner's A53), stale claims in README/SYSTEM/CAPABILITY-MAP.
+- [x] The phone test apps have a documented entry point: `npm run phone:server`, `scripts/start-phone-tests.ps1`,
+      `scripts/build-phone-tests.ps1`, `npm run phone:check`.
 - [x] Everything committed on `master`; the release archive must be rebuilt from the new commit before a deploy.
 
 # Second pass — 21 October 2026

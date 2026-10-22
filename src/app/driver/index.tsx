@@ -177,7 +177,7 @@ export default function Jobs() {
               <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
                 onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || blocked(order) || !work.known} />
               {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
-                disabled={busy !== null || blocked(order)} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
+                disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
             </View>
           </Card>
         </View>;

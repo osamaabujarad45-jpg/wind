@@ -16,7 +16,7 @@ type Message = { type: 'ready' | 'failed' | 'drawing' } | { type: 'center'; lati
 
 /** WebView on public/map.html; calls onFail if the page fails or never says it is ready (offline, blocked, server without the page). */
 function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
-  config: object; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onFail: () => void; onReady?: () => void; label?: string;
+  config: { mode?: string } & Record<string, unknown>; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onFail: () => void; onReady?: () => void; label?: string;
 }) {
   const view = useRef<WebView>(null);
   const [state, setState] = useState<'loading' | 'drawing' | 'ready'>('loading');
@@ -25,10 +25,11 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   // The fragment stays on the device (never sent in the request); the page reads it once.
   const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors }))}`);
   useEffect(() => {
-    if (state !== 'loading') return;
+    // The route map is usable as soon as it draws; the pin sheet needs its tiles before it can confirm a spot.
+    if (state === 'ready' || (state === 'drawing' && config.mode !== 'pin')) return;
     const timer = setTimeout(() => failed.current(), 25_000); // after the page's own 20 s deadline, like web
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, config.mode]);
   const json = update ? JSON.stringify(update) : '';
   useEffect(() => {
     // The page can take updates as soon as its style is parsed; the tiles may still be loading.

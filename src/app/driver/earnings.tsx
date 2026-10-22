@@ -43,6 +43,7 @@ function CashCard() {
   const { data, error, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
+  const [shown, setShown] = useState(10); // the ledger is longer than the screen: it grows on request
   if (!data) return null;
   async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
     setBusy(entry.id); setFailure('');
@@ -64,7 +65,7 @@ function CashCard() {
         onPress={() => confirm(c.cashDisputeConfirm, () => decide(entry, 'dispute'), c.cashDispute, c.no)} />
     </View>)}
     {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
-    {data.entries.slice(0, 10).map(entry => <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+    {data.entries.slice(0, shown).map(entry => <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
       <View style={{ flex: 1 }}>
         <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
         <Txt variant="micro">{entry.note ? `${time(entry.createdAt)} · ${entry.note}` : time(entry.createdAt)}</Txt>
@@ -74,5 +75,6 @@ function CashCard() {
         <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
       </View>
     </Row>)}
+    {data.entries.length > shown && <Button title={c.showMore} variant="ghost" size="sm" onPress={() => setShown(n => n + 20)} />}
   </Card>;
 }

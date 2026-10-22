@@ -30,9 +30,10 @@ export default function TrackScreen() {
   if (assignment !== kept?.assignment || (fresh && fresh !== kept?.fix)) setKept({ assignment, fix: fresh ?? undefined });
   const shown = fresh ?? (kept?.assignment === assignment ? kept?.fix ?? null : null);
   const data = polled && { ...polled, driverLocation: shown };
-  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null }>(valid && shown ? `/track/${token}/eta` : null, 15_000);
+  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null; fixAgeSeconds?: number }>(valid && shown ? `/track/${token}/eta` : null, 15_000);
   // useApi keeps the last answer when a refresh fails: show no estimate (or approach line) rather than an old one.
-  const etaData = etaApi.data, etaFresh = !etaApi.error;
+  // The estimate starts from the driver's position: past 30 s it describes a place the driver has left.
+  const etaData = etaApi.data, etaFresh = !etaApi.error && (etaData?.fixAgeSeconds ?? 0) <= 30;
   const eta = etaFresh ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);

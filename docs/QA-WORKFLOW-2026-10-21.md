@@ -28,6 +28,20 @@ are tested with explicit local opt-in and remain operationally gated.
    Each should open the appropriate role without typing credentials, use the same
    isolated test API, and have a distinct package, name and session. The production
    package must continue using its normal authentication.
+
+   The sandbox is scripted, so the matrix below is repeatable:
+
+   ```bash
+   npm run phone:server            # synthetic accounts on 127.0.0.1:4191 (ignored .expo/phone-qa)
+   powershell -File scripts/start-phone-tests.ps1   # health check + adb reverse to the phone
+   powershell -File scripts/build-phone-tests.ps1  # three debug APKs, one per role
+   npm run phone:check             # cold launch, no sign-in, correct role identity
+   ```
+
+   The build refuses anything but a local debug build pointed at the loopback
+   API, so a store build can never carry a test role or a test credential
+   (`tests/phone-test-build.test.mjs`). `WIND_PHONE_SERIAL` overrides the
+   device serial.
 5. Execute the physical-device matrix below: real tiles, pinning, delivery, GPS,
    background/lock/resume, permission changes, logout and network recovery.
 6. Before a public launch, verify the deployed revision, routing service and map

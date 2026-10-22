@@ -55,7 +55,8 @@
     "test:readiness": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-readiness.mjs",
     "test:load": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-load.mjs",
     "phone:server": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/phone-test-server.mjs",
-    "phone:web": "node scripts/export-phone-web.mjs"
+    "phone:web": "node scripts/export-phone-web.mjs",
+    "phone:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-phone-tests.mjs smoke"
   },
   "private": true,
   "overrides": {

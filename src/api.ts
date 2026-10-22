@@ -108,11 +108,19 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
         if (!foreground) { await new Promise(resolve => setTimeout(resolve, 2_000)); continue; } // no radio use in the background
         let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
         try {
-          const { driverLocation } = await api<{ driverLocation: T | null }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
+          const answer = await api<{ driverLocation: T | null; driverChanged?: boolean }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
           if (stopped) return;
-          if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
-          failures = 0;
-          setFix({ path, value: driverLocation });
+          // Another driver took the job: drop the old fix and start again on the new one.
+          if (answer.driverChanged) {
+            since = 0;
+            setFix({ path, value: null });
+            pause = 0;
+          } else {
+            const { driverLocation } = answer;
+            if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
+            failures = 0;
+            setFix({ path, value: driverLocation });
+          }
         } catch (error) {
           const code = errorCode(error);
           failures++;

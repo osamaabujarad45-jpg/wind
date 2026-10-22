@@ -148,7 +148,7 @@ function LiveMap(props: RouteMapProps) {
   const { c, language } = useCopy();
   const host = useRef<View>(null);
   const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
-    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; stale?: boolean }>({});
+    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
@@ -235,8 +235,10 @@ function LiveMap(props: RouteMapProps) {
           geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...line] } });
       }
       // The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker.
-      if (accuracy && (k >= 1 || t - (state.lineAt ?? 0) > 100))
+      if (accuracy && !state.stale && (k >= 1 || t - (state.haloAt ?? 0) > 100)) {
+        state.haloAt = t;
         source?.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: {} });
+      }
       if (k < 1) state.frame = requestAnimationFrame(step);
     };
     state.frame = requestAnimationFrame(step);
@@ -259,7 +261,7 @@ function LiveMap(props: RouteMapProps) {
     approach.setData(props.stale || !drawn?.length
       ? { type: 'FeatureCollection', features: [] }
       : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: drawn } });
-  });
+  }, [map, props.stale, lineKey]);
 
   // Camera: with a driver it follows the car (above); without one it frames the two stops and the road between them.
   const frameKey = JSON.stringify(points);
@@ -281,12 +283,12 @@ function LiveMap(props: RouteMapProps) {
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
     accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
-    {/* The diagram shows while the real map loads and behind it if the map fails: never a blank box.
-        It is decoration there: no words, no announcement, no gestures. */}
-    <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
+    {/* The diagram shows while the real map loads: never a blank box. It is decoration there: no words,
+        no announcement, no gestures. Once the map is up it covers the placeholder. */}
+    {!map && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />
-    </View>
+    </View>}
     <View ref={host} style={StyleSheet.absoluteFill} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />

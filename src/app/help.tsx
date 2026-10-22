@@ -20,7 +20,8 @@ export default function Help() {
   const { me } = useSession();
   // a customer's own account is never a driver's (each role signs up apart), so 'when is a driver account activated' was not their question
   const shown = me?.user.role === 'customer' ? topics.filter(t => t !== 'driver') : topics;
-  const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) ? topic as Topic : null);
+  // A topic the reader may not see (the driver question for a customer) opens nothing.
+  const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) && (shown as readonly Topic[]).includes(topic as Topic) ? topic as Topic : null);
   const orderRef = typeof order === 'string' && /^W-\d+$/.test(order) ? order : undefined;
 
   return <Screen>

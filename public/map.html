@@ -70,7 +70,6 @@ const labelField = language => language === 'ar'
 
 const fail = () => send({ type: 'failed' });
 let timer = setTimeout(fail, 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
-const rearm = (ms) => { clearTimeout(timer); timer = setTimeout(fail, ms); };
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
 catch (e) { clearTimeout(timer); fail(); throw e; }
@@ -139,7 +138,7 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   ready = true;
   // The map is alive and drawing: the app must not replace it with the diagram while the tiles are still coming.
   send({ type: 'drawing' });
-  rearm(30000); // tiles can still be slow; the map is usable though
+  clearTimeout(timer); // the map works: no failure deadline, the tiles may take their time
   for (const layer of map.getStyle().layers)
     if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
       map.setLayoutProperty(layer.id, 'text-field', labelField(config.language));

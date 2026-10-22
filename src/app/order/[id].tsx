@@ -212,7 +212,7 @@ export default function OrderScreen() {
           {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
           <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
-            ? fill(location.stale ? c.lastDriver : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
+            ? fill(location.stale ? c.lastDriver : location.reconnecting ? c.driverSignalWeak : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
             : mine ? c.noYourLocation : c.noDriverLocation}</Txt>
         </Row>}
         {live && eta && location && !location.stale && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>

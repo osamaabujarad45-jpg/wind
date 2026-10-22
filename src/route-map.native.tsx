@@ -55,7 +55,7 @@ export default function RouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)}>
+    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -104,8 +104,9 @@ function Car({ driver, title, approach, still, stale }: { driver: NonNullable<Ro
   const line = useMemo(() => approach && !stale && [lineAt, ...approach.map(([longitude, latitude]) => ({ latitude, longitude }))], [approach, lineAt, stale]);
   return <>
     {line && <Polyline coordinates={line} strokeColor={palette.blue} strokeWidth={5} />}
-    {/* The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker. */}
-    {!!driver.accuracy && <Circle center={lineAt} radius={driver.accuracy} fillColor={`${palette.blue}1F`} strokeColor={`${palette.blue}4D`} strokeWidth={1} />}
+    {/* The halo belongs to the drawn car, not to the raw fix, and fades with it when the signal is lost. */}
+    {!!driver.accuracy && <Circle center={lineAt} radius={driver.accuracy}
+      fillColor={`${palette.blue}${stale ? '0D' : '1F'}`} strokeColor={`${palette.blue}${stale ? '26' : '4D'}`} strokeWidth={1} />}
     <Marker coordinate={pose} title={title} flat rotation={pose.rotation} anchor={{ x: 0.5, y: 0.5 }} opacity={stale ? 0.45 : 1}>
       <Ionicons name={heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
     </Marker>

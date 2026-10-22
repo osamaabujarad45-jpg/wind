@@ -139,6 +139,24 @@ try {
   assert.equal(other.driverLocation, null, 'a fix for another driver is not sent');
   assert.equal(other.driverChanged, true);
 
+  // A reassignment while a request is held: the new driver's position never reaches the watcher that asked
+  // for the old one, and the watcher is woken instead of sleeping out its hold.
+  const driver3 = await call('/auth/register', { body: { phone: '0599700011', name: 'Ameer', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${driver3.user.id}/approve`, { token: admin.token, body: {} });
+  const swapOrder = await book({});
+  await call(`/jobs/${swapOrder.id}/accept`, { token: driver2.token, body: {} });
+  await call('/location', { token: driver2.token, body: { latitude: 31.7, longitude: 35.3, accuracy: 10 } });
+  const current = (await call(`/orders/${swapOrder.id}`, { token: customer.token })).driverLocation;
+  const heldSwap = call(`/orders/${swapOrder.id}/live?since=${current.updatedAt}&driver=${driver2.user.id}`, { token: customer.token });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await call(`/orders/${swapOrder.id}/release`, { token: driver2.token, body: {} });
+  await call(`/jobs/${swapOrder.id}/accept`, { token: driver3.token, body: {} });
+  await call('/location', { token: driver3.token, body: { latitude: 31.5, longitude: 35.5, accuracy: 10 } });
+  const swapped = await heldSwap;
+  assert.equal(swapped.driverLocation, null, 'the new driver position never reaches the old watcher');
+  assert.equal(swapped.driverChanged, true);
+  assert.equal(swapped.driverKey, String(driver3.user.id));
+
   // Pure helpers used by the map.
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.9, longitude: 35.2 })), 0);
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 31.9, longitude: 35.3 })), 90);

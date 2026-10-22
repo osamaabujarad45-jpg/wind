@@ -1792,7 +1792,9 @@ route('POST', '/api/location', ({ user, body }) => {
     : 'reject';
   if (outcome === 'reject') return { ok: true, accepted: false };
   // Only a plausible fix becomes the reference; a wild one may be shown, but it never becomes the yardstick.
-  const keep = outcome === 'ok' ? { lat, lng, at: fixAt, acc: accuracy } : { lat: null, lng: null, at: null, acc: null };
+  // The accuracy is stored as its effective value (an unreported accuracy is 50 m), so the reference never keeps a
+  // stale accuracy from an earlier fix.
+  const keep = outcome === 'ok' ? { lat, lng, at: fixAt, acc: accuracy ?? 50 } : { lat: null, lng: null, at: null, acc: null };
   const written = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy, good_lat, good_lng, good_at, good_acc)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy,
@@ -1821,7 +1823,8 @@ async function liveFix(read: () => LiveRead, query: URLSearchParams, req: Incomi
   const since = Number(query.get('since')) || 0;
   const want = query.get('driver'); // the driver the client already shows: a fix from another car is never returned
   const now = read();
-  if (!now.driverId) return { driverLocation: null, driverKey: null };
+  // No live source (no driver, or a finished trip): answer at once instead of holding a socket for nothing.
+  if (!now.driverId || !now.driverKey) return { driverLocation: null, driverKey: null };
   if (want != null && want !== now.driverKey) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
   if (now.fix && now.fix.updatedAt > since) return { driverLocation: now.fix, driverKey: now.driverKey };
   const watchers = fixWaiters.get(now.orderId);
@@ -1831,16 +1834,20 @@ async function liveFix(read: () => LiveRead, query: URLSearchParams, req: Incomi
     fixWaiters.set(now.orderId, set);
     liveTotal++;
     const finish = () => {
-      clearTimeout(timer); set.delete(finish); req.socket.off('close', finish); liveTotal--;
+      clearTimeout(timer); set.delete(finish); req.socket.off('close', finish); req.off('close', finish); liveTotal--;
       if (!set.size && fixWaiters.get(now.orderId) === set) fixWaiters.delete(now.orderId);
       done();
     };
     const timer = setTimeout(finish, LIVE_HOLD);
-    set.add(finish); req.socket.once('close', finish); // a watcher that left frees its slot at once
+    set.add(finish);
+    req.socket.once('close', finish); // a watcher that left frees its slot at once
+    req.once('close', finish); // so does a client that abandons the request but keeps the connection
   });
   // Re-read: access, status, freshness and the assigned driver are checked again before any coordinate goes out.
   const after = read();
-  return { driverLocation: after.fix, driverKey: after.driverKey, ...(want != null && want !== after.driverKey ? { driverChanged: true } : {}) };
+  // The driver may have changed while the request was held: its position is not the one this client asked for.
+  if (want != null && want !== after.driverKey) return { driverLocation: null, driverKey: after.driverKey, driverChanged: true };
+  return { driverLocation: after.fix, driverKey: after.driverKey };
 }
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
@@ -1918,8 +1925,10 @@ function roadRoute(a: Point, b: Point, heading: number | null = null, closed = c
     })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
     found = { promise, points: 0 };
     roadCache.set(key, found);
+    const entry = found;
     found.promise.then(route => { // the geometry is only known once OSRM answered: count it, then trim the cache
-      found!.points = route.line.length;
+      if (roadCache.get(key) !== entry) return; // evicted while it was pending: it counts for nothing
+      entry.points = route.line.length;
       roadCachePoints += route.line.length;
       for (const [old, cached] of roadCache) {
         if (roadCachePoints <= ROAD_CACHE_POINTS) break;

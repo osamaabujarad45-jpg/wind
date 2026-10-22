@@ -413,9 +413,10 @@ export default function Book() {
               error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
             <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} onPress={() => applyPromo(promoInput)} />
           </> : <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8 }}>
-            {credits[0] && price >= 2 && <Press accessibilityLabel={fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })} onPress={() => applyPromo(credits[0]!.code)} disabled={locked || checking}>
-              <Row gap={6} style={styles.chip}><Ionicons name="gift-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{fill(c.useCredit, { r: money(credits[0].amount), code: credits[0].code })}</Txt></Row>
-            </Press>}
+            {/* Every credit the customer holds is offered: the first one alone hid the rest. */}
+            {price >= 2 && credits.map(credit => <Press key={credit.code} accessibilityLabel={fill(c.useCredit, { r: money(credit.amount), code: credit.code })} onPress={() => applyPromo(credit.code)} disabled={locked || checking}>
+              <Row gap={6} style={styles.chip}><Ionicons name="gift-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{fill(c.useCredit, { r: money(credit.amount), code: credit.code })}</Txt></Row>
+            </Press>)}
             <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked}>
               <Row gap={6} style={styles.chip}><Ionicons name="pricetag-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.promoAdd}</Txt></Row>
             </Press>
