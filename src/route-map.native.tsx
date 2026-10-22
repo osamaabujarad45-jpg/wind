@@ -124,12 +124,16 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // The callbacks are inline arrows: they change every render, so they are kept in a ref and the timer
+  // below depends on the map's state only, not on their identity.
+  const callbacks = useRef({ onFail, onReady });
+  useEffect(() => { callbacks.current = { onFail, onReady }; });
   // The sheet offers no pin to confirm until the map says it is ready; a map that never loads says so.
   useEffect(() => {
-    if (ready) { onReady?.(); return; }
-    const timer = setTimeout(() => { setFailed(true); onFail?.(); }, 20_000);
+    if (ready) { callbacks.current.onReady?.(); return; }
+    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, 20_000);
     return () => clearTimeout(timer);
-  }, [ready, attempt, onReady, onFail]);
+  }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
     <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>

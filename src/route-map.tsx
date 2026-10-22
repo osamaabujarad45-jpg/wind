@@ -148,7 +148,7 @@ function LiveMap(props: RouteMapProps) {
   const { c, language } = useCopy();
   const host = useRef<View>(null);
   const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
-    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean }>({});
+    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean; moved?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
@@ -221,7 +221,8 @@ function LiveMap(props: RouteMapProps) {
     const span = glideMs(state.at === undefined ? 0 : start - state.at);
     state.at = start;
     // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
-    if (!moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still ? 0 : span });
+    // A user gesture stops the camera, but it must not interrupt the marker's glide.
+    if (!state.moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still ? 0 : span });
     const step = (t: number) => {
       const k = still ? 1 : (t - start) / span;
       const p = ease(origin, target, k);
@@ -243,13 +244,14 @@ function LiveMap(props: RouteMapProps) {
     };
     state.frame = requestAnimationFrame(step);
     return () => { if (state.frame) cancelAnimationFrame(state.frame); };
-  }, [map, driverKey, moved]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it every render.
   // A stale fix keeps its halo but loses the approach line: there is no road left to follow.
   useEffect(() => {
     const state = markers.current;
     state.stale = !!props.stale;
+    state.moved = moved; // the camera stops following after a gesture, the marker does not
     const el = state.driver?.getElement();
     if (el) el.style.opacity = props.stale ? '0.45' : '';
     if (!map) return;
@@ -261,7 +263,7 @@ function LiveMap(props: RouteMapProps) {
     approach.setData(props.stale || !drawn?.length
       ? { type: 'FeatureCollection', features: [] }
       : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: drawn } });
-  }, [map, props.stale, lineKey]);
+  }, [map, props.stale, lineKey, moved]);
 
   // Camera: with a driver it follows the car (above); without one it frames the two stops and the road between them.
   const frameKey = JSON.stringify(points);

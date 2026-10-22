@@ -1833,7 +1833,10 @@ async function liveFix(read: () => LiveRead, query: URLSearchParams, req: Incomi
     const set = fixWaiters.get(now.orderId) ?? new Set();
     fixWaiters.set(now.orderId, set);
     liveTotal++;
+    let finished = false;
     const finish = () => {
+      if (finished) return; // the request and the socket can both close: the slot is freed once
+      finished = true;
       clearTimeout(timer); set.delete(finish); req.socket.off('close', finish); req.off('close', finish); liveTotal--;
       if (!set.size && fixWaiters.get(now.orderId) === set) fixWaiters.delete(now.orderId);
       done();

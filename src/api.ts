@@ -111,10 +111,11 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
           const answer = await api<{ driverLocation: T | null; driverChanged?: boolean }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
           if (stopped) return;
           // Another driver took the job: drop the old fix and start again on the new one.
+          // The poll carries the new driver; until it does, the answer would be the same, so wait.
           if (answer.driverChanged) {
             since = 0;
             setFix({ path, value: null });
-            pause = 0;
+            pause = 2_000;
           } else {
             const { driverLocation } = answer;
             if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
