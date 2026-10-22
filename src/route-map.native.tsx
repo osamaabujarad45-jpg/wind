@@ -55,7 +55,9 @@ export default function RouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}>
+    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}
+    // A pinch changes the zoom without a pan: the camera must stop following then too.
+    onRegionChange={next => { if (Math.abs(next.latitudeDelta - region.latitudeDelta) > region.latitudeDelta / 20) setMoved(true); }}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />

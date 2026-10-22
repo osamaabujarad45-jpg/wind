@@ -166,8 +166,8 @@ function LiveMap(props: RouteMapProps) {
     }
     m.addSource('accuracy', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     m.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': palette.blue, 'circle-opacity': 0.12, 'circle-stroke-color': palette.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
-    m.on('dragstart', () => setMoved(true));
-    m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) setMoved(true); });
+    m.on('dragstart', () => { markers.current.moved = true; setMoved(true); });
+    m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) { markers.current.moved = true; setMoved(true); } });
   });
 
   // Road lines arrive after the map (and the driver leg changes as the car moves).
@@ -246,8 +246,8 @@ function LiveMap(props: RouteMapProps) {
     return () => { if (state.frame) cancelAnimationFrame(state.frame); };
   }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it every render.
-  // A stale fix keeps its halo but loses the approach line: there is no road left to follow.
+  // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it on every change
+  // of what it reads. A stale fix keeps its halo but loses the approach line: there is no road left to follow.
   useEffect(() => {
     const state = markers.current;
     state.stale = !!props.stale;

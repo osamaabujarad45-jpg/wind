@@ -32,7 +32,8 @@ function safe<T>(fn: () => T): T | null {
   try { return fn(); } catch { return null; }
 }
 
-export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> => request(`${API_URL}/api${path}`, body, method);
+export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> =>
+  request(`${API_URL}/api${path}`, body, method, signal);
 
 // Loads on focus and, with pollMs, refreshes while the screen stays focused.
 // The poll pauses while the app is in the background (battery, server load), backs off after a failure and stops on a
@@ -101,21 +102,26 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
   useFocusEffect(useCallback(() => {
     if (!path) return;
     let stopped = false, since = 0, failures = 0, foreground = true;
+    let watch = path; // the driver this watch asks for; the server names the one it has
     setFix(undefined); // a new watch never shows a fix from an earlier one
     const subscription = AppState.addEventListener('change', state => { foreground = state === 'active'; });
+    // Leaving the screen gives up the held request: the socket and the server's watcher slot are freed at once.
+    const controller = new AbortController();
     void (async () => {
       while (!stopped) {
         if (!foreground) { await new Promise(resolve => setTimeout(resolve, 2_000)); continue; } // no radio use in the background
         let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
         try {
-          const answer = await api<{ driverLocation: T | null; driverChanged?: boolean }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
+          const answer = await api<{ driverLocation: T | null; driverChanged?: boolean; driverKey?: string | null }>(
+            `${watch}${watch.includes('?') ? '&' : '?'}since=${since}`, undefined, undefined, controller.signal);
           if (stopped) return;
-          // Another driver took the job: drop the old fix and start again on the new one.
-          // The poll carries the new driver; until it does, the answer would be the same, so wait.
+          // Another driver took the job: drop the old fix and ask for the new driver, so the live channel
+          // carries the car that is actually driving instead of waiting for the next poll.
           if (answer.driverChanged) {
             since = 0;
             setFix({ path, value: null });
-            pause = 2_000;
+            if (answer.driverKey) watch = path.replace(/([?&]driver=)[^&]*/, `$1${encodeURIComponent(answer.driverKey)}`);
+            pause = 0;
           } else {
             const { driverLocation } = answer;
             if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
@@ -123,6 +129,7 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
             setFix({ path, value: driverLocation });
           }
         } catch (error) {
+          if (stopped) return;
           const code = errorCode(error);
           failures++;
           if (terminal(code)) return; // a revoked session or a revoked link: the screen shows it, the stream ends
@@ -131,7 +138,7 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
         if (pause) await new Promise(resolve => setTimeout(resolve, pause));
       }
     })();
-    return () => { stopped = true; subscription.remove(); };
+    return () => { stopped = true; controller.abort(); subscription.remove(); };
   }, [path]));
   return fix?.path === path ? fix.value : undefined;
 }

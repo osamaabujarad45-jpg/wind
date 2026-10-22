@@ -19,10 +19,13 @@ export function configureApi(nextToken: string | null, unauthorized: () => void)
   onUnauthorized = unauthorized;
 }
 
-export async function request<T>(url: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> {
+export async function request<T>(url: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> {
   const requestToken = token, unauthorized = onUnauthorized;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
+  // The caller can give up early (a long-poll that nobody watches any more): the socket is freed at once.
+  const abandon = () => controller.abort();
+  signal?.addEventListener('abort', abandon);
   try {
     let res: Response;
     try {
@@ -40,7 +43,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
     if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();
     if (!res.ok) throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status);
     return data as T;
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abandon); }
 }
 
 export const errorCode = (error: unknown) => error instanceof ApiError ? error.message : 'server_error';
