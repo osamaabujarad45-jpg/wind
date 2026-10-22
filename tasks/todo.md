@@ -10,6 +10,12 @@
 - [x] The phone test apps have a documented entry point: `npm run phone:server`, `scripts/start-phone-tests.ps1`,
       `scripts/build-phone-tests.ps1`, `npm run phone:check`.
 - [x] Everything committed on `master`; the release archive must be rebuilt from the new commit before a deploy.
+- [x] A second, independent review of that pass and a leftover sweep: the defects they found are fixed and covered
+      (a held live request must never answer with another driver's position, the Android map must not be torn down
+      while it is drawing, a ride in transit shows its next step, resolved reports stay readable, the FAQ matches
+      the cancel rule, the phone test apps have a documented entry point).
+- [ ] The A53 was not attached during the review: the physical-device matrix (D01-D15) and the rebuilt APK run are
+      still outstanding, and the API is still not deployed (Railway build pause, fresh backup, Cloudflare domain).
 
 # Second pass — 21 October 2026
 
