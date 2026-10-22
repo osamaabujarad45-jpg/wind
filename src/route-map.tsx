@@ -281,8 +281,12 @@ function LiveMap(props: RouteMapProps) {
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
     accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
-    {/* The diagram shows while the real map loads and behind it if the map fails: never a blank box. */}
-    <View style={[StyleSheet.absoluteFill, styles.placeholder]}><RoutePreview {...props} /></View>
+    {/* The diagram shows while the real map loads and behind it if the map fails: never a blank box.
+        It is decoration there: no words, no announcement, no gestures. */}
+    <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
+      accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
+      <RoutePreview {...props} plain />
+    </View>
     <View ref={host} style={StyleSheet.absoluteFill} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
