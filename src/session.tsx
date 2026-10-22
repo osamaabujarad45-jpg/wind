@@ -1,7 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { getLocales } from 'expo-localization';
-import { api, configureApi, errorCode, storage } from './api';
+import Constants from 'expo-constants';
+import { api, API_URL, configureApi, errorCode, storage } from './api';
+import { phoneTestConfig } from './phone-test';
 import { disablePush, dropLocalPush } from './push';
 import { stopBackgroundLocation } from './background-location';
 import type { Plan, Service, Settings, Subscription, User } from './model';
@@ -25,6 +27,7 @@ type Session = {
 };
 
 const Context = createContext<Session | null>(null);
+const phoneTest = phoneTestConfig(Constants.expoConfig?.extra?.phoneTest, API_URL);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -44,20 +47,32 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      setMe(await api<Me>('/me'));
+      // Test icons obtain real, role-scoped sessions through the regular login API.
+      // A cold launch also recovers after testing logout or password/session revocation.
+      let data: Me;
+      if (phoneTest) {
+        const { token, ...account } = await api<Me & { token: string }>('/auth/login', {
+          identifier: phoneTest.identifier, password: phoneTest.password,
+        });
+        if (account.user.role !== phoneTest.role) throw new Error('Phone test role mismatch');
+        configureApi(token, forget);
+        await storage.set('token', token);
+        data = account;
+      } else data = await api<Me>('/me');
+      setMe(data);
       setOffline(false);
     } catch (error) {
-      if (errorCode(error) === 'network') setOffline(true);
+      if (phoneTest || errorCode(error) === 'network') setOffline(true);
     }
-  }, []);
+  }, [forget]);
 
   useEffect(() => {
     (async () => {
       const [token, saved, seen] = await Promise.all([storage.get('token'), storage.get('language'), storage.get('onboarded')]);
       if (saved === 'ar' || saved === 'en') setLanguageState(saved);
       // Anyone who ever signed in on this device has seen the app; only a fresh install gets the welcome slides.
-      setOnboarded(seen === '1' || !!token);
-      if (token) {
+      setOnboarded(!!phoneTest || seen === '1' || !!token);
+      if (phoneTest || token) {
         configureApi(token, forget);
         await refresh();
       }

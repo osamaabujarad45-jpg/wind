@@ -27,7 +27,20 @@ try {
   const launch = spawnSync('adb', ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', target, '-p', 'com.android.chrome'], { encoding: 'utf8' });
   assert.equal(launch.status, 0, launch.stderr);
   console.log('Opened local test tab on Android');
-  browser = await chromium.connectOverCDP('http://127.0.0.1:9228', { timeout: 30_000 });
+  // adb can accept the forward before Chrome has created its debugging socket.
+  // Wait for an actual version reply so a cold Chrome start does not fail with socket hang up.
+  const cdp = 'http://127.0.0.1:9228';
+  const cdpDeadline = Date.now() + 15_000;
+  let cdpReady = false;
+  while (Date.now() < cdpDeadline) {
+    try {
+      const response = await fetch(`${cdp}/json/version`, { signal: AbortSignal.timeout(Math.min(1000, Math.max(1, cdpDeadline - Date.now()))) });
+      if (response.ok && typeof (await response.json()).webSocketDebuggerUrl === 'string') { cdpReady = true; break; }
+    } catch { /* Chrome's socket is still starting; retry within the bounded deadline. */ }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  assert.ok(cdpReady, 'Android Chrome debugging endpoint did not become ready within 15 seconds; check the adb forward');
+  browser = await chromium.connectOverCDP(cdp, { timeout: 30_000 });
   page = browser.contexts()[0].pages().find(p => p.url() === target);
   assert.ok(page, 'Android did not open the local test tab');
   page.setDefaultTimeout(30_000);
