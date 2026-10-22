@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { useFocusEffect } from 'expo-router';
@@ -8,7 +8,7 @@ export { ApiError, configureApi, errorCode } from './api-client';
 
 // Dev: the API runs next to Metro on port 4000 (npm run server). Production: EXPO_PUBLIC_API_URL.
 const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? `http://${devHost ?? 'localhost'}:4000`;
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? `http://${devHost ?? 'localhost'}:4000`).replace(/\/+$/, '');
 export const PRIVACY_URL = `${API_URL}/privacy`;
 export const TERMS_URL = `${API_URL}/terms`;
 // Support WhatsApp in international digits, e.g. 970599123456. Unset: support buttons are hidden.
@@ -35,6 +35,8 @@ function safe<T>(fn: () => T): T | null {
 export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'): Promise<T> => request(`${API_URL}/api${path}`, body, method);
 
 // Loads on focus and, with pollMs, refreshes while the screen stays focused.
+// The poll pauses while the app is in the background (battery, server load), backs off after a failure and stops on a
+// refusal that cannot fix itself (a revoked session, a deleted order): the screen shows the reason.
 // ponytail: polling; switch to websockets/SSE if request volume becomes a cost.
 export function useApi<T>(path: string | null, pollMs?: number) {
   const [data, setResult] = useState<{ path: string; value: T }>();
@@ -44,21 +46,43 @@ export function useApi<T>(path: string | null, pollMs?: number) {
   useEffect(() => { latestPath.current = path; }, [path]);
   const inFlight = useRef<number | null>(null);
   const load = useCallback(async () => {
-    if (!path || inFlight.current === generation.current) return;
+    if (!path || inFlight.current === generation.current) return undefined;
     const current = generation.current;
     inFlight.current = current;
     try {
       const next = await api<T>(path);
       if (current === generation.current && latestPath.current === path) { setResult({ path, value: next }); setError(undefined); }
+      return undefined;
     } catch (e) {
-      if (current === generation.current && latestPath.current === path) setError({ path, value: errorCode(e) });
+      const code = errorCode(e);
+      if (current === generation.current && latestPath.current === path) setError({ path, value: code });
+      return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }
   }, [path]);
   useFocusEffect(useCallback(() => {
     generation.current++;
-    load();
-    const timer = pollMs ? setInterval(load, pollMs) : undefined;
-    return () => { generation.current++; if (timer) clearInterval(timer); };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false, pending = false, foreground = true, failures = 0;
+    const clear = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
+    const tick = async () => {
+      if (stopped || pending) return;
+      pending = true;
+      const code = await load();
+      pending = false;
+      if (stopped || !foreground) return;
+      if (code === undefined) failures = 0; else failures++;
+      if (code && terminal(code)) return; // a revoked session or a gone order: polling again cannot help
+      const base = pollMs ?? 0;
+      if (!base) return;
+      timer = setTimeout(tick, failures ? Math.min(base * Math.min(8, failures), 30_000) : base);
+    };
+    void tick();
+    // A backgrounded app must not keep the radio busy; the first poll on return brings the screen up to date.
+    const subscription = AppState.addEventListener('change', state => {
+      foreground = state === 'active';
+      if (foreground) { if (!pending) void tick(); } else clear();
+    });
+    return () => { stopped = true; clear(); subscription.remove(); generation.current++; };
   }, [load, pollMs]));
   const setData = (next: T) => {
     if (path !== latestPath.current) return;
@@ -76,21 +100,32 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
   const [fix, setFix] = useState<{ path: string; value: T | null }>();
   useFocusEffect(useCallback(() => {
     if (!path) return;
-    let stopped = false, since = 0;
+    let stopped = false, since = 0, failures = 0, foreground = true;
     setFix(undefined); // a new watch never shows a fix from an earlier one
+    const subscription = AppState.addEventListener('change', state => { foreground = state === 'active'; });
     void (async () => {
       while (!stopped) {
+        if (!foreground) { await new Promise(resolve => setTimeout(resolve, 2_000)); continue; } // no radio use in the background
         let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
         try {
           const { driverLocation } = await api<{ driverLocation: T | null }>(`${path}${path.includes('?') ? '&' : '?'}since=${since}`);
           if (stopped) return;
           if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
+          failures = 0;
           setFix({ path, value: driverLocation });
-        } catch { pause = 5_000; } // offline or refused: the screen's own poll still shows the last state
+        } catch (error) {
+          const code = errorCode(error);
+          failures++;
+          if (terminal(code)) return; // a revoked session or a revoked link: the screen shows it, the stream ends
+          pause = Math.min(5_000 * failures, 30_000);
+        }
         if (pause) await new Promise(resolve => setTimeout(resolve, pause));
       }
     })();
-    return () => { stopped = true; };
+    return () => { stopped = true; subscription.remove(); };
   }, [path]));
   return fix?.path === path ? fix.value : undefined;
 }
+
+// A refusal that polling cannot fix: the session is gone, the link was revoked, the order was deleted.
+const terminal = (code: string) => code === 'unauthorized' || code === 'forbidden' || code === 'not_found' || code === 'session_changed';

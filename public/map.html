@@ -27,6 +27,8 @@ const send = message => window.ReactNativeWebView?.postMessage(JSON.stringify(me
 let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
 const C = config.colors ?? { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
+// The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
+const FOLLOW_ZOOM = 15, FOLLOW_OFFSET = [0, -60];
 
 // Same helpers as src/map-math.ts (tests/map.test.mjs checks this copy against them).
 const rad = d => d * Math.PI / 180;
@@ -66,10 +68,12 @@ const labelField = language => language === 'ar'
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
 // End of helpers.
 
-const timer = setTimeout(() => send({ type: 'failed' }), 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
+const fail = () => send({ type: 'failed' });
+let timer = setTimeout(fail, 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
+const rearm = (ms) => { clearTimeout(timer); timer = setTimeout(fail, ms); };
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
-catch (e) { clearTimeout(timer); send({ type: 'failed' }); throw e; }
+catch (e) { clearTimeout(timer); fail(); throw e; }
 ml.setRTLTextPlugin('/vendor/mapbox-gl-rtl-text.js', true).catch(() => undefined);
 
 const pin = config.mode === 'pin';
@@ -93,8 +97,14 @@ map.once('load', () => {
 const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0;
 window.wind = update => { Object.assign(state, update); if (ready) draw(); fade(); };
-// Faded while the fix is old (lost signal): "last seen here", not live.
-const fade = () => { if (marker) marker.getElement().style.opacity = state.stale ? '0.45' : ''; };
+// Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
+// road left to follow, and a bright line would read as live.
+const fade = () => {
+  if (marker) marker.getElement().style.opacity = state.stale ? '0.45' : '';
+  if (!ready) return;
+  if (map.getLayer('accuracy')) map.setPaintProperty('accuracy', 'circle-opacity', state.stale ? 0.05 : 0.12);
+  if (state.stale && map.getSource('approach')) map.getSource('approach').setData(empty);
+};
 
 function dot(color, square) {
   const el = document.createElement('div');
@@ -127,6 +137,9 @@ document.querySelector('#pin path').setAttribute('fill', C.clay);
 
 map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   ready = true;
+  // The map is alive and drawing: the app must not replace it with the diagram while the tiles are still coming.
+  send({ type: 'drawing' });
+  rearm(30000); // tiles can still be slow; the map is usable though
   for (const layer of map.getStyle().layers)
     if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
       map.setLayoutProperty(layer.id, 'text-field', labelField(config.language));
@@ -161,6 +174,7 @@ let drawnLines = '', drawnDriver = '', drawnClosed = '', framed = '', closedMark
 // Live: driver, next stop and the road to it. Otherwise both pins and the whole road route (it can bend outside them).
 const framePoints = () => routeFramePoints({ ...state, pickup: config.pickup, dropoff: config.dropoff });
 function refit(duration) {
+  if (state.driver) return; // the car is on screen: the camera follows it, it does not frame the stops
   const points = framePoints();
   framed = JSON.stringify(points);
   map.fitBounds(fitBounds(points), { padding, maxZoom: 16, ...(duration != null && { duration }) });
@@ -215,16 +229,21 @@ function drawDriver() {
   const start = performance.now(), origin = from ?? target, instant = still();
   const span = glideMs(at === undefined ? 0 : start - at);
   at = start;
+  // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
+  if (!moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: instant ? 0 : span });
   const step = t => {
     const k = instant ? 1 : (t - start) / span;
     const p = ease(origin, target, k);
     marker?.setLngLat([p.longitude, p.latitude]);
     if (rotation !== null) marker?.setRotation(turned = turn(turnFrom, rotation, instant ? 1 : (t - start) / 500));
     shown = p;
-    if (state.approach?.length && (k >= 1 || t - lineAt > 100)) { // ~10 line redraws a second is smooth and cheap
+    if (state.approach?.length && !state.stale && (k >= 1 || t - lineAt > 100)) { // ~10 line redraws a second is smooth and cheap
       lineAt = t;
       map.getSource('approach').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...state.approach] } });
     }
+    // The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker.
+    if (driver.accuracy && (k >= 1 || t - lineAt > 100))
+      source.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: {} });
     if (k < 1) frame = requestAnimationFrame(step);
   };
   frame = requestAnimationFrame(step);

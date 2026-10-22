@@ -134,6 +134,8 @@ const halo = (meters: number, lat: number) => {
   const base = meters / (78271.52 * Math.cos(lat * Math.PI / 180)); // MapLibre zoom levels use 512 px tiles
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
+// The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
+const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
@@ -146,7 +148,7 @@ function LiveMap(props: RouteMapProps) {
   const { c, language } = useCopy();
   const host = useRef<View>(null);
   const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
-    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number }>({});
+    at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; stale?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
@@ -213,13 +215,13 @@ function LiveMap(props: RouteMapProps) {
       state.arrow = rotation !== null; state.rotation = undefined;
     }
     const turnFrom = state.rotation ?? rotation;
-    source?.setData(accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} }
-      : { type: 'FeatureCollection', features: [] });
     if (accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const start = performance.now(), origin = from ?? target;
     const span = glideMs(state.at === undefined ? 0 : start - state.at);
     state.at = start;
+    // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
+    if (!moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still ? 0 : span });
     const step = (t: number) => {
       const k = still ? 1 : (t - start) / span;
       const p = ease(origin, target, k);
@@ -227,39 +229,60 @@ function LiveMap(props: RouteMapProps) {
       if (rotation !== null) state.driver?.setRotation(state.rotation = turn(turnFrom ?? rotation, rotation, still ? 1 : (t - start) / 500));
       state.shown = p;
       const line = state.approach;
-      if (line?.length && (k >= 1 || t - (state.lineAt ?? 0) > 100)) { // ~10 line redraws a second is smooth and cheap
+      if (line?.length && !state.stale && (k >= 1 || t - (state.lineAt ?? 0) > 100)) { // ~10 line redraws a second is smooth and cheap
         state.lineAt = t;
         (map.getSource('approach') as GeoJSONSource | undefined)?.setData({ type: 'Feature', properties: {},
           geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...line] } });
       }
+      // The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker.
+      if (accuracy && (k >= 1 || t - (state.lineAt ?? 0) > 100))
+        source?.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: {} });
       if (k < 1) state.frame = requestAnimationFrame(step);
     };
     state.frame = requestAnimationFrame(step);
     return () => { if (state.frame) cancelAnimationFrame(state.frame); };
-  }, [map, driverKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, driverKey, moved]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Faded while the fix is old; the marker element is rebuilt when the arrow appears, so set it every render.
-  useEffect(() => { const el = markers.current.driver?.getElement(); if (el) el.style.opacity = props.stale ? '0.45' : ''; });
+  // A stale fix keeps its halo but loses the approach line: there is no road left to follow.
+  useEffect(() => {
+    const state = markers.current;
+    state.stale = !!props.stale;
+    const el = state.driver?.getElement();
+    if (el) el.style.opacity = props.stale ? '0.45' : '';
+    if (!map) return;
+    map.setPaintProperty('accuracy', 'circle-opacity', props.stale ? 0.05 : 0.12);
+    const approach = map.getSource('approach') as GeoJSONSource | undefined;
+    if (!approach) return;
+    const line = state.approach;
+    const drawn = state.shown && line?.length ? [[state.shown.longitude, state.shown.latitude], ...line] : line;
+    approach.setData(props.stale || !drawn?.length
+      ? { type: 'FeatureCollection', features: [] }
+      : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: drawn } });
+  });
 
-  // Camera follows the frame (driver, next stop, the road to it) as it changes; instant on resize or reduced motion.
+  // Camera: with a driver it follows the car (above); without one it frames the two stops and the road between them.
   const frameKey = JSON.stringify(points);
   useEffect(() => {
-    if (!map || moved) return;
+    if (!map || moved || driver) return;
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const refit = (duration: number) => map.fitBounds(fitBounds(points), { padding, maxZoom: 16, duration });
     const resized = () => refit(0);
     refit(still ? 0 : 800);
     map.on('resize', resized);
     return () => { map.off('resize', resized); };
-  }, [map, moved, frameKey, padding]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, moved, frameKey, padding, driver]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function recenter() {
     setMoved(false);
-    map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
+    if (driver) map?.easeTo({ center: [driver.longitude, driver.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: 600 });
+    else map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
   }
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
     accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+    {/* The diagram shows while the real map loads and behind it if the map fails: never a blank box. */}
+    <View style={[StyleSheet.absoluteFill, styles.placeholder]}><RoutePreview {...props} /></View>
     <View ref={host} style={StyleSheet.absoluteFill} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
@@ -305,6 +328,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
 const styles = StyleSheet.create({
   recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
+  placeholder: { justifyContent: 'center' },
   failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },
   retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },
 });

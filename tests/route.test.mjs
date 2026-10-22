@@ -16,6 +16,10 @@ const osrm = createServer((req, res) => {
   const [a, b] = [pts[0], pts.at(-1)], route = (coordinates, duration = 3300) => ({ distance: 61234, duration, geometry: { type: 'LineString', coordinates } });
   if (mode === 'down') return res.destroy();
   if (mode === 'none') return res.end(JSON.stringify({ code: 'NoRoute', routes: [] }));
+  if (mode === 'bad-distance') return res.end(JSON.stringify({ code: 'Ok', routes: [{ ...route([a, b]), distance: 'unknown' }] }));
+  if (mode === 'bad-line') return res.end(JSON.stringify({ code: 'Ok', routes: [route([a, [null, 91], b])] }));
+  if (mode === 'empty-line') return res.end(JSON.stringify({ code: 'Ok', routes: [route([])] }));
+  if (mode === 'http-error') return res.writeHead(503).end(JSON.stringify({ code: 'Ok', routes: [route([a, b])] }));
   // Every fastest route passes X = [35.23, 32.0]. 'alt' adds a slower alternative; via-point requests (3 points) detour
   // through the via point unless 'stuck', where even detours pass X.
   const detour = mode === 'stuck' ? [a, [35.23, 32.0], b] : mode === 'spur' ? [a, pts[1], a, b] : pts; // 'spur': out to the via point and back
@@ -61,6 +65,15 @@ try {
   mode = 'ok';
   await call('/route?from=31.51,35.1&to=31.7,35.2', { token: customer.token }); // failures are not cached
 
+  // A malformed upstream route must never reach the map as null metrics or invalid coordinates, or be cached.
+  for (const invalid of ['bad-distance', 'bad-line', 'empty-line', 'http-error']) {
+    mode = invalid;
+    const path = `/route?from=31.52,35.1&to=31.7,35.2&heading=${['bad-distance', 'bad-line', 'empty-line', 'http-error'].indexOf(invalid) * 15}`;
+    assert.equal((await call(path, { token: customer.token, expect: 503 })).error, 'route_unavailable', invalid);
+    mode = 'ok';
+    assert.equal((await call(path, { token: customer.token })).minutes, 55, `${invalid}: retry recovers`);
+  }
+
   // Public ETA: null until a fresh driver fix, then minutes only (no geometry, no exact pins).
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599800002', detail: 'Box', dropoffPoint: { latitude: 32.2299, longitude: 35.2611 } };
@@ -71,7 +84,8 @@ try {
   await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } });
   calls = 0;
   const eta = await call(`/track/${token}/eta`);
-  assert.deepEqual({ ...eta, approach: undefined, road: undefined }, { minutes: 55, delayed: false, approach: undefined, road: undefined });
+  assert.deepEqual({ ...eta, approach: undefined, road: undefined }, { minutes: 55, delayed: false, approach: undefined, road: undefined, fixAgeSeconds: 0 });
+  assert.ok(eta.fixAgeSeconds >= 0 && eta.fixAgeSeconds < 5, 'the estimate says how old the fix it starts from is');
   assert.equal(eta.approach.length, 3, 'driver leg follows the road geometry'); assert.equal(eta.road.length, 3, 'city-to-city road line');
   assert.equal(calls, 1, 'Ramallah-Nablus centres were cached by the first /route call');
   // A closed checkpoint touching either city flags the public ETA (SPEC-road-aware-eta.md); an open one does not.

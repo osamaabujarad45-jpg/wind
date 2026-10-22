@@ -1,6 +1,26 @@
 # Handoff — deploy Wind API 1.0.13 and verify maps on the A53 (21 October 2026)
 
-## Resumed status
+## Resumed status (22 October 2026)
+
+The main `Fastship` checkout holds the finished live-tracking pass of 22 October
+and is committed on `master`: the GPS yardstick now follows the last *plausible*
+fix, the live push names the driver it belongs to (a reassignment can no longer
+show the previous driver's position), both live endpoints are rate limited and
+socket-bounded, the camera follows the car on web, Android and iOS, and polling
+pauses while the app is in the background. All 42 test files, lint, typecheck,
+15 browser scenario groups, 9 readiness groups, the customer-location group, the
+load test and Expo Doctor pass on that code. Evidence: `.expo/run-*.log`.
+
+The deployed API is still the old one. Everything below about the deployment,
+the backup transport and the Railway outage is unchanged: production still runs
+the previous build, Railway's build pause and the missing Cloudflare sending
+domain are external, and a fresh verified backup is still required before
+deploying. The source-only release archive must be rebuilt from the new commit.
+
+The original handoff below is historical. Its expired-authentication and static
+token renewal steps are superseded by the resumed status above.
+
+## Resumed status (21 October 2026)
 
 The main `Fastship` checkout is recovered and clean at `5770dab`, pushed to
 `origin/master`. It includes `f7f8629`, which reauthenticates held live requests
@@ -36,7 +56,8 @@ using the project/environment/service IDs and smoke checks below. Evidence:
 `.expo/release-*.log`, `.expo/release-production-before.json` and
 `.expo/release-rollback.json`. Transport evidence is in
 `.expo/release-backup-transport.json`. The source-only release archive is outside the repo
-at `../Release-2026-10-21/wind-api-f7f8629.zip`.
+at `../Release-2026-10-21/wind-api-f7f8629.zip` — rebuild it from the current commit
+before the next deploy.
 
 The original handoff below is historical. Its expired-authentication and static
 token renewal steps are superseded by the resumed status above.
@@ -53,8 +74,9 @@ Read `AGENTS.md`, `CLAUDE.md` and [the QA report](QA-2026-10-21.md) first.
 - Production still runs the **old API**. The new one adds `/map.html` changes (Android map), live driver long-poll
   (`/orders/:id/live`, `/track/:token/live`), `accepted` on `/api/location`, GPS jump gate, email routes.
   All additive: old clients keep working.
-- The main checkout (`Fastship/`) still has uncommitted edits from an earlier agent; every one of them is already on
-  `master`. Do not commit from there; use this worktree or a fresh pull.
+- The main checkout (`Fastship/`) is the working copy and is committed; the 22 October live-tracking pass
+  (GPS yardstick, live driver identity, rate limits, follow camera, background polling) is on `master`. The
+  release archive has to be rebuilt from the new commit before the next deploy.
 
 ## Blockers found (owner action)
 

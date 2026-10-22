@@ -12,14 +12,14 @@ export const canPin = true;
 const PAGE = `${API_URL}/map.html`;
 const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
 
-type Message = { type: 'ready' | 'failed' } | { type: 'center'; latitude: number; longitude: number };
+type Message = { type: 'ready' | 'failed' | 'drawing' } | { type: 'center'; latitude: number; longitude: number };
 
 /** WebView on public/map.html; calls onFail if the page fails or never says it is ready (offline, blocked, server without the page). */
 function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   config: object; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onFail: () => void; onReady?: () => void; label?: string;
 }) {
   const view = useRef<WebView>(null);
-  const [state, setState] = useState<'loading' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'drawing' | 'ready'>('loading');
   const failed = useRef(onFail);
   const fail = () => failed.current();
   // The fragment stays on the device (never sent in the request); the page reads it once.
@@ -31,7 +31,8 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   }, [state]);
   const json = update ? JSON.stringify(update) : '';
   useEffect(() => {
-    if (state === 'ready' && json) view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`);
+    // The page can take updates as soon as its style is parsed; the tiles may still be loading.
+    if (state !== 'loading' && json) view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`);
   }, [state, json]);
   return <View style={{ height, width: '100%' }} accessible={!!label} accessibilityRole={label ? 'image' : undefined} accessibilityLabel={label}>
     <WebView ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: '#E6ECE3' }} originWhitelist={['*']}
@@ -49,6 +50,8 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
         try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
         if (m.type === 'ready') { setState('ready'); onReady?.(); }
         else if (m.type === 'failed') fail();
+        // The style is parsed and the map is drawing: the tiles may still be coming, but the map works.
+        else if (m.type === 'drawing') setState('drawing');
         else if (m.type === 'center' && Number.isFinite(m.latitude) && Number.isFinite(m.longitude)) onCenter?.({ latitude: m.latitude, longitude: m.longitude });
       }} />
   </View>;

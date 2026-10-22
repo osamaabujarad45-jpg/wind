@@ -115,6 +115,30 @@ try {
   // Without OSRM_URL the road route is unavailable and clients keep straight lines (SPEC-routing-eta.md).
   await call('/route?from=31.9,35.2&to=32.2,35.26', { token: customer.token, expect: 503 });
 
+  // The yardstick for the next fix is the last *plausible* fix: a wild fix that won on accuracy may be shown, but it
+  // must not freeze the marker kilometres away when the real driver comes back.
+  const driver2 = await call('/auth/register', { body: { phone: '0599700010', name: 'Nabil', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${driver2.user.id}/approve`, { token: admin.token, body: {} });
+  const order2 = await book({});
+  await call(`/jobs/${order2.id}/accept`, { token: driver2.token, body: {} });
+  const here = { latitude: 31.9801, longitude: 35.2301, accuracy: 30 };
+  assert.equal((await call('/location', { token: driver2.token, body: here })).accepted, true);
+  assert.equal((await call('/location', { token: driver2.token, body: { latitude: 32.9, longitude: 35.9, accuracy: 3 } })).accepted, true,
+    'a more precise fix always wins');
+  assert.equal((await call('/location', { token: driver2.token, body: { ...here, accuracy: 60 } })).accepted, true,
+    'the next real fix is measured against the plausible one, not the wild one');
+  const back = (await call(`/orders/${order2.id}`, { token: customer.token })).driverLocation;
+  assert.equal(Math.round(back.latitude * 1000), 31980, 'the marker is back where the driver is');
+
+  // The live answer names the driver it belongs to: a fix from another car is never returned, so a reassignment
+  // cannot show the previous driver's position under the new driver's name.
+  const mine = (await call(`${live}?since=0&driver=${driver.user.id}`, { token: customer.token }));
+  assert.equal(mine.driverKey, String(driver.user.id));
+  assert.ok(mine.driverLocation);
+  const other = (await call(`${live}?since=0&driver=999999`, { token: customer.token }));
+  assert.equal(other.driverLocation, null, 'a fix for another driver is not sent');
+  assert.equal(other.driverChanged, true);
+
   // Pure helpers used by the map.
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.9, longitude: 35.2 })), 0);
   assert.equal(Math.round(bearing({ latitude: 31.9, longitude: 35.2 }, { latitude: 31.9, longitude: 35.3 })), 90);

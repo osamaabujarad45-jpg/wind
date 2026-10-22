@@ -21,14 +21,14 @@ are landmark-based, WhatsApp/phone are the default contact channels.
 
 | Module id | Uber/Careem feature | Wind today | Provider needed? | Depends on |
 |---|---|---|---|---|
-| `delivery-exceptions` | Failed delivery, recipient absent, return-to-sender, dispute | Order stranded in `in_transit`; SYSTEM.md §10 says this **blocks unsupervised parcel launch** | No | — |
-| `cash-settlement` | Careem cash collection + driver remittance/balance | Earnings are calculations only; no remittance ledger | No | `delivery-exceptions` (return/fee states affect cash) |
-| `trip-share-link` | Share trip / recipient tracking without app | Recipient must be told code out-of-band; no link | No | — |
-| `scheduled-booking` | Reserve / book for later | Now only | No | — |
-| `saved-places` | Home / Work / recent places | Retype city + landmark each time | No | — |
-| `road-status` | (Local) crowd-reported checkpoint/closure status per city pair, like Azmeh-style apps | None; ETA is straight-line × 1.3 | No | — |
-| `safety-sos` | Emergency button, incident report freezes completion | Support phone only | No | `trip-share-link` |
-| `in-app-chat` | Driver↔customer chat about the job | Phone only | No | — |
+| `delivery-exceptions` | Failed delivery, recipient absent, return-to-sender, dispute | **Shipped** (SPEC-delivery-exceptions.md): `on_hold` with the driver's reason, an admin reattempt/return decision, the sender's return code closes the return, one dispute per finished order (SPEC-dispute-credit.md) | No | — |
+| `cash-settlement` | Careem cash collection + driver remittance/balance | **Shipped** (SPEC-cash-settlement.md): commission owed per driver, numbered handovers that count only after the driver confirms, reasoned adjustments | No | `delivery-exceptions` (return/fee states affect cash) |
+| `trip-share-link` | Share trip / recipient tracking without app | **Shipped** (SPEC-trip-share-link.md): rotating no-account link, status, cities, driver first name and vehicle, a fresh position only, revocable | No | — |
+| `scheduled-booking` | Reserve / book for later | **Shipped** (SPEC-scheduled-booking.md): up to 7 days ahead, released to drivers 30 minutes before pickup, customer can reschedule or cancel | No | — |
+| `saved-places` | Home / Work / recent places | **Shipped** (SPEC-saved-places.md): Home/Work/other places plus recent landmarks, reusable in the booking sheet | No | — |
+| `road-status` | (Local) crowd-reported checkpoint/closure status per city pair, like Azmeh-style apps | **Shipped** (SPEC-road-status.md, SPEC-checkpoint-routing.md): admin checkpoints, driver reports fresh for two hours, routing avoids a reported closure | No | — |
+| `safety-sos` | Emergency button, incident report freezes completion | **Shipped** (SPEC-safety-sos.md): emergency call buttons, a report that pauses the order until an administrator resolves it | No | `trip-share-link` |
+| `in-app-chat` | Driver↔customer chat about the job | **Shipped** (SPEC-in-app-chat.md): in-trip messages with quick replies, readable 24 hours after, admins read-only | No | — |
 | `push-offers` | Push job offers / status to closed app | Web Push shipped for the web/home-screen app (SPEC-web-push.md), incl. driver offers and accepted offers (SPEC-offer-alerts.md), and delivery holds and returns (SPEC-exception-push.md, loop 49); native still polls. **Native approved by the owner but blocked (6 Oct): needs the owner's Expo account/EAS project and a Firebase project's FCM v1 key** | Native: Expo push (needs EAS project + FCM credentials) | — |
 | `promo-referral` | Promo codes, referral credit | Shipped: SPEC-promo-codes.md, SPEC-referral.md | No | `cash-settlement` (discount accounting) |
 | `trip-issues` | Uber "Help with a trip": report an issue on a finished order, support reply, goodwill credit | **Shipped 2026-10-04** as `delivery-exceptions` disputes + `dispute-credit` (SPEC-dispute-credit.md) | No | `promo-referral` (credit codes) |

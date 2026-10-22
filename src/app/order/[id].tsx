@@ -8,7 +8,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, canTake, city, commissionOn, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
+import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { locationState, newerFix } from '../../location-state';
 import RouteMap from '../../route-map';
@@ -207,22 +207,29 @@ export default function OrderScreen() {
       <View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
           driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed}
-          stale={!!location?.stale || !!error} height={live && order.driverLocation ? 300 : undefined} />
+          stale={!!location?.stale} height={live && order.driverLocation ? 300 : undefined} />
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
-          <Ionicons name={!location || location.stale || error ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || error ? palette.clayInk : palette.blue} />
+          {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
+          <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
-            ? fill(location.stale || error ? c.lastDriver : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
+            ? fill(location.stale ? c.lastDriver : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
             : mine ? c.noYourLocation : c.noDriverLocation}</Txt>
         </Row>}
-        {live && eta && location && !location.stale && !error && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+        {live && eta && location && !location.stale && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           {/* "the driver arrives" is for the other parties; the driver reads the neutral arrival line */}
           <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine} />
         </View>}
-        {live && order.sharedRun && location && !location.stale && !error && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+        {live && order.sharedRun && location && !location.stale && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1 }}>{c.courierRun}</Txt>
         </Row>}
-        {live && eta && location && !location.stale && !error && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
+        {/* The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner). */}
+        {live && isCustomer && !mine && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
+          && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500 && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          <Ionicons name="walk-outline" size={16} color={palette.olive} />
+          <Txt variant="caption" style={{ flex: 1, color: palette.olive }}>{fill(c.driverNearby, { m: 500 })}</Txt>
+        </Row>}
+        {live && eta && location && !location.stale && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
           onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Row gap={8}>
             <Ionicons name="warning-outline" size={16} color={palette.clayInk} />

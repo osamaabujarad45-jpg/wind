@@ -177,6 +177,24 @@ try {
   await until(() => call(`/orders/${id}`, { token: customerToken }), o => o.driverLocation?.latitude === 31.9045, 'Latest GPS fix was lost during the previous upload');
   await customerPage.getByText(c.assigned, { exact: true }).waitFor();
   await customerPage.locator('.maplibregl-marker').nth(2).waitFor();
+  // The live marker follows the driver: a new fix moves the car on the customer's map, with no user gesture.
+  const liveMarker = customerPage.locator('.maplibregl-marker').nth(2);
+  const markerSpot = () => liveMarker.evaluate(el => { const box = el.getBoundingClientRect(); return [box.x, box.y]; });
+  const beforeMove = await markerSpot();
+  const fixesBefore = await driverPage.evaluate(() => window.scenarioFixCount ?? 0);
+  // A car's real pace: the server rejects a jump no vehicle could make, so the test moves it like a slow street.
+  await driverPage.context().setGeolocation({ latitude: 31.9049, longitude: 35.2047, accuracy: 15 });
+  await driverPage.waitForFunction(n => (window.scenarioFixCount ?? 0) > n, fixesBefore);
+  await until(() => call(`/orders/${id}`, { token: customerToken }), o => o.driverLocation?.latitude === 31.9049,
+    'The server did not accept the next driver fix');
+  await until(markerSpot, ([x, y]) => Math.hypot(x - beforeMove[0], y - beforeMove[1]) > 0.5,
+    'The live marker did not follow the driver to its new position');
+  // The camera rides with the car (Uber keeps it in the middle of the screen) instead of drifting with every fix.
+  await new Promise(resolve => setTimeout(resolve, 2500));
+  const [carX, carY] = await markerSpot();
+  const mapBox = await customerPage.locator('.maplibregl-map').first().boundingBox();
+  const offset = [carX - (mapBox.x + mapBox.width / 2), carY - (mapBox.y + mapBox.height / 2)];
+  assert.ok(Math.abs(offset[0]) < 140 && Math.abs(offset[1]) < 140, `The camera did not follow the car (offset ${offset.map(Math.round)})`);
   await customerPage.screenshot({ path: join(output, 'customer-live-map.png'), fullPage: true });
   await driverPage.screenshot({ path: join(output, 'driver-assigned.png'), fullPage: true });
   pass('driver accepts, real MapLibre renders pickup/dropoff/driver, GPS reaches customer');

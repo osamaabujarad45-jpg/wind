@@ -67,12 +67,23 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const extension = extname(file).toLowerCase();
   const contentType = webContentTypes[extension] ?? 'application/octet-stream';
   const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
+  const modified = statSync(file).mtime;
+  const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
+    ? 'no-cache' : 'public, max-age=604800, immutable';
+  // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
+  const since = req.headers['if-modified-since'];
+  if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
+    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
+    return true;
+  }
   res.writeHead(200, {
     'Content-Type': contentType,
     // map.html (the Android WebView map) runs an inline module, so it keeps the frame/sniff headers only.
     ...(extension === '.html' && file !== resolve(webRoot, 'map.html') && { 'Content-Security-Policy': webCsp }),
-    'Cache-Control': extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js') ? 'no-cache' : 'public, max-age=604800, immutable',
-    ...(useBrotli ? { 'Content-Encoding': 'br', Vary: 'Accept-Encoding' } : {}),
+    'Cache-Control': cacheControl,
+    'Last-Modified': modified.toUTCString(),
+    'Vary': 'Accept-Encoding', // always: a shared cache must not hand a brotli body to a client that cannot read it
+    ...(useBrotli ? { 'Content-Encoding': 'br' } : {}),
   });
   if (useBrotli) compressed(file).then(body => res.end(body), () => res.destroy());
   else createReadStream(file).on('error', () => res.destroy()).pipe(res);
@@ -88,11 +99,14 @@ const compressible = (type: string) => /^(text\/|application\/(javascript|json|m
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
 const brotliCache = new Map<string, Promise<Buffer>>();
 const compressed = (file: string) => {
-  let body = brotliCache.get(file);
+  // Keyed by mtime as well: an edited file must not be served from the body cached for the previous one.
+  const key = `${file}:${statSync(file).mtimeMs}`;
+  let body = brotliCache.get(key);
   if (!body) {
     body = promisify(brotliCompress)(readFileSync(file));
-    body.catch(() => brotliCache.delete(file));
-    brotliCache.set(file, body);
+    body.catch(() => brotliCache.delete(key));
+    brotliCache.set(key, body);
+    if (brotliCache.size > 64) brotliCache.delete(brotliCache.keys().next().value!);
   }
   return body;
 };
@@ -106,7 +120,9 @@ if (webRoot && production) setImmediate(() => { // warm so the first visitor aft
 });
 
 export const db = new DatabaseSync(process.env.DB_PATH ?? 'wind.db');
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
+// A write that cannot take the lock waits a quarter of a second, then fails with a retryable 503. A long wait would
+// block the event loop (one connection, synchronous SQLite) and freeze every other request behind it.
+db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 250;');
 if (Number(db.prepare('PRAGMA user_version').get()!.user_version) > 3) throw new Error('Database schema is newer than this API');
 if (db.prepare('PRAGMA quick_check').get()!.quick_check !== 'ok') throw new Error('Database integrity check failed');
 db.exec('BEGIN IMMEDIATE');
@@ -235,9 +251,11 @@ for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'
 if ((db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'rating'))
   db.exec(`CREATE INDEX IF NOT EXISTS orders_driver_stats ON orders(driver_id, status, rating, price_rating);
     CREATE INDEX IF NOT EXISTS orders_customer_stats ON orders(customer_id, status, customer_rating);`);
-for (const column of ['heading', 'accuracy']) {
+// good_lat/good_lng/good_at/good_acc keep the last *plausible* fix: the yardstick a new fix is measured against.
+// A wild fix may be shown once, but it must not become the reference (that froze the marker kilometres away).
+for (const [column, type] of [['heading', 'REAL'], ['accuracy', 'REAL'], ['good_lat', 'REAL'], ['good_lng', 'REAL'], ['good_at', 'INTEGER'], ['good_acc', 'REAL']]) {
   if (!(db.prepare('PRAGMA table_info(driver_locations)').all() as Row[]).some(r => r.name === column))
-    db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} REAL`);
+    db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} ${type}`);
 }
 for (const column of ['lat', 'lng']) { // checkpoint position for routing (SPEC-checkpoint-routing.md)
   if (!(db.prepare('PRAGMA table_info(checkpoints)').all() as Row[]).some(r => r.name === column))
@@ -509,7 +527,7 @@ route('GET', '/api/ready', () => {
     one('SELECT COUNT(*) n FROM sqlite_schema');
     db.exec('PRAGMA busy_timeout = 50; BEGIN IMMEDIATE; ROLLBACK;');
   } catch { fail(503, 'unavailable'); }
-  finally { db.exec('PRAGMA busy_timeout = 5000'); }
+  finally { db.exec('PRAGMA busy_timeout = 250'); }
   return { ok: true, schema: 3 };
 }, true);
 
@@ -1216,13 +1234,17 @@ route('GET', '/api/orders', ({ user, query }) => {
 
 route('GET', '/api/orders/:id', ({ user, params }) => getOrder(Number(params[0]), user));
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
-route('GET', '/api/orders/:id/live', ({ params, query, req }) =>
-  liveFix(() => {
+route('GET', '/api/orders/:id/live', ({ user, params, query, req }) => {
+  let limited = false;
+  return liveFix(() => {
     // A held request must not retain a session revoked while waiting for the next fix.
     const viewer = authenticate(req) ?? fail(401, 'unauthorized');
     const o = getOrder(Number(params[0]), viewer);
-    return { driverId: o.driverId, fix: o.driverLocation ?? null };
-  }, query, req));
+    // Counted after the lookup: a stranger polling must not write to the database.
+    if (!limited) { limit(identityKey('order-live', user.id), 2400, 10 * 60_000); limited = true; }
+    return { orderId: o.id, driverId: o.driverId, driverKey: o.driverId == null ? null : String(o.driverId), fix: o.driverLocation ?? null };
+  }, query, req);
+});
 
 route('POST', '/api/orders/:id/cancel', ({ user, params }) => {
   const order = getOrder(Number(params[0]), user);
@@ -1287,14 +1309,21 @@ route('POST', '/api/orders/:id/share/revoke', ({ user, params }) => {
   return { ok: true };
 });
 route('GET', '/api/track/([a-f0-9]{64})', ({ params }) => trackView(params[0]!).view, true);
-route('GET', '/api/track/([a-f0-9]{64})/live', ({ params, query, req }) =>
-  liveFix(() => { const t = trackView(params[0]!); return { driverId: t.driverId, fix: t.view.driverLocation }; }, query, req), true);
+route('GET', '/api/track/([a-f0-9]{64})/live', ({ params, query, req }) => {
+  let limited = false;
+  return liveFix(() => {
+    const t = trackView(params[0]!); // 404 for a made-up token: it leaves no row behind
+    // Counted after the lookup, so an unauthenticated flood cannot write to the database.
+    if (!limited) { limit(identityKey('track-live', sha(params[0]!)), 3600, 10 * 60_000); limited = true; }
+    return { orderId: t.orderId, driverId: t.driverId, driverKey: t.view.driver?.ref ?? null, fix: t.view.driverLocation };
+  }, query, req);
+}, true);
 function trackView(token: string) {
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(token)) ?? fail(404, 'not_found');
   const open = r.status === 'searching' || activeStatuses.includes(r.status);
   if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
   const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
-  return { driverId: r.driver_id as number | null, view: {
+  return { orderId: r.id, driverId: r.driver_id as number | null, view: {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at,
     driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
@@ -1439,9 +1468,12 @@ route('POST', '/api/orders/:id/messages', ({ user, params, body }) => {
 
 // Road status (SPEC-road-status.md): admin-managed checkpoints, crowd reports from drivers, fresh for two hours.
 const ROAD_FRESH = 2 * 3_600_000;
-function roads() {
+type RoadRow = { id: number; name: string; cities: CityId[]; point: Point | null; status: 'open' | 'slow' | 'closed' | null; note: string; reportedAt: number | null; agreeing: number };
+// No cache: a report must show up in the next read. One request that needs it several times reads it once and passes
+// the answer on (the ETA route needs the checkpoints three times).
+function roads(): RoadRow[] {
   const since = Date.now() - ROAD_FRESH;
-  return all('SELECT id, name, cities, lat, lng FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
+  const rows = all('SELECT id, name, cities, lat, lng FROM checkpoints WHERE active = 1 ORDER BY name, id').map(c => {
     // Blocked (and deleted) accounts stop counting; each person counts once however often they report.
     const recent = `FROM checkpoint_reports r JOIN users u ON u.id = r.reporter_id WHERE r.checkpoint_id = ? AND r.created_at > ? AND u.status <> 'blocked'`;
     const latest = one(`SELECT r.status, r.note, r.created_at ${recent} ORDER BY r.created_at DESC, r.id DESC LIMIT 1`, c.id, since);
@@ -1449,6 +1481,7 @@ function roads() {
     return { id: c.id, name: c.name, cities: JSON.parse(c.cities), point: c.lat == null ? null : { latitude: c.lat, longitude: c.lng },
       status: latest?.status ?? null, note: latest?.note ?? '', reportedAt: latest?.created_at ?? null, agreeing };
   });
+  return rows;
 }
 route('GET', '/api/roads', () => roads());
 route('POST', '/api/roads/:id/report', ({ user, params, body }) => {
@@ -1737,20 +1770,42 @@ route('POST', '/api/location', ({ user, body }) => {
   // A late upload must not move the driver backward or show a fix from before this job on it.
   // Still 2xx: a background task stops on 409, and newer fixes keep coming.
   if (age > 60_000 || fixAt < Number(since)) return { ok: true, accepted: false };
-  // A jump no vehicle can make (over 70 m/s, ~250 km/h, beyond both fixes' error) from a fix at least as precise is a
-  // GPS outlier (urban multipath, a network fix): keep the last good one. A more precise fix always wins.
-  const last = one('SELECT lat, lng, updated_at, accuracy FROM driver_locations WHERE driver_id = ?', user.id);
-  if (last && fixAt > last.updated_at && (accuracy ?? 50) >= (last.accuracy ?? 50)) {
-    const metres = crowKm({ latitude: last.lat, longitude: last.lng }, { latitude: lat, longitude: lng }) * 1000
-      - (accuracy ?? 50) - (last.accuracy ?? 50);
-    if (metres / Math.max(1, (fixAt - last.updated_at) / 1000) > 70) return { ok: true, accepted: false };
-  }
-  const written = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy
+  // A jump no vehicle can make (over 70 m/s, ~250 km/h, beyond both fixes' error) is a GPS outlier (urban multipath,
+  // a network fix): keep the last good one. A more precise fix always wins.
+  // Two yardsticks: the last *plausible* fix (good_*), which the reference follows, and the last displayed fix, which
+  // catches the next real fix after a wild one won on accuracy (that froze the marker kilometres away for minutes).
+  const last = one('SELECT lat, lng, updated_at, accuracy, good_lat, good_lng, good_at, good_acc FROM driver_locations WHERE driver_id = ?', user.id);
+  const plausible = (ref: { lat: number; lng: number; at: number; accuracy: number | null } | null) => {
+    if (!ref || fixAt <= ref.at) return false;
+    const metres = crowKm({ latitude: ref.lat, longitude: ref.lng }, { latitude: lat, longitude: lng }) * 1000
+      - (accuracy ?? 50) - (ref.accuracy ?? 50);
+    return metres / Math.max(1, (fixAt - ref.at) / 1000) <= 70;
+  };
+  const reference = last ? (last.good_at != null
+    ? { lat: last.good_lat, lng: last.good_lng, at: last.good_at, accuracy: last.good_acc }
+    : { lat: last.lat, lng: last.lng, at: last.updated_at, accuracy: last.accuracy }) : null;
+  const displayed = last ? { lat: last.lat, lng: last.lng, at: last.updated_at, accuracy: last.accuracy } : null;
+  const outcome = !last ? 'ok'
+    : plausible(reference) ? 'ok' // plausible: the reference moves on
+    : plausible(displayed) ? 'bypass' // next to the fix on screen: real movement, not a new outlier
+    : (accuracy ?? 50) < (reference?.accuracy ?? 50) ? 'bypass' // a more precise fix always wins
+    : 'reject';
+  if (outcome === 'reject') return { ok: true, accepted: false };
+  // Only a plausible fix becomes the reference; a wild one may be shown, but it never becomes the yardstick.
+  const keep = outcome === 'ok' ? { lat, lng, at: fixAt, acc: accuracy } : { lat: null, lng: null, at: null, acc: null };
+  const written = run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy, good_lat, good_lng, good_at, good_acc)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy,
+      good_lat = COALESCE(excluded.good_lat, driver_locations.good_lat), good_lng = COALESCE(excluded.good_lng, driver_locations.good_lng),
+      good_at = COALESCE(excluded.good_at, driver_locations.good_at), good_acc = COALESCE(excluded.good_acc, driver_locations.good_acc)
     WHERE excluded.updated_at > driver_locations.updated_at`,
-  user.id, lat, lng, fixAt, heading, accuracy);
+  user.id, lat, lng, fixAt, heading, accuracy, keep.lat, keep.lng, keep.at, keep.acc);
   const accepted = Number(written.changes) > 0;
-  if (accepted) fixWaiters.get(user.id)?.forEach(wake => wake());
+  if (accepted) {
+    // The watchers wait on the order, not on the driver: a reassignment wakes the same people.
+    for (const o of all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id) as { id: number }[])
+      fixWaiters.get(o.id)?.forEach(wake => wake());
+  }
   return { ok: true, accepted };
 });
 
@@ -1758,33 +1813,43 @@ route('POST', '/api/location', ({ user, body }) => {
 // request waits here and returns as soon as the driver's next fix is stored, so the marker moves within network
 // latency of the upload instead of up to a poll interval later. Held under the clients' 20 s request timeout.
 // ponytail: in-process waiters, one API process; several instances need shared pub/sub (e.g. Redis) here.
-const LIVE_HOLD = 12_000, LIVE_WATCHERS = 20; // per driver: a family on one link, not a socket flood
-const fixWaiters = new Map<number, Set<() => void>>();
-async function liveFix(read: () => { driverId: number | null; fix: { updatedAt: number } | null }, query: URLSearchParams, req: IncomingMessage) {
+const LIVE_HOLD = 12_000, LIVE_WATCHERS = 20, LIVE_TOTAL = 200; // per order, and in total: a link must not pin sockets
+const fixWaiters = new Map<number, Set<() => void>>(); // keyed by order id: a reassignment wakes the same watchers
+let liveTotal = 0;
+type LiveRead = { orderId: number; driverId: number | null; driverKey: string | null; fix: { updatedAt: number } | null };
+async function liveFix(read: () => LiveRead, query: URLSearchParams, req: IncomingMessage) {
   const since = Number(query.get('since')) || 0;
+  const want = query.get('driver'); // the driver the client already shows: a fix from another car is never returned
   const now = read();
-  if (!now.driverId || (now.fix && now.fix.updatedAt > since)) return { driverLocation: now.fix };
-  const driverId = now.driverId;
-  if ((fixWaiters.get(driverId)?.size ?? 0) >= LIVE_WATCHERS) return { driverLocation: now.fix }; // answer, don't hold
+  if (!now.driverId) return { driverLocation: null, driverKey: null };
+  if (want != null && want !== now.driverKey) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
+  if (now.fix && now.fix.updatedAt > since) return { driverLocation: now.fix, driverKey: now.driverKey };
+  const watchers = fixWaiters.get(now.orderId);
+  if ((watchers?.size ?? 0) >= LIVE_WATCHERS || liveTotal >= LIVE_TOTAL) return { driverLocation: now.fix, driverKey: now.driverKey };
   await new Promise<void>(done => {
-    const set = fixWaiters.get(driverId) ?? new Set();
-    fixWaiters.set(driverId, set);
+    const set = fixWaiters.get(now.orderId) ?? new Set();
+    fixWaiters.set(now.orderId, set);
+    liveTotal++;
     const finish = () => {
-      clearTimeout(timer); set.delete(finish); req.socket.off('close', finish);
-      if (!set.size && fixWaiters.get(driverId) === set) fixWaiters.delete(driverId);
+      clearTimeout(timer); set.delete(finish); req.socket.off('close', finish); liveTotal--;
+      if (!set.size && fixWaiters.get(now.orderId) === set) fixWaiters.delete(now.orderId);
       done();
     };
     const timer = setTimeout(finish, LIVE_HOLD);
     set.add(finish); req.socket.once('close', finish); // a watcher that left frees its slot at once
   });
-  return { driverLocation: read().fix }; // re-read: access, status and freshness are checked again
+  // Re-read: access, status, freshness and the assigned driver are checked again before any coordinate goes out.
+  const after = read();
+  return { driverLocation: after.fix, driverKey: after.driverKey, ...(want != null && want !== after.driverKey ? { driverChanged: true } : {}) };
 }
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
 type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
-const roadCache = new Map<string, Promise<RoadRoute>>(); // least recently used evicted at 2000 entries
+const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
+let roadCachePoints = 0;
+const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-geometry routes would be ~500 MB
 // Calibrated on Route 60 (2026-10-05): at 150 m a road 234 m away counted as clear yet may be the same junction; 250 m
 // forced 94-minute detours where a 72-minute parallel road exists. Tune both with real checkpoint positions.
 const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpoint is taken to pass through it
@@ -1793,9 +1858,16 @@ const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking check
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
   const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
     { signal: AbortSignal.timeout(3000) });
+  if (!res.ok) fail(503, 'route_unavailable');
   const j: any = await res.json();
-  if (j?.code !== 'Ok' || !Array.isArray(j.routes)) return [];
-  return j.routes.filter((r: any) => Array.isArray(r.geometry?.coordinates))
+  if (j?.code === 'NoRoute') return [];
+  // An upstream error must not become a cached success containing null metrics or a line MapLibre cannot draw.
+  const valid = (r: any) => typeof r?.distance === 'number' && Number.isFinite(r.distance) && r.distance >= 0
+    && typeof r.duration === 'number' && Number.isFinite(r.duration) && r.duration >= 0
+    && Array.isArray(r.geometry?.coordinates) && r.geometry.coordinates.length >= 2
+    && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
+  if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
+  return j.routes
     .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
 }
 
@@ -1803,9 +1875,10 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
 // checkpoint drivers report closed — then the fastest alternative or forced detour that stays clear of every closed one.
 // A known driver heading is a bearing hint so the route starts the way the car moves. Full geometry: simplified lines
 // cut corners through buildings at street zoom.
-function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<RoadRoute> {
+// The closed checkpoints a route must go around; one request reads the road state once and passes it on.
+const closedCheckpoints = (state: RoadRow[]) => state.filter(r => r.status === 'closed' && r.point) as { id: number; name: string; point: Point }[];
+function roadRoute(a: Point, b: Point, heading: number | null = null, closed = closedCheckpoints(roads())): Promise<RoadRoute> {
   if (!osrmUrl) fail(503, 'route_unavailable');
-  const closed = roads().filter(r => r.status === 'closed' && r.point) as { id: number; name: string; point: Point }[];
   // ~10 m rounding: nearby fixes share one request and one cached answer.
   const round = (p: Point) => ({ latitude: Math.round(p.latitude * 1e4) / 1e4, longitude: Math.round(p.longitude * 1e4) / 1e4 });
   a = round(a); b = round(b);
@@ -1816,7 +1889,7 @@ function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<R
   let found = roadCache.get(key);
   if (found) { roadCache.delete(key); roadCache.set(key, found); } // recently used stays: the trip line outlives driver churn
   else {
-    found = (async () => {
+    const promise = (async () => {
       const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
       if (!routes.length) throw new HttpError(404, 'no_route');
       const crossed = (r: OsrmRoute) => closed.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
@@ -1843,10 +1916,20 @@ function roadRoute(a: Point, b: Point, heading: number | null = null): Promise<R
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name),
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    found = { promise, points: 0 };
     roadCache.set(key, found);
-    if (roadCache.size > 2000) roadCache.delete(roadCache.keys().next().value!);
+    found.promise.then(route => { // the geometry is only known once OSRM answered: count it, then trim the cache
+      found!.points = route.line.length;
+      roadCachePoints += route.line.length;
+      for (const [old, cached] of roadCache) {
+        if (roadCachePoints <= ROAD_CACHE_POINTS) break;
+        if (old === key) continue;
+        roadCachePoints -= cached.points;
+        roadCache.delete(old);
+      }
+    }, () => undefined);
   }
-  return found;
+  return found.promise;
 }
 const queryPoint = (value: string | null) => {
   const [lat, lng] = (value ?? '').split(',').map(Number);
@@ -1865,18 +1948,23 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', ({ params }) => {
   const r = one(`${orderSelect} WHERE o.share_token_hash = ?`, hash) ?? fail(404, 'not_found');
   limit(identityKey('track-eta', hash), 300, 10 * 60_000); // after the lookup (a made-up token leaves no row); a family may watch one link
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
+  // The age of the fix the estimate starts from: a two-minute-old position is not a two-minute-old answer.
+  const fixAgeSeconds = Math.max(0, Math.round((Date.now() - r.loc_at) / 1000));
+  // The road state is read once for this request: three routes and the delay flag all use it.
+  const roadState = roads(), closed = closedCheckpoints(roadState);
   // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).
-  if (r.shared_run) return Promise.resolve().then(() => roadRoute(city(r.pickup_city), city(r.dropoff_city)))
-    .then(t => t.line, () => null).then(road => ({ minutes: null, sharedRun: true, road }));
+  if (r.shared_run) return Promise.resolve().then(() => roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed))
+    .then(t => t.line, () => null).then(road => ({ minutes: null, sharedRun: true, road, fixAgeSeconds }));
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
   // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
-  const delayed = roadAlerts(roads(), r.pickup_city, r.dropoff_city).length > 0;
+  const delayed = roadAlerts(roadState, r.pickup_city, r.dropoff_city).length > 0;
   // Road lines between city centres and from the (already shown) driver fix: nothing beyond what the page already reveals.
-  const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city)).then(t => t.line, () => null);
+  const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
   // A fix off any road (or OSRM down) gives no minutes, not an error: the page still shows the car and the trip line.
-  const leg = Promise.resolve().then(() => roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null)).catch(() => null);
+  const leg = Promise.resolve().then(() => roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null, closed)).catch(() => null);
   return Promise.all([leg, trip])
-    .then(([leg, line]) => leg ? { minutes: leg.minutes, delayed, approach: leg.line, road: line } : { minutes: null, delayed, road: line });
+    .then(([leg, line]) => leg ? { minutes: leg.minutes, delayed, approach: leg.line, road: line, fixAgeSeconds }
+      : { minutes: null, delayed, road: line, fixAgeSeconds });
 }, true);
 
 route('GET', '/api/driver/earnings', ({ user }) => {
@@ -2259,6 +2347,7 @@ server.requestTimeout = 30_000;
 server.headersTimeout = 10_000;
 server.keepAliveTimeout = 5_000;
 server.maxHeadersCount = 50;
+server.maxConnections = 2_000; // a held live request is a socket: a cap keeps one client from taking the API down
 
 export async function shutdown() {
   if (draining) return;

@@ -10,13 +10,16 @@ One Expo app serves three roles, chosen by the account that signs in:
 
 The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
 
-## Current workspace verification — 21 October 2026
+## Current workspace verification — 22 October 2026
 
 The workspace targets Android 1.0.13 / code 14 and Expo SDK 57; that signed build is
 installed on the connected A53 and was tested there, including native background
 tracking against this branch's API. The API changes have not been deployed. Email
-codes (Cloudflare Email Service) need a sending domain first. See
-[the QA report](docs/QA-2026-10-21.md) for device evidence, fixes and what remains.
+codes (Cloudflare Email Service) need a sending domain first. The live-tracking
+pass of 22 October (plausible GPS yardstick, driver identity in the live push,
+follow-camera on every platform, background polling pauses) is recorded in
+[the QA report](docs/QA-2026-10-21.md) and the
+[readiness workflow](docs/QA-WORKFLOW-2026-10-21.md).
 
 ## Release reference — 4 October 2026 (historical)
 
@@ -60,6 +63,8 @@ npm run lint
 npm test                            # model + full API flow against a temp database
 npm run test:scenarios               # build web, then real browser role journeys + map checks
 npm run test:location                # customer GPS edge cases; reuses that web export
+npm run test:readiness               # tariff, promos, places, roads, offers, safety, disputes, accounts
+npm run test:load                    # bounded local load test: throughput, throttles, live push, writer lock
 npx expo-doctor
 ```
 
@@ -121,7 +126,7 @@ docker run -d -p 127.0.0.1:4000:4000 -v wind-data:/data \
 | `CLOUDFLARE_ACCOUNT_ID` | unset | Cloudflare account that owns that domain |
 | `CLOUDFLARE_EMAIL_TOKEN` | unset | Server-only API token with **Email Sending: Edit**; never in mobile build variables |
 
-For an approved operator, `WIND_ENABLED_SERVICES=parcel,ride,freight` exposes all three services. New bookings use `shared:false`; pooling is disabled and a driver may hold only one active job. Existing assigned trips can finish if their service is later disabled.
+For an approved operator, `WIND_ENABLED_SERVICES=parcel,ride,freight` exposes all three services. New bookings use `shared:false`; pooling is disabled and a ride or freight load is exclusive, while a courier may carry several parcels. Existing assigned trips can finish if their service is later disabled.
 
 Production refuses a relative/missing database path, missing support contact, or missing identity gate. The image runs as uid/gid 1000 (`node`); named volumes inherit `/data` ownership. A pre-existing bind mount must be writable by uid/gid 1000. Keep the API behind HTTPS, with no publicly reachable plaintext port. SQLite requires local storage on one host; do not share its WAL directory across hosts or run several writers.
 
@@ -150,7 +155,7 @@ with `node server/main.ts verify-phone <phone> --phone-verified` before its old
 sessions or login work in production. `promote` also refuses an unverified
 production account. No demo users are created by startup.
 
-`/api/health` checks process liveness; `/api/ready` checks readable schema, writable database/directory and a bounded SQLite writer reservation. Startup uses WAL, foreign keys, full synchronous commits, a five-second busy wait, atomic schema initialization and `user_version=1`. SQL write contention returns retryable 503. SIGTERM/SIGINT stop admission, drain requests for up to ten seconds, then close connections and the database. Use a stop grace period longer than ten seconds.
+`/api/health` checks process liveness; `/api/ready` checks readable schema, writable database/directory and a bounded SQLite writer reservation. Startup uses WAL, foreign keys, full synchronous commits, a quarter-second busy wait (a contended write answers with a retryable 503 instead of blocking every other request), atomic schema initialization and `user_version=1`. SQL write contention returns retryable 503. SIGTERM/SIGINT stop admission, drain requests for up to ten seconds, then close connections and the database. Use a stop grace period longer than ten seconds.
 
 Order advances require `requestId` (UUID) and `expectedStatus`; retries preserve the original code and request identity. A replay acknowledges the action with current server state; a new stale command is rejected. Wrong-proof retries under one identity count once. The current database schema is `user_version=3`. Upgrade clients before routing real users to this API.
 

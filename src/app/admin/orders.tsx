@@ -13,12 +13,13 @@ type DisputeRow = { id: number; orderId: number; reason: string; status: 'open' 
 export default function AdminOrders() {
   const { c, err } = useCopy();
   const { filter } = useLocalSearchParams<{ filter?: string }>();
-  const [status, setStatus] = useState<Filter>(filter === 'safety' ? 'safety' : 'all');
+  // Tabs stay mounted: use the current URL so dashboard alerts still select Safety on later visits.
+  const status: Filter = filters.includes(filter as Filter) ? filter as Filter : 'all';
   const { data, error, reload, more } = useOrders(status === 'disputes' || status === 'safety' ? null : status === 'all' ? '/orders' : `/orders?status=${status}`, 15_000);
   return <Screen onRefresh={reload}>
     <Header title={c.allOrders} />
     {/* FilterChips is its own Rail; a ScrollView around it kept the Rail from scrolling, so Arabic opened on the list's far end with 'all' hidden */}
-    <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={setStatus} />
+    <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={filter => router.setParams({ filter })} />
     {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0

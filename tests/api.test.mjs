@@ -33,7 +33,8 @@ async function call(path, { token, partnerKey, body, expect = 200 } = {}) {
 }
 
 try {
-  assert.equal(db.prepare('PRAGMA busy_timeout').get().timeout, 5000);
+  // A contended write waits a quarter of a second, then fails retryably: a long wait would freeze every other request.
+  assert.equal(db.prepare('PRAGMA busy_timeout').get().timeout, 250);
   assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 2);
   assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
   assert.equal((await call('/ready')).ok, true);

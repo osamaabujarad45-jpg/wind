@@ -1,3 +1,13 @@
+# Third pass — 22 October 2026
+
+- [x] Live tracking reviewed against Uber behaviour: GPS yardstick, live driver identity, rate limits and socket
+      budget, follow camera on web/Android/iOS, stale handling, background polling pause, writer-lock stall.
+- [x] 42 test files, lint, typecheck, 21/21 Expo Doctor, 15 browser groups, 9 readiness groups, customer-location
+      group and the local load test pass on the new code; the load script is now a documented command.
+- [x] Leftovers closed: profile password length (12-100), the dead shared-discount control, 23 untranslated API
+      refusals, the orphaned load script, the hardcoded phone serial, stale claims in README/SYSTEM/CAPABILITY-MAP.
+- [x] Everything committed on `master`; the release archive must be rebuilt from the new commit before a deploy.
+
 # Second pass — 21 October 2026
 
 - [x] Recover the completed 1.0.13 checkout; preserve earlier workspace edits; push the held-live-session privacy fix.

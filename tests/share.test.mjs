@@ -69,6 +69,14 @@ try {
   assert.equal((await call(`/track/${second.token}`)).driver.ref, ref); // stable while the driver stays
   assert.deepEqual(Object.keys(live.driverLocation).sort(), ['heading', 'latitude', 'longitude', 'updatedAt']);
   assert.equal(live.driverLocation.latitude, 32);
+  // The public live push answers with the same fix and names the driver it belongs to (an opaque ref per link).
+  const pushed = await call(`/track/${second.token}/live?since=0&driver=${ref}`);
+  assert.equal(pushed.driverKey, ref);
+  assert.equal(pushed.driverLocation.latitude, 32);
+  // A fix for another driver is never returned: a reassignment cannot show the previous driver's position.
+  const switched = await call(`/track/${second.token}/live?since=0&driver=000000000000`);
+  assert.equal(switched.driverLocation, null);
+  assert.equal(switched.driverChanged, true);
   // Check the explicit public contract rather than matching numeric substrings in a timestamp.
   // For example, a legitimate `updatedAt` can happen to contain the price "49".
   assert.equal('price' in live, false);
