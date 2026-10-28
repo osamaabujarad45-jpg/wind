@@ -32,6 +32,14 @@ param osrmCpu int = 2
 param osrmMemory string = '4Gi'
 param osrmGraphStorageGb int = 100
 param logRetentionDays int = 30
+@description('Entra External ID tenant name/GUID and app (client) ID; public identifiers, empty keeps Entra dark.')
+param entraTenantId string = ''
+param entraClientId string = ''
+@description('ACS sender (phone number or alphanumeric ID) used when enableAcs is true.')
+param acsSender string = ''
+@secure()
+@description('ACS access key; prefer a Key Vault reference in reviewed deployments.')
+param acsAccessKey string = ''
 @description('Provision Azure Communication Services (SMS + Email) for OTP delivery bake-off; Entra tenant itself is portal-created.')
 param enableAcs bool = false
 param acsDataLocation string = 'Europe'
@@ -296,7 +304,16 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
     memory: '1Gi'
     ingressEnabled: true
     ingressPort: 4000
-    environmentVariables: [{ name: 'HOST', value: '0.0.0.0' }, { name: 'PORT', value: '4000' }]
+    // Empty values are inert: every consumer gates on a non-empty setting.
+    environmentVariables: [
+      { name: 'HOST', value: '0.0.0.0' }
+      { name: 'PORT', value: '4000' }
+      { name: 'WIND_ENTRA_TENANT_ID', value: entraTenantId }
+      { name: 'WIND_ENTRA_CLIENT_ID', value: entraClientId }
+      { name: 'WIND_ACS_ENDPOINT', value: enableAcs ? 'https://${comm.properties.hostName}' : '' }
+      { name: 'WIND_ACS_SENDER', value: acsSender }
+      { name: 'WIND_ACS_KEY', value: acsAccessKey }
+    ]
     minReplicas: 1
     maxReplicas: 1
     probes: [
@@ -356,7 +373,8 @@ resource emailDomain 'Microsoft.Communication/emailServices/domains@2023-04-01' 
   name: 'AzureManagedDomain'
   location: 'global'
   properties: { domainManagement: 'AzureManaged', userEngagementTracking: 'Disabled' }
-}resource budget 'Microsoft.Consumption/budgets@2023-05-01' = {
+}
+resource budget 'Microsoft.Consumption/budgets@2023-05-01' = {
   name: '${prefix}-${environment}-monthly-budget'
   properties: {
     category: 'Cost'
