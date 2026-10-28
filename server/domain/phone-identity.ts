@@ -2,7 +2,7 @@ import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from '
 import type { IncomingMessage } from 'node:http';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { parsePhoneNumber, type PhoneNumber } from './phone-number.ts';
-import { OoredooCommunication, phoneConfig, type PhoneConfig } from './phone-provider.ts';
+import { AcsCommunication, OoredooCommunication, phoneConfig, type PhoneConfig } from './phone-provider.ts';
 
 type Actor={id:number;role:string;status:string};
 type Context={user:Actor|null;body:Row;req:IncomingMessage;query:URLSearchParams};
@@ -27,12 +27,12 @@ export async function phoneSchemaAvailable(db:Persistence) {
 }
 
 export class PhoneIdentity {
-  db:Persistence;fail:Fail;config:PhoneConfig;provider:OoredooCommunication;
+  db:Persistence;fail:Fail;config:PhoneConfig;provider:OoredooCommunication|AcsCommunication;
   private jobs=new Set<Promise<unknown>>();
   private passwordHash:(password:unknown)=>string;
   private passwordCheck:(password:string,stored:string)=>boolean;
   constructor(db:Persistence,fail:Fail,passwordHash:(password:unknown)=>string,passwordCheck:(password:string,stored:string)=>boolean) {
-    this.db=db;this.fail=fail;this.config=phoneConfig();this.provider=new OoredooCommunication(this.config);
+    this.db=db;this.fail=fail;this.config=phoneConfig();this.provider=this.config.provider==='acs'?new AcsCommunication(this.config):new OoredooCommunication(this.config);
     this.passwordHash=passwordHash;this.passwordCheck=passwordCheck;
   }
   fields(body:Row,allowed:string[]) {if (!body || Array.isArray(body) || Object.keys(body).some(k=>!allowed.includes(k)))this.fail(400,'invalid_input');}
@@ -46,7 +46,7 @@ export class PhoneIdentity {
   private device(value:unknown) {return digest(`wp06-device:${this.id(value)}`);}
   private ip(req:IncomingMessage) {const forwarded=req.headers['x-real-ip'];return this.hmac(['ip',process.env.WIND_TRUST_PROXY==='1' && typeof forwarded==='string'?forwarded:req.socket.remoteAddress??'unknown']);}
   async capabilities() {const available=await phoneSchemaAvailable(this.db);return {available,enabled:available && this.config.enabled,
-    provider:available && this.config.enabled?'ooredoo_communication':null,sendAcceptance:available && this.config.enabled,deliveryReceipts:false,deliveryQuery:false,providerTransactionIdempotency:false,
+    provider:available && this.config.enabled?this.config.provider:null,sendAcceptance:available && this.config.enabled,deliveryReceipts:false,deliveryQuery:false,providerTransactionIdempotency:false,
     policy:phonePolicy,supportedContext:'PS',supportedMobilePrefixes:['56','59'],legacyLoginPreserved:true};}
   async available(requireProvider=true) {
     if(!await phoneSchemaAvailable(this.db))this.fail(409,'phone_protocol_unavailable');
