@@ -41,10 +41,10 @@ try {
   // Registering can't make an admin; only the server-side promote command can.
   const admin = await call('/auth/register', { body: { phone: '0599000001', name: 'Admin', password: 'secret1', role: 'admin' } });
   assert.equal(admin.user.role, 'customer');
-  promote('0599000001');
+  await promote('0599000001');
   assert.equal((await call('/me', { token: admin.token })).user.role, 'admin');
   assert.deepEqual((await call('/me', { token: admin.token })).capabilities, { enabledServices: ['parcel'], pooling: false, emailVerification: false });
-  assert.throws(() => promote('0599999999'));
+  await assert.rejects(() => promote('0599999999'));
   const customer = await call('/auth/register', { body: { phone: '+970 59 900 0002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0569000003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const motorcycle = await call('/auth/register', { body: { phone: '0599000006', name: 'Mona', password: 'secret1', role: 'driver', vehicle: 'motorcycle' } });

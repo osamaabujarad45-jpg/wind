@@ -17,7 +17,7 @@ const call = apiCaller(() => base);
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599700001', name: 'Admin', password: 'secret1' } });
-  promote('0599700001');
+  await promote('0599700001');
   const shop = await call('/auth/register', { body: { phone: '0599700002', name: 'Shop', password: 'secret1' } });
   const driver = async phone => {
     const d = await call('/auth/register', { body: { phone, name: `Driver ${phone}`, password: 'secret1', role: 'driver', vehicle: 'car' } });

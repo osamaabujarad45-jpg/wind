@@ -1,0 +1,1280 @@
+{
+  "formatVersion": 1,
+  "scope": "All registered /api routes. Each has an executed frozen anonymous/public boundary fixture; behaviorSuites identify existing functional evidence, not a claim that every success combination is serialized.",
+  "errorEnvelope": {
+    "error": "stable lowercase code"
+  },
+  "nonApiSurfaces": [
+    {
+      "method": "OPTIONS",
+      "path": "*",
+      "status": 204
+    },
+    {
+      "method": "GET",
+      "path": "/privacy | /terms | /account-deletion",
+      "status": 200,
+      "body": "HTML, configured contact only"
+    },
+    {
+      "method": "GET",
+      "path": "WEB_ROOT assets and extension-free SPA routes",
+      "body": "conditional static/SPA fallback; distinct from /api/track JSON"
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "E001",
+      "method": "GET",
+      "path": "/api/health",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 521,
+      "anonymousStatus": 200,
+      "boundaryFixture": "boundary:GET:/api/health",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E002",
+      "method": "GET",
+      "path": "/api/auth/options",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 522,
+      "anonymousStatus": 200,
+      "boundaryFixture": "boundary:GET:/api/auth/options",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E003",
+      "method": "GET",
+      "path": "/api/ready",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 523,
+      "anonymousStatus": 200,
+      "boundaryFixture": "boundary:GET:/api/ready",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E004",
+      "method": "POST",
+      "path": "/api/auth/register",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 534,
+      "anonymousStatus": 400,
+      "boundaryFixture": "boundary:POST:/api/auth/register",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E005",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 562,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/auth/login",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E006",
+      "method": "POST",
+      "path": "/api/me/email/code",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 659,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/email/code",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E007",
+      "method": "POST",
+      "path": "/api/me/email",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 665,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/email",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E008",
+      "method": "POST",
+      "path": "/api/me/email/verify",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 674,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/email/verify",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E009",
+      "method": "POST",
+      "path": "/api/auth/reset/code",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 690,
+      "anonymousStatus": 503,
+      "boundaryFixture": "boundary:POST:/api/auth/reset/code",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E010",
+      "method": "POST",
+      "path": "/api/auth/reset",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 697,
+      "anonymousStatus": 400,
+      "boundaryFixture": "boundary:POST:/api/auth/reset",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E011",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 713,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/auth/logout",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E012",
+      "method": "GET",
+      "path": "/api/me",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 718,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/me",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E013",
+      "method": "POST",
+      "path": "/api/driver/heading",
+      "roles": "driver",
+      "guard": "bearer session + driver role; heading/earnings/cash do not call needActive",
+      "sourceLine": 722,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/driver/heading",
+      "behaviorSuites": [
+        "tests/driver-destination.test.mjs"
+      ]
+    },
+    {
+      "id": "E014",
+      "method": "POST",
+      "path": "/api/me",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 729,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E015",
+      "method": "POST",
+      "path": "/api/me/password",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 734,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/password",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E016",
+      "method": "POST",
+      "path": "/api/me/delete",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 779,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/delete",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E017",
+      "method": "GET",
+      "path": "/api/me/places",
+      "roles": "customer",
+      "guard": "bearer customer; saved place ownership enforced",
+      "sourceLine": 796,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/me/places",
+      "behaviorSuites": [
+        "tests/places.test.mjs"
+      ]
+    },
+    {
+      "id": "E018",
+      "method": "POST",
+      "path": "/api/me/places",
+      "roles": "customer",
+      "guard": "bearer customer; saved place ownership enforced",
+      "sourceLine": 797,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/me/places",
+      "behaviorSuites": [
+        "tests/places.test.mjs"
+      ]
+    },
+    {
+      "id": "E019",
+      "method": "DELETE",
+      "path": "/api/me/places/:id",
+      "roles": "customer",
+      "guard": "bearer customer; saved place ownership enforced",
+      "sourceLine": 814,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:DELETE:/api/me/places/:id",
+      "behaviorSuites": [
+        "tests/places.test.mjs"
+      ]
+    },
+    {
+      "id": "E020",
+      "method": "POST",
+      "path": "/api/promos/check",
+      "roles": "customer",
+      "guard": "active customer; create-order authority rechecked after routing await",
+      "sourceLine": 842,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/promos/check",
+      "behaviorSuites": [
+        "tests/promo.test.mjs"
+      ]
+    },
+    {
+      "id": "E021",
+      "method": "GET",
+      "path": "/api/me/referral",
+      "roles": "customer",
+      "guard": "bearer customer; saved place ownership enforced",
+      "sourceLine": 878,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/me/referral",
+      "behaviorSuites": [
+        "tests/referral.test.mjs"
+      ]
+    },
+    {
+      "id": "E022",
+      "method": "GET",
+      "path": "/api/admin/promos",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 894,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/promos",
+      "behaviorSuites": [
+        "tests/promo.test.mjs"
+      ]
+    },
+    {
+      "id": "E023",
+      "method": "POST",
+      "path": "/api/admin/promos",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 895,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/promos",
+      "behaviorSuites": [
+        "tests/promo.test.mjs"
+      ]
+    },
+    {
+      "id": "E024",
+      "method": "POST",
+      "path": "/api/admin/promos/:id/deactivate",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 905,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/promos/:id/deactivate",
+      "behaviorSuites": [
+        "tests/promo.test.mjs"
+      ]
+    },
+    {
+      "id": "E025",
+      "method": "GET",
+      "path": "/api/push/key",
+      "roles": "anonymous",
+      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "sourceLine": 983,
+      "anonymousStatus": 200,
+      "boundaryFixture": "boundary:GET:/api/push/key",
+      "behaviorSuites": [
+        "tests/push-server.test.mjs"
+      ]
+    },
+    {
+      "id": "E026",
+      "method": "POST",
+      "path": "/api/push/subscribe",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 984,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/push/subscribe",
+      "behaviorSuites": [
+        "tests/push-server.test.mjs"
+      ]
+    },
+    {
+      "id": "E027",
+      "method": "POST",
+      "path": "/api/push/unsubscribe",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 997,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/push/unsubscribe",
+      "behaviorSuites": [
+        "tests/push-server.test.mjs"
+      ]
+    },
+    {
+      "id": "E028",
+      "method": "POST",
+      "path": "/api/price",
+      "roles": "customer",
+      "guard": "active customer; create-order authority rechecked after routing await",
+      "sourceLine": 1042,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/price",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/offers.test.mjs",
+        "tests/parcels.test.mjs",
+        "tests/booking-auth.test.mjs"
+      ]
+    },
+    {
+      "id": "E029",
+      "method": "POST",
+      "path": "/api/orders",
+      "roles": "customer",
+      "guard": "active customer; create-order authority rechecked after routing await",
+      "sourceLine": 1093,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/offers.test.mjs",
+        "tests/parcels.test.mjs",
+        "tests/booking-auth.test.mjs"
+      ]
+    },
+    {
+      "id": "E030",
+      "method": "GET",
+      "path": "/api/partner/config",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1155,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/partner/config",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E031",
+      "method": "POST",
+      "path": "/api/partner/quotes",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1160,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/partner/quotes",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E032",
+      "method": "POST",
+      "path": "/api/partner/orders",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1171,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/partner/orders",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E033",
+      "method": "GET",
+      "path": "/api/partner/orders/by-reference",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1199,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/partner/orders/by-reference",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E034",
+      "method": "GET",
+      "path": "/api/partner/orders/:id",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1205,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/partner/orders/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E035",
+      "method": "POST",
+      "path": "/api/partner/orders/:id/cancel",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1208,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/partner/orders/:id/cancel",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E036",
+      "method": "GET",
+      "path": "/api/orders",
+      "roles": "customer owner, assigned driver, admin; eligible marketplace driver for searching detail",
+      "guard": "getOrder conceals unauthorized objects as 404; list restricted to owned/assigned except admin; scheduled/release rules",
+      "sourceLine": 1217,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/orders",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/offers.test.mjs",
+        "tests/parcels.test.mjs",
+        "tests/booking-auth.test.mjs"
+      ]
+    },
+    {
+      "id": "E037",
+      "method": "GET",
+      "path": "/api/orders/:id",
+      "roles": "customer owner, assigned driver, admin; eligible marketplace driver for searching detail",
+      "guard": "getOrder conceals unauthorized objects as 404; list restricted to owned/assigned except admin; scheduled/release rules",
+      "sourceLine": 1235,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/orders/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E038",
+      "method": "GET",
+      "path": "/api/orders/:id/live",
+      "roles": "customer owner, assigned driver, admin; eligible marketplace driver for searching detail",
+      "guard": "getOrder conceals unauthorized objects as 404; list restricted to owned/assigned except admin; scheduled/release rules",
+      "sourceLine": 1237,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/orders/:id/live",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/share.test.mjs"
+      ]
+    },
+    {
+      "id": "E039",
+      "method": "POST",
+      "path": "/api/orders/:id/cancel",
+      "roles": "customer owner, admin",
+      "guard": "searching/assigned/at_pickup only; repeated cancel acknowledges",
+      "sourceLine": 1249,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/cancel",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/pickup.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E040",
+      "method": "POST",
+      "path": "/api/orders/:id/schedule",
+      "roles": "customer owner",
+      "guard": "scheduled searching parcel before release; same-time resend acknowledges",
+      "sourceLine": 1262,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/schedule",
+      "behaviorSuites": [
+        "tests/schedule.test.mjs"
+      ]
+    },
+    {
+      "id": "E041",
+      "method": "POST",
+      "path": "/api/orders/:id/rate",
+      "roles": "customer owner, assigned driver",
+      "guard": "completed only; same value replay; admin cannot rate for another actor",
+      "sourceLine": 1274,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/rate",
+      "behaviorSuites": [
+        "tests/customer-rating.test.mjs",
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E042",
+      "method": "POST",
+      "path": "/api/orders/:id/share",
+      "roles": "customer owner",
+      "guard": "customer ID ownership (not blanket admin access); share only searchable/active",
+      "sourceLine": 1303,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/share",
+      "behaviorSuites": [
+        "tests/share.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E043",
+      "method": "POST",
+      "path": "/api/partner/orders/:id/share",
+      "roles": "partner-key",
+      "guard": "X-Partner-Key checked separately; only partner-owned numeric orders",
+      "sourceLine": 1305,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/partner/orders/:id/share",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E044",
+      "method": "POST",
+      "path": "/api/orders/:id/share/revoke",
+      "roles": "customer owner",
+      "guard": "customer ID ownership (not blanket admin access); share only searchable/active",
+      "sourceLine": 1306,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/share/revoke",
+      "behaviorSuites": [
+        "tests/share.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E045",
+      "method": "GET",
+      "path": "/api/track/([a-f0-9]{64})",
+      "roles": "public-tracking",
+      "guard": "high-entropy rotating/revocable share token; explicit response allowlist",
+      "sourceLine": 1311,
+      "anonymousStatus": 404,
+      "boundaryFixture": "boundary:GET:/api/track/([a-f0-9]{64})",
+      "behaviorSuites": [
+        "tests/share.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E046",
+      "method": "GET",
+      "path": "/api/track/([a-f0-9]{64})/live",
+      "roles": "public-tracking",
+      "guard": "high-entropy rotating/revocable share token; explicit response allowlist",
+      "sourceLine": 1312,
+      "anonymousStatus": 404,
+      "boundaryFixture": "boundary:GET:/api/track/([a-f0-9]{64})/live",
+      "behaviorSuites": [
+        "tests/share.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E047",
+      "method": "POST",
+      "path": "/api/orders/:id/dispute",
+      "roles": "customer owner",
+      "guard": "one dispute per completed/returned order within seven days",
+      "sourceLine": 1337,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/dispute",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E048",
+      "method": "GET",
+      "path": "/api/admin/disputes",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1348,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/disputes",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E049",
+      "method": "POST",
+      "path": "/api/admin/disputes/:id/resolve",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1355,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/disputes/:id/resolve",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E050",
+      "method": "POST",
+      "path": "/api/orders/:id/sos",
+      "roles": "customer owner, assigned driver",
+      "guard": "active assignment; report is private to reporter; safety hold",
+      "sourceLine": 1384,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/sos",
+      "behaviorSuites": [
+        "tests/safety.test.mjs"
+      ]
+    },
+    {
+      "id": "E051",
+      "method": "GET",
+      "path": "/api/admin/incidents",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1403,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/incidents",
+      "behaviorSuites": [
+        "tests/safety.test.mjs"
+      ]
+    },
+    {
+      "id": "E052",
+      "method": "POST",
+      "path": "/api/admin/incidents/:id/resolve",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1413,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/incidents/:id/resolve",
+      "behaviorSuites": [
+        "tests/safety.test.mjs"
+      ]
+    },
+    {
+      "id": "E053",
+      "method": "GET",
+      "path": "/api/orders/:id/messages",
+      "roles": "customer owner, assigned driver, admin",
+      "guard": "assignment-scoped thread; write only active; read 24h after end except admin",
+      "sourceLine": 1443,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/orders/:id/messages",
+      "behaviorSuites": [
+        "tests/chat.test.mjs"
+      ]
+    },
+    {
+      "id": "E054",
+      "method": "POST",
+      "path": "/api/orders/:id/messages",
+      "roles": "customer owner, assigned driver",
+      "guard": "assignment-scoped thread; write only active; read 24h after end except admin",
+      "sourceLine": 1448,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/messages",
+      "behaviorSuites": [
+        "tests/chat.test.mjs"
+      ]
+    },
+    {
+      "id": "E055",
+      "method": "GET",
+      "path": "/api/roads",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 1486,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/roads",
+      "behaviorSuites": [
+        "tests/roads.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E056",
+      "method": "POST",
+      "path": "/api/roads/:id/report",
+      "roles": "driver, admin",
+      "guard": "active; checkpoint exists; repeat/rate limit",
+      "sourceLine": 1487,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/roads/:id/report",
+      "behaviorSuites": [
+        "tests/roads.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E057",
+      "method": "POST",
+      "path": "/api/admin/roads",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1499,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/roads",
+      "behaviorSuites": [
+        "tests/roads.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E058",
+      "method": "POST",
+      "path": "/api/admin/roads/:id/place",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1514,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/roads/:id/place",
+      "behaviorSuites": [
+        "tests/roads.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E059",
+      "method": "POST",
+      "path": "/api/admin/roads/:id/remove",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1521,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/roads/:id/remove",
+      "behaviorSuites": [
+        "tests/roads.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E060",
+      "method": "GET",
+      "path": "/api/jobs",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1528,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/jobs",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/parcels.test.mjs",
+        "tests/driver-scope.test.mjs"
+      ]
+    },
+    {
+      "id": "E061",
+      "method": "POST",
+      "path": "/api/jobs/:id/accept",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1544,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/jobs/:id/accept",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/parcels.test.mjs",
+        "tests/driver-scope.test.mjs"
+      ]
+    },
+    {
+      "id": "E062",
+      "method": "POST",
+      "path": "/api/jobs/:id/offer",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1571,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/jobs/:id/offer",
+      "behaviorSuites": [
+        "tests/offers.test.mjs"
+      ]
+    },
+    {
+      "id": "E063",
+      "method": "POST",
+      "path": "/api/orders/:id/offers/:driver/accept",
+      "roles": "customer",
+      "guard": "active customer; create-order authority rechecked after routing await",
+      "sourceLine": 1589,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/offers/:driver/accept",
+      "behaviorSuites": [
+        "tests/offers.test.mjs"
+      ]
+    },
+    {
+      "id": "E064",
+      "method": "POST",
+      "path": "/api/orders/:id/release",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1611,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/release",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/pickup.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E065",
+      "method": "POST",
+      "path": "/api/orders/:id/exception",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1688,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/exception",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/pickup.test.mjs"
+      ]
+    },
+    {
+      "id": "E066",
+      "method": "POST",
+      "path": "/api/admin/orders/:id/resolve",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 1695,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/orders/:id/resolve",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/pickup.test.mjs"
+      ]
+    },
+    {
+      "id": "E067",
+      "method": "POST",
+      "path": "/api/orders/:id/advance",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1722,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/orders/:id/advance",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/pickup.test.mjs",
+        "tests/exceptions.test.mjs"
+      ]
+    },
+    {
+      "id": "E068",
+      "method": "POST",
+      "path": "/api/location",
+      "roles": "driver",
+      "guard": "active driver + vehicle/assignment/ownership/status guards; location requires active custody",
+      "sourceLine": 1754,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/location",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/share.test.mjs"
+      ]
+    },
+    {
+      "id": "E069",
+      "method": "GET",
+      "path": "/api/route",
+      "roles": "customer, driver, admin",
+      "guard": "valid bearer session; object/input checks remain required",
+      "sourceLine": 1950,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/route",
+      "behaviorSuites": [
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E070",
+      "method": "GET",
+      "path": "/api/track/([a-f0-9]{64})/eta",
+      "roles": "public-tracking",
+      "guard": "high-entropy rotating/revocable share token; explicit response allowlist",
+      "sourceLine": 1958,
+      "anonymousStatus": 404,
+      "boundaryFixture": "boundary:GET:/api/track/([a-f0-9]{64})/eta",
+      "behaviorSuites": [
+        "tests/share.test.mjs",
+        "tests/route.test.mjs"
+      ]
+    },
+    {
+      "id": "E071",
+      "method": "GET",
+      "path": "/api/driver/earnings",
+      "roles": "driver",
+      "guard": "bearer session + driver role; heading/earnings/cash do not call needActive",
+      "sourceLine": 1982,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/driver/earnings",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E072",
+      "method": "GET",
+      "path": "/api/driver/cash",
+      "roles": "driver",
+      "guard": "bearer session + driver role; heading/earnings/cash do not call needActive",
+      "sourceLine": 2017,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/driver/cash",
+      "behaviorSuites": [
+        "tests/cash.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E073",
+      "method": "POST",
+      "path": "/api/driver/cash/:id/confirm",
+      "roles": "driver",
+      "guard": "bearer session + driver role; heading/earnings/cash do not call needActive",
+      "sourceLine": 2026,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/driver/cash/:id/confirm",
+      "behaviorSuites": [
+        "tests/cash.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E074",
+      "method": "GET",
+      "path": "/api/admin/cash",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2036,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/cash",
+      "behaviorSuites": [
+        "tests/cash.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E075",
+      "method": "POST",
+      "path": "/api/admin/cash/remittance",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2069,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/cash/remittance",
+      "behaviorSuites": [
+        "tests/cash.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E076",
+      "method": "POST",
+      "path": "/api/admin/cash/adjustment",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2070,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/cash/adjustment",
+      "behaviorSuites": [
+        "tests/cash.test.mjs",
+        "tests/credit.test.mjs"
+      ]
+    },
+    {
+      "id": "E077",
+      "method": "POST",
+      "path": "/api/subscriptions",
+      "roles": "customer, driver",
+      "guard": "role determines Plus/Pro; no duplicate live subscription",
+      "sourceLine": 2073,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/subscriptions",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E078",
+      "method": "POST",
+      "path": "/api/admin/orders/:id/proof-reset",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2084,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/orders/:id/proof-reset",
+      "behaviorSuites": [
+        "tests/exceptions.test.mjs",
+        "tests/pickup.test.mjs"
+      ]
+    },
+    {
+      "id": "E079",
+      "method": "GET",
+      "path": "/api/admin/stats",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2099,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/stats",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E080",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2135,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/users",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E081",
+      "method": "POST",
+      "path": "/api/admin/users/:id",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2203,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/users/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E082",
+      "method": "PATCH",
+      "path": "/api/admin/users/:id",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2204,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:PATCH:/api/admin/users/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E083",
+      "method": "POST",
+      "path": "/api/admin/users/:id/approve",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2205,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/users/:id/approve",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E084",
+      "method": "DELETE",
+      "path": "/api/admin/users/:id",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2213,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:DELETE:/api/admin/users/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E085",
+      "method": "POST",
+      "path": "/api/admin/users/:id/password",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2221,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/users/:id/password",
+      "behaviorSuites": [
+        "tests/api.test.mjs",
+        "tests/registration.test.mjs",
+        "tests/deployment.test.mjs",
+        "tests/courier-block.test.mjs"
+      ]
+    },
+    {
+      "id": "E086",
+      "method": "POST",
+      "path": "/api/admin/users/:id/identity-code",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2238,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/users/:id/identity-code",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E087",
+      "method": "POST",
+      "path": "/api/admin/users/:id/identity-check",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2245,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/users/:id/identity-check",
+      "behaviorSuites": [
+        "tests/email.test.mjs"
+      ]
+    },
+    {
+      "id": "E088",
+      "method": "GET",
+      "path": "/api/admin/subscriptions",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2253,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:GET:/api/admin/subscriptions",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E089",
+      "method": "POST",
+      "path": "/api/admin/subscriptions/:id",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2259,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/subscriptions/:id",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    },
+    {
+      "id": "E090",
+      "method": "POST",
+      "path": "/api/admin/settings",
+      "roles": "admin",
+      "guard": "bearer session + server admin role; object/state guards remain required",
+      "sourceLine": 2274,
+      "anonymousStatus": 401,
+      "boundaryFixture": "boundary:POST:/api/admin/settings",
+      "behaviorSuites": [
+        "tests/api.test.mjs"
+      ]
+    }
+  ]
+}

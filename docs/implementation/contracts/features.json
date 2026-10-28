@@ -1,0 +1,42 @@
+{
+  "registryVersion": "wp01-baseline-2026-10-26.1",
+  "kind": "read-only engineering inventory, not a runtime activation source",
+  "authority": "Observed source defines current behavior. Final report and implementation plan define future targets. This file activates nothing and provides no provider/operating permission.",
+  "observed": [
+    {"feature":"parcel","implemented":true,"enabledByDefault":true,"configuration":"WIND_ENABLED_SERVICES","evidence":["booking","parcel-batch","sender-return"]},
+    {"feature":"ride","implemented":true,"enabledByDefault":false,"configuration":"WIND_ENABLED_SERVICES","evidence":["default-disabled:ride","tests/offers.test.mjs","tests/model.test.mjs"]},
+    {"feature":"freight","implemented":true,"enabledByDefault":false,"configuration":"WIND_ENABLED_SERVICES","evidence":["default-disabled:freight","tests/offers.test.mjs","tests/model.test.mjs"]},
+    {"feature":"negotiated-offers","implemented":true,"gate":"smart non-parcel recommendation; free eligible driver; ten-minute offer TTL; up to twenty listed","evidence":["tests/offers.test.mjs"]},
+    {"feature":"parcel-batches","implemented":true,"gate":"up to 200 count; incompatible ride/freight excluded; manual city/stage run sheet","limitation":"Count is not measured weight/volume feasibility.","evidence":["parcel-batch","tests/parcels.test.mjs"]},
+    {"feature":"consumer-auth","implemented":true,"gate":"scrypt passwords; SHA-256 bearer hashes; ninety-day sessions; identity mode/contact gates","evidence":["customer-session","logged-out-session","blocked-session","tests/registration.test.mjs"]},
+    {"feature":"active-assignment-location","implemented":true,"gate":"active driver and assignment; latest accepted fix only; age-based skew-safe uploads","evidence":["stale-location","tests/background-location.test.mjs"]},
+    {"feature":"same-order-returns","implemented":true,"gate":"sender-only return PIN; retained driver/cash/history; admin verified handback recovery","evidence":["sender-return","support-return","blocked-support-return"]},
+    {"feature":"ratings","implemented":true,"gate":"completed only; returned excluded for customer/driver/price ratings","evidence":["completed-rating:customer","completed-rating:driver","returned-rating-denied:customer","returned-rating-denied:driver"]},
+    {"feature":"cash-settlement","implemented":true,"gate":"commission snapshot; append-only integer cash entries; driver confirms admin-recorded remittance","evidence":["cash-pending","cash-confirm","cash-settled","tests/cash.test.mjs"]},
+    {"feature":"partner-souq","implemented":true,"enabledByDefault":false,"configuration":"SOUQ_PARTNER_KEY length >= 32","evidence":["partner-replay","partner-return-code"]},
+    {"feature":"web-push","implemented":true,"gate":"authenticated browser subscription; in-process best-effort queue","evidence":["tests/push.test.mjs","tests/push-server.test.mjs"]},
+    {"feature":"email-provider-adapter","implemented":true,"enabledByDefault":false,"configuration":"WIND_EMAIL_FROM + CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_EMAIL_TOKEN","liveDeliveryVerified":false,"evidence":["tests/email.test.mjs (mocked provider)"]},
+    {"feature":"osrm-adapter","implemented":true,"enabledByDefault":false,"configuration":"OSRM_URL","liveRoutePermissionVerified":false,"evidence":["tests/route.test.mjs (isolated route responses)"]},
+    {"feature":"schedules","implemented":true,"gate":"seven-day maximum; thirty-minute driver release; scheduled parcels can reschedule; no guaranteed reservation","evidence":["tests/schedule.test.mjs"]},
+    {"feature":"safety-support-chat-tracking","implemented":true,"gate":"current role/object guards; safety hold, private chat and revocable allowlisted tracking","evidence":["safety-blocks-progress","revoked-share:","tests/chat.test.mjs"]},
+    {"feature":"promotions-referrals-subscriptions","implemented":true,"gate":"existing server eligibility, budget/count and role entitlements; subscription activation by admin after offline payment","evidence":["tests/promo.test.mjs","tests/referral.test.mjs","tests/credit.test.mjs"]},
+    {"feature":"passenger-pooling","implemented":false,"enabledByDefault":false,"gate":"server rejects shared=true; historical model arithmetic is not an enabled booking product"}
+  ],
+  "prescribedPilotPolicy": {
+    "version":"handoff-v1-prescribed-inactive",
+    "implementedByWP01":false,
+    "serviceModes":{"ride":"instant_dispatch","freight":"negotiated_offer","parcel":"courier_batch"},
+    "presence":{"heartbeatSeconds":15,"leaseSeconds":60,"matchingFixMaxAgeSeconds":30},
+    "location":{"movingTargetSeconds":5,"stationaryTargetSeconds":15,"minimumTransportGapSeconds":2,"latestFixOnly":true,"productionRawHistory":false,"consentedQaRetentionHours":24},
+    "dispatch":{"offerLeaseSeconds":15,"maximumOffers":3,"absoluteSearchSeconds":90,"ranking":"pickupETAsec - min(60, floor(idleAvailableSec / 10)); stable numeric driver ID tie-break after feasibility"},
+    "quote":{"ttlSeconds":120,"replayCommittedOrderBeforeExpiryChecks":true},
+    "phoneOtp":{"validSeconds":300,"attempts":5,"resendSeconds":45,"phoneDevicePer15Minutes":3,"phoneDevicePerDay":10,"ipPerHourReviewSignal":30,"ipAloneHardBlock":false,"providerSpendCeilingRequired":true,"activation":"real carrier + sender + recovery evidence"},
+    "money":{"currency":"ILS","preserveWholeIlsPayable":true,"ledgerMinorUnits":true,"percentageBasisPoints":true,"cashExposureCapMinor":100000,"cashCapActivation":"finance validation, locked projected obligations and daily settlement review"},
+    "arrival":{"graceSeconds":300,"newWaitingFeeMinor":0,"newNoShowFeeMinor":0,"newCancellationFeeMinor":0},
+    "scheduling":{"maximumDays":7,"releaseBeforeMinutes":30,"confirmedReservation":false},
+    "ratings":{"eligibleStatuses":["completed"],"returnedFinishedForSettlementDisputeHistory":true},
+    "rideStart":{"challengeDigits":4,"hashed":true,"attempts":5,"activation":"supported client cohort and audited recovery; separate from parcel and return proof"},
+    "disabled":["H3","learned dispatch","learned ETA","surge","shared passenger rides","global microbatch matching","automatic repositioning","automatic courier insertion","photo/signature proof","unverified provider OTP","unverified digital payments","merchant COD"]
+  },
+  "rollout":"WP01 only records the baseline. Later packets implement their own guarded policy consumers and activation evidence. Configuration is not provider success, native-device proof or permission to operate."
+}

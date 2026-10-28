@@ -19,7 +19,7 @@ const advance = (token, order) =>
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Admin', password: 'secret1' } });
-  promote('0599300001');
+  await promote('0599300001');
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const drivers = [];
   for (const phone of ['0599300003', '0599300004']) {

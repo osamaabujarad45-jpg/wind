@@ -1,0 +1,79 @@
+{
+  "formatVersion": 1,
+  "recordedDate": "2026-10-26",
+  "commit": "0f8c3bc6ade520b8f274359c792b0f9b4e418a1a",
+  "scope": "Content fingerprints at capture; untracked reports/research supplied by user preserved. Concurrent work exists in shared checkout. Fingerprints identify inputs, not a requirement to freeze later implementation code.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "b7d381dd55800d242252e8bf89a40b026586d254e34908210931bc35582396a3"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f5b06cde8679a8b44bdeb4f0dcdb3bf9a543c517df803a253eedbb7c6efb9a5d"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "17488a9d45826ac77c26337145fc97db9f6fd2021fbf6f1a7308f0d6e37ebefd"
+    },
+    {
+      "path": "server/main.ts",
+      "sha256": "104c77fca37deb89daf3d571017d61eb5f3999e4fe7e6eeaa681e2c106405695"
+    },
+    {
+      "path": "src/model.ts",
+      "sha256": "f70319203677e173e660da41a164a2255b84cfb16f5db149a26438e22d78dfa3"
+    },
+    {
+      "path": "src/api.ts",
+      "sha256": "b5121fbf24e4b2f7c06fe7827a12b2c325393fdd31a0807826def7c4d4d0bb55"
+    },
+    {
+      "path": "src/api-client.ts",
+      "sha256": "d7ac3a10454cc21e732073cfa542e8d44e610518398743a224b944b459191470"
+    },
+    {
+      "path": "src/booking.ts",
+      "sha256": "725663a6208b518bcf9d134052439439c9fef87d65418f3370b03d3faee4a224"
+    },
+    {
+      "path": "src/driver-work.tsx",
+      "sha256": "53312186346cf67a82a34ae19f6ef4aa3d0116eebfbac095d55c4f8dea53e1aa"
+    },
+    {
+      "path": "src/background-location.ts",
+      "sha256": "74bdacc5314f306952184f1d9c63c92d3070e1f0070fe1c10911b86e8507cdc0"
+    },
+    {
+      "path": "src/location-delivery.ts",
+      "sha256": "bd7c8e46325d1ba91ff2794e2721e81f0a31fdb5798d4c1f78de553f29b3949f"
+    },
+    {
+      "path": "server/push.ts",
+      "sha256": "6484fabdfc92e9a6562118fe6f0d568fb7414ff5e56cbd27c52c7825d67c1b90"
+    },
+    {
+      "path": "reports/Fastship Uber behavior and Azure.md",
+      "sha256": "a156910e1a23428436ca9716480ea69262f0de793702a9d1172fb915b22a309c"
+    },
+    {
+      "path": "reports/Fastship Claude implementation plan.md",
+      "sha256": "4bb77612086f8aadbae29873492649bd9f7235db0d01c24f660a47131f55c362"
+    },
+    {
+      "path": "reports/Fastship algorithm specifications.md",
+      "sha256": "e40a70f0e77b3ca3d3db820b322d9ead5a33e3d375ab2a8b32332d7a08bdb2a3"
+    },
+    {
+      "path": "research_notes/Fastship Uber behavior and Azure/app_audit.md",
+      "sha256": "b92843f666b17a24e4dad8bcdff716cab12657428fbc36e6aa45defb2b5ef8ad"
+    }
+  ],
+  "officialDocsRead": [
+    "https://docs.expo.dev/versions/v57.0.0/",
+    "https://docs.expo.dev/llms.txt",
+    "https://docs.expo.dev/versions/v57.0.0/sdk/location/",
+    "https://docs.expo.dev/versions/v57.0.0/sdk/task-manager/"
+  ],
+  "secureStoreDocs": "Initial direct web open was unavailable; versioned reference link retried separately. No Expo/RN API changes in WP01."
+}

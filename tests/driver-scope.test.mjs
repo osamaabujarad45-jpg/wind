@@ -28,7 +28,7 @@ const call = apiCaller(() => base, realFetch);
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599400001', name: 'Admin', password: 'secret1' } });
-  promote('0599400001');
+  await promote('0599400001');
   const customer = await call('/auth/register', { body: { phone: '0599400002', name: 'Maha', password: 'secret1' } });
   const customerPush = 'https://fcm.googleapis.com/fcm/send/maha';
   await call('/push/subscribe', { token: customer.token, body: { endpoint: customerPush, ...browserKeys() } });

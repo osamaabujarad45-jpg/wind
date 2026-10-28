@@ -53,7 +53,7 @@ function ownBrowser() {
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599150001', name: 'Admin', password: 'secret1' } });
-  promote('0599150001');
+  await promote('0599150001');
   const customer = await call('/auth/register', { body: { phone: '0599150002', name: 'Rana', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599150003', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const truck = await call('/auth/register', { body: { phone: '0599150004', name: 'Truck', password: 'secret1', role: 'driver', vehicle: 'truck' } });
@@ -126,8 +126,8 @@ try {
   assert.deepEqual(sent, []);
   const past = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), scheduledFor: later + 60_000 } });
   db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(later - 20 * 60_000, past.id); // pickup already passed by the check below
-  alertReleasedJobs(later - 10 * 60_000); // 10 minutes before pickup: released
-  alertReleasedJobs(later - 10 * 60_000); // once only
+  await alertReleasedJobs(later - 10 * 60_000); // 10 minutes before pickup: released
+  await alertReleasedJobs(later - 10 * 60_000); // once only
   await settle();
   assert.deepEqual(sent.map(s => s.url), [fcm('e')]);
   let mine = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });

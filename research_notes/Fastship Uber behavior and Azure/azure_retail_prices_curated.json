@@ -1,0 +1,329 @@
+[
+  {
+    "items": [
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B12ms",
+        "meterName": "B12ms vCore",
+        "unitPrice": 0.9552,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B2S",
+        "meterName": "B2S",
+        "unitPrice": 0.0796,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2021-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "Basic",
+        "meterName": "Basic",
+        "unitPrice": 0.0199,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2021-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable Basv2",
+        "skuName": "1 vCore",
+        "meterName": "1 vCore",
+        "unitPrice": 0.20735,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-10-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B1MS",
+        "meterName": "B1MS",
+        "unitPrice": 0.0199,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2021-12-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable Batsv2",
+        "skuName": "1 vCore",
+        "meterName": "1 vCore",
+        "unitPrice": 0.02574,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-10-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B16ms",
+        "meterName": "B16ms vCore",
+        "unitPrice": 1.2736,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B20ms",
+        "meterName": "B20ms vCore",
+        "unitPrice": 1.592,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B2ms",
+        "meterName": "B2ms vCore",
+        "unitPrice": 0.1592,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B4ms",
+        "meterName": "B4ms vCore",
+        "unitPrice": 0.3184,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable BS Series Compute",
+        "skuName": "B8ms",
+        "meterName": "B8ms vCore",
+        "unitPrice": 0.6368,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable Bafsv2",
+        "skuName": "1 vCore",
+        "meterName": "1 vCore",
+        "unitPrice": 0.05148,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-10-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Burstable Balsv2",
+        "skuName": "1 vCore",
+        "meterName": "1 vCore",
+        "unitPrice": 0.10296,
+        "unitOfMeasure": "1 Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-10-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      }
+    ],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Database%20for%20PostgreSQL%27%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27%20and%20contains%28productName%2C%27Flexible%20Server%20Burstable%27%29",
+    "nextPage": null,
+    "name": "postgres_compute"
+  },
+  {
+    "items": [
+      {
+        "serviceName": "Web PubSub",
+        "productName": "Web PubSub",
+        "skuName": "Standard",
+        "meterName": "Standard Unit",
+        "unitPrice": 1.61,
+        "unitOfMeasure": "1/Day",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Web PubSub",
+        "productName": "Web PubSub",
+        "skuName": "Standard",
+        "meterName": "Standard Message",
+        "unitPrice": 1.0,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Web PubSub",
+        "productName": "Web PubSub",
+        "skuName": "Premium",
+        "meterName": "Premium Unit",
+        "unitPrice": 2.0,
+        "unitOfMeasure": "1/Day",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-02-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Web PubSub",
+        "productName": "Web PubSub",
+        "skuName": "Standard",
+        "meterName": "Standard Unit - Free",
+        "unitPrice": 0.0,
+        "unitOfMeasure": "1/Day",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-03-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Web PubSub",
+        "productName": "Web PubSub",
+        "skuName": "Premium",
+        "meterName": "Premium Message",
+        "unitPrice": 1.0,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-02-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      }
+    ],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=contains%28productName%2C%27Web%20PubSub%27%29%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27",
+    "nextPage": null,
+    "name": "pubsub_correct"
+  },
+  {
+    "items": [
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard vCPU Active Usage",
+        "unitPrice": 3.4E-05,
+        "unitOfMeasure": "1 Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard NC A100 v4 GPU Usage",
+        "unitPrice": 0.000688,
+        "unitOfMeasure": "1 Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-04-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard Memory Active Usage",
+        "unitPrice": 4E-06,
+        "unitOfMeasure": "1 GiB Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard vCPU Idle Usage",
+        "unitPrice": 4E-06,
+        "unitOfMeasure": "1 Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard Requests",
+        "unitPrice": 0.56,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard Memory Idle Usage",
+        "unitPrice": 4E-06,
+        "unitOfMeasure": "1 GiB Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2022-06-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      },
+      {
+        "serviceName": "Azure Container Apps",
+        "productName": "Azure Container Apps",
+        "skuName": "Standard",
+        "meterName": "Standard NC T4 v3 GPU Usage",
+        "unitPrice": 9.5E-05,
+        "unitOfMeasure": "1 Second",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-04-01T00:00:00Z",
+        "tierMinimumUnits": 0.0
+      }
+    ],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Container%20Apps%27%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27%20and%20skuName%20eq%20%27Standard%27",
+    "nextPage": null,
+    "name": "aca"
+  },
+  {
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Maps%27%20and%20priceType%20eq%20%27Consumption%27",
+    "nextPage": "https://prices.azure.com:443/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Maps%27%20and%20priceType%20eq%20%27Consumption%27&$skip=1000",
+    "name": "maps_incomplete_warning",
+    "note": "First 1000 records only. Not a complete inventory. No Maps price conclusions derived."
+  }
+]

@@ -1,0 +1,286 @@
+// WP06 phone UI rules: truthful states, command IDs across lost acknowledgments, session-scoped storage, exact request bodies.
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import {
+  awaitingProvider, clock, codeInput, codeUsable, deliveryKey, gateOf, gateReasonKey, issueKey, latestChallenge, normalizePhoneInput,
+  outcomeOf, phoneInputOk, secondsUntil,
+} from '../src/phone/flow.ts';
+import { commandSlot, memorySlot, sessionScope, stableDeviceId, storedSlot } from '../src/phone/command.ts';
+import { issueBody, phoneRequests, proveBody, recoveryIssueBody, recoveryProveBody } from '../src/phone/requests.ts';
+import { copy } from '../src/copy.ts';
+import { ApiError, errorCode } from '../src/api-client.ts';
+import { webGet, webSet } from '../src/web-storage.ts';
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let counter = 0;
+// Deterministic UUIDs in the right shape for tests; the app passes expo-crypto's randomUUID instead.
+const newId = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`;
+
+// Phone input: the server's accepted forms, Arabic digits and separators; obvious non-mobile forms rejected.
+assert.equal(normalizePhoneInput(' ٠٥٩ ٩٩٩-١٢٣٤٥٦ '), '059999123456');
+assert.equal(normalizePhoneInput('00970 599 123 456'), '+970599123456');
+for (const ok of ['0599123456', '599123456', '+972599123456', '00970599123456', '056 123 4567', '+970 56 123 4567', '٠٥٦١٢٣٤٥٦٧'])
+  assert.ok(phoneInputOk(ok), ok);
+for (const bad of ['', '0588123456', '+972588123456', '12345', '059912345678', '+1 5551234567', '05991234x'])
+  assert.ok(!phoneInputOk(bad), bad);
+assert.equal(codeInput('12 34-56789'), '123456');
+
+// Gates: the module can be absent (SQLite), switched off (no provider), or ready; a failed check is never "closed".
+assert.equal(gateOf(null, false), 'checking');
+assert.equal(gateOf(null, true), 'failed');
+assert.equal(gateOf({ available: false, enabled: false }, false), 'unavailable');
+assert.equal(gateOf({ available: true, enabled: false }, false), 'disabled');
+assert.equal(gateOf({ available: true, enabled: true }, false), 'ready');
+assert.equal(gateReasonKey('disabled'), 'phone_reason_disabled');
+for (const gate of ['checking', 'failed', 'unavailable', 'disabled']) assert.ok(copy.ar[gateReasonKey(gate)] && copy.en[gateReasonKey(gate)], gate);
+
+// Provider outcomes: an accepted answer is never shown as delivery; every state has its own sentence in both languages.
+const states = ['prepared', 'requested', 'accepted', 'failed', 'unknown', 'obsolete', 'suppressed'];
+for (const state of states) {
+  const key = deliveryKey(state);
+  assert.ok(copy.ar[key] && copy.en[key], state);
+  assert.doesNotMatch(copy.en[key], /delivered/i, state);
+}
+assert.equal(deliveryKey('accepted'), 'phone_state_accepted');
+assert.equal(deliveryKey('requested'), 'phone_state_recorded');
+assert.ok(awaitingProvider('prepared') && awaitingProvider('requested') && !awaitingProvider('accepted'));
+assert.match(copy.en.phone_state_accepted, /does not confirm it reached your phone/);
+assert.doesNotMatch(copy.en.phone_state_accepted, /delivered/i);
+
+// A code is usable only as the server allows: not expired, under five attempts, and not failed, obsolete or suppressed.
+const now = 1_000_000;
+const challenge = { deliveryState: 'accepted', expiresAt: now + 60_000, attempts: 0 };
+assert.ok(codeUsable(challenge, now));
+assert.ok(codeUsable({ ...challenge, deliveryState: 'unknown' }, now));
+assert.ok(!codeUsable(challenge, now + 60_000));
+assert.ok(!codeUsable({ ...challenge, attempts: 5 }, now));
+for (const deliveryState of ['failed', 'obsolete', 'suppressed']) assert.ok(!codeUsable({ ...challenge, deliveryState }, now), deliveryState);
+
+// Errors: only transport-level failures leave the outcome unknown; any answer with an error code is final.
+for (const code of ['network', 'aborted', 'server_error', 'session_changed']) assert.equal(outcomeOf(code), 'unknown', code);
+for (const code of ['phone_proof_invalid', 'phone_resend_cooldown', 'idempotency_conflict', 'unauthorized']) assert.equal(outcomeOf(code), 'definitive', code);
+assert.equal(clock(300), '5:00');
+assert.equal(clock(45), '0:45');
+assert.equal(clock(-3), '0:00');
+assert.equal(clock(3605), '60:05');
+assert.equal(secondsUntil(now + 1500, now), 2);
+assert.equal(secondsUntil(now - 5, now), 0);
+
+// Server's own view picks the newest challenge for the purpose and trusts its effective state (lease expiry becomes unknown).
+const view = [
+  { id: 'a', purpose: 'change', delivery_state: 'requested', effectiveDeliveryState: 'unknown', expires_at: 5, attempts: 1, resend_at: 9 },
+  { id: 'b', purpose: 'verify', delivery_state: 'accepted', effectiveDeliveryState: 'accepted', expires_at: 7, attempts: 0, resend_at: null },
+];
+assert.deepEqual(latestChallenge(view, ['verify']), { id: 'b', purpose: 'verify', deliveryState: 'accepted', expiresAt: 7, attempts: 0, resendAt: 0 });
+assert.equal(latestChallenge(view, ['recovery']), null);
+assert.equal(latestChallenge(view, ['change']).deliveryState, 'unknown');
+assert.equal(issueKey({ kind: 'self', phone: '+970599123456', purpose: 'change', revision: 3 }), 'issue|self|+970599123456|change|3');
+
+// Command IDs: a lost acknowledgment keeps its ID; an answered attempt does not.
+{
+  const memory = memorySlot();
+  const slot = commandSlot(memory, newId);
+  const key = 'issue|self|x|verify|1';
+  const first = await slot.begin(key);
+  assert.equal(await slot.begin(key), first, 'same payload after an unknown outcome keeps the ID');
+  await slot.settle('network');
+  assert.equal(await slot.begin(key), first, 'network failure is unresolved: retry replays the same ID');
+  await slot.settle('phone_proof_invalid');
+  assert.notEqual(await slot.begin(key), first, 'an answered error is final: the next attempt is a new command');
+  const answered = await slot.begin(key);
+  await slot.settle('ok');
+  assert.notEqual(await slot.begin(key), answered, 'success ends the attempt: a resend is a new challenge');
+  const changed = await slot.begin('issue|self|x|verify|2');
+  assert.notEqual(changed, answered, 'a different payload never reuses an ID');
+  await slot.settle('network');
+  assert.notEqual(await slot.begin('issue|self|x|verify|3'), changed, 'a changed code or revision gets a new ID');
+}
+
+// Stored slot: bound to one session scope, and only the non-secret key and ID are written.
+{
+  const values = new Map();
+  const store = { get: async k => values.get(k) ?? null, set: async (k, v) => { if (v === null) values.delete(k); else values.set(k, v); } };
+  const sha256 = async v => `sha256:${createHash('sha256').update(v).digest('hex')}`;
+  const scopeA = await sessionScope('token-one-synthetic', sha256);
+  const scopeB = await sessionScope('token-two-synthetic', sha256);
+  assert.equal(await sessionScope(null, sha256), 'none');
+  assert.ok(!scopeA.includes('token-one-synthetic'), 'the bearer token is not stored in the scope');
+  const slotA = commandSlot(storedSlot(store, 'wp06.phone.issue.self', scopeA), newId);
+  const id = await slotA.begin('issue|self|+970599123456|change|4');
+  const raw = values.get('wp06.phone.issue.self');
+  assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ['commandId', 'key', 'scope']);
+  assert.notEqual(await commandSlot(storedSlot(store, 'wp06.phone.issue.self', scopeB), newId).begin('issue|self|+970599123456|change|4'), id,
+    'another sign-in does not replay an earlier session request');
+  values.set('wp06.phone.issue.self', '{broken');
+  assert.equal(await storedSlot(store, 'wp06.phone.issue.self', scopeA).read(), null);
+  // Device scope: stable across restarts, validated, never a guessable seed.
+  const deviceValues = new Map([['wp06.phone.device', 'not-a-uuid']]);
+  const device = { get: async k => deviceValues.get(k) ?? null, set: async (k, v) => { deviceValues.set(k, v); } };
+  const fresh = await stableDeviceId(device, newId);
+  assert.match(fresh, UUID_V4);
+  assert.equal(await stableDeviceId(device, () => 'should-not-be-used'), fresh, 'the saved device survives a restart');
+}
+
+// Failing storage: a receipt that cannot be saved is never sent. The error names storage, not the server; a retry after the
+// store recovers sends; a lost reply still replays its ID without a second write.
+{
+  const values = new Map();
+  let unreadable = true, unwritable = true;
+  const store = {
+    get: async k => { if (unreadable) throw new Error('SecurityError'); return values.get(k) ?? null; },
+    // Web storage.set: a failed write is swallowed unless the caller asks for it to be required.
+    set: async (k, v, required = false) => {
+      try {
+        if (unwritable) throw new Error('QuotaExceededError');
+        if (v === null) values.delete(k); else values.set(k, v);
+      } catch (e) { if (required) throw e; }
+    },
+  };
+  const slot = commandSlot(storedSlot(store, 'wp06.phone.issue.self', 'none'), newId);
+  const key = 'issue|self|+970599123456|verify|5';
+  const sent = [];
+  let lose = true;
+  const send = async commandId => {
+    sent.push(commandId);
+    if (lose) { lose = false; throw new ApiError('network'); }
+    return { ok: true };
+  };
+  // The order the screens use: persist the ID, send, then settle the attempt by its outcome.
+  const attempt = async () => {
+    let commandId = '';
+    try {
+      commandId = await slot.begin(key);
+      await send(commandId);
+      await slot.settle('ok');
+    } catch (failure) {
+      if (commandId) await slot.settle(errorCode(failure));
+      throw failure;
+    }
+  };
+  unreadable = false;
+  await assert.rejects(attempt(), e => errorCode(e) === 'storage_unavailable', 'a failed save is named as storage');
+  assert.equal(sent.length, 0, 'nothing is sent when the receipt cannot be saved');
+  assert.equal(values.size, 0, 'and nothing is left half-saved');
+  unreadable = true;
+  unwritable = false;
+  await assert.rejects(attempt(), e => errorCode(e) === 'storage_unavailable', 'a failed read also stops before the request');
+  assert.equal(sent.length, 0, 'an unreadable receipt is never replaced by a new ID');
+
+  unreadable = false;
+  unwritable = false;
+  await assert.rejects(attempt(), e => errorCode(e) === 'network', 'the lost reply is unresolved');
+  assert.equal(sent.length, 1);
+  assert.ok(values.get('wp06.phone.issue.self'), 'the receipt is saved before the request');
+
+  unwritable = true; // writes fail from here on; the held receipt is reused without a write
+  await attempt(); // a failed clear after success is best-effort, the answer already came back
+  assert.equal(sent[1], sent[0], 'the retry replays the same command ID');
+  assert.equal(sent.length, 2);
+  assert.ok(values.get('wp06.phone.issue.self'), 'the settled receipt is still stored: the clear failed');
+
+  // The stale copy is never replayed in this session: the next attempt is a new command, not the answered one.
+  unwritable = false;
+  await attempt();
+  assert.notEqual(sent[2], sent[0], 'a settled ID is not replayed after its clear failed');
+  assert.equal(values.get('wp06.phone.issue.self'), undefined, 'the new attempt settled and cleared cleanly');
+
+  // A device ID that cannot be saved is an error, not a silently unsaved ID.
+  const unsaved = { get: async () => null, set: async () => { throw new Error('QuotaExceededError'); } };
+  await assert.rejects(stableDeviceId(unsaved, newId), e => errorCode(e) === 'storage_unavailable');
+}
+
+// Concurrent first use: callers that start together share one saved device ID, so none of them keeps an ID that was overwritten.
+{
+  const values = new Map();
+  const pause = () => new Promise(resolve => setTimeout(resolve, 5));
+  const store = { get: async k => { await pause(); return values.get(k) ?? null; }, set: async (k, v) => { await pause(); values.set(k, v); } };
+  const ids = await Promise.all([1, 2, 3, 4].map(() => stableDeviceId(store, newId)));
+  assert.equal(new Set(ids).size, 1, 'concurrent callers receive one device ID');
+  assert.equal(values.get('wp06.phone.device'), ids[0], 'the saved ID is the one they received');
+  assert.equal(await stableDeviceId(store, newId), ids[0], 'a later caller reads the same ID');
+}
+
+// Web storage through the real adapter: a receipt that cannot be read or saved stops the request; best-effort calls stay best-effort.
+{
+  const data = new Map();
+  let blockReads = false, blockWrites = false;
+  const blockedError = name => { throw Object.assign(new Error(name), { name }); };
+  const local = {
+    getItem: k => blockReads ? blockedError('SecurityError') : data.get(k) ?? null,
+    setItem: (k, v) => blockWrites ? blockedError('QuotaExceededError') : void data.set(k, v),
+    removeItem: k => blockWrites ? blockedError('SecurityError') : void data.delete(k),
+  };
+  const store = () => local;
+  const throwingAccess = () => blockedError('SecurityError'); // reading localStorage itself can throw in a blocked browser
+  assert.equal(webGet(throwingAccess, 'k'), null, 'best-effort read of a blocked store is empty');
+  assert.throws(() => webGet(throwingAccess, 'k', true), /SecurityError/);
+  blockWrites = true;
+  assert.doesNotThrow(() => webSet(store, 'k', 'v'), 'best-effort write is swallowed');
+  assert.throws(() => webSet(store, 'k', 'v', true), /QuotaExceededError/, 'a required write is not swallowed');
+  blockWrites = false;
+  webSet(store, 'k', 'v', true);
+  assert.equal(webGet(store, 'k', true), 'v');
+  data.clear();
+
+  const web = { get: (k, required) => webGet(store, k, required), set: (k, v, required) => webSet(store, k, v, required) };
+  const key = 'issue|self|+970599123456|verify|6';
+  const webSlot = () => commandSlot(storedSlot(web, 'wp06.phone.issue.self', 'none'), newId);
+  blockWrites = true;
+  await assert.rejects(webSlot().begin(key), e => errorCode(e) === 'storage_unavailable', 'an unsaved receipt names storage');
+  blockWrites = false;
+  assert.equal(data.size, 0, 'nothing is left half-saved');
+  blockReads = true;
+  await assert.rejects(webSlot().begin(key), e => errorCode(e) === 'storage_unavailable', 'an unreadable receipt is not replaced');
+  blockReads = false;
+  const saved = await webSlot().begin(key);
+  assert.equal(await webSlot().begin(key), saved, 'a saved receipt is replayed after a reload');
+}
+
+// Request bodies: exactly the fields each route accepts; the server rejects any extra key.
+const ids = { commandId: newId(), deviceId: newId(), challengeId: newId() };
+assert.deepEqual(Object.keys(issueBody({ ...ids, phone: '0599123456', purpose: 'verify', expectedRevision: 2 })).sort(),
+  ['commandId', 'countryContext', 'deviceId', 'expectedRevision', 'phone', 'purpose']);
+assert.deepEqual(Object.keys(issueBody({ ...ids, phone: '0599123456', purpose: 'change', expectedRevision: 2, currentPassword: 'x' })).sort(),
+  ['commandId', 'countryContext', 'currentPassword', 'deviceId', 'expectedRevision', 'phone', 'purpose']);
+assert.deepEqual(Object.keys(recoveryIssueBody({ ...ids, phone: '0599123456' })).sort(), ['commandId', 'countryContext', 'deviceId', 'phone']);
+assert.deepEqual(Object.keys(proveBody({ ...ids, purpose: 'verify', code: '123456' })).sort(), ['challengeId', 'code', 'commandId', 'deviceId', 'purpose']);
+assert.deepEqual(recoveryProveBody({ ...ids, code: '123456', password: 'Synthetic-password-123' }).purpose, 'recovery');
+assert.equal('currentPassword' in issueBody({ ...ids, phone: '0599123456', purpose: 'verify', expectedRevision: 2 }), false);
+
+// End to end over the request layer: a lost acknowledgment resends the same command; a resend after success does not.
+{
+  const sent = [];
+  let fail = true;
+  const call = async (path, body) => {
+    sent.push({ path, body });
+    if (fail) { fail = false; throw Object.assign(new Error('network'), { status: undefined }); }
+    return { challengeId: body.commandId, state: 'requested', expiresAt: 1, resendAfterSeconds: 45 };
+  };
+  const api = phoneRequests(call);
+  const slot = commandSlot(memorySlot(), newId);
+  const deviceId = newId();
+  const key = 'issue|self|+970599123456|verify|1';
+  const send = async () => {
+    const commandId = await slot.begin(key);
+    try { const r = await api.issueSelf(issueBody({ commandId, deviceId, phone: '0599123456', purpose: 'verify', expectedRevision: 1 })); await slot.settle('ok'); return r; }
+    catch (e) { await slot.settle(e.message); throw e; }
+  };
+  await assert.rejects(send(), /network/);
+  const second = await send();
+  assert.equal(sent[0].body.commandId, sent[1].body.commandId, 'the lost request and its retry share one command ID');
+  assert.equal(second.challengeId, sent[1].body.commandId);
+  await send();
+  assert.notEqual(sent[2].body.commandId, sent[1].body.commandId, 'a resend after an answered challenge is a new command');
+  assert.deepEqual(sent.map(x => x.path), ['/me/phone/challenges', '/me/phone/challenges', '/me/phone/challenges']);
+}
+
+// Copy parity: every phone key exists in both languages, so typecheck and tests agree.
+const phoneKeys = Object.keys(copy.ar).filter(k => k.startsWith('phone_') || k.startsWith('err_phone_') || k.startsWith('err_idempotency') || k.startsWith('err_invalid_command') || k.startsWith('err_invalid_purpose'));
+assert.ok(phoneKeys.length > 60, 'phone copy present');
+for (const key of phoneKeys) assert.ok(typeof copy.en[key] === 'string' && copy.en[key].length > 0, key);
+for (const key of Object.keys(copy.en).filter(k => k.startsWith('phone_') || k.startsWith('err_phone_'))) assert.ok(copy.ar[key], key);
+// A storage failure names storage in both languages, and never claims the server or the code was sent.
+for (const lang of ['ar', 'en']) assert.ok(copy[lang].err_storage_unavailable, lang);
+assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
+
+console.log('Phone UI rules passed');

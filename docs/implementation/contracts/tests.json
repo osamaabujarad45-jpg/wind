@@ -1,0 +1,235 @@
+{
+  "formatVersion": 1,
+  "scope": "Existing npm test script entries at WP01; optional script commands recorded, not silently claimed executed.",
+  "existingNpmTestCount": 42,
+  "existingNpmTests": [
+    {
+      "position": 1,
+      "path": "tests/model.test.mjs",
+      "sha256": "ee46a0db48d25b41693dc4f5da65708eccd6e0ceb763dc57d5468ad04c1c2190"
+    },
+    {
+      "position": 2,
+      "path": "tests/presentation.test.mjs",
+      "sha256": "1a9fcba43f25c184324831d486dc24c840fb0e5cba5b47512c97ae8687437a58"
+    },
+    {
+      "position": 3,
+      "path": "tests/api-client.test.mjs",
+      "sha256": "70e9ec802db7c1ebd35b70bfc27bfbac9776235e1f70cde67281704917537e91"
+    },
+    {
+      "position": 4,
+      "path": "tests/api.test.mjs",
+      "sha256": "9bc9d8b07beac50b94c55aa04a9c68bc7414dd6fe40e54ff7dc32b4f84076d4e"
+    },
+    {
+      "position": 5,
+      "path": "tests/deployment.test.mjs",
+      "sha256": "488559cfe5722dfb6ee18073195395657467d4083602f24ecd923f37eccdd63a"
+    },
+    {
+      "position": 6,
+      "path": "tests/registration.test.mjs",
+      "sha256": "f8cdb037b88c7ecec67d94c5fc9fbc4fe36bb2160026e53e0932c3d98af7021d"
+    },
+    {
+      "position": 7,
+      "path": "tests/vehicle-migration.test.mjs",
+      "sha256": "ddf2100d50cca19121e2b6c5c7b0cdf109046f9fe3ce1f1ff9f55c298b76ab90"
+    },
+    {
+      "position": 8,
+      "path": "tests/job-alert-migration.test.mjs",
+      "sha256": "7abea3a967155031d56cd6393c50f158fe22236e38a322b950b9314e405e0823"
+    },
+    {
+      "position": 9,
+      "path": "tests/exceptions.test.mjs",
+      "sha256": "ff4cda102d522a77165f9b593965ca833ca7c863a0c65f19cdb85d7bf83e17e2"
+    },
+    {
+      "position": 10,
+      "path": "tests/pickup.test.mjs",
+      "sha256": "8440ed7bbe9ed3c80f24b50f86a688a84f089e8269e6839039c8b0ba6bca5ffe"
+    },
+    {
+      "position": 11,
+      "path": "tests/courier-block.test.mjs",
+      "sha256": "70e1b77f70b73b8e50ebc369149c050ea206fb9b1e4c1ab96cb2a3869aa29b28"
+    },
+    {
+      "position": 12,
+      "path": "tests/cash.test.mjs",
+      "sha256": "72e0a60269f55b8803e284b86e749d162606807043eee278956f3792e2ef285f"
+    },
+    {
+      "position": 13,
+      "path": "tests/share.test.mjs",
+      "sha256": "beaee4c22587cda0d2c7276abb7db6fc91f2f09c24e183bcb8e3e16cd64f4599"
+    },
+    {
+      "position": 14,
+      "path": "tests/map.test.mjs",
+      "sha256": "64258bf2e322b08e8b0bbb4579e3feb476b31404c29d3c2ffe4d35dfe677f726"
+    },
+    {
+      "position": 15,
+      "path": "tests/route.test.mjs",
+      "sha256": "9f3699641710569cbe2597add58ecf5a6dc6eb44c62c57dd27ea9384eb5770a9"
+    },
+    {
+      "position": 16,
+      "path": "tests/safety.test.mjs",
+      "sha256": "57e8c23adb885b3f30db337d9cdc7ceacb69d42db70d3f9f1c438a9b2c7032f4"
+    },
+    {
+      "position": 17,
+      "path": "tests/places.test.mjs",
+      "sha256": "13daeb07caf89210b2128f5ddf936b7f2f10f910f12a693d42add66cbc010db2"
+    },
+    {
+      "position": 18,
+      "path": "tests/schedule.test.mjs",
+      "sha256": "bcb5a32a358aefdaf31a5dcb16314abc532c791786e603221ec99f5a5d9569ac"
+    },
+    {
+      "position": 19,
+      "path": "tests/roads.test.mjs",
+      "sha256": "38c0ff13fa92d3d213d1d86794e2d1e0c8ac7a7b0fe1628f20ca3f92577c0095"
+    },
+    {
+      "position": 20,
+      "path": "tests/chat.test.mjs",
+      "sha256": "a8e0f01c87b86ce02077c9d40964880666403207225741438d2655de646f1b8d"
+    },
+    {
+      "position": 21,
+      "path": "tests/promo.test.mjs",
+      "sha256": "1af8f60820e5700e3c245b3ccc95d93c2c258c3902e62ceecc0c6dabf11f2649"
+    },
+    {
+      "position": 22,
+      "path": "tests/referral.test.mjs",
+      "sha256": "6c8a2494b1b8e550f176c56bba3f87e1e0abfcbce6f2b2df7bf7577dd6127ff3"
+    },
+    {
+      "position": 23,
+      "path": "tests/credit.test.mjs",
+      "sha256": "dae0164f599d04354c617dbe180adbd2d77510bd51282ad68b4881c86a28b2fb"
+    },
+    {
+      "position": 24,
+      "path": "tests/push.test.mjs",
+      "sha256": "e57464bca3d9e3f6d9d5cac5cf5a39477e43e7458fedb2f9f7b9ab5677ae50ca"
+    },
+    {
+      "position": 25,
+      "path": "tests/push-server.test.mjs",
+      "sha256": "4c624fec80584dd2f0b0f771c358edcb24f78a427d68baf2104f99c7d0a8696f"
+    },
+    {
+      "position": 26,
+      "path": "tests/offers.test.mjs",
+      "sha256": "7f6abb4ee4a25f8d3039715b8acf662e971a9d9c6218556ae60d7e008040186a"
+    },
+    {
+      "position": 27,
+      "path": "tests/parcels.test.mjs",
+      "sha256": "7a7ed784485ce2358dc0993512d74239c8dda3ea9eadb70851fd9aabb21117fe"
+    },
+    {
+      "position": 28,
+      "path": "tests/booking-auth.test.mjs",
+      "sha256": "6445c8be90286e0b3099858653343198eeaeb02f9ecec82e88a638322c5f8763"
+    },
+    {
+      "position": 29,
+      "path": "tests/driver-scope.test.mjs",
+      "sha256": "ed77c82ed6ce46857156078b3f7ce27873f760fd98327ba4bab74b9167c372a2"
+    },
+    {
+      "position": 30,
+      "path": "tests/customer-rating.test.mjs",
+      "sha256": "4f6c747b93ac72a6f4cdf46b3c8a71367443c17c5f4ed9c1d895c2469ea6fd94"
+    },
+    {
+      "position": 31,
+      "path": "tests/driver-destination.test.mjs",
+      "sha256": "4eaaf88f2d5aa741b95747d9a3c36ce846154a764f2843efd5b71a6240ba0834"
+    },
+    {
+      "position": 32,
+      "path": "tests/recipient.test.mjs",
+      "sha256": "66127ae3b1592cdc6c09698de92369845db5979469bdb1d1f81cc42253a2cd1a"
+    },
+    {
+      "position": 33,
+      "path": "tests/driver-signup-alert.test.mjs",
+      "sha256": "c82fd7bd95b4f44617e970cf5d837e3b691c7b5a240da0f1cdccaa7912f073f1"
+    },
+    {
+      "position": 34,
+      "path": "tests/email.test.mjs",
+      "sha256": "a81ebb2d9ef8e83a186b3db7190ebc39f398cce78793c67a7d202e90be175255"
+    },
+    {
+      "position": 35,
+      "path": "tests/dependencies.test.mjs",
+      "sha256": "dd56874faa994536f4f5dcecadf57624510a8f832f396aaf104903791178d2fb"
+    },
+    {
+      "position": 36,
+      "path": "tests/background-location.test.mjs",
+      "sha256": "8c97d34310ac66a699c15c82b5ff531786ac6cdc1645979b3f197dc787af3408"
+    },
+    {
+      "position": 37,
+      "path": "tests/customer-location.test.mjs",
+      "sha256": "9885b2eaa376cf99e905c07ab5476d83e789d69f8c11b5746680b090a1f32474"
+    },
+    {
+      "position": 38,
+      "path": "tests/url-decoder.test.mjs",
+      "sha256": "2870cd181a600c433fb83fd2824fc10105e27c4182b35b72d5d68406bdf42406"
+    },
+    {
+      "position": 39,
+      "path": "tests/background-registration.test.mjs",
+      "sha256": "1522d9a19edb2cabb5f2fee7fd76e3be3554803ef0da2666a6b516937632d84b"
+    },
+    {
+      "position": 40,
+      "path": "tests/phone-test.test.mjs",
+      "sha256": "924d609da6516c10404d9c2195455fd2b91e1ea76eaffbe0ca57721c3ee97af3"
+    },
+    {
+      "position": 41,
+      "path": "tests/phone-test-build.test.mjs",
+      "sha256": "4ba76a0552d1b51775ad1251145a698abfea967041c3da9acf4c4c3b6adcd621"
+    },
+    {
+      "position": 42,
+      "path": "tests/phone-test-state.test.mjs",
+      "sha256": "73cf346d13f90e226837db91bf9c976f3cf44c3ef6f8f0b8c1615181f3991bf5"
+    }
+  ],
+  "wp01AdditionalCommands": [
+    "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning tests/contracts.test.mjs",
+    "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning tests/contracts-money.test.mjs"
+  ],
+  "otherTestScripts": {
+    "test:scenarios": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-scenarios.mjs",
+    "test:location": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-customer-location.mjs",
+    "test:android-browser": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-android-browser.mjs",
+    "test:readiness": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-readiness.mjs",
+    "test:load": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-load.mjs",
+    "phone:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-phone-tests.mjs smoke"
+  },
+  "requiredChecks": [
+    "npm test",
+    "npm run lint",
+    "npm run typecheck"
+  ],
+  "integration": "WP01 commands are explicit separate checks because package.json is outside this packet ownership; npm test does not discover them automatically."
+}

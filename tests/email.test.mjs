@@ -116,7 +116,7 @@ try {
 
   // Support identity check: code to the verified email, read back by the caller; admins only; verified emails only.
   await call('/auth/register', { body: { name: 'Admin', email: 'admin@mail.example', phone: '0599700009', password, consent: true } });
-  promote('0599700009');
+  await promote('0599700009');
   const admin = await call('/auth/login', { body: { identifier: '0599700009', password } });
   const id = signedIn.user.id;
   await call(`/admin/users/${id}/identity-code`, { token: signedIn.token, body: {}, expect: 403 });

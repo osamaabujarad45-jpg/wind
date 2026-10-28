@@ -1,0 +1,449 @@
+{
+  "formatVersion": 1,
+  "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
+  "modules": [
+    {
+      "packet": "WP05",
+      "source": "server/domain/eligibility.ts",
+      "registrar": "registerEligibilityRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/driver/eligibility",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/driver/eligibility/activate",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/eligibility",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/areas",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/routes",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/vehicles",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/admin/eligibility/vehicles/:id",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/drivers/:id",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/checks",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/orders/:id",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/eligibility/orders/:id/recovery",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP06",
+      "source": "server/domain/phone-identity.ts",
+      "registrar": "registerPhoneRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/phone/capabilities",
+          "anonymousStatus": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/me/phone",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/me/phone/challenges",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/me/phone/verify",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/auth/phone/recovery/challenges",
+          "anonymousStatus": 400
+        },
+        {
+          "method": "POST",
+          "path": "/api/auth/phone/recovery/verify",
+          "anonymousStatus": 400
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/phone/review",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/phone/mappings",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP07",
+      "source": "server/domain/presence.ts",
+      "registrar": "registerPresenceRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/driver/presence",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/driver/presence/online",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/driver/presence/offline",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/driver/presence/heartbeat",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/driver/presence/location",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP09-native-push",
+      "source": "server/domain/native-push.ts",
+      "registrar": "registerNativePushRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/push/native/register",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/push/native/unregister",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/push/native/preferences",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP09-realtime",
+      "source": "server/domain/realtime.ts",
+      "registrar": "registerRealtimeRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/realtime",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/track/([a-f0-9]{64})/realtime",
+          "anonymousStatus": 404
+        }
+      ]
+    },
+    {
+      "packet": "WP10",
+      "source": "server/domain/dispatch.ts",
+      "registrar": "registerDispatchRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/offers/([0-9a-f-]{36})/decline",
+          "anonymousStatus": 404
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/dispatch/retry",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP11",
+      "source": "server/domain/ride-lifecycle.ts",
+      "registrar": "registerRideLifecycleRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/arrive",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/orders/:id/arrival/override",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/orders/:id/boarding-reset",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP07-active-gps-test-only",
+      "source": "server/domain/active-gps-routes.ts",
+      "registrar": "registerActiveGpsRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/location/session",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP12-resource-scope",
+      "source": "server/domain/resource-scope.ts",
+      "registrar": "registerResourceScopeRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/scope",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/scope",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/custody",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/pickup-check",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/scope/resolve",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP12-private-objects",
+      "source": "server/domain/private-objects.ts",
+      "registrar": "registerPrivateObjectRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/objects",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/objects",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/objects/([0-9a-f-]{36})/read",
+          "anonymousStatus": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/objects/([0-9a-f-]{36})/content",
+          "anonymousStatus": 404
+        }
+      ]
+    },
+    {
+      "packet": "WP13-ledger",
+      "source": "server/domain/ledger.ts",
+      "registrar": "registerLedgerRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cash-receipt",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/cash-receipt",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cash-receipt/collect",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/ledger/import",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/ledger",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/driver/ledger",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP14",
+      "source": "server/domain/payments.ts",
+      "registrar": "registerPaymentsRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/payments",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/payments",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/payments/refund",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/payments/webhook",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cod",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/orders/:id/cod",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cod/collect",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cod/remit",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP15",
+      "source": "server/domain/ops.ts",
+      "registrar": "registerOpsRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/support/cases",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/support/cases",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/support/cases/:id/assign",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/support/cases/:id/escalate",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/support/cases/:id/resolve",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/staff/:id/role",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/approvals",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/approvals/:id/decide",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/staff-actions",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "WP17-entra",
+      "source": "server/domain/entra.ts",
+      "registrar": "registerEntraRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/auth/entra",
+          "anonymousStatus": 503
+        }
+      ]
+    }
+  ]
+}

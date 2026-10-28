@@ -8,11 +8,14 @@ import assert from 'node:assert/strict';
  */
 export function apiCaller(base, fetchImpl = (...args) => fetch(...args)) {
   return async function call(path, { token, partnerKey, body, method, expect = 200 } = {}) {
-    const res = await fetchImpl(base() + path, {
-      method: method ?? (body ? 'POST' : 'GET'),
-      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }) },
-      body: body && JSON.stringify(body),
-    });
+    let res;
+    try {
+      res = await fetchImpl(base() + path, {
+        method: method ?? (body ? 'POST' : 'GET'),
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }) },
+        body: body && JSON.stringify(body),
+      });
+    } catch (cause) { throw new Error(`Test request failed: ${path}`, { cause }); }
     const data = await res.json();
     assert.equal(res.status, expect, `${path}: ${JSON.stringify(data)}`);
     return data;

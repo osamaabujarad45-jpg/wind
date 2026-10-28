@@ -23,7 +23,7 @@ const register = (phone, name, extra = {}) => call('/auth/register', { body: { p
 
 try {
   const admin = await register('0599130001', 'Admin');
-  promote('0599130001');
+  await promote('0599130001');
   await call('/admin/settings', { token: admin.token, body: { parcelPrice: 49 } });
   const inviter = await register('0599130002', 'Lina');
   const friend = await register('0599130003', 'Omar');
@@ -92,7 +92,7 @@ try {
   }
   // Completion through the driver flow is what issues rewards; drive them directly here.
   const { rewardReferral } = await import('../server/main.ts');
-  for (const r of db.prepare('SELECT order_id FROM referrals WHERE referrer_id = ?').all(extra.user.id)) rewardReferral(r.order_id, Date.now());
+  for (const r of db.prepare('SELECT order_id FROM referrals WHERE referrer_id = ?').all(extra.user.id)) await rewardReferral(r.order_id, Date.now());
   assert.equal((await call('/me/referral', { token: extra.token })).earned, 5);
 
   // A blocked inviter's code stops working.

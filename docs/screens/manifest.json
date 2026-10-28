@@ -106,6 +106,21 @@
     "session": null
   },
   {
+    "id": "sign-in-phone-recovery",
+    "group": "Launch",
+    "name": "Sign in · reset with a phone code (synthetic capability, generic reply)",
+    "route": "/auth",
+    "file": "src/phone-recovery.tsx",
+    "state": "phone-recovery",
+    "ar": [
+      "ar/sign-in-phone-recovery.png"
+    ],
+    "en": [
+      "en/sign-in-phone-recovery.png"
+    ],
+    "session": null
+  },
+  {
     "id": "help",
     "group": "Launch",
     "name": "Help & support",
@@ -158,6 +173,21 @@
     ],
     "en": [
       "en/book-ride.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "book-calculating",
+    "group": "Customer",
+    "name": "Book a ride · price being calculated (Request disabled, reason shown)",
+    "route": "/book?service=ride&from=ramallah&to=nablus",
+    "file": "src/app/book.tsx",
+    "state": "calculating",
+    "ar": [
+      "ar/book-calculating.png"
+    ],
+    "en": [
+      "en/book-calculating.png"
     ],
     "session": "customer"
   },
@@ -331,6 +361,51 @@
     "session": "customer"
   },
   {
+    "id": "profile-phone-ready",
+    "group": "Customer",
+    "name": "Edit profile · phone verification available (synthetic reply, Verify live)",
+    "route": "/profile",
+    "file": "src/phone-card.tsx",
+    "state": "phone-ready",
+    "ar": [
+      "ar/profile-phone-ready.png"
+    ],
+    "en": [
+      "en/profile-phone-ready.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "profile-phone-code",
+    "group": "Customer",
+    "name": "Edit profile · code requested, provider accepted (synthetic), not confirmed as delivered",
+    "route": "/profile",
+    "file": "src/phone-card.tsx",
+    "state": "phone-code",
+    "ar": [
+      "ar/profile-phone-code.png"
+    ],
+    "en": [
+      "en/profile-phone-code.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "profile-phone-change",
+    "group": "Customer",
+    "name": "Edit profile · change number form (new number and current password, synthetic capability)",
+    "route": "/profile",
+    "file": "src/phone-card.tsx",
+    "state": "phone-change",
+    "ar": [
+      "ar/profile-phone-change.png"
+    ],
+    "en": [
+      "en/profile-phone-change.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "driver-pending",
     "group": "Driver",
     "name": "Awaiting approval",
@@ -361,7 +436,7 @@
   {
     "id": "driver-idle",
     "group": "Driver",
-    "name": "Jobs · ready for an assignment",
+    "name": "Jobs · no job assigned, presence card offline (go-online not pressed)",
     "route": "/driver",
     "file": "src/app/driver/index.tsx",
     "ar": [
@@ -455,6 +530,21 @@
       "en/driver-account.png"
     ],
     "session": "driver"
+  },
+  {
+    "id": "driver-offer-range",
+    "group": "Driver",
+    "name": "Jobs · offer price outside the band (Send offer disabled, band shown)",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "state": "offer-range",
+    "ar": [
+      "ar/driver-offer-range.png"
+    ],
+    "en": [
+      "en/driver-offer-range.png"
+    ],
+    "session": "freshDriver"
   },
   {
     "id": "admin-dashboard",

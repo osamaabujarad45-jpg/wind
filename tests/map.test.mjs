@@ -1,7 +1,8 @@
 // Live map (SPEC-live-map.md): exact dropoff points with pickup-point visibility, driver heading/accuracy.
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -16,7 +17,7 @@ const legacy = new DatabaseSync(process.env.DB_PATH);
 legacy.exec('CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY, lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL)');
 legacy.close();
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -28,7 +29,7 @@ try {
   assert.ok(['dropoff_lat', 'dropoff_lng'].every(c => columns('orders').includes(c)));
 
   const admin = await call('/auth/register', { body: { phone: '0599700001', name: 'Admin', password: 'secret1' } });
-  promote('0599700001');
+  await promote('0599700001');
   const customer = await call('/auth/register', { body: { phone: '0599700002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599700003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
@@ -94,6 +95,9 @@ try {
   const pending = (since, ms = 300) => Promise.race([call(`${live}?since=${since}`, { token: customer.token }),
     new Promise(resolve => setTimeout(() => resolve('held'), ms))]);
   const held = call(`${live}?since=${seen.updatedAt}`, { token: customer.token });
+  // If a later assertion fails, shutdown can close this request before it is awaited.
+  // Mark its rejection handled now while still awaiting the original promise below.
+  void held.catch(() => {});
   await new Promise(resolve => setTimeout(resolve, 100));
   await call('/location', { token: driver.token, body: { latitude: 31.4, longitude: 35.4, age: 50_000 } }); // older: ignored
   assert.equal(await pending(seen.updatedAt), 'held');
@@ -148,6 +152,7 @@ try {
   await call('/location', { token: driver2.token, body: { latitude: 31.7, longitude: 35.3, accuracy: 10 } });
   const current = (await call(`/orders/${swapOrder.id}`, { token: customer.token })).driverLocation;
   const heldSwap = call(`/orders/${swapOrder.id}/live?since=${current.updatedAt}&driver=${driver2.user.id}`, { token: customer.token });
+  void heldSwap.catch(() => {});
   await new Promise(resolve => setTimeout(resolve, 100));
   await call(`/orders/${swapOrder.id}/release`, { token: driver2.token, body: {} });
   await call(`/jobs/${swapOrder.id}/accept`, { token: driver3.token, body: {} });
@@ -245,9 +250,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const web = join(dir, 'web');
   mkdirSync(web);
   writeFileSync(join(web, 'map.html'), page);
-  const child = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
-    `const { server } = await import(${JSON.stringify(new URL('../server/main.ts', import.meta.url).href)}); server.listen(0, async () => {
-      const r = await fetch('http://127.0.0.1:' + server.address().port + '/map.html'); console.log(r.status, r.headers.get('content-type'), r.headers.get('cache-control'), (await r.text()).includes('maplibre')); server.close(); });`],
+  const child = await promisify(execFile)(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
+    `const { server, shutdown } = await import(${JSON.stringify(new URL('../server/main.ts', import.meta.url).href)}); server.listen(0, async () => {
+      const r = await fetch('http://127.0.0.1:' + server.address().port + '/map.html'); console.log(r.status, r.headers.get('content-type'), r.headers.get('cache-control'), (await r.text()).includes('maplibre')); await shutdown(); });`],
     { env: { ...process.env, WEB_ROOT: web, DB_PATH: join(web, 'w.db') }, encoding: 'utf8' });
   assert.equal(child.stdout.trim(), '200 text/html; charset=utf-8 no-cache true', child.stderr);
 
@@ -271,8 +276,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
 
   // At most 20 held watchers per driver (a public link must not pin sockets); the next one is answered at once.
   const future = `${live}?since=${Date.now() + 60_000}`;
+  const previousDeadline = Date.now() + 13_000;
+  while (liveWatcherCount(order.id) && Date.now() < previousDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(liveWatcherCount(order.id), 0, 'prior live requests finish before testing the cap');
   const holds = Array.from({ length: 20 }, () => call(future, { token: customer.token }));
-  await new Promise(resolve => setTimeout(resolve, 200));
+  const early = [];
+  for (const [index, hold] of holds.entries()) void hold.then(() => early.push(`resolved:${index}`), error => early.push(`rejected:${index}:${error.message}`));
+  const watcherDeadline = Date.now() + 5_000;
+  while (liveWatcherCount(order.id) < 20 && Date.now() < watcherDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(liveWatcherCount(order.id), 20, `all 20 watchers registered before testing the cap; early outcomes: ${early.join(',')}`);
   assert.notEqual(await pending(Date.now() + 60_000), 'held', 'the 21st watcher is answered, not held');
   const draining = Promise.all(holds).then(all => all[0]);
   at = Date.now();

@@ -1,0 +1,4134 @@
+{
+  "formatVersion": 1,
+  "environment": "isolated synthetic default-parcel server; no providers",
+  "exchanges": [
+    {
+      "id": "boundary:GET:/api/health",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/health",
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "boundary:GET:/api/auth/options",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/auth/options",
+      "httpStatus": 200,
+      "response": {
+        "registrationOpen": true,
+        "emailReset": false
+      }
+    },
+    {
+      "id": "boundary:GET:/api/ready",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/ready",
+      "httpStatus": 200,
+      "response": {
+        "ok": true,
+        "schema": 3
+      }
+    },
+    {
+      "id": "boundary:POST:/api/auth/register",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/auth/register",
+      "request": {},
+      "httpStatus": 400,
+      "response": {
+        "error": "invalid_phone"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/auth/login",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/auth/login",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "wrong_credentials"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/email/code",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/email/code",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/email",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/email",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/email/verify",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/email/verify",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/auth/reset/code",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/auth/reset/code",
+      "request": {},
+      "httpStatus": 503,
+      "response": {
+        "error": "email_unavailable"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/auth/reset",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/auth/reset",
+      "request": {},
+      "httpStatus": 400,
+      "response": {
+        "error": "weak_password"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/auth/logout",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/auth/logout",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/me",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/me",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/driver/heading",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/driver/heading",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/password",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/password",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/delete",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/delete",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/me/places",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/me/places",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/me/places",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/me/places",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:DELETE:/api/me/places/:id",
+      "role": "anonymous",
+      "method": "DELETE",
+      "path": "/me/places/999999999",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/promos/check",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/promos/check",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/me/referral",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/me/referral",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/promos",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/promos",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/promos",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/promos",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/promos/:id/deactivate",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/promos/999999999/deactivate",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/push/key",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/push/key",
+      "httpStatus": 200,
+      "response": {
+        "key": "<key>"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/push/subscribe",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/push/subscribe",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/push/unsubscribe",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/push/unsubscribe",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/price",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/price",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/partner/config",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/partner/config",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/partner/quotes",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/partner/quotes",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/partner/orders",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/partner/orders",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/partner/orders/by-reference",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/partner/orders/by-reference",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/partner/orders/:id",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/partner/orders/999999999",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/partner/orders/:id/cancel",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/partner/orders/999999999/cancel",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/orders",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/orders",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/orders/:id",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/orders/999999999",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/orders/:id/live",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/orders/999999999/live",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/cancel",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/cancel",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/schedule",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/schedule",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/rate",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/rate",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/share",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/share",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/partner/orders/:id/share",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/partner/orders/999999999/share",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/share/revoke",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/share/revoke",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/track/([a-f0-9]{64})",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/track/<share-token>",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/track/([a-f0-9]{64})/live",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/track/<share-token>/live",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/dispute",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/dispute",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/disputes",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/disputes",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/disputes/:id/resolve",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/disputes/999999999/resolve",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/sos",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/sos",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/incidents",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/incidents",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/incidents/:id/resolve",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/incidents/999999999/resolve",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/orders/:id/messages",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/orders/999999999/messages",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/messages",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/messages",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/roads",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/roads",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/roads/:id/report",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/roads/999999999/report",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/roads",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/roads",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/roads/:id/place",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/roads/999999999/place",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/roads/:id/remove",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/roads/999999999/remove",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/jobs",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/jobs",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/jobs/:id/accept",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/jobs/999999999/accept",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/jobs/:id/offer",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/jobs/999999999/offer",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/offers/:driver/accept",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/offers/999999999/accept",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/release",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/release",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/exception",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/exception",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/orders/:id/resolve",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/orders/999999999/resolve",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/orders/:id/advance",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/orders/999999999/advance",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/location",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/location",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/route",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/route",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/track/([a-f0-9]{64})/eta",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/track/<share-token>/eta",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/driver/earnings",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/driver/earnings",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/driver/cash",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/driver/cash/:id/confirm",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/driver/cash/999999999/confirm",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/cash",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/cash",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/cash/remittance",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/cash/remittance",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/cash/adjustment",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/cash/adjustment",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/subscriptions",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/subscriptions",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/orders/:id/proof-reset",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/orders/999999999/proof-reset",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/stats",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/stats",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/users",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/users",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/users/:id",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/users/999999999",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:PATCH:/api/admin/users/:id",
+      "role": "anonymous",
+      "method": "PATCH",
+      "path": "/admin/users/999999999",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/users/:id/approve",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/users/999999999/approve",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:DELETE:/api/admin/users/:id",
+      "role": "anonymous",
+      "method": "DELETE",
+      "path": "/admin/users/999999999",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/users/:id/password",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/users/999999999/password",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/users/:id/identity-code",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/users/999999999/identity-code",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/users/:id/identity-check",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/users/999999999/identity-check",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:GET:/api/admin/subscriptions",
+      "role": "anonymous",
+      "method": "GET",
+      "path": "/admin/subscriptions",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/subscriptions/:id",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/subscriptions/999999999",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "boundary:POST:/api/admin/settings",
+      "role": "anonymous",
+      "method": "POST",
+      "path": "/admin/settings",
+      "request": {},
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "pending-driver",
+      "role": "driver",
+      "method": "GET",
+      "path": "/jobs",
+      "httpStatus": 403,
+      "response": {
+        "error": "pending_approval"
+      }
+    },
+    {
+      "id": "customer-session",
+      "role": "customer",
+      "method": "GET",
+      "path": "/me",
+      "httpStatus": 200,
+      "response": {
+        "user": {
+          "id": 2,
+          "phone": "<customer-phone>",
+          "name": "Synthetic customer",
+          "role": "customer",
+          "status": "active",
+          "vehicle": null,
+          "rating": null,
+          "createdAt": "<server-timestamp>",
+          "email": null,
+          "permanentlyApprovedAt": null,
+          "phoneVerifiedAt": null,
+          "emailVerifiedAt": null
+        },
+        "subscription": null,
+        "plan": null,
+        "settings": {
+          "parcelPrice": 20,
+          "parcelLarge": 10,
+          "rideBase": 15,
+          "ridePerKm": 1.1,
+          "freightBase": 70,
+          "freightPerKm": 2.5,
+          "freightLarge": 50,
+          "loadingHelp": 30,
+          "sharedDiscount": 0.4,
+          "plusDiscount": 0.15,
+          "commission": 0.15,
+          "proCommission": 0.05,
+          "plusPrice": 29,
+          "proPrice": 99,
+          "perMinute": 0.25,
+          "nightExtra": 0.2
+        },
+        "capabilities": {
+          "enabledServices": [
+            "parcel"
+          ],
+          "pooling": false,
+          "emailVerification": false
+        }
+      }
+    },
+    {
+      "id": "default-disabled:ride",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "ride",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "1",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "service_unavailable"
+      }
+    },
+    {
+      "id": "default-disabled:freight",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "freight",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "service_unavailable"
+      }
+    },
+    {
+      "id": "wrong-role-jobs",
+      "role": "customer",
+      "method": "GET",
+      "path": "/jobs",
+      "httpStatus": 403,
+      "response": {
+        "error": "forbidden"
+      }
+    },
+    {
+      "id": "wrong-role-admin",
+      "role": "customer",
+      "method": "POST",
+      "path": "/admin/settings",
+      "request": {
+        "commission": 0.2
+      },
+      "httpStatus": 403,
+      "response": {
+        "error": "forbidden"
+      }
+    },
+    {
+      "id": "quote",
+      "role": "customer",
+      "method": "POST",
+      "path": "/price",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20,
+        "scheduledFor": "<server-timestamp>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "price": 20,
+        "km": 46.3,
+        "minutes": 56,
+        "delayMinutes": 0,
+        "night": false,
+        "slow": [],
+        "closed": [],
+        "avoids": [],
+        "estimated": true,
+        "standard": true,
+        "line": null,
+        "at": "<at>"
+      }
+    },
+    {
+      "id": "booking",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20,
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "foreign-order",
+      "role": "foreign-customer",
+      "method": "GET",
+      "path": "/orders/1",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "job-card",
+      "role": "driver",
+      "method": "GET",
+      "path": "/orders/1",
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": null,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "",
+        "dropoffNote": "",
+        "detail": "",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": null,
+        "pickupContact": null,
+        "recipientName": "",
+        "recipientPhone": null,
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 0
+        }
+      }
+    },
+    {
+      "id": "admin-order",
+      "role": "admin",
+      "method": "GET",
+      "path": "/orders/1",
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "booking-replay-after-price-change",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20,
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "booking-changed-payload",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Changed box",
+        "quotedPrice": 20,
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "idempotency_conflict"
+      }
+    },
+    {
+      "id": "price-changed",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20,
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "price_changed"
+      }
+    },
+    {
+      "id": "accept",
+      "role": "driver",
+      "method": "POST",
+      "path": "/jobs/1/accept",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "assigned",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 0
+        }
+      }
+    },
+    {
+      "id": "stale-location",
+      "role": "driver",
+      "method": "POST",
+      "path": "/location",
+      "request": {
+        "latitude": 31.9038,
+        "longitude": 35.2034,
+        "age": 61000
+      },
+      "httpStatus": 200,
+      "response": {
+        "ok": true,
+        "accepted": false
+      }
+    },
+    {
+      "id": "parcel-batch",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/1",
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "assigned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": true,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "arrival",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "requestId": "<requestId>",
+        "expectedStatus": "assigned"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "at_pickup",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 0
+        }
+      }
+    },
+    {
+      "id": "arrival-replay",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "requestId": "<requestId>",
+        "expectedStatus": "assigned"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "at_pickup",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 0
+        }
+      }
+    },
+    {
+      "id": "arrival-altered-replay",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "requestId": "<requestId>",
+        "expectedStatus": "assigned",
+        "code": "<code>"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "idempotency_conflict"
+      }
+    },
+    {
+      "id": "pickup",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "expectedStatus": "at_pickup",
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "in_transit",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 0
+        }
+      }
+    },
+    {
+      "id": "custody-cannot-cancel",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/1/cancel",
+      "request": {},
+      "httpStatus": 409,
+      "response": {
+        "error": "cannot_cancel"
+      }
+    },
+    {
+      "id": "wrong-proof",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "expectedStatus": "in_transit",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 400,
+      "response": {
+        "error": "wrong_code"
+      }
+    },
+    {
+      "id": "wrong-proof-replay",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "expectedStatus": "in_transit",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 400,
+      "response": {
+        "error": "wrong_code"
+      }
+    },
+    {
+      "id": "completion",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "expectedStatus": "in_transit",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "completion-replay",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/advance",
+      "request": {
+        "expectedStatus": "in_transit",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "completed-rating:customer",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/1/rate",
+      "request": {
+        "rating": 4,
+        "priceRating": 3
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": "<handoverCode>",
+        "rating": 4,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": 3,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "completed-rating-replay:customer",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/1/rate",
+      "request": {
+        "rating": 4,
+        "priceRating": 3
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": "<handoverCode>",
+        "rating": 4,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": 3,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "completed-rating:driver",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/rate",
+      "request": {
+        "customerRating": 5
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": null,
+        "rating": 4,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": 3,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": 5,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "completed-rating-replay:driver",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/1/rate",
+      "request": {
+        "customerRating": 5
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": null,
+        "rating": 4,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": 3,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": 5,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "customer-rating-privacy",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/1",
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "completed",
+        "handoverCode": "<handoverCode>",
+        "rating": 4,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": 3,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "delivery-exception",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/3/exception",
+      "request": {
+        "requestId": "<requestId>",
+        "expectedStatus": "in_transit",
+        "reason": "refused"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "on_hold",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "refused",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "reattempt",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/orders/3/resolve",
+      "request": {
+        "action": "reattempt",
+        "reason": "Synthetic recipient confirmation"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "in_transit",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "refused",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "return-decision",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/orders/3/resolve",
+      "request": {
+        "action": "return",
+        "reason": "Synthetic sender return approval"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "sender-return-code",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/3",
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": "<returnCode>",
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "driver-return-privacy",
+      "role": "driver",
+      "method": "GET",
+      "path": "/orders/3",
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 1
+        }
+      }
+    },
+    {
+      "id": "admin-return-privacy",
+      "role": "admin",
+      "method": "GET",
+      "path": "/orders/3",
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "sender-return",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/3/advance",
+      "request": {
+        "expectedStatus": "returning",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 2
+        }
+      }
+    },
+    {
+      "id": "return-replay",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/3/advance",
+      "request": {
+        "expectedStatus": "returning",
+        "requestId": "<requestId>",
+        "code": "<code>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 2
+        }
+      }
+    },
+    {
+      "id": "returned-rating-denied:customer",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/3/rate",
+      "request": {
+        "rating": 4,
+        "priceRating": 4
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "cannot_rate"
+      }
+    },
+    {
+      "id": "returned-rating-denied:driver",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/3/rate",
+      "request": {
+        "customerRating": 4
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "cannot_rate"
+      }
+    },
+    {
+      "id": "returned-dispute",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/3/dispute",
+      "request": {
+        "reason": "Synthetic return handling review"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": {
+          "status": "open",
+          "reason": "Synthetic return handling review",
+          "resolution": null,
+          "credit": null
+        },
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "finished-cash",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 600,
+        "pendingCents": 0,
+        "commissionCents": 600,
+        "discountsCents": 0,
+        "remittedCents": 0,
+        "adjustmentsCents": 0,
+        "entries": []
+      }
+    },
+    {
+      "id": "cash-remittance",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/cash/remittance",
+      "request": {
+        "driverId": 3,
+        "amountCents": 600,
+        "requestId": "<requestId>",
+        "note": "Synthetic two-person handover"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 600,
+        "note": "Synthetic two-person handover",
+        "status": "pending",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": null
+      }
+    },
+    {
+      "id": "cash-pending",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 600,
+        "pendingCents": 600,
+        "commissionCents": 600,
+        "discountsCents": 0,
+        "remittedCents": 0,
+        "adjustmentsCents": 0,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 600,
+            "note": "Synthetic two-person handover",
+            "status": "pending",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "cash-confirm",
+      "role": "driver",
+      "method": "POST",
+      "path": "/driver/cash/1/confirm",
+      "request": {
+        "decision": "confirm"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 600,
+        "note": "Synthetic two-person handover",
+        "status": "confirmed",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": "<server-timestamp>"
+      }
+    },
+    {
+      "id": "cash-settled",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 0,
+        "pendingCents": 0,
+        "commissionCents": 600,
+        "discountsCents": 0,
+        "remittedCents": 600,
+        "adjustmentsCents": 0,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 600,
+            "note": "Synthetic two-person handover",
+            "status": "confirmed",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": "<server-timestamp>"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cancel:searching",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/4/cancel",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "id": 4,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "cancelled",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "cancel:assigned",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/5/cancel",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "id": 5,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "cancelled",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "cancel:at_pickup",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/6/cancel",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "id": 6,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "cancelled",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "release:assigned",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/7/release",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "release-replay:assigned",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/7/release",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "release:at_pickup",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/8/release",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "release-replay:at_pickup",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/8/release",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "pickup-failed",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/9/exception",
+      "request": {
+        "expectedStatus": "at_pickup",
+        "requestId": "<requestId>",
+        "reason": "absent"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 9,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "cancelled",
+        "handoverCode": null,
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null,
+        "customerStats": {
+          "rating": null,
+          "trips": 2
+        }
+      }
+    },
+    {
+      "id": "support-return",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/orders/10/resolve",
+      "request": {
+        "action": "confirm_return",
+        "reason": "Synthetic sender handback verified"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 10,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "public-tracking",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>",
+      "httpStatus": 200,
+      "response": {
+        "orderCode": "W-00011",
+        "status": "searching",
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "updatedAt": "<server-timestamp>",
+        "driver": null,
+        "driverLocation": null
+      }
+    },
+    {
+      "id": "public-live",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>/live",
+      "httpStatus": 200,
+      "response": {
+        "driverLocation": null,
+        "driverKey": null
+      }
+    },
+    {
+      "id": "public-eta",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>/eta",
+      "httpStatus": 200,
+      "response": {
+        "minutes": null
+      }
+    },
+    {
+      "id": "revoked-share:",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "revoked-share:/live",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>/live",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "revoked-share:/eta",
+      "role": "public-tracking",
+      "method": "GET",
+      "path": "/track/<share-token>/eta",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "partner-config",
+      "role": "partner",
+      "method": "GET",
+      "path": "/partner/config",
+      "httpStatus": 200,
+      "response": {
+        "currency": "<currency>",
+        "cities": [
+          {
+            "id": "ramallah",
+            "ar": "<ar>"
+          },
+          {
+            "id": "bireh",
+            "ar": "<ar>"
+          },
+          {
+            "id": "nablus",
+            "ar": "<ar>"
+          },
+          {
+            "id": "hebron",
+            "ar": "<ar>"
+          },
+          {
+            "id": "bethlehem",
+            "ar": "<ar>"
+          },
+          {
+            "id": "jenin",
+            "ar": "<ar>"
+          },
+          {
+            "id": "tulkarm",
+            "ar": "<ar>"
+          },
+          {
+            "id": "qalqilya",
+            "ar": "<ar>"
+          },
+          {
+            "id": "jericho",
+            "ar": "<ar>"
+          },
+          {
+            "id": "salfit",
+            "ar": "<ar>"
+          }
+        ],
+        "enabledServices": [
+          "parcel"
+        ],
+        "pooling": false
+      }
+    },
+    {
+      "id": "partner-quote",
+      "role": "partner",
+      "method": "POST",
+      "path": "/partner/quotes",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20
+      },
+      "httpStatus": 200,
+      "response": {
+        "currency": "<currency>",
+        "price": 20
+      }
+    },
+    {
+      "id": "partner-booking",
+      "role": "partner",
+      "method": "POST",
+      "path": "/partner/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Synthetic box",
+        "quotedPrice": 20,
+        "externalRef": "<externalRef>"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 12,
+        "customerId": 6,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "<partner-name>",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "partner-replay",
+      "role": "partner",
+      "method": "POST",
+      "path": "/partner/orders",
+      "request": {
+        "externalRef": "<externalRef>",
+        "quotedPrice": 20,
+        "detail": "Synthetic box",
+        "recipientPhone": "<foreign-customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "contact": "<customer-phone>",
+        "dropoffNote": "Synthetic destination landmark",
+        "pickupNote": "Synthetic pickup landmark",
+        "shared": false,
+        "option": "small",
+        "dropoffCity": "nablus",
+        "pickupCity": "ramallah",
+        "service": "parcel"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 12,
+        "customerId": 6,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "<partner-name>",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "partner-altered-replay",
+      "role": "partner",
+      "method": "POST",
+      "path": "/partner/orders",
+      "request": {
+        "service": "parcel",
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "option": "small",
+        "shared": false,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "contact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "detail": "Changed scope",
+        "quotedPrice": 20,
+        "externalRef": "<externalRef>"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "idempotency_conflict"
+      }
+    },
+    {
+      "id": "partner-reference",
+      "role": "partner",
+      "method": "GET",
+      "path": "/partner/orders/by-reference?externalRef=wp01:synthetic:external-reference",
+      "httpStatus": 200,
+      "response": {
+        "id": 12,
+        "customerId": 6,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "<partner-name>",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "partner-foreign-order",
+      "role": "partner",
+      "method": "GET",
+      "path": "/partner/orders/1",
+      "httpStatus": 404,
+      "response": {
+        "error": "not_found"
+      }
+    },
+    {
+      "id": "partner-return-code",
+      "role": "partner",
+      "method": "GET",
+      "path": "/partner/orders/12",
+      "httpStatus": 200,
+      "response": {
+        "id": 12,
+        "customerId": 6,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": "<returnCode>",
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "<partner-name>",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "partner-returned",
+      "role": "partner",
+      "method": "GET",
+      "path": "/partner/orders/12",
+      "httpStatus": 200,
+      "response": {
+        "id": 12,
+        "customerId": 6,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "<partner-name>",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "safety-hold",
+      "role": "customer",
+      "method": "POST",
+      "path": "/orders/13/sos",
+      "request": {
+        "kind": "other",
+        "note": "Synthetic safety drill"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 13,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "assigned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": true,
+        "safetyReport": {
+          "status": "open",
+          "kind": "other",
+          "resolution": null
+        },
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "safety-blocks-progress",
+      "role": "driver",
+      "method": "POST",
+      "path": "/orders/13/advance",
+      "request": {
+        "expectedStatus": "assigned",
+        "requestId": "<requestId>"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "safety_hold"
+      }
+    },
+    {
+      "id": "block-without-recovery",
+      "role": "admin",
+      "method": "PATCH",
+      "path": "/admin/users/3",
+      "request": {
+        "status": "blocked"
+      },
+      "httpStatus": 409,
+      "response": {
+        "error": "carrying_parcels"
+      }
+    },
+    {
+      "id": "block-recovery",
+      "role": "admin",
+      "method": "PATCH",
+      "path": "/admin/users/3",
+      "request": {
+        "status": "blocked",
+        "recovery": "return"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 3,
+        "phone": "<driver-phone>",
+        "name": "Synthetic driver",
+        "role": "driver",
+        "status": "blocked",
+        "vehicle": "car",
+        "rating": 4,
+        "priceRating": 3,
+        "trips": 4,
+        "createdAt": "<server-timestamp>",
+        "heading": null,
+        "email": null,
+        "permanentlyApprovedAt": "<server-timestamp>",
+        "phoneVerifiedAt": null,
+        "emailVerifiedAt": null
+      }
+    },
+    {
+      "id": "blocked-session",
+      "role": "driver",
+      "method": "GET",
+      "path": "/me",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    },
+    {
+      "id": "block:assigned",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/14",
+      "httpStatus": 200,
+      "response": {
+        "id": 14,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "block:at_pickup",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/15",
+      "httpStatus": 200,
+      "response": {
+        "id": 15,
+        "customerId": 2,
+        "driverId": null,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": null,
+        "status": "searching",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverVehicle": null,
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "block:in_transit",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/16",
+      "httpStatus": 200,
+      "response": {
+        "id": 16,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": "<returnCode>",
+        "exceptionReason": null,
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": true,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "block:on_hold",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/17",
+      "httpStatus": 200,
+      "response": {
+        "id": 17,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": "<returnCode>",
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": true,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "block:returning",
+      "role": "customer",
+      "method": "GET",
+      "path": "/orders/18",
+      "httpStatus": 200,
+      "response": {
+        "id": 18,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returning",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": "<returnCode>",
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": true,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "blocked-support-return",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/orders/18/resolve",
+      "request": {
+        "action": "confirm_return",
+        "reason": "Synthetic blocked courier recovery"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 18,
+        "customerId": 2,
+        "driverId": 3,
+        "service": "parcel",
+        "shared": false,
+        "pickupCity": "ramallah",
+        "dropoffCity": "nablus",
+        "pickupPoint": null,
+        "dropoffPoint": null,
+        "pickupNote": "Synthetic pickup landmark",
+        "dropoffNote": "Synthetic destination landmark",
+        "detail": "Synthetic box",
+        "option": "small",
+        "loadingHelp": false,
+        "contact": "<customer-phone>",
+        "pickupContact": "<customer-phone>",
+        "recipientName": "Synthetic recipient",
+        "recipientPhone": "<foreign-customer-phone>",
+        "price": 20,
+        "commission": 3,
+        "status": "returned",
+        "handoverCode": "<handoverCode>",
+        "rating": null,
+        "createdAt": "<server-timestamp>",
+        "updatedAt": "<server-timestamp>",
+        "sharing": false,
+        "scheduledFor": null,
+        "discount": 0,
+        "returnCode": null,
+        "exceptionReason": "absent",
+        "safetyHold": false,
+        "safetyReport": null,
+        "dispute": null,
+        "customerName": "Synthetic customer",
+        "driverName": "Synthetic driver",
+        "driverPhone": "<driver-phone>",
+        "driverVehicle": "car",
+        "driverLocation": null,
+        "recommendedPrice": null,
+        "priceRating": null,
+        "routeKm": null,
+        "sharedRun": false,
+        "myOffer": null,
+        "customerRating": null
+      }
+    },
+    {
+      "id": "logout",
+      "role": "foreign-customer",
+      "method": "POST",
+      "path": "/auth/logout",
+      "request": {},
+      "httpStatus": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "id": "logged-out-session",
+      "role": "foreign-customer",
+      "method": "GET",
+      "path": "/me",
+      "httpStatus": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "currency": "ILS",
+  "currentRepresentation": "Public fare, discount and commission are ILS numbers; SQLite price/commission are REAL. cash_entries.amount_cents is integer minor ILS. No provider collection or COD ledger is implied.",
+  "rounding": "Payable fare is max(1, Math.round(total)) in whole ILS. Smart calculation adds time/checkpoint extras, then night uplift, then Plus discount, then rounds once. commissionOn rounds price * rate to two decimals. Cash sums each finished order's rounded commission/discount cents, not a rounded aggregate. Preserve this before later integer migration.",
+  "parcelCases": [
+    {"id":"parcel-standard","input":{"option":"small"},"ils":20,"minor":2000},
+    {"id":"parcel-medium","input":{"option":"medium"},"ils":20,"minor":2000},
+    {"id":"parcel-large","input":{"option":"large"},"ils":30,"minor":3000},
+    {"id":"parcel-plus","input":{"option":"small","plus":true},"ils":17,"minor":1700},
+    {"id":"parcel-large-plus-half","input":{"option":"large","plus":true},"ils":26,"minor":2600},
+    {"id":"configured-tariff-plus","settings":{"parcelPrice":49},"input":{"option":"small","plus":true},"ils":42,"minor":4200},
+    {"id":"minimum-one-ils","settings":{"parcelPrice":0},"input":{"option":"small"},"ils":1,"minor":100}
+  ],
+  "smartCases": [
+    {"id":"ride-day","input":{"service":"ride","option":"1","km":10,"minutes":12,"delayMinutes":0,"at":"2026-10-06T09:00:00Z"},"ils":26},
+    {"id":"ride-night","input":{"service":"ride","option":"1","km":10,"minutes":12,"delayMinutes":0,"at":"2026-10-06T20:30:00Z"},"ils":31},
+    {"id":"ride-night-plus","input":{"service":"ride","option":"1","km":10,"minutes":12,"delayMinutes":0,"at":"2026-10-06T20:30:00Z","plus":true},"ils":27},
+    {"id":"ride-slow-minutes","input":{"service":"ride","option":"1","km":10,"minutes":32,"delayMinutes":0,"at":"2026-10-06T09:00:00Z"},"ils":31},
+    {"id":"ride-checkpoint","input":{"service":"ride","option":"1","km":10,"minutes":12,"delayMinutes":15,"at":"2026-10-06T09:00:00Z"},"ils":30},
+    {"id":"freight-base","input":{"service":"freight","option":"small","km":10,"minutes":12,"delayMinutes":0,"at":"2026-10-06T09:00:00Z"},"ils":95},
+    {"id":"freight-load-help-plus","input":{"service":"freight","option":"large","loadingHelp":true,"km":10,"minutes":12,"delayMinutes":0,"at":"2026-10-06T09:00:00Z","plus":true},"ils":149},
+    {"id":"parcel-no-distance-night-surcharge","input":{"service":"parcel","option":"large","km":150,"minutes":300,"delayMinutes":45,"at":"2026-10-06T20:30:00Z"},"ils":30}
+  ],
+  "commissionCases": [
+    {"price":49,"rate":0.15,"ils":7.35,"minor":735},
+    {"price":55,"rate":0.15,"ils":8.25,"minor":825},
+    {"price":26,"rate":0.05,"ils":1.3,"minor":130},
+    {"price":17,"rate":0.15,"ils":2.55,"minor":255}
+  ],
+  "nightBoundaries": [
+    {"at":"2026-10-06T18:59:00Z","night":false},
+    {"at":"2026-10-06T19:00:00Z","night":true},
+    {"at":"2026-10-07T02:59:00Z","night":true},
+    {"at":"2026-10-07T03:00:00Z","night":false}
+  ],
+  "cashFixtureIds":["finished-cash","cash-remittance","cash-pending","cash-confirm","cash-settled","return-replay"],
+  "cashInvariant":"owedCents = commissionCents - discountsCents + adjustmentsCents - confirmedRemittedCents. Pending remittances reserve room but do not lower debt. Returned is included exactly once; cancelled is excluded. Append-only triggers protect decided entries. Negative debt can reflect funded discounts; admin cannot create payout through over-remittance or adjustment."
+}

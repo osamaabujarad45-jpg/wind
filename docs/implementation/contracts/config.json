@@ -1,0 +1,229 @@
+{
+  "formatVersion": 1,
+  "scope": "Source defaults and isolated fixture configuration; no production environment, live tariff database, credentials or provider accounts inspected.",
+  "runtime": {
+    "expo": "~57.0.31",
+    "reactNative": "0.86.3",
+    "node": "v24.12.0",
+    "npm": "11.11.0",
+    "packageManager": "npm",
+    "sqliteUserVersion": 3
+  },
+  "tariffs": {
+    "defaults": {
+      "parcelPrice": 20,
+      "parcelLarge": 10,
+      "rideBase": 15,
+      "ridePerKm": 1.1,
+      "freightBase": 70,
+      "freightPerKm": 2.5,
+      "freightLarge": 50,
+      "loadingHelp": 30,
+      "sharedDiscount": 0.4,
+      "plusDiscount": 0.15,
+      "commission": 0.15,
+      "proCommission": 0.05,
+      "plusPrice": 29,
+      "proPrice": 99,
+      "perMinute": 0.25,
+      "nightExtra": 0.2
+    },
+    "units": "ILS; percentage settings are fractions in existing source",
+    "fractionKeys": [
+      "sharedDiscount",
+      "plusDiscount",
+      "commission",
+      "proCommission",
+      "nightExtra"
+    ],
+    "validation": "Admin allows known keys, finite n >= 0; fraction keys < 1; values stored in SQLite settings and overlaid on defaults. No configured live tariff snapshot is claimed."
+  },
+  "environment": [
+    {
+      "name": "NODE_ENV",
+      "classification": "runtime",
+      "baselineDefault": "development unless production",
+      "behavior": "Production startup requires persistent absolute DB_PATH, SUPPORT_CONTACT and identity mode."
+    },
+    {
+      "name": "DB_PATH",
+      "classification": "server-only path",
+      "baselineDefault": "wind.db",
+      "behavior": "SQLite authoritative; WAL, FULL, foreign_keys ON, busy timeout 250ms; use isolated fixtures only."
+    },
+    {
+      "name": "WIND_IDENTITY_MODE",
+      "classification": "server policy",
+      "baselineDefault": "development registration unless operator-verified; required explicitly in production",
+      "behavior": "operator-verified or self-service; not consumer identity proof."
+    },
+    {
+      "name": "WIND_CONTACT_VERIFICATION_REQUIRED",
+      "classification": "server policy",
+      "baselineDefault": "false",
+      "behavior": "Only self-service + literal true enables closed contact-verification gate; not a mock provider bypass."
+    },
+    {
+      "name": "WIND_ENABLED_SERVICES",
+      "classification": "server policy",
+      "baselineDefault": "parcel",
+      "behavior": "Comma-delimited allowlist parcel,ride,freight. Ride and freight implemented but disabled by default; no operating permission inferred."
+    },
+    {
+      "name": "SUPPORT_CONTACT",
+      "classification": "configured contact / personal",
+      "baselineDefault": "unset",
+      "behavior": "Escaped into legal pages; required in production; actual value deliberately not inspected."
+    },
+    {
+      "name": "WEB_ROOT",
+      "classification": "server-only path",
+      "baselineDefault": "public in development; none in production",
+      "behavior": "Static/SPA bundle; API and legal routes stay authoritative."
+    },
+    {
+      "name": "WIND_EMAIL_FROM",
+      "classification": "provider account / personal",
+      "baselineDefault": "unset",
+      "behavior": "All three email settings required before provider adapter advertises readiness; does not prove real delivery."
+    },
+    {
+      "name": "CLOUDFLARE_ACCOUNT_ID",
+      "classification": "provider account",
+      "baselineDefault": "unset",
+      "behavior": "Server only; value omitted."
+    },
+    {
+      "name": "CLOUDFLARE_EMAIL_TOKEN",
+      "classification": "secret",
+      "baselineDefault": "unset",
+      "behavior": "Server only; never fixture, log or bundle."
+    },
+    {
+      "name": "CLOUDFLARE_API_BASE",
+      "classification": "provider endpoint",
+      "baselineDefault": "https://api.cloudflare.com/client/v4",
+      "behavior": "Override for isolated provider tests only in this baseline."
+    },
+    {
+      "name": "WIND_PUSH_SUBJECT",
+      "classification": "public VAPID subject",
+      "baselineDefault": "existing application HTTPS origin in source",
+      "behavior": "Override mailto/site; no private key exposed."
+    },
+    {
+      "name": "SOUQ_PARTNER_KEY",
+      "classification": "secret",
+      "baselineDefault": "unset",
+      "behavior": "At least 32 characters; X-Partner-Key on server-to-server calls only; absent/short -> 503."
+    },
+    {
+      "name": "OSRM_URL",
+      "classification": "server-only endpoint",
+      "baselineDefault": "unset",
+      "behavior": "Self-hosted road routing; missing -> route_unavailable or disclosed estimated quote; not lawful-access proof."
+    },
+    {
+      "name": "WIND_TRUST_PROXY",
+      "classification": "server policy",
+      "baselineDefault": "unset",
+      "behavior": "Only literal 1 trusts x-real-ip for public auth throttles."
+    },
+    {
+      "name": "PORT",
+      "classification": "runtime",
+      "baselineDefault": "4000",
+      "behavior": "Listener port."
+    },
+    {
+      "name": "HOST",
+      "classification": "runtime",
+      "baselineDefault": "127.0.0.1 production; 0.0.0.0 development",
+      "behavior": "Listener binding."
+    },
+    {
+      "name": "EXPO_PUBLIC_API_URL",
+      "classification": "public bundle configuration",
+      "baselineDefault": "development host on port 4000",
+      "behavior": "Release requires public HTTPS origin without credentials/query/fragment."
+    },
+    {
+      "name": "EXPO_PUBLIC_SUPPORT_WHATSAPP",
+      "classification": "public contact / personal",
+      "baselineDefault": "unset",
+      "behavior": "Support link hidden if absent; never store actual contact here."
+    },
+    {
+      "name": "EXPO_PUBLIC_SUPPORT_CONTACT",
+      "classification": "public contact / personal",
+      "baselineDefault": "unset",
+      "behavior": "mailto/HTTPS fallback; value omitted."
+    },
+    {
+      "name": "GOOGLE_MAPS_API_KEY",
+      "classification": "public native configuration",
+      "baselineDefault": "unset",
+      "behavior": "Optional maps manifest configuration; not a server secret."
+    },
+    {
+      "name": "WIND_RELEASE",
+      "classification": "build policy",
+      "baselineDefault": "unset",
+      "behavior": "Literal 1 enables public HTTPS release guard."
+    },
+    {
+      "name": "WIND_LOCAL_TEST",
+      "classification": "build policy",
+      "baselineDefault": "unset",
+      "behavior": "Literal 1 is local debug only; prohibited for release."
+    },
+    {
+      "name": "WIND_TEST_ROLE",
+      "classification": "test-only",
+      "baselineDefault": "unset",
+      "behavior": "Synthetic role apps only; requires isolated loopback API."
+    },
+    {
+      "name": "WIND_TEST_IDENTIFIER",
+      "classification": "test-only identity",
+      "baselineDefault": "unset",
+      "behavior": "Never store raw identifiers in baseline output."
+    },
+    {
+      "name": "WIND_TEST_PASSWORD",
+      "classification": "test-only secret",
+      "baselineDefault": "unset",
+      "behavior": "Never record; cannot enter EAS/release bundle."
+    },
+    {
+      "name": "EAS_BUILD",
+      "classification": "build policy",
+      "baselineDefault": "unset locally",
+      "behavior": "EAS release guard; no cloud builds performed."
+    },
+    {
+      "name": "WIND_KEYSTORE",
+      "classification": "signing path",
+      "baselineDefault": "unset",
+      "behavior": "Local upload signing input; not inspected."
+    },
+    {
+      "name": "WIND_STORE_PASSWORD",
+      "classification": "secret",
+      "baselineDefault": "unset",
+      "behavior": "Signing secret omitted."
+    },
+    {
+      "name": "WIND_KEY_ALIAS",
+      "classification": "signing identity",
+      "baselineDefault": "unset",
+      "behavior": "Alias omitted."
+    },
+    {
+      "name": "WIND_KEY_PASSWORD",
+      "classification": "secret",
+      "baselineDefault": "unset",
+      "behavior": "Signing secret omitted."
+    }
+  ]
+}

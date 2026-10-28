@@ -28,7 +28,7 @@ async function call(path, body, token, expected = 200, method = 'POST') {
 }
 try {
   const admin = await call('/auth/register', { phone: '0599111000', name: 'Admin', password: 'secret1' });
-  promote('0599111000');
+  await promote('0599111000');
   let index = 0;
   for (const command of [false, true]) for (const change of ['logout', 'block', 'role', 'delete']) {
     const customer = await call('/auth/register', { phone: `059911100${++index}`, name: 'Customer', password: 'secret1' });

@@ -1,0 +1,36 @@
+{
+  "formatVersion": 1,
+  "statusFlow": ["searching", "assigned", "at_pickup", "in_transit", "completed"],
+  "activeStatuses": ["assigned", "at_pickup", "in_transit", "on_hold", "returning"],
+  "finishedStatuses": ["completed", "returned"],
+  "ratingEligibleStatuses": ["completed"],
+  "mapping": "Stored statuses equal public statuses. Future internal sub-states must adapt to these values. Safety holds are an orthogonal flag, not a replacement status.",
+  "transitions": [
+    {"from":"searching","to":"assigned","actor":"eligible active driver","fixture":"accept","guard":"same-order conditional claim; eligible vehicle; parcel capacity differs from exclusive ride/freight"},
+    {"from":"assigned","to":"at_pickup","actor":"assigned active driver","fixture":"arrival","guard":"requestId + expectedStatus; no safety hold"},
+    {"from":"at_pickup","to":"in_transit","actor":"assigned active driver","fixture":"pickup","guard":"requestId + expectedStatus; no safety hold"},
+    {"from":"in_transit","to":"completed","actor":"assigned active driver","fixture":"completion","guard":"handover PIN for parcel/freight; ride currently has no PIN; five proof failures lock"},
+    {"from":"in_transit","to":"on_hold","actor":"assigned active driver","fixture":"delivery-exception","guard":"parcel/freight only; valid reason; no safety hold"},
+    {"from":"on_hold","to":"in_transit","actor":"admin","fixture":"reattempt","guard":"reason of at least five characters"},
+    {"from":"on_hold","to":"returning","actor":"admin","fixture":"return-decision","guard":"same order and driver; new sender PIN and proof-attempt budget"},
+    {"from":"returning","to":"returned","actor":"assigned active driver","fixture":"sender-return","guard":"sender-only return PIN; same order/driver/commission; completed_at set once per successful command"},
+    {"from":"returning","to":"returned","actor":"admin","fixture":"support-return","guard":"confirm_return with recorded reason; support verified physical handback"},
+    {"from":"searching","to":"cancelled","actor":"customer owner or admin; partner for its orders","fixture":"cancel:searching","guard":"repeated cancel acknowledges cancelled state"},
+    {"from":"assigned","to":"cancelled","actor":"customer owner or admin; partner for its orders","fixture":"cancel:assigned","guard":"not yet in custody"},
+    {"from":"at_pickup","to":"cancelled","actor":"customer owner or admin; partner for its orders","fixture":"cancel:at_pickup","guard":"not yet in custody"},
+    {"from":"assigned","to":"searching","actor":"assigned active driver","fixture":"release:assigned","guard":"no safety hold; persist releasing driver exclusion; retry cannot free a replacement"},
+    {"from":"at_pickup","to":"searching","actor":"assigned active driver","fixture":"release:at_pickup","guard":"not yet collected; no safety hold"},
+    {"from":"at_pickup","to":"cancelled","actor":"assigned active driver","fixture":"pickup-failed","guard":"parcel/freight exception before custody; PICKUP_FAILED audit"},
+    {"from":"assigned","to":"searching","actor":"admin blocking driver","fixture":"block:assigned","guard":"explicit recovery=return; driver cleared; audit and session revocation"},
+    {"from":"at_pickup","to":"searching","actor":"admin blocking driver","fixture":"block:at_pickup","guard":"explicit recovery=return; driver cleared; no item collected"},
+    {"from":"in_transit","to":"returning","actor":"admin blocking driver","fixture":"block:in_transit","guard":"explicit recovery=return; retain custody; sender PIN and audit"},
+    {"from":"on_hold","to":"returning","actor":"admin blocking driver","fixture":"block:on_hold","guard":"retain custody; sender PIN and audit"},
+    {"from":"returning","to":"returning","actor":"admin blocking driver","fixture":"block:returning","guard":"retain original sender PIN and driver; no second return leg"},
+    {"from":"returning","to":"returned","actor":"admin after driver block","fixture":"blocked-support-return","guard":"audited confirm_return; finish original obligation"}
+  ],
+  "additionalAdapters": [
+    {"transition":"searching -> assigned","endpoint":"POST /api/orders/:id/offers/:driver/accept","evidence":"tests/offers.test.mjs","guard":"customer-owned order; live eligible counteroffer; atomic claim; commission and discount snapshot"},
+    {"transition":"all normal progression blocked while safetyHold=true","evidence":"fixtures.json#safety-blocks-progress","guard":"safety_hold; support resolution does not itself advance status"},
+    {"transition":"completed/returned/cancelled remain terminal","evidence":["tests/exceptions.test.mjs","tests/pickup.test.mjs","tests/customer-rating.test.mjs"],"guard":"no normal advance or release reactivates terminal work"}
+  ]
+}

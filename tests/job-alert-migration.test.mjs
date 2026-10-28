@@ -37,7 +37,7 @@ const { alertReleasedJobs, db } = await import('../server/main.ts');
 try {
   const marked = db.prepare('SELECT job_alerted_at FROM orders WHERE id = 1').get().job_alerted_at;
   assert.ok(marked, 'startup marks a legacy order already inside the alert window');
-  alertReleasedJobs(marked + 1);
+  await alertReleasedJobs(marked + 1);
   assert.equal(db.prepare('SELECT job_alerted_at FROM orders WHERE id = 1').get().job_alerted_at, marked,
     'the post-upgrade alert loop does not re-offer that existing job');
   console.log('job alert migration: ok');

@@ -65,18 +65,21 @@ assert.ok(!canSendAnother({ status: 'completed', service: 'ride' }, 'customer'))
 for (const role of ['driver', 'admin', undefined]) assert.ok(!canSendAnother({ status: 'completed', service: 'parcel' }, role), String(role));
 assert.equal(locationState(null, 180000), null);
 const location = { latitude: 31.9, longitude: 35.2, updatedAt: 60000, ageSeconds: 0 };
-assert.deepEqual(locationState(location, 179000), { ageSeconds: 119, stale: false, reconnecting: true });
-assert.deepEqual(locationState(location, 180000), { ageSeconds: 120, stale: true, reconnecting: false });
+// Freshness limit 30 s: 29 s is fresh, 30 s is weak, 60 s is stale (two missed 15 s stationary cycles).
+assert.deepEqual(locationState(location, 89000), { ageSeconds: 29, stale: false, reconnecting: false });
+assert.deepEqual(locationState(location, 90000), { ageSeconds: 30, stale: false, reconnecting: true });
+assert.deepEqual(locationState(location, 119000), { ageSeconds: 59, stale: false, reconnecting: true });
+assert.deepEqual(locationState(location, 120000), { ageSeconds: 60, stale: true, reconnecting: false });
 assert.deepEqual(locationState(location, 1000), { ageSeconds: 0, stale: false, reconnecting: false });
 assert.deepEqual(locationState({ ...location, ageSeconds: 130 }, 1000), { ageSeconds: 130, stale: true, reconnecting: false }); // server age survives a slow device clock
-// Five missed fixes (15 s): the signal is weak but the fix is still shown, not called stale.
-assert.deepEqual(locationState(location, 76000), { ageSeconds: 16, stale: false, reconnecting: true });
+// A stationary driver's 15 s fix is the normal cadence, not a weak signal.
+assert.deepEqual(locationState(location, 76000), { ageSeconds: 16, stale: false, reconnecting: false });
 assert.deepEqual(locationState(location, 74000), { ageSeconds: 14, stale: false, reconnecting: false });
 // A phone clock 2 minutes ahead (server Date header) still sees a 10 s old fix as live; small header jitter is ignored.
 noteServerDate(new Date(70_000).toUTCString(), 190_000);
 assert.deepEqual(locationState(location, 190_000), { ageSeconds: 10, stale: false, reconnecting: false });
 noteServerDate(new Date(190_000).toUTCString(), 192_000);
-assert.deepEqual(locationState(location, 179_000), { ageSeconds: 119, stale: false, reconnecting: true });
+assert.deepEqual(locationState(location, 95_000), { ageSeconds: 35, stale: false, reconnecting: true });
 noteServerDate(null);
 console.log('Booking recovery and location freshness checks passed');
 

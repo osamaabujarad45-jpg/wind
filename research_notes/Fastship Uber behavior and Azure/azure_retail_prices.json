@@ -1,0 +1,215 @@
+[
+  {
+    "name": "postgres",
+    "items": [
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flex Server Storage",
+        "skuName": "Storage",
+        "meterName": "Storage Data Stored",
+        "unitPrice": 0.1369,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2021-06-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flex Server Storage",
+        "skuName": "Premium SSD v2 Storage",
+        "meterName": "Premium SSD v2 Storage Data Stored",
+        "unitPrice": 0.1369,
+        "unitOfMeasure": "1 GiB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2023-10-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flex Server Storage",
+        "skuName": "Ultra Disk Storage",
+        "meterName": "Ultra Disk Storage Data Stored",
+        "unitPrice": 0.19305,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-08-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure Database for PostgreSQL Flexible Server Backup Storage",
+        "skuName": "Backup Storage LRS",
+        "meterName": "Backup Storage LRS Data Stored",
+        "unitPrice": 0.103,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2021-06-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure HorizonDB Storage",
+        "skuName": "HorizonDB storage Free Tier",
+        "meterName": "HorizonDB Storage - Free Tier Data Stored",
+        "unitPrice": 0.0,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2026-07-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure HorizonDB Storage",
+        "skuName": "HorizonDB storage",
+        "meterName": "HorizonDB Storage Data Stored",
+        "unitPrice": 0.301724,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2025-11-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Azure Database for PostgreSQL",
+        "productName": "Azure HorizonDB Backup Storage",
+        "skuName": "HorizonDB Backup Storage",
+        "meterName": "HorizonDB Backup Storage Data Stored",
+        "unitPrice": 0.119,
+        "unitOfMeasure": "1 GB/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2025-11-01T00:00:00Z"
+      }
+    ],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Database%20for%20PostgreSQL%27%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27%20and%20%28contains%28skuName%2C%27B1ms%27%29%20or%20contains%28meterName%2C%27Storage%27%29%29",
+    "nextPage": null
+  },
+  {
+    "name": "pubsub",
+    "items": [],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Web%20PubSub%27%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27",
+    "nextPage": null
+  },
+  {
+    "name": "servicebus",
+    "items": [
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Base Unit",
+        "unitPrice": 0.013441,
+        "unitOfMeasure": "1/Hour",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2018-05-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Messaging Operations",
+        "unitPrice": 0.0,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2017-08-15T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Messaging Operations",
+        "unitPrice": 0.5,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2017-08-15T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Messaging Operations",
+        "unitPrice": 0.8,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2017-08-15T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Messaging Operations",
+        "unitPrice": 0.2,
+        "unitOfMeasure": "1M",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2017-08-15T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Base Unit",
+        "unitPrice": 10.0,
+        "unitOfMeasure": "1/Month",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2018-05-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Brokered Connection",
+        "unitPrice": 0.0,
+        "unitOfMeasure": "1",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2014-12-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Brokered Connection",
+        "unitPrice": 0.03,
+        "unitOfMeasure": "1",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2014-12-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Brokered Connection",
+        "unitPrice": 0.025,
+        "unitOfMeasure": "1",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2014-12-01T00:00:00Z"
+      },
+      {
+        "serviceName": "Service Bus",
+        "productName": "Service Bus",
+        "skuName": "Standard",
+        "meterName": "Standard Brokered Connection",
+        "unitPrice": 0.015,
+        "unitOfMeasure": "1",
+        "currencyCode": "USD",
+        "armRegionName": "westeurope",
+        "effectiveStartDate": "2014-12-01T00:00:00Z"
+      }
+    ],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Service%20Bus%27%20and%20armRegionName%20eq%20%27westeurope%27%20and%20priceType%20eq%20%27Consumption%27%20and%20contains%28skuName%2C%27Standard%27%29",
+    "nextPage": null
+  },
+  {
+    "name": "maps",
+    "items": [],
+    "source": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20%27Azure%20Maps%27%20and%20priceType%20eq%20%27Consumption%27%20and%20contains%28productName%2C%27Gen2%27%29",
+    "nextPage": null
+  }
+]

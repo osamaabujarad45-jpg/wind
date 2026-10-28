@@ -25,7 +25,7 @@ try {
       ...(role === 'driver' && { role, vehicle: 'van' }) } });
     accounts[role] = { userId: account.user.id, token: account.token };
   }
-  promote(phone.admin);
+  await promote(phone.admin);
   await call(`/admin/users/${accounts.driver.userId}/approve`, { token: accounts.admin.token, body: {} });
   for (const account of Object.values(accounts)) account.baseline = db.prepare('SELECT * FROM users WHERE id=?').get(account.userId);
   assert.equal(restorePhoneTestIdentity(db, {}, 'customer', phone.customer), false, 'first startup has no baseline to restore');

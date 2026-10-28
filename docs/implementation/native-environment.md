@@ -1,0 +1,13 @@
+# Local Android verification environment
+
+The initial device inventory could not use Android because SDK Command-Line Tools were missing. The existing SDK already contained an Android13 Pixel7Pro emulator, system image and accepted SDK license. WHPX acceleration reported installed and usable.
+
+The missing tools were restored from Google's `commandlinetools-win-15859902_latest.zip`, following the [official layout](https://developer.android.com/tools/sdkmanager), into the SDK's new `cmdline-tools/latest` directory. SHA256 matched the [published download checksum](https://developer.android.com/studio): `90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a`. The installed tools report revision22.0. No existing SDK files or license acceptance records were replaced.
+
+Device streaming then reported a missing H264 encoder. FFmpeg9.0.2 was installed through Scoop with its published package checksum verified; the installer also installed its 7-Zip26.05 extraction dependency and refreshed Scoop/manifests. `ffmpeg -encoders` confirms `libx264`. Existing application packages were not upgraded by that operation.
+
+T3 device discovery now reports Android available. `device_open` booted `Pixel_7_Pro` as `emulator-5554` and showed it in the Device panel; the pinned agent-device launcher successfully returned an interactive launcher snapshot. Its host-specific config/session flags must be obtained from a fresh `device_open` response for later checks.
+
+This proves emulator discovery, streaming and control. It is not app journey, physical-device, background tracking, battery, permission or carrier acceptance. iOS simulators remain unavailable on this Windows host; no physical Android device was attached during this preparation.
+
+Physical device update (2026-10-27): Samsung Galaxy A53 5G (SM-A5360, Android 16, ADB R5CTB0FJP9Z) attached. The three isolated test APKs (ps.wind.app.testcustomer/testdriver/testadmin, Oct 21 builds v1.0.13) were driven live via the T3 device panel against the current sandbox server (scripts/phone-test-server.mjs, port 4191): customer home/account, driver jobs with an accept button, and admin dashboard all rendered current sandbox data. The legacy scripts/check-phone-tests.mjs smoke harness is unreliable on this device because uiautomator cannot reach an idle state on the animated app (it dumps the keyguard hierarchy); agent-device snapshots are the working path, and the harness now retries dumps. APKs predate WP05-WP08 native changes; a rebuild is required to test those on device.
