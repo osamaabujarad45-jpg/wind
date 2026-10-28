@@ -42,7 +42,8 @@ import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
-const SESSION_DAYS = 90;
+const SESSION_DAYS = 90; // absolute lifetime
+const SESSION_IDLE_DAYS = 30; // sliding inactivity limit; last_seen_at is touched at most hourly
 const production = process.env.NODE_ENV === 'production';
 const selfService = process.env.WIND_IDENTITY_MODE === 'self-service';
 const contactVerificationRequired = selfService && process.env.WIND_CONTACT_VERIFICATION_REQUIRED === 'true';
@@ -500,7 +501,7 @@ route('POST', '/api/auth/register', async ({ body }) => {
   // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
   const account = (await one('SELECT * FROM users WHERE id = ?', id))!;
   void persistence.detached(() => sendCode(account, 'verify')).catch(() => {});
-  return { ...session, emailCode: 'sent' };
+  return { ...session, emailCode: 'requested' };
 }, true);
 
 route('POST', '/api/auth/login', async ({ body }) => {
@@ -525,7 +526,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
 
 async function startSession(userId: number) {
   const token = randomBytes(32).toString('hex');
-  (await run('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)', sha(token), userId, Date.now()));
+  (await run('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)', sha(token), userId, Date.now(), Date.now()));
   return { token, ...(await me((await toUser((await one('SELECT * FROM users WHERE id = ?', userId))!)))) };
 }
 
@@ -2139,9 +2140,9 @@ async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, re
   const since = Number(query.get('since')) || 0;
   const want = query.get('driver'); // the driver the client already shows: a fix from another car is never returned
   const now = (await read());
+  if (want != null && want !== now.driverKey) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
   // No live source (no driver, or a finished trip): answer at once instead of holding a socket for nothing.
   if (!now.driverId || !now.driverKey) return { driverLocation: null, driverKey: null };
-  if (want != null && want !== now.driverKey) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
   if (now.fix && now.fix.updatedAt > since) return { driverLocation: now.fix, driverKey: now.driverKey };
   const watchers = fixWaiters.get(now.orderId);
   if ((watchers?.size ?? 0) >= LIVE_WATCHERS || liveTotal >= LIVE_TOTAL) return { driverLocation: now.fix, driverKey: now.driverKey };
@@ -2272,18 +2273,25 @@ route('GET', '/api/route', async ({ user, query }) => {
 });
 
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
-route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params }) => {
-  const hash = sha(params[0]!);
+route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
+  const token = params[0]!, hash = sha(token);
+  await trackView(token); // enforce the same revocation and expiry as the public trip page
   const r = (await one(`${orderSelect} WHERE o.share_token_hash = ?`, hash)) ?? fail(404, 'not_found');
   (await limit(identityKey('track-eta', hash), 300, 10 * 60_000)); // after the lookup (a made-up token leaves no row); a family may watch one link
+  const driverKey = r.driver_id ? sha(`${token}:${r.driver_id}`).slice(0, 12) : null;
+  if (query.has('driver') && query.get('driver') !== driverKey) return { minutes: null };
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
   // The age of the fix the estimate starts from: a two-minute-old position is not a two-minute-old answer.
   const fixAgeSeconds = Math.max(0, Math.round((Date.now() - r.loc_at) / 1000));
   // The road state is read once for this request: three routes and the delay flag all use it.
   const roadState = (await roads()), closed = closedCheckpoints(roadState);
   // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).
-  if (r.shared_run) return Promise.resolve().then(async () => (await roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed)))
-    .then(t => t.line, () => null).then(road => ({ minutes: null, sharedRun: true, road, fixAgeSeconds }));
+  if (r.shared_run) {
+    const road = await roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
+    const current = await trackView(token);
+    if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null };
+    return { minutes: null, sharedRun: true, road, fixAgeSeconds, fixUpdatedAt: r.loc_at };
+  }
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
   // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
   const delayed = roadAlerts(roadState, r.pickup_city, r.dropoff_city).length > 0;
@@ -2291,9 +2299,11 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params }) => {
   const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
   // A fix off any road (or OSRM down) gives no minutes, not an error: the page still shows the car and the trip line.
   const leg = Promise.resolve().then(async () => (await roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null, closed))).catch(() => null);
-  return Promise.all([leg, trip])
-    .then(([leg, line]) => leg ? { minutes: leg.minutes, delayed, approach: leg.line, road: line, fixAgeSeconds }
-      : { minutes: null, delayed, road: line, fixAgeSeconds });
+  const [approach, line] = await Promise.all([leg, trip]);
+  const current = await trackView(token);
+  if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null };
+  return approach ? { minutes: approach.minutes, delayed, approach: approach.line, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at }
+    : { minutes: null, delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
 }, true);
 
 route('GET', '/api/driver/earnings', async ({ user }) => {
@@ -2653,9 +2663,13 @@ async function readBody(req: IncomingMessage): Promise<Row> {
 async function authenticate(req: IncomingMessage): Promise<User | null> {
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
   if (!token) return null;
-  const r = (await one('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ?',
-    sha(token), Date.now() - SESSION_DAYS * DAY));
-  return r && r.status !== 'blocked' && contactAllowed(r) && (!production || (selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at)) ? (await toUser(r)) : null;
+  const now = Date.now();
+  const r = (await one('SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?',
+    sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
+  if (!r || r.status === 'blocked' || !contactAllowed(r) || (production && !(selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at))) return null;
+  if (now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
+    void run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', now, sha(token)).catch(() => {});
+  return (await toUser(r));
 }
 
 let draining = false;
@@ -2836,7 +2850,7 @@ if (import.meta.main) {
   } else {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     const prune = async () => {
-      (await run('DELETE FROM sessions WHERE created_at < ?', Date.now() - SESSION_DAYS * DAY));
+      (await run('DELETE FROM sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?', Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY));
       (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
     };
     (await prune());

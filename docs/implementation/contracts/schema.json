@@ -294,7 +294,7 @@
       "type": "table",
       "name": "sessions",
       "tableName": "sessions",
-      "sql": "CREATE TABLE sessions (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL)"
+      "sql": "CREATE TABLE sessions (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, last_seen_at INTEGER)"
     },
     {
       "type": "table",
@@ -3016,6 +3016,14 @@
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "last_seen_at",
+          "type": "INTEGER",
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         }

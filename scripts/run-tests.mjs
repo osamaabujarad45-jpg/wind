@@ -13,6 +13,8 @@ const suites = [
   "deployment.test.mjs",
   "registration.test.mjs",
   "entra.test.mjs",
+  "session-idle.test.mjs",
+  "phone-acs.test.mjs",
   "entra-exchange.test.mjs",
   "vehicle-migration.test.mjs",
   "job-alert-migration.test.mjs",

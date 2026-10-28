@@ -153,6 +153,8 @@ for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_entra_oid_unique ON users(entra_oid) WHERE entra_oid IS NOT NULL');
+if (!(db.prepare('PRAGMA table_info(sessions)').all() as Row[]).some(r => r.name === 'last_seen_at'))
+  db.exec('ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER');
 db.exec('CREATE TABLE IF NOT EXISTS entra_replay (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
 if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === 'request_id'))
   db.exec('ALTER TABLE cash_entries ADD COLUMN request_id TEXT');
