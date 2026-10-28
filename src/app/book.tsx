@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { againForm, orderRequest, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
 import { browserPickupWatch, findPickup, withPickupPermission } from '../customer-location';
 import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
@@ -232,11 +232,11 @@ export default function Book() {
       const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
         contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
         ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
-        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }) });
+        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
       await storage.set(pendingKey, JSON.stringify(command), true);
       saved = true;
       setPending(command);
-      const order = await api<Order>('/orders', { ...command.payload, requestId: command.requestId });
+      const order = await api<Order>('/orders', orderRequest(command));
       await storage.set(pendingKey, null, true).catch(() => {}); // a retained successful command safely replays
       haptic.success();
       router.replace(`/order/${order.id}`);

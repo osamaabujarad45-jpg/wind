@@ -130,7 +130,7 @@ export type DriverStats = { rating: number | null; priceRating: number | null; t
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
 export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
-  standard?: boolean }; // a parcel: one standard price, no breakdown
+  standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;

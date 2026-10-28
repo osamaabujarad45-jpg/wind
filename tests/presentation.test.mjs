@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import './customer-location.test.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
-import { againForm, canOrderAgain, canSendAnother, newBooking, pickupForm, readBooking, retryIds } from '../src/booking.ts';
+import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pickupForm, readBooking, retryIds } from '../src/booking.ts';
 import { locationState } from '../src/location-state.ts';
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
@@ -12,6 +12,18 @@ const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablu
 const pending = newBooking(payload);
 assert.deepEqual(readBooking(JSON.stringify(pending)), pending); // restart keeps the same command and terms
 assert.notEqual(newBooking(payload).requestId, pending.requestId);
+// Quote-bound booking: the locked quote survives restart, and the wire body must not
+// carry quotedPrice beside quoteId (the server answers quote_price_conflict).
+const quotedCommand = newBooking({ ...payload, quoteId: '123e4567-e89b-42d3-a456-426614174000' });
+assert.deepEqual(readBooking(JSON.stringify(quotedCommand)), quotedCommand);
+assert.throws(() => readBooking(JSON.stringify({ ...pending, payload: { ...payload, quoteId: 'not-a-uuid' } })));
+const locked = orderRequest(quotedCommand);
+assert.equal(locked.quoteId, quotedCommand.payload.quoteId);
+assert.equal('quotedPrice' in locked, false);
+assert.equal(locked.requestId, quotedCommand.requestId);
+const legacy = orderRequest(pending);
+assert.equal(legacy.quotedPrice, payload.quotedPrice);
+assert.equal('quoteId' in legacy, false);
 // Chat retry: text A fails (reply lost), quick reply B goes out, A is resent with its first id.
 const chatIds = retryIds(), firstA = chatIds.for('A');
 chatIds.for('B'); chatIds.sent('B');

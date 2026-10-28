@@ -4,6 +4,7 @@ export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
   option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
+  quoteId?: string; // server-locked quote (WP08); when set, the wire body omits quotedPrice
   promoCode?: string; expectedDiscount?: number;
   recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
@@ -28,6 +29,14 @@ export function retryIds() {
   };
 }
 export const newBooking = (payload: BookingPayload): PendingBooking => ({ requestId: newRequestId(), payload });
+
+/** Wire body for POST /orders: a locked quote travels by id alone (quotedPrice beside it is a 400). */
+export function orderRequest(command: PendingBooking) {
+  if (!command.payload.quoteId) return { ...command.payload, requestId: command.requestId };
+  const rest: BookingPayload & { requestId: string } = { ...command.payload, requestId: command.requestId };
+  delete (rest as { quotedPrice?: number }).quotedPrice;
+  return rest;
+}
 
 // Order again (SPEC-order-again.md): a customer's ended order refills the booking form.
 export const canOrderAgain = (order: Pick<Order, 'status'>, role: Role | undefined) =>
@@ -64,6 +73,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || (p.promoCode !== undefined && (typeof p.promoCode !== 'string' || !Number.isInteger(p.expectedDiscount)))
     || ['recipientName', 'recipientPhone'].some(key => p[key as 'recipientName'] !== undefined && typeof p[key as 'recipientName'] !== 'string')
     || (p.pricing !== undefined && p.pricing !== 'smart')
+    || (p.quoteId !== undefined && !uuid.test(p.quoteId))
     || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
     || p.pickupPoint === undefined) {
     throw new Error('invalid_pending_booking');
