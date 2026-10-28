@@ -32,6 +32,11 @@ Verification **[V]**: `tests/entra.test.mjs` (signature/tamper/audience/expiry/n
 - **Realtime/push**: Web PubSub already provisioned but unbound (HMAC credential is not a PubSub token) **[R]**; long-poll caps at 200 watchers; Notification Hubs rejected for Expo. Azure worker/API still need DB-URL + Key Vault binding (owner gate, bicep:280). [V/R]
 - **Payments/dispatch**: real PSP never constructed (Fake only) and dispatch is gated off in production — both pre-date this session. [V]
 
+## Completion addendum (same day)
+
+- Rider quote lock wired end-to-end: `/price` now returns `quoteId` into the booking payload and `POST /orders` sends the id alone (sending `quotedPrice` beside it is a server 400). Regression coverage in `tests/presentation.test.mjs` (quote round-trip, bad-id rejection, wire shape). Full gate: **69 suites passed**, tsc/lint clean.
+- Everything in this report is committed and pushed to `origin/master`. Remaining P0s (session lifetime, real PSP, dispatch enablement, background presence) require operator/provider decisions and are intentionally not half-built.
+
 ## Unverified — do not contract on these
 
 2026 Azure dollar prices (JS-rendered), +970 SMS deliverability via Entra/ACS, Azure Maps Palestine coverage, iOS background/Doze device behavior, Web PubSub RN client on a dev build, Entra happy-path exchange against a real tenant (no tenant exists yet — route replay/admin-guard code is unit- and contract-tested, not tenant-tested).
