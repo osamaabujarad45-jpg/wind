@@ -118,6 +118,13 @@ export type Order = {
   offers?: Offer[]; // the customer's open offers, cheapest first
   customerRating?: number | null; // stars the driver gave the customer (driver and admin only)
   customerStats?: { rating: number | null; trips: number }; // drivers only; rating from 3 ratings (SPEC-customer-rating.md)
+  dispatch?: { roundId: string; state: string; closeReason: string | null; offersIssued: number; deadlineAt: number; startedAt: number;
+    myOffer?: { id: string; offerId: string; expiresAt: number; issuedAt: number; leaseNonce: string | null; pickupEtaSeconds: number; idleSeconds: number; idleCreditSeconds: number; rankScore: number; etaEstimated: boolean } | null } | null; // WP10 additive
+  ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string } | null; // WP11 additive
+  declaredScope?: { orderId: number; service: string; revision: number; itemCount: number | null; lengthMm: number | null; widthMm: number | null; heightMm: number | null;
+    massGrams: number | null; volumeCm3: number | null; declaredValueMinor: number | null; equipment: string[]; crewCount: number | null;
+    loadingAfter: number | null; loadingBefore: number | null; accessConstraints: string[]; pickupPromisedAfter: number | null;
+    pickupPromisedBefore: number | null; dropoffPromisedBefore: number | null; sourceRef: string | null; createdAt: number; updatedAt: number } | null; // WP12 additive
 };
 export type DriverStats = { rating: number | null; priceRating: number | null; trips: number };
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };

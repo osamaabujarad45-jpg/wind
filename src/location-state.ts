@@ -4,9 +4,9 @@ export function locationState(location: { updatedAt: number; ageSeconds?: number
   if (!location || !Number.isFinite(location.updatedAt)) return null;
   const serverAge = typeof location.ageSeconds === 'number' && Number.isFinite(location.ageSeconds) ? location.ageSeconds : 0;
   const ageSeconds = Math.max(0, serverAge, Math.floor((now + serverOffset() - location.updatedAt) / 1000)); // fix times are server clock
-  // ponytail: two-minute freshness heuristic; tune against measured driver update intervals.
-  // 15 s is five missed fixes: the driver posts every 2-3 s, so the signal is already weak there.
-  return { ageSeconds, stale: ageSeconds >= 120, reconnecting: ageSeconds >= 15 && ageSeconds < 120 };
+  // ponytail: thresholds follow the presence freshness limit (30 s, the server drops older fixes) and the 15 s stationary cadence.
+  // A stationary driver's fix at ~15 s is normal, so "weak" starts at 30 s and "stale" at two missed stationary cycles. Tune on measured intervals.
+  return { ageSeconds, stale: ageSeconds >= 60, reconnecting: ageSeconds >= 30 && ageSeconds < 60 };
 }
 
 /** The newer of two reports of one driver fix (the live push and the screen's poll); a missing one loses. */

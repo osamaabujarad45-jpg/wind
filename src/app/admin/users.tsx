@@ -98,16 +98,16 @@ export default function Users() {
                 {identity?.id === user.id && <Field label={c.emailCodeLabel} value={identity.code} keyboardType="number-pad" maxLength={6} disabled={busy !== null}
                   onChangeText={code => setIdentity({ id: user.id, code: code.replace(/\D/g, '').slice(0, 6) })} />}
                 <Button title={identity?.id === user.id ? c.identityCheck : c.identitySend} icon={identity?.id === user.id ? 'shield-checkmark-outline' : 'mail-outline'} variant="soft"
-                  loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} onPress={() => identityStep(user)} />
+                  loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} reason={busy !== null ? c.wait_busy : c.code_six_digits} onPress={() => identityStep(user)} />
               </>}
           </View>}
           {user.role !== 'admin' && <View style={{ marginTop: 12, gap: 8 }}>
             {/* only drivers wait on approval (server needActive); on a customer it was the loudest button doing nothing */}
-            {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null}
+            {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
             <Row gap={8}>
-              <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
-              <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null}
+              <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
+              <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null} reason={c.wait_busy}
                 onPress={() => action(user, '', { status: user.status === 'blocked' ? user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' : 'blocked' }, 'PATCH')} /></View>
             </Row>
             {editing?.id === user.id && <View>
@@ -118,12 +118,12 @@ export default function Users() {
               {editing.role === 'driver' && <View style={{ marginTop: 8 }}><Choices items={vehicles.map(key => ({ key, label: c[key] }))} value={editing.vehicle} onChange={vehicle => setEditing({ ...editing, vehicle })} disabled={busy !== null} /></View>}
               <Row style={{ marginVertical: 10 }}>
                 <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle }, 'PATCH')} /></View>
-                <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} onPress={() => setEditing(null)} /></View>
+                <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>
               </Row>
               {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clay }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
-                : <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null} onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />}
+                : <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />}
             </View>}
-            <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" disabled={busy !== null}
+            <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.deleteUserConfirm, { name: user.name }), () => action(user, '', undefined, 'DELETE'), c.deleteAccount, c.cancel)} />
           </View>}
         </Card>

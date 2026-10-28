@@ -70,7 +70,7 @@ function Incidents() {
             onChangeText={text => setDrafts(v => ({ ...v, [d.id]: text }))} />
           <Txt variant="caption" style={{ marginBottom: 8 }}>{c.resolutionVisible}</Txt>
           <Button title={c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
-            disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5} onPress={() => resolve(d.id)} />
+            disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5} reason={busy !== null ? c.wait_busy : c.reason_min5} onPress={() => resolve(d.id)} />
         </>}
     </Card>)}
   </>;
@@ -117,7 +117,8 @@ function Disputes() {
           <Txt variant="caption" style={{ marginTop: -6, marginBottom: 10 }}>{c.creditHint}</Txt>
           <View>
             <Button title={creditOf(credits[d.id]) ? `${c.resolveDispute} + ${money(creditOf(credits[d.id])!)}` : c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
-              disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5 || creditOf(credits[d.id]) === undefined} onPress={() => resolve(d.id)} />
+              disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5 || creditOf(credits[d.id]) === undefined}
+              reason={busy !== null ? c.wait_busy : (drafts[d.id] ?? '').trim().length < 5 ? c.reason_min5 : c.creditInvalid} onPress={() => resolve(d.id)} />
           </View>
         </>}
     </Card>)}

@@ -15,7 +15,7 @@ import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
-import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Row, Screen, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string; keep?: string }>();
@@ -172,6 +172,7 @@ export default function Book() {
     return () => { live = false; clearTimeout(timer); };
   }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor]);
   const quoting = isCustomer && !pending && routeChosen && quoted?.key !== priceKey; // the Request button waits for it
+  const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
   const smart = quoted?.quote ?? null;
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
   const reasons = smart && [fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${smart.minutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
@@ -262,8 +263,18 @@ export default function Book() {
   }
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
+  // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
+  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
+    : !available && !pending ? c.serviceUnavailable : null;
+  // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
+  const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={!routeChosen || quoting ? '…' : money(pay)} onPress={submit} loading={busy} disabled={!ready || locating || quoting || (!available && !pending)} />}>
+    <Screen scrollRef={scrollRef} footer={<>
+      <Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
+        onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || (!available && !pending)} />
+      {requestReason && <Reason>{requestReason}</Reason>}
+      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={() => setPriceTick(n => n + 1)} />}
+    </>}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
         {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
@@ -375,7 +386,7 @@ export default function Book() {
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>
             <Txt variant="micro">{smart.standard ? c.standardParcel : c.recommendedPrice}</Txt>
-            <Txt variant="title">{quoting ? '…' : money(smart.price)}</Txt>
+            <Txt variant="title">{quoting ? c.quote_calculating : money(smart.price)}</Txt>
           </View>
         </Row>
         {smart.standard
@@ -406,12 +417,12 @@ export default function Book() {
           </Row>
           : promo && !pending ? <Row gap={8}>
             <Txt variant="caption" style={{ flex: 1 }}>{c.promoRecheck}</Txt>
-            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked} label={`${c.promoApply} ${promo.code}`} onPress={() => applyPromo(promo.code)} />
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked} reason={lockedReason} label={`${c.promoApply} ${promo.code}`} onPress={() => applyPromo(promo.code)} />
           </Row>
           : !pending && (promoOpen ? <>
             <Field label={c.promoCode} icon="pricetag-outline" value={promoInput} onChangeText={v => { setPromoInput(v); setPromoError(''); }}
               error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
-            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} onPress={() => applyPromo(promoInput)} />
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} reason={promoInput.trim() ? lockedReason : c.promo_need_code} onPress={() => applyPromo(promoInput)} />
           </> : <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8 }}>
             {/* Every credit the customer holds is offered: the first one alone hid the rest. */}
             {price >= 2 && credits.map(credit => <Press key={credit.code} accessibilityLabel={fill(c.useCredit, { r: money(credit.amount), code: credit.code })} onPress={() => applyPromo(credit.code)} disabled={locked || checking}>

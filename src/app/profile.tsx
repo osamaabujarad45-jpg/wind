@@ -1,10 +1,11 @@
-// Edit profile: display name (POST /api/me). Phone is the account identity and stays read-only.
+// Edit profile: display name (POST /api/me). The phone card proves control with a code and changes the number only with the current password.
 // Email: verified with an emailed 6-digit code when the server can send email (capabilities.emailVerification).
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../api';
 import { useFormat } from '../parts';
+import { PhoneCard } from '../phone-card';
 import { useSession, type Me } from '../session';
 import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
 
@@ -51,16 +52,11 @@ export default function Profile() {
         <Card>
           <Field label={c.name} value={name} onChangeText={next => { setName(next); setSaved(false); }} placeholder={c.nameHint} autoComplete="name"
             onSubmitEditing={changed ? save : undefined} />
-          <Txt variant="label" style={{ marginBottom: 7 }}>{c.phone}</Txt>
-          <Row gap={10} style={styles.locked}>
-            <Ionicons name="lock-closed-outline" size={16} color={palette.secondary} />
-            <Txt variant="title" style={{ flex: 1, color: palette.secondary }}>{user.phone}</Txt>
-          </Row>
-          <Txt variant="caption" style={{ marginTop: 8 }}>{c.phoneLocked}</Txt>
         </Card>
       </Appear>
-      {user.email && <Appear index={2}><EmailCard /></Appear>}
-      <Appear index={3}>
+      <Appear index={2}><PhoneCard key={user.id} /></Appear>
+      {user.email && <Appear index={3}><EmailCard /></Appear>}
+      <Appear index={4}>
         <Card tone="muted">
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt>{c.memberSince}</Txt>
@@ -70,7 +66,7 @@ export default function Profile() {
       </Appear>
       <ErrorText>{error}</ErrorText>
       {saved && !changed && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
-      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} />
+      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
     </Screen>
   </KeyboardAvoidingView>;
 }
@@ -115,13 +111,13 @@ function EmailCard() {
       <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
         autoComplete="one-time-code" maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? verify : undefined} />
       <ErrorText>{error}</ErrorText>
-      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} />
-      <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={send} disabled={busy} />
+      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} reason={c.code_six_digits} />
+      <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={send} disabled={busy} reason={c.wait_busy} />
       {changing === null
-        ? <Button title={c.emailChange} icon="create-outline" variant="ghost" onPress={() => setChanging(email)} disabled={busy} />
+        ? <Button title={c.emailChange} icon="create-outline" variant="ghost" onPress={() => setChanging(email)} disabled={busy} reason={c.wait_busy} />
         : <View style={{ marginTop: 8 }}>
           <Field label={c.email} value={changing} onChangeText={setChanging} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} onSubmitEditing={change} />
-          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email} />
+          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email} reason={c.email_unchanged} />
         </View>}
     </View>}
   </Card>;

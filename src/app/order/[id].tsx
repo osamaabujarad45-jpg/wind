@@ -171,9 +171,9 @@ export default function OrderScreen() {
         : <View style={{ marginTop: 10, gap: 8 }}>
           <SlotPicker slots={scheduleSlots()} value={moving} onChange={setMoving} />
           <Row gap={8}>
-            <Button title={c.saveTime} size="sm" loading={busy === 'schedule'} disabled={!!busy || moving === later}
+            <Button title={c.saveTime} size="sm" loading={busy === 'schedule'} disabled={!!busy || moving === later} reason={busy ? c.wait_busy : c.time_unchanged}
               onPress={() => act('schedule', `/orders/${order.id}/schedule`, { scheduledFor: moving }, () => setMoving(null))} />
-            <Button title={c.keepTime} variant="ghost" size="sm" disabled={!!busy} onPress={() => setMoving(null)} />
+            <Button title={c.keepTime} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy} onPress={() => setMoving(null)} />
           </Row>
         </View>)}
     </Card>}
@@ -197,7 +197,7 @@ export default function OrderScreen() {
         </View>
         <View style={{ alignItems: 'center', gap: 4 }}>
           <Txt variant="h2">{money(offer.price)}</Txt>
-          <Button title={c.acceptOffer} size="sm" loading={busy === `offer${offer.driverId}`} disabled={!!busy}
+          <Button title={c.acceptOffer} size="sm" loading={busy === `offer${offer.driverId}`} disabled={!!busy} reason={c.wait_busy}
             onPress={() => act(`offer${offer.driverId}`, `/orders/${order.id}/offers/${offer.driverId}/accept`, {})} />
         </View>
       </Row>)}
@@ -277,14 +277,14 @@ export default function OrderScreen() {
 
     {(isCustomer || mine) && activeStatuses.includes(order.status) && <View style={{ marginBottom: 12 }}><Safety order={order} driver={mine} onChange={setData} /></View>}
 
-    {order.driverName && (isCustomer || isAdmin) ? <Appear index={3}>
+    {order.driverName && (isAdmin || ((isCustomer) && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) ? <Appear index={3}>
       <Card>
         <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={order.driverVehicle ? c[order.driverVehicle] : undefined} />
       </Card>
     </Appear> : null}
 
-    {(mine || isAdmin) && order.contact ? <Appear index={3}>
+    {(isAdmin || (mine && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) && order.contact ? <Appear index={3}>
       <Card>
         <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />
         {order.pickupContact && order.pickupContact !== order.contact && <View style={styles.divider}>
@@ -347,7 +347,7 @@ export default function OrderScreen() {
       </Card>
     </Appear>
 
-    <ErrorText>{actionError}</ErrorText>
+
 
     {isAdmin && order.status === 'on_hold' && <Card tone="clay">
       <Txt variant="title">{c.exceptionTitle}</Txt>
@@ -357,7 +357,7 @@ export default function OrderScreen() {
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
           variant={action === 'reattempt' ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
-          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5}
+          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}
       </View>
@@ -369,7 +369,7 @@ export default function OrderScreen() {
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       <Button title={c.confirmReturn} variant="outline" icon="checkmark-done-outline" loading={busy === 'confirm_return'}
-        disabled={!!busy || decisionReason.trim().length < 5}
+        disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
         onPress={() => confirm(c.confirmReturnHint, () => act('confirm_return', `/admin/orders/${order.id}/resolve`,
           { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.confirmReturn, c.no)} />
     </Card>}
@@ -380,7 +380,7 @@ export default function OrderScreen() {
       <Field label={c.proofResetReason} value={resetReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setProofReset({ id, reason, done: false })} />
       <Button title={c.proofResetAction} variant="outline" icon="refresh-outline" loading={busy === 'proof-reset'}
-        disabled={!!busy || resetReason.trim().length < 5}
+        disabled={!!busy || resetReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
         onPress={() => confirm(c.proofResetConfirm, () => act('proof-reset', `/admin/orders/${order.id}/proof-reset`,
           { reason: resetReason.trim() }, () => setProofReset({ id, reason: '', done: true })), c.proofResetAction, c.no)} />
       {proofReset.id === id && proofReset.done && <View accessibilityLiveRegion="polite" style={{ marginTop: 10 }}>
@@ -388,24 +388,27 @@ export default function OrderScreen() {
       </View>}
     </Card>}
 
+    <ErrorText>{actionError}</ErrorText>
+
     <View style={{ gap: 8 }}>
       {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
+        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {mine && activeStatuses.includes(order.status) && <>
         {needsCode &&
-          <Field label={order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="phone-pad" placeholder="0000"
+          <Field label={order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy}
+          icon="arrow-forward-circle-outline" loading={busy === 'advance'} disabled={!!busy} reason={c.wait_busy}
           onPress={() => act('advance', `/orders/${order.id}/advance`, { code })} />}
         {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
           <FilterChips items={exceptionReasons.map(key => ({ key, label: atPickup ? c[`pickup_${key}`] : c[`reason_${key}`] }))} value={problem.reason}
             onChange={reason => setProblem(p => ({ ...p, reason }))} />
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
-          <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy}
+          <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy} reason={c.wait_busy}
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
               { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
@@ -419,6 +422,9 @@ export default function OrderScreen() {
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
       </>}
 
+      {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
+      {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
+
       {order.status === 'completed' && (isCustomer || mine || isAdmin) &&
         <Button title={c.viewReceipt} icon="receipt-outline" variant="outline" onPress={() => router.push(`/receipt/${order.id}`)} />}
 
@@ -428,29 +434,24 @@ export default function OrderScreen() {
       {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
 
-      {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
-      {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
-
       {isCustomer && (live || order.sharing) && <Card style={{ gap: 8 }}>
         <Txt variant="caption">{c.shareHint}</Txt>
         {sharedUrl?.id === id && <Txt variant="caption" selectable>{sharedUrl.url}</Txt>}
-        {live && <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy}
+        {live && <Button title={c.shareTracking} icon="share-social-outline" variant="soft" loading={busy === 'share'} disabled={!!busy} reason={c.wait_busy}
           onPress={async () => {
             setBusy('share'); setActionError('');
             try {
-              const { path } = await api<{ path: string }>(`/orders/${order.id}/share`, {});
-              const url = `${API_URL}${path}`;
-              setSharedUrl({ id, url }); setData({ ...order, sharing: true });
+              const url = sharedUrl?.id === id ? sharedUrl.url : `${API_URL}${(await api<{ path: string }>(`/orders/${order.id}/share`, {})).path}`;
+              if (sharedUrl?.id !== id) { setSharedUrl({ id, url }); setData({ ...order, sharing: true }); }
               await Share.share({ message: fill(c.shareMessage, { url }) }).catch(() => undefined); // the link stays visible to copy
             } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
           }} />}
-        {live && !!order.recipientPhone && <Button title={c.shareRecipient} icon="logo-whatsapp" variant="soft" loading={busy === 'share-wa'} disabled={!!busy}
+        {live && !!order.recipientPhone && <Button title={c.shareRecipient} icon="logo-whatsapp" variant="soft" loading={busy === 'share-wa'} disabled={!!busy} reason={c.wait_busy}
           onPress={async () => { // the recipient gets the live link on WhatsApp, no SMS provider (SPEC-parcel-recipient.md)
             setBusy('share-wa'); setActionError('');
             try {
-              const { path } = await api<{ path: string }>(`/orders/${order.id}/share`, {});
-              const url = `${API_URL}${path}`;
-              setSharedUrl({ id, url }); setData({ ...order, sharing: true });
+              const url = sharedUrl?.id === id ? sharedUrl.url : `${API_URL}${(await api<{ path: string }>(`/orders/${order.id}/share`, {})).path}`;
+              if (sharedUrl?.id !== id) { setSharedUrl({ id, url }); setData({ ...order, sharing: true }); }
               await Linking.openURL(`https://wa.me/970${order.recipientPhone!.slice(1)}?text=${encodeURIComponent(fill(c.shareMessage, { url }))}`);
             } catch (e) { setActionError(err(e)); } finally { setBusy(null); }
           }} />}
@@ -468,7 +469,7 @@ export default function OrderScreen() {
         <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
         <Field label={c.disputeReason} value={disputeReason} multiline maxLength={1000} disabled={!!busy}
           onChangeText={reason => setDispute({ id, reason })} />
-        <Button title={c.disputeSend} variant="outline" icon="flag-outline" loading={busy === 'dispute'} disabled={!!busy || disputeReason.trim().length < 10}
+        <Button title={c.disputeSend} variant="outline" icon="flag-outline" loading={busy === 'dispute'} disabled={!!busy || disputeReason.trim().length < 10} reason={busy ? c.wait_busy : c.reason_min10}
           onPress={() => act('dispute', `/orders/${order.id}/dispute`, { reason: disputeReason.trim() }, () => setDispute({ id, reason: '' }))} />
       </Card>}
 
@@ -520,7 +521,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
       <Txt variant="title" style={{ marginBottom: 8 }}>{c.safetyReport}</Txt>
       <FilterChips items={kinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} />
       <Field label={c.problemNote} value={note} maxLength={300} multiline disabled={busy} onChangeText={setNote} />
-      <Button title={c.safetySend} icon="alert-circle-outline" variant="outline" loading={busy} disabled={busy}
+      <Button title={c.safetySend} icon="alert-circle-outline" variant="outline" loading={busy} disabled={busy} reason={c.wait_busy}
         onPress={() => confirm(c.safetyConfirm, send, c.safetySend, c.no)} />
     </>}
     <ErrorText>{failure}</ErrorText>

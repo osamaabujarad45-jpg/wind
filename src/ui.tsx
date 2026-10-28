@@ -136,9 +136,9 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
 }
 
 export function Header({ title, back = false, right, subtitle }: { title: string; back?: boolean; right?: React.ReactNode; subtitle?: string }) {
-  const { row, language } = useCopy();
+  const { row, c } = useCopy();
   return <View style={[styles.header, { flexDirection: row }]}>
-    {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={language === 'ar' ? 'رجوع' : 'Back'}
+    {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
       onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />}
     <View style={{ flex: 1 }}>
       <Txt variant="h1" numberOfLines={1}>{title}</Txt>
@@ -216,21 +216,23 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // ---------- controls ----------
 
 // Press feedback: 3% scale over 120ms on the UI thread.
-export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop }: {
+export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean;
   accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
   hitSlop?: number; // for controls drawn smaller than 44pt
+  dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
-    <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && { opacity: 0.5 }]}>{children}</Animated.View>
+    <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
 
-export function Button({ title, onPress, variant = 'primary', icon, loading, disabled, size: s = 'md', trailing, label }: {
+export function Button({ title, onPress, variant = 'primary', icon, loading, disabled, size: s = 'md', trailing, label, reason }: {
   title: string; onPress: () => void; variant?: 'primary' | 'soft' | 'danger' | 'ghost' | 'outline'; icon?: IconName; loading?: boolean; disabled?: boolean;
   size?: 'md' | 'sm'; trailing?: string; label?: string;
+  reason?: string; // why it waits, shown under it only while disabled and not busy itself (design §10)
 }) {
   const { row } = useCopy();
   const tone = {
@@ -239,16 +241,26 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
   const small = s === 'sm';
-  return <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading}
-    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: tone.bg, flexDirection: row }, variant === 'outline' && styles.outline,
+  // Disabled keeps its shape and label on a paper fill with secondary text (5.6:1), not a 50% wash of the tone. A busy button
+  // keeps its colours so the spinner reads as work in progress. Callers add a <Reason> under it saying why it waits.
+  const off = !!disabled && !loading;
+  const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
+  const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
+    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
-      {loading ? <ActivityIndicator size="small" color={tone.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={tone.fg}
+      {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
         style={row === 'row-reverse' && /^(arrow-(forward|back)|send)/.test(icon) ? { transform: [{ scaleX: -1 }] } : undefined} /* point the way Arabic reads */ />}
-      <Text style={[styles.buttonText, small && { fontSize: 13 }, { color: tone.fg, flexShrink: 1 }]}>{title}</Text>
+      <Text style={[styles.buttonText, small && { fontSize: 13 }, { color: look.fg, flexShrink: 1 }]}>{title}</Text>
     </View>
-    {trailing && <Text style={[styles.buttonText, { color: variant === 'primary' ? palette.lime : tone.fg }]}>{trailing}</Text>}
+    {trailing && <Text style={[styles.buttonText, { color: variant === 'primary' && !off ? palette.lime : look.fg }]}>{trailing}</Text>}
   </Press>;
+  return off && reason ? <View>{press}<Reason>{reason}</Reason></View> : press;
+}
+
+// Why a control is waiting, in one plain sentence under it (design §10). Text, not a tooltip, so it reads without a long press.
+export function Reason({ children }: { children: string }) {
+  return <Txt variant="body" style={{ marginTop: 6 }}>{children}</Txt>;
 }
 
 export function Choices<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
@@ -304,14 +316,14 @@ export function Rail({ children, gap = 8, style, contentStyle, reveal }: { child
   </ScrollView>;
 }
 
-export function FilterChips<K extends string>({ items, value, onChange }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void }) {
+export function FilterChips<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
   // The selected chip's box as laid out, so a rail that opens on a later choice (a driver's far heading, a reschedule slot)
   // shows it. A tap only recolours chips, so it never relays out and never scrolls.
   const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
   return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
     {items.map(item => <Pressable key={item.key} accessibilityRole="radio" aria-checked={item.key === value} accessibilityLabel={item.label}
       onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
-      onPress={() => onChange(item.key)} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn]}>
+      onPress={() => onChange(item.key)} disabled={disabled} aria-disabled={disabled} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
       <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
   </Rail>;

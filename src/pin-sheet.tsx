@@ -22,7 +22,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm }: { t
         <PinMap center={start} onChange={setPoint} onReady={() => { setReady(true); setFailed(false); }} onFail={() => { setReady(false); setFailed(true); }} height={360} />
       </View>
       {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c.pinUnavailable}</Txt>
-        : <Button title={c.confirmPin} icon="checkmark" disabled={!ready} onPress={() => { if (ready) onConfirm(point); }} />}
+        : <Button title={c.confirmPin} icon="checkmark" disabled={!ready} reason={c.pin_wait} onPress={() => { if (ready) onConfirm(point); }} />}
       <Button title={c.cancel} variant="ghost" onPress={onClose} />
     </SafeAreaView>
   </Modal>;

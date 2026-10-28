@@ -46,6 +46,6 @@ module.exports = ({ config }) => ({
     ios: { ...config.ios, bundleIdentifier: `ps.wind.app.test${testRole}` },
   }),
   extra: { ...config.extra, ...(phoneTest && { phoneTest }) },
-  plugins: [...config.plugins, ['react-native-maps', { androidGoogleMapsApiKey: key }], './plugins/with-release-guard',
+  plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications', 'expo-local-authentication', ['react-native-maps', { androidGoogleMapsApiKey: key }], './plugins/with-release-guard',
     ...(phoneTest ? ['./plugins/with-phone-test'] : [])],
 });

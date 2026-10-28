@@ -1,4 +1,4 @@
-// Driver jobs, Uber Driver pattern: an online strip, then offer cards that lead with what the driver
+// Driver jobs, Uber Driver pattern: a presence card (never ready until the server confirms), then offer cards that lead with what the driver
 // earns, the route spine, what the job carries, and one accept button.
 import { useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
@@ -7,9 +7,10 @@ import { router } from 'expo-router';
 import { api, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
+import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Pulse, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
 export default function Jobs() {
   const { me, refresh } = useSession();
@@ -29,6 +30,9 @@ export default function Jobs() {
   const assigned = carrying.length > 0;
   // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
   const blocked = (order: Order) => !canTake(carrying, order.service);
+  // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
+  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : !work.known ? c.accept_wait_status
+    : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
     if (busy !== null || blocked(order) || !work.known) return;
@@ -70,10 +74,12 @@ export default function Jobs() {
   }
 
   // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
+  const [headingBusy, setHeadingBusy] = useState(false);
   async function head(target: CityId | 'any') {
     setActionError('');
+    setHeadingBusy(true);
     try { await api('/driver/heading', { city: target === 'any' ? null : target }); await refresh(); reload(); }
-    catch (e) { haptic.error(); setActionError(err(e)); }
+    catch (e) { haptic.error(); setActionError(err(e)); } finally { setHeadingBusy(false); }
   }
 
   async function enableTracking() {
@@ -94,27 +100,37 @@ export default function Jobs() {
     <Header title={c.jobs} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
     <VerifyEmailNudge />
 
-    <Card tone="forest" style={{ paddingVertical: 12 }}>
-      <Row gap={10}>
-        <Pulse color={palette.lime} size={9} />
-        <View style={{ flex: 1 }}>
-          <Txt variant="title" style={{ color: palette.onFill }}>{c.online}</Txt>
-          <Txt variant="caption" style={{ color: 'rgba(255,255,255,0.75)' }}>{c.onlineNote}</Txt>
-        </View>
-      </Row>
-      {assigned && work.known && <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
+    {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
+    {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
+      <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
         <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.clayPale }]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.clayInk} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.clayInk }}>
             {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
         </Row>
-      </Press>}
-    </Card>
+      </Press>
+      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayInk }}>{c.backgroundTrackingWarn}</Txt>}
+    </Card>}
+
+    {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
+    <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
+      <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
+        requestsOn={false /* dispatch is not enabled: the server reports eligibleForMatching:false */}
+        pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
+        startDisabled={!work.known || assigned} startReason={!work.known ? c.presence_reason_status : assigned ? c.presence_reason_job : undefined}
+        onConsentAndEnable={() => { void work.enablePresence(); }} onDisable={() => { void work.disablePresence(); }}
+        onOpenSettings={() => { void Linking.openSettings(); }} />
+    </View>
+
+    {/* Optional and separately tapped: never requested automatically. */}
+    <View style={{ marginTop: 12 }}>
+      <BackgroundLocationAction onRequest={() => work.requestBackgroundTracking()} />
+    </View>
 
     <Txt variant="label" style={{ marginTop: 4 }}>{c.headingTo}</Txt>
     <FilterChips items={[{ key: 'any' as const, label: c.headingAny }, ...cities.map(x => ({ key: x.id, label: x[language] }))]}
-      value={me?.user.heading?.city ?? 'any'} onChange={key => { void head(key); }} />
+      value={me?.user.heading?.city ?? 'any'} disabled={headingBusy} onChange={key => { void head(key); }} />
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
     {/* gap keeps the shortcut from reading as the first offer's header */}
@@ -128,6 +144,7 @@ export default function Jobs() {
         const earn = order.price - commissionOn(order.price, rate);
         // The road km the price used; fixed-price orders (Souq, old apps) only have the city-centre estimate.
         const km = order.routeKm != null ? `${order.routeKm}` : `≈ ${distanceKm(city(order.pickupCity), city(order.dropoffCity))}`;
+        const waiting = acceptReason(order);
         // Native layout animation can retain a removed assignment panel's offset.
         return <View key={order.id}>
           <Card>
@@ -171,6 +188,7 @@ export default function Jobs() {
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
                   onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
+                {(waiting || !ok) && <Reason>{waiting ?? fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Reason>}
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
@@ -178,6 +196,7 @@ export default function Jobs() {
                 onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || blocked(order) || !work.known} />
               {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
                 disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
+              {waiting && <Reason>{waiting}</Reason>}
             </View>
           </Card>
         </View>;

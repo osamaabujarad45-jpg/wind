@@ -5,7 +5,9 @@ import Constants from 'expo-constants';
 import { api, API_URL, configureApi, errorCode, storage } from './api';
 import { phoneTestConfig } from './phone-test';
 import { disablePush, dropLocalPush } from './push';
+import { registerNativePush, unregisterNativePush } from './native-push';
 import { stopBackgroundLocation } from './background-location';
+import { stopPresence, validatePresenceContextOnLaunch } from './driver-presence-runtime';
 import type { Plan, Service, Settings, Subscription, User } from './model';
 
 export type Language = 'ar' | 'en';
@@ -37,6 +39,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
 
   const forget = useCallback(async () => {
+    void stopPresence().catch(() => {}); // invalidate local presence before clearing the account
     await stopBackgroundLocation().catch(() => {});
     void dropLocalPush(); // an ended session must not leave this browser alerting
     configureApi(null, () => {});
@@ -68,11 +71,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
+      // A restored native task is not authorized until this launch revalidates the account and active order.
+      await stopBackgroundLocation().catch(() => {});
+      await validatePresenceContextOnLaunch().catch(() => {});
       const [token, saved, seen] = await Promise.all([storage.get('token'), storage.get('language'), storage.get('onboarded')]);
       if (saved === 'ar' || saved === 'en') setLanguageState(saved);
       // Anyone who ever signed in on this device has seen the app; only a fresh install gets the welcome slides.
       setOnboarded(!!phoneTest || seen === '1' || !!token);
       if (phoneTest || token) {
+        // Refresh older native token accessibility while the app is open, before starting any tracker.
+        if (token && Platform.OS !== 'web') await storage.set('token', token).catch(() => {});
         configureApi(token, forget);
         await refresh();
       }
@@ -100,13 +108,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     finishOnboarding: () => { setOnboarded(true); storage.set('onboarded', '1'); },
     setLanguage: next => { setLanguageState(next); storage.set('language', next); },
     signIn: async ({ token, ...data }) => {
+      void registerNativePush(language);
       configureApi(token, forget);
       await Promise.all([storage.set('token', token), storage.set('onboarded', '1')]);
       setOnboarded(true);
       setMe(data);
     },
     signOut: async () => {
+      // Give the server a short opportunity to revoke, but never hold sign-out on a failed network.
+      await Promise.race([stopPresence().catch(() => false), new Promise(resolve => setTimeout(resolve, 1500))]);
       await disablePush().catch(() => {}); // a shared browser stops alerting this account
+      await unregisterNativePush().catch(() => {});
       await api('/auth/logout', {}).catch(() => {});
       await forget();
     },

@@ -66,6 +66,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e7bcad51-764b-4070-bd4b-81949af51660"
+      }
+    },
+    "owner": "osamaabujarad236"
   }
 }

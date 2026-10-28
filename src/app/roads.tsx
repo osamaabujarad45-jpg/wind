@@ -58,14 +58,14 @@ export default function Roads() {
         {canReport && <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
           {(['open', 'slow', 'closed'] as const).map(status => <View key={status} style={{ flexGrow: 1, flexBasis: 90 }}>
             <Button title={fill(c.roadReportAs, { s: c[`road_${status}`] })} label={fill(c.roadReportLabel, { name: road.name, s: c[`road_${status}`] })}
-              variant={status === 'open' ? 'soft' : 'outline'} loading={busy === `${road.id}${status}`} disabled={!!busy}
+              variant={status === 'open' ? 'soft' : 'outline'} loading={busy === `${road.id}${status}`} disabled={!!busy} reason={c.wait_busy}
               onPress={() => send(`${road.id}${status}`, `/roads/${road.id}/report`, { status }, c.roadReported)} />
           </View>)}
         </Row>}
         {isAdmin && <Txt variant="caption" style={{ marginTop: 8, color: road.point ? palette.olive : palette.clayInk }}>{road.point ? c.roadPlaced : c.roadUnplaced}</Txt>}
-        {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy}
+        {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}
           loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: road.point ?? city(road.cities[0]) })} />}
-        {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy}
+        {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}
           onPress={() => confirm(fill(c.roadRemoveConfirm, { name: road.name }), () => send(`rm${road.id}`, `/admin/roads/${road.id}/remove`, {}, c.roadRemoved), c.roadRemove, c.no)} />}
       </Card>)}
 
@@ -84,10 +84,10 @@ export default function Roads() {
           </Press>;
         })}
       </View>
-      {canPin && <Button title={draft.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="soft" disabled={!!busy || !draft.cities.length}
+      {canPin && <Button title={draft.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="soft" disabled={!!busy || !draft.cities.length} reason={busy ? c.wait_busy : c.road_need_cities}
         onPress={() => setPinFor({ id: 'draft', start: draft.point ?? city(draft.cities[0]) })} />}
       {!!draft.point && <Txt variant="caption" style={{ marginBottom: 8, color: palette.olive }}>{c.roadPlaced}</Txt>}
-      <Button title={c.roadAdd} icon="add-circle-outline" loading={busy === 'add'} disabled={!!busy || draft.name.trim().length < 3 || !draft.cities.length}
+      <Button title={c.roadAdd} icon="add-circle-outline" loading={busy === 'add'} disabled={!!busy || draft.name.trim().length < 3 || !draft.cities.length} reason={busy ? c.wait_busy : c.road_need_name}
         onPress={() => send('add', '/admin/roads', { name: draft.name.trim(), cities: draft.cities, ...(draft.point && { point: draft.point }) })
           .then(ok => ok && setDraft({ name: '', cities: [] }))} />
     </Card>}

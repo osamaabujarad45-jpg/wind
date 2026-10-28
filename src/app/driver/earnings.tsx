@@ -60,8 +60,8 @@ function CashCard() {
     <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
       <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
-      <Button title={c.cashConfirm} icon="checkmark-circle-outline" loading={busy === entry.id} disabled={busy !== null} onPress={() => decide(entry, 'confirm')} />
-      <Button title={c.cashDispute} variant="ghost" size="sm" disabled={busy !== null}
+      <Button title={c.cashConfirm} icon="checkmark-circle-outline" loading={busy === entry.id} disabled={busy !== null} reason={c.wait_busy} onPress={() => decide(entry, 'confirm')} />
+      <Button title={c.cashDispute} variant="ghost" size="sm" disabled={busy !== null} reason={c.wait_busy}
         onPress={() => confirm(c.cashDisputeConfirm, () => decide(entry, 'dispute'), c.cashDispute, c.no)} />
     </View>)}
     {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}

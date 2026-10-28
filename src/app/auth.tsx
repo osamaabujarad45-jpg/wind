@@ -7,6 +7,11 @@ import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
 import { HelpLinks } from '../parts';
 import { InstallLink } from '../install-link';
 import { useSession, type Me } from '../session';
+import { PhoneRecovery } from '../phone-recovery';
+import { entraConfigured, signInWithEntra } from '../entra-auth';
+import { phoneApi } from '../phone/client';
+import { gateOf, type Capabilities } from '../phone/flow';
+import { takeAuthNotice } from '../phone/notice';
 import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
 const HERO = FadeInUp.duration(400);
@@ -16,12 +21,18 @@ export default function Auth() {
   const { signIn, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const still = useReducedMotion(); // reduced motion: render the auth card without entrance movement
-  const [mode, setMode] = useState<'in' | 'up' | 'reset'>('in');
+  const [mode, setMode] = useState<'in' | 'up' | 'reset' | 'phone'>('in');
   // Forgot password by email (server has email): ask for a code, then code + new password.
   const [emailReset, setEmailReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(() => takeAuthNotice() ?? ''); // e.g. after a verified number change ended the last session
+  // Phone-code reset: the server says whether the module exists and is switched on. A failed check is never shown as available.
+  const [phoneCaps, setPhoneCaps] = useState<Capabilities | null>(null);
+  const [phoneCapsFailed, setPhoneCapsFailed] = useState(false);
+  const phoneGate = gateOf(phoneCaps, phoneCapsFailed);
+  const phoneNote = phoneGate === 'unavailable' ? c.phone_recovery_unavailable : phoneGate === 'disabled' ? c.phone_recovery_disabled
+    : phoneGate === 'failed' ? c.phone_status_failed : null;
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -45,6 +56,12 @@ export default function Auth() {
     }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
   }, [policyTry]);
+
+  useEffect(() => {
+    let active = true;
+    void phoneApi.capabilities().then(next => { if (active) setPhoneCaps(next); }).catch(() => { if (active) setPhoneCapsFailed(true); });
+    return () => { active = false; };
+  }, []);
 
   async function reset() {
     if (busy) return;
@@ -98,6 +115,29 @@ export default function Auth() {
     }
   }
 
+  async function entraSignIn() {
+    if (busy) return;
+    if (mode === 'up' && (!consent || !name.trim() || !isValidPhone(phone))) {
+      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : 'invalid_phone'));
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const tokens = await signInWithEntra();
+      if (!tokens) { setBusy(false); return; } // browser dismissed: stay on the form, no error noise
+      const data = await api<Me & { token: string }>('/auth/entra', {
+        idToken: tokens.idToken, nonce: tokens.nonce,
+        consent: mode === 'up' ? consent : false,
+        ...(mode === 'up' ? { registrationRole: role, vehicle, phone, name } : {}),
+      });
+      haptic.success();
+      await signIn(data);
+    } catch (e) {
+      haptic.error();
+      setError(err(e));
+      setBusy(false);
+    }
+  }
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen>
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
@@ -113,7 +153,8 @@ export default function Auth() {
       </Animated.View>
       <Animated.View entering={still ? undefined : FORM}>
         <Card>
-          {mode === 'reset' ? <>
+          {mode === 'phone' ? <PhoneRecovery gate={phoneGate} onBack={() => { setMode('in'); setError(''); }}
+            onDone={text => { setMode('in'); setPassword(''); setError(''); setNotice(text); }} /> : mode === 'reset' ? <>
             <Txt variant="h2" style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
             <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : c.resetBody}</Txt>
             <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
@@ -126,7 +167,7 @@ export default function Auth() {
             </Appear>}
             <ErrorText>{error}</ErrorText>
             <Button title={resetSent ? c.resetSave : c.resetSend} icon={resetSent ? 'key-outline' : 'mail-outline'} onPress={submit} loading={busy} />
-            {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} onPress={() => { setResetSent(false); setCode(''); }} />}
+            {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={() => { setResetSent(false); setCode(''); }} />}
             <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
               <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.resetNoEmail}</Txt>
             </Press>
@@ -180,10 +221,15 @@ export default function Auth() {
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
+          {entraConfigured && <Button title={c.entraSignIn} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={entraSignIn} />}
           {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}
             onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
             <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
+          {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
+            <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
+          </Press>}
+          {mode === 'in' && !!phoneNote && <Txt variant="caption" center style={{ paddingVertical: 6 }}>{phoneNote}</Txt>}
           </>}
           </>}
         </Card>

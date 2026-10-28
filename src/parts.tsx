@@ -324,7 +324,7 @@ export function PasswordCard() {
     <Field label={c.newPassword} value={next} onChangeText={setNext} placeholder={c.passwordHint} secureTextEntry autoComplete="new-password" />
     <ErrorText>{error}</ErrorText>
     <Row gap={8}>
-      <View style={{ flex: 1 }}><Button title={c.save} onPress={save} loading={busy} disabled={!current || next.length < 12 || next.length > 100} /></View>
+      <View style={{ flex: 1 }}><Button title={c.save} onPress={save} loading={busy} disabled={!current || next.length < 12 || next.length > 100} reason={c.password_rule} /></View>
       <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" onPress={() => setOpen(false)} /></View>
     </Row>
   </Appear>;

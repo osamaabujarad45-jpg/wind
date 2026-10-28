@@ -40,6 +40,7 @@ export default function TrackScreen() {
 
   // A failed poll must not leave revoked tracking or stale GPS visible — but it must not blank the page either:
   // the last answer stays with a note that the updates are paused.
+  if (error === 'not_found') return <Screen><Header title={c.trackTitle} /><Empty icon="link-outline" title={c.trackEnded} /></Screen>;
   if (!data) return <Screen><Header title={c.trackTitle} />
     {error || !valid ? <Empty icon="link-outline" title={error && error !== 'not_found' ? c.err_network : c.trackEnded} /> : <Loading />}</Screen>;
 

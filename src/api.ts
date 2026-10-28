@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { useFocusEffect } from 'expo-router';
 import { errorCode, request } from './api-client';
+import { webGet, webSet, type WebStore } from './web-storage';
 export { ApiError, configureApi, errorCode } from './api-client';
 
 // Dev: the API runs next to Metro on port 4000 (npm run server). Production: EXPO_PUBLIC_API_URL.
@@ -17,20 +18,17 @@ const supportContact = process.env.EXPO_PUBLIC_SUPPORT_CONTACT?.trim();
 export const SUPPORT_URL = supportNumber ? `https://wa.me/${supportNumber}`
   : supportContact && /^(mailto:|https:\/\/)/.test(supportContact) ? supportContact : null;
 
+// The getter, not the object: reading `localStorage` can itself throw in a blocked browser, and that must stay inside the guard.
+const webStore: WebStore = () => localStorage;
+
 export const storage = {
-  get: async (key: string) => Platform.OS === 'web' ? safe(() => localStorage.getItem(key)) : SecureStore.getItemAsync(key),
+  get: async (key: string, required = false) => Platform.OS === 'web' ? webGet(webStore, key, required) : SecureStore.getItemAsync(key),
   set: async (key: string, value: string | null, required = false) => {
-    if (Platform.OS === 'web') {
-      const write = () => value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value);
-      return required ? write() : safe(write);
-    }
-    return value === null ? SecureStore.deleteItemAsync(key) : SecureStore.setItemAsync(key, value);
+    if (Platform.OS === 'web') return webSet(webStore, key, value, required);
+    return value === null ? SecureStore.deleteItemAsync(key) : SecureStore.setItemAsync(key, value,
+      key === 'token' ? { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } : undefined);
   },
 };
-
-function safe<T>(fn: () => T): T | null {
-  try { return fn(); } catch { return null; }
-}
 
 export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> =>
   request(`${API_URL}/api${path}`, body, method, signal);
