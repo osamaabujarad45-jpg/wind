@@ -26,6 +26,10 @@ export type EntraClaims = {
 
 type FetchImpl = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; json: () => Promise<any> }>;
 
+export class EntraUnavailableError extends Error {
+  constructor() { super('entra_unavailable'); }
+}
+
 const TENANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TENANT_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 
@@ -53,20 +57,22 @@ const b64urlJson = (part: string): Record<string, any> => {
 };
 
 let jwksCache: { url: string; keys: Map<string, any>; fetchedAt: number } | null = null;
+let lastMissAt = 0;
 const JWKS_TTL_MS = 60 * 60_000;
+const JWKS_MISS_COOLDOWN_MS = 60_000;
 
 async function fetchJwks(config: EntraConfig, fetchImpl: FetchImpl) {
   const metadataResponse = await fetchImpl(config.metadataUrl, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
   const metadata = metadataResponse?.ok ? await metadataResponse.json().catch(() => null) : null;
   // Pin both values to this tenant before fetching keys; never follow metadata to
   // another tenant or accept a token issuer derived from untrusted input.
-  if (metadata?.issuer !== config.issuer || metadata?.jwks_uri !== config.jwksUrl) throw new Error('entra_unavailable');
+  if (metadata?.issuer !== config.issuer || metadata?.jwks_uri !== config.jwksUrl) throw new EntraUnavailableError();
   const res = await fetchImpl(config.jwksUrl, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
-  if (!res?.ok) throw new Error('entra_unavailable');
+  if (!res?.ok) throw new EntraUnavailableError();
   const body = await res.json().catch(() => null);
   const keys = new Map<string, any>();
   for (const key of Array.isArray(body?.keys) ? body.keys : []) if (key?.kid) keys.set(String(key.kid), key);
-  if (!keys.size) throw new Error('entra_unavailable');
+  if (!keys.size) throw new EntraUnavailableError();
   jwksCache = { url: config.jwksUrl, keys, fetchedAt: Date.now() };
 }
 
@@ -75,7 +81,10 @@ async function jwkFor(config: EntraConfig, kid: string, fetchImpl: FetchImpl) {
   if (stale) await fetchJwks(config, fetchImpl);
   let jwk = jwksCache!.keys.get(kid);
   if (!jwk) {
-    // Key rotation: an unknown kid refetches once instead of failing until the TTL.
+    // Key rotation: an unknown kid refetches once, then cools down. Without the
+    // cooldown, forged tokens with random kids force an upstream fetch each.
+    if (Date.now() - lastMissAt < JWKS_MISS_COOLDOWN_MS) throw new Error('invalid_token');
+    lastMissAt = Date.now();
     await fetchJwks(config, fetchImpl);
     jwk = jwksCache!.keys.get(kid);
   }
@@ -84,7 +93,7 @@ async function jwkFor(config: EntraConfig, kid: string, fetchImpl: FetchImpl) {
 }
 
 // Test seam: reset the module JWKS cache between cases.
-export function resetEntraJwksCache() { jwksCache = null; }
+export function resetEntraJwksCache() { jwksCache = null; lastMissAt = 0; }
 
 export async function verifyEntraIdToken(
   token: string,

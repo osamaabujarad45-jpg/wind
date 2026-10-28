@@ -43,7 +43,7 @@ try {
 
   // Sign-up sends a code at once; the reply never carries it.
   const customer = await register(1);
-  assert.equal(customer.emailCode, 'sent');
+  assert.equal(customer.emailCode, 'requested');
   assert.equal(customer.capabilities.emailVerification, true);
   assert.equal(customer.user.emailVerifiedAt, null);
   const welcome = await mailTo('user1@mail.example');
@@ -72,6 +72,7 @@ try {
   // Provider refusal or a bounce: a clear error, and no cooldown left behind, so a retry can go out at once.
   mode = 'fail';
   const third = await register(3);
+  assert.equal(third.emailCode, 'requested', 'the asynchronous send is not reported as delivered');
   await mailTo('user3@mail.example');
   assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
   mode = 'bounce';

@@ -27,7 +27,7 @@ export function useRoad(order: Order | undefined) {
   const fetched = approach.error ? undefined : approach.data;
   // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched, but only to the same stop:
   // a new stop or a failed fetch drops it rather than show an ETA to somewhere the driver is no longer heading.
-  const stop = order && target ? `${order.id}:${target.latitude},${target.longitude}` : '';
+  const stop = order && target ? `${order.id}:${order.driverId}:${target.latitude},${target.longitude}` : '';
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   if (fetched && (fetched !== kept?.route || kept.stop !== stop)) setKept({ stop, route: fetched });
   const eta = driver ? shownApproach(fetched, !!approach.error, kept, stop) : undefined;

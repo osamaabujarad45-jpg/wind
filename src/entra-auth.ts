@@ -1,6 +1,7 @@
 import * as AuthSession from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
+import { cancelledEntraResult, ENTRA_SCOPES } from './entra-result';
 
 // Microsoft Entra External ID sign-in (authorization code + PKCE in the system
 // browser). Dormant until both public values are configured; the password form
@@ -13,25 +14,34 @@ export const entraConfigured = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 WebBrowser.maybeCompleteAuthSession();
 
 export type EntraTokens = { idToken: string; nonce: string };
+export type EntraRequest = { request: AuthSession.AuthRequest; nonce: string; discovery: AuthSession.DiscoveryDocument };
 
-export async function signInWithEntra(): Promise<EntraTokens | null> {
+// Prepare PKCE and the authorization URL before the button is tapped, so the
+// system popup is opened directly from the user gesture on mobile web.
+export async function prepareEntraRequest(): Promise<EntraRequest | null> {
   if (!entraConfigured) return null;
   const authority = `https://${tenantName}.ciamlogin.com/${tenant.toLowerCase()}`;
   const discovery: AuthSession.DiscoveryDocument = {
     authorizationEndpoint: `${authority}/oauth2/v2.0/authorize`,
     tokenEndpoint: `${authority}/oauth2/v2.0/token`,
-    revocationEndpoint: `${authority}/oauth2/v2.0/logout`,
+    endSessionEndpoint: `${authority}/oauth2/v2.0/logout`,
   };
   const nonce = Crypto.randomUUID();
   const request = new AuthSession.AuthRequest({
     clientId,
-    scopes: ['openid', 'profile', 'email', 'phone'],
+    scopes: ENTRA_SCOPES,
     redirectUri: AuthSession.makeRedirectUri({ scheme: 'wind', path: 'auth' }),
     usePKCE: true,
     extraParams: { nonce },
   });
+  await request.makeAuthUrlAsync(discovery);
+  return { request, nonce, discovery };
+}
+
+export async function signInWithEntra({ request, nonce, discovery }: EntraRequest): Promise<EntraTokens | null> {
   const result = await request.promptAsync(discovery);
-  if (result.type !== 'success' || !result.params.code) return null;
+  if (cancelledEntraResult(result)) return null;
+  if (result.type !== 'success' || !result.params.code) throw new Error('entra_authorization_failed');
   const token = await AuthSession.exchangeCodeAsync(
     // SDK 57 has no typed codeVerifier on the exchange config; extraParams is its typed body channel.
     { clientId, code: result.params.code, redirectUri: request.redirectUri ?? '', extraParams: { code_verifier: request.codeVerifier ?? '' } },

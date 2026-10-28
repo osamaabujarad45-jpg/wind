@@ -49,6 +49,9 @@ try {
   // The fake hub verifies signature, expiry and current authority on every use.
   const verified = await hub.verify(credential.token);
   assert.equal(verified.orderId, order.id); assert.equal(verified.subjectType, 'user');
+  await conn.run('UPDATE sessions SET last_seen_at=? WHERE user_id=?', Date.now() - 31 * 86_400_000, customer.user.id);
+  await assert.rejects(() => hub.verify(credential.token), e => e.status === 401 && e.message === 'realtime_revoked');
+  await conn.run('UPDATE sessions SET last_seen_at=? WHERE user_id=?', Date.now(), customer.user.id);
   await assert.rejects(() => hub.verify(`${credential.token.slice(0, -2)}xx`), e => e.status === 401 && e.message === 'realtime_invalid');
   await assert.rejects(() => hub.verify(credential.token, credential.expiresAt + 1), e => e.status === 401 && e.message === 'realtime_expired');
   await assert.rejects(() => hub.verify('not-a-credential'), e => e.status === 401 && e.message === 'realtime_invalid');

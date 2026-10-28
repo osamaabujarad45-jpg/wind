@@ -51,6 +51,7 @@ function fitBounds(points) {
   return [[w, s], [e, n]];
 }
 const glideMs = gap => gap > 0 && gap <= 6000 ? Math.max(600, gap) : 1200;
+const farJump = (a, b) => Math.abs(a.latitude - b.latitude) + Math.abs(a.longitude - b.longitude) > 0.018;
 function turn(a, b, t) {
   const d = ((b - a) % 360 + 540) % 360 - 180;
   return (a + d * Math.min(1, Math.max(0, t)) + 360) % 360;
@@ -86,15 +87,23 @@ const map = new ml.Map({
 });
 map.touchZoomRotate.disableRotation();
 map.on('webglcontextlost', () => send({ type: 'failed' })); // a lost GPU context never draws again; the app retries
-map.once('load', () => {
+let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
+const announceReady = () => {
+  if (!mapLoaded || !baseTileLoaded || announcedReady) return;
+  announcedReady = true;
   clearTimeout(timer);
   document.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
-  // The pin sheet must wait for tiles, not just a parsed style and DOM markers.
   send({ type: 'ready' });
+};
+// MapLibre can emit load even when every vector source request failed. Require
+// an actual basemap tile, not a GeoJSON overlay, before enabling the pin.
+map.on('sourcedata', e => {
+  if (e.source?.type === 'vector' && e.coord && e.tile?.state === 'loaded') { baseTileLoaded = true; announceReady(); }
 });
+map.once('load', () => { mapLoaded = true; announceReady(); });
 
 const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
-let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0;
+let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
 window.wind = update => { Object.assign(state, update); if (ready) draw(); fade(); };
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
@@ -102,7 +111,11 @@ const fade = () => {
   if (marker) marker.getElement().style.opacity = state.stale ? '0.45' : '';
   if (!ready) return;
   if (map.getLayer('accuracy')) map.setPaintProperty('accuracy', 'circle-opacity', state.stale ? 0.05 : 0.12);
-  if (state.stale && map.getSource('approach')) map.getSource('approach').setData(empty);
+  const approach = map.getSource('approach');
+  if (approach) {
+    const line = state.approach && shown ? [[shown.longitude, shown.latitude], ...state.approach] : state.approach;
+    approach.setData(state.stale || !line?.length ? empty : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } });
+  }
 };
 
 function dot(color, square) {
@@ -118,6 +131,7 @@ function noEntry() { // closed checkpoint, same sign as the web map
 }
 function driverIcon(withArrow) {
   const el = document.createElement('div');
+  el.classList.add('driver-marker');
   el.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="${C.blue}" stroke="#fff" stroke-width="3"/>${
     withArrow ? '<path d="M19 9 L26 26 L19 22 L12 26 Z" fill="#fff"/>' : '<circle cx="19" cy="19" r="5" fill="#fff"/>'}</svg>`;
   el.style.cssText = 'width:38px;height:38px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))';
@@ -136,9 +150,8 @@ document.querySelector('#pin path').setAttribute('fill', C.clay);
 
 map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   ready = true;
-  // The map is alive and drawing: the app must not replace it with the diagram while the tiles are still coming.
+  // The style is parsed; keep the deadline until the map's first load completes.
   send({ type: 'drawing' });
-  clearTimeout(timer); // the map works: no failure deadline, the tiles may take their time
   for (const layer of map.getStyle().layers)
     if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
       map.setLayoutProperty(layer.id, 'text-field', labelField(config.language));
@@ -161,7 +174,12 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
     const userMoved = () => { moved = true; recenter.style.display = 'flex'; };
     map.on('dragstart', userMoved);
     map.on('zoomstart', e => { if (e.originalEvent) userMoved(); });
-    recenter.onclick = () => { moved = false; recenter.style.display = 'none'; refit(); };
+    recenter.onclick = () => {
+      moved = false; recenter.style.display = 'none';
+      const car = shown ?? state.driver;
+      if (car) map.easeTo({ center: [car.longitude, car.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still() ? 0 : 800 });
+      else refit(still() ? 0 : 800);
+    };
     // The WebView can lay out after the map is created (a 150 px booking preview framed nothing): frame again at real size.
     addEventListener('resize', () => { if (!moved) refit(0); });
     map.resize(); refit(0);
@@ -222,11 +240,13 @@ function drawDriver() {
     arrow = rotation !== null; turned = undefined;
   }
   const turnFrom = turned ?? rotation;
-  source.setData(driver.accuracy ? { type: 'Feature', geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: {} } : empty);
-  if (driver.accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(driver.accuracy, target.latitude));
+  const snap = !!from && farJump(from, target);
+  const origin = snap ? target : from ?? target;
+  source.setData(driver.accuracy != null ? { type: 'Feature', geometry: { type: 'Point', coordinates: [origin.longitude, origin.latitude] }, properties: {} } : empty);
+  if (driver.accuracy != null) map.setPaintProperty('accuracy', 'circle-radius', halo(driver.accuracy, target.latitude));
   if (frame) cancelAnimationFrame(frame);
-  const start = performance.now(), origin = from ?? target, instant = still();
-  const span = glideMs(at === undefined ? 0 : start - at);
+  const start = performance.now(), instant = still();
+  const span = snap ? 0 : glideMs(at === undefined ? 0 : start - at);
   at = start;
   // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
   if (!moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: instant ? 0 : span });
@@ -241,8 +261,10 @@ function drawDriver() {
       map.getSource('approach').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...state.approach] } });
     }
     // The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker.
-    if (driver.accuracy && (k >= 1 || t - lineAt > 100))
+    if (driver.accuracy != null && (k >= 1 || t - haloAt > 100)) {
+      haloAt = t;
       source.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: {} });
+    }
     if (k < 1) frame = requestAnimationFrame(step);
   };
   frame = requestAnimationFrame(step);

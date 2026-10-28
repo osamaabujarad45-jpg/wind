@@ -35,6 +35,8 @@ const order = sqlite.prepare('SELECT id FROM orders ORDER BY id LIMIT 1').get().
 const now = Date.now();
 const token = randomBytes(32).toString('hex');
 sqlite.prepare('INSERT INTO sessions(token_hash,user_id,created_at) VALUES(?,?,?)').run(createHash('sha256').update(token).digest('hex'), driver, now);
+// Replay entries must survive a cutover too; otherwise an already exchanged ID token could be reused.
+sqlite.prepare('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)').run(createHash('sha256').update('synthetic-entra-replay').digest('hex'), now + 300_000);
 // Synthetic Arabic, timezone and REAL rounding data. Existing installed tariff/settings stay unchanged.
 sqlite.prepare("UPDATE users SET name=?,status='active',approved_at=? WHERE id=?").run('سائق تجريبي — القدس', now, driver);
 sqlite.prepare("INSERT INTO subscriptions(user_id,plan,status,price,activated_at,ends_at,created_at) VALUES(?,'pro','active',10,?,?,?)").run(driver, now, Date.parse('2026-10-30T23:30:00+02:00'), now);

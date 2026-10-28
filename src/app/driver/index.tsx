@@ -1,10 +1,10 @@
 // Driver jobs, Uber Driver pattern: a presence card (never ready until the server confirms), then offer cards that lead with what the driver
 // earns, the route spine, what the job carries, and one accept button.
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { api, SUPPORT_URL, useApi } from '../../api';
+import { router, useFocusEffect } from 'expo-router';
+import { api, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
@@ -22,6 +22,8 @@ export default function Jobs() {
   const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
+  const focusRevision = useRef(0);
+  useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
   const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
@@ -38,8 +40,12 @@ export default function Jobs() {
     if (busy !== null || blocked(order) || !work.known) return;
     setBusy(order.id);
     setActionError('');
+    const session = apiSessionRevision(), focus = focusRevision.current;
+    const current = () => apiSessionRevision() === session && focusRevision.current === focus;
     try {
-      if (!await work.prepareTracking()) {
+      const prepared = await work.prepareTracking();
+      if (!current()) return;
+      if (!prepared) {
         haptic.error();
         setActionError(c.locationOff);
         return;
@@ -59,9 +65,13 @@ export default function Jobs() {
     if (busy !== null || blocked(order) || !work.known) return;
     setBusy(order.id);
     setActionError('');
+    const session = apiSessionRevision(), focus = focusRevision.current;
+    const current = () => apiSessionRevision() === session && focusRevision.current === focus;
     try {
       // An accepted offer is an assignment: location sharing must be ready, exactly as for Accept.
-      if (!await work.prepareTracking()) {
+      const prepared = await work.prepareTracking();
+      if (!current()) return;
+      if (!prepared) {
         haptic.error();
         setActionError(c.locationOff);
         return;

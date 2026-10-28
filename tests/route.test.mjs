@@ -84,7 +84,12 @@ try {
   await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } });
   calls = 0;
   const eta = await call(`/track/${token}/eta`);
-  assert.deepEqual({ ...eta, approach: undefined, road: undefined }, { minutes: 55, delayed: false, approach: undefined, road: undefined, fixAgeSeconds: 0 });
+  assert.deepEqual({ ...eta, approach: undefined, road: undefined, fixUpdatedAt: undefined }, { minutes: 55, delayed: false, approach: undefined, road: undefined, fixAgeSeconds: 0, fixUpdatedAt: undefined });
+  assert.ok(Number.isFinite(eta.fixUpdatedAt), 'the client can age the ETA after it was received');
+  const currentRef = (await call(`/track/${token}`)).driver.ref;
+  assert.deepEqual(await call(`/track/${token}/eta?driver=000000000000`), { minutes: null }, 'a route for another driver is never returned');
+  assert.deepEqual(await call(`/track/${token}/eta?driver=${currentRef}&status=in_transit`), { minutes: null }, 'a route for an old trip stage is never returned');
+  assert.equal((await call(`/track/${token}/eta?driver=${currentRef}`)).minutes, 55);
   assert.ok(eta.fixAgeSeconds >= 0 && eta.fixAgeSeconds < 5, 'the estimate says how old the fix it starts from is');
   assert.equal(eta.approach.length, 3, 'driver leg follows the road geometry'); assert.equal(eta.road.length, 3, 'city-to-city road line');
   assert.equal(calls, 1, 'Ramallah-Nablus centres were cached by the first /route call');

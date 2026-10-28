@@ -26,7 +26,7 @@ module.exports = config => {
     const begin = '// BEGIN WIND PHONE TEST', end = '// END WIND PHONE TEST';
     mod.modResults.contents = mod.modResults.contents
       .replace(/\n\/\/ BEGIN WIND PHONE TEST[\s\S]*?\/\/ END WIND PHONE TEST\n/g, '')
-      + `\n${begin}\n// Ship a JS bundle in the Debug APK so testing does not depend on Metro.\nreact {\n    debuggableVariants = []\n    extraPackagerArgs = ["--reset-cache"]\n}\ngradle.taskGraph.whenReady { graph ->\n    if (graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {\n        throw new GradleException('Phone test apps cannot be built as Release.')\n    }\n}\n${end}\n`;
+      + `\n${begin}\n// Ship a JS bundle in the Debug APK so testing does not depend on Metro.\nreact {\n    debuggableVariants = []\n    extraPackagerArgs = ["--reset-cache"]\n}\n// Leave room for CMake to hash long names while staying under Windows path limits.\nandroid { defaultConfig { externalNativeBuild { cmake { arguments "-DCMAKE_OBJECT_PATH_MAX=240" } } } }\ngradle.taskGraph.whenReady { graph ->\n    if (graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {\n        throw new GradleException('Phone test apps cannot be built as Release.')\n    }\n}\n${end}\n`;
     return mod;
   });
 

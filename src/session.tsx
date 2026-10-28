@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { AppState, Platform } from 'react-native';
 import { getLocales } from 'expo-localization';
 import Constants from 'expo-constants';
-import { api, API_URL, configureApi, errorCode, storage } from './api';
+import { api, API_URL, configureApi, errorCode, invalidateApiSessionActions, storage } from './api';
 import { phoneTestConfig } from './phone-test';
 import { disablePush, dropLocalPush } from './push';
 import { registerNativePush, unregisterNativePush } from './native-push';
@@ -39,6 +39,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
 
   const forget = useCallback(async () => {
+    invalidateApiSessionActions();
     void stopPresence().catch(() => {}); // invalidate local presence before clearing the account
     await stopBackgroundLocation().catch(() => {});
     void dropLocalPush(); // an ended session must not leave this browser alerting
@@ -115,8 +116,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setMe(data);
     },
     signOut: async () => {
+      invalidateApiSessionActions();
       // Give the server a short opportunity to revoke, but never hold sign-out on a failed network.
-      await Promise.race([stopPresence().catch(() => false), new Promise(resolve => setTimeout(resolve, 1500))]);
+      await Promise.race([stopPresence().catch(() => false), new Promise(resolve => setTimeout(resolve, 5000))]);
       await disablePush().catch(() => {}); // a shared browser stops alerting this account
       await unregisterNativePush().catch(() => {});
       await api('/auth/logout', {}).catch(() => {});

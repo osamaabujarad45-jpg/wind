@@ -46,7 +46,7 @@ try {
 
   // Sign-up sends a code at once; the reply never carries it.
   const customer = await register(1);
-  assert.equal(customer.emailCode, 'sent');
+  assert.equal(customer.emailCode, 'requested');
   assert.equal(customer.capabilities.emailVerification, true);
   assert.equal(customer.user.emailVerifiedAt, null);
   const welcome = await mailTo('user1@mail.example');

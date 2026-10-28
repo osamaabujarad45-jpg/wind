@@ -32,7 +32,8 @@ param osrmCpu int = 2
 param osrmMemory string = '4Gi'
 param osrmGraphStorageGb int = 100
 param logRetentionDays int = 30
-@description('Entra External ID tenant name/GUID and app (client) ID; public identifiers, empty keeps Entra dark.')
+@description('Entra External ID tenant subdomain, directory GUID and app client ID; all empty keeps Entra dark.')
+param entraTenantName string = ''
 param entraTenantId string = ''
 param entraClientId string = ''
 @description('ACS sender (phone number or alphanumeric ID) used when enableAcs is true.')
@@ -308,12 +309,14 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
     environmentVariables: [
       { name: 'HOST', value: '0.0.0.0' }
       { name: 'PORT', value: '4000' }
+      { name: 'WIND_ENTRA_TENANT_NAME', value: entraTenantName }
       { name: 'WIND_ENTRA_TENANT_ID', value: entraTenantId }
       { name: 'WIND_ENTRA_CLIENT_ID', value: entraClientId }
-      { name: 'WIND_ACS_ENDPOINT', value: enableAcs ? 'https://${comm.properties.hostName}' : '' }
+      { name: 'WIND_ACS_ENDPOINT', value: enableAcs ? 'https://${comm!.properties.hostName}' : '' }
       { name: 'WIND_ACS_SENDER', value: acsSender }
-      { name: 'WIND_ACS_KEY', value: acsAccessKey }
+      { name: 'WIND_TRUST_PROXY', value: '1' }
     ]
+    acsAccessKey: acsAccessKey
     minReplicas: 1
     maxReplicas: 1
     probes: [
@@ -387,6 +390,6 @@ resource budget 'Microsoft.Consumption/budgets@2023-05-01' = {
 output imageValidation string = enableWorkloads ? '${checkedImage} ${checkedOsrmImage}' : 'Workloads disabled'
 output workloadGate string = enableWorkloads ? 'Enabled by parameter; does not mean runtime gates passed.' : 'Disabled; workloads are not staged or running.'
 output postgresFqdn string = pg.properties.fullyQualifiedDomainName
-output acsHostName string = enableAcs ? comm.properties.hostName : ''
+output acsHostName string = enableAcs ? comm!.properties.hostName : ''
 output storageId string = storage.id
 output identityPrincipalId string = environmentIdentity.properties.principalId

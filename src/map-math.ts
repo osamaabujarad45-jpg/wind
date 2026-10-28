@@ -28,6 +28,9 @@ export function turn(a: number, b: number, t: number): number {
   return (a + d * Math.min(1, Math.max(0, t)) + 360) % 360;
 }
 
+/** A jump too far to be one drive between fixes (driver change, long outage): snap, never glide across the city. */
+export const farJump = (a: Point, b: Point) => Math.abs(a.latitude - b.latitude) + Math.abs(a.longitude - b.longitude) > 0.018;
+
 export type Pose = Point & { rotation: number };
 /**
  * Live marker motion: each fix starts a glide from where the marker is drawn now (never dropped mid-glide, never
@@ -38,7 +41,7 @@ export function glider(start: Pose) {
   let now = start, from = start, to = start, at = 0, span = 0;
   return {
     fix(fix: Point & { heading?: number | null }, t: number, still = false) {
-      span = still ? 0 : glideMs(at ? t - at : 0);
+      span = still || farJump(now, { latitude: fix.latitude, longitude: fix.longitude }) ? 0 : glideMs(at ? t - at : 0);
       from = now; to = { latitude: fix.latitude, longitude: fix.longitude, rotation: fix.heading ?? now.rotation }; at = t;
     },
     frame(t: number) {

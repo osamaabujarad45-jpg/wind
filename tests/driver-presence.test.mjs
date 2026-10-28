@@ -146,8 +146,8 @@ const fix=(timestamp,speed=0,accuracy=10)=>({timestamp,coords:{latitude:31.9,lon
   let release,entered;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{entered=resolve;});
   h.setHandler(async path=>{if(path.endsWith('/location')){entered();await gate;return {status:200,body:{accepted:true}};}return {status:200,body:{ok:true}};});
   const first=p.deliverPresenceFix(fix(1_000_000));await started;
-  h.setNow(1_001_000);assert.equal(await p.deliverPresenceFix(fix(1_001_000)),false,'no fix waits behind an in-flight upload');
-  release();assert.equal(await first,true);
+  h.setNow(1_001_000);const queuedFix=p.deliverPresenceFix(fix(1_001_000));
+  release();assert.equal(await first,true);assert.equal(await queuedFix,false,'a fix queued behind an in-flight upload is cadence-dropped, not replayed');
   assert.equal(h.calls.filter(x=>x.path.endsWith('/location')).length,1,'a later callback is not replayed after the network finishes');
 }
 {

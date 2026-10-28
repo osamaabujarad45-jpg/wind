@@ -18,8 +18,8 @@ Verification **[V]**: `tests/entra.test.mjs` (signature/tamper/audience/expiry/n
 
 ## Operator runbook (go-live, in order)
 
-1. Create an **Entra External ID tenant** in the Azure portal; user flow: phone OTP primary + email OTP fallback; app registration (public client, redirect `wind://auth`).
-2. Server env: `WIND_ENTRA_TENANT_ID`, `WIND_ENTRA_CLIENT_ID`. App env (EAS): `EXPO_PUBLIC_ENTRA_TENANT_ID`, `EXPO_PUBLIC_ENTRA_CLIENT_ID`. Dev build required (not Expo Go).
+1. Create an **Entra External ID tenant** and a supported customer sign-up/sign-in user flow. Configure the native public-client redirect `wind://auth` and, for each approved web origin, the SPA redirect `https://<web-origin>/auth`. Phone OTP is not assumed to be a supported primary sign-in method: Microsoft's customer-tenant documentation describes SMS as a second factor. Verify the tenant's actual identity claims before using any contact for account linking.
+2. Server env: `WIND_ENTRA_TENANT_NAME`, `WIND_ENTRA_TENANT_ID`, `WIND_ENTRA_CLIENT_ID`. App env (EAS/export): `EXPO_PUBLIC_ENTRA_TENANT_NAME`, `EXPO_PUBLIC_ENTRA_TENANT_ID`, `EXPO_PUBLIC_ENTRA_CLIENT_ID`. Rebuild the client after setting public values. Use a development build for native testing.
 3. Run the ACS-vs-Ooredoo bake-off on real Jawwal/Ooredoo numbers before trusting `phone_number_verified` for linking (+970 delivery is **[U]**).
 4. Only then: pilot behind the button, link-by-verified-phone, cut over, deprecate passwords (passkeys last).
 

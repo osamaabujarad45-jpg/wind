@@ -100,6 +100,7 @@ try {
   await call(`/orders/${order.id}/share`, { token: customer.token, body: {}, expect: 409 });
   db.prepare('UPDATE orders SET updated_at = ? WHERE id = ?').run(Date.now() - 25 * 3_600_000, order.id);
   await call(`/track/${third.token}`, { expect: 404 });
+  await call(`/track/${third.token}/eta`, { expect: 404 });
   for (const bad of ['abc', 'g'.repeat(64), '0'.repeat(64)]) await call(`/track/${bad}`, { expect: 404 });
 
   console.log('share: ok');

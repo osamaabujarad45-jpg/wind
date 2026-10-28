@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { createSign, generateKeyPairSync, randomUUID } from 'node:crypto';
+import { createHash, createSign, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
+import { resetEntraJwksCache } from '../server/domain/entra.ts';
 
 const tenantId = '11111111-2222-3333-4444-555555555555';
 const clientId = 'test-client';
@@ -18,9 +19,10 @@ process.env.WIND_ENTRA_CLIENT_ID = clientId;
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'test-key', alg: 'RS256', use: 'sig' };
 const realFetch = globalThis.fetch;
+let providerDown = false;
 globalThis.fetch = async (url, init) => {
   if (url === `${authority}/v2.0/.well-known/openid-configuration`)
-    return { ok: true, json: async () => ({ issuer, jwks_uri: `${authority}/discovery/v2.0/keys` }) };
+    return { ok: !providerDown, json: async () => ({ issuer, jwks_uri: `${authority}/discovery/v2.0/keys` }) };
   if (url === `${authority}/discovery/v2.0/keys`) return { ok: true, json: async () => ({ keys: [jwk] }) };
   return realFetch(url, init);
 };
@@ -41,6 +43,16 @@ const register = (phone, email) => call('/auth/register', { body: { phone, email
 const exchange = (claims, extra = {}, expect = 200) => call('/auth/entra', { body: { idToken: token(claims), nonce: 'test-nonce', ...extra }, expect });
 
 try {
+  resetEntraJwksCache();
+  providerDown = true;
+  const outageToken = token({ oid: 'after-outage', email: 'outage@example.com', email_verified: true, name: 'Outage Rider' });
+  const outageBody = { idToken: outageToken, nonce: 'test-nonce', phone: '0599300106', email: 'outage@example.com', consent: true };
+  assert.equal((await call('/auth/entra', { body: outageBody, expect: 503 })).error, 'entra_unavailable');
+  const attemptKey = 'entra-attempt:' + createHash('sha256').update(outageToken.slice(-24)).digest('hex');
+  assert.equal(db.prepare('SELECT count FROM request_limits WHERE key = ?').get(attemptKey), undefined, 'provider outage is not a bad-token attempt');
+  providerDown = false;
+  assert.equal((await call('/auth/entra', { body: outageBody })).user.email, 'outage@example.com', 'the same token can be exchanged after recovery');
+
   const existing = await register('0599300101', 'unverified@example.com');
   await exchange({ oid: 'attacker', email: 'unverified@example.com', email_verified: true }, {}, 403);
   assert.equal(db.prepare('SELECT entra_oid FROM users WHERE id = ?').get(existing.user.id).entra_oid, null,
@@ -60,8 +72,11 @@ try {
   assert.equal(db.prepare('SELECT entra_oid FROM users WHERE id = ?').get(verified.user.id).entra_oid, 'first-identity',
     'a second external identity cannot replace the established link');
 
+  assert.equal((await exchange({ oid: 'wrong-email', email: 'provider@example.com', email_verified: true, name: 'Rider' },
+    { phone: '0599300107', email: 'typed@example.com', consent: true }, 400)).error, 'entra_email_mismatch');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM users WHERE entra_oid = ?').get('wrong-email').n, 0);
   const created = await exchange({ oid: 'new-rider', email: 'new@example.com', email_verified: true, name: 'New Rider' },
-    { phone: '0599300104', consent: true, registrationRole: 'driver', vehicle: 'car' });
+    { phone: '0599300104', email: 'new@example.com', consent: true, registrationRole: 'driver', vehicle: 'car' });
   assert.equal(created.user.status, 'pending', 'driver approval is still required');
   const row = db.prepare('SELECT phone_verified_at, email_verified_at FROM users WHERE id = ?').get(created.user.id);
   assert.equal(row.phone_verified_at, null, 'a manually entered phone is never treated as verified');

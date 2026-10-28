@@ -21,10 +21,11 @@ import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, registerNativePushRoutes } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
-import { entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
+import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
+import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -42,15 +43,15 @@ import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
-const SESSION_DAYS = 90; // absolute lifetime
-const SESSION_IDLE_DAYS = 30; // sliding inactivity limit; last_seen_at is touched at most hourly
+// Sliding inactivity is touched at most hourly; the absolute lifetime still applies.
 const production = process.env.NODE_ENV === 'production';
 const selfService = process.env.WIND_IDENTITY_MODE === 'self-service';
 const contactVerificationRequired = selfService && process.env.WIND_CONTACT_VERIFICATION_REQUIRED === 'true';
 const contactAllowed = (r: Row) => !contactVerificationRequired || r.role === 'admin' || r.phone_verified_at || r.email_verified_at || r.approved_at;
 const registrationOpen = selfService || (!production && process.env.WIND_IDENTITY_MODE !== 'operator-verified');
 // Entra External ID stays dark until the tenant is configured; password auth is untouched while it is off.
-const entra = entraConfig();
+// A partial or mistyped Entra config must never crash-loop the whole API.
+const entra = (() => { try { return entraConfig(); } catch (error) { console.error('Entra disabled:', error instanceof Error ? error.message : error); return null; } })();
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
   if (!process.env.SUPPORT_CONTACT?.trim()) throw new Error('Production requires a real SUPPORT_CONTACT');
@@ -308,7 +309,7 @@ async function getOrder(id: number, viewer: User): Promise<Order> {
   const released = viewer.role === 'driver' && r.status === 'searching' &&
     !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
   const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
-    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && servesFor(viewer.vehicle).includes(r.service)
+    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && enabledServices.includes(r.service) && servesFor(viewer.vehicle).includes(r.service)
       && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
   if (!canSee || released) fail(404, 'not_found');
   return (await toOrder(r, viewer));
@@ -348,7 +349,8 @@ const entraExchange = async ({ body }: { body: Row }) => {
   let claims;
   try {
     claims = await verifyEntraIdToken(idToken, entra!, { nonce });
-  } catch {
+  } catch (error) {
+    if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable');
     (await limit(identityKey('entra-attempt', idToken.slice(-24) || 'empty'), 10, 10 * 60_000));
     fail(401, 'invalid_token');
   }
@@ -361,6 +363,11 @@ const entraExchange = async ({ body }: { body: Row }) => {
   let user = (await one('SELECT * FROM users WHERE entra_oid = ?', claims!.oid));
   const phone = claims!.phoneVerified && claims!.phone ? normalizePhone(claims!.phone) : null;
   const email = claims!.emailVerified && claims!.email ? normalizeEmail(claims!.email) : null;
+  if (body.email !== undefined) {
+    const enteredEmail = normalizeEmail(String(body.email));
+    if (!enteredEmail) fail(400, 'invalid_email');
+    if (!email || email !== enteredEmail) fail(400, 'entra_email_mismatch');
+  }
   if (!user) {
     const phoneUser = phone ? await one('SELECT * FROM users WHERE phone = ?', phone) : undefined;
     const emailUser = email ? await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email) : undefined;
@@ -463,8 +470,8 @@ route('GET', '/api/ready', async () => {
       await one('SELECT COUNT(*) n FROM sqlite_schema');
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
-      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 18'))?.n ?? 0);
-      if (schema < 18 || applied !== 16) fail(503, 'unavailable');
+      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 20'))?.n ?? 0);
+      if (schema < 20 || applied !== 18) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -702,7 +709,7 @@ async function deleteAccount(user: User) {
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
-    (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL,
+    (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
@@ -1157,17 +1164,20 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     if (quoted.service !== 'ride' && !effDetail) fail(400, 'invalid_input');
     const effContact = fillPhone(quoted.contact, body.contact) ?? fail(400, 'invalid_phone');
     const effPickupContact = fillPhone(quoted.pickup_contact, body.pickupContact);
-    if ((quoted.pickup_lat == null && body.pickupPoint != null) || (quoted.dropoff_lat == null && body.dropoffPoint != null)) {
-      const repriced = (await recommend(user, { service: quoted.service, option: quoted.option, loadingHelp: !!Number(quoted.loading_help), pickupCity: quoted.pickup_city, dropoffCity: quoted.dropoff_city, pickupPoint: body.pickupPoint, dropoffPoint: body.dropoffPoint, scheduledFor: quoted.scheduled_for }));
-      if (repriced.price !== Number(quoted.price_minor) / 100) fail(409, 'price_changed');
-    }
+    // Pins filled in at booking join the order at the locked quote price; the
+    // quote is immutable, so no reprice runs here (a tariff/graph change inside
+    // the 120s window must not void the fare the customer accepted).
     const effPoint = fillPoint(quoted.pickup_lat, quoted.pickup_lng, body.pickupPoint, quoted.pickup_city);
     const effDropoffPoint = fillPoint(quoted.dropoff_lat, quoted.dropoff_lng, body.dropoffPoint, quoted.dropoff_city);
     if (quoted.service === 'ride' && body.recipientPhone != null && body.recipientPhone !== '') fail(400, 'invalid_input');
     const effRecipientPhone = fillPhone(quoted.recipient_phone, body.recipientPhone);
     const effRecipientName = effRecipientPhone ? fillText(quoted.recipient_name, body.recipientName, 60, false) : '';
-    // Re-evaluate current prohibition for this itinerary before booking.
-    const currentFeasibility = (await evaluateQuoteFeasibility(persistence, { service: quoted.service, routeLine: null, estimated: true, pickup: effPoint ?? city(quoted.pickup_city as CityId), dropoff: effDropoffPoint ?? city(quoted.dropoff_city as CityId) }));
+    // Re-evaluate current prohibition on the same road geometry the quote used.
+    // The straight chord cuts corners the road bends around (and vice versa).
+    const effFrom = effPoint ?? city(quoted.pickup_city as CityId), effTo = effDropoffPoint ?? city(quoted.dropoff_city as CityId);
+    let bookingLine: [number, number][] | null = null, bookingEstimated = true;
+    try { const trip = await roadRoute(effFrom, effTo); bookingLine = trip.line; bookingEstimated = false; } catch { /* chord fallback below */ }
+    const currentFeasibility = (await evaluateQuoteFeasibility(persistence, { service: quoted.service, routeLine: bookingLine, estimated: bookingEstimated, pickup: effFrom, dropoff: effTo }));
     // Current uncertain evidence does not block a valid uncertain quote.
     if (currentFeasibility.verdict.feasibility === 'infeasible') fail(409, 'route_prohibited');
     const service = quoted.service as Service;
@@ -1508,7 +1518,13 @@ route('POST', '/api/orders/:id/share/revoke', async ({ user, params }) => {
     fail(404, 'not_found');
   return { ok: true };
 });
-route('GET', '/api/track/([a-f0-9]{64})', async ({ params }) => (await trackView(params[0]!)).view, true);
+const shareRefKey = randomBytes(32); // in memory only: public driver refs must not be invertible from the link itself
+route('GET', '/api/track/([a-f0-9]{64})', async ({ params, req }) => {
+  const forwarded = req.headers['x-real-ip'] ?? (typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0]?.trim() : undefined);
+  const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
+  (await limit(identityKey('track-view', address), 600, 10 * 60_000));
+  return (await trackView(params[0]!)).view;
+}, true);
 route('GET', '/api/track/([a-f0-9]{64})/live', async ({ params, query, req }) => {
   let limited = false;
   return (await liveFix(async () => {
@@ -1523,11 +1539,11 @@ async function trackView(token: string) {
   const open = r.status === 'searching' || activeStatuses.includes(r.status);
   if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
   const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
-  return { orderId: r.id, driverId: r.driver_id as number | null, view: {
+  return { orderId: r.id, driverId: r.driver_id as number | null, row: r, view: {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at,
     driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
-      ref: sha(`${token}:${r.driver_id}`).slice(0, 12) } : null, // opaque per link: tells a reassignment apart, names no one
+      ref: createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}`).digest('hex').slice(0, 12) } : null, // opaque per link: tells a reassignment apart, names no one
     driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
   } };
 }
@@ -2005,7 +2021,7 @@ async function activeGpsAuthority(user: User, req: IncomingMessage) {
   if (persistence.backend !== 'postgres' || !await one('SELECT version FROM schema_migrations WHERE version=10')) fail(409, 'active_gps_unavailable');
   await all(`SELECT id FROM orders WHERE driver_id=? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, user.id);
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
-  if (!token || !await one(`SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND u.role='driver' AND u.status='active' AND s.token_hash=? AND s.created_at>? FOR UPDATE OF u FOR SHARE OF s`, user.id, sha(token), Date.now() - SESSION_DAYS * DAY)) fail(401, 'unauthorized');
+  if (!token || !await one(`SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND u.role='driver' AND u.status='active' AND s.token_hash=? AND s.created_at>? AND COALESCE(s.last_seen_at,s.created_at)>? FOR UPDATE OF u FOR SHARE OF s`, user.id, sha(token), Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY)) fail(401, 'unauthorized');
   const assignments = await all(`SELECT id AS "orderId",assignment_epoch AS "assignmentEpoch" FROM orders WHERE driver_id=? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, user.id);
   return { tokenHash: sha(token!), assignments };
 }
@@ -2047,8 +2063,8 @@ route('POST', '/api/location', async ({ user, body, req }) => {
     await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, user.id);
     const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
     if (!token || !await one(`SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id
-      WHERE u.id=? AND u.role='driver' AND u.status='active' AND s.token_hash=? AND s.created_at>?
-      FOR SHARE OF u,s`, user.id, sha(token), Date.now() - SESSION_DAYS * DAY)) fail(401, 'unauthorized');
+      WHERE u.id=? AND u.role='driver' AND u.status='active' AND s.token_hash=? AND s.created_at>? AND COALESCE(s.last_seen_at,s.created_at)>?
+      FOR SHARE OF u,s`, user.id, sha(token), Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY)) fail(401, 'unauthorized');
   }
   if (body.activeGps !== undefined) {
     const fence = body.activeGps;
@@ -2108,14 +2124,33 @@ route('POST', '/api/location', async ({ user, body, req }) => {
   // The accuracy is stored as its effective value (an unreported accuracy is 50 m), so the reference never keeps a
   // stale accuracy from an earlier fix.
   const keep = outcome === 'ok' ? { lat, lng, at: fixAt, acc: accuracy ?? 50 } : { lat: null, lng: null, at: null, acc: null };
+  // SQLite has no request-wide transaction: make the authorization and assignment
+  // checks part of the write itself, so a queued fix cannot outlive either one.
+  const locationArgs: SQLInputValue[] = [user.id, lat, lng, fixAt, heading, accuracy, keep.lat, keep.lng, keep.at, keep.acc];
+  let source = 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+  if (persistence.backend === 'sqlite') {
+    const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+    const checkedAt = Date.now();
+    source = `SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (
+      SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE u.id = ? AND u.role = 'driver' AND u.status = 'active' AND s.token_hash = ?
+        AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?
+        AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.email_verified_at IS NOT NULL OR u.approved_at IS NOT NULL)
+        AND (? = 0 OR u.phone_verified_at IS NOT NULL)
+    ) AND EXISTS (SELECT 1 FROM orders o WHERE o.driver_id = ? AND o.status IN (${activeSql})
+      AND (o.assigned_at IS NULL OR o.assigned_at <= ?))`;
+    locationArgs.push(user.id, sha(token), checkedAt - SESSION_DAYS * DAY, checkedAt - SESSION_IDLE_DAYS * DAY,
+      contactVerificationRequired ? 1 : 0, production && !selfService ? 1 : 0, user.id, fixAt);
+  }
   const written = (await run(`INSERT INTO driver_locations (driver_id, lat, lng, updated_at, heading, accuracy, good_lat, good_lng, good_at, good_acc)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ${source}
     ON CONFLICT(driver_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, updated_at = excluded.updated_at, heading = excluded.heading, accuracy = excluded.accuracy,
       good_lat = COALESCE(excluded.good_lat, driver_locations.good_lat), good_lng = COALESCE(excluded.good_lng, driver_locations.good_lng),
       good_at = COALESCE(excluded.good_at, driver_locations.good_at), good_acc = COALESCE(excluded.good_acc, driver_locations.good_acc)
     WHERE excluded.updated_at > driver_locations.updated_at`,
-  user.id, lat, lng, fixAt, heading, accuracy, keep.lat, keep.lng, keep.at, keep.acc));
+  ...locationArgs));
   const accepted = Number(written.changes) > 0;
+  if (!accepted && persistence.backend === 'sqlite' && !await authenticate(req)) fail(401, 'unauthorized');
   if (accepted) {
     // The watchers wait on the order, not on the driver: a reassignment wakes the same people.
     const affected = await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id) as { id: number }[];
@@ -2275,11 +2310,11 @@ route('GET', '/api/route', async ({ user, query }) => {
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const token = params[0]!, hash = sha(token);
-  await trackView(token); // enforce the same revocation and expiry as the public trip page
-  const r = (await one(`${orderSelect} WHERE o.share_token_hash = ?`, hash)) ?? fail(404, 'not_found');
-  (await limit(identityKey('track-eta', hash), 300, 10 * 60_000)); // after the lookup (a made-up token leaves no row); a family may watch one link
-  const driverKey = r.driver_id ? sha(`${token}:${r.driver_id}`).slice(0, 12) : null;
+  const { row: r } = await trackView(token); // validate the link and reuse the same snapshot
+  (await limit(identityKey('track-eta', hash), 300, 10 * 60_000)); // after one lookup (a made-up token leaves no row)
+  const driverKey = r.driver_id ? createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}`).digest('hex').slice(0, 12) : null;
   if (query.has('driver') && query.get('driver') !== driverKey) return { minutes: null };
+  if (query.has('status') && query.get('status') !== r.status) return { minutes: null };
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
   // The age of the fix the estimate starts from: a two-minute-old position is not a two-minute-old answer.
   const fixAgeSeconds = Math.max(0, Math.round((Date.now() - r.loc_at) / 1000));
@@ -2289,7 +2324,7 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   if (r.shared_run) {
     const road = await roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
     const current = await trackView(token);
-    if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null };
+    if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road, fixAgeSeconds, fixUpdatedAt: r.loc_at };
     return { minutes: null, sharedRun: true, road, fixAgeSeconds, fixUpdatedAt: r.loc_at };
   }
   const next = city(['in_transit', 'on_hold'].includes(r.status) ? r.dropoff_city : r.pickup_city);
@@ -2301,7 +2336,7 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const leg = Promise.resolve().then(async () => (await roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null, closed))).catch(() => null);
   const [approach, line] = await Promise.all([leg, trip]);
   const current = await trackView(token);
-  if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null };
+  if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
   return approach ? { minutes: approach.minutes, delayed, approach: approach.line, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at }
     : { minutes: null, delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
 }, true);
@@ -2702,7 +2737,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     if (!match.isPublic && !user) fail(401, 'unauthorized');
     const perAddress = publicAuthLimits[url.pathname];
     if (perAddress) {
-      const forwarded = req.headers['x-real-ip'];
+      const forwarded = req.headers['x-real-ip'] ?? (typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0]?.trim() : undefined);
       const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
       (await limit(identityKey(url.pathname, address), perAddress, 10 * 60_000));
     }
@@ -2753,7 +2788,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
         && !(await durableProtocolAvailable(persistence))) fail(503, 'durable_schema_required');
       let failure: HttpError | undefined;
       payload = await persistence.atomic({ id: user?.id, correlationId, purpose: user ? undefined : url.pathname.startsWith('/api/partner/') ? 'partner_api' : 'http_public' }, async () => {
-        try { return await versionedCommand(persistence, user, body, url.pathname, req.method!, invoke, fail, e => e instanceof HttpError, id => getOrder(id, user!), { requirePermanentDriverApproval: production && selfService }); }
+        try { const rawToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1]; return await versionedCommand(persistence, user, body, url.pathname, req.method!, invoke, fail, e => e instanceof HttpError, id => getOrder(id, user!), { requirePermanentDriverApproval: production && selfService, sessionHash: rawToken ? sha(rawToken) : undefined }); }
         catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       });
       if (failure) throw failure;

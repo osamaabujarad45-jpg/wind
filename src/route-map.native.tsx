@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { bearing, glider } from './map-math';
@@ -41,6 +41,12 @@ export default function RouteMap(props: RouteMapProps) {
     view.current?.animateToRegion({ latitude: driver.latitude, longitude: driver.longitude,
       latitudeDelta: FOLLOW_DELTA, longitudeDelta: FOLLOW_DELTA }, still ? 0 : 800);
   }, [driver?.latitude, driver?.longitude, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
+  useEffect(() => {
+    if (!failed) return;
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
+    return () => sub.remove();
+  }, [failed]);
   // A map that never becomes usable shows the diagram with a Retry, like web and Android (never a blank box).
   useEffect(() => {
     if (ready || failed) return;
@@ -57,7 +63,8 @@ export default function RouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}>
+    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}
+    onRegionChangeComplete={r => { if (driver && Math.abs(r.latitude - driver.latitude) + Math.abs(r.longitude - driver.longitude) > 0.004) setMoved(true); }}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />

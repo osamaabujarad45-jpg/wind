@@ -35,7 +35,7 @@ const osrm = createServer((req, res) => {
 });
 await new Promise(r => osrm.listen(0, '127.0.0.1', r));
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}`;
-const { server, db, promote, shutdown } = await import('../server/main.ts');
+const { server, db, promote, shutdown, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(r => server.listen(4188, '127.0.0.1', r));
 const call = apiCaller(() => base + '/api');
 const browser = await chromium.launch({ headless: true });
@@ -131,6 +131,17 @@ async function advance(page, id, current, next, code) {
   await atStatus(id, next);
 }
 try {
+  stage = 'phone recovery capability retry';
+  const phoneRetry = await newPage();
+  let capabilityAttempts = 0;
+  await phoneRetry.route('**/api/phone/capabilities', route => ++capabilityAttempts === 1
+    ? route.abort() : route.fulfill({ json: { available: true, enabled: true } }));
+  await phoneRetry.goto(base + '/auth');
+  await phoneRetry.getByText(c.phone_status_failed, { exact: true }).waitFor();
+  await button(phoneRetry, c.retry).click();
+  await phoneRetry.getByRole('link', { name: c.phone_recovery_open, exact: true }).waitFor();
+  pass('phone recovery capability can be retried after a network failure');
+
   stage = 'signup and approval';
   await call('/auth/register', { body: { name: 'QA Administrator', email: 'admin@example.test', phone: '0599000709', password, consent: true } });
   await promote('0599000709');
@@ -218,8 +229,24 @@ try {
   pass('two-way chat and anonymous recipient tracking without private contacts or landmarks');
 
   stage = 'handover and receipt';
+  await call('/location', { token: driverToken, body: { latitude: 31.9049, longitude: 35.2047, accuracy: 5 } });
+  const pickupEta = recipient.waitForResponse(r => r.url().includes(`/track/${share.token}/eta?`) && new URL(r.url()).searchParams.get('status') === 'at_pickup');
   await advance(driverPage, id, 'assigned', 'at_pickup');
+  await pickupEta;
+  await recipient.getByText(/^Driver arrives in /).waitFor();
+  let releaseTransitEta, transitEtaWaiting = false;
+  const transitEtaGate = new Promise(resolve => { releaseTransitEta = resolve; });
+  await recipient.route(`**/api/track/${share.token}/eta?*`, async route => {
+    if (new URL(route.request().url()).searchParams.get('status') === 'in_transit') { transitEtaWaiting = true; await transitEtaGate; }
+    await route.continue();
+  });
   await advance(driverPage, id, 'at_pickup', 'in_transit');
+  await until(() => transitEtaWaiting, Boolean, 'The new trip-stage ETA was not requested');
+  assert.equal(await recipient.getByText(/^Arrives in /).count(), 0, 'The pickup estimate cannot be relabeled as a dropoff ETA');
+  releaseTransitEta();
+  await recipient.getByText(/^Arrives in /).waitFor();
+  await recipient.unroute(`**/api/track/${share.token}/eta?*`);
+  pass('public ETA is cleared and refetched when the same driver changes trip stage');
   const order = await call(`/orders/${id}`, { token: customerToken });
   await field(driverPage, c.codeFromCustomer).fill(order.handoverCode === '0000' ? '1111' : '0000');
   await button(driverPage, c.advance_in_transit).click();
@@ -311,6 +338,133 @@ try {
   await until(() => call('/me', { token: customerToken }), me => me.plan === 'plus', 'Plan was not activated');
   pass('customer subscription request and admin activation');
 
+  stage = 'reassignment with unavailable snapshot';
+  const adminToken = await adminPage.evaluate(() => localStorage.getItem('token'));
+  const replacement = await call('/auth/register', { body: { name: 'Baker Driver', email: 'replacement@example.test', phone: '0599000708', password, consent: true, registrationRole: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${replacement.user.id}/approve`, { token: adminToken, body: {} });
+  const swapId = await booking(customerPage);
+  await call(`/jobs/${swapId}/accept`, { token: driverToken, body: {} });
+  await call('/location', { token: driverToken, body: { latitude: 31.91, longitude: 35.21, accuracy: 10 } });
+  const swapShare = await call(`/orders/${swapId}/share`, { token: customerToken, body: {} });
+  await customerPage.reload();
+  await customerPage.getByText('QA Driver', { exact: true }).waitFor();
+  const swapRecipient = await newPage();
+  await swapRecipient.goto(base + swapShare.path);
+  await swapRecipient.getByText(/^QA/).first().waitFor();
+  await until(() => liveWatcherCount(swapId), n => n >= 2, 'Both live trackers did not subscribe');
+  await customerPage.route(`**/api/orders/${swapId}`, route => route.abort());
+  await swapRecipient.route(`**/api/track/${swapShare.token}`, route => route.abort());
+  await call(`/orders/${swapId}/release`, { token: driverToken, body: {} });
+  await call(`/jobs/${swapId}/accept`, { token: replacement.token, body: {} });
+  await call('/location', { token: replacement.token, body: { latitude: 31.92, longitude: 35.22, accuracy: 10 } });
+  await until(() => customerPage.getByText('QA Driver', { exact: true }).count(), n => n === 0, 'Old driver remained on the customer page after release');
+  await until(() => swapRecipient.getByText(/^QA/).count(), n => n === 0, 'Old driver remained on the public page after release');
+  assert.equal(await customerPage.locator('.driver-marker').count(), 0, 'Old map stays hidden when the snapshot refresh fails');
+  await customerPage.unroute(`**/api/orders/${swapId}`);
+  await swapRecipient.unroute(`**/api/track/${swapShare.token}`);
+  await customerPage.getByText('Baker Driver', { exact: true }).waitFor({ timeout: 35_000 });
+  await swapRecipient.getByText(/^Baker/).first().waitFor({ timeout: 35_000 });
+  await call(`/orders/${swapId}/release`, { token: replacement.token, body: {} });
+  await call(`/orders/${swapId}/cancel`, { token: customerToken, body: {} });
+  pass('reassignment hides the old driver during failed refresh and shows the replacement after recovery');
+
+  stage = 'reassignment while an old snapshot is in flight';
+  const raceId = await booking(customerPage);
+  await call(`/jobs/${raceId}/accept`, { token: driverToken, body: {} });
+  await call('/location', { token: driverToken, body: { latitude: 31.91, longitude: 35.21, accuracy: 10 } });
+  const raceShare = await call(`/orders/${raceId}/share`, { token: customerToken, body: {} });
+  await customerPage.reload();
+  await customerPage.getByText('QA Driver', { exact: true }).waitFor();
+  const raceRecipient = await newPage();
+  await raceRecipient.goto(base + raceShare.path);
+  await raceRecipient.getByText(/^QA/).first().waitFor();
+  await until(() => liveWatcherCount(raceId), n => n >= 2, 'Both trackers did not subscribe for the in-flight test');
+  let customerIntercepted = false, recipientIntercepted = false, customerHeld = false, recipientHeld = false;
+  let customerReleased = false, recipientReleased = false, unblock, allowFresh;
+  const heldSnapshots = new Promise(resolve => { unblock = resolve; });
+  const freshSnapshots = new Promise(resolve => { allowFresh = resolve; });
+  const holdFirst = (take, ready, released, lateError = false) => async route => {
+    if (take()) {
+      const response = await route.fetch(); ready(); await heldSnapshots;
+      if (lateError) await route.fulfill({ status: 404, json: { error: 'not_found' } });
+      else await route.fulfill({ response });
+      released();
+    }
+    else { await freshSnapshots; await route.continue(); }
+  };
+  await customerPage.route(`**/api/orders/${raceId}`, holdFirst(() => { if (customerIntercepted) return false; customerIntercepted = true; return true; },
+    () => { customerHeld = true; }, () => { customerReleased = true; }, true));
+  await raceRecipient.route(`**/api/track/${raceShare.token}`, holdFirst(() => { if (recipientIntercepted) return false; recipientIntercepted = true; return true; },
+    () => { recipientHeld = true; }, () => { recipientReleased = true; }));
+  await until(() => customerHeld && recipientHeld, Boolean, 'Both old snapshots were not held');
+  await call(`/orders/${raceId}/release`, { token: driverToken, body: {} });
+  await call(`/jobs/${raceId}/accept`, { token: replacement.token, body: {} });
+  allowFresh();
+  await customerPage.getByText('Baker Driver', { exact: true }).waitFor({ timeout: 6_000 });
+  await raceRecipient.getByText(/^Baker/).first().waitFor({ timeout: 6_000 });
+  let laterPolls = 0;
+  const observePoll = request => { if (customerReleased && new URL(request.url()).pathname === `/api/orders/${raceId}`) laterPolls++; };
+  customerPage.on('request', observePoll);
+  unblock(); // an older 404 must not stop polling; the old public response must not overwrite the newer driver
+  await until(() => customerReleased && recipientReleased, Boolean, 'Held snapshots did not finish');
+  await customerPage.unroute(`**/api/orders/${raceId}`);
+  await raceRecipient.unroute(`**/api/track/${raceShare.token}`);
+  await customerPage.getByText('Baker Driver', { exact: true }).waitFor();
+  await raceRecipient.getByText(/^Baker/).first().waitFor();
+  await until(() => laterPolls, n => n > 0, 'A superseded 404 stopped future snapshot polls');
+  customerPage.off('request', observePoll);
+  await call(`/orders/${raceId}/release`, { token: replacement.token, body: {} });
+  await call(`/orders/${raceId}/cancel`, { token: customerToken, body: {} });
+  pass('reassignment overtakes old snapshots and a late 404 cannot stop polling');
+
+  stage = 'driver location provider timeout';
+  const timeoutId = await booking(customerPage);
+  const stalledDriver = await newPage();
+  await stalledDriver.addInitScript(() => {
+    const query = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = descriptor => descriptor.name === 'geolocation'
+      ? Promise.resolve({ state: 'prompt', onchange: null, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } })
+      : query(descriptor);
+    navigator.geolocation.getCurrentPosition = () => {}; // provider never responds
+  });
+  await login(stalledDriver, '0599000708');
+  await button(stalledDriver, c.accept).click();
+  await stalledDriver.getByText(c.locationOff, { exact: true }).waitFor({ timeout: 20_000 });
+  assert.equal(await button(stalledDriver, c.accept).isEnabled(), true, 'The driver can retry after a stalled permission request');
+  assert.equal(state(timeoutId).status, 'searching', 'A timed-out location request must not accept the job');
+  await call(`/orders/${timeoutId}/cancel`, { token: customerToken, body: {} });
+  pass('unresponsive driver location request times out without accepting and can be retried');
+
+  stage = 'account switch during driver permission';
+  const switchDriver = await call('/auth/register', { body: { name: 'Switch Driver', email: 'switch@example.test', phone: '0599000710', password, consent: true, registrationRole: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${switchDriver.user.id}/approve`, { token: adminToken, body: {} });
+  const switchId = await booking(customerPage);
+  const switching = await newPage();
+  await switching.addInitScript(() => {
+    window.pendingPermission = [];
+    const query = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = descriptor => descriptor.name === 'geolocation' ? Promise.resolve({ state: 'prompt' }) : query(descriptor);
+    navigator.geolocation.getCurrentPosition = success => window.pendingPermission.push(success);
+    navigator.geolocation.watchPosition = () => 1;
+    navigator.geolocation.clearWatch = () => {};
+  });
+  await login(switching, '0599000710');
+  await button(switching, c.accept).click();
+  await switching.waitForFunction(() => window.pendingPermission.length > 0);
+  await switching.getByRole('tab', { name: c.account, exact: true }).click();
+  await button(switching, c.logout).click();
+  await switching.waitForURL('**/auth');
+  await field(switching, c.identifier).fill('0599000708');
+  await field(switching, c.password).fill(password);
+  await button(switching, c.signIn).click();
+  await switching.waitForURL(url => !url.pathname.startsWith('/auth'));
+  await switching.evaluate(() => window.pendingPermission.shift()({ coords: { latitude: 31.91, longitude: 35.21, accuracy: 10,
+    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() }));
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  assert.equal(state(switchId).status, 'searching', 'A previous driver cannot accept under a new session');
+  await call(`/orders/${switchId}/cancel`, { token: customerToken, body: {} });
+  pass('late location permission cannot accept a job after a driver account switch');
+
   stage = 'map picker and recovery';
   await customerPage.goto(base + '/book?from=ramallah&to=nablus');
   await button(customerPage, c.pickupOnMap).click();
@@ -330,6 +484,17 @@ try {
   await button(customerPage, c.pickupOnMap).waitFor();
   pass('map picker loads real tiles, pans and confirms an exact pickup');
 
+  await customerPage.setViewportSize({ width: 600, height: 320 });
+  await button(customerPage, c.pickupOnMap).click();
+  const landscapeConfirm = button(customerPage, c.confirmPin);
+  await until(() => landscapeConfirm.isEnabled(), Boolean, 'Landscape pin map did not become ready');
+  await landscapeConfirm.scrollIntoViewIfNeeded();
+  const landscapeBox = await landscapeConfirm.boundingBox();
+  assert.ok(landscapeBox && landscapeBox.y >= 0 && landscapeBox.y + landscapeBox.height <= 320, 'Pin confirmation must be reachable in landscape');
+  await landscapeConfirm.click();
+  await customerPage.setViewportSize({ width: 390, height: 844 });
+  pass('pin confirmation remains reachable on a short landscape screen');
+
   stage = 'map download recovery';
   const recovery = await newPage();
   await login(recovery, '0599000701');
@@ -343,11 +508,19 @@ try {
 
   stage = 'Android map bridge';
   const androidMap = await newPage('ar');
+  await androidMap.emulateMedia({ reducedMotion: 'no-preference' });
   await androidMap.context().addInitScript(() => {
     window.mapMessages = [];
     window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
   });
   const pickup = { latitude: 31.9038, longitude: 35.2034 }, dropoff = { latitude: 32.2211, longitude: 35.2544 };
+  // Expose the test page's map instance through the intercepted HTML only; production stays unchanged.
+  await androidMap.route('**/map.html', async route => {
+    const response = await route.fetch();
+    const html = (await response.text()).replace('const map = new ml.Map({', 'const map = window.testMap = new ml.Map({')
+      .replace('marker = new ml.Marker({', 'marker = window.testMarker = new ml.Marker({');
+    await route.fulfill({ response, body: html });
+  });
   let releaseTiles;
   const tilesReady = new Promise(resolve => { releaseTiles = resolve; });
   await androidMap.route('https://tiles.openfreemap.org/**', async route => {
@@ -362,11 +535,62 @@ try {
   await androidMap.waitForFunction(() => window.mapMessages.some(m => m.type === 'ready'));
   await androidMap.evaluate(driver => window.wind({ driver, focus: 'pickup' }), { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 });
   await androidMap.locator('.maplibregl-marker').nth(2).waitFor();
+  await androidMap.evaluate(() => window.wind({ approach: [[35.2044, 31.9145], [35.2034, 31.9038]], stale: true }));
+  await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.features?.length === 0);
+  await androidMap.evaluate(() => window.wind({ stale: false }));
+  await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.geometry?.type === 'LineString');
+  await androidMap.evaluate(() => { window.testMap.fire('dragstart'); window.testMap.jumpTo({ center: [35.3, 32.0] }); });
+  await androidMap.locator('#recenter').click();
+  await androidMap.waitForFunction(() => {
+    const p = window.testMap.project([35.2044, 31.9145]);
+    return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 60)) < 20;
+  });
+  await new Promise(resolve => setTimeout(resolve, 1300));
+  await androidMap.evaluate(() => window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } }));
+  await androidMap.waitForFunction(() => {
+    const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
+    return halo && marker.lat > 31.91455 && marker.lat < 31.91545
+      && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015;
+  });
+  pass('Android accuracy halo follows the moving marker while the approach line is active');
   await androidMap.waitForLoadState('networkidle');
   await androidMap.screenshot({ path: join(output, 'android-map-bridge.png') });
   await androidMap.evaluate(() => window.wind({ driver: null }));
   await until(() => androidMap.locator('.maplibregl-marker').count(), n => n === 2, 'Android bridge did not remove ended GPS');
-  pass('Android map waits for tiles, ready/update bridge, Arabic tiles, driver marker creation and removal');
+  pass('Android map waits for tiles, restores stale approach, recenters immediately, and updates driver marker');
+
+  stage = 'map tile failure';
+  const badTiles = await newPage();
+  await badTiles.addInitScript(() => {
+    window.mapMessages = [];
+    window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
+    const later = window.setTimeout;
+    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 20_000 ? 5_000 : ms, ...args);
+  });
+  await badTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
+  await badTiles.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
+  await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
+  await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'failed'), null, { timeout: 12_000 });
+  assert.equal(await badTiles.evaluate(() => window.mapMessages.some(m => m.type === 'ready')), false,
+    'A parsed style with failed basemap tiles is not a usable map');
+  pass('Android map reports failure when the style loads but basemap tiles fail');
+
+  const webBadTiles = await newPage();
+  await webBadTiles.addInitScript(() => {
+    const later = window.setTimeout;
+    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 25_000 ? 5_000 : ms, ...args);
+  });
+  await login(webBadTiles, '0599000701');
+  await webBadTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
+  await webBadTiles.goto(base + '/book?from=ramallah&to=nablus');
+  await button(webBadTiles, c.pickupOnMap).click();
+  await webBadTiles.getByText(c.pinUnavailable, { exact: true }).waitFor();
+  assert.equal(await button(webBadTiles, c.confirmPin).count(), 0, 'A blank web map cannot confirm a pin');
+  await webBadTiles.unroute('https://tiles.openfreemap.org/**');
+  await webBadTiles.getByRole('button', { name: c.retry, exact: true }).last().click();
+  await until(() => button(webBadTiles, c.confirmPin).isEnabled(), Boolean, 'The web pin picker did not recover after tile service returned');
+  await button(webBadTiles, c.cancel).last().click();
+  pass('web pin picker refuses blank tiles and recovers after Retry');
 
   stage = 'responsive role screens';
   for (const [width, height] of [[360, 780], [768, 1024], [1440, 1000]]) {

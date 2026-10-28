@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
-import { api, errorCode } from './api';
+import { api, apiSessionRevision, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 import { activeGpsTestEnabled, backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
@@ -11,6 +11,7 @@ import type { PresenceState } from './driver-presence';
 import { requestBackgroundTracking } from './background-permission';
 import { createPresenceStartGuard } from './presence-start-guard';
 import { createLocationWebClock } from './location-web-clock';
+import { boundedPermission } from './location-permission-timeout';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
@@ -23,6 +24,10 @@ const Context = createContext<Work | null>(null);
 export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const { me, ready } = useSession();
   const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
+  const actorRef = useRef(actor);
+  useLayoutEffect(() => { actorRef.current = actor; }, [actor]);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [lifecycle, setLifecycle] = useState({ active: AppState.currentState === 'active', revision: 0 });
   const lifecycleRef=useRef(lifecycle);
   const foreground = lifecycle.active;
@@ -106,15 +111,21 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   // Background permission is a separate, optional action and does not guarantee delivery.
   const prepareTracking = useCallback(async () => {
     if (actor === null || !foreground) return false;
-    const value = permission?.granted ? permission : await requestPermission();
-    if (!value.granted) return false;
+    const session = apiSessionRevision(), revision = lifecycleRef.current.revision;
+    const current = () => mounted.current && actorRef.current === actor && lifecycleRef.current.active
+      && lifecycleRef.current.revision === revision && apiSessionRevision() === session;
+    const value = permission?.granted ? permission : Platform.OS === 'web'
+      ? await boundedPermission(requestPermission) : await requestPermission();
+    if (!current() || !value?.granted) return false;
     let enabled = await refreshServices();
+    if (!current()) return false;
     if (!enabled && Platform.OS === 'android') {
       try { await Location.enableNetworkProviderAsync(); }
       catch { return false; }
+      if (!current()) return false;
       enabled = await refreshServices();
     }
-    return enabled;
+    return current() && enabled;
   }, [actor, foreground, permission, refreshServices, requestPermission]);
   // The caller must show its own explanation before invoking this optional OS prompt.
   const requestBackgroundPermission=useCallback(async()=>{
@@ -296,7 +307,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       void stopBackgroundLocation().catch(() => {});
       return;
     }
-    if (!servicesEnabled) return;
+    if (!servicesEnabled) { void stopBackgroundLocation().catch(() => {}); return; }
     let cancelled = false;
     const status = () => backgroundLocationState().then(value => {
       if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value });

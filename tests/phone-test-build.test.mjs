@@ -37,6 +37,7 @@ try {
   const mods = plugin(releasePlugin(config())).mods.android;
   const gradle = await mods.appBuildGradle({ modResults: { language: 'groovy', contents: 'apply plugin: "com.android.application"\n' }, modRequest: {} });
   assert.match(gradle.modResults.contents, /debuggableVariants = \[\]/);
+  assert.match(gradle.modResults.contents, /CMAKE_OBJECT_PATH_MAX=240/);
   assert.match(gradle.modResults.contents, /Phone test apps cannot be built as Release/);
   assert.match(gradle.modResults.contents, /Wind release requires a public HTTPS/);
   assert.match(gradle.modResults.contents, /Wind release needs a real upload signing key/);

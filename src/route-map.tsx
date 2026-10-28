@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
-import { bearing, ease, fitBounds, glideMs, labelField, routeFramePoints, turn } from './map-math';
+import { bearing, ease, farJump, fitBounds, glideMs, labelField, routeFramePoints, turn } from './map-math';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -58,6 +58,7 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
   useEffect(() => { first.current = { points, onReady, padding, picker }; });
   useEffect(() => {
     let disposed = false, created: MlMap | undefined, container: HTMLElement | undefined, observer: ResizeObserver | undefined;
+    let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
     const run = `${language}:${attempt}`;
     const patch = (value: { map?: MlMap; failed?: boolean; loaded?: boolean }) => {
       if (!disposed) setResult(previous => ({ ...(previous?.run === run && previous), run, ...value }));
@@ -78,12 +79,17 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
         cooperativeGestures: !first.current.picker, dragRotate: false, pitchWithRotate: false, maxZoom: 18,
       });
       created.touchZoomRotate.disableRotation();
-      created.once('load', () => {
-        if (disposed) return;
+      const announceReady = () => {
+        if (disposed || !mapLoaded || !baseTileLoaded || announcedReady) return;
+        announcedReady = true;
         clearTimeout(timer);
         patch({ failed: false, loaded: true });
         container?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
+      };
+      created.on('sourcedata', event => {
+        if (event.source?.type === 'vector' && event.coord && event.tile?.state === 'loaded') { baseTileLoaded = true; announceReady(); }
       });
+      created.once('load', () => { mapLoaded = true; announceReady(); });
       created.on('webglcontextlost', fail);
       // Parent sheets/cards can change size without a window resize.
       observer = new ResizeObserver(() => created?.resize());
@@ -124,6 +130,7 @@ function noEntry() {
 }
 function driverIcon(arrow: boolean) {
   const el = document.createElement('div');
+  el.classList.add('driver-marker');
   el.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="${palette.blue}" stroke="#fff" stroke-width="3"/>${
     arrow ? '<path d="M19 9 L26 26 L19 22 L12 26 Z" fill="#fff"/>' : '<circle cx="19" cy="19" r="5" fill="#fff"/>'}</svg>`;
   el.style.cssText = 'width:38px;height:38px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))';
@@ -152,7 +159,7 @@ function LiveMap(props: RouteMapProps) {
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
-  const { map, failed, retry } = useMap(host, points, language, { padding }, (m, ml) => {
+  const { map, failed, loaded, retry } = useMap(host, points, language, { padding }, (m, ml) => {
     // A retried or relabelled map is new: markers of the old one went with it, and its camera follows the route again.
     markers.current = { ml };
     setMoved(false);
@@ -215,10 +222,12 @@ function LiveMap(props: RouteMapProps) {
       state.arrow = rotation !== null; state.rotation = undefined;
     }
     const turnFrom = state.rotation ?? rotation;
-    if (accuracy) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
+    if (accuracy != null) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
+    else source?.setData({ type: 'FeatureCollection', features: [] });
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const start = performance.now(), origin = from ?? target;
-    const span = glideMs(state.at === undefined ? 0 : start - state.at);
+    const snap = !!from && farJump(from, target);
+    const start = performance.now(), origin = snap ? target : from ?? target;
+    const span = snap ? 0 : glideMs(state.at === undefined ? 0 : start - state.at);
     state.at = start;
     // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
     // A user gesture stops the camera, but it must not interrupt the marker's glide.
@@ -236,7 +245,7 @@ function LiveMap(props: RouteMapProps) {
           geometry: { type: 'LineString', coordinates: [[p.longitude, p.latitude], ...line] } });
       }
       // The halo belongs to the drawn car, not to the raw fix: it must not jump ahead of the marker.
-      if (accuracy && !state.stale && (k >= 1 || t - (state.haloAt ?? 0) > 100)) {
+      if (accuracy != null && !state.stale && (k >= 1 || t - (state.haloAt ?? 0) > 100)) {
         state.haloAt = t;
         source?.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: {} });
       }
@@ -287,7 +296,7 @@ function LiveMap(props: RouteMapProps) {
     accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
     {/* The diagram shows while the real map loads: never a blank box. It is decoration there: no words,
         no announcement, no gestures. Once the map is up it covers the placeholder. */}
-    {!map && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
+    {!loaded && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />
     </View>}

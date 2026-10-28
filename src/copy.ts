@@ -10,6 +10,7 @@ const ar = {
   signUp: 'حساب جديد',
   createAccount: 'إنشاء الحساب',
   entraSignIn: 'المتابعة مع Microsoft',
+  entraRetry: 'إعادة محاولة تسجيل الدخول مع Microsoft',
   backgroundTrackingWarn: 'تتوقف المشاركة عند قفل الهاتف — فعّل «السماح دائمًا» لمتابعة التتبع في الخلفية.',
   email: 'البريد الإلكتروني',
   identifier: 'البريد أو رقم الجوال',
@@ -879,6 +880,11 @@ const ar = {
   err_unauthorized: 'انتهت الجلسة. سجّل الدخول من جديد.',
   err_unavailable: 'الخدمة غير متاحة مؤقتاً. حاول بعد قليل.',
   err_generic: 'حدث خطأ. حاول مرة أخرى.',
+  err_entra_link_required: 'لا يمكن ربط حساب Microsoft تلقائيًا. سجّل الدخول بكلمة المرور أو تواصل مع ويند للتحقق من بياناتك.',
+  err_entra_unavailable: 'تسجيل الدخول مع Microsoft غير متاح الآن. أعد المحاولة أو استخدم كلمة المرور.',
+  err_invalid_token: 'تعذّر التحقق من تسجيل الدخول مع Microsoft. أعد المحاولة.',
+  err_phone_required: 'أدخل رقم جوالك لإنشاء الحساب.',
+  err_entra_email_mismatch: 'البريد الذي أدخلته لا يطابق البريد الذي تحققت منه Microsoft. استخدم البريد المطابق أو أنشئ الحساب بكلمة مرور.',
 };
 
 export type CopyKey = keyof typeof ar;
@@ -893,6 +899,7 @@ const en: Copy = {
   signUp: 'New account',
   createAccount: 'Create account',
   entraSignIn: 'Continue with Microsoft',
+  entraRetry: 'Retry Microsoft sign-in',
   backgroundTrackingWarn: 'Sharing stops when this phone locks — allow Always location for background tracking.',
   email: 'Email',
   identifier: 'Email or mobile number',
@@ -1739,6 +1746,11 @@ const en: Copy = {
   err_unauthorized: 'Your session ended. Sign in again.',
   err_unavailable: 'The service is temporarily unavailable. Try again shortly.',
   err_generic: 'Something went wrong. Try again.',
+  err_entra_link_required: 'We could not link this Microsoft account automatically. Sign in with your password or contact Wind to verify your details.',
+  err_entra_unavailable: 'Microsoft sign-in is unavailable right now. Try again or use your password.',
+  err_invalid_token: 'We could not verify your Microsoft sign-in. Try again.',
+  err_phone_required: 'Enter your mobile number to create an account.',
+  err_entra_email_mismatch: 'The email you entered does not match the email verified by Microsoft. Use the matching email or sign up with a password.',
 };
 
 export const copy = { ar: ar as Copy, en };

@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { durableProtocolAvailable } from './events.ts';
 import { activeStatuses } from '../../src/model.ts';
+import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 
 type Actor = { id: number; role: string; status: string };
 type Context = { user: Actor | null; params: string[]; req: IncomingMessage };
@@ -49,7 +50,9 @@ export class Realtime {
   }
   private transport() {
     const endpoint = process.env.WIND_PUBSUB_ENDPOINT?.trim();
-    if (endpoint && process.env.WIND_PUBSUB_ENABLED === '1') return { url: endpoint, transport: 'web_pubsub' as const };
+    // PubSub needs a stable shared signing secret: with the per-process fallback
+    // key, a restart or second instance would invalidate every credential.
+    if (endpoint && process.env.WIND_PUBSUB_ENABLED === '1' && process.env.WIND_REALTIME_SECRET?.trim()) return { url: endpoint, transport: 'web_pubsub' as const };
     // No PubSub connection string is configured: realtime stays on the existing
     // authenticated long-poll and snapshot, and this is reported, never faked.
     return { url: null, transport: 'long_poll' as const };
@@ -74,7 +77,7 @@ export class Realtime {
     if (!order) this.fail(404, 'not_found');
     if (ctx.user!.role !== 'admin' && ctx.user!.id !== Number(order!.customer_id) && ctx.user!.id !== Number(order!.driver_id)) this.fail(404, 'not_found');
     const sessionHash = this.sessionHash(ctx.req);
-    if (!await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>?', sessionHash, ctx.user!.id, Date.now() - 90 * 86_400_000))
+    if (!await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?', sessionHash, ctx.user!.id, Date.now() - SESSION_DAYS * SESSION_DAY_MS, Date.now() - SESSION_IDLE_DAYS * SESSION_DAY_MS))
       this.fail(401, 'unauthorized');
     const now = Date.now();
     return this.issue(order!, { subjectType: 'user', subjectId: ctx.user!.id, sessionHash }, await this.cursor(orderId), now);
@@ -113,7 +116,7 @@ export class Realtime {
       if (!payload!.sessionHash || !Number.isSafeInteger(payload!.subjectId)) this.fail(401, 'realtime_invalid');
       const user = await this.db.one('SELECT id,role,status FROM users WHERE id=?', payload!.subjectId);
       if (!user || user.status === 'blocked') this.fail(401, 'realtime_revoked');
-      if (!await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>?', payload!.sessionHash, payload!.subjectId, now - 90 * 86_400_000))
+      if (!await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?', payload!.sessionHash, payload!.subjectId, now - SESSION_DAYS * SESSION_DAY_MS, now - SESSION_IDLE_DAYS * SESSION_DAY_MS))
         this.fail(401, 'realtime_revoked');
       if (user.role !== 'admin' && payload!.subjectId !== Number(order!.customer_id) && payload!.subjectId !== Number(order!.driver_id))
         this.fail(401, 'realtime_revoked');

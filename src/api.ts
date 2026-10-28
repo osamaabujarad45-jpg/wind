@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useFocusEffect } from 'expo-router';
 import { errorCode, request } from './api-client';
 import { webGet, webSet, type WebStore } from './web-storage';
-export { ApiError, configureApi, errorCode } from './api-client';
+export { ApiError, apiSessionRevision, configureApi, errorCode, invalidateApiSessionActions } from './api-client';
 
 // Dev: the API runs next to Metro on port 4000 (npm run server). Production: EXPO_PUBLIC_API_URL.
 const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
@@ -44,8 +44,12 @@ export function useApi<T>(path: string | null, pollMs?: number) {
   const latestPath = useRef(path);
   useEffect(() => { latestPath.current = path; }, [path]);
   const inFlight = useRef<number | null>(null);
-  const load = useCallback(async () => {
-    if (!path || inFlight.current === generation.current) return undefined;
+  const load = useCallback(async (force = false) => {
+    if (!path) return undefined;
+    if (inFlight.current === generation.current) {
+      if (!force) return undefined;
+      generation.current++; // a manual refresh must not wait for an older snapshot
+    }
     const current = generation.current;
     inFlight.current = current;
     try {
@@ -54,7 +58,8 @@ export function useApi<T>(path: string | null, pollMs?: number) {
       return undefined;
     } catch (e) {
       const code = errorCode(e);
-      if (current === generation.current && latestPath.current === path) setError({ path, value: code });
+      if (current !== generation.current || latestPath.current !== path) return undefined;
+      setError({ path, value: code });
       return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }
   }, [path]);
@@ -88,7 +93,8 @@ export function useApi<T>(path: string | null, pollMs?: number) {
     generation.current++; // an acknowledged action wins over a poll that started before it
     if (path) setResult({ path, value: next });
   };
-  return { data: data?.path === path ? data.value : undefined, error: error?.path === path ? error.value : undefined, reload: load, setData };
+  const reload = useCallback(() => load(true), [load]);
+  return { data: data?.path === path ? data.value : undefined, error: error?.path === path ? error.value : undefined, reload, setData };
 }
 
 // Live driver fix over the server's long-poll (`.../live?since=`): each answer arrives as soon as the driver's next fix
@@ -96,11 +102,10 @@ export function useApi<T>(path: string | null, pollMs?: number) {
 // in the path (`?driver=`) so a reassignment starts clean instead of keeping the previous driver's fix.
 // ponytail: long-poll over fetch (auth header, no native module); SSE/WebSocket if one stream must carry more.
 export function useLiveFix<T extends { updatedAt: number }>(path: string | null) {
-  const [fix, setFix] = useState<{ path: string; value: T | null }>();
+  const [fix, setFix] = useState<{ path: string; value: T | null; driverChanged: boolean }>();
   useFocusEffect(useCallback(() => {
     if (!path) return;
-    let stopped = false, since = 0, failures = 0, foreground = true, changes = 0;
-    let watch = path; // the driver this watch asks for; the server names the one it has
+    let stopped = false, since = 0, failures = 0, foreground = true;
     setFix(undefined); // a new watch never shows a fix from an earlier one
     const subscription = AppState.addEventListener('change', state => { foreground = state === 'active'; });
     // Leaving the screen gives up the held request: the socket and the server's watcher slot are freed at once.
@@ -111,23 +116,19 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
         let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
         try {
           const answer = await api<{ driverLocation: T | null; driverChanged?: boolean; driverKey?: string | null }>(
-            `${watch}${watch.includes('?') ? '&' : '?'}since=${since}`, undefined, undefined, controller.signal);
+            `${path}${path.includes('?') ? '&' : '?'}since=${since}`, undefined, undefined, controller.signal);
           if (stopped) return;
-          // Another driver took the job: drop the old fix and ask for the new driver, so the live channel
-          // carries the car that is actually driving instead of waiting for the next poll.
+          // Keep asking about the snapshot's driver until the snapshot changes.
+          // The screen must hide its old driver and reload before displaying a new fix.
           if (answer.driverChanged) {
             since = 0;
             failures = 0;
-            setFix({ path, value: null });
-            if (answer.driverKey) watch = path.replace(/([?&]driver=)[^&]*/, `$1${encodeURIComponent(answer.driverKey)}`);
-            // The first re-ask is immediate (the new car is one request away); a driver that keeps changing
-            // must not spin the endpoint.
-            pause = changes++ ? 2_000 : 0;
+            setFix({ path, value: null, driverChanged: true });
           } else {
             const { driverLocation } = answer;
             if (driverLocation && driverLocation.updatedAt > since) { since = driverLocation.updatedAt; pause = 0; }
             failures = 0;
-            setFix({ path, value: driverLocation });
+            setFix({ path, value: driverLocation, driverChanged: false });
           }
         } catch (error) {
           if (stopped) return;
@@ -141,7 +142,7 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
     })();
     return () => { stopped = true; controller.abort(); subscription.remove(); };
   }, [path]));
-  return fix?.path === path ? fix.value : undefined;
+  return fix?.path === path ? { value: fix.value, driverChanged: fix.driverChanged } : { value: undefined, driverChanged: false };
 }
 
 // A refusal that polling cannot fix: the session is gone, the link was revoked, the order was deleted.

@@ -8,7 +8,7 @@ import { HelpLinks } from '../parts';
 import { InstallLink } from '../install-link';
 import { useSession, type Me } from '../session';
 import { PhoneRecovery } from '../phone-recovery';
-import { entraConfigured, signInWithEntra } from '../entra-auth';
+import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from '../entra-auth';
 import { phoneApi } from '../phone/client';
 import { gateOf, type Capabilities } from '../phone/flow';
 import { takeAuthNotice } from '../phone/notice';
@@ -30,6 +30,7 @@ export default function Auth() {
   // Phone-code reset: the server says whether the module exists and is switched on. A failed check is never shown as available.
   const [phoneCaps, setPhoneCaps] = useState<Capabilities | null>(null);
   const [phoneCapsFailed, setPhoneCapsFailed] = useState(false);
+  const [phoneCapsTry, setPhoneCapsTry] = useState(0);
   const phoneGate = gateOf(phoneCaps, phoneCapsFailed);
   const phoneNote = phoneGate === 'unavailable' ? c.phone_recovery_unavailable : phoneGate === 'disabled' ? c.phone_recovery_disabled
     : phoneGate === 'failed' ? c.phone_status_failed : null;
@@ -41,6 +42,9 @@ export default function Auth() {
   const [role, setRole] = useState<'customer' | 'driver'>('customer');
   const [vehicle, setVehicle] = useState<Vehicle>('car');
   const [busy, setBusy] = useState(false);
+  const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
+  const [entraPrepareFailed, setEntraPrepareFailed] = useState(false);
+  const [entraTry, setEntraTry] = useState(0);
   const [error, setError] = useState('');
   // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
@@ -59,9 +63,16 @@ export default function Auth() {
 
   useEffect(() => {
     let active = true;
-    void phoneApi.capabilities().then(next => { if (active) setPhoneCaps(next); }).catch(() => { if (active) setPhoneCapsFailed(true); });
+    void phoneApi.capabilities().then(next => { if (active) { setPhoneCaps(next); setPhoneCapsFailed(false); } }).catch(() => { if (active) setPhoneCapsFailed(true); });
     return () => { active = false; };
-  }, []);
+  }, [phoneCapsTry]);
+
+  useEffect(() => {
+    let active = true;
+    if (entraConfigured) void prepareEntraRequest().then(request => { if (active) { setEntraRequest(request); setEntraPrepareFailed(false); } })
+      .catch(() => { if (active) { setEntraPrepareFailed(true); setError(err('entra_unavailable')); } });
+    return () => { active = false; };
+  }, [entraTry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function reset() {
     if (busy) return;
@@ -116,19 +127,21 @@ export default function Auth() {
   }
 
   async function entraSignIn() {
-    if (busy) return;
-    if (mode === 'up' && (!consent || !name.trim() || !isValidPhone(phone))) {
-      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : 'invalid_phone'));
+    if (busy || !entraRequest) return;
+    if (mode === 'up' && (!consent || !name.trim() || !normalizeEmail(email) || !isValidPhone(phone))) {
+      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : 'invalid_phone'));
     }
     setBusy(true);
     setError('');
     try {
-      const tokens = await signInWithEntra();
+      const request = entraRequest;
+      setEntraRequest(null);
+      const tokens = await signInWithEntra(request);
       if (!tokens) { setBusy(false); return; } // browser dismissed: stay on the form, no error noise
       const data = await api<Me & { token: string }>('/auth/entra', {
         idToken: tokens.idToken, nonce: tokens.nonce,
         consent: mode === 'up' ? consent : false,
-        ...(mode === 'up' ? { registrationRole: role, vehicle, phone, name } : {}),
+        ...(mode === 'up' ? { registrationRole: role, vehicle, phone, name, email } : {}),
       });
       haptic.success();
       await signIn(data);
@@ -136,6 +149,8 @@ export default function Auth() {
       haptic.error();
       setError(err(e));
       setBusy(false);
+    } finally {
+      setEntraTry(n => n + 1); // never reuse a nonce, state, or PKCE verifier
     }
   }
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -221,7 +236,9 @@ export default function Auth() {
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
-          {entraConfigured && <Button title={c.entraSignIn} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={entraSignIn} />}
+          {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
+            disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
+            onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}
           {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}
             onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
             <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
@@ -230,6 +247,8 @@ export default function Auth() {
             <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
           </Press>}
           {mode === 'in' && !!phoneNote && <Txt variant="caption" center style={{ paddingVertical: 6 }}>{phoneNote}</Txt>}
+          {mode === 'in' && phoneGate === 'failed' && <Button title={c.retry} variant="ghost" disabled={busy} reason={c.wait_busy}
+            onPress={() => { setPhoneCapsFailed(false); setPhoneCapsTry(n => n + 1); }} />}
           </>}
           </>}
         </Card>

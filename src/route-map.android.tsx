@@ -25,8 +25,8 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   // The fragment stays on the device (never sent in the request); the page reads it once.
   const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors }))}`);
   useEffect(() => {
-    // The route map is usable as soon as it draws; the pin sheet needs its tiles before it can confirm a spot.
-    if (state === 'ready' || (state === 'drawing' && config.mode !== 'pin')) return;
+    // Parsing the style alone does not prove that map tiles can be drawn.
+    if (state === 'ready') return;
     const timer = setTimeout(() => failed.current(), 25_000); // after the page's own 20 s deadline, like web
     return () => clearTimeout(timer);
   }, [state, config.mode]);

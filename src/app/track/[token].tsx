@@ -19,24 +19,28 @@ export default function TrackScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { c, language } = useCopy();
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
-  const { data: polled, error } = useApi<Tracking>(valid ? `/track/${token}` : null, 10_000);
+  const { data: polled, error, reload } = useApi<Tracking>(valid ? `/track/${token}` : null, 10_000);
   // Driver position over the live push; the 10 s poll carries status and revocation.
   const live = useLiveFix<NonNullable<Tracking['driverLocation']>>(valid && polled?.driver ? `/track/${token}/live?driver=${polled.driver.ref}` : null);
-  const fresh = polled && live !== undefined ? newerFix(live, polled.driverLocation) : polled?.driverLocation;
+  const fresh = polled && live.value !== undefined ? newerFix(live.value, polled.driverLocation) : polled?.driverLocation;
   // The server stops sending a fix after 120 s: keep the last one seen for this driver, faded as "last known",
   // instead of dropping the car (a reload or a new link starts without it).
   const assignment = polled?.driver?.ref ?? null;
   const [kept, setKept] = useState<{ assignment: string | null; fix?: NonNullable<Tracking['driverLocation']> }>();
   if (assignment !== kept?.assignment || (fresh && fresh !== kept?.fix)) setKept({ assignment, fix: fresh ?? undefined });
-  const shown = fresh ?? (kept?.assignment === assignment ? kept?.fix ?? null : null);
-  const data = polled && { ...polled, driverLocation: shown };
-  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null; fixAgeSeconds?: number }>(valid && shown ? `/track/${token}/eta` : null, 15_000);
+  const [now, setNow] = useState(Date.now);
+  const keptFix = kept?.assignment === assignment ? kept?.fix ?? null : null;
+  const shown = fresh ?? (keptFix && now - keptFix.updatedAt <= 120_000 ? keptFix : null);
+  // A reassignment invalidates the snapshot's driver: hide the old car and name
+  // even while the refresh that brings the new driver is failing.
+  const data = polled && { ...polled, ...(live.driverChanged ? { driver: null, driverLocation: null } : { driverLocation: shown }) };
+  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null; fixUpdatedAt?: number }>(valid && shown && assignment && polled && !live.driverChanged ? `/track/${token}/eta?driver=${encodeURIComponent(assignment)}&status=${encodeURIComponent(polled.status)}` : null, 15_000);
   // useApi keeps the last answer when a refresh fails: show no estimate (or approach line) rather than an old one.
   // The estimate starts from the driver's position: past 30 s it describes a place the driver has left.
-  const etaData = etaApi.data, etaFresh = !etaApi.error && (etaData?.fixAgeSeconds ?? 0) <= 30;
-  const eta = etaFresh ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
-  const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10_000); return () => clearInterval(timer); }, []);
+  useEffect(() => { if (live.driverChanged) void reload(); }, [live.driverChanged, reload]);
+  const etaData = etaApi.data, etaFresh = !etaApi.error && etaData?.fixUpdatedAt != null && (locationState({ updatedAt: etaData.fixUpdatedAt }, now)?.ageSeconds ?? Infinity) <= 30;
+  const eta = etaFresh ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
 
   // A failed poll must not leave revoked tracking or stale GPS visible — but it must not blank the page either:
   // the last answer stays with a note that the updates are paused.

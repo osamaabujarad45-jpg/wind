@@ -21,10 +21,8 @@ export function createPresenceController(io:PresenceIO) {
   let active:PresenceRecord|null=null, timer:unknown, generation=0, pendingHere:string|null=null;
   let lastAttemptMonotonic:number|undefined,lastAcceptedMonotonic:number|undefined;
   let queue:Promise<unknown>=Promise.resolve();
-  let queued=0;
   const serial=<T>(work:()=>Promise<T>):Promise<T>=>{
-    queued++;
-    const next=queue.then(work,work).finally(()=>{queued--;});queue=next.catch(()=>{});return next;
+    const next=queue.then(work,work);queue=next.catch(()=>{});return next;
   };
   const cancelTimer=()=>{if(timer!==undefined){io.cancel(timer);timer=undefined;}};
   const invalidate=(state:PresenceState='offline')=>{generation++;active=null;lastAttemptMonotonic=undefined;lastAcceptedMonotonic=undefined;cancelTimer();io.state(state);};
@@ -162,8 +160,8 @@ export function createPresenceController(io:PresenceIO) {
     return true;
   });
   const deliverPresenceFix=(fix:DriverFix)=>{
-    // Never retain location callbacks behind a pending command or network request.
-    if(queued)return Promise.resolve(false);
+    // Queue behind a pending command/heartbeat instead of dropping: the serial
+    // cadence and freshness checks inside still discard fixes that aged out.
     return serial(async()=>{
     const record=active,epoch=generation,token=await io.token(),now=io.now(),monotonic=io.monotonic?.()??now;
     if(!record)return false;

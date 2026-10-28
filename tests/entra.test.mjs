@@ -57,6 +57,23 @@ const rotated = await verifyEntraIdToken(sign(base), config, { nonce: 'nonce-1',
 assert.equal(rotated.oid, 'oid-123');
 assert.equal(fetches, 2);
 
+// Unknown-kid flood: after one rotation refetch, further unknown kids must not
+// each force an upstream fetch (forged-token DoS against Entra throttling).
+resetEntraJwksCache();
+let missFetches = 0;
+const warmFetch = async (url) => {
+  if (url === config.metadataUrl) return { ok: true, json: async () => metadata };
+  missFetches += 1;
+  return { ok: true, json: async () => ({ keys: [jwk] }) };
+};
+await verifyEntraIdToken(sign(base), config, { nonce: 'nonce-1', fetchImpl: warmFetch, now });
+const warmCount = missFetches;
+await assert.rejects(verifyEntraIdToken(sign(base, { kid: 'bogus-1' }), config, { fetchImpl: warmFetch, now }), /invalid_token/);
+const afterFirstMiss = missFetches;
+await assert.rejects(verifyEntraIdToken(sign(base, { kid: 'bogus-2' }), config, { fetchImpl: warmFetch, now }), /invalid_token/);
+assert.equal(missFetches, afterFirstMiss, 'second unknown kid must be served from the miss cooldown, not upstream');
+assert.ok(afterFirstMiss <= warmCount + 1, 'first unknown kid refetches at most once');
+
 await assert.rejects(verifyEntraIdToken(sign({ ...base, nonce: 'other' }), config, { nonce: 'nonce-1', fetchImpl, now }), /invalid_token/);
 await assert.rejects(verifyEntraIdToken(sign({ ...base, aud: 'someone-else' }), config, { fetchImpl, now }), /invalid_token/);
 await assert.rejects(verifyEntraIdToken(sign({ ...base, iss: 'https://evil.example/v2.0' }), config, { fetchImpl, now }), /invalid_token/);

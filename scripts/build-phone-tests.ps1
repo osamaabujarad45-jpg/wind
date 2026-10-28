@@ -2,6 +2,8 @@
 param(
   [ValidateSet('customer', 'driver', 'admin')]
   [string[]]$Roles = @('customer', 'driver', 'admin'),
+  [ValidateSet('arm64-v8a', 'x86_64')]
+  [string]$Architecture = 'arm64-v8a',
   [string]$BuildRoot = 'C:\w-phone-qa-20261021',
   [string]$ProvisionPath,
   [string]$OutputDirectory
@@ -14,8 +16,8 @@ if (!$OutputDirectory) { $OutputDirectory = Join-Path $phoneSource '.expo\phone-
 $phoneBuild = [IO.Path]::GetFullPath($BuildRoot).TrimEnd('\')
 # Prebuild --clean removes generated native files. Restrict that operation to a
 # dedicated, short, marked scratch checkout, never the shared source workspace.
-if ($phoneBuild -notmatch '^[A-Za-z]:\\w-phone-qa-[A-Za-z0-9-]+$') {
-  throw 'BuildRoot must be a dedicated short path such as C:\w-phone-qa-20261021.'
+if ($phoneBuild -notmatch '^[A-Za-z]:\\(?:w-phone-qa-|wq-)[A-Za-z0-9-]+$') {
+  throw 'BuildRoot must be a dedicated short path such as C:\w-phone-qa-20261021 or C:\wq-test.'
 }
 $phoneMarker = Join-Path $phoneBuild '.wind-phone-test-build'
 if ((Test-Path -LiteralPath $phoneBuild) -and !(Test-Path -LiteralPath $phoneMarker)) {
@@ -123,7 +125,7 @@ try {
         # Expo 57 suppresses --reset-cache in CI. Every role gets a fresh native
         # bundle; none may reuse another export's EXPO_PUBLIC_API_URL transform.
         $env:CI = '0'
-        & .\gradlew.bat :app:assembleDebug '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=2 *> (Join-Path $phoneLogs "$phoneRole-build.log")
+        & .\gradlew.bat :app:assembleDebug "-PreactNativeArchitectures=$Architecture" --no-daemon --max-workers=2 *> (Join-Path $phoneLogs "$phoneRole-build.log")
         if ($LASTEXITCODE -ne 0) { throw "$phoneRole build failed; see its private build log." }
       } finally { $env:CI = '1'; Pop-Location }
       $phoneApk = Join-Path $phoneNative 'app\build\outputs\apk\debug\app-debug.apk'

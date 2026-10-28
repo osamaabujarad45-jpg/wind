@@ -5,7 +5,7 @@ import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Sha
 import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { api, API_URL, ApiError, useApi, useLiveFix } from '../../api';
+import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
@@ -43,13 +43,19 @@ export default function OrderScreen() {
   const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}` : null);
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
-  const fresh = polled && pushed !== undefined ? newerFix(pushed, polled.driverLocation) : polled?.driverLocation;
+  const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
   const assignment = polled && `${polled.id}:${polled.driverId}`;
   const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
   if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
   const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
-  const order = useMemo(() => polled && { ...polled, driverLocation: shown }, [polled, shown]);
+  // A reassignment invalidates the snapshot's driver: hide the old car and name
+  // even while the refresh that brings the new driver is failing.
+  const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
+    ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
+    : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
   const [busy, setBusy] = useState<string | null>(null);
+  const focusRevision = useRef(0);
+  useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
   const [actionError, setActionError] = useState('');
   const [code, setCode] = useState('');
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
@@ -64,6 +70,7 @@ export default function OrderScreen() {
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   const { road, approach, eta, km, avoids, through, closed } = useRoad(order);
+  useEffect(() => { if (pushed.driverChanged) void reload(); }, [pushed.driverChanged, reload]);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
@@ -99,10 +106,12 @@ export default function OrderScreen() {
     if (!order || busy || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
     setBusy(key);
     setActionError('');
+    const session = apiSessionRevision(), focus = focusRevision.current;
     try {
-      if (key === 'accept' && !await work.prepareTracking()) {
-        setActionError(c.locationOff);
-        return;
+      if (key === 'accept') {
+        const prepared = await work.prepareTracking();
+        if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+        if (!prepared) { setActionError(c.locationOff); return; }
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);

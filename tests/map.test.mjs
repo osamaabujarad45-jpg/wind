@@ -155,6 +155,9 @@ try {
   void heldSwap.catch(() => {});
   await new Promise(resolve => setTimeout(resolve, 100));
   await call(`/orders/${swapOrder.id}/release`, { token: driver2.token, body: {} });
+  const unassigned = await call(`/orders/${swapOrder.id}/live?driver=${driver2.user.id}`, { token: customer.token });
+  assert.equal(unassigned.driverChanged, true, 'a released driver is cleared even before the next assignment');
+  assert.equal(unassigned.driverKey, null);
   await call(`/jobs/${swapOrder.id}/accept`, { token: driver3.token, body: {} });
   await call('/location', { token: driver3.token, body: { latitude: 31.5, longitude: 35.5, accuracy: 10 } });
   const swapped = await heldSwap;
@@ -189,6 +192,8 @@ try {
   const steady = Math.hypot(C.latitude - mid.latitude, C.longitude - mid.longitude) * 16 / 1_500; // 1500 ms: the C−B gap
   assert.ok(worst <= steady * 1.01, 'constant speed, no frame jumps'); assert.deepEqual([last.latitude, last.longitude], [C.latitude, C.longitude]);
   assert.equal(g.frame(7_100).done, true); assert.equal(glider(A).frame(0).done, true);
+  const far = glider(A); far.fix(A, 1_000); far.fix({ latitude: 32.2, longitude: 35.2 }, 4_000);
+  assert.deepEqual([far.frame(4_000).now.latitude, far.frame(4_000).now.longitude], [32.2, 35.2], 'a km-scale jump (new driver) snaps, never glides across the city');
   const still = glider(A); still.fix(A, 1_000, true); still.fix({ ...C, heading: 0 }, 4_000, true);
   assert.deepEqual(still.frame(4_000), { now: { ...C, rotation: 0 }, done: true }, 'reduced motion lands at once');
   // Approach line starts under the car: points behind the driver are dropped.

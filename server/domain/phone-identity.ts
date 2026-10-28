@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { parsePhoneNumber, type PhoneNumber } from './phone-number.ts';
 import { AcsCommunication, OoredooCommunication, phoneConfig, type PhoneConfig } from './phone-provider.ts';
@@ -55,7 +56,7 @@ export class PhoneIdentity {
   private async actor(ctx:Context) {
     if(!ctx.user)this.fail(401,'unauthorized');
     const sessionHash=this.session(ctx.req);
-    const user=await this.db.one(`SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND s.token_hash=? AND s.created_at>? FOR UPDATE OF u`,ctx.user!.id,sessionHash,Date.now()-90*86400000);
+    const user=await this.db.one(`SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND s.token_hash=? AND s.created_at>? AND COALESCE(s.last_seen_at,s.created_at)>? FOR UPDATE OF u`,ctx.user!.id,sessionHash,Date.now()-SESSION_DAYS*SESSION_DAY_MS,Date.now()-SESSION_IDLE_DAYS*SESSION_DAY_MS);
     if(!user || user.status==='blocked')this.fail(401,'unauthorized');
     return {user:user!,sessionHash:sessionHash!};
   }
@@ -105,7 +106,7 @@ export class PhoneIdentity {
     const m=await this.db.one('SELECT * FROM phone_mappings WHERE canonical_group=?',c.canonical_group);
     if(!m || m.user_id!==user.id || m.version!==c.mapping_version || !['reviewed','verified'].includes(m.state) || m.legacy_phone!==user.phone)return false;
     if(c.purpose==='recovery')return user.role!=='admin' && !!user.phone_verified_at && m.state==='verified';
-    if(checkSession && !await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>?',c.session_hash,c.actor_id,Date.now()-90*86400000))return false;
+    if(checkSession && !await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?',c.session_hash,c.actor_id,Date.now()-SESSION_DAYS*SESSION_DAY_MS,Date.now()-SESSION_IDLE_DAYS*SESSION_DAY_MS))return false;
     return true;
   }
   private async rate(phone:PhoneNumber,deviceHash:string,ipHash:string) {

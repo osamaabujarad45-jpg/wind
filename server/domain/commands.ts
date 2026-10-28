@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 type Failure = Error & { status: number };
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 export async function versionedCommand(db: Persistence, user: { id: number } | null, body: Row, path: string, method: string,
   invoke: () => unknown, fail: (status: number, message: string) => never, isFailure: (error: unknown) => boolean, authorizeOrder: (id: number) => Promise<unknown>,
-  policy: { requirePermanentDriverApproval?: boolean } = {}) {
+  policy: { requirePermanentDriverApproval?: boolean; sessionHash?: string } = {}) {
   if (body.commandId === undefined) return await invoke();
   if (db.backend !== 'postgres') fail(409, 'durable_protocol_unavailable');
   if (!user) fail(401, 'unauthorized');
@@ -21,6 +22,10 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     // Idempotency preserves a completed decision, never a revoked permission to its private result.
     // Read after the advisory-lock wait so a role change during that wait is observed too.
     const actor = await db.one('SELECT role,status,approved_at FROM users WHERE id=?',user.id) ?? fail(401,'unauthorized');
+    // The caller's session was validated before the lock wait; a revocation or
+    // idle/absolute expiry during that wait must not receive the stored result.
+    if (policy.sessionHash && !await db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?',
+      policy.sessionHash, user.id, Date.now() - SESSION_DAYS * SESSION_DAY_MS, Date.now() - SESSION_IDLE_DAYS * SESSION_DAY_MS)) fail(401,'unauthorized');
     const driverAction = /^\/api\/jobs\//.test(path) || /^\/api\/orders\/\d+\/(?:advance|release|exception)$/.test(path);
     const customerAction = path === '/api/orders' || /^\/api\/orders\/\d+\/offers\/\d+\/accept$/.test(path);
     if ((path.startsWith('/api/admin/') && actor.role !== 'admin')
