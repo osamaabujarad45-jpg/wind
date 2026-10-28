@@ -64,12 +64,13 @@ if (process.argv.includes('--serve')) {
   const dbPath = join(mkdtempSync(join(tmpdir(), 'wind-local-load-')), 'load.db');
   const env = { ...process.env, NODE_ENV: 'test', DB_PATH: dbPath, WIND_LOCAL_TEST: '1', WIND_IDENTITY_MODE: 'self-service', WIND_ENABLED_SERVICES: 'parcel' };
   for (const key of ['WIND_TEST_ROLE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'EAS_BUILD', 'WIND_RELEASE', 'OSRM_URL',
-    'WIND_EMAIL_FROM', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_EMAIL_TOKEN', 'SOUQ_PARTNER_KEY', 'WEB_ROOT']) delete env[key];
+    'WIND_EMAIL_FROM', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_EMAIL_TOKEN', 'SOUQ_PARTNER_KEY', 'WEB_ROOT',
+    'WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DATABASE_URL']) delete env[key];
   const child = fork(import.meta.filename, ['--serve'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], execArgv: ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'] });
   let serverOutput = '', runtime, ready;
   child.stdout.on('data', data => { serverOutput += data; });
   child.stderr.on('data', data => { serverOutput += data; });
-  const startedAt = new Date().toISOString(), records = [], phases = [], checks = [];
+  const startedAt = new Date().toISOString(), records = [], phases = [], checks = [], performanceGates = [];
   const expectedCommands = new Set(), duplicateIds = [];
   let serial = 0, unexpected = 0, lock;
   const request = async (path, { token, body, expected = 200, phase = 'correctness', operation = path } = {}) => {
@@ -131,7 +132,10 @@ if (process.argv.includes('--serve')) {
         await request(path, { token, phase, operation });
       }
     }
+    const selectedPhase = process.argv.find(value => value.startsWith('--phase='))?.slice('--phase='.length);
+    if (selectedPhase && !/^(read|mixed)-(1|10|30|60)$/.test(selectedPhase)) throw new Error('Unknown load phase');
     for (const concurrency of [1, 10, 30, 60]) for (const kind of ['read', 'mixed']) {
+      if (selectedPhase && selectedPhase !== `${kind}-${concurrency}`) continue;
       const phase = `${kind}-${concurrency}`, phaseStart = performance.now(), until = phaseStart + 8_000;
       // Closed-loop workers plus pacing: at most 250 operations/s before multi-request booking overhead.
       const gap = Math.max(20, concurrency * 1000 / 250);
@@ -185,6 +189,15 @@ if (process.argv.includes('--serve')) {
     assert.equal(lock.prepare("SELECT COUNT(*) n FROM orders WHERE status='searching'").get().n, 0);
     checks.push(`Integrity OK, zero foreign-key errors, ${expectedCommands.size} idempotent bookings each stored once and cancelled`);
     console.log(checks.map(c => `PASS ${c}`).join('\n'));
+    // These are the handoff's engineering targets, not a production SLA. Exclude deliberate held reads/lock faults.
+    for (const phase of phases) performanceGates.push({ gate: `${phase.phase}: non-provider API p95 < 500ms`, actualMs: phase.p95, passed: phase.p95 < 500 });
+    const commands = records.filter(record => ['book-idempotent', 'cancel-load-booking'].includes(record.operation));
+    if (commands.length) {
+      const p95 = percentile(commands.map(record => record.ms), .95);
+      performanceGates.push({ gate: 'critical command acknowledgment p95 < 1000ms', actualMs: p95, passed: p95 < 1000 });
+    }
+    for (const gate of performanceGates) console.log(`${gate.passed ? 'PASS' : 'FAIL'} ${gate.gate}: ${gate.actualMs}ms`);
+    assert.deepEqual(performanceGates.filter(gate => !gate.passed), [], 'Handoff performance targets were not met');
   } finally {
     try { lock?.exec('ROLLBACK'); } catch { /* no held transaction */ }
     lock?.close();
@@ -194,7 +207,7 @@ if (process.argv.includes('--serve')) {
     writeFileSync(join(output, 'results.json'), JSON.stringify({ startedAt, finishedAt: new Date().toISOString(),
       environment: { node: process.version, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model, logicalCpus: cpus().length, memoryGiB: Math.round(totalmem() / 1024 ** 3),
         target: 'ephemeral loopback child process; disposable SQLite WAL database', historicalOrders: ready?.history, syntheticAccounts: 121, pacingOperationsPerSecond: 250, phaseSeconds: 8 },
-      phases, checks, unexpectedErrors: unexpected, correctness: summarize(records.filter(r => r.phase === 'correctness')), runtime }, null, 2));
+      phases, checks, performanceGates, unexpectedErrors: unexpected, correctness: summarize(records.filter(r => r.phase === 'correctness')), runtime }, null, 2));
     writeFileSync(join(output, 'requests.json'), JSON.stringify(records, null, 2));
   }
 }

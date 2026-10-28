@@ -16,8 +16,15 @@ export function nodes(xml) {
     Object.fromEntries([...match[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(([, key, value]) => [key, decode(value)])));
 }
 export async function snapshot(name) {
-  adb('shell', 'uiautomator', 'dump', '--compressed', '/sdcard/wind-test-window.xml');
-  const xml = adb('shell', 'cat', '/sdcard/wind-test-window.xml').toString();
+  // The animated app rarely idles, so uiautomator often dumps the keyguard/system
+  // hierarchy or errors with "could not get idle state"; retry for a real window.
+  let xml = '';
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try { adb('shell', 'uiautomator', 'dump', '--compressed', '/sdcard/wind-test-window.xml'); } catch { /* stale file handled below */ }
+    xml = adb('shell', 'cat', '/sdcard/wind-test-window.xml').toString();
+    if (xml.includes('ps.wind.app') && !xml.includes('aodservice')) break;
+    await pause(1500);
+  }
   writeFileSync(join(output, `${name}.xml`), xml);
   writeFileSync(join(output, `${name}.png`), adb('exec-out', 'screencap', '-p'));
   return nodes(xml);

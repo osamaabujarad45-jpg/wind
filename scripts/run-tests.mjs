@@ -1,0 +1,85 @@
+// Keep the original suite order; every child failure stops the integration gate.
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const suites = [
+  "model.test.mjs",
+  "presentation.test.mjs",
+  "driver-presence-card.test.mjs",
+  "driver-presence.test.mjs",
+  "driver-presence-runtime.test.mjs",
+  "api-client.test.mjs",
+  "api.test.mjs",
+  "deployment.test.mjs",
+  "registration.test.mjs",
+  "entra.test.mjs",
+  "entra-exchange.test.mjs",
+  "vehicle-migration.test.mjs",
+  "job-alert-migration.test.mjs",
+  "exceptions.test.mjs",
+  "pickup.test.mjs",
+  "courier-block.test.mjs",
+  "cash.test.mjs",
+  "share.test.mjs",
+  "map.test.mjs",
+  "route.test.mjs",
+  "routing-policy.test.mjs",
+  "safety.test.mjs",
+  "places.test.mjs",
+  "schedule.test.mjs",
+  "roads.test.mjs",
+  "chat.test.mjs",
+  "promo.test.mjs",
+  "referral.test.mjs",
+  "credit.test.mjs",
+  "push.test.mjs",
+  "push-server.test.mjs",
+  "offers.test.mjs",
+  "review-fixes.test.mjs",
+  "parcels.test.mjs",
+  "booking-auth.test.mjs",
+  "driver-scope.test.mjs",
+  "customer-rating.test.mjs",
+  "driver-destination.test.mjs",
+  "recipient.test.mjs",
+  "driver-signup-alert.test.mjs",
+  "email.test.mjs",
+  "dependencies.test.mjs",
+  "background-location.test.mjs",
+  "active-gps-client.test.mjs",
+  "active-gps-native.test.mjs",
+  "location-web-clock.test.mjs",
+  "background-permission.test.mjs",
+  "customer-location.test.mjs",
+  "url-decoder.test.mjs",
+  "background-registration.test.mjs",
+  "phone-test.test.mjs",
+  "phone-test-build.test.mjs",
+  "phone-test-state.test.mjs",
+  "phone-ui.test.mjs",
+  "contracts-money.test.mjs",
+  "contracts.test.mjs",
+  "cross-process-claims.test.mjs",
+  "dependency-security.test.mjs",
+  "runtime-dependencies.test.mjs",
+  "phone-provider.mjs",
+  "native-push-sqlite.mjs",
+  "dispatch-ranking.test.mjs",
+  "dispatch-sqlite.mjs",
+  "ride-lifecycle-sqlite.mjs",
+  "resource-scope-sqlite.mjs",
+  "ledger-sqlite.mjs",
+  "payments-sqlite.mjs",
+  "activation-gates.mjs",
+  "ops-sqlite.mjs"
+];
+const filter = process.argv.find(value => value.startsWith('--filter='))?.slice('--filter='.length);
+const selected = suites.filter(name => !filter || name.includes(filter));
+if (!selected.length) throw new Error('No tests match the requested filter');
+for (const name of selected) {
+  const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
+    fileURLToPath(new URL('../tests/' + name, import.meta.url))], { stdio: 'inherit', windowsHide: true });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+console.log('Integration gate: ' + selected.length + ' suites passed');

@@ -18,7 +18,8 @@ process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_CONTACT_VERIFICATION_REQUIRED = 'false';
 // Public demonstration routing is sufficient for low-volume synthetic QA, never a production fallback.
 process.env.OSRM_URL ??= 'https://router.project-osrm.org';
-for (const key of ['WIND_EMAIL_FROM', 'CLOUDFLARE_EMAIL_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'SOUQ_PARTNER_KEY']) delete process.env[key];
+for (const key of ['WIND_EMAIL_FROM', 'CLOUDFLARE_EMAIL_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'SOUQ_PARTNER_KEY',
+  'WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DATABASE_URL']) delete process.env[key];
 const { db, server, promote, shutdown } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(4191, '127.0.0.1', resolve));
 const apiUrl = 'http://127.0.0.1:4191';
@@ -47,7 +48,7 @@ for (const [role, [identifier, name]] of Object.entries(labels)) {
   });
   else result = await call('/auth/login', null, { identifier, password });
   if (role === 'admin') {
-    promote(identifier);
+    await promote(identifier);
     result = await call('/auth/login', null, { identifier, password });
   }
   provision.roles[role] = { identifier, password, token: result.token, userId: result.user.id, ...(saved?.baseline && { baseline: saved.baseline }) };

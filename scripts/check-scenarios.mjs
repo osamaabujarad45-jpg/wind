@@ -133,7 +133,7 @@ async function advance(page, id, current, next, code) {
 try {
   stage = 'signup and approval';
   await call('/auth/register', { body: { name: 'QA Administrator', email: 'admin@example.test', phone: '0599000709', password, consent: true } });
-  promote('0599000709');
+  await promote('0599000709');
   const customerPage = await newPage(), driverPage = await newPage(), adminPage = await newPage();
   const customerToken = await signup(customerPage, '0599000701', 'QA Customer');
   await signup(driverPage, '0599000702', 'QA Driver', true);
@@ -148,7 +148,7 @@ try {
   // Approval may revoke the pending session; the same credentials must still work.
   await until(() => driverPage.url(), url => /\/(driver|auth)/.test(url), 'Driver did not refresh after approval');
   if (new URL(driverPage.url()).pathname === '/auth') await login(driverPage, '0599000702');
-  await driverPage.getByText(c.online, { exact: true }).waitFor();
+  await driverPage.getByText(c.presence_offline_title, { exact: true }).waitFor(); // approved drivers land on the jobs screen with the presence card offline (SPEC-driver-presence)
   const driverToken = await driverPage.evaluate(() => localStorage.getItem('token'));
   pass('customer and driver UI registration, pending gate, admin approval, driver login');
 

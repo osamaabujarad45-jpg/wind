@@ -21,3 +21,5 @@
 !public/**
 !plugins/
 !plugins/**
+!scripts/
+!scripts/runtime-dependencies.mjs

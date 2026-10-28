@@ -28,6 +28,7 @@ const phone = { width: 390, height: 844 };
 // ---------- 1. throwaway API with seeded data ----------
 const dbDir = mkdtempSync(join(tmpdir(), 'wind-screens-'));
 process.env.DB_PATH = join(dbDir, 'screens.db');
+for (const key of ['WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DATABASE_URL']) delete process.env[key];
 // Synthetic screenshots also cover gated legacy services; production defaults stay parcel-only.
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_IDENTITY_MODE = 'self-service';
@@ -59,7 +60,7 @@ const omar = await register('0599000004', 'عمر ناصر');
 const ahmad = await register('0599000002', 'أحمد يوسف', { role: 'driver', vehicle: 'car' });
 const sami = await register('0569000003', 'سامي خليل', { role: 'driver', vehicle: 'van' }); // stays pending
 const boss = await register('0599000009', 'إدارة ويند');
-promote('0599000009');
+await promote('0599000009');
 await call(`/admin/users/${ahmad.user.id}/approve`, boss.token, {});
 
 // Layla has Wind Plus (requested, then activated by the admin); Omar and Ahmad have requests waiting.
@@ -156,11 +157,13 @@ const screens = [
   { id: 'sign-in', group: 'Launch', name: 'Sign in', route: '/auth', file: 'src/app/auth.tsx', role: null },
   { id: 'sign-up', group: 'Launch', name: 'Create account (driver)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp', 'driver'] },
   { id: 'sign-up-customer', group: 'Launch', name: 'Create account (customer)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp'] },
+  { id: 'sign-in-phone-recovery', group: 'Launch', name: 'Sign in · reset with a phone code (synthetic capability, generic reply)', route: '/auth', file: 'src/phone-recovery.tsx', role: null, state: 'phone-recovery' },
   { id: 'help', group: 'Launch', name: 'Help & support', route: '/help?topic=password', file: 'src/app/help.tsx', role: null },
 
   { id: 'home', group: 'Customer', name: 'Home', route: '/', file: 'src/app/(customer)/index.tsx', role: 'customer' },
   { id: 'book-parcel', group: 'Customer', name: 'Book a parcel', route: '/book?service=parcel', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-ride', group: 'Customer', name: 'Book a ride', route: '/book?service=ride', file: 'src/app/book.tsx', role: 'customer' },
+  { id: 'book-calculating', group: 'Customer', name: 'Book a ride · price being calculated (Request disabled, reason shown)', route: '/book?service=ride&from=ramallah&to=nablus', file: 'src/app/book.tsx', role: 'customer', state: 'calculating' },
   { id: 'book-freight', group: 'Customer', name: 'Book a load', route: '/book?service=freight', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-again', group: 'Customer', name: 'Order again (form copied from a delivered order)', route: `/book?again=${completed.id}`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
@@ -173,16 +176,20 @@ const screens = [
   { id: 'receipt', group: 'Customer', name: 'Receipt', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'customer' },
   { id: 'account', group: 'Customer', name: 'Account', route: '/account', file: 'src/parts.tsx (AccountScreen)', role: 'customer' },
   { id: 'profile', group: 'Customer', name: 'Edit profile', route: '/profile', file: 'src/app/profile.tsx', role: 'customer' },
+  { id: 'profile-phone-ready', group: 'Customer', name: 'Edit profile · phone verification available (synthetic reply, Verify live)', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-ready' },
+  { id: 'profile-phone-code', group: 'Customer', name: 'Edit profile · code requested, provider accepted (synthetic), not confirmed as delivered', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-code' },
+  { id: 'profile-phone-change', group: 'Customer', name: 'Edit profile · change number form (new number and current password, synthetic capability)', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-change' },
 
   { id: 'driver-pending', group: 'Driver', name: 'Awaiting approval', route: '/driver', file: 'src/app/driver/index.tsx', role: 'pending' },
   { id: 'driver-jobs', group: 'Driver', name: 'Jobs', route: '/driver', file: 'src/app/driver/index.tsx', role: 'driver' },
-  { id: 'driver-idle', group: 'Driver', name: 'Jobs · ready for an assignment', route: '/driver', file: 'src/app/driver/index.tsx', role: 'idle' },
+  { id: 'driver-idle', group: 'Driver', name: 'Jobs · no job assigned, presence card offline (go-online not pressed)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'idle' },
   { id: 'driver-run-sheet', group: 'Driver', name: 'Parcel run sheet (pickups and deliveries by city)', route: '/driver/trips', file: 'src/app/driver/trips.tsx', role: 'courier' },
   { id: 'driver-order', group: 'Driver', name: 'Active trip', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'driver' },
   { id: 'driver-trips', group: 'Driver', name: 'My trips', route: '/driver/trips', file: 'src/app/driver/trips.tsx', role: 'driver' },
   { id: 'driver-earnings', group: 'Driver', name: 'Earnings', route: '/driver/earnings', file: 'src/app/driver/earnings.tsx', role: 'driver' },
   { id: 'driver-receipt', group: 'Driver', name: 'Receipt (driver view)', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'driver' },
   { id: 'driver-account', group: 'Driver', name: 'Account', route: '/driver/account', file: 'src/parts.tsx (AccountScreen)', role: 'driver' },
+  { id: 'driver-offer-range', group: 'Driver', name: 'Jobs · offer price outside the band (Send offer disabled, band shown)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'freshDriver', state: 'offer-range' },
 
   { id: 'admin-dashboard', group: 'Admin', name: 'Dashboard', route: '/admin', file: 'src/app/admin/index.tsx', role: 'admin' },
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
@@ -201,6 +208,7 @@ const shots = [];
 for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
   for (const screen of screens) {
+    if (screen.state) continue; // captured after the scenarios that set them up
     const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
     await context.addInitScript(({ token, language, onboarded }) => {
@@ -446,6 +454,188 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, loggedOutPublications);
   await context.close();
   console.log('Driver UI: idle GPS privacy, foreground assignment/permission recovery, revoked/granted/pending/failed/stale permission reads, busy offers, role hints, completion cleanup, direct accept, late callbacks and logout passed');
+}
+// ---------- 4b. interactive states: a held quote and an offer price outside its band ----------
+if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-range')) {
+  const base = `http://localhost:${WEB_PORT}`;
+  const stateShot = async (screen, language, token, { setup, run }) => {
+    const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
+    await context.addInitScript(({ token, language }) => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.clear();
+      localStorage.setItem('language', language);
+      localStorage.setItem('onboarded', '1');
+      localStorage.setItem('token', token);
+    }, { token, language });
+    const page = await context.newPage();
+    await setup?.(page);
+    await page.goto(base + screen.route, { waitUntil: 'load' });
+    await page.waitForTimeout(2500); // intro + first data load
+    await run?.(page);
+    await page.waitForTimeout(800);
+    mkdirSync(join(outDir, language), { recursive: true });
+    const file = join(outDir, language, `${screen.id}.png`);
+    await page.screenshot({ path: file });
+    shots.push({ ...screen, language, file });
+    await context.close();
+  };
+  const calculating = screens.find(s => s.id === 'book-calculating');
+  const offerRange = screens.find(s => s.id === 'driver-offer-range');
+  // A smart-priced ride no driver has taken yet, and a fresh approved driver with no custody, so the offer form opens.
+  await smartOrder(omar, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
+  const fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
+  await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
+  for (const language of ['ar', 'en']) {
+    // The quote request is held for 9 s, so the footer shows the calculating reason and a disabled Request.
+    await stateShot(calculating, language, layla.token, {
+      setup: page => page.route('**/api/price', async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
+    });
+    await stateShot(offerRange, language, fresh.token, {
+      run: async page => {
+        await page.getByRole('button', { name: copy[language].offerPrice, exact: true }).first().click();
+        await page.getByLabel(`${copy[language].offerPrice} (₪)`).first().fill('5');
+        await page.mouse.wheel(0, 420); // bring the send button and its reason into view
+      },
+    });
+  }
+}
+// ---------- 4c. phone verification and recovery (WP06): synthetic capability replies, no provider, no SMS ----------
+// The phone routes run only on PostgreSQL; this block answers them in the browser, so the enabled states are shown without a provider.
+const pickScreen = id => screens.find(s => s.id === id);
+const readyCaps = { available: true, enabled: true, provider: 'ooredoo_communication', sendAcceptance: true, deliveryReceipts: false, deliveryQuery: false,
+  providerTransactionIdempotency: false, policy: { codeSeconds: 300, maxAttempts: 5, resendSeconds: 45 }, supportedContext: 'PS',
+  supportedMobilePrefixes: ['56', '59'], legacyLoginPreserved: true };
+const selfView = challenges => ({ identityRevision: 1, legacyPhone: '0599000001', profile: null,
+  mappings: [{ canonical_group: '+970599000001', routing_e164: '+970599000001', state: 'reviewed', version: 1, country_context: 'PS' }], challenges, capabilities: readyCaps });
+const phoneShot = async (screen, language, token, { setup, run }) => {
+  const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
+  await context.addInitScript(({ token, language }) => {
+    if (sessionStorage.getItem('seeded')) return;
+    sessionStorage.setItem('seeded', '1');
+    localStorage.clear();
+    localStorage.setItem('language', language);
+    localStorage.setItem('onboarded', '1');
+    if (token) localStorage.setItem('token', token);
+  }, { token, language });
+  const page = await context.newPage();
+  await setup(page);
+  await page.goto(`http://localhost:${WEB_PORT}${screen.route}`, { waitUntil: 'load' });
+  await page.waitForTimeout(2500); // intro + first data load
+  await run(page);
+  await page.setViewportSize({ width: phone.width, height: 1300 }); // the card sits low on the profile and sign-in pages
+  await page.waitForTimeout(600);
+  mkdirSync(join(outDir, language), { recursive: true });
+  const file = join(outDir, language, `${screen.id}.png`);
+  await page.screenshot({ path: file });
+  shots.push({ ...screen, language, file });
+  await context.close();
+};
+for (const language of ['ar', 'en']) {
+  const t = copy[language];
+  const ready = pickScreen('profile-phone-ready');
+  if (ready) await phoneShot(ready, language, layla.token, {
+    setup: async page => {
+      await page.route('**/api/phone/capabilities', route => route.fulfill({ json: readyCaps }));
+      await page.route('**/api/me/phone', route => route.fulfill({ json: selfView([]) }));
+    },
+    run: async () => {},
+  });
+  const code = pickScreen('profile-phone-code');
+  if (code) {
+    let challenges = [];
+    const challengeId = '00000000-0000-4000-8000-0000000000c1';
+    await phoneShot(code, language, layla.token, {
+      setup: async page => {
+        await page.route('**/api/phone/capabilities', route => route.fulfill({ json: readyCaps }));
+        await page.route('**/api/me/phone', route => route.fulfill({ json: selfView(challenges) }));
+        await page.route('**/api/me/phone/challenges', async route => {
+          challenges = [{ id: challengeId, purpose: 'verify', delivery_state: 'accepted', effectiveDeliveryState: 'accepted', expires_at: Date.now() + 300000,
+            attempts: 0, resend_at: Date.now() + 45000 }];
+          await route.fulfill({ json: { challengeId, state: 'requested', expiresAt: Date.now() + 300000, resendAfterSeconds: 45, deliveryState: 'accepted' } });
+        });
+      },
+      run: async page => {
+        await page.getByRole('button', { name: t.phone_verify_send, exact: true }).click();
+        await page.getByText(t.phone_state_accepted, { exact: true }).waitFor();
+      },
+    });
+  }
+  const change = pickScreen('profile-phone-change');
+  if (change) await phoneShot(change, language, layla.token, {
+    setup: async page => {
+      await page.route('**/api/phone/capabilities', route => route.fulfill({ json: readyCaps }));
+      await page.route('**/api/me/phone', route => route.fulfill({ json: selfView([]) }));
+    },
+    run: async page => {
+      await page.getByRole('button', { name: t.phone_change, exact: true }).click();
+      await page.getByText(t.phone_change_title, { exact: true }).waitFor();
+    },
+  });
+  const recovery = pickScreen('sign-in-phone-recovery');
+  if (recovery) await phoneShot(recovery, language, null, {
+    setup: async page => {
+      await page.route('**/api/phone/capabilities', route => route.fulfill({ json: readyCaps }));
+      await page.route('**/api/auth/phone/recovery/challenges', route => route.fulfill({ json: { challengeId: '00000000-0000-4000-8000-0000000000d1',
+        state: 'request_recorded', expiresAt: Date.now() + 300000, resendAfterSeconds: 45, accountStateConcealed: true } }));
+    },
+    run: async page => {
+      await page.getByRole('link', { name: t.phone_recovery_open, exact: true }).click();
+      await page.getByRole('textbox', { name: t.phone, exact: true }).fill('0599000001');
+      await page.getByRole('button', { name: t.phone_recovery_send, exact: true }).click();
+      await page.getByText(t.phone_recovery_recorded, { exact: true }).waitFor();
+    },
+  });
+}
+// ---------- 4c. 360 px and large text: the presence card must not overflow, clip or push Go online out of reach ----------
+// Captures go to .screens/narrow (not docs/screens). Font scale multiplies every text node's computed size, which approximates
+// the OS text setting on web; it does not prove a device's font-scale behaviour.
+if (!only || only.some(id => id.startsWith('driver-'))) {
+  const base = `http://localhost:${WEB_PORT}`;
+  const narrowDir = join(root, '.screens', 'narrow');
+  mkdirSync(narrowDir, { recursive: true });
+  // A fresh approved driver: the idle driver above logs out in an earlier step, which revokes its session.
+  const narrowDriver = await register('0599000012', 'سمير نصار', { role: 'driver', vehicle: 'car' });
+  await call(`/admin/users/${narrowDriver.user.id}/approve`, boss.token, {});
+  for (const language of ['ar', 'en']) for (const scale of [1, 1.3]) {
+    const context = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2,
+      locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
+    await context.addInitScript(({ token, language }) => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.clear();
+      localStorage.setItem('language', language);
+      localStorage.setItem('onboarded', '1');
+      localStorage.setItem('token', token);
+    }, { token: narrowDriver.token, language });
+    const page = await context.newPage();
+    await page.goto(`${base}/driver`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: copy[language].presence_go_online, exact: true }).waitFor({ timeout: 15000 })
+      .catch(async error => { await page.screenshot({ path: join(narrowDir, `debug-${language}.png`) }); throw error; });
+    if (scale !== 1) {
+      await page.evaluate(factor => {
+        for (const element of document.querySelectorAll('body *')) {
+          if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+          element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * factor}px`;
+        }
+      }, scale);
+      await page.waitForTimeout(400);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 0, `${language} at 360px scale ${scale}: horizontal overflow ${overflow}px`);
+    // A button whose label wraps is clipped by its fixed height: every visible button in the view must fit its own text.
+    const clipped = await page.evaluate(() => [...document.querySelectorAll('[role="button"]')]
+      .filter(b => b.getBoundingClientRect().bottom > 0 && b.getBoundingClientRect().top < innerHeight)
+      .filter(b => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1)
+      .map(b => b.textContent.trim()));
+    assert.deepEqual(clipped, [], `${language} at 360px scale ${scale}: clipped buttons`);
+    assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true, 'reduced motion is active');
+    const goOnline = await page.getByRole('button', { name: copy[language].presence_go_online, exact: true }).boundingBox();
+    assert.ok(goOnline && goOnline.x >= 0 && goOnline.x + goOnline.width <= 360, `${language} scale ${scale}: Go online inside 360px: ${JSON.stringify(goOnline)}`);
+    await page.screenshot({ path: join(narrowDir, `driver-idle-${language}-${scale === 1 ? '100' : '130'}.png`) });
+    await context.close();
+  }
+  console.log('Driver presence at 360 px, 100% and 130% text: no horizontal overflow, Go online reachable, reduced motion active');
 }
 await browser.close();
 await Promise.all([

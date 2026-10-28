@@ -72,7 +72,7 @@ async function state(id, status) {
 }
 try {
   await register('0599000811', 'Readiness Admin');
-  promote('0599000811');
+  await promote('0599000811');
   const admin = await call('/auth/login', { body: { identifier: '0599000811', password } });
   const customer = await register('0599000812', 'Readiness Customer');
   const pending = await register('0599000813', 'Readiness Driver', 'driver');

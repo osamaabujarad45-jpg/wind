@@ -1,0 +1,39 @@
+name: Azure infrastructure validation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'scripts/check-azure.mjs'
+      - 'tests/azure-infra.test.mjs'
+      - '.github/workflows/azure-validate.yml'
+  push:
+    paths:
+      - 'infra/**'
+      - 'scripts/check-azure.mjs'
+      - 'tests/azure-infra.test.mjs'
+      - '.github/workflows/azure-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.12.0
+      - name: Install pinned Bicep CLI
+        run: |
+          curl --fail --silent --show-error --location https://github.com/Azure/bicep/releases/download/v0.48.1/Azure.Bicep.CommandLine.linux-x64.0.48.1.nupkg -o "$RUNNER_TEMP/bicep.nupkg"
+          echo 'f33848816dcaefa4a5e6cfc1453d8a4d759ce3988ebdf2a10e06dd834c219f31  bicep.nupkg' | (cd "$RUNNER_TEMP" && sha256sum --check)
+          mkdir -p "$RUNNER_TEMP/tools"
+          unzip -q "$RUNNER_TEMP/bicep.nupkg" tools/bicep -d "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/tools" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/tools/tools/bicep" --version
+      - name: Compile, lint, and run Azure IaC policy test
+        run: node tests/azure-infra.test.mjs
+        env:
+          BICEP_COMMAND: bicep
