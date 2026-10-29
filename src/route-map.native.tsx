@@ -85,8 +85,8 @@ export default function RouteMap(props: RouteMapProps) {
 // The driver marker glides to each fix over the gap between fixes, like web/Android: still moving when the next fix
 // lands, no hop-and-wait. Driven from JS, not animateMarkerToCoordinate: on iOS that drops a request while one runs
 // and truncates its duration to whole seconds. Own component so a frame re-renders the marker, not the map.
-// ponytail: one setState per frame on one marker; Reanimated if low-end phones drop frames.
-function Car({ driver, title, approach, still, stale }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean; stale: boolean }) {
+// Exported for the Google renderer (google-map.native.tsx): marker motion is provider-agnostic.
+export function Car({ driver, title, approach, still, stale }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean; stale: boolean }) {
   const [glide] = useState(() => glider({ latitude: driver.latitude, longitude: driver.longitude, rotation: driver.heading ?? 0 }));
   const [pose, setPose] = useState(() => glide.frame(0).now);
   const [lineAt, setLineAt] = useState(pose); // the approach line's first point: the marker, redrawn ~10x/s like web/Android

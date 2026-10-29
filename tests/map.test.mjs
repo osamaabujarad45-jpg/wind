@@ -235,6 +235,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(selectRenderer('web'), 'maplibre');
   assert.equal(selectRenderer('windows'), 'maplibre', 'an unknown platform chooses the safe baseline');
   assert.equal(selectRenderer(''), 'maplibre');
+  // T10: a Google family is selectable only when the build actually baked it in for that platform.
+  assert.equal(selectRenderer('android', { android: true }, 'google'), 'google');
+  assert.equal(selectRenderer('android', { android: false }, 'google'), 'maplibre', 'a kill switch cannot enable a renderer absent from the binary');
+  assert.equal(selectRenderer('android', undefined, 'google'), 'maplibre');
+  assert.equal(selectRenderer('ios', { ios: true }, 'google'), 'google');
+  assert.equal(selectRenderer('ios', { android: true }, 'google'), 'apple', 'another platform capability does not select Google');
+  assert.equal(selectRenderer('web', { web: true }, 'google'), 'google');
+  assert.equal(selectRenderer('android', { android: true }, 'baseline'), 'maplibre');
+  assert.equal(selectRenderer('android', { android: true }), 'maplibre', 'no preference keeps the baseline');
   // Baseline OSRM geometry renders everywhere; Google content only on a Google renderer; unknown provenance nowhere.
   for (const renderer of ['maplibre', 'apple', 'google']) assert.equal(canShowOnRenderer('osrm', renderer), true);
   assert.equal(canShowOnRenderer('google', 'google'), true);
@@ -263,6 +272,16 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.ok(roadSource.includes('canShowOnRenderer'), 'useRoad must guard route lines by renderer capability');
   assert.ok(roadSource.includes('routeProvider'), 'useRoad must read provenance off the route data');
   assert.ok(roadSource.includes('approachKey'), 'useRoad must bind kept route state to order, driver, stop and provider');
+  // The Android entry must choose the renderer from the baked capability plus the stored mode — never
+  // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
+  const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
+  assert.ok(androidSource.includes("selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode)"), 'Android must resolve the renderer from baked capability and mode');
+  const googleSource = readFileSync(new URL('../src/google-map.native.tsx', import.meta.url), 'utf8');
+  assert.ok(googleSource.includes('onMapLoaded'), 'Google readiness waits for loaded tiles');
+  assert.ok(!googleSource.includes('onMapReady'), 'map initialization alone is not a readiness signal');
+  assert.ok(googleSource.includes('provider={PROVIDER_GOOGLE}'), 'the Google renderer must actually select the Google provider');
+  const modeSource = readFileSync(new URL('../src/map-mode.ts', import.meta.url), 'utf8');
+  assert.ok(modeSource.includes("?? 'baseline'"), 'an unreadable preference must fall back to the baseline');
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));

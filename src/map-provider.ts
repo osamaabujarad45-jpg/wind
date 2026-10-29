@@ -15,11 +15,17 @@ export const platformRenderers: Record<string, MapRenderer[]> = {
 };
 
 /**
- * The renderer this platform draws with today: the first family baked into the binary. An unknown platform
- * falls back to the baseline every client ships, never to a renderer that may be absent — a kill switch
- * cannot enable a renderer the binary does not contain.
+ * The renderer this platform draws with today. The first family baked into the binary is the default; when
+ * a Google family is also baked in (`baked` capability from the build, never a runtime fetch) and the user
+ * selected the Google mode, that renderer is used. An unknown platform falls back to the baseline every
+ * client ships, never to a renderer that may be absent — a kill switch cannot enable a renderer the binary
+ * does not contain.
  */
-export function selectRenderer(platform: string): MapRenderer {
+export function selectRenderer(platform: string, baked?: { android?: boolean; ios?: boolean; web?: boolean } | null, preference?: string): MapRenderer {
+  if (preference === 'google') {
+    const available = platform === 'android' ? !!baked?.android : platform === 'ios' ? !!baked?.ios : !!baked?.web;
+    if (available) return 'google';
+  }
   return platformRenderers[platform]?.[0] ?? 'maplibre';
 }
 

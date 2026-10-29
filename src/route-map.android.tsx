@@ -1,9 +1,15 @@
-// Android map (SPEC-android-map.md): the APK has no Google Maps key, so it shows the same MapLibre + OpenFreeMap map as
-// the web app, drawn by public/map.html (served by the Wind API) inside a WebView. Any failure shows the diagram.
+// Android map (SPEC-android-map.md): the baseline APK has no Google Maps key, so it shows the same MapLibre +
+// OpenFreeMap map as the web app, drawn by public/map.html (served by the Wind API) inside a WebView. When the
+// binary was built with a restricted Google key (extra.googleMaps) and the user selected the Google mode, the
+// native Google renderer draws instead. Any failure shows the diagram.
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { WebView } from 'react-native-webview';
 import { API_URL } from './api';
+import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
+import { selectRenderer } from './map-provider';
+import { useMapMode } from './map-mode';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, useCopy } from './ui';
 
@@ -61,6 +67,15 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
+  const [mode] = useMapMode();
+  // T06/T10: the renderer must be one this binary actually contains — the capability is baked at build time
+  // (extra.googleMaps), so a kill switch or mode change can never select an absent renderer.
+  if (selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GoogleRouteMap key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
+  return <MapLibreRoute key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
+}
+
+function MapLibreRoute(props: RouteMapProps) {
+  const { pickup: a, dropoff: b } = props;
   return <LiveMap key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
 }
 
@@ -83,6 +98,13 @@ function LiveMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+  const [mode] = useMapMode();
+  if (selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode) === 'google')
+    return <GooglePinMap center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
+  return <MapLibrePin center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
+}
+
+function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);

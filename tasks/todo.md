@@ -256,7 +256,7 @@ Implementation children:
 
 ## T09: Google native build setup
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Configure SDK 57 react-native-maps with separate restricted Android/iOS keys and a build capability flag. Preserve release/QA guards and account for QA package IDs and signing certificates.
 
@@ -271,15 +271,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Baseline binary needs no Google key.
-- [ ] Google build fails early for missing platform key.
-- [ ] Server route key is absent from public config.
+- [x] Baseline binary needs no Google key.
+- [x] Google build fails early for missing platform key.
+- [x] Server route key is absent from public config.
 
 **Verification:** `npm run test -- --filter=phone-test-build`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Native plugin changes require a rebuilt EAS binary; do not treat OTA as sufficient.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `app.config.js`: separate restricted keys `GOOGLE_MAPS_ANDROID_KEY` / `GOOGLE_MAPS_IOS_KEY` (legacy `GOOGLE_MAPS_API_KEY` secret still maps to the Android key so existing EAS environments keep working); explicit opt-in `WIND_GOOGLE_MAPS=1` fails the build early when the key for the built platform (`EAS_BUILD_PLATFORM`, `WIND_BUILD_PLATFORM` locally; unknown platform demands both) is missing; phone-test loopback apps cannot opt in, so test APKs never embed a Google key. Keys reach only the react-native-maps plugin (native manifest); `extra.googleMaps` bakes boolean capability `{android, ios}` for `selectRenderer` — never key strings. `GOOGLE_MAPS_SERVER_KEY` remains server-only (T07). Suite extended: baseline bakes no capability and embeds no key; legacy secret maps to Android; opted-in Android/iOS builds fail `/missing: (android|ios)/` without their key and never embed the other platform's key; key strings never appear in `extra`; phone-test opt-in rejected. `npm run test -- --filter=phone-test-build` exit 0; lint 0; typecheck 0. The rebuilt EAS binary with real restricted keys remains the T49/D06 gate.
 
 ### Checkpoint C03 — after T09
 
@@ -291,6 +291,10 @@ Implementation children:
 ## T10: Android Google renderer
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T10.1: Renderer implementation and selection wiring (src/google-map.native.tsx new, src/route-map.android.tsx, src/map-provider.ts, src/map-mode.ts new, src/route-map.native.tsx exports Car, tests/map.test.mjs). Complete — see evidence below. `npm run test -- --filter=map` 0; lint 0; typecheck 0 (29 Oct local fallback).
+- [ ] T10.2: A53 device acceptance on a Google-keyed rebuilt binary (missing key, slow tiles, pin drag, pan/recenter, driver animation) — blocked on restricted Google keys and the EAS rebuild (T49 gate). Parent stays open until then.
 
 **Description / implementation:** Implement provider-selected native Google rendering with pin movement, driver marker/accuracy/heading, follow/recenter, route and checkpoint overlays. Preserve MapLibre fallback with explicit data clearing.
 
@@ -313,7 +317,7 @@ Implementation children:
 
 **Manual / failure-case check:** A53 native: missing key, slow tiles, pin drag, pan/recenter and driver animation.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T10.1):** New `src/google-map.native.tsx`: react-native-maps `provider={PROVIDER_GOOGLE}` (1.27.2 exports the constant directly, no `Provider` object — verified against the installed module source); readiness waits for `onMapLoaded` (loaded tiles), never `onMapReady` (initialization) — the suite asserts `onMapReady` is absent; failure unmounts the map so overlays go with it and shows the diagram with Retry; foreground-return retry; recenter button; follow camera; pins, closed-checkpoint no-entry markers, road/approach lines converted from `[lng,lat]`; the provider-agnostic gliding `Car` is now exported from `route-map.native.tsx` and reused, so marker motion is identical across native renderers. `src/map-mode.ts` (new): SecureStore-backed `useMapMode` defaulting to `baseline`; an unreadable preference can never select a renderer the binary lacks. `src/route-map.android.tsx`: `RouteMap`/`PinMap` resolve `selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode)` — Google only when the binary baked the capability and the user chose the mode; the MapLibre WebView page remains the default and fallback. map suite extended with the capability/preference matrix (kill switch cannot enable an absent renderer; another platform's capability does not select Google) and source-wiring asserts. Both backends unaffected server-side. Device acceptance deferred to T10.2 (Google-keyed rebuild).
 
 ## T11: iOS map parity
 
