@@ -173,8 +173,6 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
         if (NON_LEGACY_TABLES.has(table.name)) continue;
         const columns = actual.filter(c => c.table_name === table.name).map(c => c.column_name);
         if (importColumns(table).some(c => !columns.includes(c.name))) errors.push({ table: table.name, reason: 'unreviewed SQLite schema/column; update migration explicitly' });
-        if (table.name === 'quotes' || table.name === 'road_restrictions') continue; // PG-only operational data, never snapshot-imported
-        if (table.name === 'road_restriction_policy') { const isSeed = (r: Row) => Number(r.id) === 1 && Number(r.revision) === 1 && Number(r.activated) === 0 && r.evidence_ref == null && r.reviewer_id == null && r.reason == null && r.reviewed_at == null; const target = await database.all('SELECT * FROM road_restriction_policy'); const source = snapshot.rows[table.name] ?? []; if (!(target.length === 1 && isSeed(target[0]) && source.length === 1 && isSeed(source[0]))) errors.push({ table: table.name, reason: 'operator road-restriction policy is not importable; use the policy exchange' }); continue; }
         if (columns.length && (await database.one(`SELECT COUNT(*) count FROM ${quote(table.name)}`))!.count) errors.push({ table: table.name, reason: 'target is not empty; never merge or overwrite' });
       }
       const legacyTables = actual.map(r => r.table_name).filter(name => !['schema_migrations','driver_run_resources','service_zone_geometries','command_results','event_sequences','domain_events','outbox','consumer_inbox','event_projection',
