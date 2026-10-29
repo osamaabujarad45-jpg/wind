@@ -653,6 +653,7 @@ const ar = {
   set_proCommission: 'عمولة سائق برو',
   set_plusPrice: 'سعر بلس الشهري',
   set_proPrice: 'سعر برو الشهري',
+  set_invalid: 'قيمة غير صالحة لحقل {field}',
   // intro + onboarding
   skip: 'تخطي',
   next: 'التالي',
@@ -1558,6 +1559,7 @@ const en: Copy = {
   set_proCommission: 'Pro driver commission',
   set_plusPrice: 'Plus monthly price',
   set_proPrice: 'Pro monthly price',
+  set_invalid: 'Invalid value for {field}',
   skip: 'Skip',
   next: 'Next',
   start: 'Get started',

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
-import { fractionSettings, typedNumber, type Settings } from '../../model';
+import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
@@ -26,8 +26,18 @@ export default function AdminSettings() {
     setBusy(true);
     setError('');
     setMessage('');
+    // Catch it on the screen that can name the field, instead of letting the server
+    // store a 0 or a mistyped 2000 that only shows up on the next customer's quote.
+    const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)]));
+    const bad = invalidSetting(numbers);
+    if (bad) {
+      setBusy(false);
+      haptic.error();
+      setError(fill(c.set_invalid, { field: c[`set_${bad}`] }));
+      return;
+    }
     try {
-      await api('/admin/settings', Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)])));
+      await api('/admin/settings', numbers);
       await refresh();
       haptic.success();
       setMessage(c.saved);

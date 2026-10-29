@@ -11,6 +11,7 @@ const suites = [
   "driver-presence-runtime.test.mjs",
   "api-client.test.mjs",
   "api.test.mjs",
+  "admin-settings.test.mjs",
   "deployment.test.mjs",
   "deployment-probe.test.mjs",
   "registration.test.mjs",

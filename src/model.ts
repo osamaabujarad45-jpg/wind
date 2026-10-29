@@ -87,6 +87,28 @@ export type Settings = typeof defaultSettings;
 export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
 export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission', 'nightExtra'];
 
+// One ceiling per setting, shared by the admin form and the server. Without it a blank
+// field saved 0 (commission 0 throws in minorUnits; a plan price of 0 is free) and a
+// fat-fingered 2000 quoted every parcel at 2000. Fractions are capped below 1 because
+// 100% commission or discount is never a real tariff.
+export const settingCeilings: Record<keyof Settings, number> = {
+  parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100,
+  freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
+  sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
+  plusPrice: 1000, proPrice: 2000,
+};
+// Returns the offending key, or null when every value is storable. `Number.isFinite`
+// rejects the NaN an empty or non-numeric field produces; `<= 0` rejects the 0 that a
+// blank field becomes (no setting has a meaningful zero: free delivery and zero commission
+// are not supported states, and minorUnits(0) throws).
+export function invalidSetting(values: Record<string, number>): keyof Settings | null {
+  for (const [key, value] of Object.entries(values)) {
+    const ceiling = settingCeilings[key as keyof Settings];
+    if (ceiling === undefined || !Number.isFinite(value) || value <= 0 || value > ceiling) return key as keyof Settings;
+  }
+  return null;
+}
+
 export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; plate?: string | null; rating: number | null; createdAt: number;
