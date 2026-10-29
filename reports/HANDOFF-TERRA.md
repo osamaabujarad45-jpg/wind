@@ -27,7 +27,8 @@ Read in this order:
 | `c0a5c37` | **P1 #1** IaC bound · **CI Postgres gate** · **P2 #6/#7 audit rows** · schema migration |
 | `0344d98` | Home search action fix |
 | `d99ed22` / `378e37c` | Large-font `minHeight`; owner-run `wp16_staging` migration, with the post-commit `search_path` fix |
-| `0302c2d` | Integrated the finished maps session: last-known pin GPS, shared 20 km bound, public/ map serving, phone-test PATH, SQLite nolock; removed the public OSRM fallback/unmarked chord and restored the area guard |
+| `0302c2d` | Integrated the finished maps session: last-known pin GPS, shared 20 km bound, public/ map serving, phone-test PATH; removed the public OSRM fallback/unmarked chord and restored the area guard |
+| `2b61fc4` | Read-only review P0s: reverted `?nolock`; SQLite/Postgres 15 s grace parity with tests; production `WEB_ROOT` guard; 17 km bound case |
 
 Verified in this pass:
 
