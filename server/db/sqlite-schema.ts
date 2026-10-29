@@ -259,6 +259,16 @@ for (const column of ['heading_city TEXT', 'heading_until INTEGER', 'entra_oid T
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_entra_oid_unique ON users(entra_oid) WHERE entra_oid IS NOT NULL');
 db.exec('BEGIN IMMEDIATE; PRAGMA user_version = 3; COMMIT');
+// T22, additive and idempotent (user_version stays 3 so an older build can still open the database):
+// pending subscriptions that predate the constraint collapse to the newest per user and plan — paid
+// history (active and rejected rows) is untouched — before the unique index is built.
+db.exec('BEGIN IMMEDIATE');
+try {
+  db.exec(`UPDATE subscriptions SET status = 'rejected'
+    WHERE status = 'pending' AND id NOT IN (SELECT MAX(id) FROM subscriptions WHERE status = 'pending' GROUP BY user_id, plan)`);
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_pending ON subscriptions(user_id, plan) WHERE status = 'pending'");
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }

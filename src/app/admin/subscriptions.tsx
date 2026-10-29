@@ -41,8 +41,10 @@ export default function Subscriptions() {
               {!(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : sub.status === 'pending' ? tones.clay : tones.muted} />}{/* "active until" below already says it */}
             </Row>
             {sub.status === 'pending' && <Row gap={8} style={{ marginTop: 12 }}>
-              <View style={{ flex: 1 }}><Button title={c.activate} loading={busy === `${sub.id}activate`} onPress={() => decide(sub, 'activate')} /></View>
-              <View style={{ flex: 1 }}><Button title={c.reject} variant="danger" loading={busy === `${sub.id}reject`} onPress={() => decide(sub, 'reject')} /></View>
+              {/* T22: while any decision is in flight both controls wait — the server CAS makes the loser
+                  a 409 anyway, and the UI never invites the second tap. */}
+              <View style={{ flex: 1 }}><Button title={c.activate} loading={busy === `${sub.id}activate`} disabled={busy !== null} onPress={() => decide(sub, 'activate')} /></View>
+              <View style={{ flex: 1 }}><Button title={c.reject} variant="danger" loading={busy === `${sub.id}reject`} disabled={busy !== null} onPress={() => decide(sub, 'reject')} /></View>
             </Row>}
           </Card>
         </Appear>;

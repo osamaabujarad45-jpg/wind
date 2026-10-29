@@ -53,6 +53,7 @@ const suites = [
   "customer-rating.test.mjs",
   "driver-destination.test.mjs",
   "jobs-pagination.test.mjs",
+  "subscription-migration.test.mjs",
   "change-destination.test.mjs",
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",

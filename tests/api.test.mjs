@@ -209,9 +209,31 @@ try {
   // Subscriptions: request, admin activates, plan applies
   const pending = await call('/subscriptions', { token: driver.token, body: {} });
   assert.equal(pending.subscription.status, 'pending');
-  await call('/subscriptions', { token: driver.token, body: {}, expect: 409 });
+  // T22: a burst of concurrent requests yields exactly one pending record — the envelope serializes the
+  // check with the insert on SQLite, and the unique pending index backs the same guarantee on PostgreSQL.
+  const spare = await call('/auth/register', { body: { phone: '0599000422', name: 'Spare', password: 'secret1' } });
+  const burst = await Promise.all(Array.from({ length: 4 }, () =>
+    call('/subscriptions', { token: spare.token, body: {} }).then(() => 'created', e => e.message.includes('already_subscribed') ? 'already_subscribed' : e.message)));
+  assert.deepEqual([...burst].sort(), ['already_subscribed', 'already_subscribed', 'already_subscribed', 'created'],
+    `concurrent requests produce one pending subscription: ${burst.join()}`);
+  const pendingSubs = (await call('/admin/subscriptions', { token: admin.token })).filter(s => s.status === 'pending');
+  const target = pendingSubs.find(s => s.userPhone === '0599000422') ?? pendingSubs[0];
+  // T22: one concurrent activate/reject race decides once; the loser is refused with its own words.
+  const [activated, rejected] = await Promise.all([
+    call(`/admin/subscriptions/${target.id}`, { token: admin.token, body: { action: 'activate' } }).then(() => 'activated', e => e.message.includes('subscription_decided') ? 'subscription_decided' : e.message),
+    call(`/admin/subscriptions/${target.id}`, { token: admin.token, body: { action: 'reject' } }).then(() => 'rejected', e => e.message.includes('subscription_decided') ? 'subscription_decided' : e.message),
+  ]);
+  const decided = [activated, rejected].filter(result => result === 'activated' || result === 'rejected');
+  const refused = [activated, rejected].filter(result => result !== 'activated' && result !== 'rejected');
+  assert.equal(decided.length, 1, `exactly one decision lands: ${activated} / ${rejected}`);
+  assert.ok(refused.every(result => result.includes('subscription_decided') || result.includes('not_found')),
+    `the loser is refused: ${refused.join(' | ')}`);
+  // A pending or active plan still gates a re-request; a rejected applicant may reapply (one live row either way).
+  if (decided[0] === 'activated') await call('/subscriptions', { token: spare.token, body: {}, expect: 409 });
   const subs = await call('/admin/subscriptions', { token: admin.token });
-  await call(`/admin/subscriptions/${subs[0].id}`, { token: admin.token, body: { action: 'activate' } });
+  const driverPending = subs.find(s => s.status === 'pending' && s.userId === pending.subscription.userId) ?? subs.find(s => s.status === 'pending' && s.userPhone === pending.subscription.userPhone) ?? subs.find(s => s.status === 'pending');
+  assert.ok(driverPending, 'the driver request is still pending');
+  await call(`/admin/subscriptions/${driverPending.id}`, { token: admin.token, body: { action: 'activate' } });
   assert.equal((await call('/me', { token: driver.token })).plan, 'pro');
 
   const plusSub = await call('/subscriptions', { token: customer.token, body: {} });
@@ -223,7 +245,7 @@ try {
   // Profits
   const stats = await call('/admin/stats', { token: admin.token });
   assert.equal(stats.commission, done.commission);
-  assert.equal(stats.subscriptions, defaultSettings.proPrice + defaultSettings.plusPrice);
+  assert.equal(stats.subscriptions, defaultSettings.proPrice + defaultSettings.plusPrice + (decided[0] === 'activated' ? defaultSettings.plusPrice : 0), 'the spare race decision counts once');
   assert.equal(stats.profit, stats.commission + stats.subscriptions);
   assert.equal(stats.daily.length, 14);
   assert.equal(stats.daily.at(-1).subscriptions, stats.subscriptions);

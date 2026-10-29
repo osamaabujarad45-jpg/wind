@@ -2630,8 +2630,14 @@ route('POST', '/api/subscriptions', async ({ user }) => {
   const plan = planForRole[user.role] ?? fail(403, 'forbidden');
   if ((await latestSubscription(user.id))) fail(409, 'already_subscribed');
   const s = (await settings());
-  (await run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
-    user.id, plan, plan === 'plus' ? s.plusPrice : s.proPrice, Date.now()));
+  try {
+    (await run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
+      user.id, plan, plan === 'plus' ? s.plusPrice : s.proPrice, Date.now()));
+  } catch (error) {
+    // T22: a concurrent double tap committed its pending row first; the unique index turns it into one record.
+    if ((error as { code?: string }).code === '23505') fail(409, 'already_subscribed');
+    throw error;
+  }
   await queuePush((await adminIds()), 'attention', 0, '/admin/subscriptions');
   return (await me(user));
 });
@@ -2844,17 +2850,25 @@ route('GET', '/api/admin/subscriptions', async ({ user }) => {
 
 route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => {
   need(user, 'admin');
-  const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
-  if (body.action === 'activate') {
-    const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-    if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
-    (await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ?", Date.now(), Date.now() + 30 * DAY, sub.id));
-  }
-  else if (body.action === 'reject') (await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ?", sub.id));
-  else fail(400, 'invalid_action');
-  const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-  await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
-  return { ok: true };
+  // T22: the decision reads, checks and writes inside one transaction with a status predicate on the
+  // update, so a concurrent activate/reject race has exactly one outcome; the loser is already_decided.
+  return (await persistence.atomic({ purpose: 'admin_subscription_decision' }, async () => {
+    const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
+    if (body.action === 'activate') {
+      const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+      if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
+      if (!(await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ? AND status = 'pending'", Date.now(), Date.now() + 30 * DAY, sub.id)).changes)
+        fail(409, 'subscription_decided');
+    }
+    else if (body.action === 'reject') {
+      if (!(await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ? AND status = 'pending'", sub.id)).changes)
+        fail(409, 'subscription_decided');
+    }
+    else fail(400, 'invalid_action');
+    const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+    await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
+    return { ok: true };
+  }));
 });
 
 route('POST', '/api/admin/settings', async ({ user, body }) => {

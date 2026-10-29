@@ -669,7 +669,7 @@ Implementation children:
 
 ## T22: Subscription concurrency
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Enforce one pending subscription per user/plan in storage, with safe duplicate migration. Serialize activate/reject and disable competing UI actions during a request.
 
@@ -685,15 +685,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Concurrent create yields one pending record.
-- [ ] Activate/reject race has one outcome.
-- [ ] Migration preserves paid history and reports conflicts.
+- [x] Concurrent create yields one pending record.
+- [x] Activate/reject race has one outcome.
+- [x] Migration preserves paid history and reports conflicts.
 
 **Verification:** `npm run test -- --filter=api; npm run test:persistence -- --filter=pg-dialect`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Use independent DB connections; a single SQLite process alone cannot prove cross-replica safety.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. **Storage:** a unique partial index `subscriptions_pending ON subscriptions(user_id, plan) WHERE status='pending'` on both backends — SQLite in an additive, idempotent, no-version-bump migration block (like the audit rebuild) that first collapses pre-existing duplicate pendings to the newest per user and plan (paid `active`/`rejected` history untouched); PostgreSQL as versioned migration 22 (`postgres-subscriptions.sql`) with the same collapse statements. **Routes:** the customer request catches the PG unique violation into `409 already_subscribed` (the SQLite envelope serializes check+insert; a 4-way concurrent burst yields exactly one pending record); the admin decision now runs read-check-write in one `persistence.atomic` with a `status='pending'` CAS predicate, so a concurrent activate/reject race has exactly one outcome and the loser gets `409 subscription_decided` (new copy pair ar+en) or `not_found` once the decision committed. **UI:** `subscriptions.tsx` disables both controls while any decision is in flight. **Tests:** api.test burst+race (outcome-aware), `tests/subscription-migration.test.mjs` (new, registered) proving the legacy-SQLite collapse across two real processes plus the PG constraint refusing a duplicate insert, pg-dialect 0. Suites: api.test 0, subscription-migration 0, `test:persistence --filter=pg-dialect` 0, lint 0, typecheck 0. Cross-replica race proof rests on the unique index itself (SQLite cannot open two writers; the PG index is the hard guarantee).
 
 ## T23: Cash adjustment control policy
 
