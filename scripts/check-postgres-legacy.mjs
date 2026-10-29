@@ -11,7 +11,7 @@ mkdirSync(output, { recursive: true });
 // Cash, offers, customer ratings, email and the frozen API corpus have explicit pg-* counterparts.
 const suites = ['chat', 'pickup', 'safety', 'places', 'recipient', 'driver-scope',
   'driver-destination', 'promo', 'courier-block', 'exceptions', 'share', 'schedule',
-  'roads', 'route', 'booking-auth', 'driver-signup-alert', 'push-server', 'credit', 'referral', 'parcels', 'map'];
+  'roads', 'route', 'booking-auth', 'driver-signup-alert', 'push-server', 'credit', 'referral', 'parcels', 'map', 'change-destination'];
 const filter = process.argv.find(value => value.startsWith('--filter='))?.slice('--filter='.length);
 const selected = suites.filter(name => !filter || name === filter);
 if (!selected.length) throw new Error('No PostgreSQL legacy suite matches the filter');
@@ -54,6 +54,13 @@ function transform(name) {
   assert.ok(['heading', 'accuracy'].every(c => driverColumns.includes(c)), 'PostgreSQL driver location columns exist');
   assert.ok(['dropoff_lat', 'dropoff_lng'].every(c => orderColumns.includes(c)));`,
     'Column assertions inspect real PostgreSQL catalogs; SQLite legacy-rebuild evidence remains in the original SQLite suite. All HTTP tracking/map assertions remain unchanged.');
+  if (name === 'change-destination') {
+    text = text.replace("const { db, shutdown, server, promote } = await import('../server/main.ts');",
+      "const { db, shutdown, server, promote, drainOutbox } = await import('../server/main.ts');");
+    replaceFixture('const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`, realFetch);',
+      "const rawCall = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`, realFetch);\nconst call = async (...args) => { const result = await rawCall(...args); await drainOutbox(); return result; };",
+      'Destination requests notify through the durable outbox on PostgreSQL; each HTTP call drains committed notifications before the next fixture action, preserving the existing delivery assertions.');
+  }
   if (name === 'referral') replaceFixture(
     `db.prepare("UPDATE orders SET status = 'completed', completed_at = ? WHERE id = ?").run(Date.now(), o.id);`,
     `const assigned = await call('/jobs/' + o.id + '/accept', { token: driver.token, body: {} });

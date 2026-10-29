@@ -23,7 +23,7 @@ import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
-import { destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
+import { destinationAvailable, destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
@@ -267,7 +267,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
-  const destinationChange = persistence.backend === 'sqlite' && (viewer.id === r.customer_id || viewer.id === r.driver_id)
+  // T33: the pending destination card follows the capability, not the dialect.
+  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -824,7 +825,8 @@ async function deleteAccount(user: User) {
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
-    if (persistence.backend === 'sqlite') await run("UPDATE destination_changes SET original = '[]', dropoff_note = '', dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?", user.id);
+    // T33: the privacy scrub follows the capability on both backends (destination_changes hosts proposals).
+    if ((await destinationAvailable(persistence))) await run("UPDATE destination_changes SET original = '[]', dropoff_note = '', dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?", user.id);
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
@@ -1973,7 +1975,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
-      if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id);
+      await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id); // T33: both backends bind the rate snapshot
       await rideLifecycle.ensureAssignment(offered.id, user.id, 'dispatch');
       (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', offered.id, user.id));
       if (!carryingOffer.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
@@ -2001,7 +2003,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
   if (!changed) fail(409, 'already_taken');
-  if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id);
+  await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id); // T33: both backends bind the rate snapshot
   await rideLifecycle.ensureAssignment(order.id, user.id, 'legacy');
   (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id)); // settled, and this driver is busy now
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
@@ -2052,7 +2054,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     // A promo or credit never discounts more than the fare minus â‚ª1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
-    if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id);
+    await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id); // T33: both backends bind the rate snapshot
     await rideLifecycle.ensureAssignment(r.id, Number(f.id), 'legacy');
     (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id));
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', f.id));

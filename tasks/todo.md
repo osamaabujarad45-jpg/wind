@@ -999,7 +999,7 @@ Implementation children:
 
 ## T33: PostgreSQL destination-change parity
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Port existing customer request, driver consent, quote and commission-rate snapshot behavior with safe migration. Do not remove sqliteOnly until all lifecycle vectors pass.
 
@@ -1015,15 +1015,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Consent remains mandatory.
-- [ ] Accepted change preserves rate policy.
-- [ ] Concurrent accept/cancel and old imported rows behave safely.
+- [x] Consent remains mandatory.
+- [x] Accepted change preserves rate policy.
+- [x] Concurrent accept/cancel and old imported rows behave safely.
 
 **Verification:** `npm run test -- --filter=change-destination; npm run test:persistence -- --filter=pg-dialect`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Run equivalent vectors on SQLite and PostgreSQL.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. **Storage:** migration 26 `postgres-destinations.sql` — the `destination_changes` table in PostgreSQL types plus `orders.commission_rate` (idempotent ALTER); `SQLITE_ONLY_COLUMNS` emptied so the import populates the rate snapshot. **Module:** the `sqliteOnly` gate became `destinationAvailable` (capability follows the storage, either backend); the legacy `BEGIN IMMEDIATE`/`COMMIT` blocks became an `inTx` helper that **joins the HTTP envelope's transaction on PostgreSQL instead of nesting a second one** (the earlier naive port lost the propose UPDATE to the envelope boundary — caught by the new PG vector before commit); `ORDER BY rowid` became `created_at`. **Writers unified:** the three `commission_rate` assignment writers and the account-deletion privacy scrub now run on both backends; `toOrder`'s pending-card gate follows `destinationAvailable`. **Tests:** the SQLite suite passes unchanged (consent, assignment rate, atomic cash, retries, stale orders, privacy scrub); `change-destination` joined the PG legacy-parity list as its 22nd suite with a durable-outbox drain adaptation — the same vectors now run against real PostgreSQL. Suites: change-destination 0 (SQLite), full `test:persistence` 0 incl. 22/22 legacy suites, `npm test` 0, contracts 0, typecheck 0, lint 0 errors. `sqliteOnly` is gone from the module, closing P2.15.
 
 ### Checkpoint C11 — after T33
 

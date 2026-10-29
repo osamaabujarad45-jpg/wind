@@ -16,7 +16,8 @@ const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
-const SQLITE_ONLY_COLUMNS = new Set(['commission_rate']);
+// T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
+const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
 const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length

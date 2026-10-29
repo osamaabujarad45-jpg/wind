@@ -12,7 +12,9 @@ export const line={type:'LineString',coordinates:[pickup,dropoff]};
 export async function fixture(label='eligibility',extraEnv={}) {
   const {schema,database:db}=await freshPostgres(label);
   const dir=await mkdtemp(join(tmpdir(),'fastship-wp05-'));
-  const storage={DB_PATH:join(dir,'legacy.sqlite'),WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema,...extraEnv};
+  // The WP05 fixtures book many searching orders through HTTP; the T21 per-customer cap is a product
+  // policy for real customers, so fixtures raise it explicitly instead of tripping it.
+  const storage={DB_PATH:join(dir,'legacy.sqlite'),WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema,WIND_SEARCHING_LIMIT:extraEnv.WIND_SEARCHING_LIMIT??'200',...extraEnv};
   const a=await startApiProcess(storage),b=await startApiProcess(storage),call=apiCaller(()=>a.base),other=apiCaller(()=>b.base);
   let phone=598700000;
   const account=async(role='customer',vehicle='car')=>{
