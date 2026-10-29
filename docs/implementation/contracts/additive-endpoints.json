@@ -3,6 +3,22 @@
   "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
   "modules": [
     {
+      "packet": "T07-google-routing",
+      "source": "server/domain/google-routing.ts",
+      "registrar": "registerGoogleRouteRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/route/google", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "T05-routing",
+      "source": "server/domain/routing-status.ts",
+      "registrar": "registerRoutingStatusRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/admin/routing", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "WP05",
       "source": "server/domain/eligibility.ts",
       "registrar": "registerEligibilityRoutes",

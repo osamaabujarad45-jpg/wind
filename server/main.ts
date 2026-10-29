@@ -26,11 +26,14 @@ import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
 import { destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
+import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
+import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
+import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
-import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -177,14 +180,15 @@ async function settings(): Promise<Settings> {
   return { ...defaultSettings, ...stored };
 }
 
-function hashPassword(password: string) {
-  const salt = randomBytes(16).toString('hex');
-  return `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;
+// scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
+async function hashPassword(password: string) {
+  try { return await createPasswordHash(password); }
+  catch (error) { if (error instanceof PasswordBusyError) fail(503, 'password_busy'); throw error; }
 }
 
-function checkPassword(password: string, stored: string) {
-  const [salt, hash] = stored.split(':');
-  return timingSafeEqual(Buffer.from(hash, 'hex'), scryptSync(password, salt, 32));
+async function checkPassword(password: string, stored: string) {
+  try { return await verifyPassword(password, stored); }
+  catch (error) { if (error instanceof PasswordBusyError) fail(503, 'password_busy'); throw error; }
 }
 
 function newPassword(value: unknown, minimum = production || selfService ? 12 : 6) {
@@ -381,6 +385,7 @@ const identityKey = (kind: string, value: string | number) => `${kind}:${sha(Str
 // Entra External ID exchange: the app completes PKCE in the system browser, then trades the
 // ID token here. The server verifies signature/issuer/audience/expiry itself and only then
 // links or creates the Wind account — the password path above stays available during migration.
+type EntraClaims = Awaited<ReturnType<typeof verifyEntraIdToken>>;
 const entraExchange = async ({ body }: { body: Row }) => {
   if (!entra) fail(503, 'entra_unavailable');
   const idToken = typeof body.idToken === 'string' ? body.idToken : '';
@@ -401,9 +406,17 @@ const entraExchange = async ({ body }: { body: Row }) => {
     (await run('INSERT INTO entra_replay (token_hash, expires_at) VALUES (?, ?)', sha(claims!.tokenId || idToken), claims!.expiresAt));
   } catch { fail(401, 'invalid_token'); }
   (await limit(identityKey('entra', claims!.oid), 10, 10 * 60_000));
-  let user = (await one('SELECT * FROM users WHERE entra_oid = ?', claims!.oid));
-  const phone = claims!.phoneVerified && claims!.phone ? normalizePhone(claims!.phone) : null;
-  const email = claims!.emailVerified && claims!.email ? normalizeEmail(claims!.email) : null;
+  // The passwordless placeholder is derived before the write transaction; the bounded KDF must
+  // never run while one is open. A linked identity needs no new placeholder.
+  const known = (await one('SELECT id FROM users WHERE entra_oid = ?', claims!.oid));
+  const placeholder = known ? '' : await hashPassword(randomBytes(32).toString('hex'));
+  return persistence.atomic({ purpose: 'http_public' }, () => entraAccount(claims!, body, placeholder));
+};
+
+async function entraAccount(claims: EntraClaims, body: Row, placeholder: string) {
+  let user = (await one('SELECT * FROM users WHERE entra_oid = ?', claims.oid));
+  const phone = claims.phoneVerified && claims.phone ? normalizePhone(claims.phone) : null;
+  const email = claims.emailVerified && claims.email ? normalizeEmail(claims.email) : null;
   if (body.email !== undefined) {
     const enteredEmail = normalizeEmail(String(body.email));
     if (!enteredEmail) fail(400, 'invalid_email');
@@ -423,7 +436,7 @@ const entraExchange = async ({ body }: { body: Row }) => {
       if (user.status === 'blocked') fail(403, 'blocked');
       if (user.role === 'admin' || user.entra_oid) fail(403, 'entra_link_required');
       const linked = await run(`UPDATE users SET entra_oid = ? WHERE id = ? AND entra_oid IS NULL AND role <> 'admin' AND status <> 'blocked'
-        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND email_verified_at IS NOT NULL))`, claims!.oid, user.id, phone, email);
+        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND email_verified_at IS NOT NULL))`, claims.oid, user.id, phone, email);
       if (!linked.changes) fail(403, 'entra_link_required');
     } else {
       if (!registrationOpen) fail(403, 'registration_closed');
@@ -438,10 +451,11 @@ const entraExchange = async ({ body }: { body: Row }) => {
       const role: Role = requestedRole === 'driver' ? 'driver' : 'customer';
       const vehicle = role === 'driver' ? (vehicles.includes(body.vehicle ?? 'car') ? (body.vehicle ?? 'car') as Vehicle : fail(400, 'invalid_vehicle')) : null;
       const plate = role === 'driver' ? text(body.plate, 12, false) || null : null;
-      const name = claims!.name ?? text(body.name, 60);
+      const name = claims.name ?? text(body.name, 60);
+      if (!placeholder) fail(409, 'entra_link_required'); // raced with a linked-row removal: retry the exchange
       const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version, entra_oid, phone_verified_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        registrationPhone, name, hashPassword(randomBytes(32).toString('hex')), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
-        selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims!.oid,
+        registrationPhone, name, placeholder, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+        selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims.oid,
         phone === registrationPhone ? Date.now() : null, email ? Date.now() : null)).lastInsertRowid);
       if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
       user = (await one('SELECT * FROM users WHERE id = ?', id))!;
@@ -456,7 +470,7 @@ const entraExchange = async ({ body }: { body: Row }) => {
   if (!contactAllowed(user)) fail(403, 'verification_required');
   if (production && !selfService && !user.phone_verified_at) fail(403, 'phone_not_verified');
   return (await startSession(user.id));
-};
+}
 
 // ---------- routes ----------
 
@@ -543,12 +557,16 @@ route('POST', '/api/auth/register', async ({ body }) => {
   // ponytail: an unverified address still blocks a second sign-up with it; taking it over would silently strip email
   // sign-in from the first account while most addresses are unverified. Support edits the address if it is squatted.
   if (email && (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE', email))) fail(409, 'email_taken');
-  const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
-    selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
-  // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
-  if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
-  const session = (await startSession(id));
+  const hashed = await hashPassword(password);
+  // The KDF stays outside this short transaction; the user, its alert and its session commit together.
+  const [id, session] = await persistence.atomic({ purpose: 'http_public' }, async () => {
+    const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      phone, name, hashed, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+      selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
+    // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
+    if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
+    return [id, await startSession(id)] as const;
+  });
   if (!emailReady || !email) return session;
   // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
   const account = (await one('SELECT * FROM users WHERE id = ?', id))!;
@@ -564,7 +582,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
   const r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
-  if (!r || !checkPassword(String(body.password ?? ''), r.password)) {
+  if (!r || !await checkPassword(String(body.password ?? ''), r.password)) {
     (await limit(key, 5, 10 * 60_000));
     fail(401, 'wrong_credentials');
   }
@@ -693,7 +711,7 @@ route('POST', '/api/auth/reset/code', async ({ body }) => {
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', async ({ body }) => {
-  const password = hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
+  const password = await hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
   // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
   const r = (await accountFor(body.identifier)) ?? fail(400, 'wrong_email_code');
   try { (await useCode(r, 'reset', body.code)); }
@@ -733,12 +751,13 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
   (await limit(key, 5, 10 * 60_000, false));
   const stored = (await one('SELECT password FROM users WHERE id = ?', user.id))!.password;
-  if (!checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, 'wrong_password'); }
-  const password = hashPassword(newPassword(body.password));
+  if (!await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, 'wrong_password'); }
+  const password = await hashPassword(newPassword(body.password));
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    (await run('UPDATE users SET password = ? WHERE id = ?', password, user.id));
+    // Re-check the exact credential the KDF approved: a concurrent change must not be overwritten.
+    if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', password, user.id, stored)).changes) fail(401, 'wrong_password');
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
     (await run('DELETE FROM request_limits WHERE key = ?', key));
     (await persistence.exec('COMMIT'));
@@ -1396,7 +1415,7 @@ async function partnerUser(): Promise<User> {
   let row = (await one('SELECT * FROM users WHERE phone = ?', phone));
   if (!row) {
     const id = Number((await run("INSERT INTO users (phone, name, password, role, status, vehicle, created_at) VALUES (?, 'سوقنا', ?, 'customer', 'active', NULL, ?)",
-      phone, hashPassword(randomBytes(32).toString('hex')), Date.now())).lastInsertRowid);
+      phone, await hashPassword(randomBytes(32).toString('hex')), Date.now())).lastInsertRowid);
     row = (await one('SELECT * FROM users WHERE id = ?', id));
   }
   return (await toUser(row!));
@@ -1431,14 +1450,14 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
     }
     return (await getOrder(existing.order_id, (await partnerUser())));
   }
-  (await persistence.exec('BEGIN'));
-  try {
+  const user = await partnerUser(); // its one-time placeholder KDF must precede the transaction
+  // Same short atomic boundary the HTTP envelope used, including the partner_api audit purpose.
+  return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
     const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
-    const order = (await createOrder((await partnerUser()), { ...input, service: 'parcel' }));
+    const order = (await createOrder(user, { ...input, service: 'parcel' }));
     (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
-    (await persistence.exec('COMMIT'));
     return order;
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  });
 }, true);
 
 async function partnerOrder(req: IncomingMessage, id: number) {
@@ -2279,6 +2298,11 @@ async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, re
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
+let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 'not_checked' | 'route_unavailable' | null } =
+  { healthy: null, checkedAt: null, reason: 'not_checked' };
+const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
+registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
+  reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
 type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
 const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
@@ -2290,19 +2314,28 @@ const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpo
 const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking checkpoint (10 parallel OSRM calls, cached)
 
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
-  const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
-    { signal: AbortSignal.timeout(Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000)) });
-  if (!res.ok) fail(503, 'route_unavailable');
-  const j: any = await res.json();
-  if (j?.code === 'NoRoute') return [];
-  // An upstream error must not become a cached success containing null metrics or a line MapLibre cannot draw.
-  const valid = (r: any) => typeof r?.distance === 'number' && Number.isFinite(r.distance) && r.distance >= 0
-    && typeof r.duration === 'number' && Number.isFinite(r.duration) && r.duration >= 0
-    && Array.isArray(r.geometry?.coordinates) && r.geometry.coordinates.length >= 2
-    && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
-  if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
-  return j.routes
-    .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+  try {
+    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
+      { signal: AbortSignal.timeout(routingTimeout) });
+    if (!res.ok) fail(503, 'route_unavailable');
+    const j: any = await res.json();
+    if (j?.code === 'NoRoute') {
+      routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
+      return [];
+    }
+    // An upstream error must not become a cached success containing null metrics or a line MapLibre cannot draw.
+    const valid = (r: any) => typeof r?.distance === 'number' && Number.isFinite(r.distance) && r.distance >= 0
+      && typeof r.duration === 'number' && Number.isFinite(r.duration) && r.duration >= 0
+      && Array.isArray(r.geometry?.coordinates) && r.geometry.coordinates.length >= 2
+      && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
+    if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
+    routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
+    return j.routes
+      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+  } catch (error) {
+    routingHealth = { healthy: false, checkedAt: Date.now(), reason: 'route_unavailable' };
+    throw error;
+  }
 }
 
 // Best road route (SPEC-checkpoint-routing.md): OSRM's fastest (car profile, multi-level Dijkstra), unless it crosses a
@@ -2386,6 +2419,11 @@ route('GET', '/api/route', async ({ user, query }) => {
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
   return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
 });
+
+// T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
+// module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.
+const googleRoutes = createGoogleRoutes({ apiKey: process.env.GOOGLE_MAPS_SERVER_KEY });
+registerGoogleRouteRoutes(route, googleRoutes, { fail, limit, budgetKey: id => identityKey('google-route', id) });
 
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
@@ -2696,15 +2734,18 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params }) => {
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
   const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   const password = randomBytes(12).toString('base64url');
-  const hashed = hashPassword(password);
-  (await persistence.exec('BEGIN IMMEDIATE'));
-  try {
-    (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
-    (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
-    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
-      user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true }), Date.now()));
-    (await persistence.exec('COMMIT'));
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  const hashed = await hashPassword(password);
+  // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
+  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, async () => {
+    (await persistence.exec('BEGIN IMMEDIATE'));
+    try {
+      (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
+      (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+      (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
+        user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true }), Date.now()));
+      (await persistence.exec('COMMIT'));
+    } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  });
   return { password };
 });
 
@@ -2882,6 +2923,16 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // Phone issuance commits its budget/challenge before the detached provider call, then rechecks
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
+    } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/password|admin\/users\/\d+\/password)$/.test(url.pathname)
+        || /^\/api\/partner\//.test(url.pathname))) {
+      // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
+      // envelope would hold a pooled connection and a transaction for the whole hash. Entra and
+      // partner create passwordless placeholder credentials, so they take the same path.
+      if (body.commandId !== undefined) fail(400, 'unsupported_command');
+      if (persistence.backend === 'postgres' && /^\/api\/partner\/orders(?:\/|$)/.test(url.pathname)
+        && !(await durableProtocolAvailable(persistence))) fail(503, 'durable_schema_required');
+      payload = await invoke();
     } else if (req.method === 'POST' && /^\/api\/orders\/[^/]+\/payments(?:\/refund)?$/.test(url.pathname)) {
       // Payment create/refund call the provider between their own short reserve and settle
       // transactions (WP14). They own their idempotency instead of an HTTP-long lock.
@@ -2938,7 +2989,7 @@ export async function shutdown() {
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }
-  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await persistence.close(); db.close(); }
+  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
 }
 
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.
@@ -2977,7 +3028,7 @@ if (import.meta.main) {
       const name = text(process.argv[5], 60), password = newPassword(readFileSync(0, 'utf8').trimEnd());
       if ((await one('SELECT id FROM users WHERE phone = ?', phone))) fail(409, 'phone_taken');
       (await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, phone_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
+        phone, name, await hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
       console.log('Verified account enrolled; drivers still require approval');
     } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
     finally { db.close(); }

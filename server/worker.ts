@@ -8,9 +8,11 @@ import { nativeSuppression, PUSH_KINDS } from './domain/native-push.ts';
 import { Dispatch } from './domain/dispatch.ts';
 import { Eligibility } from './domain/eligibility.ts';
 import { logServerError } from './domain/diagnostics.ts';
+import { createPayments, type Payments } from './domain/payments.ts';
 
 type Work = Row & { event_id: string; destination: string; lease_owner: string; payload: Row };
 type WorkerOptions = { leaseMs?: number; maxAttempts?: number; baseBackoffMs?: number;
+  payments?: Payments; refundSweepLimit?: number; refundStaleMs?: number;
   transport?: (subscription: Row, message: string, ttl: number) => Promise<void>;
   expoTransport?: (token: Row, message: string, ttl: number) => Promise<void>;
   afterPublish?: (work: Work) => Promise<void> };
@@ -24,6 +26,9 @@ export class DurableWorker {
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
   private readonly baseBackoff: number;
+  private readonly refundSweepLimit: number;
+  private readonly refundStaleMs: number;
+  private readonly payments: Payments;
   readonly db: Persistence;
   private readonly options: WorkerOptions;
   constructor(db: Persistence, options: WorkerOptions = {}) {
@@ -32,9 +37,15 @@ export class DurableWorker {
     this.leaseMs = options.leaseMs ?? 30_000;
     this.maxAttempts = options.maxAttempts ?? 8;
     this.baseBackoff = options.baseBackoffMs ?? 1_000;
+    this.refundSweepLimit = options.refundSweepLimit ?? 20;
+    this.refundStaleMs = options.refundStaleMs ?? 60_000;
+    this.payments = options.payments ?? createPayments(db, (status, message) => { throw Object.assign(new Error(message), { status }); });
     for (const bound of [this.leaseMs,this.maxAttempts,this.baseBackoff])
       if (!Number.isSafeInteger(bound) || bound < 1) throw new Error('Invalid worker bounds');
+    for (const bound of [this.refundSweepLimit,this.refundStaleMs])
+      if (!Number.isSafeInteger(bound) || bound < 0) throw new Error('Invalid worker bounds');
     if (this.maxAttempts > 20 || this.leaseMs > 300_000 || this.baseBackoff > 60_000) throw new Error('Worker bounds exceeded');
+    if (this.refundSweepLimit < 1 || this.refundSweepLimit > 100 || this.refundStaleMs > 3_600_000) throw new Error('Worker bounds exceeded');
   }
   async claim(): Promise<Work | undefined> {
     return this.db.transaction(async () => {
@@ -121,8 +132,13 @@ export class DurableWorker {
     const fail = (status: number, message: string): never => { throw Object.assign(new Error(message), { status }); };
     return new Dispatch(this.db, new Eligibility(this.db, fail), fail).processExpiries();
   }
+  /** Bounded refund recovery: only stale reservations, one CAS-claimed provider retry per row. */
+  async processRefundReconciliation(): Promise<number> {
+    return this.payments.reconcileRefunds(this.refundSweepLimit, this.refundStaleMs);
+  }
   async runOnce() {
     try { await this.processDispatchExpiries(); } catch (error) { logServerError('outbox_worker_failed', error); }
+    try { await this.processRefundReconciliation(); } catch (error) { logServerError('outbox_worker_failed', error); }
     const work=await this.claim(); if (!work) return false;
     try {
       if (await this.db.one('SELECT event_id FROM consumer_inbox WHERE event_id=?::uuid AND destination=?',work.event_id,work.destination)) {

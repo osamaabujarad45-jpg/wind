@@ -198,7 +198,7 @@ Implementation children (split after the frozen route-inventory gate exposed the
 
 ## T07: Google routing proxy
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Implement a narrow authenticated proxy with validated coordinates, minimal documented field mask, timeouts and redacted errors. Use fake upstream fixtures and explicit provider metadata; never accept arbitrary upstream URLs.
 
@@ -221,11 +221,15 @@ Implementation children (split after the frozen route-inventory gate exposed the
 
 **Manual / failure-case check:** Server Routes credentials must never appear in app config, client bundles or logs.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete (fixture tier). Delegate worktree commit `db3e5b4` (branch t3/41a545fa, DeepSeek V4.1 Flash 1017 via Modal dedicated) cherry-picked; leader wired the HTTP boundary as registrar `registerGoogleRouteRoutes` in the domain module (the frozen main.ts route inventory requires additive modules to own their `route(` declarations) and listed it in additive-endpoints.json; suite registered in scripts/run-tests.mjs. Commands exit 0 local fallback: google-routing suite (registered run), contracts (90 installed + 75 additive boundaries incl. anonymous 401 on /api/route/google), pg-contracts on PostgreSQL (same counts), lint, typecheck. Key never leaves server env (`GOOGLE_MAPS_SERVER_KEY`); no client config or bundle carries it. Live activation remains an operator gate (restricted key + budget, maps-contract.md).
 
 ## T08: Paid routing budgets
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T08.1: Server-side budgets, kill switch and trigger policy (server/domain/google-routing.ts + tests) — complete with T07 above; fake-call count assertions cover many-user, movement, navigation-remount and outage sequences; exhaustion returns typed limits without retry storms; global cap documented as single-instance-owned with `request_limits`/`google_usage` upgrade path.
+- [ ] T08.2: Client trigger gating in src/road.tsx (foreground/movement-based reroute only; stationary/background polls must not bill) — lands with T13/T14 renderer integration.
 
 **Description / implementation:** Bound concurrency and per-user/global requests; add a kill switch and foreground/movement-based reroute triggers. Do not inherit OSRM caching policy for Google. Specify multi-instance budget ownership before scaling.
 
@@ -248,7 +252,7 @@ Implementation children (split after the frozen route-inventory gate exposed the
 
 **Manual / failure-case check:** Use fake-call counts for many users, navigation remounts, movement and outages; no unapproved billable load.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** T08.1 complete with T07 (server budgets fake-fixture tested, no billable load: GOOGLE_MAPS_SERVER_KEY unset in every run, kill switch default-off). T08.2 and the parent stay open until the client trigger gating lands with T13/T14.
 
 ## T09: Google native build setup
 
@@ -828,7 +832,7 @@ Implementation children:
 
 ## T28: Refund uncertain outcomes
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Keep pending/timeout unresolved and reserve refundable amount until definitive outcome. Add stable provider idempotency and bounded reconciliation; compare-and-set callbacks and retries.
 
@@ -851,7 +855,7 @@ Implementation children:
 
 **Manual / failure-case check:** Fake provider accepted-then-timeout, delayed success, duplicate request and process restart.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete. Delegate worktree commit `c366293` (branch t3/ac2e9bb3, DeepSeek V4.1 Flash 1017 via Modal dedicated) cherry-picked unchanged; failing-first regression reproduced pre-fix (timeout row terminal `rejected`, second full refund reached the provider) and post-fix probe shows reservation held (`requested`, retry 400 refund_exceeds_capture, one provider call). Leader reran on master under the PG lock: payments suite exit 0 (SQLite+PG runner) and pg-contracts 90+75 boundaries exit 0; lint/typecheck 0. Worker sweep wired into DurableWorker.runOnce (bounded limit/age, CAS claims); production sweep is a no-op until a real provider adapter exists (payments gate stays closed). Carry-forward notes: rows written `rejected` under the old contract are not retro-reserved — reconcile against provider statements before any payment cutover (added to T34/T50 checklists); conflicting definitive answers for one idempotency key settle first-wins (`shortcut:` comment in payments.ts, upgrade on a PSP statement feed).
 
 ## T29: Live order ledger posting
 
@@ -1028,7 +1032,7 @@ Implementation children:
 
 **Verification:** `npm run test:persistence; npm run test:contracts`. Execute each semicolon-separated command separately; common checks above also apply.
 
-**Manual / failure-case check:** Fixtures first; real snapshots need authorized access and redacted evidence.
+**Manual / failure-case check:** Fixtures first; real snapshots need authorized access and redacted evidence. Reconcile pre-T28 `rejected` refund rows against provider statements inside the rehearsal.
 
 **Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
 
@@ -1506,7 +1510,7 @@ Implementation children:
 
 **Verification:** `npm test; npm run test:persistence; npm run test:contracts; npm run test:readiness`. Execute each semicolon-separated command separately; common checks above also apply.
 
-**Manual / failure-case check:** No automatic production cutover; approvals concern final concrete candidate/config/evidence.
+**Manual / failure-case check:** No automatic production cutover; approvals concern final concrete candidate/config/evidence. Pre-T28 `rejected` refund rows must be reconciled against provider statements before the payments gate opens.
 
 **Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
 
