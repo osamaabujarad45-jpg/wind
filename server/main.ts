@@ -19,7 +19,7 @@ import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/priv
 import { Ledger, registerLedgerRoutes } from './domain/ledger.ts';
 import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
-import { NativePush, nativePushAvailable, registerNativePushRoutes } from './domain/native-push.ts';
+import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
@@ -915,7 +915,7 @@ const flushPush = () => persistence.flushEffects();
 async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string) {
   const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
   for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds)))
-    void persistence.detached(() => deliverCapped(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided', 'attention', 'safety', 'destination_request', 'destination_accepted', 'destination_declined'].includes(kind) ? 'high' : 'normal',
+    void persistence.detached(() => deliverCapped(s, JSON.stringify({ kind, order, url, lang: s.lang }), URGENT_KINDS.includes(kind) ? 'high' : 'normal',
       kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600));
 }
 

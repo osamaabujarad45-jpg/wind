@@ -39,8 +39,11 @@ export const straightLineEta: EtaProvider = async (from, to) => ({ seconds: Math
 
 export async function dispatchAvailable(db: Persistence): Promise<boolean> {
   if (db.backend !== 'postgres') return false;
-  const tables = await db.one("SELECT to_regclass('dispatch_rounds') AS rounds, to_regclass('dispatch_offers') AS offers, to_regclass('schema_migrations') AS migrations");
-  return !!(tables?.rounds && tables.offers && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=13'));
+  // Request-scoped: list endpoints call this once per row, and the answer cannot change mid-request.
+  return db.memo('dispatchAvailable', async () => {
+    const tables = await db.one("SELECT to_regclass('dispatch_rounds') AS rounds, to_regclass('dispatch_offers') AS offers, to_regclass('schema_migrations') AS migrations");
+    return !!(tables?.rounds && tables.offers && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=13'));
+  });
 }
 
 export class Dispatch {

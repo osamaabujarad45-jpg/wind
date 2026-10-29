@@ -27,8 +27,11 @@ export type DeclaredScopeInput = {
 
 export async function scopeAvailable(db: Persistence): Promise<boolean> {
   if (db.backend !== 'postgres') return false;
-  const tables = await db.one("SELECT to_regclass('order_declared_scope') AS scope, to_regclass('custody_records') AS custody, to_regclass('schema_migrations') AS migrations");
-  return !!(tables?.scope && tables.custody && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=15'));
+  // Request-scoped: list endpoints call this once per row, and the answer cannot change mid-request.
+  return db.memo('scopeAvailable', async () => {
+    const tables = await db.one("SELECT to_regclass('order_declared_scope') AS scope, to_regclass('custody_records') AS custody, to_regclass('schema_migrations') AS migrations");
+    return !!(tables?.scope && tables.custody && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=15'));
+  });
 }
 
 /** The declared row for an order, or null when migration 15 has not run. */

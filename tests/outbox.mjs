@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { freshPostgres,connect } from './pg-support.mjs';
 import { DurableWorker } from '../server/worker.ts';
 import { enqueuePush } from '../server/domain/events.ts';
+import { PUSH_KINDS } from '../server/domain/native-push.ts';
 
 const booking=`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,detail,option,loading_help,price,status,created_at,updated_at)
  VALUES(?,'parcel',0,'ramallah','nablus','PRIVATE_ADDRESS','PRIVATE_ADDRESS','0599800001','PRIVATE_DETAIL','small',0,20,'searching',?,?)`;
@@ -104,6 +105,14 @@ if (process.argv[2]==='child') {
     // Alter only disposable fixture event time to simulate a long outage.
     await db.run('UPDATE domain_events SET occurred_at=? WHERE id=?::uuid',Date.now()-4_000_000,expired.event_id);
     await drained(worker);assert.equal((await db.one('SELECT status FROM outbox WHERE event_id=?::uuid AND destination=?',expired.event_id,expired.destination)).status,'obsolete');
+    // Every kind the API may enqueue passes the worker's allow-list: an unknown kind would retry eight
+    // times and park in review as attempts_exhausted, so delivery is the only acceptable end state here.
+    for (const kind of PUSH_KINDS) {
+      const row=await notification(0,kind);
+      await drained(worker);
+      const done=await db.one('SELECT status,last_error FROM outbox WHERE event_id=?::uuid AND destination=?',row.event_id,row.destination);
+      assert.equal(done.status,'delivered',`${kind} ended as ${done.status}/${done.last_error}; the worker allow-list must contain every kind the API enqueues`);
+    }
     // Graceful drain completes current work, then stops claiming with the persisted backlog intact.
     await notification(order);await notification(order);
     const abort=new AbortController();let sent=0;

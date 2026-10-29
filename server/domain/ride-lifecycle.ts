@@ -21,8 +21,11 @@ export const boardingEnabled = (env: NodeJS.ProcessEnv = process.env) =>
 
 export async function rideLifecycleAvailable(db: Persistence): Promise<boolean> {
   if (db.backend !== 'postgres') return false;
-  const tables = await db.one("SELECT to_regclass('ride_lifecycle') AS lifecycle, to_regclass('ride_boarding_attempts') AS attempts, to_regclass('schema_migrations') AS migrations");
-  return !!(tables?.lifecycle && tables.attempts && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=14'));
+  // Request-scoped: list endpoints call this once per row, and the answer cannot change mid-request.
+  return db.memo('rideLifecycleAvailable', async () => {
+    const tables = await db.one("SELECT to_regclass('ride_lifecycle') AS lifecycle, to_regclass('ride_boarding_attempts') AS attempts, to_regclass('schema_migrations') AS migrations");
+    return !!(tables?.lifecycle && tables.attempts && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=14'));
+  });
 }
 
 const haversineMeters = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {

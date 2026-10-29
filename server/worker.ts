@@ -4,7 +4,7 @@ import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
 import { encrypt, pushEndpoint, vapid } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
-import { nativeSuppression } from './domain/native-push.ts';
+import { nativeSuppression, PUSH_KINDS } from './domain/native-push.ts';
 import { Dispatch } from './domain/dispatch.ts';
 import { Eligibility } from './domain/eligibility.ts';
 import { logServerError } from './domain/diagnostics.ts';
@@ -73,9 +73,7 @@ export class DurableWorker {
     const user=await this.db.one("SELECT * FROM users WHERE id=? AND status='active'",userId);
     if (!user) return;
     const event=work.payload, kind=event.kind;
-    if (!['assigned','at_pickup','in_transit','completed','returned','message','job','released','cancelled','offer',
-      'offer_accepted','on_hold','returning','decided','approved','support','cash','attention','safety','plan'].includes(kind))
-      throw new Error('invalid_notification');
+    if (!PUSH_KINDS.includes(kind)) throw new Error('invalid_notification');
     if (event.path?.startsWith('/admin') && user.role!=='admin') return;
     if (event.path?.startsWith('/driver') && user.role!=='driver') return;
     const ttl=kind==='job' ? 300 : kind==='offer' ? 600 : 3600;
@@ -111,30 +109,12 @@ export class DurableWorker {
     const match = /^webpush:(\d+):([a-f0-9]{64})$/.exec(work.destination);
     if (!match) throw new Error('invalid_destination');
     const userId=Number(match[1]);
-    const user=await this.db.one("SELECT * FROM users WHERE id=? AND status='active'",userId);
-    if (!user) return;
-    const event=work.payload, kind=event.kind;
-    if (!['assigned','at_pickup','in_transit','completed','returned','message','job','released','cancelled','offer',
-      'offer_accepted','on_hold','returning','decided','approved','support','cash','attention','safety','plan'].includes(kind))
-      throw new Error('invalid_notification');
-    if (event.path?.startsWith('/admin') && user.role!=='admin') return;
-    if (event.path?.startsWith('/driver') && user.role!=='driver') return;
-    const ttl=kind==='job' ? 300 : kind==='offer' ? 600 : 3600;
-    const remaining=Math.floor((work.occurred_at+ttl*1000-Date.now())/1000);
-    if (remaining<=0) return;
-    if (work.order_id) {
-      const order=await this.db.one('SELECT * FROM orders WHERE id=?',work.order_id);
-      if (!order || event.assignmentEpoch!==order.assignment_epoch) return;
-      if (kind==='job' || kind==='offer') {
-        if (order.status!=='searching' || (order.scheduled_for && (order.scheduled_for<=Date.now() || order.scheduled_for>Date.now()+30*60_000))) return;
-        if (kind==='job' && user.role!=='driver') return;
-      } else if (user.role!=='admin' && userId!==order.customer_id && userId!==order.driver_id) return;
-      if (kind==='offer_accepted' && (order.status!=='assigned' || userId!==order.driver_id)) return;
-      if (['assigned','at_pickup','in_transit','completed','returned','on_hold','returning','cancelled'].includes(kind) && order.status!==kind) return;
-    }
-    const subscriptions=await this.db.all('SELECT * FROM push_subscriptions WHERE user_id=?',userId);
-    const subscription=subscriptions.find(s=>subscriptionKey(s.endpoint)===match[2]);
-    return subscription ? { subscription, remaining } : undefined;
+    // One authority check for both transports: validate() owns the kind and order guards.
+    const valid=await this.validate(work,userId);
+    if (!valid) return;
+    const subscription=(await this.db.all('SELECT * FROM push_subscriptions WHERE user_id=?',userId))
+      .find(s=>subscriptionKey(s.endpoint)===match[2]);
+    return subscription ? { subscription, remaining: valid.remaining } : undefined;
   }
   /** WP10 offer expiry shares the acceptance version boundary; restart-safe and idempotent. */
   async processDispatchExpiries(): Promise<number> {
