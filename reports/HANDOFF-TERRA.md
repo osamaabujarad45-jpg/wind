@@ -46,7 +46,7 @@ Two were actionable and are fixed: the fixed `height: 56` could clip at a large 
 
 Rejected with code evidence:
 
-- **OSRM URL**: the committed quote and track paths catch a road-route failure and use the marked estimate (`/api/price` catches around `roadRoute`; the track call sites resolve to null), so a bad internal FQDN does not break booking or tracking. `/api/route` itself can still 503. The internal `ingress.fqdn` still needs one staging what-if check. A concurrent uncommitted change adds a public-router fallback; it is not part of `d99ed22` and was not reviewed here.
+- **OSRM URL**: the committed quote and track paths catch a road-route failure and use the marked estimate (`/api/price` catches around `roadRoute`; the track call sites resolve to null), so a bad internal FQDN does not break booking or tracking. `/api/route` itself can still 503. The internal `ingress.fqdn` still needs one staging what-if check. The finished session's implicit public-router fallback and unmarked chord were removed in `0302c2d`.
 - **SQLite rebuild is dead code**: `git log -S 'order_id INTEGER NOT NULL REFERENCES orders(id)'` shows `c0a5c37` removed that exact clause; `reports/verify-2026-10-29/migrate-audit.mjs` rebuilds a legacy table and inserts a NULL-order audit row. The branch is real and tested.
 - **`USER_UPDATED` outside a transaction**: the insert sits inside `editUser`'s `BEGIN IMMEDIATE` … `COMMIT` block, alongside the user update and courier-release writes.
 - **Migration 21 ordering/idempotency**: `initializePostgres` applies base migration 3 first, then 21; `ALTER COLUMN … DROP NOT NULL` is a no-op on an already-nullable column. The rehearsal CLI also goes through `initializePostgres`.
@@ -55,11 +55,11 @@ Rejected with code evidence:
 
 Deployment traps, not code defects: the `osrm-graph` share must be populated before activation (an empty share crash-loops, already documented), and the internal OSRM FQDN must be confirmed in a staging what-if.
 
-### Concurrent uncommitted changes (not reviewed here)
+### Concurrent session integrated (`0302c2d`)
 
-Before `d99ed22` was committed, the tree also contained uncommitted edits outside this audit: `Dockerfile` (adds `OSRM_URL=https://router.project-osrm.org`), `server/main.ts` (public OSRM fallback, 6 s timeout, 15 s GPS grace), `src/app/book.tsx` (drops the client `servedCity` guard) and `src/model.ts` (service radius 15 → 20 km, env-overridable); `scripts/check-phone-tests.mjs` has since changed too. They were left untouched and not committed. Review/decide them separately; the service-radius change is a product decision.
+The finished session's useful changes were integrated: last-known GPS as the pin start, a shared 20 km service bound on client and server, `public/` map serving when `WEB_ROOT` is unset, the phone-test PATH, and the opt-in SQLite `nolock` path with a single-writer warning. The review's unsafe parts were corrected: the implicit public OSRM fallback and unmarked straight chord are removed (the quote/booking estimate path is unchanged), the client `servedCity` guard is restored, both sides read the same `SERVICE_KM`, and the 15 s GPS grace comment now states what it does. Full `npm test` (85 suites), `test:persistence`, typecheck and lint pass.
 
-The follow-up review found two of those edits are not safe to commit as-is: `fallbackRoute` returns a straight chord that is not marked `estimated`, so `book.tsx` would draw it as a road route and `quotes.ts` would store driving provenance; and dropping the client `servedCity` guard means the server rejects an out-of-area pin only at submit (`outside_area`). Fix the fallback marking/guard, or keep the original rejection path, before committing them.
+The 20 km radius is a product change from the earlier 15 km; it is not field-proven and should be confirmed against the intended operating area.
 
 
 ---
