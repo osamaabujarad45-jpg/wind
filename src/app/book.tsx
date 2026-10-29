@@ -1,14 +1,16 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, orderRequest, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { browserPickupWatch, findPickup, withPickupPermission } from '../customer-location';
-import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { browserPickupWatch, cachedPickup, findPickup, withPickupPermission } from '../customer-location';
+import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { type PlaceCandidate } from '../place-search';
+import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
 import { roadPath } from '../map-math';
 import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
@@ -32,6 +34,9 @@ export default function Book() {
   const routeChosen = pickupChosen && dropoffChosen;
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
+  const gpsAt = useRef(0);
+  const pinRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => pinRequest.current?.abort(), []);
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
   const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
@@ -108,8 +113,8 @@ export default function Book() {
         : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
       if (request.signal.aborted) return;
-      if (result.city !== pickupCity) setPickupNote('');
       setPickupCity(result.city); setPickupChosen(true);
+      gpsAt.current = Date.now();
       setPickupPoint(result.point); setGpsPoint(result.point);
       setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
     } catch (e) {
@@ -329,9 +334,17 @@ export default function Book() {
             const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
             const openPin = async (w: 'pickup' | 'dropoff') => {
               haptic.tap(); setLocationError('');
-              if (w === 'pickup' && !pickupPoint && !gpsPoint && Platform.OS !== 'web') {
-                try { const last = await Location.getLastKnownPositionAsync(); if (last?.coords) setGpsPoint({ latitude: last.coords.latitude, longitude: last.coords.longitude }); } catch {}
+              pinRequest.current?.abort();
+              const request = new AbortController(); pinRequest.current = request;
+              if (w === 'pickup' && !pickupPoint && Platform.OS !== 'web') {
+                if (Date.now() - gpsAt.current > 30_000) {
+                  setGpsPoint(null);
+                  const point = await cachedPickup(() => Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 100 }), request.signal);
+                  if (request.signal.aborted) return;
+                  if (point) setGpsPoint(point); // Revalidate cached hints on every opening; only live fixes set gpsAt.
+                }
               }
+              if (request.signal.aborted) return;
               setPinFor(w);
             };
             return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { void openPin(which); }}>
@@ -468,19 +481,24 @@ export default function Book() {
         setPinFor(null);
       }} />}
 
-    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? (pickupChosen ? pickupCity : null) : (dropoffChosen ? dropoffCity : null)}
+    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff}
       places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
         .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {
         haptic.tap();
-        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
-        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); edit('dropoffNote', setDropoffNote)(note); }
+        // A saved-place tap is explicit but must not silently drop a confirmed pin in the same city.
+        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(pickupCity === id ? pickupPoint : null); edit('pickupNote', setPickupNote)(note); }
+        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(dropoffCity === id ? dropoffPoint : null); edit('dropoffNote', setDropoffNote)(note); }
         setPicker(null);
       }}
-      onClose={() => setPicker(null)} onPick={id => {
+      onClose={() => setPicker(null)}
+      selectedPlace={picker === 'pickup' ? (pickupChosen ? { city: pickupCity, note: pickupNote, point: pickupPoint } : null) : (dropoffChosen ? { city: dropoffCity, note: dropoffNote, point: dropoffPoint } : null)}
+      outside={locationError === c.pinOutsideArea}
+      text={{ label: c.searchLabel, empty: c.searchEmpty, offline: c.searchOffline, pinKept: c.searchPinKept, pinCleared: c.searchPinCleared, apply: c.searchApply }}
+      onConfirm={place => {
         haptic.tap();
-        if (picker === 'pickup') { if (id !== pickupCity) setPickupNote(''); setPickupCity(id); setPickupChosen(true); setPickupPoint(null); }
-        else { if (id !== dropoffCity) setDropoffNote(''); setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); }
+        if (picker === 'pickup') { if (place.city !== pickupCity) setPickupNote(''); setPickupCity(place.city); setPickupChosen(true); setPickupPoint(place.point); if (place.note) edit('pickupNote', setPickupNote)(place.note); }
+        else { if (place.city !== dropoffCity) setDropoffNote(''); setDropoffCity(place.city); setDropoffChosen(true); setDropoffPoint(place.point); if (place.note) edit('dropoffNote', setDropoffNote)(place.note); }
         setPicker(null);
       }} />
   </KeyboardAvoidingView>;
@@ -505,26 +523,20 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
   </View>;
 }
 
-// Searchable city list in a bottom sheet (Arabic and English names both match), with the customer's places first.
-function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, onForget }: { open: boolean; title: string; selected: CityId | null; onClose: () => void; onPick: (id: CityId) => void;
-  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void }) {
-  const { c, language, row, align } = useCopy();
-  const [query, setQuery] = useState('');
-  const term = query.trim().toLowerCase();
-  const list = cities.filter(item => !term || item.ar.includes(term) || item.en.toLowerCase().includes(term));
+// Bottom sheet with the customer's places and the T16 search panel (Arabic folding, pin-safe proposal).
+function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedPlace, outside, text, onConfirm }: { open: boolean; title: string; onClose: () => void;
+  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void; selectedPlace: PlaceCandidate | null;
+  outside: boolean; text: PlaceSearchText; onConfirm: (place: PlaceCandidate) => void }) {
+  const { c, language } = useCopy();
+  const [term, setTerm] = useState('');
   const insets = useSafeAreaInsets();
   // The keyboard never resizes a modal window: lift the sheet above it, leaving the sheet's own bottom inset behind the keyboard.
-  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setQuery('')}>
+  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setTerm('')}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={-insets.bottom}>
       <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
       <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
         <View style={styles.grip} />
         <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
-        <View style={[styles.searchBox, { flexDirection: row }]}>
-          <Ionicons name="search" size={17} color={palette.faint} />
-          <TextInput value={query} onChangeText={setQuery} placeholder={c.chooseCity} placeholderTextColor={palette.faint} accessibilityLabel={c.chooseCity}
-            style={[styles.searchInput, { textAlign: align }]} autoCorrect={false} />
-        </View>
         <ScrollView keyboardShouldPersistTaps="handled">
           {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
             <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
@@ -543,24 +555,8 @@ function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, o
                 {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
               </Row>;
             })}
-            <Txt variant="label" style={{ marginTop: 12 }}>{c.cities}</Txt>
           </>}
-          {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
-          {list.map(item => {
-            const on = item.id === selected;
-            return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={item[language]} aria-checked={on} onPress={() => onPick(item.id)}>
-              <Row gap={12} style={styles.sheetRow}>
-                <View style={[styles.pin, on && { backgroundColor: palette.forest }]}>
-                  <Ionicons name="location" size={15} color={on ? palette.lime : palette.secondary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="title">{item[language]}</Txt>
-                  <Txt variant="micro">{item[language === 'ar' ? 'en' : 'ar']}</Txt>
-                </View>
-                {on && <Ionicons name="checkmark" size={18} color={palette.olive} />}
-              </Row>
-            </Pressable>;
-          })}
+          <PlaceSearch saved={places.saved} selected={selectedPlace} outside={outside} text={text} onConfirm={onConfirm} onQuery={setTerm} />
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>

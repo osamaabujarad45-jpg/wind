@@ -66,6 +66,7 @@ const suites = [
   "location-permission-timeout.test.mjs",
   "background-permission.test.mjs",
   "customer-location.test.mjs",
+  "place-search.test.mjs",
   "url-decoder.test.mjs",
   "background-registration.test.mjs",
   "phone-test.test.mjs",
