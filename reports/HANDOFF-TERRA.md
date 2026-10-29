@@ -1,6 +1,6 @@
 # Handoff for GPT-6.1 Terra — 29 October 2026
 
-Branch `master`, tree clean at `fdf65b5`. `node scripts/run-tests.mjs` → **85 suites, exit 0**; `npm run test:persistence` also passed. Both typechecks clean. Re-verified at write time, not carried over from the earlier note.
+Branch `master`, tree clean at `308eadf`. `node scripts/run-tests.mjs` → **85 suites, exit 0**; `npm run test:persistence` also passed when run sequentially. Both typechecks clean. Re-verified at write time, not carried over from the earlier note.
 
 Read in this order:
 1. `reports/REVIEW-2026-10-29-multiagent.md` — findings, severity, fix order
