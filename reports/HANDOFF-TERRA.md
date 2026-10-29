@@ -38,7 +38,22 @@ Verified in this pass:
   `action='SUPPORT_PASSW…'`, `order_id NULL`).
 - Physical SM-A5360 pass: the home search row no longer stretches, its Arabic label is visible and the whole bar opens the booking sheet; the native order-detail map and a real share-link track screen render MapLibre with Arabic labels; `test:android-browser` passes on the real GPU.
 - `test:load` was re-run uncontended: 60 concurrent requests, zero errors/timeouts, read p95 246.97 ms, mixed 346.74 ms (272 expected 429 limiter responses), populated jobs 244.39/344.17 ms, critical acknowledgement 293.61 ms. This is local SQLite evidence, not a PostgreSQL/production capacity claim.
-- The MiniMax cross-review could not run: the `opencode` provider failed authentication and the Fireworks run never returned (cancelled after an hour). Antigravity exposes no models. The existing 8-agent review plus executed tests stand; no fresh external review is claimed.
+- The MiniMax review completed late after earlier provider/auth retries; its nine findings were triaged against the code below. Antigravity still exposes no models.
+
+### MiniMax review triage (nine findings)
+
+Two were actionable and are fixed: the fixed `height: 56` could clip at a large font scale — now `minHeight` with the flex on the pressable container; and the staging runtime's hardcoded `wp16_staging` schema had no owner-run migration command — now `scripts/migrate-postgres.mjs` + `npm run db:migrate:staging -- --confirm`, documented in `deploy.md`.
+
+Rejected with code evidence:
+
+- **OSRM URL**: when `OSRM_URL` is unset the main server falls back to `router.project-osrm.org`; when a present URL fails, `roadRoute` returns `fallbackRoute` for any non-404 error. A booked quote therefore degrades to the marked estimate, not a 503. The internal `ingress.fqdn` is a deploy-time property and still needs one what-if check.
+- **SQLite rebuild is dead code**: `git log -S 'order_id INTEGER NOT NULL REFERENCES orders(id)'` shows `c0a5c37` removed that exact clause; `reports/verify-2026-10-29/migrate-audit.mjs` rebuilds a legacy table and inserts a NULL-order audit row. The branch is real and tested.
+- **`USER_UPDATED` outside a transaction**: the insert sits inside `editUser`'s `BEGIN IMMEDIATE` … `COMMIT` block, alongside the user update and courier-release writes.
+- **Migration 21 ordering/idempotency**: `initializePostgres` applies base migration 3 first, then 21; `ALTER COLUMN … DROP NOT NULL` is a no-op on an already-nullable column. The rehearsal CLI also goes through `initializePostgres`.
+- **CI PostGIS health**: `initializePostgres` itself runs `CREATE EXTENSION IF NOT EXISTS postgis`; `pg_isready` does not need to assert the extension.
+- **`.invalid` image URL**: the `image` job builds a local smoke image and never pushes it; using a real host would be riskier.
+
+Deployment traps, not code defects: the `osrm-graph` share must be populated before activation (an empty share crash-loops, already documented), and the internal OSRM FQDN must be confirmed in a staging what-if.
 
 ---
 

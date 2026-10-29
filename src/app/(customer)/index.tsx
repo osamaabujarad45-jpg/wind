@@ -107,9 +107,10 @@ function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'c
 }
 
 const styles = StyleSheet.create({
-  // Fixed height: the flexed search label inside a ScrollView stretched this row to the viewport
-  // on the A53 until a scroll (reproduced 29 Oct 2026). 56px still clears the 40px controls.
-  search: { alignItems: 'center', gap: 4, height: 56, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
+  // minHeight, not height: the flexed label inside a ScrollView stretched this row to the viewport
+  // on the A53 until a scroll (reproduced 29 Oct 2026). The flex now sits on the pressable container;
+  // minHeight still lets a large font scale grow the row instead of clipping it.
+  search: { alignItems: 'center', gap: 4, minHeight: 56, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
   searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 40 },
   searchIcon: { width: 38, alignItems: 'center' },
   searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },

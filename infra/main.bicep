@@ -226,6 +226,8 @@ resource osrmEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026
   }
   dependsOn: [osrmStorageRole]
 }
+// The durable share must contain region.osrm and its companion files before enableWorkloads:
+// mounting an empty share hides the image's baked graph and osrm-routed crash-loops (deploy.md).
 // The runtime refuses to boot without an absolute DB_PATH. PostgreSQL is the durable store;
 // this share only satisfies the SQLite fallback path and keeps the mount identical on rollback.
 resource dataFiles 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {

@@ -70,7 +70,8 @@
     "phone:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-phone-tests.mjs smoke",
     "test:dependency-security": "node tests/dependency-security.test.mjs",
     "test:contracts": "node scripts/check-contracts.mjs",
-    "test:persistence": "node scripts/check-persistence.mjs"
+    "test:persistence": "node scripts/check-persistence.mjs",
+    "db:migrate:staging": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/migrate-postgres.mjs"
   },
   "private": true,
   "overrides": {
