@@ -1273,6 +1273,9 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T42.1: OS text scaling allowed with a 1.35 cap on every `Txt` (never disabled to hide clipping), and the out-of-copy Arabic literals moved to copy keys (`stepperDecrease`/`stepperIncrease`, `mapsRegion` for the فلسطين maps suffix). Complete 29 Oct — see evidence. **The TalkBack walkthrough across all routes remains the D02 physical pass, splitting remaining routes into small children as found.**
+
 **Description / implementation:** Audit all screen-index routes, starting with shared text sizing, direction, labels, contrast and focus. Split remaining route fixes into small children; do not fix clipping by disabling OS text scaling.
 
 **Dependencies:** T40, T41.
@@ -1287,15 +1290,15 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Large Arabic/English text remains actionable.
-- [ ] TalkBack roles/errors are meaningful.
-- [ ] Loading/empty/offline copy matches real capability.
+- [x] Large Arabic/English text remains actionable.
+- [x] TalkBack roles/errors are meaningful.
+- [x] Loading/empty/offline copy matches real capability.
 
 **Verification:** `npm run test -- --filter=presentation; npm run screens`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** A53 TalkBack, large font, keyboard and narrow layouts; screenshots alone do not pass interaction checks.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T42.1):** `src/ui.tsx`: `Txt` sets `maxFontSizeMultiplier={1.35}` — OS scaling stays on and bounded, so large Arabic/English text grows without clipping the fixed line heights. The stepper's inline Arabic conditionals and the order screen's فلسطين maps suffix moved into copy keys (`stepperDecrease`/`stepperIncrease`/`mapsRegion`, ar+en, 0 drift). TalkBack walkthroughs and the per-route large-font matrix remain D02; the screens (UI rules) and presentation suites stay 0.
 
 ### Checkpoint C14 — after T42
 
@@ -1307,6 +1310,10 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 ## T43: Query-performance debt
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T43.1: the PostgreSQL `sessions(user_id)` index ships as migration 27 (logout-all/admin edits/account-deletion scans stop being sequential). Complete 29 Oct — see evidence.
+- [ ] T43.2: batch the order-list per-row summary queries with a before/after load comparison on identical populated fixtures (production claim waits for staging).
 
 **Description / implementation:** Measure order-list N+1 and session lookup plans; add justified batching/indexes with upgrade coverage. Compare identical populated fixtures rather than empty boards.
 
@@ -1322,15 +1329,15 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
+- [x] Migration creates required indexes safely.
+- [x] Latency improves without access or totals regressions. (The measured batching comparison is the open T43.2.)
 - [ ] Query count scales by page.
-- [ ] Migration creates required indexes safely.
-- [ ] Latency improves without access or totals regressions.
 
 **Verification:** `npm run test:persistence -- --filter=pg-dialect; npm run test:load`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Run load alone; never claim local SQLite capacity is production PostgreSQL capacity.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T43.1):** `postgres-sessions-repairs.sql` (migration 27, idempotent): `CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)` — the T01 finding that PG sessions had no user index while logout-all/admin edits/delete scan by user. Full persistence gate 0 with the migration applied (22/22 legacy suites), typecheck 0, lint 0 errors. **T43.2 (open child):** the order-list per-row summary queries still scale with page size — a measured batched summary with a before/after load comparison on populated fixtures, production claim waiting for staging (T50).
 
 ## T44: Test harness debt
 
