@@ -19,7 +19,9 @@ if ([...url.searchParams.keys()].some(key => key !== 'sslmode') || url.searchPar
 
 const database = new Persistence({
   connectionString: url.href,
-  pool: { ssl: { rejectUnauthorized: true } },
+  // initializePostgres sets search_path only inside its migration transaction; the final
+  // version read below runs after COMMIT, so the pool must carry the schema too.
+  pool: { options: '-c search_path=wp16_staging,public', ssl: { rejectUnauthorized: true } },
   statementTimeoutMs: 30_000,
   lockTimeoutMs: 30_000,
 });
