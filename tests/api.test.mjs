@@ -136,8 +136,9 @@ try {
   assert.equal(job.customerName, '');
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {}, expect: 409 });
-  // A late upload of a fix taken before this assignment never shows on this job.
-  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 5000 } })).accepted, false);
+  // A fix taken more than 15 s before this assignment never shows on this job; a fix inside
+  // the grace window is covered positively in map.test and active-gps.mjs.
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 20_000 } })).accepted, false);
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation, null);
   assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } })).accepted, true);
   await call('/location', { token: driver.token, body: { latitude: null, longitude: 35.21 }, expect: 400 });

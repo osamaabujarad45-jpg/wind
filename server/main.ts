@@ -31,7 +31,7 @@ import { clientAddress } from './domain/client-address.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompress } from 'node:zlib';
@@ -67,7 +67,8 @@ const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path
   readFileSync(new URL(`${path.slice(1)}.html`, import.meta.url), 'utf8').replaceAll('{{contact}}', supportContact)]));
 // Dev (`npm run server`): serve public/ so the Android app's map page (/map.html + /vendor) loads; without it the WebView 404s
 // and every Android map falls back to the diagram.
-const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : fileURLToPath(new URL('../public', import.meta.url));
+const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : production ? null : fileURLToPath(new URL('../public', import.meta.url));
+if (production && webRoot && !existsSync(webRoot)) throw new Error('Production WEB_ROOT does not exist');
 const webContentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -150,9 +151,7 @@ if (webRoot && production) setImmediate(() => { // warm so the first visitor aft
 });
 
 // Retained sync export is for offline legacy fixture setup; HTTP/domain work uses persistence below.
-// nolock is opt-in for a single-writer network SQLite (OneDrive/SMB); never use it with two API processes.
-const dbPath = process.env.WIND_DATABASE_URL ? ':memory:' : process.env.DB_PATH ? (process.env.SQLITE_NOLOCK === '1' || process.env.SQLITE_JOURNAL === 'DELETE' ? ('file:' + process.env.DB_PATH + '?nolock=1') : process.env.DB_PATH) : 'wind.db';
-export const db = new DatabaseSync(dbPath);
+export const db = new DatabaseSync(process.env.WIND_DATABASE_URL ? ':memory:' : process.env.DB_PATH ?? 'wind.db');
 initializeSqlite(db);
 export const persistence = runtimePersistence(db);
 type Row = Record<string, any>;
@@ -2211,7 +2210,7 @@ route('POST', '/api/location', async ({ user, body, req }) => {
         AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.email_verified_at IS NOT NULL OR u.approved_at IS NOT NULL)
         AND (? = 0 OR u.phone_verified_at IS NOT NULL)
     ) AND EXISTS (SELECT 1 FROM orders o WHERE o.driver_id = ? AND o.status IN (${activeSql})
-      AND (o.assigned_at IS NULL OR o.assigned_at <= ?))`;
+      AND (o.assigned_at IS NULL OR o.assigned_at <= ? + 15000))`;
     locationArgs.push(user.id, sha(token), checkedAt - SESSION_DAYS * DAY, checkedAt - SESSION_IDLE_DAYS * DAY,
       contactVerificationRequired ? 1 : 0, production && !selfService ? 1 : 0, user.id, fixAt);
   }

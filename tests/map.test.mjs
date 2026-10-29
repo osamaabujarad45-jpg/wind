@@ -46,7 +46,7 @@ try {
     assert.equal((await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), pickupPoint }, expect: 400 })).error, 'outside_area');
   }
   assert.equal((await book({ pickupPoint: { latitude: 31.9107, longitude: 35.2164 } })).pickupCity, 'ramallah'); // Al-Bireh's centre, 1.5 km away
-  await call('/price', { token: customer.token, body: { ...input, pickupPoint: { latitude: 31.9038, longitude: 35.0734 } } }); // 12 km out: inside the 15 km bound
+  await call('/price', { token: customer.token, body: { ...input, pickupPoint: { latitude: 31.9038, longitude: 35.0234 } } }); // ~17 km out: inside the 20 km bound, outside the old 15
   const plain = await book({});
   assert.equal(plain.dropoffPoint, null);
   await call(`/orders/${plain.id}/cancel`, { token: customer.token, body: {} });
@@ -59,6 +59,11 @@ try {
   assert.equal(job.dropoffPoint, null);
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   assert.deepEqual((await call(`/orders/${order.id}`, { token: driver.token })).dropoffPoint, order.dropoffPoint);
+  // A fix captured 14 s before the accept is inside the grace window and must be stored; the
+  // inline SQLite guard used to require assigned_at <= fixAt and silently dropped it.
+  const assignedAt = Number(db.prepare('SELECT assigned_at FROM orders WHERE id = ?').get(order.id).assigned_at);
+  const grace = await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, accuracy: 5, age: Date.now() - assignedAt + 14_000 } });
+  assert.equal(grace.accepted, true, 'a fix 14 s before assignment is accepted');
 
   // Heading/accuracy: optional, validated, -1 means unknown.
   for (const bad of [{ heading: 361 }, { heading: 'n' }, { accuracy: -2 }, { accuracy: 9000 }])

@@ -24,10 +24,11 @@ assert.equal(nextStatus('cancelled'), 'cancelled');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);
 assert.equal(nearestCity({ latitude: 31.9038, longitude: 35.2034 }), 'ramallah');
-// A pin belongs to a city only within its 15 km service bound.
+// A pin belongs to a city only within its 20 km service bound.
 assert.equal(servedCity({ latitude: 31.90, longitude: 35.19 }), 'ramallah');
 assert.equal(servedCity({ latitude: 0, longitude: 0 }), null);
 assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0734 }), 'ramallah'); // 12 km as the crow flies (16 by road)
+assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0234 }), 'ramallah'); // ~17 km: inside 20, outside the old 15
 assert.equal(servedCity({ latitude: 31.40, longitude: 34.40 }), null); // nearest is Hebron, but 70 km out
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');
