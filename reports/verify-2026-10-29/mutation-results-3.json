@@ -1,0 +1,32 @@
+[
+  {
+    "id": "H. need(): role check removed (every role gate opens)",
+    "verdict": "CAUGHT",
+    "guard": "every role-scoped route (admin, driver, customer)",
+    "detail": "AssertionError [ERR_ASSERTION]: /admin/stats: {\"gmv\":0,\"commission\":0,\"subscriptions\":0,\"discounts\":0,\"profit\":0,\"completed\":0,\"activeSubscriptions\":0,\"statuses\":{},\"services\":{},\""
+  },
+  {
+    "id": "I. needActive(): blocked users may act",
+    "verdict": "CAUGHT",
+    "guard": "pending/blocked users must be refused on write routes",
+    "detail": "AssertionError [ERR_ASSERTION]: /jobs: []"
+  },
+  {
+    "id": "J. Reschedule: ownership check removed",
+    "verdict": "MISSED",
+    "guard": "a driver must not reschedule a customer’s order",
+    "detail": ""
+  },
+  {
+    "id": "K. Jobs accept: status predicate removed (double-assign)",
+    "verdict": "CAUGHT",
+    "guard": "two drivers cannot accept the same job",
+    "detail": "AssertionError [ERR_ASSERTION]: /jobs/1/accept: {\"id\":1,\"customerId\":2,\"driverId\":3,\"service\":\"parcel\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"nablus\",\"pickupPoint\":n"
+  },
+  {
+    "id": "L. Settings: fraction ceiling removed",
+    "verdict": "CAUGHT",
+    "guard": "a percentage setting must stay below 100%",
+    "detail": "AssertionError [ERR_ASSERTION]: /admin/settings: {\"parcelPrice\":20,\"parcelLarge\":10,\"rideBase\":15,\"ridePerKm\":1.1,\"freightBase\":70,\"freightPerKm\":2.5,\"freightLarge\":50,\"loadingHelp"
+  }
+]

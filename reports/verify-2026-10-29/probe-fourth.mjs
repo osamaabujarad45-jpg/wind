@@ -56,24 +56,6 @@ try {
       `5x scryptSync = ${per.toFixed(1)} ms/hash on this host; each unauthenticated /auth/login calls it once, synchronously, on the single event loop`);
   }
 
-  // ===== P2 #14: one admin forgives 10k with no second approver =====
-  {
-    await call('/admin/cash/adjustment', { token: adminTok, body: { driverId: drv.user.id, amountCents: 200000, reason: 'verify debt' } });
-    const bal0 = (await call('/admin/cash', { token: adminTok })).data.find(b => b.driverId === drv.user.id);
-    const forgive = await call('/admin/cash/adjustment', { token: adminTok, body: { driverId: drv.user.id, amountCents: -1000000, reason: 'one-admin forgiveness' } });
-    const bal1 = (await call('/admin/cash', { token: adminTok })).data.find(b => b.driverId === drv.user.id);
-    const approvals = rows("SELECT name FROM sqlite_master WHERE type='table' AND name='financial_approvals'");
-    out('P2-14 forgive-10k', forgive.status === 200 ? 'VERIFIED' : 'REFUTED',
-      `owed ${bal0?.owedCents} -> adjustment -1000000 -> ${forgive.status}; owed now ${bal1?.owedCents}; financial_approvals table on sqlite=${approvals.length > 0}`);
-    out('P2-14b cap', 'INFO', `recordCash rejects |amount| > 1_000_000 (10000 ILS); -1000000 is exactly at the ceiling: ${forgive.status}`);
-  }
-
-  // ===== P2 #15: destination change is SQLite-ONLY (inverted gate) =====
-  {
-    const dest = await call('/destination/change', { token: cust.token, body: { orderId: 1, city: 'nablus' } });
-    out('P2-15 destchange', dest.status === 409 ? 'VERIFIED' : 'REACHABLE',
-      `POST /destination/change -> ${dest.status} ${JSON.stringify(dest.data).slice(0, 80)} (sqliteOnly() fails when backend!=='sqlite', so on SQLite this route RUNS; 409 here is a different guard)`);
-  }
 } finally {
   console.log('temp:', dir);
   server.close();

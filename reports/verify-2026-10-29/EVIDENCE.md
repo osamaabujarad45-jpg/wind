@@ -8,16 +8,17 @@ real accounts, calls the real HTTP routes, and reads the resulting rows. Nothing
 database location. Probes are checked in under `reports/verify-2026-10-29/` so every result is reproducible.
 
 ```powershell
-node reports/verify-2026-10-29/probe-p1-p2.mjs          # P1 #2, #3, P2 #6-#13 (12 verified, 2 refuted)
-node reports/verify-2026-10-29/probe-refuted.mjs        # the refutations, re-tested
-node reports/verify-2026-10-29/probe-third.mjs          # job-board freeze, subscribe race
-node reports/verify-2026-10-29/probe-race.mjs           # 760-attempt subscribe race
-node reports/verify-2026-10-29/probe-fourth.mjs         # commission blast radius, scrypt cost
-node reports/verify-2026-10-29/probe-fifth.mjs          # approve-over-custody guard
-node reports/verify-2026-10-29/probe-seventh.mjs        # destination runs on SQLite, forgiveness
-node reports/verify-2026-10-29/probe-reschedule.mjs     # reschedule TOCTOU
-node reports/verify-2026-10-29/probe-guard-isolated.mjs # Docker module-copy guard
-node reports/verify-2026-10-29/probe-osrm.mjs           # OSRM fallback
+node reports/verify-2026-10-29/probe-p1-p2.mjs           # P1 #2, #3, P2 #6-#13 (12 verified, 2 refuted)
+node reports/verify-2026-10-29/probe-consolidated.mjs    # P2 #8 custody, #12 race, #15 destination
+node reports/verify-2026-10-29/probe-fourth.mjs          # commission blast radius, scrypt cost
+node reports/verify-2026-10-29/probe-reschedule.mjs      # reschedule TOCTOU (40 races)
+node reports/verify-2026-10-29/probe-reschedule-ownership.mjs # the unasserted guard
+node reports/verify-2026-10-29/probe-wrong-cause.mjs     # do refusals fail for the right reason
+node reports/verify-2026-10-29/probe-guard-isolated.mjs  # Docker module-copy guard
+node reports/verify-2026-10-29/probe-osrm.mjs            # OSRM fallback
+node reports/verify-2026-10-29/mutation-test.mjs         # do the tests catch regressions (see MUTATION.md)
+node reports/verify-2026-10-29/mutation-test-2.mjs
+node reports/verify-2026-10-29/mutation-test-3.mjs
 ```
 
 ## P1 — all six executed

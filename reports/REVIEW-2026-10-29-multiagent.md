@@ -262,6 +262,10 @@ one file); `presentation.test.mjs:2` re-imports a registered suite so it runs tw
 duplicates two more; the URL-decoder DoS regression is enforced by a 3-second wall clock
 (`url-decoder.test.mjs:15`); every persistence run creates a Postgres schema and never drops it; four
 browser gates share port 4188 and one build dir, so two cannot run at once.
+**The reschedule ownership guard (`main.ts:1495`) is unasserted** — mutation-tested, removing it leaves
+the suite green; `schedule.test.mjs:78` sends a driver who cannot see the order, so it asserts the 404 from
+`getOrder` and never reaches the guard. One-line fix: assert `409 cannot_reschedule` with the assigned
+driver's token. (`reports/verify-2026-10-29/MUTATION.md`.)
 
 **Release:** no `versionCode` in the repo — `app.json:17`, remote EAS counter, generated project says 1, so
 a locally signed release is rejected by Play.
@@ -305,8 +309,10 @@ cap at `main.ts:2463` and the driver decision route at `:2428` already exist, an
 **Corrections to reviewer claims:**
 - R3 said the server accepts a price of `0`. It does — but `minorUnits(0)` then **throws**, so the
   outcome is a 500, not a free ride. The free ride is the *subscription* path, which R3 did not follow.
-- R1 said the refund double-pay needs `WIND_BOP_*`. It does not; `WIND_BOP_*` is read and never used.
-  The second refund is a second **HTTP** call, and no refund retry exists.
+- R1 said the refund double-pay needs `WIND_BOP_*`. It does not — and since commit `3968368` (author's own,
+  08:24 today) that env switch is **gone entirely**: `paymentsConfig()` now returns only `testFake`, so no
+  production env var can enable payments and the `WIND_BOP_*` names survive only in a comment. The second
+  refund is a second **HTTP** call, and no refund retry exists.
 - R5 said COD is implemented. The *collection* is; the *payout* is a free-text `payout_ref`.
 - The first pass's "78 suites" overstates coverage: `test:persistence`'s 50 files are in a second list, one
   suite runs twice, and four real `*.test.mjs` files run **zero** times.
@@ -405,6 +411,15 @@ direction (runs on SQLite, 409s after cutover); P1 #4's "four files never run" (
 - No test asserts nothing, skips itself, or swallows a failure (checked: zero `.skip`/`.todo` in `tests/`,
   zero empty `catch {}` in the listed suites, and the five assert-free files are `*-support.mjs` helpers,
   not suites) — the problem is what is never *selected*.
+  **Mutation-tested (11/13 caught):** see `reports/verify-2026-10-29/MUTATION.md`. Inverting `canSee`,
+  `expectedStatus`, the cash double-settle predicate, the partner-key check, the role gate, `needActive`,
+  the accept-status predicate, the rating immutability guards and the settings ceiling all turn the suite
+  red — the suite is genuinely strong, not merely well-formed.
+  **One real gap:** removing the reschedule ownership check at `main.ts:1495` leaves the suite **green**,
+  because `getOrder` at `:1493` 404s first for everyone except the assigned driver, and
+  `tests/schedule.test.mjs:78` sends a driver who *cannot see* the order (asserting 404, which never
+  reaches the guard). Probe `probe-reschedule-ownership.mjs` drives the reachable case and gets
+  `409 cannot_reschedule`. Fix: assert it with the assigned driver's token.
 - The partner key comparison is constant-time; track limiting and the Entra boot guard hold.
 
 ---

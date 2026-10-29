@@ -1,0 +1,27 @@
+[
+  {
+    "id": "A. IDOR: canSee disabled",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /orders/5: {\"id\":5,\"customerId\":null,\"driverId\":3,\"service\":\"parcel\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"nablu"
+  },
+  {
+    "id": "B. Optimistic concurrency: expectedStatus not enforced",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /orders/1/advance: {\"id\":1,\"customerId\":2,\"driverId\":3,\"service\":\"parcel\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\""
+  },
+  {
+    "id": "C. Double-settle: status predicate removed",
+    "verdict": "CAUGHT",
+    "detail": "{\"category\":\"http_request_failed\",\"code\":\"ERR_SQLITE_ERROR\",\"sqliteCode\":1811,\"correlationId\":\"ad4f94a5-9bd0-45d3-9884-471839fc855a\",\"httpStatus\":500} | {\"categ"
+  },
+  {
+    "id": "D. Partner key: comparison not constant-time / not checked",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /partner/config: {\"currency\":\"ILS\",\"cities\":[{\"id\":\"ramallah\",\"ar\":\"رام الله\"},{\"id\":\"bireh\",\"ar\":\"البيرة\"},{\"id\":\"nablus\",\"ar\":"
+  },
+  {
+    "id": "E. Rating: overwrite allowed",
+    "verdict": "MISSED",
+    "detail": "suite stayed green"
+  }
+]

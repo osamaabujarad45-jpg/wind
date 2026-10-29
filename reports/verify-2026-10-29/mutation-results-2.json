@@ -1,0 +1,17 @@
+[
+  {
+    "id": "E2. Driver may change an existing customer rating",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /orders/1/rate: {\"id\":1,\"customerId\":2,\"driverId\":3,\"service\":\"ride\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"nablus\",\"pickupPoint\":{\"l"
+  },
+  {
+    "id": "F. Customer may rate twice with a different value",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /orders/5/rate: {\"id\":5,\"customerId\":2,\"driverId\":3,\"service\":\"ride\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"bireh\",\"pickupPoint\":{\"la"
+  },
+  {
+    "id": "G. Cash settle: driver-only decision removed",
+    "verdict": "CAUGHT",
+    "detail": "AssertionError [ERR_ASSERTION]: /driver/cash/1/confirm: {\"id\":1,\"kind\":\"remittance\",\"amountCents\":500,\"note\":\"Office handover\",\"status\":\"confirmed\",\"reference\":\"R-000001\",\"createdA"
+  }
+]
