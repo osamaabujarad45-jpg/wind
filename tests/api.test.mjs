@@ -81,6 +81,11 @@ try {
   assert.equal((await call('/orders', { token: customer.token, body: Object.fromEntries(Object.entries(retryInput).reverse()) })).id, duplicate[0].id);
   await call('/orders', { token: customer.token, body: { ...retryInput, detail: 'Other parcel' }, expect: 409 });
   await call(`/orders/${duplicate[0].id}/cancel`, { token: customer.token, body: {} });
+  // T20: identity is optional; a client without requestId keeps per-call creation until a transition is agreed.
+  const fresh = { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) };
+  const plain = await Promise.all([call('/orders', { token: customer.token, body: fresh }), call('/orders', { token: customer.token, body: fresh })]);
+  assert.notEqual(plain[0].id, plain[1].id);
+  for (const extra of plain) await call(`/orders/${extra.id}/cancel`, { token: customer.token, body: {} });
 
   // Souqna's server can book once and safely retry; the partner key never grants access to ordinary orders.
   const partnerKey = process.env.SOUQ_PARTNER_KEY;
@@ -95,6 +100,10 @@ try {
   assert.equal((await call('/partner/orders', { partnerKey, body: delivery })).id, partnerOrder.id);
   assert.equal((await call('/partner/orders', { partnerKey, body: Object.fromEntries(Object.entries(delivery).reverse()) })).id, partnerOrder.id);
   await call('/partner/orders', { partnerKey, body: { ...delivery, pickupNote: 'changed' }, expect: 409 });
+  const partnerRace = { ...delivery, externalRef: 'listing:buyer:race' };
+  const partnerRaced = await Promise.all(Array.from({ length: 4 }, () => call('/partner/orders', { partnerKey, body: partnerRace })));
+  assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
+  await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
   await call(`/partner/orders/${order.id}`, { partnerKey, expect: 404 });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}`, { partnerKey })).status, 'searching');
   assert.equal((await call(`/partner/orders/by-reference?externalRef=${encodeURIComponent(delivery.externalRef)}`, { partnerKey })).id, partnerOrder.id);

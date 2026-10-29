@@ -1398,7 +1398,12 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
     (await persistence.exec('COMMIT'));
     return order;
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  } catch (error) {
+    (await persistence.exec('ROLLBACK'));
+    // A concurrent retry can commit this key while we wait on it; answer with the winner.
+    if ((error as { code?: string }).code === '23505') { const won = (await replay()); if (won) return won; }
+    throw error;
+  }
 });
 
 // A partner key stays on the two API servers; never ship it in a mobile bundle.
@@ -1452,12 +1457,21 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
   }
   const user = await partnerUser(); // its one-time placeholder KDF must precede the transaction
   // Same short atomic boundary the HTTP envelope used, including the partner_api audit purpose.
-  return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
-    const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
-    const order = (await createOrder(user, { ...input, service: 'parcel' }));
-    (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
-    return order;
-  });
+  try {
+    return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
+      const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
+      const order = (await createOrder(user, { ...input, service: 'parcel' }));
+      (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
+      return order;
+    });
+  } catch (error) {
+    // A concurrent retry of this reference won the insert; map both callers to its order.
+    if ((error as { code?: string }).code !== '23505') throw error;
+    const winner = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
+    if (!winner) throw error;
+    if (winner.payload_hash !== hash) fail(409, 'idempotency_conflict');
+    return (await getOrder(winner.order_id, (await partnerUser())));
+  }
 }, true);
 
 async function partnerOrder(req: IncomingMessage, id: number) {

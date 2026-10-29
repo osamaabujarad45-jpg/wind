@@ -594,7 +594,7 @@ Implementation children:
 
 ## T20: Booking idempotency contract
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Inventory first-party requestId and partner external-reference behavior. Define a compatible transition before requiring identity on all modern creates; reject same-key changed-payload reuse.
 
@@ -610,15 +610,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Concurrent retry creates once on both backends.
-- [ ] Changed payload conflicts.
-- [ ] Old client and partner behavior have explicit compatibility coverage.
+- [x] Concurrent retry creates once on both backends.
+- [x] Changed payload conflicts.
+- [x] Old client and partner behavior have explicit compatibility coverage.
 
 **Verification:** `npm run test -- --filter=contracts; npm run test:persistence -- --filter=pg-contracts`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Exercise lost response, partner retry, different users and missing identity.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T20):** Local Windows revision `d4b1323` + this diff; isolated loopback PostgreSQL 18 on 127.0.0.1:55473. Inventory found `order_commands` (first-party `requestId`, `PRIMARY KEY(user_id, request_id)`) and `partner_orders.external_ref` already stored a payload hash and returned the committed order, but a retry that raced its own first attempt crossed the PG constraint instead of the replay path: before the fix, four concurrent `POST /api/orders` with one `requestId` produced `500 {"error":"server_error"}` (SQLSTATE 23505, logged `correlationId`) for the losers. Fix in `server/main.ts`: on a unique violation the request rolls back and replays the winning key, so concurrent callers receive the committed order (changed payload still `409 idempotency_conflict`); `POST /api/partner/orders` maps a concurrent `externalRef` duplicate onto the winner's order the same way instead of a constraint error. Identity stays optional: a create without `requestId` still books per call, and the key remains user-scoped (`tests/pg-contracts.mjs` T20 block runs after the frozen comparison so recorded ids stay stable). Commands: `npm run test:persistence -- --filter=pg-contracts` exit 0 (frozen 174 exchanges unchanged; 4-way same-request race → one order, changed payload 409, two no-identity creates → two orders, another customer reusing the key → separate order, 4-way partner race → one order + 409 on changed payload); `npm run test -- --filter=api.test` exit 0 (SQLite parity for same-key duplicate, changed payload, no-identity pair and partner race); `npm run test:contracts` exit 0 (two suites); `npm run lint` and `npm run typecheck` exit 0. Docs: `endpoints.json` E029/E032 guards and the WP08 API-contract transition note. Limitation: SQLite serializes requests through one event loop and connection, so its concurrent assertions document installed behaviour but cannot exercise the PG constraint path; the PG suite is the failing-before/passing-after evidence, and no device or field tier applies to this server contract.
 
 ## T21: Marketplace abuse limits
 
@@ -712,7 +712,7 @@ Implementation children:
 
 **Manual / failure-case check:** Do not enact new financial policy on live data during implementation.
 
-**Evidence (T23.1):** Local fallback, sequential exits 0: cash suite (SQLite: forgiveness without approval 409 `approval_required`, missing approval table 503 `approval_unsupported`, positive adjustments and payout boundary unchanged), persistence ops on PostgreSQL under the shared lock, lint, typecheck. Gate order: amount/boundary checks first (400s preserved), then approval binding before insert, inside the same transaction. One-time consumption and atomic approval+mutation remain T24; UI T25; policy acceptance T23.2.
+**Evidence (T23.1):** Local fallback, sequential exits 0: cash suite (SQLite: forgiveness without approval 409 `approval_required`, missing approval table 503 `approval_unsupported`, positive adjustments and payout boundary unchanged), persistence ops on PostgreSQL under the shared lock, lint, typecheck. Gate order: amount/boundary checks first (400s preserved), then approval binding before insert, inside the same transaction. One-time consumption and atomic approval+mutation remain T24; UI T25; policy acceptance T23.2. Follow-up on 29 Oct: `tests/pg-cash.mjs` had not been re-baselined and still expected unapproved forgiveness, failing the shared persistence gate at the new check; it now registers a second promoted admin, requests the approval, decides it from that other account, asserts the bound-amount refusal (`409` on `-201` against a 200 approval) and records both forgivenesses with their `approvalId` (`npm run test:persistence -- --filter=pg-cash` exit 0).
 
 ## T24: Cash approval persistence
 
@@ -807,6 +807,10 @@ Implementation children:
 ## T27: Declared-scope authorization
 
 - [x] Complete with acceptance evidence
+
+Implementation children:
+- [x] T27.1: Scope predicates and redaction (server/domain/eligibility.ts, server/domain/resource-scope.ts, tests/resource-scope.mjs, tests/resource-scope-sqlite.mjs) — complete; sqlite capability suite registered in scripts/run-tests.mjs by the leader so `npm test` always covers the fail-closed gate.
+- [ ] T27.2: Rewire getOrder's inline `canSee` (server/main.ts ~L348-355) onto `openToDriver` to remove the duplicated visibility policy (semantics verified equal at integration; drift risk only). Shares main.ts with T22/T29, so schedule after wave 3 merges.
 
 **Description / implementation:** Replace blanket searching-driver visibility with active status, service/vehicle eligibility and release exclusions. Minimize preassignment declaredValue/sourceRef/custody fields; retain owner/assigned/admin policy.
 

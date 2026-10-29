@@ -235,6 +235,7 @@ try {
   assert.equal((await exchange('partner-replay', 'partner', '/partner/orders', { partnerKey,
     body: Object.fromEntries(Object.entries(partnerBody).reverse()) })).id, partnerOrder.id);
   await exchange('partner-altered-replay', 'partner', '/partner/orders', { partnerKey, body: { ...partnerBody, detail: 'Changed scope' }, expect: 409 });
+
   await exchange('partner-reference', 'partner', `/partner/orders/by-reference?externalRef=${partnerBody.externalRef}`, { partnerKey });
   await exchange('partner-foreign-order', 'partner', `/partner/orders/${first.id}`, { partnerKey, expect: 404 });
   await call('/admin/settings', { token: admin.token, body: { parcelPrice: 20 } });
@@ -335,6 +336,29 @@ try {
       }
     }
     assert.deepEqual(cleanObserved, expectedContracts, 'Public behavior changed; review the redacted fixture diff');
+    // T20 runs after the frozen comparison so its extra orders cannot shift recorded ids.
+    // A retry that races its own first attempt must still create one order and answer every caller with it.
+    const priced = { ...input, quotedPrice: (await call('/price', { token: customer.token, body: input })).price };
+    const raced = { ...priced, requestId: randomUUID() };
+    const racedOrders = await Promise.all(Array.from({ length: 4 }, () => call('/orders', { token: customer.token, body: raced })));
+    assert.equal(new Set(racedOrders.map(o => o.id)).size, 1, 'concurrent same-request retry creates once');
+    assert.equal((await call('/orders', { token: customer.token, body: { ...raced, detail: 'Changed box' }, expect: 409 })).error, 'idempotency_conflict');
+    // Identity stays optional: a client that omits requestId keeps per-call creation until a transition is agreed.
+    const legacy = await Promise.all([call('/orders', { token: customer.token, body: priced }), call('/orders', { token: customer.token, body: priced })]);
+    assert.notEqual(legacy[0].id, legacy[1].id, 'missing identity still creates a new order');
+    // The key is scoped to its user, so another customer reusing it gets a separate order.
+    const other = await call('/auth/register', { body: { phone: '0599600099', name: 'Synthetic other', password: 'synthetic-local-password' } });
+    const stolen = await call('/orders', { token: other.token, body: raced });
+    assert.notEqual(stolen.id, racedOrders[0].id);
+    for (const extra of [...racedOrders, ...legacy]) await call(`/orders/${extra.id}/cancel`, { token: customer.token, body: {} });
+    await call(`/orders/${stolen.id}/cancel`, { token: other.token, body: {} });
+    // Concurrent partner retries of one external reference map to one order, never a constraint error.
+    const partnerQuoteNow = (await call('/partner/quotes', { partnerKey, body: input })).price;
+    const partnerRace = { ...input, externalRef: 'wp01:synthetic:concurrent-reference', quotedPrice: partnerQuoteNow };
+    const partnerRaced = await Promise.all(Array.from({ length: 4 }, () => call('/partner/orders', { partnerKey, body: partnerRace })));
+    assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
+    assert.equal((await call('/partner/orders', { partnerKey, body: { ...partnerRace, detail: 'Changed scope' }, expect: 409 })).error, 'idempotency_conflict');
+    await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
   }
   console.log(`WP03 PostgreSQL frozen contracts: ${inventory.endpoints.length} installed + ${additiveBoundaries} additive endpoint boundaries, ${transitions.size} transitions, ${observed.exchanges.length} exchanges; schema/auth/return/cash/rating/partner checks passed${recording ? ' (fixtures recorded; rerun read-only)' : ''}`);
 } finally {
