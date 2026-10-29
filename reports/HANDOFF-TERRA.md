@@ -44,23 +44,33 @@ Verified in this pass:
 
 ## Left for Terra, in priority order
 
-### 1. Debt forgiveness still has no second approver — `P2 #14`
+### 1. Debt forgiveness has no second approver — `P2 #14`  ⚠ smaller than it looks
 `server/main.ts:2443` (`recordCash`) vs `server/domain/ops.ts:73-82`.
 
-`ops.ts` already implements `requestApproval` / `decideApproval` and routes (`POST /api/admin/approvals`),
-but `recordCash` never calls it. Executed evidence (`probe-fourth.mjs`, `probe-seventh.mjs`): with ₪13 500
-owed, one admin forgave ₪10 000 in a single call, no approver, no `financial_approvals` row.
+**Correction to the review's framing, verified this pass:** `financial_approvals` is created in
+`server/db/postgres-ops.sql`, and the entire ops module is gated by `opsAvailable()`, which returns
+`false` on any non-Postgres backend. So on the shipped SQLite path there is *no* approval table and *no*
+approval route — the route 404s/409s, it does not silently skip. What is actually true:
 
-Damage is already bounded — the `≤ ₪10 000` cap at `:2446` and the no-negative-balance rule at `:2464`
-both hold; a second ₪10 000 forgiveness is rejected `400`. **Only the approval step is missing.**
+- On SQLite: one admin can forgive up to ₪10 000 per call, bounded by the cap at `:2446` and the
+  no-negative-balance rule at `:2464`. A second ₪10 000 forgiveness is rejected `400` (executed).
+- `decideApproval` already blocks self-approval (`409 second_approver_required`, `ops.ts:81`) — so the
+  control exists wherever it can run.
 
-Precondition: `financial_approvals` must exist on SQLite. Confirm it in `sqlite-schema.ts` before wiring —
-`grep` last showed it only referenced by `ops.ts` queries.
+So the defect is narrower than "no second approver anywhere": it is that **`recordCash` is ungated and
+never consults the approval flow**, so the bounded-but-unreviewed path is the *live* one, while the
+reviewed path only exists after cutover. Decide:
+- **(a)** leave it: the ₪10 000 cap is the real control on SQLite and is enforced. Document that one admin
+  can move ₪10 000 per call. *(Smallest; defensible.)*
+- **(b)** port `financial_approvals` to SQLite and route adjustments above a threshold through it. Requires
+  the whole ops module to ungate for that one table — more surface than it sounds.
 
-### 2. `/api/admin/approvals` is untested end-to-end
-If item 1 is implemented, this route becomes the control that matters and has no HTTP-level test.
-Add one that proves: an adjustment above a threshold creates a pending approval, a *different* admin can
-approve it, the recording admin cannot self-approve, and the cash balance only moves on approval.
+Pick (a) unless the owner wants four-eyes on cash before the cutover.
+
+### 2. If (b) is chosen: `/api/admin/approvals` needs an HTTP test
+The route has no end-to-end test today. It would need to prove: an adjustment above threshold creates a
+pending approval, a *different* admin can approve, the requester cannot self-approve, and the cash balance
+only moves on approval. `ops.ts:81` covers the self-approval rule at the domain level only.
 
 ### 3. The `(PG)` five — deliberately deferred, do not start
 P2 #1–#5 (refund `pending`→`rejected`, import-time ledger snapshot, partial COD, card-vs-cash,
