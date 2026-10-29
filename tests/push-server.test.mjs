@@ -11,7 +11,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-push-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 delete process.env.OSRM_URL; // smart prices from the straight-line estimate
-const { shutdown, server, promote, db, alertReleasedJobs } = await import('../server/main.ts');
+const { shutdown, server, promote, db, persistence, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -20,7 +20,26 @@ let reply = 201;
 globalThis.fetch = (url, init) => String(url).startsWith('https://fcm.googleapis.com/')
   ? (sent.push({ url: String(url), headers: init.headers, body: init.body }), Promise.resolve(new Response(null, { status: reply })))
   : realFetch(url, init);
-const settle = () => new Promise(resolve => setTimeout(resolve, 50));
+// Wait for the pushes a request queued instead of sleeping. sendPush hands each delivery to
+// persistence.detached() after the response, so record those promises and await them; a regression
+// that queues an extra push still reaches `sent`.
+// scripts/check-postgres-legacy.mjs rewrites the next line to `drainOutbox` in its generated copy.
+// const settle = () => new Promise(resolve => setTimeout(resolve, 50));
+const inFlight = new Set();
+const detached = persistence.detached.bind(persistence);
+persistence.detached = work => {
+  const running = detached(work);
+  inFlight.add(running);
+  void running.then(() => inFlight.delete(running), () => inFlight.delete(running));
+  return running;
+};
+const settle = async () => {
+  // The generated PostgreSQL copy declares drainOutbox (durable outbox); SQLite delivers through
+  // persistence.detached() above.
+  // eslint-disable-next-line no-undef
+  if (typeof drainOutbox === 'function') await drainOutbox();
+  while (inFlight.size) await Promise.allSettled([...inFlight]);
+};
 const b = s => Buffer.from(s, 'base64url');
 const fcm = name => `https://fcm.googleapis.com/fcm/send/${name}`;
 

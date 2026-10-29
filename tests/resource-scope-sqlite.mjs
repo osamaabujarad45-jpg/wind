@@ -32,6 +32,8 @@ try {
   assert.equal(order.declaredScope, undefined, 'SQLite order serialization gains no declared scope');
   assert.equal((await call(`/orders/${order.id}/scope`, { token: customer.token, body: parcelScope, expect: 409 })).error, 'scope_unavailable');
   assert.equal((await call(`/orders/${order.id}/scope`, { token: customer.token, expect: 409 })).error, 'scope_unavailable');
+  assert.equal((await call(`/orders/${order.id}/scope`, { token: driver.token, expect: 409 })).error, 'scope_unavailable',
+    'the capability gate comes before any browsing-driver visibility rule on SQLite');
   assert.equal((await call(`/orders/${order.id}/custody`, { token: driver.token, body: { kind: 'collected' }, expect: 409 })).error, 'scope_unavailable');
   assert.equal((await call(`/orders/${order.id}/pickup-check`, { token: driver.token, body: { actual: { itemCount: 1, massGrams: 1000, lengthMm: 100, widthMm: 100, heightMm: 100 } }, expect: 409 })).error, 'scope_unavailable');
   assert.equal((await call(`/orders/${order.id}/scope/resolve`, { token: admin.token, body: { action: 'support', reason: 'Synthetic support' }, expect: 409 })).error, 'scope_unavailable');

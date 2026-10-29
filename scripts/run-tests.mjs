@@ -92,19 +92,24 @@ const suites = [
   "azure-infra.test.mjs",
   "ops-sqlite.mjs"
 ];
-// Suites that need a live PostgreSQL (WIND_TEST_DATABASE_URL); run-tests has none, so they are
-// excluded by name and gated by `npm run test:persistence`. A NEW test file must be listed above
-// or exempted here — the guard below fails the gate if one is silently orphaned.
-const requiresPostgres = new Set(['db-persistence.test.mjs', 'db-api.test.mjs']);
+// Exempt with the reason it cannot run here. A new tests/*.test.mjs must be listed above or
+// exempted here; the guard below fails the gate if one is silently orphaned.
+const exempt = new Map([
+  ['db-persistence.test.mjs', 'needs live PostgreSQL (WIND_TEST_DATABASE_URL); npm run test:persistence'],
+  ['db-api.test.mjs', 'needs live PostgreSQL (WIND_TEST_DATABASE_URL); npm run test:persistence'],
+]);
+// Selection discipline: every *.test.mjs on disk must be selected or explicitly exempt.
+// This is what silently skipped four real suites (REVIEW-2026-10-29, P1 #4).
+const onDisk = readdirSync(new URL('../tests/', import.meta.url)).filter(f => f.endsWith('.test.mjs'));
+const orphaned = onDisk.filter(f => !suites.includes(f) && !exempt.has(f));
+if (orphaned.length) throw new Error('Test files are not selected and not exempt: ' + orphaned.join(', '));
+// A repeat would run one suite twice and inflate the gate count.
+const repeated = suites.filter((name, index) => suites.indexOf(name) !== index);
+if (repeated.length) throw new Error('Suites registered twice: ' + [...new Set(repeated)].join(', '));
 
 const filter = process.argv.find(value => value.startsWith('--filter='))?.slice('--filter='.length);
 const selected = suites.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No tests match the requested filter');
-// Selection discipline: every *.test.mjs on disk must be selected or explicitly exempt.
-// This is what silently skipped four real suites (REVIEW-2026-10-29, P1 #4).
-const onDisk = readdirSync(new URL('../tests/', import.meta.url)).filter(f => f.endsWith('.test.mjs'));
-const orphaned = onDisk.filter(f => !suites.includes(f) && !requiresPostgres.has(f));
-if (orphaned.length) throw new Error('Test files are not selected and not exempt: ' + orphaned.join(', '));
 for (const name of selected) {
   const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
     fileURLToPath(new URL('../tests/' + name, import.meta.url))], { stdio: 'inherit', windowsHide: true });
