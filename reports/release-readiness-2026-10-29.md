@@ -36,6 +36,16 @@ described as verified phone ownership, and email-based password recovery is off.
 The service scope, licensing, driver onboarding, support and recovery processes
 need operational verification before exposing rides or freight to the public.
 No live orders, messages or payment transactions were created for this check.
+The VM's configured support number matches the example number in the README,
+and the EAS production environment had no public support-contact variable.
+A real monitored support channel has not been verified.
+
+The existing `SouqWind-Railway-Backups` task last recorded a successful backup
+on 21 October; its recent run failed. Both the local Railway login and the stored
+protected token returned unauthorized, although Railway's SSH port was reachable.
+Because the live Azure web bundle currently calls Railway, a recent verified
+backup of that legacy service remains important and could not be established
+with the available account access. The shared Railway backup task was not changed.
 
 Microsoft's [routing coverage table](https://learn.microsoft.com/en-us/azure/azure-maps/routing-coverage)
 does not separately list Palestine and marks real-time traffic unavailable for
@@ -95,20 +105,31 @@ exports completed. The role/map browser scenarios passed 26 groups, the
 readiness journeys passed nine groups, and the customer-location check passed;
 those use isolated databases and controlled GPS/routing fixtures. A separate
 local load test passed its bounded SQLite correctness and latency gates. These
-checks do not prove a signed build, external provider integration or actual
-driver tracking in the field.
+checks do not prove external provider integration or actual driver tracking in
+the field; the signed Android build and phone launch are covered below.
 
 Two EAS Android attempts failed before compilation because an isolated checkout
 was nested inside a Git-ignored directory. Inspecting an archive in a standalone
 directory confirmed that `package.json` and the vendored patch are included and
 `node_modules` is excluded. An initial standalone Android preview built and
 launched on the QA emulator; it exposed the recovery-copy issue above. A pending
-production build based on that copy was canceled, and corrected
+production build based on that copy was canceled. The corrected
 [Android preview](https://expo.dev/accounts/osamaabujarad236/projects/wind/builds/2b9312f7-3751-4faf-a663-51e4fa8380e5)
 and [Android production](https://expo.dev/accounts/osamaabujarad236/projects/wind/builds/9503fcc8-c018-42bd-a02e-8141a74b867f)
-builds were queued. Check their final status before treating either as an
-artifact. iOS preview failed before building because suitable Apple distribution
-credentials were not available in non-interactive mode. A successful EAS build
+builds finished. The preview APK (`versionCode 16`, 107,157,758 bytes, SHA-256
+`49dd46fd2aa11afcc571e626c5674bae5d92bbb8b8baa4a10a19788091a8372f`)
+installed over the previous QA build on a physical Samsung SM-A5360 running
+Android 16. It launched to sign-in without a crash, showed the corrected
+recovery copy in English and Arabic and no email-reset claim, and displayed the
+registration fields for name, email, mobile number, password, account type and
+terms. The production App Bundle (`versionCode 17`, 75,708,394 bytes, SHA-256
+`7700ab59804472e953d365a28c599ba7e6866fd1dff2c99df4a233e49e9de93e`)
+passed `bundletool validate` 1.18.3 and `jarsigner -verify`; it packages
+`ps.wind.app` at versionName `1.0.13` and is signed by the same certificate as
+the preview APK. It has not been uploaded to Google Play or installed from the
+bundle. The phone check created no account, order or payment, and the QA
+emulator was shut down after it. iOS preview failed before building because
+suitable Apple distribution credentials were not available in non-interactive mode. A successful EAS build
 would still need device testing and store processing; see [Expo's submission
 guide](https://docs.expo.dev/deploy/submit-to-app-stores/).
 
