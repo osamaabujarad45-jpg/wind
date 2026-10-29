@@ -79,6 +79,13 @@ try {
   assert.equal((await reschedule(later, moved, 409)).error, 'cannot_reschedule'); // a driver took it
   db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 20 * MIN, move.id);
   assert.equal((await reschedule(move, moved, 409)).error, 'cannot_reschedule'); // drivers can see it now
+  // Ownership alone. An admin sees any order, and a slot beyond RELEASE_BEFORE (30 min) also
+  // passes the status/time check at :1497 — so only :1495 can refuse this. A driver request
+  // cannot isolate the guard, because :1497 returns the same error first.
+  const far = await book({ scheduledFor: Date.now() + 2 * DAY });
+  const farSlot = db.prepare('SELECT scheduled_for FROM orders WHERE id = ?').get(far.id).scheduled_for;
+  assert.equal((await reschedule(far, Date.now() + 3 * DAY, 409, admin.token)).error, 'cannot_reschedule');
+  assert.equal(db.prepare('SELECT scheduled_for FROM orders WHERE id = ?').get(far.id).scheduled_for, farSlot);
 
   // The customer can still cancel a scheduled order before a driver takes it.
   const another = await book({ scheduledFor: Date.now() + DAY });
