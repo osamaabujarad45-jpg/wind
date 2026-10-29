@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
+import { clientAddress } from './client-address.ts';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { parsePhoneNumber, type PhoneNumber } from './phone-number.ts';
 import { AcsCommunication, OoredooCommunication, phoneConfig, type PhoneConfig } from './phone-provider.ts';
@@ -45,7 +46,7 @@ export class PhoneIdentity {
   // These UUID/token-derived lookup keys remain stable across HMAC-key rotation. Old command
   // fingerprints then fail closed on a missing old key instead of creating another paid send.
   private device(value:unknown) {return digest(`wp06-device:${this.id(value)}`);}
-  private ip(req:IncomingMessage) {const forwarded=req.headers['x-real-ip'];return this.hmac(['ip',process.env.WIND_TRUST_PROXY==='1' && typeof forwarded==='string'?forwarded:req.socket.remoteAddress??'unknown']);}
+  private ip(req:IncomingMessage) {return this.hmac(['ip',clientAddress(req)]);}
   async capabilities() {const available=await phoneSchemaAvailable(this.db);return {available,enabled:available && this.config.enabled,
     provider:available && this.config.enabled?this.config.provider:null,sendAcceptance:available && this.config.enabled,deliveryReceipts:false,deliveryQuery:false,providerTransactionIdempotency:false,
     policy:phonePolicy,supportedContext:'PS',supportedMobilePrefixes:['56','59'],legacyLoginPreserved:true};}

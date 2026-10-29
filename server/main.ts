@@ -27,6 +27,7 @@ import { destinationEligible, pendingDestination, registerDestinationRoutes } fr
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
+import { clientAddress } from './domain/client-address.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -1540,9 +1541,7 @@ route('POST', '/api/orders/:id/share/revoke', async ({ user, params }) => {
 });
 const shareRefKey = randomBytes(32); // in memory only: public driver refs must not be invertible from the link itself
 route('GET', '/api/track/([a-f0-9]{64})', async ({ params, req }) => {
-  const forwarded = req.headers['x-real-ip'] ?? (typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0]?.trim() : undefined);
-  const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
-  (await limit(identityKey('track-view', address), 600, 10 * 60_000));
+  (await limit(identityKey('track-view', clientAddress(req)), 600, 10 * 60_000));
   return (await trackView(params[0]!)).view;
 }, true);
 route('GET', '/api/track/([a-f0-9]{64})/live', async ({ params, query, req }) => {
@@ -2778,11 +2777,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     const user = (await authenticate(req)); // a slow body cannot retain authority revoked while it was uploading
     if (!match.isPublic && !user) fail(401, 'unauthorized');
     const perAddress = publicAuthLimits[url.pathname];
-    if (perAddress) {
-      const forwarded = req.headers['x-real-ip'] ?? (typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0]?.trim() : undefined);
-      const address = process.env.WIND_TRUST_PROXY === '1' && typeof forwarded === 'string' ? forwarded : req.socket.remoteAddress ?? 'unknown';
-      (await limit(identityKey(url.pathname, address), perAddress, 10 * 60_000));
-    }
+    if (perAddress) (await limit(identityKey(url.pathname, clientAddress(req)), perAddress, 10 * 60_000));
 
     const invoke = async () => {
       const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(url.pathname);
