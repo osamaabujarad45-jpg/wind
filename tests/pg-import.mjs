@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { initializeSqlite } from '../server/db/sqlite-schema.ts';
-import { snapshotSqlite, importSnapshot, reconcile } from '../server/migrate.ts';
+import { snapshotSqlite, importSnapshot, reconcile, NON_LEGACY_TABLES } from '../server/migrate.ts';
 import { Persistence } from '../server/db/persistence.ts';
 import { initializePostgres, MIGRATION_LOCK } from '../server/db/postgres-schema.ts';
 import { connectionString, connect, freshPostgres, schemaName } from './pg-support.mjs';
@@ -80,7 +80,7 @@ try {
   assert.deepEqual(geometry,{longitude:35.2034,latitude:31.9038,srid:4326});
   assert.ok((await database.all("SELECT indexdef FROM pg_indexes WHERE schemaname=? AND indexdef LIKE '%USING gist%'",schema)).length>=2);
   assert.equal((await database.one('SELECT capacity_state,usable_kg,usable_m3 FROM driver_run_resources WHERE driver_id=?',driver)).capacity_state,'unknown_legacy');
-  for(const table of snapshot.tables) if(table.columns.some(c=>c.name==='id'&&c.pk)){
+  for(const table of snapshot.tables.filter(t=>!NON_LEGACY_TABLES.has(t.name))) if(table.columns.some(c=>c.name==='id'&&c.pk)){
     // UUID (quotes) and singleton (road_restriction_policy) keys have no serial sequence to repair.
     if(!(await database.one("SELECT pg_get_serial_sequence(?, 'id') sequence",`${schema}.${table.name}`)).sequence) continue;
     const max=Math.max(0,...snapshot.rows[table.name].map(r=>r.id));
@@ -126,7 +126,7 @@ try {
   assert.equal(afterRestore.tables.find(t=>t.table==='promo_redemptions').targetRows,2,'restore retains distinct PK-less redemptions');
   writeFileSync(join(dir,'restore-report.json'),JSON.stringify({schema,database:freshDatabase,...afterRestore},null,2));
   await assert.rejects(restored.run('DELETE FROM cash_entries'),/append-only/);
-  for(const table of snapshot.tables)if(table.columns.some(c=>c.name==='id'&&c.pk)){
+  for(const table of snapshot.tables.filter(t=>!NON_LEGACY_TABLES.has(t.name)))if(table.columns.some(c=>c.name==='id'&&c.pk)){
     if(!(await restored.one("SELECT pg_get_serial_sequence(?, 'id') sequence",`${schema}.${table.name}`)).sequence) continue;
     assert.ok((await restored.one("SELECT nextval(pg_get_serial_sequence(?, 'id')) id",`${schema}.${table.name}`)).id>Math.max(0,...snapshot.rows[table.name].map(r=>r.id)));
   }

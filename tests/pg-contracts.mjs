@@ -302,6 +302,11 @@ try {
     // WP08: price now returns quote metadata (quoteId, expires, minor units, versions, ETA band) on Postgres;
     // the frozen SQLite fixture does not have those, so strip them for the Postgres comparison.
     const cleanObserved = JSON.parse(JSON.stringify(observed));
+    // Destination change is SQLite-only (the route returns destination_unavailable
+    // on Postgres); the frozen fixture is SQLite. Compare the shared contract.
+    const expectedContracts = JSON.parse(JSON.stringify(read('fixtures.json')));
+    for (const ex of [...cleanObserved.exchanges, ...expectedContracts.exchanges])
+      if (ex.response && typeof ex.response === 'object') delete ex.response.canChangeDestination;
     for (const ex of cleanObserved.exchanges) {
       // On Postgres /api/ready reports the max applied migration version (503 below 20);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
@@ -329,7 +334,7 @@ try {
         ex.response.at = '<at>';
       }
     }
-    assert.deepEqual(cleanObserved, read('fixtures.json'), 'Public behavior changed; review the redacted fixture diff');
+    assert.deepEqual(cleanObserved, expectedContracts, 'Public behavior changed; review the redacted fixture diff');
   }
   console.log(`WP03 PostgreSQL frozen contracts: ${inventory.endpoints.length} installed + ${additiveBoundaries} additive endpoint boundaries, ${transitions.size} transitions, ${observed.exchanges.length} exchanges; schema/auth/return/cash/rating/partner checks passed${recording ? ' (fixtures recorded; rerun read-only)' : ''}`);
 } finally {

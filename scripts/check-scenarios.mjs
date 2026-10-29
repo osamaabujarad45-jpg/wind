@@ -93,7 +93,10 @@ async function signup(page, phone, name, driver = false) {
   await field(page, c.email).fill(`${phone}@example.test`);
   await field(page, c.phone).fill(phone);
   await field(page, c.password).fill(password);
-  if (driver) await page.getByRole('radio', { name: c.driver, exact: true }).click();
+  if (driver) {
+    await page.getByRole('radio', { name: c.driver, exact: true }).click();
+    await field(page, c.plate).fill('12-345-67'); // the plate is required for a motor vehicle
+  }
   await page.getByRole('checkbox', { name: c.consent }).click();
   await button(page, c.createAccount).click();
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));

@@ -13,7 +13,11 @@ const hash = (value: string | Buffer) => createHash('sha256').update(value).dige
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // WP08 operational tables are PostgreSQL-only: quotes are 120s-ephemeral and road
 // restrictions/policy move only via the operator policy exchange, never snapshot import.
-export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+// SQLite-only columns carried by the live schema but absent from the Postgres
+// snapshot. They stay in the source; the import does not invent a target column.
+const SQLITE_ONLY_COLUMNS = new Set(['commission_rate']);
+const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
 const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
@@ -100,14 +104,15 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
   const tables: Row[] = [];
   for (const table of snapshot.tables) {
     if (NON_LEGACY_TABLES.has(table.name)) continue;
-    const rows = await database.all(`SELECT ${table.columns.map(c => quote(c.name)).join(',')} FROM ${quote(table.name)}`);
+    const columns = importColumns(table);
+    const rows = await database.all(`SELECT ${columns.map(c => quote(c.name)).join(',')} FROM ${quote(table.name)}`);
     const group=(values:Row[])=>{
       const grouped=new Map<string,string[]>();
       for(const row of values){const key=keyOf(table,row);const entries=grouped.get(key)??[];entries.push(stable(row));grouped.set(key,entries);}
       for(const entries of grouped.values())entries.sort();
       return grouped;
     };
-    const source = group(snapshot.rows[table.name]), target = group(rows);
+    const source = group(snapshot.rows[table.name].map(row => Object.fromEntries(columns.map(c => [c.name, row[c.name]])))), target = group(rows);
     for (const [key, value] of source) if (JSON.stringify(target.get(key)) !== JSON.stringify(value)) mismatches.push({ table: table.name, key, reason: target.has(key) ? 'row/multiplicity differs' : 'missing key' });
     for (const key of target.keys()) if (!source.has(key)) mismatches.push({ table: table.name, key, reason: 'unexpected key' });
     tables.push({ table: table.name, keyColumns:table.keyColumns, sourceRows: snapshot.rows[table.name].length, targetRows: rows.length,
@@ -165,8 +170,9 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       await database.run(`SET LOCAL search_path TO ${schema}, public`);
       const actual = await database.all("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=?", schema);
       for (const table of snapshot.tables) {
+        if (NON_LEGACY_TABLES.has(table.name)) continue;
         const columns = actual.filter(c => c.table_name === table.name).map(c => c.column_name);
-        if (table.columns.some(c => !columns.includes(c.name))) errors.push({ table: table.name, reason: 'unreviewed SQLite schema/column; update migration explicitly' });
+        if (importColumns(table).some(c => !columns.includes(c.name))) errors.push({ table: table.name, reason: 'unreviewed SQLite schema/column; update migration explicitly' });
         if (table.name === 'quotes' || table.name === 'road_restrictions') continue; // PG-only operational data, never snapshot-imported
         if (table.name === 'road_restriction_policy') { const isSeed = (r: Row) => Number(r.id) === 1 && Number(r.revision) === 1 && Number(r.activated) === 0 && r.evidence_ref == null && r.reviewer_id == null && r.reason == null && r.reviewed_at == null; const target = await database.all('SELECT * FROM road_restriction_policy'); const source = snapshot.rows[table.name] ?? []; if (!(target.length === 1 && isSeed(target[0]) && source.length === 1 && isSeed(source[0]))) errors.push({ table: table.name, reason: 'operator road-restriction policy is not importable; use the policy exchange' }); continue; }
         if (columns.length && (await database.one(`SELECT COUNT(*) count FROM ${quote(table.name)}`))!.count) errors.push({ table: table.name, reason: 'target is not empty; never merge or overwrite' });
@@ -187,7 +193,8 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
             const amount = row[column]; const cents = minor(amount);
             if (amount !== null && cents! / 100 !== amount) rounding.push({ table: table.name, key, column, legacyAmount: amount, minor: cents });
           }
-          await database.run(`INSERT INTO ${quote(table.name)} (${table.columns.map(c => quote(c.name)).join(',')}) VALUES(${table.columns.map(() => '?').join(',')})`, ...table.columns.map(c => row[c.name]));
+          const columns = importColumns(table);
+          await database.run(`INSERT INTO ${quote(table.name)} (${columns.map(c => quote(c.name)).join(',')}) VALUES(${columns.map(() => '?').join(',')})`, ...columns.map(c => row[c.name]));
         } catch (error) {
           await database.run('ROLLBACK TO SAVEPOINT import_row');
           const e = error as { code?: string; constraint?: string };
@@ -198,7 +205,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       if (errors.length) throw new Error('Invalid legacy rows require review');
       await database.run('SET CONSTRAINTS ALL IMMEDIATE');
       await database.run("INSERT INTO driver_run_resources(driver_id) SELECT id FROM users WHERE role='driver' ON CONFLICT DO NOTHING");
-      for (const table of snapshot.tables.filter(t => t.columns.some(c => c.name === 'id' && c.pk)))
+      for (const table of snapshot.tables.filter(t => !NON_LEGACY_TABLES.has(t.name) && t.columns.some(c => c.name === 'id' && c.pk)))
         {
           // UUID/singleton keys have no serial sequence; MAX(uuid) would raise 42883.
           const sequence = (await database.one(`SELECT pg_get_serial_sequence(?, 'id') AS sequence`, `${schema}.${table.name}`))?.sequence;
