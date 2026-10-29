@@ -40,9 +40,9 @@ export default function Home() {
     {/* The one entry point: destination first, like Uber's "Where to?", with "Later" a real control rather than a label
         drawn like a button. */}
     <View style={[styles.search, { flexDirection: row }]}>
-      <Press accessibilityLabel={c.whereTo} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
+      <Press accessibilityLabel={c.whereTo} containerStyle={{ flex: 1 }} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
         <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-        <Text style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
+        <Text numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
       </Press>
       <Press accessibilityLabel={c.later} onPress={() => book({ service: 'parcel', when: 'later' })} style={[styles.now, { flexDirection: row }]}>
         <Ionicons name="calendar-outline" size={15} color={palette.ink} />
@@ -107,7 +107,9 @@ function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'c
 }
 
 const styles = StyleSheet.create({
-  search: { alignItems: 'center', gap: 4, minHeight: 52, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
+  // Fixed height: the flexed search label inside a ScrollView stretched this row to the viewport
+  // on the A53 until a scroll (reproduced 29 Oct 2026). 56px still clears the 40px controls.
+  search: { alignItems: 'center', gap: 4, height: 56, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
   searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 40 },
   searchIcon: { width: 38, alignItems: 'center' },
   searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },

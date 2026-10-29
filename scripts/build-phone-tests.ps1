@@ -62,7 +62,7 @@ foreach ($phoneFolder in @('src', 'assets', 'plugins', 'vendor', 'public')) {
 
 $phoneEnvNames = @('ANDROID_HOME', 'ANDROID_SDK_ROOT', 'JAVA_HOME', 'CI', 'NODE_ENV', 'EXPO_PUBLIC_API_URL',
   'WIND_LOCAL_TEST', 'WIND_TEST_ROLE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_RELEASE', 'EAS_BUILD',
-  'GOOGLE_MAPS_API_KEY', 'EXPO_NO_GIT_STATUS')
+  'GOOGLE_MAPS_API_KEY', 'EXPO_NO_GIT_STATUS', 'GRADLE_USER_HOME', 'CMAKE_OBJECT_PATH_MAX')
 $phoneSavedEnv = @{}
 foreach ($phoneEnvName in $phoneEnvNames) { $phoneSavedEnv[$phoneEnvName] = [Environment]::GetEnvironmentVariable($phoneEnvName, 'Process') }
 $phoneArtifactsPath = Join-Path $phoneOutput 'artifacts.json'
@@ -75,6 +75,10 @@ try {
   $env:CI = '1'
   $env:NODE_ENV = 'production'
   $env:EXPO_NO_GIT_STATUS = '1'
+  # Windows MAX_PATH: the Scoop Gradle home put a prefab header past 260 characters when CMake
+  # regenerated the ARM64 objects. Keep the cache on a short root; 250 leaves room for suffixes.
+  $env:GRADLE_USER_HOME = Join-Path $env:SystemDrive 'wq-gradle'
+  $env:CMAKE_OBJECT_PATH_MAX = '250'
   $env:EXPO_PUBLIC_API_URL = [string]$phoneProvision.apiUrl
   $env:WIND_LOCAL_TEST = '1'
   Remove-Item Env:WIND_RELEASE, Env:EAS_BUILD, Env:GOOGLE_MAPS_API_KEY -ErrorAction SilentlyContinue

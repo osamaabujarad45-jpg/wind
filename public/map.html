@@ -26,6 +26,8 @@
 const send = message => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
 let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
+// A missing/empty fragment used to throw on config.colors and leave a blank WebView; tell the app to fall back.
+if (!config || typeof config !== 'object') { send({ type: 'failed' }); throw new Error('bad config'); }
 const C = config.colors ?? { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_ZOOM = 15, FOLLOW_OFFSET = [0, -60];
