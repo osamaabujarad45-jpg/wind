@@ -32,7 +32,10 @@ async function open() {
     throw error;
   }
   Object.assign(process.env, { NODE_ENV: 'test', WIND_DATABASE_URL: connectionString,
-    WIND_POSTGRES_TEST_ONLY: '1', WIND_POSTGRES_TEST_SCHEMA: schema });
+    WIND_POSTGRES_TEST_ONLY: '1', WIND_POSTGRES_TEST_SCHEMA: schema,
+    // T37: the worker refuses an unconfigured VAPID subject; legacy parity suites send real Web Push
+    // through the local fetch double, so the fixture supplies a synthetic operator subject.
+    WIND_PUSH_SUBJECT: process.env.WIND_PUSH_SUBJECT ?? 'mailto:wind-push-suite@example.invalid' });
   const main = await import('../../server/main.ts');
   const worker = new DurableWorker(fixture);
   const drainOutbox = async () => {

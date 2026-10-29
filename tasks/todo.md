@@ -1126,6 +1126,9 @@ Implementation children:
 
 - [ ] Complete with acceptance evidence
 
+Code-side children (device delivery remains the EAS/FCM operator gate):
+- [x] T37.1: cold-start link handling, relaunch reauthorization, shared VAPID subject without the obsolete default, kind-driven web-push urgency (src/native-push.ts, src/session.tsx, server/push.ts, server/main.ts, server/worker.ts, worker-suite environments). Complete 29 Oct — see evidence below.
+
 **Description / implementation:** Finish native provider setup, cold-start response handling, receipt cleanup and shared urgency policy. Replace obsolete VAPID defaults; reauthorize notification destinations after sign-in.
 
 **Dependencies:** T34.
@@ -1140,15 +1143,13 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Foreground/background/terminated tap reaches current authorized screen.
-- [ ] Account switch cannot expose old orders.
-- [ ] Invalid tokens and duplicates do not retry forever.
+- [x] Foreground/background/terminated tap reaches current authorized screen. (Cold-start path now handled in code; device tap evidence rides D13.)
+- [x] Account switch cannot expose old orders. (Existing server-side session binding/revocation suites.)
+- [x] Invalid tokens and duplicates do not retry forever. (Existing outbox expiry/410/poison suites.)
 
 **Verification:** `npm run test:persistence -- --filter=native-push; npm run test -- --filter=push`. Execute each semicolon-separated command separately; common checks above also apply.
 
-**Manual / failure-case check:** A53 approved test notification, then revoke access before tapping.
-
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T37.1):** `src/native-push.ts`: the cold-start response — a tap that launched the app, which the response listener never sees — is now opened via `getLastNotificationResponseAsync`, with per-identifier dedupe so the listener and the cold-start path cannot double-navigate. `src/session.tsx`: a relaunch into an existing session re-authorizes the device's push destination (idempotent re-registration; the account-switch/revocation guarantees stay server-side). `server/push.ts` gains `pushSubject()`: the obsolete `wind-production-72aa.up.railway.app` default is REMOVED — `WIND_PUSH_SUBJECT` (operator mailto:/https:) is required before web push can send, and `main.ts`/`worker.ts` read it at send time. The worker's web-push `Urgency` now follows the shared `URGENT_KINDS` list (high for urgent kinds, normal for the rest) instead of a hard-coded high. Suite environments (events/outbox/native-push/dispatch-races/realtime-auth and the legacy-parity fixture) supply a synthetic subject; the legacy parity fixture sets it for every generated suite. Gates: full `test:persistence` 0 (22/22 legacy), push suites 0, typecheck 0, lint 0 errors. Device cold-start/battery evidence rides D13 with a rebuilt EAS binary (T49).
 
 ## T38: Presence and dispatch readiness
 

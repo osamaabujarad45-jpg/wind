@@ -97,12 +97,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signedIn = !!me;
   useEffect(() => {
     if (!signedIn) return;
+    // T37: a relaunch into an existing session re-authorizes this device's push destination against the
+    // current session (registering is idempotent; failures keep the polling fallback).
+    void registerNativePush(language);
     // Updater form: a reply landing after sign-out must not bring the session back.
     const quiet = () => { api<Me>('/me').then(data => setMe(current => current && data), () => {}); };
     const timer = setInterval(quiet, 60_000);
     const sub = AppState.addEventListener('change', state => { if (state === 'active') quiet(); });
     return () => { clearInterval(timer); sub.remove(); };
-  }, [signedIn]);
+  }, [signedIn, language]);
 
   const value: Session = {
     ready, offline, me, language, refresh, forget, onboarded,

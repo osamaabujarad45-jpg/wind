@@ -4,7 +4,8 @@ import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
 import { encrypt, pushEndpoint, vapid } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
-import { nativeSuppression, PUSH_KINDS } from './domain/native-push.ts';
+import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
+import { pushSubject } from './push.ts';
 import { Dispatch } from './domain/dispatch.ts';
 import { Eligibility } from './domain/eligibility.ts';
 import { logServerError } from './domain/diagnostics.ts';
@@ -158,7 +159,7 @@ export class DurableWorker {
         else await this.expoSend((target as { token: Row }).token,message,target.remaining);
       } else if (this.options.transport) await this.options.transport((target as unknown as { subscription: Row }).subscription,message,target.remaining);
       else {
-        const invalid = await this.webPush((target as unknown as { subscription: Row }).subscription,message,target.remaining);
+        const invalid = await this.webPush((target as unknown as { subscription: Row }).subscription,message,target.remaining,String(work.payload.kind));
         if (invalid) { await this.finish(work,'obsolete',`provider_http_${invalid}`); return true; }
       }
       await this.options.afterPublish?.(work);
@@ -198,7 +199,7 @@ export class DurableWorker {
     }
     if (ticket?.status!=='ok') throw Object.assign(new Error('provider_failed'),{providerStatus:502});
   }
-  private async webPush(subscription: Row,message: string,ttl: number) {
+  private async webPush(subscription: Row,message: string,ttl: number,kind: string) {
     const endpoint=pushEndpoint(subscription.endpoint);
     if (!endpoint) throw new Error('invalid_endpoint');
     let keys=await this.db.one('SELECT private_jwk FROM push_keys WHERE id=1');
@@ -215,8 +216,8 @@ export class DurableWorker {
     const publicRaw=Buffer.concat([Buffer.from([4]),Buffer.from(jwk.x,'base64url'),Buffer.from(jwk.y,'base64url')]);
     const response=await fetch(endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10_000),
       body:encrypt(Buffer.from(message),Buffer.from(subscription.p256dh,'base64url'),Buffer.from(subscription.auth,'base64url')),
-      headers:{TTL:String(ttl),Urgency:'high','Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream',
-        Authorization:vapid(endpoint,publicRaw,privateKey,process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app')}});
+      headers:{TTL:String(ttl),Urgency:URGENT_KINDS.includes(kind)?'high':'normal','Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream',
+        Authorization:vapid(endpoint,publicRaw,privateKey,pushSubject())}});
     await response.body?.cancel();
     if (response.status===404 || response.status===410) {
       await this.db.run('DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=? AND created_at=?',endpoint,subscription.user_id,subscription.created_at);

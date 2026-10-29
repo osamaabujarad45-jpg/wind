@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { acceptOffer, addDriver, assessRide, bookRide, dispatchFixture, myOffer } from './dispatch-support.mjs';
 import { leaseNonceFor, leaseNonceHash } from '../server/domain/dispatch.ts';
 import { DurableWorker } from '../server/worker.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: the worker refuses an unconfigured VAPID subject
 
 const raw = (base, path, token, body = {}) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
   .then(async r => ({ status: r.status, data: await r.json() }));

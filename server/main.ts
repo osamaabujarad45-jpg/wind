@@ -46,7 +46,7 @@ import {
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
-import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
+import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
@@ -991,8 +991,8 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined';
-// ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
-const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
+// T37: the subject is read at send time and must be configured (no obsolete host default).
+const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
 async function pushKeys() {
   if (pushKeyCache) return pushKeyCache;
@@ -1030,7 +1030,7 @@ async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   try {
     const { privateKey, publicRaw } = (await pushKeys());
     const res = await fetch(s.endpoint as string, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
-      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT) } });
+      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT()) } });
     await res.body?.cancel();
     if (res.status === 404 || res.status === 410) (await run('DELETE FROM push_subscriptions WHERE endpoint = ?', s.endpoint)); // the browser dropped it
   } catch { /* best effort: the app still shows everything on next open */ }

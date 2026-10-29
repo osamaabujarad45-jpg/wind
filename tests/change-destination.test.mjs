@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-destination-'));
 process.env.DB_PATH = join(dir, 'test.db');

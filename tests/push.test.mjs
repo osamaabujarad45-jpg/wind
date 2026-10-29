@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { encrypt, pushEndpoint, vapid } from '../server/push.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
 const b = s => Buffer.from(s.replace(/\s/g, ''), 'base64url');
 const body = encrypt(b('V2hlbiBJIGdyb3cgdXAsIEkgd2FudCB0byBiZSBhIHdhdGVybWVsb24'),

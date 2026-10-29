@@ -4,6 +4,7 @@ import { freshPostgres,selectRuntime,connect } from './pg-support.mjs';
 import { apiCaller } from './support/api.mjs';
 import { DurableWorker } from '../server/worker.ts';
 import { enqueuePush } from '../server/domain/events.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: the worker refuses an unconfigured VAPID subject
 const {schema,database:db}=await freshPostgres('events');selectRuntime(schema);
 process.env.WIND_ENABLED_SERVICES='parcel,ride,freight';delete process.env.WIND_IDENTITY_MODE;delete process.env.WIND_EMAIL_FROM;delete process.env.OSRM_URL;
 const {server,shutdown,promote,alertReleasedJobs}=await import('../server/main.ts');

@@ -7,6 +7,7 @@ import { apiCaller } from './support/api.mjs';
 import { DurableWorker } from '../server/worker.ts';
 import { enqueuePush, expoDestination } from '../server/domain/events.ts';
 import { nativeDeviceHash, nativeTokenHash } from '../server/domain/native-push.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: the worker refuses an unconfigured VAPID subject
 
 const { schema, database: setupDb } = await freshPostgres('native_push');
 await setupDb.close();

@@ -10,6 +10,7 @@ import { apiCaller } from './support/api.mjs';
 const dir = mkdtempSync(join(tmpdir(), 'wind-push-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 delete process.env.OSRM_URL; // smart prices from the straight-line estimate
 const { shutdown, server, promote, db, persistence, alertReleasedJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
