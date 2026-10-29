@@ -883,7 +883,7 @@ Implementation children:
 
 ## T29: Live order ledger posting
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Post balanced journals atomically at completion/return using stored commission and promo allocation. Reuse stable business references; importLegacy is not a continuous synchronization mechanism.
 
@@ -898,19 +898,19 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] One journal per business fact.
-- [ ] Rollback leaves neither partial order nor journal.
-- [ ] Import plus new events never double-count.
+- [x] One journal per business fact.
+- [x] Rollback leaves neither partial order nor journal.
+- [x] Import plus new events never double-count.
 
 **Verification:** `npm run test:persistence -- --filter=ledger; npm run test:persistence -- --filter=pg-cash`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Reconcile import, two completions and return against explicit minor-unit totals.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `server/main.ts` gains `postOrderJournals`/`postCashJournal` over the WP13 Ledger capability (PostgreSQL + migration 16 only; SQLite has no ledger tables and keeps the legacy cash flow as the sole authority). Completion and return post the commission-accrual and discount-funding journals inside the advance transaction, using exactly `importLegacy`'s stable business references (`order:{id}:commission` / `order:{id}:discount`) and the trigger-maintained `commission_minor`/`discount_minor`; a posting failure fails the enclosing money transition, so a rollback leaves neither a partial order nor a journal. Suite: a real HTTP completion posts the journals, and a subsequent `/admin/ledger/import` adds none for the same order (business-ref dedupe). ledger suite 0.
 
 ## T30: Live cash ledger posting
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Post confirmed remittance, adjustment and reversal transactionally. Pending/disputed remittances remain unsettled; corrections append reversals without deleting originals.
 
@@ -925,15 +925,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Live balances update immediately after confirmed events.
-- [ ] Retry cannot post twice.
-- [ ] Reversal restores expected balance with preserved history.
+- [x] Live balances update immediately after confirmed events.
+- [x] Retry cannot post twice.
+- [x] Reversal restores expected balance with preserved history.
 
 **Verification:** `npm run test:persistence -- --filter=ledger; npm run test:persistence -- --filter=pg-cash`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Compare cash-screen totals and ledger after confirm/dispute/reversal.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. The driver's `confirm` decision, the T25 administrator resolution (`cash-ops` gained a `postCashJournal` hook), and `recordCash` adjustments all post the `cash-entry:{id}` journal in the settling transaction — pending and disputed handovers stay unsettled (no journal), adjustments post as they are recorded with the import's sign-aware direction, and `postJournal`'s `business_ref` conflict makes any retry idempotent (same payload replays, changed payload `409 idempotency_conflict`). Suite: pending records no journal, confirmation lowers the receivable, a positive adjustment raises it, and import adds nothing for the live entries. ledger 0, pg-cash 0, typecheck 0, lint 0 errors. Dispute/reversal visual reconciliation stays a D14 device check; production posting requires the PostgreSQL gate to open (T34/T50).
 
 ### Checkpoint C10 — after T30
 

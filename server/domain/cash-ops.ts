@@ -20,6 +20,8 @@ type Deps = {
   need: (user: any, ...roles: any[]) => void;
   text: (value: unknown, max: number, required?: boolean) => string;
   cashEntry: (r: Row) => Row;
+  // T30: a resolution that confirms the handover settles it in the same envelope transaction.
+  postCashJournal: (entryId: number) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queuePush: (ids: any[], kind: any, order: number, path?: string) => Promise<void>;
 };
@@ -44,6 +46,7 @@ export function registerCashOpsRoutes(route: Register, deps: Deps): void {
       evidenceRef ? `${reason} | evidence: ${evidenceRef}` : reason, entry.id)).changes)
       deps.fail(409, 'already_decided');
     await deps.queuePush([entry.driver_id as number], 'cash', 0, '/driver/earnings');
+    if (body.decision === 'confirm') await deps.postCashJournal(entry.id as number);
     return deps.cashEntry((await deps.one('SELECT * FROM cash_entries WHERE id = ?', entry.id))!);
   });
 }

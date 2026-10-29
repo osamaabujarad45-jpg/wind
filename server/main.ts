@@ -16,7 +16,7 @@ import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/disp
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
-import { Ledger, registerLedgerRoutes } from './domain/ledger.ts';
+import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
 import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
@@ -511,6 +511,43 @@ registerResourceScopeRoutes(route, resourceScope);
 const privateObjects = createPrivateObjects(persistence, fail);
 registerPrivateObjectRoutes(route, privateObjects);
 const ledger = new Ledger(persistence, fail);
+
+// T29/T30: live ledger posting on the PostgreSQL capability. Journals reuse importLegacy's stable business
+// references, so a later import meets the posted journals and dedupes on the business_ref instead of
+// double-counting. SQLite has no ledger tables: the legacy cash flow stays the sole authority there, and
+// posting is skipped. A posting failure fails the enclosing money transition (same transaction).
+async function ledgerReady() {
+  return persistence.backend === 'postgres' && !!(await ledgerAvailable(persistence));
+}
+const postOrderJournals = async (orderId: number) => {
+  if (!(await ledgerReady())) return;
+  const o = (await one('SELECT * FROM orders WHERE id = ?', orderId))!;
+  const receivable = await ledger.ensureAccount(`driver:${o.driver_id}:receivable`, 'driver_receivable', Number(o.driver_id));
+  const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+  const promo = await ledger.ensureAccount('platform:promo_expense', 'promo_expense', null);
+  const commission = Number(o.commission_minor ?? 0), discount = Number(o.discount_minor ?? 0);
+  if (commission > 0) await ledger.postJournal({ businessRef: `order:${o.id}:commission`, kind: 'commission_accrual', orderId: o.id as number,
+    entries: [{ accountId: receivable.id as number, debitMinor: commission }, { accountId: revenue.id as number, creditMinor: commission }] });
+  if (discount > 0) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
+    entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
+};
+const postCashJournal = async (entryId: number) => {
+  if (!(await ledgerReady())) return;
+  const e = (await one('SELECT * FROM cash_entries WHERE id = ?', entryId))!;
+  if (e.kind === 'remittance' && e.status !== 'confirmed') return; // pending and disputed handovers stay unsettled
+  const amount = Number(e.amount_cents);
+  if (!amount) return;
+  const receivable = await ledger.ensureAccount(`driver:${e.driver_id}:receivable`, 'driver_receivable', Number(e.driver_id));
+  const clearing = await ledger.ensureAccount('platform:provider_clearing', 'provider_clearing', null);
+  const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+  const other = e.kind === 'remittance' ? clearing : revenue;
+  // Sign-aware, exactly like the import: a positive adjustment increases the debt, a negative one relieves it.
+  const debitReceivable = e.kind === 'adjustment' ? amount > 0 : amount < 0;
+  const n = Math.abs(amount);
+  await ledger.postJournal({ businessRef: `cash-entry:${e.id}`, kind: e.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: e.id as number,
+    entries: debitReceivable ? [{ accountId: receivable.id as number, debitMinor: n }, { accountId: other.id as number, creditMinor: n }]
+      : [{ accountId: other.id as number, debitMinor: n }, { accountId: receivable.id as number, creditMinor: n }] });
+};
 registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
@@ -2090,6 +2127,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
       next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
+    await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
@@ -2577,7 +2615,7 @@ async function cashSettled(userId: number) {
 const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
-registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush });
+registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');
@@ -2597,6 +2635,7 @@ route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => 
   if (!(await run("UPDATE cash_entries SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
     body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), entry.id)).changes) fail(409, 'already_decided');
   if (body.decision === 'dispute') await queuePush([entry.recorded_by], 'attention', 0, '/admin/cash'); // the admin who recorded it decides
+  else await postCashJournal(entry.id); // T30: the confirmed handover settles in the same transaction
   return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', entry.id))!);
 });
 
@@ -2649,6 +2688,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     }
     const id = Number((await run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);
+    if (kind === 'adjustment') await postCashJournal(id); // T30: adjustments settle as they are recorded
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     (await persistence.exec('COMMIT'));
     return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', id))!);

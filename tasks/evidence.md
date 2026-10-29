@@ -427,3 +427,10 @@ Other downgraded assertions: readiness lock and query performance → T43; phone
 - **Schedule race:** refuted in T01; the reschedule ownership assertion stays green.
 - Commands, sequential, exit 0: `npm run test -- --filter=customer-rating`, `--filter=pickup`, `--filter=promo`, `--filter=schedule`, `npm run test:contracts`, `npm run test:persistence -- --filter=pg-contracts` (readiness migration expectation updated 21 → 23 with the T22/T24 migrations recorded), `npm run typecheck`, `npm run lint` (0 errors).
 - Tier: deterministic fixtures + frozen corpus. No device, provider or field claim.
+
+## T29 + T30 — live ledger posting, 29 October 2026 — COMPLETE
+
+- Host: explicitly labelled local fallback (k5 refused). Revision: 70b21f2 plus these changes.
+- **T29** (`server/main.ts`): `postOrderJournals` posts commission-accrual and discount-funding journals inside the advance transaction on completion/return, reusing importLegacy's exact business references and accounts; the PostgreSQL capability gate (`ledgerAvailable`, migration 16) skips posting on SQLite where the legacy cash flow remains the sole authority. **T30:** the driver confirm, the T25 admin resolution (cash-ops `postCashJournal` hook), and recorded adjustments post `cash-entry:{id}` journals in their settling transactions; pending/disputed handovers stay unsettled; `postJournal`'s business_ref conflict keeps retries idempotent and import non-double-counting.
+- Verification (ledger suite, real HTTP flows on isolated PostgreSQL): completion posts the journals; a subsequent `/admin/ledger/import` adds none for the same order; a pending remittance posts nothing until confirmed; confirmation lowers the receivable; a positive adjustment raises it as recorded. ledger 0, pg-cash 0, typecheck 0, lint 0 errors.
+- Tier: isolated PostgreSQL integration. Production posting requires the PostgreSQL gate (T34/T50); dispute/reversal visual reconciliation rides D14.
