@@ -17,6 +17,7 @@ const percentile = (values, quantile) => values.length ? Math.round([...values].
 if (process.argv.includes('--serve')) {
   assert.ok(process.send, 'Load server must be started by the local harness');
   const { db, server, shutdown } = await import('../server/main.ts');
+  const { hashPassword } = await import('../server/domain/passwords.ts');
   const now = Date.now(), actors = [], usedPhones = new Set();
   function actor(role, number) {
     let phone;
@@ -31,6 +32,9 @@ if (process.argv.includes('--serve')) {
   const orderInsert = db.prepare(`INSERT INTO orders(customer_id,driver_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,
     detail,option,loading_help,price,commission,status,handover_code,created_at,updated_at,completed_at,assigned_at)
     VALUES(?,?,'parcel',0,'ramallah','nablus','Load private pickup','Load private dropoff',?,'Load private contents','small',0,20,3,?,'1234',?,?,?,?)`);
+  // Password logins under a bounded KDF: one shared synthetic credential, eight accounts.
+  const loginPassword = 'Synthetic-load-password', loginHash = await hashPassword(loginPassword);
+  const loginPhones = Array.from({ length: 8 }, (_, i) => `05690000${String(i + 1).padStart(2, '0')}`);
   db.exec('BEGIN IMMEDIATE');
   for (let i = 0; i < 60; i++) {
     const customer = actor('customer', i), driver = actor('driver', i);
@@ -49,11 +53,15 @@ if (process.argv.includes('--serve')) {
     const a = actors[i % actors.length];
     orderInsert.run(a.customer.id, null, a.customer.phone, 'searching', now + i, now + i, null, null);
   }
+  // Password logins under a bounded KDF: one shared synthetic credential, eight accounts.
+  for (const phone of loginPhones)
+    db.prepare('INSERT INTO users(phone,name,password,role,status,created_at) VALUES(?,?,?,?,?,?)')
+      .run(phone, 'Load login', loginHash, 'customer', 'active', now);
   db.exec('COMMIT');
   const eventLoop = monitorEventLoopDelay({ resolution: 10 });
   eventLoop.enable();
   await new Promise(r => server.listen(0, '127.0.0.1', r));
-  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000, queued: 120 });
+  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000, queued: 120, logins: { phones: loginPhones, password: loginPassword } });
   process.on('message', async message => {
     if (message === 'stop') {
       process.send({ type: 'runtime', memory: process.memoryUsage(), cpu: process.cpuUsage(),
@@ -144,7 +152,7 @@ if (process.argv.includes('--serve')) {
       }
     }
     const selectedPhase = process.argv.find(value => value.startsWith('--phase='))?.slice('--phase='.length);
-    if (selectedPhase && !/^(read|mixed)-(1|10|30|60)$/.test(selectedPhase)) throw new Error('Unknown load phase');
+    if (selectedPhase && !/^(?:(?:read|mixed)-(?:1|10|30|60)|auth-8)$/.test(selectedPhase)) throw new Error('Unknown load phase');
     for (const concurrency of [1, 10, 30, 60]) for (const kind of ['read', 'mixed']) {
       if (selectedPhase && selectedPhase !== `${kind}-${concurrency}`) continue;
       const phase = `${kind}-${concurrency}`, phaseStart = performance.now(), until = phaseStart + 8_000;
@@ -164,6 +172,37 @@ if (process.argv.includes('--serve')) {
       result.requestsPerSecond = Math.round(result.requests / elapsedSeconds * 100) / 100;
       phases.push(result);
       console.log(JSON.stringify(result));
+    }
+    if (!selectedPhase || selectedPhase === 'auth-8') {
+      // Uncontended KDF burst: eight closed-loop clients, 40 real logins (inside the 50/10-minute
+      // address limit), with health and order reads interleaved to prove the event loop stays free.
+      const phase = 'auth-8', phaseStart = performance.now(), until = phaseStart + 4_000, { phones, password } = ready.logins;
+      let issued = 0;
+      await Promise.all(Array.from({ length: 8 }, async () => {
+        while (performance.now() < until && issued < 40) {
+          const index = issued++;
+          await request('/auth/login', { body: { phone: phones[index % phones.length], password }, phase, operation: 'login-kdf' });
+          if (index % 2 === 0) await request('/health', { phase, operation: 'health-during-kdf' });
+          if (index % 4 === 0) {
+            const a = actors[index % actors.length];
+            await request(`/orders/${a.orderId}`, { token: a.customer.token, phase, operation: 'order-read-during-kdf' });
+          }
+        }
+      }));
+      const elapsedSeconds = (performance.now() - phaseStart) / 1000;
+      const result = { phase, concurrency: 8, kind: 'auth', elapsedSeconds: Math.round(elapsedSeconds * 100) / 100,
+        ...summarize(records.filter(r => r.phase === phase)) };
+      result.requestsPerSecond = Math.round(result.requests / elapsedSeconds * 100) / 100;
+      phases.push(result);
+      console.log(JSON.stringify(result));
+      const health = records.filter(record => record.phase === phase && record.operation === 'health-during-kdf');
+      const healthP95 = percentile(health.map(record => record.ms), .95);
+      const orders = records.filter(record => record.phase === phase && record.operation === 'order-read-during-kdf');
+      const orderP95 = percentile(orders.map(record => record.ms), .95);
+      performanceGates.push({ gate: 'auth-8: health p95 < 250ms while password KDFs run', actualMs: healthP95, passed: healthP95 !== null && healthP95 < 250 });
+      performanceGates.push({ gate: 'auth-8: order read p95 < 500ms while password KDFs run', actualMs: orderP95, passed: orderP95 !== null && orderP95 < 500 });
+      const logins = records.filter(record => record.phase === phase && record.operation === 'login-kdf');
+      checks.push(`${logins.length} password logins stayed inside the bounded KDF pool without refusal; health p95 ${healthP95}ms, order read p95 ${orderP95}ms`);
     }
     await Promise.all(actors.map((a, i) => request(`/orders/${a.orderId}`, { token: actors[(i + 1) % actors.length].customer.token, expected: 404, operation: 'foreign-order-denied' })));
     await Promise.all(actors.map(a => request(`/orders/${a.orderId}`, { expected: 401, operation: 'anonymous-order-denied' })));

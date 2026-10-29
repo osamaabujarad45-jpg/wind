@@ -29,6 +29,7 @@ const osrm = createServer((req, res) => {
 });
 await new Promise(r => osrm.listen(0, '127.0.0.1', r));
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}/`;
+process.env.OSRM_TIMEOUT_MS = '3000'; // The fixture's health contract must not inherit operator timeout settings.
 const dir = mkdtempSync(join(tmpdir(), 'wind-route-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
@@ -42,6 +43,10 @@ try {
   const admin = await call('/auth/register', { body: { phone: '0599800001', name: 'Admin', password: 'secret1' } });
   await promote('0599800001');
   const customer = await call('/auth/register', { body: { phone: '0599800002', name: 'Lina', password: 'secret1' } });
+  await call('/admin/routing', { expect: 401 });
+  await call('/admin/routing', { token: customer.token, expect: 403 });
+  const unmeasured = await call('/admin/routing', { token: admin.token });
+  assert.deepEqual(unmeasured, { provider: 'osrm', configured: true, healthy: null, checkedAt: null, reason: 'not_checked', timeoutMs: 3000 });
   const driver = await call('/auth/register', { body: { phone: '0599800003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
 
@@ -51,6 +56,7 @@ try {
     await call(`/route?${bad}`, { token: customer.token, expect: 400 });
   const road = await call('/route?from=31.90381,35.20341&to=32.2211,35.2544', { token: customer.token });
   assert.deepEqual(road, { km: 61.2, minutes: 55, line: [[35.2034, 31.9038], [35.23, 32], [35.2544, 32.2211]], avoids: [], through: [], closed: [] });
+  assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true);
   await call('/route?from=31.90383,35.20344&to=32.2211,35.2544', { token: customer.token });
   assert.equal(calls, 1, 'a fix a few metres away reuses the cached route');
   assert.match(lastUrl, /overview=full&geometries=geojson&alternatives=3$/, 'full geometry (simplified lines cut corners) and alternatives');
@@ -62,8 +68,13 @@ try {
   await call('/route?from=31.5,35.1&to=31.7,35.2', { token: customer.token, expect: 404 });
   mode = 'down';
   await call('/route?from=31.51,35.1&to=31.7,35.2', { token: customer.token, expect: 503 });
+  const unavailable = await call('/admin/routing', { token: admin.token });
+  assert.equal(unavailable.healthy, false); assert.equal(unavailable.reason, 'route_unavailable');
+  assert.ok(unavailable.checkedAt > 0);
+  await call('/ready'); // Essential DB readiness is independent of optional routing health.
   mode = 'ok';
   await call('/route?from=31.51,35.1&to=31.7,35.2', { token: customer.token }); // failures are not cached
+  assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true);
 
   // A malformed upstream route must never reach the map as null metrics or invalid coordinates, or be cached.
   for (const invalid of ['bad-distance', 'bad-line', 'empty-line', 'http-error']) {

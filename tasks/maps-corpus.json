@@ -1,0 +1,542 @@
+{
+  "version": 1,
+  "evidenceTier": "synthetic specification; not field validation",
+  "coordinateSource": "city centres from src/model.ts plus synthetic offsets; no customer GPS",
+  "cases": [
+    {
+      "id": "C01",
+      "kind": "same-city",
+      "name": "ramallah",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 31.9088,
+        "longitude": 35.208400000000005
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C02",
+      "kind": "same-city",
+      "name": "bireh",
+      "from": {
+        "latitude": 31.9107,
+        "longitude": 35.2164
+      },
+      "to": {
+        "latitude": 31.915699999999998,
+        "longitude": 35.2214
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C03",
+      "kind": "same-city",
+      "name": "nablus",
+      "from": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "to": {
+        "latitude": 32.2261,
+        "longitude": 35.2594
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C04",
+      "kind": "same-city",
+      "name": "hebron",
+      "from": {
+        "latitude": 31.5326,
+        "longitude": 35.0998
+      },
+      "to": {
+        "latitude": 31.537599999999998,
+        "longitude": 35.104800000000004
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C05",
+      "kind": "same-city",
+      "name": "bethlehem",
+      "from": {
+        "latitude": 31.7054,
+        "longitude": 35.2024
+      },
+      "to": {
+        "latitude": 31.7104,
+        "longitude": 35.2074
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C06",
+      "kind": "same-city",
+      "name": "jenin",
+      "from": {
+        "latitude": 32.4612,
+        "longitude": 35.3005
+      },
+      "to": {
+        "latitude": 32.4662,
+        "longitude": 35.3055
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C07",
+      "kind": "same-city",
+      "name": "tulkarm",
+      "from": {
+        "latitude": 32.3116,
+        "longitude": 35.0279
+      },
+      "to": {
+        "latitude": 32.3166,
+        "longitude": 35.032900000000005
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C08",
+      "kind": "same-city",
+      "name": "qalqilya",
+      "from": {
+        "latitude": 32.196,
+        "longitude": 34.981
+      },
+      "to": {
+        "latitude": 32.201,
+        "longitude": 34.986000000000004
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C09",
+      "kind": "same-city",
+      "name": "jericho",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8717,
+        "longitude": 35.455000000000005
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C10",
+      "kind": "same-city",
+      "name": "salfit",
+      "from": {
+        "latitude": 32.0837,
+        "longitude": 35.1808
+      },
+      "to": {
+        "latitude": 32.0887,
+        "longitude": 35.1858
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C11",
+      "kind": "intercity",
+      "name": "ramallah to nablus",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C12",
+      "kind": "intercity",
+      "name": "bireh to hebron",
+      "from": {
+        "latitude": 31.9107,
+        "longitude": 35.2164
+      },
+      "to": {
+        "latitude": 31.5326,
+        "longitude": 35.0998
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C13",
+      "kind": "intercity",
+      "name": "nablus to bethlehem",
+      "from": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "to": {
+        "latitude": 31.7054,
+        "longitude": 35.2024
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C14",
+      "kind": "intercity",
+      "name": "hebron to jenin",
+      "from": {
+        "latitude": 31.5326,
+        "longitude": 35.0998
+      },
+      "to": {
+        "latitude": 32.4612,
+        "longitude": 35.3005
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C15",
+      "kind": "intercity",
+      "name": "bethlehem to tulkarm",
+      "from": {
+        "latitude": 31.7054,
+        "longitude": 35.2024
+      },
+      "to": {
+        "latitude": 32.3116,
+        "longitude": 35.0279
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C16",
+      "kind": "intercity",
+      "name": "jenin to qalqilya",
+      "from": {
+        "latitude": 32.4612,
+        "longitude": 35.3005
+      },
+      "to": {
+        "latitude": 32.196,
+        "longitude": 34.981
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C17",
+      "kind": "intercity",
+      "name": "tulkarm to jericho",
+      "from": {
+        "latitude": 32.3116,
+        "longitude": 35.0279
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C18",
+      "kind": "intercity",
+      "name": "qalqilya to salfit",
+      "from": {
+        "latitude": 32.196,
+        "longitude": 34.981
+      },
+      "to": {
+        "latitude": 32.0837,
+        "longitude": 35.1808
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C19",
+      "kind": "intercity",
+      "name": "jericho to ramallah",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C20",
+      "kind": "intercity",
+      "name": "salfit to bireh",
+      "from": {
+        "latitude": 32.0837,
+        "longitude": 35.1808
+      },
+      "to": {
+        "latitude": 31.9107,
+        "longitude": 35.2164
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "fixture-only"
+    },
+    {
+      "id": "C21",
+      "kind": "boundary",
+      "name": "synthetic village east 5km",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.502946202344816
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "independent"
+    },
+    {
+      "id": "C22",
+      "kind": "boundary",
+      "name": "synthetic village east 17km",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.63001708797236
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "independent"
+    },
+    {
+      "id": "C23",
+      "kind": "boundary",
+      "name": "synthetic boundary east 19.99km",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.66167891697456
+      },
+      "serviceExpected": "inside",
+      "roadExpected": "independent"
+    },
+    {
+      "id": "C24",
+      "kind": "boundary",
+      "name": "synthetic boundary east 20.01km",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.66189070178394
+      },
+      "serviceExpected": "outside",
+      "roadExpected": "independent"
+    },
+    {
+      "id": "C25",
+      "kind": "boundary",
+      "name": "synthetic remote east 30km",
+      "from": {
+        "latitude": 31.8667,
+        "longitude": 35.45
+      },
+      "to": {
+        "latitude": 31.8667,
+        "longitude": 35.767677214068875
+      },
+      "serviceExpected": "outside",
+      "roadExpected": "independent"
+    },
+    {
+      "id": "C26",
+      "kind": "provider-or-checkpoint",
+      "name": "Qalandia synthetic closure",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "closed",
+      "roadExpected": "detour-or-through-warning"
+    },
+    {
+      "id": "C27",
+      "kind": "provider-or-checkpoint",
+      "name": "Huwwara synthetic slowdown",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "slow",
+      "roadExpected": "server-delay"
+    },
+    {
+      "id": "C28",
+      "kind": "provider-or-checkpoint",
+      "name": "provider timeout",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "timeout",
+      "roadExpected": "unavailable"
+    },
+    {
+      "id": "C29",
+      "kind": "provider-or-checkpoint",
+      "name": "provider forbidden",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "403",
+      "roadExpected": "unavailable"
+    },
+    {
+      "id": "C30",
+      "kind": "provider-or-checkpoint",
+      "name": "provider throttled",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "429",
+      "roadExpected": "unavailable"
+    },
+    {
+      "id": "C31",
+      "kind": "provider-or-checkpoint",
+      "name": "no road",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "no-route",
+      "roadExpected": "unavailable"
+    },
+    {
+      "id": "C32",
+      "kind": "provider-or-checkpoint",
+      "name": "checkpoint alternate",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "closed-alternative",
+      "roadExpected": "avoid"
+    },
+    {
+      "id": "C33",
+      "kind": "provider-or-checkpoint",
+      "name": "checkpoint trapped",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "closed-no-alternative",
+      "roadExpected": "through-warning"
+    },
+    {
+      "id": "C34",
+      "kind": "provider-or-checkpoint",
+      "name": "driver reassigned",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "late-response",
+      "roadExpected": "discard"
+    },
+    {
+      "id": "C35",
+      "kind": "provider-or-checkpoint",
+      "name": "provider switched",
+      "from": {
+        "latitude": 31.9038,
+        "longitude": 35.2034
+      },
+      "to": {
+        "latitude": 32.2211,
+        "longitude": 35.2544
+      },
+      "serviceExpected": "inside",
+      "providerFixture": "late-google-response",
+      "roadExpected": "discard"
+    }
+  ]
+}

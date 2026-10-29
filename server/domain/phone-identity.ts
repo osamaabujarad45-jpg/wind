@@ -11,6 +11,13 @@ type Context={user:Actor|null;body:Row;req:IncomingMessage;query:URLSearchParams
 type Register=(method:string,path:string,handler:(ctx:Context)=>Promise<unknown>,isPublic?:boolean)=>unknown;
 type Result={status:number;body:Row;persist?:boolean};
 type Fail=(status:number,message:string)=>never;
+// A prepared KDF result is attached before the command transaction; `checked` is a replay
+// fingerprint already verified outside it. Neither field ever leaves this object.
+type Password={value:string;prepare?:()=>Promise<string|undefined>;prepared?:string;checked?:string};
+class PasswordRecheck extends Error {
+  fingerprint:string;
+  constructor(fingerprint:string) { super('password_recheck'); this.fingerprint=fingerprint; }
+}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ordered=(x:any):any=>Array.isArray(x)?x.map(ordered):x && typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,ordered(x[k])])):x;
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
@@ -31,11 +38,12 @@ export async function phoneSchemaAvailable(db:Persistence) {
 export class PhoneIdentity {
   db:Persistence;fail:Fail;config:PhoneConfig;provider:OoredooCommunication|AcsCommunication;
   private jobs=new Set<Promise<unknown>>();
-  private passwordHash:(password:unknown)=>string;
-  private passwordCheck:(password:string,stored:string)=>boolean;
-  constructor(db:Persistence,fail:Fail,passwordHash:(password:unknown)=>string,passwordCheck:(password:string,stored:string)=>boolean) {
+  private passwordHash:(password:unknown)=>Promise<string>;
+  private passwordCheck:(password:string,stored:string)=>Promise<boolean>;
+  constructor(db:Persistence,fail:Fail,passwordHash:(password:unknown)=>string|Promise<string>,passwordCheck:(password:string,stored:string)=>boolean|Promise<boolean>) {
     this.db=db;this.fail=fail;this.config=phoneConfig();this.provider=this.config.provider==='acs'?new AcsCommunication(this.config):new OoredooCommunication(this.config);
-    this.passwordHash=passwordHash;this.passwordCheck=passwordCheck;
+    // Sync fixtures stay valid; production callbacks are the bounded async pool.
+    this.passwordHash=async value=>passwordHash(value);this.passwordCheck=async(password,stored)=>passwordCheck(password,stored);
   }
   fields(body:Row,allowed:string[]) {if (!body || Array.isArray(body) || Object.keys(body).some(k=>!allowed.includes(k)))this.fail(400,'invalid_input');}
   id(value:unknown) {if(typeof value!=='string' || !uuid.test(value))this.fail(400,'invalid_command_id');return (value as string).toLowerCase();}
@@ -66,23 +74,48 @@ export class PhoneIdentity {
     await this.db.run('INSERT INTO phone_audit(user_id,actor_id,challenge_id,action,reason,evidence_ref,created_at) VALUES(?,?,?::uuid,?,?,?,?)',userId,actorId,challenge?.id??null,action,reason,evidence,Date.now());
     await this.db.one("SELECT append_domain_event(NULL,'phone.identity',?::jsonb) id",JSON.stringify({action,challengeId:challenge?.id??null,userId}));
   }
-  private async command(ctx:Context,scope:string,commandId:string,input:unknown,authorize:()=>Promise<void>,work:()=>Promise<Result>,password?:{value:string;fingerprint?:string}) {
+  private async command(ctx:Context,scope:string,commandId:string,input:unknown,authorize:()=>Promise<void>,work:()=>Promise<Result>,password?:Password) {
     const hash=this.hmac(input);
-    const result=await this.db.atomic({id:ctx.user?.id,purpose:ctx.user?undefined:'phone_public',correlationId:randomUUID()},async()=>{
-      // Short phone-only command serialization fixes lock order across authenticated and public
-      // recovery commands. OAuth/SMS never runs inside this transaction or lock.
-      await this.lock('identity_commands');
-      await this.lock(`command:${scope}:${commandId}`);await authorize();
-      const old=await this.db.one('SELECT * FROM phone_command_results WHERE scope_hash=? AND command_id=?::uuid',scope,commandId);
-      if(old) {
-        if(old.payload_hash!==hash)return bad('idempotency_conflict',409);
-        if(old.password_fingerprint && (!password || !this.passwordCheck(password.value,old.password_fingerprint)))return bad('idempotency_conflict',409);
-        return {status:old.http_status,body:old.response};
+    // Stored receipts are immutable: verify a replay's password fingerprint before taking any
+    // transaction or command lock, so no KDF ever runs while one is held. A receipt inserted
+    // concurrently is detected inside and rechecked by one retry.
+    const prior=await this.db.one('SELECT * FROM phone_command_results WHERE scope_hash=? AND command_id=?::uuid',scope,commandId);
+    if(prior) {
+      if(prior.payload_hash!==hash)this.fail(409,'idempotency_conflict');
+      if(prior.password_fingerprint) {
+        if(!password || !await this.passwordCheck(password.value,prior.password_fingerprint))this.fail(409,'idempotency_conflict');
+        password.checked=prior.password_fingerprint;
       }
-      const response=await work();
-      if(response.persist!==false)await this.db.run('INSERT INTO phone_command_results(scope_hash,command_id,payload_hash,http_status,response,created_at,password_fingerprint) VALUES(?,?::uuid,?,?,?::jsonb,?,?)',scope,commandId,hash,response.status,JSON.stringify(response.body),Date.now(),response.status===200 ? password?.fingerprint??null : null);
-      return response;
-    });
+    } else if(password?.prepare)password.prepared=await password.prepare();
+    let result:Result;
+    for(let attempt=0;;attempt++) {
+      try {
+        result=await this.db.atomic({id:ctx.user?.id,purpose:ctx.user?undefined:'phone_public',correlationId:randomUUID()},async()=>{
+          // Short phone-only command serialization fixes lock order across authenticated and public
+          // recovery commands. OAuth/SMS/KDF never runs inside this transaction or lock.
+          await this.lock('identity_commands');
+          await this.lock(`command:${scope}:${commandId}`);await authorize();
+          const old=await this.db.one('SELECT * FROM phone_command_results WHERE scope_hash=? AND command_id=?::uuid',scope,commandId);
+          if(old) {
+            if(old.payload_hash!==hash)return bad('idempotency_conflict',409);
+            if(old.password_fingerprint) {
+              if(!password)return bad('idempotency_conflict',409);
+              if(password.checked!==old.password_fingerprint)throw new PasswordRecheck(old.password_fingerprint);
+            }
+            return {status:old.http_status,body:old.response};
+          }
+          const response=await work();
+          if(response.persist!==false)await this.db.run('INSERT INTO phone_command_results(scope_hash,command_id,payload_hash,http_status,response,created_at,password_fingerprint) VALUES(?,?::uuid,?,?,?::jsonb,?,?)',scope,commandId,hash,response.status,JSON.stringify(response.body),Date.now(),response.status===200 ? password?.prepared??null : null);
+          return response;
+        });
+        break;
+      } catch(error) {
+        if(!(error instanceof PasswordRecheck) || attempt>=1)throw error;
+        if(!password)this.fail(409,'idempotency_conflict');
+        if(!await this.passwordCheck(password.value,error.fingerprint))this.fail(409,'idempotency_conflict');
+        password.checked=error.fingerprint;
+      }
+    }
     if(result.status!==200)this.fail(result.status,result.body.error);return result.body;
   }
   private async mapping(phone:PhoneNumber,userId?:number) {
@@ -158,7 +191,18 @@ export class PhoneIdentity {
     const deviceHash=this.device(deviceId);
     const sessionHash=this.session(ctx.req),scope=digest(`wp06-${recovery?'public':'actor'}:${recovery?deviceHash:sessionHash}`);
     let dispatch:{id:string;code:string}|undefined;
-    const password=purpose==='change'?{value:String(ctx.body.currentPassword??''),fingerprint:undefined as string|undefined}:undefined;
+    const currentPassword=purpose==='change'?String(ctx.body.currentPassword??''):undefined;
+    // The current-password KDF and its admission window run before the command transaction;
+    // `prepared` is the exact stored credential the work transaction revalidates.
+    const password:Password|undefined=currentPassword===undefined?undefined:{value:currentPassword,prepare:async()=>{
+      const current=await this.actor(ctx);
+      if(current.user.role==='admin')return this.fail(403,'phone_change_not_authorized');
+      const interval=600000,window=Math.floor(Date.now()/interval)*interval,bucket=this.hmac(['change_password_admission',current.user.id]);
+      const admission=await this.db.one(`INSERT INTO phone_rate_windows(bucket_hash,period_ms,window_start,count) VALUES(?,?,?,1)
+        ON CONFLICT(bucket_hash,period_ms,window_start) DO UPDATE SET count=phone_rate_windows.count+1 RETURNING count`,bucket,interval,window);
+      if(admission!.count>5 || !await this.passwordCheck(currentPassword,current.user.password))return this.fail(403,'phone_change_not_authorized');
+      return current.user.password;
+    }};
     const response=await this.command(ctx,scope,commandId,{kind:'issue',purpose,phone:phone.e164,deviceHash,expectedRevision:ctx.body.expectedRevision},
       async()=>{if(!recovery)await this.actor(ctx);},async()=>{
         if(recovery && !await this.admitPublicChallenge())return {status:200,persist:false,body:{challengeId:randomUUID(),state:'request_recorded',expiresAt:Date.now()+300000,resendAfterSeconds:45,accountStateConcealed:true}};
@@ -167,11 +211,8 @@ export class PhoneIdentity {
         if(!recovery && user!.phone_revision!==this.int(ctx.body.expectedRevision,1))return bad('phone_revision_changed',409);
         if(!recovery && purpose==='verify' && parsePhoneNumber(user!.phone,'PS')?.canonicalGroup!==phone.canonicalGroup)return bad('phone_change_required',409);
         if(!recovery && purpose==='change') {
-          const interval=600000,window=Math.floor(Date.now()/interval)*interval,bucket=this.hmac(['change_password_admission',user!.id]);
-          const admission=await this.db.one(`INSERT INTO phone_rate_windows(bucket_hash,period_ms,window_start,count) VALUES(?,?,?,1)
-            ON CONFLICT(bucket_hash,period_ms,window_start) DO UPDATE SET count=phone_rate_windows.count+1 RETURNING count`,bucket,interval,window);
-          if(user!.role==='admin' || admission!.count>5 || !this.passwordCheck(String(ctx.body.currentPassword??''),user!.password))return bad('phone_change_not_authorized',403);
-          password!.fingerprint=user!.password;
+          // The KDF approved this exact snapshot; a concurrent password change fails closed.
+          if(user!.role==='admin' || user!.password!==password!.prepared)return bad('phone_change_not_authorized',403);
         }
         const mapping=await this.mapping(phone,user?.id);
         if(recovery && mapping?.state==='verified')user=await this.db.one("SELECT * FROM users WHERE id=? AND phone=? AND status<>'blocked' AND role<>'admin' AND phone_verified_at IS NOT NULL",mapping.user_id,mapping.legacy_phone)??null;
@@ -268,7 +309,18 @@ export class PhoneIdentity {
     // only a valid, current, bound and one-use recovery proof may reach that operation below.
     if(recovery && (typeof ctx.body.password!=='string' || ctx.body.password.length<12 || ctx.body.password.length>100))this.fail(400,'weak_password');
     const sessionHash=this.session(ctx.req),scope=digest(`wp06-${recovery?'public':'actor'}:${recovery?deviceHash:sessionHash}`);
-    const password=recovery?{value:ctx.body.password as string,fingerprint:undefined as string|undefined}:undefined;
+    const password:Password|undefined=recovery?{value:ctx.body.password as string,prepare:async()=>{
+      // Admission only: an invalid, spent, superseded, expired or unmatched proof must reach
+      // the transaction below without paying for a KDF. Every condition checked here is
+      // monotonic, so the work transaction can only re-confirm it.
+      const c=await this.db.one('SELECT * FROM phone_challenges WHERE id=?::uuid',challengeId);
+      if(!c || c.device_hash!==deviceHash || c.scope_hash!==scope || c.consumed_at || c.superseded_at || c.attempts>=5
+        || c.expires_at<=Date.now() || ['failed','obsolete','suppressed'].includes(c.delivery_state) || c.purpose!==purpose)return undefined;
+      if(!await this.authority(c))return undefined;
+      const expected=this.proofDigest(c,ctx.body.code);
+      if(!timingSafeEqual(Buffer.from(c.code_digest,'hex'),Buffer.from(expected,'hex')))return undefined;
+      return this.passwordHash(ctx.body.password);
+    }}:undefined;
     return this.command(ctx,scope,commandId,{kind:'proof',challengeId,purpose,deviceHash,code:ctx.body.code},
       async()=>{if(!recovery)await this.actor(ctx);},async()=>{
         const c=await this.db.one('SELECT * FROM phone_challenges WHERE id=?::uuid FOR UPDATE',challengeId);
@@ -285,8 +337,10 @@ export class PhoneIdentity {
         const collisions=await this.db.one('SELECT count(*) n FROM users WHERE phone_identity_group(phone)=? AND id<>?',c.canonical_group,c.user_id);
         if(collisions!.n)return bad();
         if(recovery) {
-          const hashedPassword=this.passwordHash(ctx.body.password);
-          password!.fingerprint=hashedPassword;
+          // The KDF ran before this transaction; revalidate that the admitted proof is still
+          // the one being consumed, so a raced consume/expiry can never apply a late reset.
+          const hashedPassword=password!.prepared;
+          if(!hashedPassword)return bad();
           await this.db.run('UPDATE users SET password=? WHERE id=?',hashedPassword,user.id);
           await this.db.run('DELETE FROM sessions WHERE user_id=?',user.id);
           await this.db.run('DELETE FROM push_subscriptions WHERE user_id=?',user.id);
