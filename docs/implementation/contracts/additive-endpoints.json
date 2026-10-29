@@ -434,6 +434,33 @@
       ]
     },
     {
+      "packet": "SPEC-change-destination",
+      "source": "server/domain/destination-change.ts",
+      "registrar": "registerDestinationRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/destination/quote",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/destination/propose",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/destination/decision",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/destination/withdraw",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
       "packet": "WP17-entra",
       "source": "server/domain/entra.ts",
       "registrar": "registerEntraRoutes",

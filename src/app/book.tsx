@@ -18,7 +18,7 @@ import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
-  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; again?: string; keep?: string }>();
+  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
@@ -55,7 +55,7 @@ export default function Book() {
   const [sameFrom, setSameFrom] = useState(false); // send another: only the pickup was copied
   const copied = useRef<string | null>(null); // copy once: a language switch re-runs the effect and must not undo edits
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
-  const [when, setWhen] = useState<'now' | 'later'>('now');
+  const [when, setWhen] = useState<'now' | 'later'>(params.when === 'later' ? 'later' : 'now');
   const [slot, setSlot] = useState<number | null>(null);
   const slots = scheduleSlots();
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
@@ -570,8 +570,8 @@ const styles = StyleSheet.create({
   shade: { flex: 1, backgroundColor: '#0E1F1966' },
   sheet: { backgroundColor: palette.paper, maxHeight: '78%', paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
   grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.line, marginBottom: 12 },
-  searchBox: { alignItems: 'center', gap: 8, height: 44, borderRadius: 12, backgroundColor: palette.card, paddingHorizontal: 12, marginBottom: 6 },
-  searchInput: { flex: 1, height: 44, fontSize: 15, color: palette.ink },
+  searchBox: { alignItems: 'center', gap: 8, minHeight: 44, borderRadius: 12, backgroundColor: palette.card, paddingHorizontal: 12, marginBottom: 6 },
+  searchInput: { flex: 1, minHeight: 44, fontSize: 15, color: palette.ink },
   sheetRow: { minHeight: 56, borderBottomWidth: 1, borderBottomColor: palette.hair },
   pin: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
 });

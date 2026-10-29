@@ -141,7 +141,7 @@ export function Header({ title, back = false, right, subtitle }: { title: string
     {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
       onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />}
     <View style={{ flex: 1 }}>
-      <Txt variant="h1" numberOfLines={1}>{title}</Txt>
+      <Txt variant="h1" header numberOfLines={1}>{title}</Txt>
       {!!subtitle && <Txt variant="caption" numberOfLines={1}>{subtitle}</Txt>}
     </View>
     {right}
@@ -173,17 +173,18 @@ const textVariants = {
   micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.faint },
 } satisfies Record<string, TextStyle>;
 
-export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable }: {
+export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header }: {
   children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
+  header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
 }) {
   const { align } = useCopy();
-  return <Text numberOfLines={numberOfLines} selectable={selectable} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  return <Text numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
 export function Section({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return <Row style={{ justifyContent: 'space-between', marginTop: 6, marginBottom: 10 }}>
-    <Txt variant="h2">{title}</Txt>
+    <Txt variant="h2" header>{title}</Txt>
     {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={13}>
       {/* label variant is ~18px tall; 13px slop each side brings the target to 44pt */}
       <Txt variant="label" style={{ color: palette.olive }}>{action}</Txt>
@@ -219,7 +220,7 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean;
   accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
-  hitSlop?: number; // for controls drawn smaller than 44pt
+  hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);

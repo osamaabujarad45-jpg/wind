@@ -141,7 +141,8 @@ CREATE TABLE orders (
   customer_rating BIGINT CHECK (customer_rating BETWEEN -9007199254740991 AND 9007199254740991),
   recipient_name TEXT,
   recipient_phone TEXT,
-  assigned_at BIGINT CHECK (assigned_at BETWEEN -9007199254740991 AND 9007199254740991)
+  assigned_at BIGINT CHECK (assigned_at BETWEEN -9007199254740991 AND 9007199254740991),
+  picked_up_at BIGINT CHECK (picked_up_at BETWEEN -9007199254740991 AND 9007199254740991)
 );
 CREATE TABLE partner_orders (
   external_ref TEXT PRIMARY KEY,
@@ -260,6 +261,7 @@ CREATE TABLE users (
   role TEXT NOT NULL,
   status TEXT NOT NULL,
   vehicle TEXT,
+  plate TEXT,
   created_at BIGINT NOT NULL CHECK (created_at BETWEEN -9007199254740991 AND 9007199254740991),
   phone_verified_at BIGINT CHECK (phone_verified_at BETWEEN -9007199254740991 AND 9007199254740991),
   email TEXT,

@@ -198,7 +198,7 @@ export default function Jobs() {
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
                   onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
-                {(waiting || !ok) && <Reason>{waiting ?? fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Reason>}
+                {!ok && <Reason>{fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Reason>}
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>

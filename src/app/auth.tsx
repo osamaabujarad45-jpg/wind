@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, useReducedMotion } from '../motion';
 import { router } from 'expo-router';
 import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
@@ -41,6 +42,7 @@ export default function Auth() {
   const [consent, setConsent] = useState(false);
   const [role, setRole] = useState<'customer' | 'driver'>('customer');
   const [vehicle, setVehicle] = useState<Vehicle>('car');
+  const [plate, setPlate] = useState('');
   const [busy, setBusy] = useState(false);
   const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
   const [entraPrepareFailed, setEntraPrepareFailed] = useState(false);
@@ -109,6 +111,7 @@ export default function Auth() {
       if (!name.trim()) return setError(err('invalid_input'));
       if (!normalizeEmail(email)) return setError(err('invalid_email'));
       if (!isValidPhone(phone)) return setError(err('invalid_phone'));
+      if (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2) return setError(err('invalid_plate'));
       if (password.length < 12 || password.length > 100) return setError(err('weak_password'));
       if (!consent) return setError(err('consent_required'));
     }
@@ -116,7 +119,7 @@ export default function Auth() {
     setError('');
     try {
       const data = await api<Me & { token: string }>(mode === 'in' ? '/auth/login' : '/auth/register',
-        mode === 'in' ? { identifier: phone, password } : { phone, password, name, email, consent, registrationRole: role, vehicle });
+        mode === 'in' ? { identifier: phone, password } : { phone, password, name, email, consent, registrationRole: role, vehicle, plate: plate.trim() || null });
       haptic.success();
       await signIn(data);
     } catch (e) {
@@ -128,8 +131,8 @@ export default function Auth() {
 
   async function entraSignIn() {
     if (busy || !entraRequest) return;
-    if (mode === 'up' && (!consent || !name.trim() || !normalizeEmail(email) || !isValidPhone(phone))) {
-      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : 'invalid_phone'));
+    if (mode === 'up' && (!consent || !name.trim() || !normalizeEmail(email) || !isValidPhone(phone) || (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2))) {
+      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone' : 'invalid_plate'));
     }
     setBusy(true);
     setError('');
@@ -141,7 +144,7 @@ export default function Auth() {
       const data = await api<Me & { token: string }>('/auth/entra', {
         idToken: tokens.idToken, nonce: tokens.nonce,
         consent: mode === 'up' ? consent : false,
-        ...(mode === 'up' ? { registrationRole: role, vehicle, phone, name, email } : {}),
+        ...(mode === 'up' ? { registrationRole: role, vehicle, plate: plate.trim() || null, phone, name, email } : {}),
       });
       haptic.success();
       await signIn(data);
@@ -157,7 +160,7 @@ export default function Auth() {
     <Screen>
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <Press accessibilityLabel={c.language} hitSlop={4} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
-          style={{ paddingHorizontal: 14, height: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.card }}>
+          style={{ paddingHorizontal: 14, minHeight: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.card }}>
           <Txt variant="label">{c.language}</Txt>
         </Press>
       </Row>
@@ -183,10 +186,10 @@ export default function Auth() {
             <ErrorText>{error}</ErrorText>
             <Button title={resetSent ? c.resetSave : c.resetSend} icon={resetSent ? 'key-outline' : 'mail-outline'} onPress={submit} loading={busy} />
             {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={() => { setResetSent(false); setCode(''); }} />}
-            <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
+            <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} hitSlop={8} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
               <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.resetNoEmail}</Txt>
             </Press>
-            <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
+            <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} hitSlop={8} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
               <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
             </Press>
           </> : <>
@@ -219,18 +222,21 @@ export default function Auth() {
             {role === 'driver' && <Appear>
               <Txt variant="label" style={{ marginVertical: 7 }}>{c.vehicle}</Txt>
               <Choices items={vehicles.map(v => ({ key: v, label: c[v] }))} value={vehicle} onChange={setVehicle} disabled={busy} />
+              {vehicle !== 'bicycle' && <View style={{ marginTop: 12 }}>
+                <Field label={c.plate} value={plate} onChangeText={setPlate} placeholder={c.plateHint} maxLength={12} disabled={busy} />
+              </View>}
             </Appear>}
             <View style={{ height: 8 }} />
             <Press accessibilityRole="checkbox" accessibilityLabel={c.consent} accessibilityState={{ checked: consent }} disabled={busy}
               onPress={() => setConsent(!consent)} style={{ minHeight: 44, justifyContent: 'center' }}>
               <Row gap={8}>
-                <Txt variant="title" style={{ color: palette.olive }}>{consent ? '☑' : '☐'}</Txt>
+                <Ionicons name={consent ? 'checkbox' : 'square-outline'} size={22} color={consent ? palette.olive : palette.secondary} />
                 <Txt variant="caption">{c.consent}</Txt>
               </Row>
             </Press>
             <Row gap={16} style={{ justifyContent: 'center', marginBottom: 8 }}>
-              <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => Linking.openURL(PRIVACY_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
-              <Press accessibilityRole="link" accessibilityLabel={c.terms} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(PRIVACY_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.terms} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
@@ -239,11 +245,11 @@ export default function Auth() {
           {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
             disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
             onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}
-          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}
+          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword} hitSlop={8}
             onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
             <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
-          {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
+          {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} hitSlop={8} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
             <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
           </Press>}
           {mode === 'in' && !!phoneNote && <Txt variant="caption" center style={{ paddingVertical: 6 }}>{phoneNote}</Txt>}

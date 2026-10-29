@@ -128,7 +128,7 @@ const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transform: [{ scaleY: 1 }], opacity: 1 } };
 
 const styles = StyleSheet.create({
-  count: { minWidth: 30, height: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
+  count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
   plot: { height: 150, marginTop: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
   grid: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: palette.muted },

@@ -11,6 +11,7 @@ import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { locationState, newerFix } from '../../location-state';
+import { DestinationChangeCard } from '../../destination-change';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
@@ -192,6 +193,11 @@ export default function OrderScreen() {
       </Radar>
       <Txt variant="h2" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{c.findingBody}</Txt>
+      {/* Uber keeps Cancel under the search animation: the bottom of the page is three screens away. */}
+      {isCustomer && <View style={{ marginTop: 14, alignSelf: 'stretch' }}>
+        <Button title={c.cancelOrder} variant="ghost" icon="close-circle-outline" loading={busy === 'cancel'}
+          onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />
+      </View>}
     </Card>}
     {/* Driver offers (SPEC-driver-offers.md): cheapest first, with what the customer needs to choose a driver. */}
     {isCustomer && order.status === 'searching' && order.offers && <Card>
@@ -273,6 +279,11 @@ export default function OrderScreen() {
           <Txt variant="micro">{order.service === 'ride' ? c.dropoff_ride : c.dropoff}</Txt>
         </Row>
         {next && <Txt variant="caption" style={{ marginTop: 10 }}>{next}</Txt>}
+        {/* Uber's stage line: the times we actually recorded, nothing inferred. */}
+        {(order.assignedAt || order.pickedUpAt) && <Txt variant="caption" style={{ marginTop: 6 }}>
+          {[`${c.requested} ${time(order.createdAt)}`, order.assignedAt ? `${c.driverAssigned} ${time(order.assignedAt)}` : null,
+            order.pickedUpAt ? `${c.in_transit} ${time(order.pickedUpAt)}` : null].filter(Boolean).join(' · ')}
+        </Txt>}
         {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
           <Row gap={6} style={{ marginTop: 6 }}>
             <Ionicons name="shield-outline" size={16} color={palette.clayInk} />
@@ -289,7 +300,8 @@ export default function OrderScreen() {
     {order.driverName && (isAdmin || ((isCustomer) && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) ? <Appear index={3}>
       <Card>
         <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
-          sub={order.driverVehicle ? c[order.driverVehicle] : undefined} />
+          sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
+          plate={order.driverPlate ?? undefined} />
       </Card>
     </Appear> : null}
 
@@ -336,6 +348,10 @@ export default function OrderScreen() {
     {/* Codes sit above the chat: they are what the customer needs at the door. */}
     {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
       <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
+
+    <DestinationChangeCard key={order.id} order={order} customer={isCustomer} driver={!!mine} now={now} onChange={next => {
+      setData(next); if (isDriver) work.update(next);
+    }} />
 
     <Appear index={5}>
       <Card>
@@ -482,7 +498,7 @@ export default function OrderScreen() {
           onPress={() => act('dispute', `/orders/${order.id}/dispute`, { reason: disputeReason.trim() }, () => setDispute({ id, reason: '' }))} />
       </Card>}
 
-      {((isCustomer || isAdmin) && ['searching', 'assigned', 'at_pickup'].includes(order.status)) && // until the courier holds it
+      {((isCustomer || isAdmin) && ['searching', 'assigned', 'at_pickup'].includes(order.status)) && !(isCustomer && finding) && // the searching card already carries it
         <Button title={c.cancelOrder} variant="danger" size="sm" icon="close-circle-outline" loading={busy === 'cancel'}
           onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />}
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
@@ -612,7 +628,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   </Card>;
 }
 
-function Person({ title, name, sub, phone }: { title: string; name: string; sub?: string; phone?: string | null }) {
+function Person({ title, name, sub, plate, phone }: { title: string; name: string; sub?: string; plate?: string; phone?: string | null }) {
   const { c } = useCopy();
   return <Row gap={12}>
     <Avatar name={name} size={44} />
@@ -620,6 +636,8 @@ function Person({ title, name, sub, phone }: { title: string; name: string; sub?
       <Txt variant="micro">{title}</Txt>
       <Txt variant="title" numberOfLines={1}>{name}</Txt>
       {!!sub && <Txt variant="caption">{sub}</Txt>}
+      {/* the plate is what you match at the kerb: its own bold line, not buried in the caption */}
+      {!!plate && <Txt variant="label" style={{ marginTop: 2, letterSpacing: 1 }}>{plate}</Txt>}
     </View>
     {phone && <IconButton icon="call" tone="forest" label={`${c.call} ${name}`} onPress={() => Linking.openURL(`tel:${phone}`)} />}
   </Row>;

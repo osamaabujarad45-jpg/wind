@@ -9,7 +9,7 @@ import { OrderRow, ServiceIcon, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Screen, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
 
-const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; again?: string }) => router.push({ pathname: '/book', params });
+const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
 
 export default function Home() {
   const { me } = useSession();
@@ -27,9 +27,9 @@ export default function Home() {
 
   return <Screen onRefresh={reload}>
     <Row style={{ justifyContent: 'space-between', marginBottom: 14 }}>
-      <Row gap={10}>
+      <Row gap={10} style={{ flexShrink: 1 }}>
         <Logo size={34} />
-        <View>
+        <View style={{ flexShrink: 1 }}>
           <Txt variant="micro">{greet}</Txt>
           <Txt variant="h2" numberOfLines={1}>{first}</Txt>
         </View>
@@ -37,15 +37,18 @@ export default function Home() {
       <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
     </Row>
 
-    {/* The one entry point: destination first, like Uber's "Where to?" */}
-    <Press accessibilityLabel={c.whereTo} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.search, { flexDirection: row }]}>
-      <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-      <Text style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
-      <View style={[styles.now, { flexDirection: row }]}>
-        <Ionicons name="time-outline" size={15} color={palette.ink} />
-        <Text style={styles.nowText}>{c.now}</Text>
-      </View>
-    </Press>
+    {/* The one entry point: destination first, like Uber's "Where to?", with "Later" a real control rather than a label
+        drawn like a button. */}
+    <View style={[styles.search, { flexDirection: row }]}>
+      <Press accessibilityLabel={c.whereTo} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
+        <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
+        <Text style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
+      </Press>
+      <Press accessibilityLabel={c.later} onPress={() => book({ service: 'parcel', when: 'later' })} style={[styles.now, { flexDirection: row }]}>
+        <Ionicons name="calendar-outline" size={15} color={palette.ink} />
+        <Text style={styles.nowText}>{c.later}</Text>
+      </Press>
+    </View>
 
     <VerifyEmailNudge />
 
@@ -59,7 +62,7 @@ export default function Home() {
       </Appear>)}
     </Row>
     <ErrorText>{error && c.updatesPaused}</ErrorText>
-    {!data && !error && <Loading />}
+    {!data && <Loading failed={!!error} onRetry={reload} />}
 
     {active.length > 0 && <>
       <Section title={c.activeOrder} />
@@ -85,12 +88,10 @@ export default function Home() {
     {me?.plan ? <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
       : <>
         <Section title={c.waysToSave} />
-        <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingBottom: 4 }}>
-          <View style={{ width: 6 }} />
+        <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
           <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
           <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
             body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />
-          <View style={{ width: 6 }} />
         </Rail>
       </>}
   </Screen>;
@@ -106,10 +107,11 @@ function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'c
 }
 
 const styles = StyleSheet.create({
-  search: { alignItems: 'center', gap: 4, height: 52, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, marginBottom: 14 },
+  search: { alignItems: 'center', gap: 4, minHeight: 52, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
+  searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 40 },
   searchIcon: { width: 38, alignItems: 'center' },
   searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },
-  now: { alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
+  now: { alignItems: 'center', gap: 5, minHeight: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
   nowText: { fontSize: 13, fontWeight: '700', color: palette.ink },
   tile: { flex: 1, alignItems: 'center', gap: 8, borderRadius: 16, backgroundColor: palette.card, paddingVertical: 12, paddingHorizontal: 6 },
   recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },

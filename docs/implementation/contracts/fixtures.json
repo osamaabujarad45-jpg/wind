@@ -987,6 +987,7 @@
           "role": "customer",
           "status": "active",
           "vehicle": null,
+          "plate": null,
           "rating": null,
           "createdAt": "<server-timestamp>",
           "email": null,
@@ -1173,10 +1174,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1187,6 +1192,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1238,6 +1244,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1248,6 +1257,7 @@
         "dispute": null,
         "customerName": "",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1293,6 +1303,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1303,6 +1316,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1355,10 +1369,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1369,6 +1387,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1461,6 +1480,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1473,6 +1495,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1483,7 +1506,8 @@
         "customerStats": {
           "rating": null,
           "trips": 0
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1530,10 +1554,14 @@
         "price": 20,
         "commission": 3,
         "status": "assigned",
+        "canChangeDestination": true,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1546,13 +1574,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": true,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": null
       }
     },
     {
@@ -1591,6 +1621,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1603,6 +1636,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1613,7 +1647,8 @@
         "customerStats": {
           "rating": null,
           "trips": 0
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1652,6 +1687,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1664,6 +1702,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1674,7 +1713,8 @@
         "customerStats": {
           "rating": null,
           "trips": 0
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1728,6 +1768,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1740,6 +1783,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1750,7 +1794,8 @@
         "customerStats": {
           "rating": null,
           "trips": 0
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1831,6 +1876,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1843,6 +1891,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1853,7 +1902,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1893,6 +1943,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1905,6 +1958,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -1915,7 +1969,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": null
       }
     },
     {
@@ -1950,10 +2005,14 @@
         "price": 20,
         "commission": 3,
         "status": "completed",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": 4,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -1966,13 +2025,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": 3,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2007,10 +2068,14 @@
         "price": 20,
         "commission": 3,
         "status": "completed",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": 4,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2023,13 +2088,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": 3,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2067,6 +2134,9 @@
         "rating": 4,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2079,6 +2149,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": 3,
@@ -2089,7 +2160,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2127,6 +2199,9 @@
         "rating": 4,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2139,6 +2214,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": 3,
@@ -2149,7 +2225,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2180,10 +2257,14 @@
         "price": 20,
         "commission": 3,
         "status": "completed",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": 4,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2196,13 +2277,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": 3,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2242,6 +2325,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2254,6 +2340,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -2264,7 +2351,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2303,6 +2391,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2315,13 +2406,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2360,6 +2453,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2372,13 +2468,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2409,10 +2507,14 @@
         "price": 20,
         "commission": 3,
         "status": "returning",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2425,13 +2527,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2466,6 +2570,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2478,6 +2585,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -2488,7 +2596,8 @@
         "customerStats": {
           "rating": null,
           "trips": 1
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2523,6 +2632,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2535,13 +2647,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2581,6 +2695,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2593,6 +2710,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -2603,7 +2721,8 @@
         "customerStats": {
           "rating": null,
           "trips": 2
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2643,6 +2762,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2655,6 +2777,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -2665,7 +2788,8 @@
         "customerStats": {
           "rating": null,
           "trips": 2
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -2726,10 +2850,14 @@
         "price": 20,
         "commission": 3,
         "status": "returned",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2747,13 +2875,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -2898,10 +3028,14 @@
         "price": 20,
         "commission": null,
         "status": "cancelled",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2912,6 +3046,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -2950,10 +3085,14 @@
         "price": 20,
         "commission": 3,
         "status": "cancelled",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -2966,13 +3105,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3004,10 +3145,14 @@
         "price": 20,
         "commission": 3,
         "status": "cancelled",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3020,13 +3165,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3110,6 +3257,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3122,6 +3272,7 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3132,7 +3283,8 @@
         "customerStats": {
           "rating": null,
           "trips": 2
-        }
+        },
+        "driverRating": 4
       }
     },
     {
@@ -3171,6 +3323,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3183,13 +3338,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3384,10 +3541,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3398,6 +3559,7 @@
         "dispute": null,
         "customerName": "<partner-name>",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3450,10 +3612,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3464,6 +3630,7 @@
         "dispute": null,
         "customerName": "<partner-name>",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3526,10 +3693,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": null,
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3540,6 +3711,7 @@
         "dispute": null,
         "customerName": "<partner-name>",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3587,10 +3759,14 @@
         "price": 20,
         "commission": 3,
         "status": "returning",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3603,13 +3779,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3640,10 +3818,14 @@
         "price": 20,
         "commission": 3,
         "status": "returned",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3656,13 +3838,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3697,10 +3881,14 @@
         "price": 20,
         "commission": 3,
         "status": "assigned",
+        "canChangeDestination": true,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3717,13 +3905,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3770,6 +3960,7 @@
         "role": "driver",
         "status": "blocked",
         "vehicle": "car",
+        "plate": null,
         "rating": 4,
         "priceRating": 3,
         "trips": 4,
@@ -3819,10 +4010,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3833,6 +4028,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3870,10 +4066,14 @@
         "price": 20,
         "commission": null,
         "status": "searching",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": null,
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3884,6 +4084,7 @@
         "dispute": null,
         "customerName": "Synthetic customer",
         "driverVehicle": null,
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
@@ -3921,10 +4122,14 @@
         "price": 20,
         "commission": 3,
         "status": "returning",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3937,13 +4142,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": true,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -3974,10 +4181,14 @@
         "price": 20,
         "commission": 3,
         "status": "returning",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -3990,13 +4201,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": true,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -4027,10 +4240,14 @@
         "price": 20,
         "commission": 3,
         "status": "returning",
+        "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": null,
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -4043,13 +4260,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": true,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {
@@ -4088,6 +4307,9 @@
         "rating": null,
         "createdAt": "<server-timestamp>",
         "updatedAt": "<server-timestamp>",
+        "assignedAt": "<server-timestamp>",
+        "pickedUpAt": "<server-timestamp>",
+        "completedAt": "<server-timestamp>",
         "sharing": false,
         "scheduledFor": null,
         "discount": 0,
@@ -4100,13 +4322,15 @@
         "driverName": "Synthetic driver",
         "driverPhone": "<driver-phone>",
         "driverVehicle": "car",
+        "driverPlate": null,
         "driverLocation": null,
         "recommendedPrice": null,
         "priceRating": null,
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "driverRating": 4
       }
     },
     {

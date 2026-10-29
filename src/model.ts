@@ -34,6 +34,12 @@ export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat'
 export const safetyKinds: SafetyKind[] = ['other', 'unsafe_driving', 'harassment', 'accident', 'threat'];
 export type Plan = 'plus' | 'pro';
 export type Point = { latitude: number; longitude: number };
+export type DestinationChange = {
+  id: string; city: CityId; point: Point | null; note: string;
+  oldPrice: number; oldDiscount: number; price: number; discount: number;
+  commission: number; expiresAt: number;
+  road: { slow: string[]; closed: string[]; avoids: string[]; estimated: boolean; minutes: number };
+};
 
 export const services: Service[] = ['parcel', 'ride', 'freight'];
 export const vehicles: Vehicle[] = ['motorcycle', 'bicycle', 'car', 'van', 'truck'];
@@ -83,7 +89,7 @@ export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDisc
 
 export type User = {
   id: number; phone: string; name: string; role: Role; status: UserStatus;
-  vehicle: Vehicle | null; rating: number | null; createdAt: number;
+  vehicle: Vehicle | null; plate?: string | null; rating: number | null; createdAt: number;
   priceRating?: number | null; trips?: number; // drivers only
   heading?: { city: CityId; until: number } | null; // drivers only: destination filter (SPEC-driver-destination.md)
   email?: string | null; permanentlyApprovedAt?: number | null;
@@ -104,11 +110,14 @@ export type Order = {
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   recipientName?: string; recipientPhone?: string | null; // parcels and loads (SPEC-parcel-recipient.md)
   option: string; loadingHelp: boolean; price: number; commission: number | null;
+  destinationChange?: DestinationChange | null; canChangeDestination?: boolean;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
+  assignedAt?: number | null; pickedUpAt?: number | null; completedAt?: number | null; // status timeline
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;
+  driverPlate?: string | null; driverRating?: number | null;
   sharedRun?: boolean; // the driver carries other orders right now: no straight-to-you ETA (SPEC-courier-run-eta.md)
   driverLocation?: (Point & { updatedAt: number; ageSeconds: number; heading?: number | null; accuracy?: number | null }) | null;
   // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).

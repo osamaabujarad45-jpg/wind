@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS email_codes (
 CREATE TABLE IF NOT EXISTS order_offers (
   order_id INTEGER NOT NULL REFERENCES orders(id), driver_id INTEGER NOT NULL REFERENCES users(id), price INTEGER NOT NULL CHECK (price >= 1),
   created_at INTEGER NOT NULL, PRIMARY KEY (order_id, driver_id));
+-- The amount alone cannot recover the original commission rate after rounding.
+CREATE TABLE IF NOT EXISTS destination_changes (
+  id TEXT PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), customer_id INTEGER NOT NULL REFERENCES users(id),
+  driver_id INTEGER NOT NULL REFERENCES users(id), original TEXT NOT NULL, dropoff_city TEXT NOT NULL,
+  dropoff_lat REAL, dropoff_lng REAL, dropoff_note TEXT NOT NULL, price REAL NOT NULL, discount REAL, commission REAL NOT NULL, route_km REAL NOT NULL,
+  road_info TEXT NOT NULL, tariff_version TEXT NOT NULL, customer_plan TEXT,
+  state TEXT NOT NULL CHECK (state IN ('quote','pending','accepted','declined','withdrawn')),
+  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER);
+CREATE INDEX IF NOT EXISTS destination_changes_order ON destination_changes(order_id, state, created_at);
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_delete BEFORE DELETE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
@@ -121,7 +130,7 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER'], ['picked_up_at', 'INTEGER'], ['commission_rate', 'REAL']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
@@ -147,7 +156,7 @@ if (!(db.prepare('PRAGMA table_info(order_disputes)').all() as Row[]).some(r => 
   db.exec('ALTER TABLE order_disputes ADD COLUMN credit_promo_id INTEGER REFERENCES promo_codes(id)');
 if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === 'phone_verified_at'))
   db.exec('ALTER TABLE users ADD COLUMN phone_verified_at INTEGER');
-for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'], ['approved_at', 'INTEGER'], ['consent_at', 'INTEGER'], ['consent_version', 'TEXT'], ['entra_oid', 'TEXT']]) {
+for (const [column, type] of [['email', 'TEXT'], ['email_verified_at', 'INTEGER'], ['approved_at', 'INTEGER'], ['consent_at', 'INTEGER'], ['consent_version', 'TEXT'], ['entra_oid', 'TEXT'], ['plate', 'TEXT']]) {
   if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE users ADD COLUMN ${column} ${type}`);
 }
@@ -210,11 +219,11 @@ function migrateVehicleChoices() {
         id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password TEXT NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('customer','driver','admin')),
         status TEXT NOT NULL CHECK (status IN ('active','pending','blocked')),
-        vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), created_at INTEGER NOT NULL,
+        vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), plate TEXT, created_at INTEGER NOT NULL,
         phone_verified_at INTEGER, email TEXT, email_verified_at INTEGER, approved_at INTEGER,
         consent_at INTEGER, consent_version TEXT, entra_oid TEXT);
-      INSERT INTO users_vehicle_upgrade (id, phone, name, password, role, status, vehicle, created_at, phone_verified_at, email, email_verified_at, approved_at, consent_at, consent_version, entra_oid)
-        SELECT id, phone, name, password, role, ${status}, ${vehicle}, created_at, ${existing('phone_verified_at')}, ${existing('email')}, ${existing('email_verified_at')}, ${existing('approved_at')}, ${existing('consent_at')}, ${existing('consent_version')}, ${existing('entra_oid')}
+      INSERT INTO users_vehicle_upgrade (id, phone, name, password, role, status, vehicle, plate, created_at, phone_verified_at, email, email_verified_at, approved_at, consent_at, consent_version, entra_oid)
+        SELECT id, phone, name, password, role, ${status}, ${vehicle}, ${existing('plate')}, created_at, ${existing('phone_verified_at')}, ${existing('email')}, ${existing('email_verified_at')}, ${existing('approved_at')}, ${existing('consent_at')}, ${existing('consent_version')}, ${existing('entra_oid')}
         FROM users;
       DROP TABLE users;
       ALTER TABLE users_vehicle_upgrade RENAME TO users;

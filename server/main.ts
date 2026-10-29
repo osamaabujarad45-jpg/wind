@@ -23,9 +23,11 @@ import { NativePush, nativePushAvailable, registerNativePushRoutes } from './dom
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
+import { destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
+import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -196,7 +198,7 @@ const payloadHash = (body: Row) => sha(JSON.stringify(canonical(body)));
 
 async function toUser(r: Row): Promise<User> {
   const stats = r.role === 'driver' ? (await driverStats(r.id)) : null;
-  return { id: r.id, phone: r.phone, name: r.name, role: r.role, status: r.status, vehicle: r.vehicle ?? null,
+  return { id: r.id, phone: r.phone, name: r.name, role: r.role, status: r.status, vehicle: r.vehicle ?? null, plate: r.plate ?? null,
     rating: stats?.rating ?? null, ...(stats && { priceRating: stats.priceRating, trips: stats.trips }), createdAt: r.created_at,
     ...(r.role === 'driver' && { heading: r.heading_city && r.heading_until > Date.now() ? { city: r.heading_city, until: r.heading_until } : null }),
     email: r.email ?? null, permanentlyApprovedAt: r.approved_at ?? null,
@@ -229,7 +231,7 @@ const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses)
 const servesFor = (vehicle: unknown): Service[] => vehicleServices[vehicle as Vehicle] ?? [];
 const activeLoad = async (driverId: number) => (await all(`SELECT service FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId)) as { service: Service }[];
 
-const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle,
+const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle, d.plate driver_plate,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
   (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
@@ -246,6 +248,8 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
+  const destinationChange = persistence.backend === 'sqlite' && (viewer.id === r.customer_id || viewer.id === r.driver_id)
+    ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
     pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
@@ -257,8 +261,12 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
     pickupContact: partyPhones ? r.pickup_contact ?? r.contact : null,
     recipientName: owner || assigned ? r.recipient_name ?? '' : '', recipientPhone: partyPhones ? r.recipient_phone ?? null : null,
     price: r.price, commission: r.commission ?? null, status: r.status,
+    ...(persistence.backend === 'sqlite' && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
+    ...(destinationChange && { destinationChange }),
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
+    // Stage times for the status timeline: known only where the state was reached.
+    assignedAt: r.assigned_at ?? null, pickedUpAt: r.picked_up_at ?? null, completedAt: r.completed_at ?? null,
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
@@ -271,6 +279,8 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
       credit: r.dispute_credit_code ? { code: r.dispute_credit_code as string, amount: r.dispute_credit_amount as number } : null } : null,
     customerName: owner || assigned ? r.customer_name : '', driverName: r.driver_name ?? undefined,
     driverPhone: partyPhones ? r.driver_phone ?? undefined : undefined, driverVehicle: r.driver_vehicle ?? null,
+    // What the customer matches at the kerb (SYSTEM §4): the plate, to the parties on this order only.
+    driverPlate: owner || assigned || viewer.role === 'admin' ? r.driver_plate ?? null : null,
     driverLocation: live && (owner || assigned) ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, ageSeconds: Math.max(0, Math.round((Date.now() - r.loc_at) / 1000)),
       heading: r.loc_heading ?? null, accuracy: r.loc_accuracy ?? null } : null,
     recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null, routeKm: r.route_km ?? null,
@@ -312,7 +322,11 @@ async function getOrder(id: number, viewer: User): Promise<Order> {
     (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && enabledServices.includes(r.service) && servesFor(viewer.vehicle).includes(r.service)
       && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
   if (!canSee || released) fail(404, 'not_found');
-  return (await toOrder(r, viewer));
+  const order = await toOrder(r, viewer);
+  // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
+  if (order.driverId && (viewer.role === 'admin' || viewer.id === r.customer_id || viewer.id === r.driver_id))
+    order.driverRating = (await driverStats(order.driverId)).rating;
+  return order;
 }
 
 const text = (v: unknown, max: number, required = true) => {
@@ -396,9 +410,10 @@ const entraExchange = async ({ body }: { body: Row }) => {
       if (requestedRole !== undefined && !['customer', 'driver'].includes(requestedRole)) fail(400, 'invalid_role');
       const role: Role = requestedRole === 'driver' ? 'driver' : 'customer';
       const vehicle = role === 'driver' ? (vehicles.includes(body.vehicle ?? 'car') ? (body.vehicle ?? 'car') as Vehicle : fail(400, 'invalid_vehicle')) : null;
+      const plate = role === 'driver' ? text(body.plate, 12, false) || null : null;
       const name = claims!.name ?? text(body.name, 60);
-      const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, email, consent_at, consent_version, entra_oid, phone_verified_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        registrationPhone, name, hashPassword(randomBytes(32).toString('hex')), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), email,
+      const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version, entra_oid, phone_verified_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        registrationPhone, name, hashPassword(randomBytes(32).toString('hex')), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
         selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims!.oid,
         phone === registrationPhone ? Date.now() : null, email ? Date.now() : null)).lastInsertRowid);
       if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
@@ -494,12 +509,15 @@ route('POST', '/api/auth/register', async ({ body }) => {
   if (selfService && requestedRole !== undefined && !['customer', 'driver'].includes(requestedRole)) fail(400, 'invalid_role');
   const role: Role = requestedRole === 'driver' ? 'driver' : 'customer'; // admins only through operator enrollment
   const vehicle = role === 'driver' ? (vehicles.includes(body.vehicle ?? 'car') ? (body.vehicle ?? 'car') as Vehicle : fail(400, 'invalid_vehicle')) : null;
+  // The plate is what the customer matches at the kerb (SYSTEM §4). Optional on the wire, so the previous build and
+  // its tests keep registering; the app asks for it whenever the vehicle carries one.
+  const plate = role === 'driver' ? text(body.plate, 12, false) || null : null;
   if ((await one('SELECT id FROM users WHERE phone = ?', phone))) fail(409, 'phone_taken');
   // ponytail: an unverified address still blocks a second sign-up with it; taking it over would silently strip email
   // sign-in from the first account while most addresses are unverified. Support edits the address if it is squatted.
   if (email && (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE', email))) fail(409, 'email_taken');
-  const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), email,
+  const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
     selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
   // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
   if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
@@ -710,9 +728,10 @@ async function deleteAccount(user: User) {
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
-      approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
+      approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
+    if (persistence.backend === 'sqlite') await run("UPDATE destination_changes SET original = '[]', dropoff_note = '', dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?", user.id);
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
@@ -869,7 +888,8 @@ route('POST', '/api/admin/promos/:id/deactivate', async ({ user, params }) => {
 type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
-  | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'; // SPEC-notification-audit.md
+  | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
+  | 'destination_request' | 'destination_accepted' | 'destination_declined';
 // ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
 const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -895,7 +915,7 @@ const flushPush = () => persistence.flushEffects();
 async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string) {
   const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
   for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds)))
-    void persistence.detached(() => deliverCapped(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided', 'attention', 'safety'].includes(kind) ? 'high' : 'normal',
+    void persistence.detached(() => deliverCapped(s, JSON.stringify({ kind, order, url, lang: s.lang }), ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided', 'attention', 'safety', 'destination_request', 'destination_accepted', 'destination_declined'].includes(kind) ? 'high' : 'normal',
       kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600));
 }
 
@@ -1776,6 +1796,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
+      if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id);
       await rideLifecycle.ensureAssignment(offered.id, user.id, 'dispatch');
       (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', offered.id, user.id));
       if (!carryingOffer.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
@@ -1803,6 +1824,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
   if (!changed) fail(409, 'already_taken');
+  if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id);
   await rideLifecycle.ensureAssignment(order.id, user.id, 'legacy');
   (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id)); // settled, and this driver is busy now
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
@@ -1853,6 +1875,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     // A promo or credit never discounts more than the fare minus â‚ª1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
+    if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id);
     await rideLifecycle.ensureAssignment(r.id, Number(f.id), 'legacy');
     (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id));
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', f.id));
@@ -1869,6 +1892,10 @@ async function restoredDiscount(orderId: number, price: number, current: number 
   if ((await one('SELECT referee_id FROM referrals WHERE order_id = ?', orderId))) return Math.min(REFERRAL_REWARD, price - 1);
   return current;
 }
+
+registerDestinationRoutes(route, { need, needActive, fail, limit, identityKey, text, isCity, bookedPoint, uuid,
+  db: persistence, settings, tariffVersionFor, activePlan, safetyFree, queuePush, getOrder, recommend, restoredDiscount, commissionOn });
+
 route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   need(user, 'driver'); needActive(user);
   const order = await (async () => {
@@ -1923,7 +1950,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
       next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
-  } else (await run('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', next, now, r.id));
+  } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
 }
@@ -2239,7 +2266,10 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
 // cut corners through buildings at street zoom.
 // The closed checkpoints a route must go around; one request reads the road state once and passes it on.
 const closedCheckpoints = (state: RoadRow[]) => state.filter(r => r.status === 'closed' && r.point) as { id: number; name: string; point: Point }[];
-async function roadRoute(a: Point, b: Point, heading: number | null = null, closed?: ReturnType<typeof closedCheckpoints>): Promise<RoadRoute> {
+const slowCheckpoints = (state: RoadRow[]) => state.filter(r => r.status === 'slow' && r.point) as { id: number; name: string; point: Point }[];
+type CheckpointState = { closed: ReturnType<typeof closedCheckpoints>; slow: ReturnType<typeof slowCheckpoints> };
+const checkpointsFor = (state: RoadRow[]): CheckpointState => ({ closed: closedCheckpoints(state), slow: slowCheckpoints(state) });
+async function roadRoute(a: Point, b: Point, heading: number | null = null, checkpoints?: CheckpointState): Promise<RoadRoute> {
   if (!osrmUrl) fail(503, 'route_unavailable');
   // ~10 m rounding: nearby fixes share one request and one cached answer.
   const round = (p: Point) => ({ latitude: Math.round(p.latitude * 1e4) / 1e4, longitude: Math.round(p.longitude * 1e4) / 1e4 });
@@ -2247,8 +2277,9 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, clos
   const at = (p: Point) => `${p.longitude},${p.latitude}`;
   const hint = heading == null ? null : Math.round(heading / 15) * 15 % 360;
   // A new closure, or a closed checkpoint moved on the map, re-routes at once.
-  closed ??= closedCheckpoints(await roads());
-  const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `${c.id}@${at(c.point)}`).join(',')}`;
+  checkpoints ??= checkpointsFor(await roads());
+  const { closed, slow } = checkpoints;
+  const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `c${c.id}@${at(c.point)}`).join(',')}|${slow.map(c => `s${c.id}@${at(c.point)}`).join(',')}`;
   let found = roadCache.get(key);
   if (found) { roadCache.delete(key); roadCache.set(key, found); } // recently used stays: the trip line outlives driver churn
   else {
@@ -2256,8 +2287,12 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, clos
       const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
       if (!routes.length) throw new HttpError(404, 'no_route');
       const crossed = (r: OsrmRoute) => closed.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
+      const slowCrossed = (r: OsrmRoute) => slow.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
+      // The same delay the fare model charges: a reported slow checkpoint makes a
+      // slightly longer clear route the better ETA, not only the cheaper fare.
+      const delay = (r: OsrmRoute) => checkpointDelaySeconds(slowCrossed(r).length);
       const fastest = routes[0], blocked = crossed(fastest);
-      let chosen = fastest;
+      let chosen = bestRoute(routes, delay) ?? fastest;
       if (blocked.length) {
         const usable = (r: OsrmRoute) => !crossed(r).length && !backtracks(r.line); // no out-and-back to a dead-end via point
         let options = routes.filter(usable);
@@ -2272,10 +2307,10 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, clos
           const detours = await Promise.all((await Promise.all(vias.map(async v => osrmRoutes([a, v, b], hint == null ? '' : `&bearings=${hint},60;;`).then(r => r[0], () => undefined)))));
           options = detours.filter((r): r is OsrmRoute => !!r && usable(r));
         }
-        chosen = options.sort((x, y) => x.duration - y.duration)[0] ?? fastest;
+        chosen = bestRoute(options, delay) ?? fastest;
       }
-      const through = crossed(chosen);
-      return { km: Math.round(chosen.distance / 100) / 10, minutes: Math.max(1, Math.round(chosen.duration / 60)), line: chosen.line,
+      const through = crossed(chosen), slowOn = slowCrossed(chosen);
+      return { km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name),
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
@@ -2319,11 +2354,12 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   // The age of the fix the estimate starts from: a two-minute-old position is not a two-minute-old answer.
   const fixAgeSeconds = Math.max(0, Math.round((Date.now() - r.loc_at) / 1000));
   // The road state is read once for this request: three routes and the delay flag all use it.
-  const roadState = (await roads()), closed = closedCheckpoints(roadState);
+  const roadState = (await roads()), checkpoints = checkpointsFor(roadState);
   // ponytail: no stop order on a multi-parcel run, so no minutes and no straight-to-you line (SPEC-courier-run-eta.md).
   if (r.shared_run) {
-    const road = await roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
+    const road = await roadRoute(city(r.pickup_city), city(r.dropoff_city), null, checkpoints).then(t => t.line, () => null);
     const current = await trackView(token);
+    if (current.row.pickup_city !== r.pickup_city || current.row.dropoff_city !== r.dropoff_city) return { minutes: null };
     if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road, fixAgeSeconds, fixUpdatedAt: r.loc_at };
     return { minutes: null, sharedRun: true, road, fixAgeSeconds, fixUpdatedAt: r.loc_at };
   }
@@ -2331,11 +2367,12 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   // Checkpoint delays as a flag only: the public page never names places beyond the two cities (SPEC-road-aware-eta.md).
   const delayed = roadAlerts(roadState, r.pickup_city, r.dropoff_city).length > 0;
   // Road lines between city centres and from the (already shown) driver fix: nothing beyond what the page already reveals.
-  const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city), null, closed).then(t => t.line, () => null);
+  const trip = roadRoute(city(r.pickup_city), city(r.dropoff_city), null, checkpoints).then(t => t.line, () => null);
   // A fix off any road (or OSRM down) gives no minutes, not an error: the page still shows the car and the trip line.
-  const leg = Promise.resolve().then(async () => (await roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null, closed))).catch(() => null);
+  const leg = Promise.resolve().then(async () => (await roadRoute({ latitude: r.loc_lat, longitude: r.loc_lng }, next, r.loc_heading ?? null, checkpoints))).catch(() => null);
   const [approach, line] = await Promise.all([leg, trip]);
   const current = await trackView(token);
+  if (current.row.pickup_city !== r.pickup_city || current.row.dropoff_city !== r.dropoff_city) return { minutes: null };
   if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
   return approach ? { minutes: approach.minutes, delayed, approach: approach.line, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at }
     : { minutes: null, delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
@@ -2517,6 +2554,7 @@ const editUser: Handler = async ({ user, params, body }) => {
   let status = body.status === undefined ? target.status : ['active', 'pending', 'blocked'].includes(body.status) ? body.status : fail(400, 'invalid_status');
   const role = body.role === undefined ? target.role : ['customer', 'driver'].includes(body.role) ? body.role : fail(400, 'invalid_role');
   const vehicle = role === 'driver' ? vehicles.includes(body.vehicle ?? target.vehicle ?? 'car') ? body.vehicle ?? target.vehicle ?? 'car' : fail(400, 'invalid_vehicle') : null;
+  const plate = role === 'driver' ? (body.plate === undefined ? target.plate ?? null : text(body.plate, 12, false) || null) : null;
   if ((await one('SELECT id FROM users WHERE phone = ? AND id <> ?', phone, target.id))) fail(409, 'phone_taken');
   if (email && (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, target.id))) fail(409, 'email_taken');
   const identityChanged = phone !== target.phone || email !== (target.email ?? null);
@@ -2537,9 +2575,9 @@ const editUser: Handler = async ({ user, params, body }) => {
       carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id));
       if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
-    (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?,
+    (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
       phone_verified_at = ?, email_verified_at = ?, approved_at = ? WHERE id = ?`,
-      name, phone, email, status, role, vehicle, phone !== target.phone ? null : target.phone_verified_at ?? null,
+      name, phone, email, status, role, vehicle, plate, phone !== target.phone ? null : target.phone_verified_at ?? null,
       email !== (target.email ?? null) ? null : target.email_verified_at ?? null,
       identityChanged || roleChanged || vehicleChanged ? null : target.approved_at ?? null, target.id));
     if (roleChanged) {

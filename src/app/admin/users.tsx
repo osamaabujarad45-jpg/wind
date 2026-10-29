@@ -21,7 +21,7 @@ export default function Users() {
   const [temp, setTemp] = useState<{ id: number; password: string } | null>(null);
   // Support caller check: a one-time code goes to the user's verified email and the caller reads it back.
   const [identity, setIdentity] = useState<{ id: number; code: string; confirmedAt?: number } | null>(null);
-  const [editing, setEditing] = useState<{ id: number; name: string; email: string; phone: string; role: 'customer' | 'driver'; vehicle: Vehicle } | null>(null);
+  const [editing, setEditing] = useState<{ id: number; name: string; email: string; phone: string; role: 'customer' | 'driver'; vehicle: Vehicle; plate: string } | null>(null);
 
   async function action(user: User, suffix: string, body?: object, method?: 'POST' | 'PATCH' | 'DELETE') {
     if (busy !== null) return;
@@ -86,6 +86,7 @@ export default function Users() {
           <Row gap={6} style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <Badge label={c[user.role]} tone={tones.blue} />
             {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
+            {user.plate && <Badge label={user.plate} tone={tones.muted} />}
             {user.permanentlyApprovedAt && <Badge label={c.permanentlyApproved} tone={tones.olive} />}
           </Row>
           <Txt variant="micro" style={{ marginTop: 8 }}>{c.phone}: {user.phoneVerifiedAt ? c.verified : c.unverified}{user.email ? ` · ${c.email}: ${user.emailVerifiedAt ? c.verified : c.unverified}` : ''}</Txt>
@@ -106,7 +107,7 @@ export default function Users() {
             {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
             <Row gap={8}>
-              <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car' })} /></View>
+              <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car', plate: user.plate ?? '' })} /></View>
               <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null} reason={c.wait_busy}
                 onPress={() => action(user, '', { status: user.status === 'blocked' ? user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' : 'blocked' }, 'PATCH')} /></View>
             </Row>
@@ -116,11 +117,12 @@ export default function Users() {
               <Field label={c.phone} value={editing.phone} onChangeText={phone => setEditing({ ...editing, phone })} keyboardType="phone-pad" disabled={busy !== null} />
               <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={editing.role} onChange={next => setEditing({ ...editing, role: next })} disabled={busy !== null} />
               {editing.role === 'driver' && <View style={{ marginTop: 8 }}><Choices items={vehicles.map(key => ({ key, label: c[key] }))} value={editing.vehicle} onChange={vehicle => setEditing({ ...editing, vehicle })} disabled={busy !== null} /></View>}
+              {editing.role === 'driver' && editing.vehicle !== 'bicycle' && <Field label={c.plate} value={editing.plate} onChangeText={plate => setEditing({ ...editing, plate })} placeholder={c.plateHint} maxLength={12} disabled={busy !== null} />}
               <Row style={{ marginVertical: 10 }}>
-                <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle }, 'PATCH')} /></View>
+                <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH')} /></View>
                 <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>
               </Row>
-              {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clay }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
+              {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clayInk }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
                 : <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />}
             </View>}
             <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy}
