@@ -16,6 +16,8 @@ export type RouteMapProps = {
   approach?: [number, number][] | null;
   /** Closed checkpoints the route goes around (or still crosses), drawn as no-entry markers. */
   closed?: Point[] | null;
+  /** Anonymous and public surfaces draw the free baseline only: no paid route, no Google tiles (T15). */
+  forceBaseline?: boolean;
 };
 export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number };
 

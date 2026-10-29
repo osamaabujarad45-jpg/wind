@@ -37,7 +37,12 @@ export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'P
 // The poll pauses while the app is in the background (battery, server load), backs off after a failure and stops on a
 // refusal that cannot fix itself (a revoked session, a deleted order): the screen shows the reason.
 // ponytail: polling; switch to websockets/SSE if request volume becomes a cost.
-export function useApi<T>(path: string | null, pollMs?: number) {
+export function useApi<T>(path: string | null, pollMs?: number, options?: { refetchOnFocus?: boolean }) {
+  // Billable endpoints (a Google display route) must load once per path and never again on a remount or an
+  // app-foreground bounce: rerenders and refocuses are not reasons to bill (T08's trigger policy). Free
+  // endpoints keep the default refresh-on-focus.
+  const refetchOnFocus = options?.refetchOnFocus ?? true;
+  const loaded = useRef<string | null>(null);
   const [data, setResult] = useState<{ path: string; value: T }>();
   const [error, setError] = useState<{ path: string; value: string }>();
   const generation = useRef(0);
@@ -67,6 +72,8 @@ export function useApi<T>(path: string | null, pollMs?: number) {
   }, [path]);
   useFocusEffect(useCallback(() => {
     generation.current++;
+    const firstForPath = loaded.current !== path;
+    loaded.current = path;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false, pending = false, foreground = true, failures = 0;
     const clear = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
@@ -82,14 +89,15 @@ export function useApi<T>(path: string | null, pollMs?: number) {
       if (!base) return;
       timer = setTimeout(tick, failures ? Math.min(base * Math.min(8, failures), 30_000) : base);
     };
-    void tick();
-    // A backgrounded app must not keep the radio busy; the first poll on return brings the screen up to date.
+    if (firstForPath || refetchOnFocus) void tick();
+    // A backgrounded app must not keep the radio busy; the first poll on return brings the screen up to date —
+    // unless refetching this path costs money, in which case the next real change (a new pin pair) reloads it.
     const subscription = AppState.addEventListener('change', state => {
       foreground = state === 'active';
-      if (foreground) { if (!pending) void tick(); } else clear();
+      if (foreground) { if (!pending && (refetchOnFocus || firstForPath)) void tick(); } else clear();
     });
     return () => { stopped = true; clear(); subscription.remove(); generation.current++; };
-  }, [load, pollMs]));
+  }, [load, pollMs, refetchOnFocus, path]));
   const setData = (next: T) => {
     if (path !== latestPath.current) return;
     generation.current++; // an acknowledged action wins over a poll that started before it

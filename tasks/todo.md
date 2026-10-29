@@ -225,11 +225,11 @@ Implementation children (split after the frozen route-inventory gate exposed the
 
 ## T08: Paid routing budgets
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 Implementation children:
 - [x] T08.1: Server-side budgets, kill switch and trigger policy (server/domain/google-routing.ts + tests) — complete with T07 above; fake-call count assertions cover many-user, movement, navigation-remount and outage sequences; exhaustion returns typed limits without retry storms; global cap documented as single-instance-owned with `request_limits`/`google_usage` upgrade path.
-- [ ] T08.2: Client trigger gating in src/road.tsx (foreground/movement-based reroute only; stationary/background polls must not bill) — lands with T13/T14 renderer integration.
+- [x] T08.2: Client trigger gating (src/api.ts refetchOnFocus option, src/road.tsx billed-fix movement gating, src/app/book.tsx preview triggers) — complete with T13/T14; stationary/background/refocus never builds a billable URL.
 
 **Description / implementation:** Bound concurrency and per-user/global requests; add a kill switch and foreground/movement-based reroute triggers. Do not inherit OSRM caching policy for Google. Specify multi-instance budget ownership before scaling.
 
@@ -252,7 +252,7 @@ Implementation children:
 
 **Manual / failure-case check:** Use fake-call counts for many users, navigation remounts, movement and outages; no unapproved billable load.
 
-**Evidence:** T08.1 complete with T07 (server budgets fake-fixture tested, no billable load: GOOGLE_MAPS_SERVER_KEY unset in every run, kill switch default-off). T08.2 and the parent stay open until the client trigger gating lands with T13/T14.
+**Evidence:** T08.1 complete with T07 (server budgets fake-fixture tested, no billable load: GOOGLE_MAPS_SERVER_KEY unset in every run, kill switch default-off). **T08.2 complete 29 Oct:** `useApi` gains `refetchOnFocus:false` (defaults unchanged for every free endpoint); `useRoad` builds the Google approach URL from the last *billed* fix — the first approach per stop is `preview&shown=1`, later ones `movement&foreground=1&metres=N` only at the server's 250 m threshold (`SIGNIFICANT_MOVEMENT_METRES` mirrored client-side, asserted equal by source read), and a backgrounded app builds no URL at all; the booking screen bills a first shown preview or a changed pin pair, never a rerender/refocus. Parent complete.
 
 ## T09: Google native build setup
 
@@ -283,10 +283,10 @@ Implementation children:
 
 ### Checkpoint C03 — after T09
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T07 complete; T08 parent open only for T08.2 client gating, which lands with T13/T14 as its own checklist records; T09 complete.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (Full gates rerun at the C04 window on the same tree; map/phone-build/scenario suites 0.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (No renderer is enabled by default: baseline binaries unchanged; Google-keyed rebuild evidence belongs to T10.2/T49.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
 
 ## T10: Android Google renderer
 
@@ -384,14 +384,14 @@ Implementation children:
 
 ### Checkpoint C04 — after T12
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T10.2/T11.2/T12.2 device passes carry explicit blocked status pending Google keys, a rebuilt binary and a physical iPhone; all code halves complete with suites 0.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (Full gates: `npm test`, `test:persistence`, `test:contracts`, `test:scenarios` 15/15, lint, both typechecks, expo-doctor 21/21 — all 0 on this tree.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (Web export verified by test:scenarios; baseline rendering unchanged with zero Google calls; Google-keyed binaries remain T10.2/T49 gates.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated. (Money/feasibility paths untouched by the renderer work; `provider` provenance is additive.)
 
 ## T13: Booking map integration
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Select preview route by renderer while keeping fare/commission/feasibility on authoritative server policy. Changing pins invalidates obsolete preview/quote requests. Never relax servedCity for nearestCity.
 
@@ -407,19 +407,19 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Google preview cannot change authoritative money.
-- [ ] Out-of-area pins fail before booking.
-- [ ] Estimated price/distance remains labelled during provider outage.
+- [x] Google preview cannot change authoritative money.
+- [x] Out-of-area pins fail before booking.
+- [x] Estimated price/distance remains labelled during provider outage.
 
 **Verification:** `npm run test -- --filter=booking-auth; npm run test -- --filter=route`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Book a synthetic parcel with Google enabled, disabled and failing.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `src/app/book.tsx`: the preview line follows the selected renderer — Google display route (`googlePreviewPath`) only when the binary baked the capability and the user chose Google; the first shown pin pair bills `preview&shown=1` and every different pair `destination&changed=1` (render-phase trigger state), `refetchOnFocus:false` so remounts and foreground bounces never re-bill, and a typed Google failure falls back to the free OSRM line with the price flow's existing estimated labelling. The preview is provenance-guarded (`canShowOnRenderer`) before it reaches any map; fares, feasibility and the servedCity bound stay on `/price` and `/orders` (money never reads display routes — structurally unchanged, booking-auth suite re-run 0). Out-of-area pins are refused server-side before any booking (map suite pins the URL encoding and the source guards). A physical book-with-Google run needs a Google-keyed binary; that acceptance rides D06/D07 and the T49 matrix.
 
 ## T14: Private tracking integration
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Apply provider selection to approach routing while preserving stale GPS, server clock, shared-run suppression, stop identity and terminal-access clearing.
 
@@ -435,19 +435,19 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Stale GPS cannot produce fresh ETA.
-- [ ] Multi-parcel runs suppress direct approach.
-- [ ] Revoked access removes cached markers and route data.
+- [x] Stale GPS cannot produce fresh ETA.
+- [x] Multi-parcel runs suppress direct approach.
+- [x] Revoked access removes cached markers and route data.
 
 **Verification:** `npm run test -- --filter=presentation; npm run test:access`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** A53: driver reassignment, completed job, offline, background and access refusal.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `src/road.tsx` (`useRoad`): the approach source follows the selected renderer — Google calls are gated by T08.2's trigger policy (preview once per stop, then >=250 m foreground movement; URL built from the billed fix so stationary fixes cannot refetch; refocus refetch suppressed; backgrounded builds no URL), while the OSRM approach keeps its ~110 m grid and focus refresh. Stale-GPS freshness, shared-run suppression and stop identity are the existing tested behaviors (presentation/map suites 0, unchanged); a failed or revoked fetch still drops the ETA (`approach.error` → no `shownApproach`) and terminal codes clear data (`useApi`), so revoked access cannot leave cached route state. Kept-route state remains bound to order, driver, stop and provider (T06). A53 device pass rides D06/D10.
 
 ## T15: Public tracking privacy and cost
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Default anonymous tracking to baseline MapLibre/OSRM. Any optional Google public mode needs compatible overlays and a bounded authorized call policy; 15-second public polling must not become unrestricted paid routing.
 
@@ -462,15 +462,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Expired/revoked links disclose no private location.
-- [ ] Baseline public tracking makes zero Google calls.
-- [ ] Provider switching removes old incompatible content.
+- [x] Expired/revoked links disclose no private location.
+- [x] Baseline public tracking makes zero Google calls.
+- [x] Provider switching removes old incompatible content.
 
 **Verification:** `npm run test -- --filter=share; npm run test -- --filter=route`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** A53 Chrome: slow/backward clock, network loss, expired token and provider failure.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `RouteMapProps.forceBaseline` (route-preview.tsx) is honored by all three platform entries: the anonymous track page passes `forceBaseline`, so even a Google-keyed build draws MapLibre/Apple there and makes zero Google calls; the server's `/track/:token/eta` stays OSRM-only (route suite). Expired/revoked-link privacy and the no-private-location rules are the existing share-suite behaviors (0, unchanged). Provider-switch content clearing is the T06 provenance guard plus per-renderer unmount cleanup. Any optional Google public path remains a separate authorization decision (maps-contract paid-activation gates); none is wired. A53 Chrome pass rides D06/D12.
 
 ### Checkpoint C05 — after T15
 

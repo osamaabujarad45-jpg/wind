@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
@@ -12,6 +13,8 @@ import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, ord
 import { type PlaceCandidate } from '../place-search';
 import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
 import { roadPath } from '../map-math';
+import { canShowOnRenderer, googlePreviewPath, routeProvider, selectRenderer } from '../map-provider';
+import { useMapMode } from '../map-mode';
 import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
@@ -102,8 +105,25 @@ function BookForm() {
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
-  // Road line for the preview map (never a straight line); absent while loading or without routing.
-  const preview = useApi<RoadRoute>(routeChosen ? roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5) : null).data;
+  // T13: the preview line follows the selected renderer. The OSRM preview is free and refreshes on focus;
+  // a Google display route is billed once per shown pin pair (never a rerender or refocus: refetchOnFocus
+  // is off, and a changed pin pair is the only re-request), falls back to the free OSRM line when Google is
+  // unavailable or exhausted, and is provenance-guarded like every other line. Money never reads it: fares,
+  // feasibility and the servedCity bound stay on the server's /price and /orders policy.
+  const [mapMode] = useMapMode();
+  const mapRenderer = selectRenderer(Platform.OS, Constants.expoConfig?.extra?.googleMaps, mapMode);
+  const previewFrom = pickupPoint ?? city(pickupCity), previewTo = dropoffPoint ?? city(dropoffCity);
+  const pinPair = routeChosen ? `${previewFrom.latitude},${previewFrom.longitude}|${previewTo.latitude},${previewTo.longitude}` : null;
+  // Which trigger the next Google preview may claim: the first shown pair bills as a preview, every different
+  // pair afterwards as a destination change (render-phase adjustment, the sanctioned React pattern).
+  const [previewTrigger, setPreviewTrigger] = useState<{ pair: string | null; changed: boolean }>({ pair: null, changed: false });
+  if (pinPair !== previewTrigger.pair) setPreviewTrigger({ pair: pinPair, changed: previewTrigger.pair != null && pinPair != null });
+  const osrmPreviewPath = routeChosen && pinPair ? roadPath(previewFrom, previewTo, 5) : null;
+  const googlePreview = useApi<RoadRoute>(routeChosen && mapRenderer === 'google' && pinPair ? googlePreviewPath(previewFrom, previewTo, previewTrigger.changed) : null, undefined, { refetchOnFocus: false });
+  const osrmPreview = useApi<RoadRoute>(mapRenderer === 'google' ? (pinPair && googlePreview.error ? osrmPreviewPath : null) : osrmPreviewPath);
+  // A line renders only when its provenance is allowed on this renderer (T06); pins stay either way.
+  const preview = [osrmPreview.data, googlePreview.data].find(line =>
+    !!line && canShowOnRenderer(routeProvider(line.provider), mapRenderer));
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 

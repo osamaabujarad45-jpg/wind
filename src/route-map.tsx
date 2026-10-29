@@ -153,10 +153,12 @@ const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
   const [mode] = useMapMode();
-  // T06/T12: the renderer must be one this bundle actually contains — the capability is baked at build time,
-  // so a mode change or kill switch can never select an absent renderer.
+  // T06/T12/T15: the renderer must be one this bundle actually contains — the capability is baked at build
+  // time, so a mode change or kill switch can never select an absent renderer. A forced baseline (public
+  // tracking) draws MapLibre even for a Google-keyed build.
   const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GoogleRouteMap key={key} {...props} />;
+  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode);
+  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
   return <LiveMap key={key} {...props} />;
 }
 
@@ -328,7 +330,6 @@ export function PinMap(props: PinMapProps) {
   if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
   return <MapLibrePin {...props} />;
 }
-
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);

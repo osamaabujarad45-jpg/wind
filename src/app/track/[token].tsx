@@ -67,7 +67,8 @@ export default function TrackScreen() {
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
     {error && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.updatesPaused}</Txt>}
     <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-      <RouteMap pickup={from} dropoff={to} focus={toPickup ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
+      {/* Anonymous tracking draws the free baseline only: a Google-keyed build still makes zero paid calls here (T15). */}
+      <RouteMap forceBaseline pickup={from} dropoff={to} focus={toPickup ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={location ? 300 : undefined}
         stale={!!freshness?.stale} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
     </View>

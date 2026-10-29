@@ -68,10 +68,13 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
   const [mode] = useMapMode();
-  // T06/T10: the renderer must be one this binary actually contains — the capability is baked at build time
-  // (extra.googleMaps), so a kill switch or mode change can never select an absent renderer.
-  if (selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GoogleRouteMap key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
-  return <MapLibreRoute key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
+  // T06/T10/T15: the renderer must be one this binary actually contains — the capability is baked at build
+  // time (extra.googleMaps), so a kill switch or mode change can never select an absent renderer. A forced
+  // baseline (public tracking) draws the MapLibre page even in a Google-keyed build.
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
+  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode);
+  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
+  return <MapLibreRoute key={key} {...props} />;
 }
 
 function MapLibreRoute(props: RouteMapProps) {

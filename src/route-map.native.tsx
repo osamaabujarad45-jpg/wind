@@ -21,8 +21,8 @@ const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 export default function RouteMap(props: RouteMapProps) {
   const { pickup, dropoff } = props;
   const [mode] = useMapMode();
-  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google')
-    return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
+  const renderer = props.forceBaseline ? 'apple' : selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode);
+  if (renderer === 'google') return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
   return <AppleRouteMap {...props} />;
 }
 

@@ -57,3 +57,32 @@ export const approachKey = (
   target: { latitude: number; longitude: number } | undefined,
   provider: string,
 ) => `${order.id ?? ''}:${order.driverId ?? ''}:${target ? `${target.latitude},${target.longitude}` : ''}:${provider}`;
+
+/**
+ * The one Google call a booking screen makes (T13): a display route for the current pin pair, billed only
+ * for a first shown preview or a changed pin pair — never for a rerender, a refocus or a poll (T08's
+ * trigger policy; the server 400s anything else). The client never sends an unauthorized retry.
+ */
+export const googlePreviewPath = (
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+  changedPinPair: boolean,
+) => `/route/google?from=${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)
+}&trigger=${changedPinPair ? 'destination&changed=1' : 'preview&shown=1'}`;
+
+/** Mirrors server/domain/google-routing.ts: only a real drive re-bills a tracking route. Kept in step by tests. */
+export const SIGNIFICANT_MOVEMENT_METRES = 250;
+
+/**
+ * Private tracking's approach (T14): the first approach for a stop bills as a shown preview; afterwards only
+ * a significant movement while the app is foregrounded re-bills. Stationary polls, background timers and
+ * refocuses build no URL at all — the caller passes metres 0 for the first call and ≥ 250 afterwards.
+ */
+export const googleApproachPath = (
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+  metresSinceLastBill: number,
+) => metresSinceLastBill <= 0
+  ? `/route/google?from=${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)}&trigger=preview&shown=1`
+  : `/route/google?from=${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}&to=${b.latitude.toFixed(5)},${b.longitude.toFixed(5)
+  }&trigger=movement&foreground=1&metres=${Math.round(metresSinceLastBill)}`;

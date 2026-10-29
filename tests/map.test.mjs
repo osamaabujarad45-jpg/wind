@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
 import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
-import { approachKey, canShowOnRenderer, routeProvider, selectRenderer } from '../src/map-provider.ts';
+import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -267,11 +267,36 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, { latitude: 32, longitude: 35.001 }, 'osrm'), 'a stop change drops the kept ETA');
   assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, target, 'google'), 'a provider change drops the kept ETA');
   assert.equal(approachKey({ id: 7, driverId: null }, target, 'osrm'), approachKey({ id: 7 }, target, 'osrm'), 'no driver means no driver, however it is spelled');
+  // T13: the booking screen's only Google call, billed as a first shown preview or a changed pin pair — never
+  // a rerender, refocus or poll; the server 400s anything else (T08's policy table).
+  assert.equal(googlePreviewPath({ latitude: 31.90411, longitude: 35.20421 }, { latitude: 32.2215, longitude: 35.2601 }, false),
+    '/route/google?from=31.90411,35.20421&to=32.22150,35.26010&trigger=preview&shown=1');
+  assert.equal(googlePreviewPath({ latitude: 31.90411, longitude: 35.20421 }, { latitude: 32.2215, longitude: 35.2601 }, true),
+    '/route/google?from=31.90411,35.20421&to=32.22150,35.26010&trigger=destination&changed=1');
+  // T14: tracking's approach bills as a first shown preview, then only for a significant foreground movement;
+  // the client threshold mirrors the server's policy constant (kept in step by this source read).
+  assert.equal(googleApproachPath({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.2, longitude: 35.26 }, 0),
+    '/route/google?from=31.90000,35.20000&to=32.20000,35.26000&trigger=preview&shown=1');
+  assert.equal(googleApproachPath({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.2, longitude: 35.26 }, 312.4),
+    '/route/google?from=31.90000,35.20000&to=32.20000,35.26000&trigger=movement&foreground=1&metres=312');
+  const serverRouting = readFileSync(new URL('../server/domain/google-routing.ts', import.meta.url), 'utf8');
+  assert.match(serverRouting, /SIGNIFICANT_MOVEMENT_METRES = 250;/);
+  assert.match(readFileSync(new URL('../src/map-provider.ts', import.meta.url), 'utf8'), /SIGNIFICANT_MOVEMENT_METRES = 250;/);
+  const bookSource = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+  assert.ok(bookSource.includes('refetchOnFocus: false'), 'a Google preview must not re-bill on remount or foreground bounce');
+  assert.ok(bookSource.includes('canShowOnRenderer'), 'the booking preview is provenance-guarded like every other line');
+  // T14/T15: the road hook gates billable approach calls on foreground and movement, and the anonymous
+  // tracking page forces the free baseline regardless of a Google-capable build.
+  assert.ok(SIGNIFICANT_MOVEMENT_METRES === 250, 'the client keeps the server movement threshold');
+  const trackSource = readFileSync(new URL('../src/app/track/[token].tsx', import.meta.url), 'utf8');
+  assert.ok(trackSource.includes('<RouteMap forceBaseline'), 'public tracking draws the free baseline only');
   // The hook that fetches routes must pass provenance through the renderer guard (same style as the vendoring asserts).
   const roadSource = readFileSync(new URL('../src/road.tsx', import.meta.url), 'utf8');
   assert.ok(roadSource.includes('canShowOnRenderer'), 'useRoad must guard route lines by renderer capability');
   assert.ok(roadSource.includes('routeProvider'), 'useRoad must read provenance off the route data');
   assert.ok(roadSource.includes('approachKey'), 'useRoad must bind kept route state to order, driver, stop and provider');
+  assert.ok(roadSource.includes("refetchOnFocus: renderer !== 'google'"), 'a Google approach never re-bills on refocus');
+  assert.ok(roadSource.includes('googleApproachPath(billed.fix'), 'the approach URL is built from the last billed fix, so stationary fixes cannot refetch');
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never
   // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
