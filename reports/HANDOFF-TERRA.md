@@ -26,6 +26,8 @@ Read in this order:
 | `39d6794` | Terminal-access guard; logging/pg test hardening |
 | `c0a5c37` | **P1 #1** IaC bound · **CI Postgres gate** · **P2 #6/#7 audit rows** · schema migration |
 | `0344d98` | Home search action fix |
+| `d99ed22` / `378e37c` | Large-font `minHeight`; owner-run `wp16_staging` migration, with the post-commit `search_path` fix |
+| `0302c2d` | Integrated the finished maps session: last-known pin GPS, shared 20 km bound, public/ map serving, phone-test PATH, SQLite nolock; removed the public OSRM fallback/unmarked chord and restored the area guard |
 
 Verified in this pass:
 
@@ -42,7 +44,7 @@ Verified in this pass:
 
 ### MiniMax review triage (nine findings)
 
-Two were actionable and are fixed: the fixed `height: 56` could clip at a large font scale — now `minHeight` with the flex on the pressable container; and the staging runtime's hardcoded `wp16_staging` schema had no owner-run migration command — now `scripts/migrate-postgres.mjs` + `npm run db:migrate:staging -- --confirm`, documented in `deploy.md`.
+Two were actionable and are fixed: the fixed `height: 56` could clip at a large font scale — now `minHeight` with the flex on the pressable container; and the staging runtime's hardcoded `wp16_staging` schema had no owner-run migration command — now `scripts/migrate-postgres.mjs` + `npm run db:migrate:staging -- --confirm`, documented in `deploy.md`. A second review pass caught that the migration's final version read ran after the transaction's `search_path` reverted; fixed in `378e37c` and proven by `reports/verify-2026-10-29/check-staging-migration.mjs` (schema 21 read back).
 
 Rejected with code evidence:
 
