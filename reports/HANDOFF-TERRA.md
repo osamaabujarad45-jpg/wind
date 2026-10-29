@@ -57,7 +57,10 @@ Deployment traps, not code defects: the `osrm-graph` share must be populated bef
 
 ### Concurrent uncommitted changes (not reviewed here)
 
-Before `d99ed22` was committed, the tree also contained uncommitted edits outside this audit: `Dockerfile` (adds `OSRM_URL=https://router.project-osrm.org`), `server/main.ts` (public OSRM fallback, 6 s timeout, 15 s GPS grace) and `src/model.ts` (service radius 15 → 20 km, env-overridable). They were left untouched and not committed. Review/decide them separately; the service-radius change is a product decision.
+Before `d99ed22` was committed, the tree also contained uncommitted edits outside this audit: `Dockerfile` (adds `OSRM_URL=https://router.project-osrm.org`), `server/main.ts` (public OSRM fallback, 6 s timeout, 15 s GPS grace), `src/app/book.tsx` (drops the client `servedCity` guard) and `src/model.ts` (service radius 15 → 20 km, env-overridable); `scripts/check-phone-tests.mjs` has since changed too. They were left untouched and not committed. Review/decide them separately; the service-radius change is a product decision.
+
+The follow-up review found two of those edits are not safe to commit as-is: `fallbackRoute` returns a straight chord that is not marked `estimated`, so `book.tsx` would draw it as a road route and `quotes.ts` would store driving provenance; and dropping the client `servedCity` guard means the server rejects an out-of-area pin only at submit (`outside_area`). Fix the fallback marking/guard, or keep the original rejection path, before committing them.
+
 
 ---
 
