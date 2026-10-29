@@ -67,7 +67,7 @@ const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path
   readFileSync(new URL(`${path.slice(1)}.html`, import.meta.url), 'utf8').replaceAll('{{contact}}', supportContact)]));
 // Dev (`npm run server`): serve public/ so the Android app's map page (/map.html + /vendor) loads; without it the WebView 404s
 // and every Android map falls back to the diagram.
-const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : production ? null : fileURLToPath(new URL('../public', import.meta.url));
+const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : fileURLToPath(new URL('../public', import.meta.url));
 const webContentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -150,7 +150,9 @@ if (webRoot && production) setImmediate(() => { // warm so the first visitor aft
 });
 
 // Retained sync export is for offline legacy fixture setup; HTTP/domain work uses persistence below.
-export const db = new DatabaseSync(process.env.WIND_DATABASE_URL ? ':memory:' : process.env.DB_PATH ?? 'wind.db');
+// nolock is opt-in for a single-writer network SQLite (OneDrive/SMB); never use it with two API processes.
+const dbPath = process.env.WIND_DATABASE_URL ? ':memory:' : process.env.DB_PATH ? (process.env.SQLITE_NOLOCK === '1' || process.env.SQLITE_JOURNAL === 'DELETE' ? ('file:' + process.env.DB_PATH + '?nolock=1') : process.env.DB_PATH) : 'wind.db';
+export const db = new DatabaseSync(dbPath);
 initializeSqlite(db);
 export const persistence = runtimePersistence(db);
 type Row = Record<string, any>;
@@ -2165,9 +2167,11 @@ route('POST', '/api/location', async ({ user, body, req }) => {
   // Older builds send no age: their fixes are taken as current, as before.
   const age = body.age == null ? 0 : finite(body.age, 86_400_000, 0) ? Math.round(body.age) : fail(400, 'invalid_location');
   const fixAt = Date.now() - age;
-  // A late upload must not move the driver backward or show a fix from before this job on it.
+  // A late upload must not move the driver backward. A fix timestamped up to 15 s before this
+  // assignment is still accepted: location providers may batch a fix captured just before the
+  // accept, and the marker upsert itself cannot move backward. Older fixes are dropped.
   // Still 2xx: a background task stops on 409, and newer fixes keep coming.
-  if (age > 60_000 || fixAt < Number(since)) return { ok: true, accepted: false };
+  if (age > 60_000 || fixAt < Number(since) - 15_000) return { ok: true, accepted: false };
   // A jump no vehicle can make (over 70 m/s, ~250 km/h, beyond both fixes' error) is a GPS outlier (urban multipath,
   // a network fix): keep the last good one. A more precise fix always wins.
   // Two yardsticks: the last *plausible* fix (good_*), which the reference follows, and the last displayed fix, which
@@ -2288,7 +2292,7 @@ const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking check
 
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
   const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
-    { signal: AbortSignal.timeout(3000) });
+    { signal: AbortSignal.timeout(Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000)) });
   if (!res.ok) fail(503, 'route_unavailable');
   const j: any = await res.json();
   if (j?.code === 'NoRoute') return [];

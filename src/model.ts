@@ -179,8 +179,8 @@ export function nearestCity(point: Point): CityId {
   }).id;
 }
 
-// ponytail: 15 km as the crow flies from a served city centre stands in for real service zones; the app and the API share the bound.
-export const SERVICE_KM = 15;
+// ponytail: 20 km as the crow flies from a served city centre stands in for real service zones; the app and the API share the one bound.
+export const SERVICE_KM = 20;
 export function servedCity(point: Point): CityId | null {
   const near = nearestCity(point);
   return crowKm(city(near), point) <= SERVICE_KM ? near : null;

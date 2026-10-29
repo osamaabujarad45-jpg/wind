@@ -327,7 +327,14 @@ export default function Book() {
           {(['pickup', 'dropoff'] as const).map(which => {
             const set = which === 'pickup' ? pickupPoint : dropoffPoint;
             const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
-            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { haptic.tap(); setLocationError(''); setPinFor(which); }}>
+            const openPin = async (w: 'pickup' | 'dropoff') => {
+              haptic.tap(); setLocationError('');
+              if (w === 'pickup' && !pickupPoint && !gpsPoint && Platform.OS !== 'web') {
+                try { const last = await Location.getLastKnownPositionAsync(); if (last?.coords) setGpsPoint({ latitude: last.coords.latitude, longitude: last.coords.longitude }); } catch {}
+              }
+              setPinFor(w);
+            };
+            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { void openPin(which); }}>
               <Row gap={6} style={styles.chip}>
                 <Ionicons name={set ? 'checkmark-circle' : 'pin-outline'} size={14} color={palette.olive} />
                 <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{label}</Txt>
@@ -445,7 +452,7 @@ export default function Book() {
     </Screen>
 
     {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
-      start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
+      start={(pinFor === 'pickup' ? (pickupPoint ?? gpsPoint) : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
       onClose={() => setPinFor(null)} onConfirm={point => {
         const near = servedCity(point);
         if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
