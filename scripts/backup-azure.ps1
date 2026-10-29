@@ -59,7 +59,11 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-const payload = JSON.parse(readFileSync(0, 'utf8'));
+// Stream stdin: synchronous reads of large Docker-exec pipes intermittently
+// crash the Node build currently deployed on the VM.
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 const bytes = Buffer.from(payload.data, 'base64');
 assert.equal(createHash('sha256').update(bytes).digest('hex'), payload.sha256);
 process.umask(0o077);
@@ -83,16 +87,23 @@ if ($VerifyLatest) {
     $file = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'wind-azure-*.dpapi' | Sort-Object Name -Descending | Select-Object -First 1
     if (-not $file) { throw 'No Azure snapshot exists.' }
     $destination = $file.FullName
+    $readPath = $destination
 } else {
+    New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+    $driveRoot = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($OutputDirectory))
+    $drive = [IO.DriveInfo]::new($driveRoot)
+    if ($drive.AvailableFreeSpace -lt 2GB) { throw 'Backup stopped: less than 2 GiB of disk space remains.' }
     $privateOutput = Invoke-DatabaseTool $snapshotCode
     $payload = [Text.Encoding]::UTF8.GetBytes($privateOutput)
     $encrypted = [Security.Cryptography.ProtectedData]::Protect($payload, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-    New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+    if ($drive.AvailableFreeSpace -lt (2GB + $encrypted.Length)) { throw 'Backup stopped: insufficient disk space for the encrypted snapshot.' }
     $destination = Join-Path $OutputDirectory ('wind-azure-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssffffZ') + '.dpapi')
-    [IO.File]::WriteAllBytes($destination, $encrypted)
+    $readPath = $destination + '.partial'
+    [IO.File]::WriteAllBytes($readPath, $encrypted)
 }
-$decrypted = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($destination), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+$decrypted = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($readPath), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
 $result = Invoke-DatabaseTool $restoreCode ([Text.Encoding]::UTF8.GetString($decrypted)) | ConvertFrom-Json
+if (-not $VerifyLatest) { [IO.File]::Move($readPath, $destination) }
 $result | Add-Member -NotePropertyName file -NotePropertyValue $destination
 $result | Add-Member -NotePropertyName verifiedAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
 $result | Add-Member -NotePropertyName encryption -NotePropertyValue 'Windows DPAPI CurrentUser'

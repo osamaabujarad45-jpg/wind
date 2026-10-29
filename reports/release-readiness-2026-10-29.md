@@ -79,7 +79,12 @@ local route corpus and the app's checkpoint and ETA behavior.
   the authenticated SSH channel and verifies a restored, isolated copy. One
   snapshot was taken and independently restored: SQLite integrity was `ok`,
   foreign-key violations were zero, and user/session/order counts matched.
-  This is a manual recovery point, not a verified recurring backup or a tested
+  An intermittent crash in the VM's synchronous pipe read was reproduced with
+  synthetic data; streaming passed five repeated restore checks. Partial files
+  are not published as successful backups, and the script stops before free disk
+  space drops below 2 GiB. A four-hour Windows task was installed and its first
+  run returned success. It requires this Windows account to be logged in and
+  online, has no automatic retention or failure alert, and does not establish
   recovery of the Windows account's DPAPI keys.
 
 ## Verification and limits
@@ -124,8 +129,8 @@ did not modify the production database.
 No Azure VM metric alerts were listed in the inspected resource group; alert
 routing and operational monitoring have not been verified.
 
-Before public release, establish recurring encrypted backups with an independent
-key-recovery plan, activate and exercise the chosen identity, messaging, routing
+Before public release, establish unattended backup monitoring and retention with
+an independent key-recovery plan, activate and exercise the chosen identity, messaging, routing
 and push providers, verify service licensing and support, produce and test signed
 Android/iOS builds, and run a controlled customer/driver delivery with real device
 background behavior. Preserve the current database and a tested rollback path.

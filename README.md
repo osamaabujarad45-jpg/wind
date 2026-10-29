@@ -178,8 +178,10 @@ docker exec <container> node -e "new (require('node:sqlite').DatabaseSync)('/dat
 For the existing Azure VM, PowerShell 7 on the authorized Windows workstation
 can run `./scripts/backup-azure.ps1` and `./scripts/backup-azure.ps1 -VerifyLatest`.
 It encrypts the snapshot with the current Windows account's DPAPI keys and tests
-an isolated restore. This manual snapshot does not set up a recurring backup or
-an independent recovery of the Windows account's encryption keys.
+an isolated restore. `./scripts/install-azure-backup-task.ps1` installs a
+four-hour task for that interactive account. It runs only while the workstation
+is online and the account is logged in; it does not provide independent key
+recovery, retention management or failure alerts.
 
 The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch.
 
