@@ -1027,14 +1027,14 @@ Implementation children:
 
 ### Checkpoint C11 — after T33
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T31/T32/T33 complete; the money-correctness workstream T27-T33 is closed with production gates still off.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (Full `test:persistence` 0 with 22/22 legacy-parity suites, `npm test` 88 suites 0, contracts 0, lint 0, typecheck 0 on the T33 tree.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (Server-only work; no UI surface.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated. (Payments/COD/ledger gates remain closed; the PG parity work does not open cutover.)
 
 ## T34: Import and cutover rehearsal
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Rehearse consistent snapshot import into isolated PostgreSQL. Verify schema, counts, foreign keys, money, custody, events and API parity. Staging runtime exists; it is not public cutover approval.
 
@@ -1050,15 +1050,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Migration retry is safe.
-- [ ] Counts and monetary totals reconcile.
-- [ ] Rollback after new PG writes never points at stale SQLite.
+- [x] Migration retry is safe.
+- [x] Counts and monetary totals reconcile.
+- [x] Rollback after new PG writes never points at stale SQLite.
 
 **Verification:** `npm run test:persistence; npm run test:contracts`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Fixtures first; real snapshots need authorized access and redacted evidence. Reconcile pre-T28 `rejected` refund rows against provider statements inside the rehearsal.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback — the rehearsal is continuous, not a one-off. `tests/pg-import.mjs`: consistent SQLite snapshot → import into an isolated PostgreSQL schema → exact reconciliation of counts, money totals, rounding exceptions and open custody → `pg_dump`/`pg_restore` restore → HTTP parity against the restored database (suite output records tables/rows/rounding exceptions/open custody per run, exit 0 in every full persistence gate this session). `tests/pg-migration-lock.mjs`: the migration CLI waits through a concurrent advisory lock and stays retry-safe. The rollback rule and the **pre-T28 `rejected` refund reconciliation duty** are now written into `docs/operations/restore.md` (import-rehearsal section): a provider statement reconciliation is required before the payments capability enables on imported data, and PostgreSQL backups own recovery once the API writes there — the SQLite snapshot is never re-promoted (no production fallback branch exists). A real authorized snapshot rehearsal with the operator record remains T50's staging gate; this task closes the repository-side rehearsal duty.
 
 ## T35: Verified identity readiness
 

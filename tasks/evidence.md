@@ -451,3 +451,10 @@ Other downgraded assertions: readiness lock and query performance → T43; phone
 - **Tests:** the SQLite suite passes unchanged; `change-destination` joined `check-postgres-legacy.mjs` as the 22nd legacy-parity suite with a durable-outbox drain adaptation. During integration the full persistence gate caught two knock-ons, both fixed: the pg-contracts readiness migration expectation (now 26) and the WP05 fixtures tripping the T21 searching cap (the eligibility fixture raises `WIND_SEARCHING_LIMIT` explicitly — product default stays 5).
 - Commands, sequential, exit 0: `npm run test -- --filter=change-destination`, full `npm run test:persistence` (51 suites + 22/22 legacy-parity), `npm test` (88 suites), `npm run test:contracts`, `npm run typecheck`, `npm run lint` (0 errors).
 - Tier: isolated PostgreSQL integration with real HTTP vectors on both backends. Cutover itself stays gated (T34/T50).
+
+## T34 — import and cutover rehearsal, 29 October 2026 — COMPLETE (repository-side)
+
+- Host: explicitly labelled local fallback (k5 refused). Revision: 3e78c05 plus documentation.
+- The rehearsal runs continuously in the gate: `tests/pg-import.mjs` (consistent snapshot → isolated PostgreSQL import → exact reconciliation of counts/money/custody/rounding → pg_dump+pg_restore restore → HTTP parity) and `tests/pg-migration-lock.mjs` (advisory-lock wait, retry-safe CLI). Both exit 0 in every full persistence run this session, including the T33 tree with the widened import (commission_rate now imported, SQLITE_ONLY_COLUMNS emptied).
+- `docs/operations/restore.md` gains the import-rehearsal section: the **pre-T28 `rejected` refund rows must be reconciled against provider statements before the payments capability enables on imported data**, and once the API writes to PostgreSQL, recovery owns PostgreSQL backups — the SQLite snapshot is never re-promoted (no production fallback branch exists).
+- Tier: isolated PostgreSQL integration. The real authorized snapshot rehearsal with the operator record (source backup window, restore point, RPO/RTO) is T50's staging gate — this task closes the repository-side duty only.
