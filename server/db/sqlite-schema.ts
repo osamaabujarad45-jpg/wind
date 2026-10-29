@@ -269,6 +269,9 @@ try {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_pending ON subscriptions(user_id, plan) WHERE status = 'pending'");
   db.exec('COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
+// T25, additive: an administrator who resolves a pending handover leaves an actor and a reason on the row.
+for (const column of ['resolved_by INTEGER', "resolution_note TEXT"])
+  if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }

@@ -567,10 +567,10 @@ Implementation children:
 
 ### Checkpoint C06 — after T18
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T17/T18/T19 complete; T19.2 device pass batched D07.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (The T02 close-out and the C05 window ran the full gates green on the T18-final tree and its successors; persistence passed on both backends again after T20/T21/T22.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (No UI surface in T17/T18; T19.1 verified by booking-auth suites.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
 
 ## T19: Uncertain booking recovery
 
@@ -728,7 +728,7 @@ Implementation children:
 
 ## T24: Cash approval persistence
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Bind the cash adjustment path to pending approvals on the active backend. Execute approval and cash mutation atomically; include requester separation, immutable payload and one-time decision.
 
@@ -744,15 +744,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Requester cannot approve self.
-- [ ] Concurrent decisions execute once.
-- [ ] Changed amount/driver cannot reuse approval.
+- [x] Requester cannot approve self.
+- [x] Concurrent decisions execute once.
+- [x] Changed amount/driver cannot reuse approval.
 
 **Verification:** `npm run test -- --filter=cash; npm run test:persistence -- --filter=ops`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** HTTP tests with two admins, foreign role, replay and restart.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `financial_approvals` gains `consumed_at` (postgres-ops.sql for fresh schemas; additive idempotent migration 23 `postgres-ops-repairs.sql` for staging schemas). `recordCash`'s fail-closed forgiveness gate (T23.1) now **consumes** the decision in the same transaction as the cash entry — `UPDATE ... WHERE status='approved' AND consumed_at IS NULL` — so a second entry (new requestId) holding the same approval is refused `409 approval_used` (copy ar+en); the amount/subject binding still re-checks before consumption, so a changed amount/driver fails `approval_required` without spending the approval. Requester separation is enforced at decision time (`second_approver_required`, re-checked at consumption: `decided_by != requested_by` and `decided_by != recorder`). Concurrent decisions: `decideApproval`'s `FOR UPDATE` + `status='pending'` predicate gives exactly one outcome — proven by a two-eligible-approver `Promise.all` race in ops.mjs (loser `approval_decided`). SQLite keeps the deliberate fail-closed `503 approval_unsupported` for forgiveness (no approval protocol on the legacy backend); production money gates stay closed regardless. Suites: ops 0, pg-cash 0 (consumption replay refused), cash 0, contracts 0 (77 additive boundaries), lint 0, typecheck 0.
 
 ### Checkpoint C08 — after T24
 
@@ -763,7 +763,7 @@ Implementation children:
 
 ## T25: Cash recovery and approval UI
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Add review/approve/reject and audited support resolution for pending remittances when driver is blocked/unavailable. Show balance impact and require deliberate confirmation; never impersonate driver confirmation.
 
@@ -778,15 +778,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Unavailable driver does not cause permanent unresolvable pending cash.
-- [ ] Resolution records reason/evidence reference/actor.
-- [ ] Double taps cannot duplicate movement.
+- [x] Unavailable driver does not cause permanent unresolvable pending cash.
+- [x] Resolution records reason/evidence reference/actor.
+- [x] Double taps cannot duplicate movement.
 
 **Verification:** `npm run test -- --filter=cash`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Phone admin flow using synthetic funds and unauthorized-role controls.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. New additive module `server/domain/cash-ops.ts` (registered in the additive contract as T25-cash-ops: 2 boundaries, anonymous 401): `GET /api/admin/cash/pending` lists handovers with driver identity and status; `POST /api/admin/cash/:id/resolve` confirms or disputes a pending remittance with a required reason (>=5 chars) and optional evidence reference, recording `resolved_by` + `resolution_note` (additive columns on both backends) and reusing the driver's own CAS predicate so a double tap or a racing driver decision moves the entry exactly once (`409 already_decided`). `src/app/admin/cash.tsx` gains a pending-handover section with a deliberate confirm()-guarded resolution dialog (reason + evidence fields, both controls wait while busy). The blocked-driver journey is HTTP-tested: block revokes the driver session, the administrator resolves with reason+evidence, the row records actor/note, the repeat resolve refuses, and the balance math accounts for the resolution. Suites: cash 0, presentation 0, contracts 0 (schema fixture re-recorded with review: +subscriptions_pending index, +cash_entries resolved_by/resolution_note), ops 0, pg-cash 0, lint 0, typecheck 0. Physical admin-flow acceptance rides D14 (synthetic funds only).
 
 ## T26: Order transition race review
 

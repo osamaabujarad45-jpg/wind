@@ -31,6 +31,7 @@ import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
+import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -2481,6 +2482,8 @@ route('GET', '/api/route', async ({ user, query }) => {
 const googleRoutes = createGoogleRoutes({ apiKey: process.env.GOOGLE_MAPS_SERVER_KEY });
 registerGoogleRouteRoutes(route, googleRoutes, { fail, limit, budgetKey: id => identityKey('google-route', id) });
 
+
+
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const token = params[0]!, hash = sha(token);
@@ -2552,6 +2555,8 @@ async function cashSettled(userId: number) {
 }
 const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
+// T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
+registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');
@@ -2578,6 +2583,7 @@ route('GET', '/api/admin/cash', async ({ user }) => {
   need(user, 'admin');
   return (await cashBalances('1 = 1')).sort((a, b) => b.owedCents - a.owedCents || a.driverId - b.driverId);
 });
+
 
 async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   need(user, 'admin');
@@ -2614,6 +2620,11 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
         || Number(approval.amount_minor) !== -amount || approval.status !== 'approved' || approval.decided_by == null
         || Number(approval.decided_by) === Number(approval.requested_by) || Number(approval.decided_by) === user.id)
         fail(409, 'approval_required');
+      // T24: the decision is spent exactly once, in the same transaction as the cash entry — a second
+      // request (new requestId) holding the same approval finds it consumed and is refused.
+      if (persistence.backend === 'postgres' &&
+        !(await run("UPDATE financial_approvals SET consumed_at = ? WHERE id = ? AND status = 'approved' AND consumed_at IS NULL", Date.now(), approvalId)).changes)
+        fail(409, 'approval_used');
     }
     const id = Number((await run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);

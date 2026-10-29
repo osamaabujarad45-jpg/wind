@@ -101,6 +101,8 @@ try {
   const forgiveness = await forgive(200);
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -201, approvalId: forgiveness, reason: 'Customer paid by mistake to office' }, expect: 409 }); // approval amount is bound
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, approvalId: forgiveness, reason: 'Customer paid by mistake to office' } });
+  // T24: the decision was spent exactly once — a second entry cannot reuse it, on any request identity.
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, approvalId: forgiveness, requestId: randomUUID(), reason: 'Customer paid by mistake to office' }, expect: 409 });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.adjustmentsCents, -200);
   assert.equal(cash.owedCents, commissionCents - 700);

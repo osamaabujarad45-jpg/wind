@@ -129,13 +129,33 @@ try {
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 4);
   assert.equal((await call('/driver/earnings', { token: driver.token })).all.jobs, 4);
-  const open = cash.owedCents;
+  let open = cash.owedCents;
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
   await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { role: 'customer' }, expect: 409 });
   const { db } = await import('../server/main.ts');
   assert.throws(() => db.prepare('DELETE FROM cash_entries').run(), /append-only/);
   assert.throws(() => db.prepare("UPDATE cash_entries SET amount_cents = 1 WHERE kind = 'adjustment'").run(), /append-only/);
+  // T25: a handover its driver can never confirm (blocked, gone) is resolved by an administrator with a
+  // recorded reason and evidence reference; the CAS shares the driver's own predicate, so exactly one move.
+  const stuck = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 120, note: 'Blocked driver handover' } });
+  await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'blocked' } });
+  // Blocking revokes the driver's sessions: the driver cannot even reach the decision route.
+  await call(`/driver/cash/${stuck.id}/confirm`, { token: driver.token, body: { decision: 'confirm' }, expect: 401 });
+  await call(`/admin/cash/${stuck.id}/resolve`, { token: driver.token, body: { decision: 'confirm', reason: 'Driver cannot act' }, expect: 401 });
+  await call(`/admin/cash/${stuck.id}/resolve`, { token: admin.token, body: { decision: 'confirm', reason: 'no' }, expect: 400 });
+  await call(`/admin/cash/${stuck.id}/resolve`, { token: admin.token, body: { decision: 'reinstate', reason: 'Not a decision' }, expect: 400 });
+  const resolved = await call(`/admin/cash/${stuck.id}/resolve`, { token: admin.token, body: { decision: 'confirm', reason: 'Driver blocked; office counted the envelope', evidenceRef: 'SAFE-2026-114' } });
+  assert.equal(resolved.status, 'confirmed');
+  await call(`/admin/cash/${stuck.id}/resolve`, { token: admin.token, body: { decision: 'dispute', reason: 'Double tap must not repeat' }, expect: 409 });
+  // (The driver-side double-move guard shares this CAS predicate; the blocked driver cannot call at all.)
+  const row = db.prepare('SELECT resolved_by, resolution_note FROM cash_entries WHERE id = ?').get(stuck.id);
+  assert.equal(row.resolved_by, admin.user.id, 'the resolution records its actor');
+  assert.ok(row.resolution_note.includes('Driver blocked; office counted the envelope') && row.resolution_note.includes('SAFE-2026-114'), 'the resolution records its reason and evidence');
+  await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'active' } });
+  driver.token = (await call('/auth/login', { body: { phone: '0599300003', password: 'secret1' } })).token; // the block killed the session
+  open = (await call('/driver/cash', { token: driver.token })).owedCents; // the resolved handover already settled its share
+
   const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);

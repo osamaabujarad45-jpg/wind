@@ -112,6 +112,12 @@
     },
     {
       "type": "index",
+      "name": "subscriptions_pending",
+      "tableName": "subscriptions",
+      "sql": "CREATE UNIQUE INDEX subscriptions_pending ON subscriptions(user_id, plan) WHERE status = 'pending'"
+    },
+    {
+      "type": "index",
       "name": "users_email_unique",
       "tableName": "users",
       "sql": "CREATE UNIQUE INDEX users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL"
@@ -126,7 +132,7 @@
       "type": "table",
       "name": "cash_entries",
       "tableName": "cash_entries",
-      "sql": "CREATE TABLE cash_entries (\n  id INTEGER PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),\n  kind TEXT NOT NULL CHECK (kind IN ('remittance','adjustment')), amount_cents INTEGER NOT NULL CHECK (amount_cents <> 0),\n  note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),\n  recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER, request_id TEXT)"
+      "sql": "CREATE TABLE cash_entries (\n  id INTEGER PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),\n  kind TEXT NOT NULL CHECK (kind IN ('remittance','adjustment')), amount_cents INTEGER NOT NULL CHECK (amount_cents <> 0),\n  note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),\n  recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER, request_id TEXT, resolved_by INTEGER, resolution_note TEXT)"
     },
     {
       "type": "table",
@@ -418,6 +424,22 @@
         {
           "cid": 9,
           "name": "request_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "resolved_by",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "resolution_note",
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,

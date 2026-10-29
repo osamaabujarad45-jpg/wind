@@ -11,6 +11,15 @@
       ]
     },
     {
+      "packet": "T25-cash-ops",
+      "source": "server/domain/cash-ops.ts",
+      "registrar": "registerCashOpsRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/admin/cash/pending", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/cash/:id/resolve", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "T05-routing",
       "source": "server/domain/routing-status.ts",
       "registrar": "registerRoutingStatusRoutes",
