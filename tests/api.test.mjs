@@ -245,6 +245,10 @@ try {
   await call('/me', { token: customer.token }); // failed reset must preserve the complete previous credential state
   db.exec('DROP TRIGGER fail_reset_revoke');
   const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {} });
+  const resetAudit = db.prepare("SELECT * FROM security_events WHERE action = 'SUPPORT_PASSWORD_RESET' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(resetAudit?.order_id, null, 'account-level audit rows have no order');
+  assert.equal(resetAudit?.actor_id, admin.user.id);
+  assert.match(resetAudit?.detail ?? '', new RegExp(`"targetId":${customer.user.id}`));
   await call('/me', { token: customer.token, expect: 401 }); // reset signs out everywhere
   const relogged = await call('/auth/login', { body: { phone: '0599000002', password: temp } });
 
@@ -260,6 +264,10 @@ try {
   });
   await new Promise(resolve => setTimeout(resolve, 30));
   await call(`/admin/users/${customer.user.id}`, { token: admin.token, body: { status: 'blocked' } });
+  const editAudit = db.prepare("SELECT * FROM security_events WHERE action = 'USER_UPDATED' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(editAudit?.order_id, null, 'admin identity edits are account-level audit rows');
+  assert.equal(editAudit?.actor_id, admin.user.id);
+  assert.match(editAudit?.detail ?? '', /"status"/);
   finishSlowBody();
   assert.equal((await slowMutation).status, 401);
   assert.notEqual(db.prepare('SELECT name FROM users WHERE id = ?').get(customer.user.id).name, 'Revoked mutation');

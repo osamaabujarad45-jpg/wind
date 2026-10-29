@@ -44,11 +44,16 @@ if (process.argv.includes('--serve')) {
     const a = actors[i % actors.length], at = now - (i + 1) * 60_000;
     orderInsert.run(a.customer.id, a.driver.id, a.customer.phone, 'completed', at, at, at, at);
   }
+  // A full job board is materially more expensive than an empty one; include enough for three pages.
+  for (let i = 0; i < 120; i++) {
+    const a = actors[i % actors.length];
+    orderInsert.run(a.customer.id, null, a.customer.phone, 'searching', now + i, now + i, null, null);
+  }
   db.exec('COMMIT');
   const eventLoop = monitorEventLoopDelay({ resolution: 10 });
   eventLoop.enable();
   await new Promise(r => server.listen(0, '127.0.0.1', r));
-  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000 });
+  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000, queued: 120 });
   process.on('message', async message => {
     if (message === 'stop') {
       process.send({ type: 'runtime', memory: process.memoryUsage(), cpu: process.cpuUsage(),
@@ -108,7 +113,13 @@ if (process.argv.includes('--serve')) {
     ready.base = `http://127.0.0.1:${ready.port}`;
     const { actors, admin } = ready;
     await request('/ready');
-    console.log(`Local-only API fixture ready: ${actors.length * 2 + 1} synthetic accounts, ${ready.history} historical orders`);
+    console.log(`Local-only API fixture ready: ${actors.length * 2 + 1} synthetic accounts, ${ready.history} historical orders, ${ready.queued} searching orders`);
+    const jobsPage = await request('/jobs?page=1', { token: actors[0].driver.token, operation: 'populated-jobs-page' });
+    assert.equal(jobsPage.data.jobs.length, 20);
+    assert.ok(jobsPage.data.nextCursor);
+    const jobsNext = await request(`/jobs?page=1&after=${encodeURIComponent(jobsPage.data.nextCursor)}`, { token: actors[0].driver.token, operation: 'populated-jobs-next-page' });
+    assert.equal(jobsNext.data.jobs.length, 20);
+    assert.ok(!jobsNext.data.jobs.some(job => jobsPage.data.jobs.some(first => first.id === job.id)));
     async function work(kind, phase) {
       const i = serial++, a = actors[i % actors.length];
       const n = i % (kind === 'read' ? 6 : 10);
@@ -126,7 +137,7 @@ if (process.argv.includes('--serve')) {
       } else {
         const paths = [
           ['/me', a.customer.token, 'customer-profile'], ['/orders', a.customer.token, 'customer-history'], ['/orders', a.driver.token, 'driver-history'],
-          ['/jobs', a.driver.token, 'driver-jobs'], [`/orders/${a.orderId}/live?since=0`, a.customer.token, 'live-fix-immediate'], ['/admin/stats', admin.token, 'admin-dashboard'],
+          ['/jobs?page=1', a.driver.token, 'driver-jobs'], [`/orders/${a.orderId}/live?since=0`, a.customer.token, 'live-fix-immediate'], ['/admin/stats', admin.token, 'admin-dashboard'],
         ];
         const [path, token, operation] = paths[n % paths.length];
         await request(path, { token, phase, operation });
@@ -186,11 +197,18 @@ if (process.argv.includes('--serve')) {
     assert.deepEqual(lock.prepare('PRAGMA foreign_key_check').all(), []);
     assert.equal(lock.prepare('SELECT COUNT(*) n FROM order_commands').get().n, expectedCommands.size);
     assert.equal(duplicateIds.length, 0);
-    assert.equal(lock.prepare("SELECT COUNT(*) n FROM orders WHERE status='searching'").get().n, 0);
+    assert.equal(lock.prepare("SELECT COUNT(*) n FROM orders WHERE status='searching'").get().n, ready.queued);
     checks.push(`Integrity OK, zero foreign-key errors, ${expectedCommands.size} idempotent bookings each stored once and cancelled`);
     console.log(checks.map(c => `PASS ${c}`).join('\n'));
     // These are the handoff's engineering targets, not a production SLA. Exclude deliberate held reads/lock faults.
     for (const phase of phases) performanceGates.push({ gate: `${phase.phase}: non-provider API p95 < 500ms`, actualMs: phase.p95, passed: phase.p95 < 500 });
+    for (const phase of phases.filter(item => item.concurrency === 60)) {
+      const jobs = records.filter(record => record.phase === phase.phase && record.operation === 'driver-jobs');
+      if (jobs.length) {
+        const p95 = percentile(jobs.map(record => record.ms), .95);
+        performanceGates.push({ gate: `${phase.phase}: populated driver jobs p95 < 500ms`, actualMs: p95, passed: p95 < 500 });
+      }
+    }
     const commands = records.filter(record => ['book-idempotent', 'cancel-load-booking'].includes(record.operation));
     if (commands.length) {
       const p95 = percentile(commands.map(record => record.ms), .95);
@@ -206,7 +224,7 @@ if (process.argv.includes('--serve')) {
     writeFileSync(join(output, 'server.log'), serverOutput);
     writeFileSync(join(output, 'results.json'), JSON.stringify({ startedAt, finishedAt: new Date().toISOString(),
       environment: { node: process.version, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model, logicalCpus: cpus().length, memoryGiB: Math.round(totalmem() / 1024 ** 3),
-        target: 'ephemeral loopback child process; disposable SQLite WAL database', historicalOrders: ready?.history, syntheticAccounts: 121, pacingOperationsPerSecond: 250, phaseSeconds: 8 },
+        target: 'ephemeral loopback child process; disposable SQLite WAL database', historicalOrders: ready?.history, searchingOrders: ready?.queued, syntheticAccounts: 121, pacingOperationsPerSecond: 250, phaseSeconds: 8 },
       phases, checks, performanceGates, unexpectedErrors: unexpected, correctness: summarize(records.filter(r => r.phase === 'correctness')), runtime }, null, 2));
     writeFileSync(join(output, 'requests.json'), JSON.stringify(records, null, 2));
   }

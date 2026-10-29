@@ -308,9 +308,9 @@ try {
     for (const ex of [...cleanObserved.exchanges, ...expectedContracts.exchanges])
       if (ex.response && typeof ex.response === 'object') delete ex.response.canChangeDestination;
     for (const ex of cleanObserved.exchanges) {
-      // On Postgres /api/ready reports the max applied migration version (503 below 20);
+      // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 20, 'PG readiness must report migration 20'); ex.response.schema = 3; }
+      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 21, 'PG readiness must report migration 21'); ex.response.schema = 3; }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;
         delete ex.response.quoteExpiresAt;

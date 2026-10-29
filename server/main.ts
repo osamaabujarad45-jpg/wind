@@ -241,7 +241,10 @@ const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.pho
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
   LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0) LEFT JOIN order_disputes od ON od.order_id = o.id`;
 
-async function toOrder(r: Row, viewer: User): Promise<Order> {
+type JobCardData = { customers: Map<number, { rating: number | null; trips: number }>;
+  offers: Map<number, { price: number; createdAt: number }> };
+
+async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order> {
   const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
   const assigned = viewer.id === r.driver_id;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
@@ -287,10 +290,12 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
     recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null, routeKm: r.route_km ?? null,
     // The courier has other stops on this run, so a straight-to-you ETA would be wrong (SPEC-courier-run-eta.md).
     sharedRun: (owner || assigned) && activeStatuses.includes(r.status) && !!r.shared_run,
-    myOffer: viewer.role === 'driver' && r.status === 'searching' ? (await myOffer(r.id, viewer.id)) : null,
+    myOffer: viewer.role === 'driver' && r.status === 'searching'
+      ? cards ? cards.offers.get(Number(r.id)) ?? null : await myOffer(r.id, viewer.id) : null,
     // Drivers rate the customer; customers never see per-order or summary ratings (SPEC-customer-rating.md).
     customerRating: assigned || viewer.role === 'admin' ? r.customer_rating ?? null : null,
-    ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: (await customerStats(r.customer_id)) }),
+    ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: cards
+      ? cards.customers.get(Number(r.customer_id)) ?? { rating: null, trips: 0 } : await customerStats(r.customer_id) }),
     ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: (await offersFor(r.id)) }),
     ...(dispatchInfo ? { dispatch: dispatchInfo as Order['dispatch'] } : {}),
     ...(rideInfo ? { ride: rideInfo as Order['ride'] } : {}),
@@ -311,6 +316,26 @@ const myOffer = async (orderId: number, driverId: number) => {
   const f = (await one('SELECT price, created_at FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', orderId, driverId, Date.now() - OFFER_TTL));
   return f ? { price: f.price as number, createdAt: f.created_at as number } : null;
 };
+
+// A job page can contain 50 customers and 50 offers. Fetch each relation once per request;
+// neither result is cached across requests, so ratings and the driver's offers stay current.
+async function jobCardData(rows: Row[], driverId: number): Promise<JobCardData> {
+  const customers = new Map<number, { rating: number | null; trips: number }>();
+  const offers = new Map<number, { price: number; createdAt: number }>();
+  if (!rows.length) return { customers, offers };
+  const customerIds = [...new Set(rows.map(row => Number(row.customer_id)))];
+  const orderIds = rows.map(row => Number(row.id));
+  const stats = await all(`SELECT customer_id, AVG(customer_rating) rating, COUNT(customer_rating) rated,
+    COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders
+    WHERE customer_id IN (${customerIds.map(() => '?').join(',')}) GROUP BY customer_id`, ...customerIds);
+  for (const row of stats) customers.set(Number(row.customer_id), {
+    rating: Number(row.rated) >= 3 ? Math.round(Number(row.rating) * 10) / 10 : null, trips: Number(row.trips),
+  });
+  const rowsWithOffers = await all(`SELECT order_id, price, created_at FROM order_offers
+    WHERE driver_id = ? AND created_at > ? AND order_id IN (${orderIds.map(() => '?').join(',')})`, driverId, Date.now() - OFFER_TTL, ...orderIds);
+  for (const row of rowsWithOffers) offers.set(Number(row.order_id), { price: Number(row.price), createdAt: Number(row.created_at) });
+  return { customers, offers };
+}
 const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.all((await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
   WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL))
   .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) }))));
@@ -486,8 +511,8 @@ route('GET', '/api/ready', async () => {
       await one('SELECT COUNT(*) n FROM sqlite_schema');
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
-      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 20'))?.n ?? 0);
-      if (schema < 20 || applied !== 18) fail(503, 'unavailable');
+      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
+      if (schema < 21 || applied !== 19) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -1765,16 +1790,34 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   needActive(user);
   if (!servesFor(user.vehicle).length) fail(409, 'no_vehicle'); // say why the list is empty
   const allowed = servesFor(user.vehicle).filter(service => enabledServices.includes(service));
-  if (!allowed.length) return [];
+  const paging = query.get('page') === '1';
+  const pageSize = paging ? 20 : 50; // keep legacy responses stable while bounding mobile rendering and per-request work
+  if (!allowed.length) return paging ? { version: 1, jobs: [], nextCursor: null } : [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
   // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md).
   const heading = user.heading?.city ?? '';
-  const jobs=(await Promise.all((await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
+  const after = query.get('after');
+  let cursor: [number, number] | undefined;
+  if (after !== null) {
+    if (!/^\d{1,16}:\d{1,16}$/.test(after)) fail(400, 'invalid_input');
+    const [at, id] = after.split(':').map(Number);
+    if (!Number.isSafeInteger(at) || !Number.isSafeInteger(id) || id < 1) fail(400, 'invalid_input');
+    cursor = [at, id];
+  }
+  const rows = await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
     AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?)
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
-    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id))
-    .map(async r => (await toOrder(r, user)))));
-  return query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
+    ${cursor ? 'AND (COALESCE(o.scheduled_for, o.created_at) > ? OR (COALESCE(o.scheduled_for, o.created_at) = ? AND o.id > ?))' : ''}
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id,
+    ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
+  const visible = rows.slice(0, pageSize);
+  const cards = await jobCardData(visible, user.id);
+  const jobs = await Promise.all(visible.map(r => toOrder(r, user, cards)));
+  const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
+  if (!paging) return result;
+  const last = visible.at(-1);
+  const nextCursor = rows.length > pageSize && last ? `${last.scheduled_for ?? last.created_at}:${last.id}` : null;
+  return { version: 1, jobs: result, nextCursor };
 });
 
 route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
@@ -2507,18 +2550,18 @@ route('GET', '/api/admin/stats', async ({ user }) => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - 13);
-  const from = start.getTime();
-  const day = (ms: number) => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
-  const byDay = new Map<string, { commission: number; subscriptions: number }>();
-  for (let i = 0; i < 14; i++) byDay.set(day(new Date(start).setDate(start.getDate() + i)), { commission: 0, subscriptions: 0 });
-  for (const r of (await all(`SELECT completed_at t, commission v FROM orders WHERE status IN (${finishedSql}) AND completed_at >= ?`, from))) {
-    const bucket = byDay.get(day(r.t));
-    if (bucket) bucket.commission += r.v;
-  }
-  for (const r of (await all('SELECT activated_at t, price v FROM subscriptions WHERE activated_at >= ?', from))) {
-    const bucket = byDay.get(day(r.t));
-    if (bucket) bucket.subscriptions += r.v;
-  }
+  const boundaries = Array.from({ length: 15 }, (_, i) => new Date(start).setDate(start.getDate() + i));
+  const daily = boundaries.slice(0, 14).map(ms => ({ date: new Date(ms).toLocaleDateString('en-CA'), commission: 0, subscriptions: 0 }));
+  // Group in the database instead of formatting every historical row on the event loop.
+  // Boundaries are local midnights, so a 23- or 25-hour DST day remains one bucket.
+  const bucketCase = (column: string) => `CASE ${boundaries.slice(1, 14).map((_, i) => `WHEN ${column} < ? THEN ${i}`).join(' ')} ELSE 13 END`;
+  const params = [...boundaries.slice(1, 14), boundaries[0], boundaries[14]];
+  const commissions = await all(`SELECT ${bucketCase('completed_at')} bucket, COALESCE(SUM(commission), 0) amount
+    FROM orders WHERE status IN (${finishedSql}) AND completed_at >= ? AND completed_at < ? GROUP BY bucket`, ...params);
+  const subscriptions = await all(`SELECT ${bucketCase('activated_at')} bucket, COALESCE(SUM(price), 0) amount
+    FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY bucket`, ...params);
+  for (const row of commissions) daily[Number(row.bucket)].commission = Number(row.amount);
+  for (const row of subscriptions) daily[Number(row.bucket)].subscriptions = Number(row.amount);
   return {
     gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, discounts: orders.discounts,
     // Promo discounts are Wind's cost (the driver's ledger credits them), so they come off the profit.
@@ -2530,7 +2573,7 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
-    daily: [...byDay].map(([date, v]) => ({ date, ...v })),
+    daily,
   };
 });
 
@@ -2586,6 +2629,17 @@ const editUser: Handler = async ({ user, params, body }) => {
     }
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
     const now = Date.now();
+    const auditFields = [
+      name !== target.name ? 'name' : null,
+      phone !== target.phone ? 'phone' : null,
+      email !== (target.email ?? null) ? 'email' : null,
+      status !== target.status ? 'status' : null,
+      roleChanged ? 'role' : null,
+      vehicle !== (target.vehicle ?? null) ? 'vehicle' : null,
+      plate !== (target.plate ?? null) ? 'plate' : null,
+    ].filter(Boolean);
+    if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
+      user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
         const backPrice = (o.recommended_price ?? o.price) as number;
@@ -2644,6 +2698,8 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params }) => {
   try {
     (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
+      user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true }), Date.now()));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return { password };

@@ -44,10 +44,16 @@ param acsAccessKey string = ''
 @description('Provision Azure Communication Services (SMS + Email) for OTP delivery bake-off; Entra tenant itself is portal-created.')
 param enableAcs bool = false
 param acsDataLocation string = 'Europe'
+@description('Real support contact shown on the legal pages; required when workloads are enabled.')
+param supportContact string = ''
+@description('Production identity policy; operator-verified keeps self-registration closed.')
+@allowed(['operator-verified', 'self-service'])
+param identityMode string = 'operator-verified'
 
 // Evaluate both required images at deployment start, before workload activation.
 var checkedImage = !enableWorkloads || !empty(trim(imageDigest)) ? imageDigest : fail('imageDigest is required when enableWorkloads is true')
 var checkedOsrmImage = !enableWorkloads || !empty(trim(osrmImageDigest)) ? osrmImageDigest : fail('osrmImageDigest is required when enableWorkloads is true')
+var checkedSupportContact = !enableWorkloads || !empty(trim(supportContact)) ? supportContact : fail('supportContact is required when enableWorkloads is true')
 var suffix = uniqueString(subscription().id, resourceGroup().id, prefix)
 var commonTags = { application: 'fastship', environment: environment, managedBy: 'bicep' }
 var vnetName = '${prefix}-${environment}-vnet'
@@ -220,6 +226,20 @@ resource osrmEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026
   }
   dependsOn: [osrmStorageRole]
 }
+// The runtime refuses to boot without an absolute DB_PATH. PostgreSQL is the durable store;
+// this share only satisfies the SQLite fallback path and keeps the mount identical on rollback.
+resource dataFiles 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
+  name: '${osrmStorage.name}/default/wind-data'
+  properties: { shareQuota: 5, enabledProtocols: 'SMB' }
+}
+resource dataEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026-03-02-preview' = {
+  parent: acaEnvironment
+  name: 'wind-data'
+  properties: {
+    azureFile: { accountName: osrmStorage.name, identity: 'system', shareName: 'wind-data', accessMode: 'ReadWrite' }
+  }
+  dependsOn: [osrmStorageRole]
+}
 resource evidence 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   name: '${storage.name}/default/evidence'
   properties: { publicAccess: 'None' }
@@ -289,8 +309,27 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   sku: { name: 'Basic' }
   properties: { adminUserEnabled: false, publicNetworkAccess: 'Enabled', networkRuleBypassOptions: 'AzureServices' }
 }
-// Owner gate: API and worker still need a reviewed Key Vault database URL binding,
-// staging mode, secret access and registry AcrPull. Without these they use ephemeral SQLite.
+resource databaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enableWorkloads) {
+  parent: vault
+  name: 'database-url'
+  properties: {
+    // The runtime currently accepts a non-loopback URL only through the staging gate (verify-full).
+    // The production cutover still requires the code gate to be removed by review.
+    value: 'postgresql://${postgresAdministratorLogin}:${uriComponent(postgresAdministratorPassword)}@${pg.properties.fullyQualifiedDomainName}:5432/fastship?sslmode=verify-full'
+  }
+}
+resource vaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+  name: guid(vault.id, environmentIdentity.id, '4633458b-17de-408a-b874-0445c86b69e6')
+  scope: vault
+  properties: { principalId: environmentIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') }
+}
+resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+  name: guid(registry.id, environmentIdentity.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  scope: registry
+  properties: { principalId: environmentIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') }
+}
+// Owner gate: workloads stay disabled until the runtime PostgreSQL cutover is reviewed, the
+// migration has run under the advisory lock, and the identity/provider gates are accepted.
 module api 'modules/container-app.bicep' = if (enableWorkloads) {
   name: 'api'
   params: {
@@ -309,6 +348,11 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
     environmentVariables: [
       { name: 'HOST', value: '0.0.0.0' }
       { name: 'PORT', value: '4000' }
+      { name: 'SUPPORT_CONTACT', value: checkedSupportContact }
+      { name: 'WIND_IDENTITY_MODE', value: identityMode }
+      { name: 'WIND_POSTGRES_STAGING', value: '1' }
+      { name: 'OSRM_URL', value: 'http://${acaOsrm!.properties.configuration.ingress!.fqdn}' }
+      { name: 'DB_PATH', value: '/data/wind.db' }
       { name: 'WIND_ENTRA_TENANT_NAME', value: entraTenantName }
       { name: 'WIND_ENTRA_TENANT_ID', value: entraTenantId }
       { name: 'WIND_ENTRA_CLIENT_ID', value: entraClientId }
@@ -316,6 +360,12 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
       { name: 'WIND_ACS_SENDER', value: acsSender }
       { name: 'WIND_TRUST_PROXY', value: '1' }
     ]
+    keyVaultSecrets: [
+      { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }
+    ]
+    volumeName: 'data'
+    volumeMountPath: '/data'
+    storageName: 'wind-data'
     acsAccessKey: acsAccessKey
     minReplicas: 1
     maxReplicas: 1
@@ -338,6 +388,12 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
     cpu: '0.5'
     memory: '1Gi'
     command: ['node', 'server/worker.ts']
+    environmentVariables: [
+      { name: 'WIND_POSTGRES_STAGING', value: '1' }
+    ]
+    keyVaultSecrets: [
+      { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }
+    ]
     minReplicas: 1
     maxReplicas: 1
   }

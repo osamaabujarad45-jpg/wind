@@ -229,7 +229,10 @@ if (import.meta.main) {
   if (!source || !destination || !schema || !report || !process.env.WIND_DATABASE_URL) throw new Error('Usage: WIND_DATABASE_URL=<local test URL> node server/migrate.ts source.sqlite new-snapshot.sqlite wp03_<name> report.json');
   const url = new URL(process.env.WIND_DATABASE_URL);
   if (process.env.NODE_ENV !== 'test' || !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) throw new Error('Only isolated loopback migration rehearsals are enabled');
-  const database = new Persistence({ connectionString: url.href, pool: { options: `-c search_path=${isolatedSchema(schema)},public` }, statementTimeoutMs: 30_000 });
+  // Rehearsals share one migration lock. A concurrent schema setup may legitimately take
+  // longer than the short request lock budget; keep this CLI bounded but allow it to finish.
+  const database = new Persistence({ connectionString: url.href, pool: { options: `-c search_path=${isolatedSchema(schema)},public` },
+    statementTimeoutMs: 30_000, lockTimeoutMs: 30_000 });
   try {
     const result = await importSnapshot(await snapshotSqlite(source, destination, process.argv.includes('--freeze-writes')), database, schema, report);
     console.log(JSON.stringify({ ok: result.ok, schema, report, runtimeActivated: false }));

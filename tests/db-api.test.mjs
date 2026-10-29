@@ -41,7 +41,8 @@ try {
   await setup.run('INSERT INTO schema_migrations VALUES(19, 0)');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(20, 0)');
-  assert.deepEqual(await call('/ready'), { ok: true, schema: 20 });
+  await setup.run('INSERT INTO schema_migrations VALUES(21, 0)');
+  assert.deepEqual(await call('/ready'), { ok: true, schema: 21 });
   await setup.run('DELETE FROM schema_migrations WHERE version=19');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(19, 0)');

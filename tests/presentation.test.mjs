@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import './customer-location.test.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pickupForm, readBooking, retryIds } from '../src/booking.ts';
-import { locationState } from '../src/location-state.ts';
+import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from '../src/location-state.ts';
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
 import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
@@ -92,6 +92,19 @@ noteServerDate(new Date(70_000).toUTCString(), 190_000);
 assert.deepEqual(locationState(location, 190_000), { ageSeconds: 10, stale: false, reconnecting: false });
 noteServerDate(new Date(190_000).toUTCString(), 192_000);
 assert.deepEqual(locationState(location, 95_000), { ageSeconds: 35, stale: false, reconnecting: true });
+// A phone clock two minutes behind must not extend the public marker's 120-second retention.
+noteServerDate(new Date(180_000).toUTCString(), 60_000);
+const stillRecent = { ...location, updatedAt: 61_000 }, tooOld = { ...location, updatedAt: 59_000 };
+assert.equal(retainedPublicFix(stillRecent, 60_000), stillRecent);
+assert.equal(retainedPublicFix(tooOld, 60_000), null);
+assert.equal(retainedPublicFix({ ...stillRecent, ageSeconds: 121 }, 60_000), null);
+assert.equal(retainedPublicFix(null, 60_000), null);
+noteServerDate(new Date(60_000).toUTCString(), 60_000);
+// Moving the device clock backwards while offline must not renew a cached location.
+const lease = publicFixClock(location, 60_000, 1_000);
+assert.equal(publicFixAgeMs(location, -3_540_000, lease, 61_000), 60_000);
+assert.equal(retainedPublicFix(location, -3_540_000, lease, 121_001), null);
+assert.equal(publicFixAgeMs({ ...location, updatedAt: 61_000 }, 61_000, lease, 121_001), 0, 'a different fix does not inherit the prior lease');
 noteServerDate(null);
 console.log('Booking recovery and location freshness checks passed');
 

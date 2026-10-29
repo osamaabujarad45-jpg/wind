@@ -403,7 +403,10 @@ direction (runs on SQLite, 409s after cutover); P1 #4's "four files never run" (
   **not** go through it is `resource-scope.getScope`, and that is exactly P2 #5.
 - No SQL injection (parameterised throughout), no cookies and therefore no CSRF surface, no path traversal, no shipped backdoor.
 - `BEGIN IMMEDIATE` on SQLite and `FOR UPDATE` on Postgres genuinely serialise `advanceOrder`; `expectedStatus` is enforced inside the transaction.
-- Cash entries are append-only, and a double settle is blocked by `WHERE status='pending'`.
+- Cash entries are append-only, and a double settle is blocked by `WHERE status='pending'`. **Executed**:
+  two concurrent `POST /api/driver/cash/:id/confirm` → `[200, 409]`, one row left `confirmed`; a
+  confirm-then-dispute → `409 already_decided`; a second driver → `404 not_found`
+  (`reports/verify-2026-10-29/probe-cash-decision.mjs`).
 - Booking is persisted before it is sent and replayed with one `requestId`; every poll and GPS watch aborts on blur/unmount.
 - `copy.ts` has zero key drift: **886 keys in each locale, no key in one and not the other** (verified by
   direct comparison at HEAD, not by the test suite — the two tests that exist cover only the `presence_`

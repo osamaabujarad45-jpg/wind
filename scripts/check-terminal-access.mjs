@@ -67,6 +67,46 @@ try {
   while (liveWatcherCount(order.id) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(liveWatcherCount(order.id), 0, 'Revoked order must release its live tracking watcher');
   console.log('Terminal order access clears the driver and location; a transient failure keeps them');
+
+  // A recipient's slow device clock must not keep a cached live marker past the public retention window.
+  const shared = await call(`/orders/${order.id}/share`, {}, customer.token);
+  const publicContext = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  await publicContext.addInitScript(() => {
+    const realNow = Date.now.bind(Date);
+    const realMonotonic = performance.now.bind(performance);
+    window.testClockAdvance = 0;
+    window.testMonotonicAdvance = 0;
+    Date.now = () => realNow() - 120_000 + window.testClockAdvance;
+    Object.defineProperty(performance, 'now', { value: () => realMonotonic() + window.testMonotonicAdvance });
+    localStorage.setItem('language', 'en');
+    localStorage.setItem('onboarded', '1');
+  });
+  const publicPage = await publicContext.newPage();
+  let pauseUpdates = false;
+  await publicPage.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    return pauseUpdates || path.endsWith('/live') ? route.abort() : route.continue();
+  });
+  await publicPage.goto(base + shared.path, { waitUntil: 'domcontentloaded' });
+  const marker = publicPage.locator('.driver-marker');
+  await marker.waitFor({ timeout: 30000 });
+  pauseUpdates = true; // keep the previously received fix, as happens during a network outage
+  // Even a clock moved backwards while offline cannot extend the marker's lifetime.
+  await publicPage.evaluate(() => { window.testClockAdvance = -3_600_000; window.testMonotonicAdvance = 121_000; });
+  await marker.waitFor({ state: 'detached', timeout: 16000 });
+  console.log('Public tracking removes a cached marker after 120 seconds despite a slow or backward-changing device clock');
+  await publicContext.close();
+
+  // Exercise a real authorization change, not just a fabricated 403 response.
+  const driverContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await driverContext.addInitScript(token => { localStorage.setItem('token', token); localStorage.setItem('language', 'en'); localStorage.setItem('onboarded', '1'); }, signedDriver.token);
+  const driverPage = await driverContext.newPage();
+  await driverPage.goto(`${base}/order/${order.id}`, { waitUntil: 'domcontentloaded' });
+  await driverPage.getByText('Synthetic pickup', { exact: true }).waitFor({ timeout: 30000 });
+  await call(`/orders/${order.id}/release`, {}, signedDriver.token);
+  await driverPage.getByText('Not found or no longer available.', { exact: true }).waitFor({ timeout: 15000 });
+  assert.equal(await driverPage.getByText('Synthetic pickup', { exact: true }).count(), 0, 'released driver must lose the private landmark');
+  console.log('A real driver release removes cached private order details after the server revokes access');
 } finally {
   await browser?.close();
   await shutdown();

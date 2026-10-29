@@ -58,6 +58,9 @@ try{
   assert.ok(row.version>=5);assert.equal(row.assignment_epoch,1);assert.equal(row.currency,'ILS');
   assert.deepEqual([row.price_minor,row.commission_minor,row.discount_minor],[2000,300,1000]);
   const stats=await call('/admin/stats',{token:admin.token});assert.equal(typeof stats.gmv,'number');
+  assert.equal(stats.daily.length,14);
+  assert.equal(stats.daily.at(-1).commission,stats.commission,'PostgreSQL groups today’s completed order');
+  assert.equal(stats.daily.at(-1).subscriptions,stats.subscriptions,'PostgreSQL groups today’s activated subscription');
   const credential=await persistence.one('SELECT password FROM users WHERE id=?',customer.user.id);
   await persistence.run(`CREATE FUNCTION fail_reset_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF OLD.user_id=${customer.user.id} THEN RAISE EXCEPTION 'synthetic session write failure'; END IF; RETURN OLD; END $$;

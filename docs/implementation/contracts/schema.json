@@ -300,7 +300,7 @@
       "type": "table",
       "name": "security_events",
       "tableName": "security_events",
-      "sql": "CREATE TABLE security_events (\n  id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER NOT NULL REFERENCES orders(id),\n  action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL)"
+      "sql": "CREATE TABLE security_events (\n  id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),\n  action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL)"
     },
     {
       "type": "table",
@@ -3165,7 +3165,7 @@
           "cid": 2,
           "name": "order_id",
           "type": "INTEGER",
-          "notnull": 1,
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         },

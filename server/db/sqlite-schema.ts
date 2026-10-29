@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS request_limits (key TEXT PRIMARY KEY, count INTEGER N
 CREATE TABLE IF NOT EXISTS proof_attempts (
   order_id INTEGER PRIMARY KEY REFERENCES orders(id), failures INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS security_events (
-  id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER NOT NULL REFERENCES orders(id),
+  id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),
   action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS order_disputes (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), customer_id INTEGER NOT NULL REFERENCES users(id),
@@ -200,6 +200,26 @@ CREATE TABLE IF NOT EXISTS quotes (
 `);
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
+
+// Account-level audit rows (support reset, admin identity edit) have no order. SQLite cannot drop
+// NOT NULL in place, so rebuild once; existing rows keep their order reference. user_version stays
+// 3 so a build from before this change can still open the database.
+if ((db.prepare('PRAGMA table_info(security_events)').all() as Row[]).find(column => column.name === 'order_id')?.notnull) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS security_events_audit_upgrade;
+      CREATE TABLE security_events_audit_upgrade (
+        id INTEGER PRIMARY KEY, actor_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),
+        action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL);
+      INSERT INTO security_events_audit_upgrade (id, actor_id, order_id, action, detail, created_at)
+        SELECT id, actor_id, order_id, action, detail, created_at FROM security_events;
+      DROP TABLE security_events;
+      ALTER TABLE security_events_audit_upgrade RENAME TO security_events;
+      COMMIT;
+    `);
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
 
 // SQLite cannot alter a CHECK constraint. Rebuild only the users table, preserving every id so child
 // rows (sessions, orders, locations, subscriptions and audit events) remain valid.

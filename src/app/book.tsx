@@ -395,6 +395,7 @@ export default function Book() {
             {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
             <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
           </>}
+        {smart.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
       </Card>}
 
       <Card style={{ paddingVertical: 10 }}>

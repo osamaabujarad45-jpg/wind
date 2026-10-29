@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const tests = ['db-persistence.test.mjs', 'db-api.test.mjs', 'pg-dialect.mjs', 'pg-memo.mjs',
-  'pg-contracts.mjs', 'pg-import.mjs', 'pg-claims.mjs', 'pg-cash.mjs', 'pg-offers.mjs',
+  'pg-contracts.mjs', 'pg-import.mjs', 'pg-migration-lock.mjs', 'pg-claims.mjs', 'pg-cash.mjs', 'pg-offers.mjs', 'pg-jobs-pagination.mjs',
   'pg-customer-rating.mjs', 'pg-email.mjs', 'database-logging.test.mjs',
   'cross-process-claims.test.mjs', 'runtime-dependencies.test.mjs',
   'commands.mjs', 'commands-sqlite.mjs', 'events.mjs', 'outbox.mjs',

@@ -12,12 +12,25 @@ import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts
 import { useSession } from '../../session';
 import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
+type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
+
 export default function Jobs() {
   const { me, refresh } = useSession();
   const { c, money, err, language, rtl } = useCopy();
   const { time } = useFormat();
   const active = me?.user.status === 'active';
-  const { data, error, reload } = useApi<Order[]>(active ? '/jobs' : null, 8000);
+  // A cursor is valid only for this driver and destination filter; changing either returns to the first page.
+  const pageScope = `${me?.user.id ?? ''}:${me?.user.heading?.city ?? ''}:${me?.user.heading?.until ?? ''}`;
+  const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
+  const cursors = pages.scope === pageScope ? pages.cursors : [];
+  const cursor = cursors.at(-1);
+  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
+  const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
+    && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
+  const badCursor = !!page?.nextCursor && (!/^\d{1,16}:\d{1,16}$/.test(page.nextCursor) || page.nextCursor === cursor);
+  // Older APIs ignore `page=1` and return an array. Never present a repeated first page as a new page.
+  const pagingUnavailable = (Array.isArray(data) && (!!cursor || data.length === 50)) || (!!data && !Array.isArray(data) && !page) || badCursor;
+  const jobs = Array.isArray(data) ? (cursor ? [] : data) : page?.jobs;
   const work = useDriverWork();
   const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
@@ -88,7 +101,7 @@ export default function Jobs() {
   async function head(target: CityId | 'any') {
     setActionError('');
     setHeadingBusy(true);
-    try { await api('/driver/heading', { city: target === 'any' ? null : target }); await refresh(); reload(); }
+    try { await api('/driver/heading', { city: target === 'any' ? null : target }); setPages({ scope: '', cursors: [] }); await refresh(); reload(); }
     catch (e) { haptic.error(); setActionError(err(e)); } finally { setHeadingBusy(false); }
   }
 
@@ -148,9 +161,11 @@ export default function Jobs() {
     {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
-      ? <Empty icon="hourglass-outline" title={c.noJobs} body={c.noJobsDesc} />
-      : data.map(order => {
+    {!jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
+      : !jobs ? <Loading failed={!!error} onRetry={reload} /> : jobs.length === 0
+      ? <Empty icon="hourglass-outline" title={pagingUnavailable ? c.jobsPagingTitle : cursors.length ? c.jobsNoMore : c.noJobs}
+        body={pagingUnavailable ? c.jobsPagingUnavailable : cursors.length ? c.jobsNoMoreDesc : c.noJobsDesc} />
+      : jobs.map(order => {
         const earn = order.price - commissionOn(order.price, rate);
         // The road km the price used; fixed-price orders (Souq, old apps) only have the city-centre estimate.
         const km = order.routeKm != null ? `${order.routeKm}` : `≈ ${distanceKm(city(order.pickupCity), city(order.dropoffCity))}`;
@@ -211,6 +226,11 @@ export default function Jobs() {
           </Card>
         </View>;
       })}
+    {pagingUnavailable && !!jobs?.length && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.jobsPagingUnavailable}</Txt>}
+    {cursors.length > 0 && <Button title={c.jobsPreviousPage} variant="soft" onPress={() => setPages({ scope: pageScope, cursors: cursors.slice(0, -1) })} />}
+    {page?.nextCursor && !badCursor && <Button title={c.jobsNextPage} variant="soft" onPress={() => {
+      setPages({ scope: pageScope, cursors: [...cursors, page.nextCursor!] });
+    }} />}
   </Screen>;
 }
 
