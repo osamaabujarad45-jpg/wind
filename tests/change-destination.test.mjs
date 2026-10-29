@@ -57,25 +57,31 @@ try {
   assert.deepEqual(proposal.road.slow, ['Hebron checkpoint']);
   const before = await call(`/orders/${order.id}`, { token: customer.token });
   assert.equal(before.dropoffCity, 'nablus');
-  assert.equal((await post(order.id, 'propose', customer.token, { id: proposal.id }, 409)).error, 'destination_driver_unreachable');
+  // Uber parity: no subscription gates the request; the polled in-app card delivers it and push stays best-effort.
+  sends.length = 0;
+  const unpushed = await post(order.id, 'propose', customer.token, { id: proposal.id });
+  assert.equal(sends.length, 0);
+  assert.equal(unpushed.destinationChange.price, 34);
+  await post(order.id, 'withdraw', customer.token, { id: proposal.id });
   await call('/push/subscribe', { token: driver.token, body: { endpoint: 'https://fcm.googleapis.com/fcm/send/destination-test',
     p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en' } });
   sends.length = 0;
-  const pending = await post(order.id, 'propose', customer.token, { id: proposal.id });
+  const requoted = await post(order.id, 'quote', customer.token, request);
+  const pending = await post(order.id, 'propose', customer.token, { id: requoted.id });
   assert.equal(sends.length, 1);
   assert.equal(readPush(sends[0].body).kind, 'destination_request');
   assert.equal(sends[0].headers.Urgency, 'high');
   assert.equal(pending.price, 20);
   assert.equal(pending.destinationChange.price, 34);
-  assert.equal((await post(order.id, 'propose', customer.token, { id: proposal.id })).destinationChange.id, proposal.id);
-  await post(order.id, 'decision', other.token, { id: proposal.id, decision: 'accept' }, 404);
-  const accepted = await post(order.id, 'decision', driver.token, { id: proposal.id, decision: 'accept' });
+  assert.equal((await post(order.id, 'propose', customer.token, { id: requoted.id })).destinationChange.id, requoted.id);
+  await post(order.id, 'decision', other.token, { id: requoted.id, decision: 'accept' }, 404);
+  const accepted = await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' });
   assert.equal(accepted.dropoffCity, 'hebron');
   assert.deepEqual(accepted.dropoffPoint, request.point);
   assert.equal(accepted.price, 34);
   assert.equal(accepted.commission, 5.1);
-  assert.equal((await post(order.id, 'decision', driver.token, { id: proposal.id, decision: 'accept' })).price, 34);
-  await post(order.id, 'decision', driver.token, { id: proposal.id, decision: 'decline' }, 409);
+  assert.equal((await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' })).price, 34);
+  await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'decline' }, 409);
   for (const status of ['assigned', 'at_pickup', 'in_transit']) {
     const customerOrder = await call(`/orders/${order.id}`, { token: customer.token });
     order = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { expectedStatus: status, requestId: randomUUID(),

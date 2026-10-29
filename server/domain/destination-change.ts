@@ -116,8 +116,7 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       if (await pendingDestination(db, r)) fail(409, 'destination_pending');
       if (tariffVersionFor(await settings() as Record<string, unknown>) !== p.tariff_version || await activePlan(user.id) !== p.customer_plan) fail(409, 'price_changed');
       await safetyFree(id);
-      // SQLite currently has Web Push only; never claim to notify a native-only driver.
-      if (!(await db.one('SELECT 1 FROM push_subscriptions WHERE user_id = ? LIMIT 1', r.driver_id))) fail(409, 'destination_driver_unreachable');
+      // Uber parity: the polled in-app pending card is the authoritative channel; push only nudges, so it never gates a proposal.
       await db.run("UPDATE destination_changes SET state = 'pending', expires_at = ? WHERE id = ? AND state = 'quote'", Date.now() + 10 * 60_000, p.id);
       await queuePush([r.driver_id], 'destination_request', id);
       await db.exec('COMMIT');
