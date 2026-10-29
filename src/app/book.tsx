@@ -1,12 +1,12 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
-import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, orderRequest, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
+import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { browserPickupWatch, cachedPickup, findPickup, withPickupPermission } from '../customer-location';
 import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { type PlaceCandidate } from '../place-search';
@@ -20,6 +20,12 @@ import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
+  const { me } = useSession();
+  // An account switch remounts the form: no field from the previous account stays on screen.
+  return <BookForm key={me?.user.id ?? 0} />;
+}
+
+function BookForm() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
@@ -55,6 +61,13 @@ export default function Book() {
   const locationRequest = useRef<AbortController | null>(null);
   useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
+  const [outcome, setOutcome] = useState<PendingOutcome | null>(null); // the last read-only answer; null = not checked
+  const [resolving, setResolving] = useState(false);
+  const reading = useRef(false);
+  const settled = useRef(false);
+  const alive = useRef(true);
+  const latest = useRef<PendingBooking | null>(null); // what the screen is actually holding, for late answers
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
   const [sameFrom, setSameFrom] = useState(false); // send another: only the pickup was copied
@@ -66,7 +79,8 @@ export default function Book() {
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);
-  const pendingKey = `booking.${me!.user.id}`;
+  const savedKey = pendingKey(me!.user.id);
+  const releasable = pendingReleasable(outcome);
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
@@ -123,19 +137,52 @@ export default function Book() {
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
 
+  // Read-only reconciliation: the customer's own order list decides whether the stored command became an order.
+  const checkPending = useCallback(async (command: PendingBooking) => {
+    if (reading.current || settled.current) return;
+    reading.current = true;
+    setResolving(true);
+    try {
+      const answer = pendingOutcome(command, await api<Order[]>('/orders'));
+      const held = latest.current;
+      // Only apply an answer about the attempt this screen still holds: a late reply must not act for another account.
+      if (!alive.current || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
+      setOutcome(answer);
+      if (answer.state === 'present') {
+        settled.current = true;
+        await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely re-finds this order
+        if (!alive.current) return;
+        latest.current = null;
+        setPending(null);
+        router.replace(`/order/${answer.orderId}`);
+      }
+    } catch {
+      if (alive.current && !settled.current) setOutcome({ state: 'unknown' }); // a failed check never unlocks editing
+    } finally {
+      reading.current = false;
+      setResolving(false);
+    }
+  }, [savedKey]);
+
   useEffect(() => {
     let mounted = true;
-    storage.get(pendingKey).then(async saved => {
-      const existing = readBooking(saved);
+    storage.get(savedKey).then(async saved => {
+      let existing: PendingBooking | null = null;
+      if (saved !== null) {
+        try { existing = readBooking(saved); }
+        catch { await storage.set(savedKey, null).catch(() => {}); } // an unreadable command must not lock the form forever
+      }
       if (!mounted) return;
       if (existing) {
         const p = existing.payload;
+        latest.current = existing;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupChosen(true); setDropoffChosen(true);
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
+        void checkPending(existing);
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
@@ -159,7 +206,16 @@ export default function Book() {
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [pendingKey, c.bookingStorageError, params.again, params.keep]);
+  }, [savedKey, checkPending, c.bookingStorageError, params.again, params.keep]);
+
+  // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
+  useEffect(() => {
+    if (!pending) return;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && !sending.current) void checkPending(pending);
+    });
+    return () => subscription.remove();
+  }, [pending, checkPending]);
 
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
@@ -234,15 +290,21 @@ export default function Book() {
     setError('');
     let saved = !!pending; // a pending command is already on the device
     try {
-      const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
-        contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
-        ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
-        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
-      await storage.set(pendingKey, JSON.stringify(command), true);
+      // Retry keeps the stored identity and payload: the server's command idempotency makes a lost answer safe to repeat.
+      const command = pending ? { ...pending, attemptedAt: Date.now() }
+        : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
+          contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
+          ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
+          ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
+      setOutcome(null); // a new attempt invalidates the answer that arrived before it
+      await storage.set(savedKey, JSON.stringify(command), true);
       saved = true;
+      latest.current = command;
       setPending(command);
       const order = await api<Order>('/orders', orderRequest(command));
-      await storage.set(pendingKey, null, true).catch(() => {}); // a retained successful command safely replays
+      settled.current = true;
+      latest.current = null;
+      await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely replays
       haptic.success();
       router.replace(`/order/${order.id}`);
     } catch (e) {
@@ -254,7 +316,7 @@ export default function Book() {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
         if (e.status && e.status < 500 && ![401, 408, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
-          try { await storage.set(pendingKey, null, true); setPending(null); }
+          try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
           catch { setError(c.bookingStorageError); }
         }
       }
@@ -267,6 +329,18 @@ export default function Book() {
     } finally { sending.current = false; setBusy(false); }
   }
 
+  /** Drop a command the server has confirmed absent. Edit keeps the draft; discard leaves the form. */
+  async function release(edit: boolean) {
+    if (!pending || busy || sending.current || !releasable) return;
+    haptic.tap();
+    try {
+      await storage.set(savedKey, null, true);
+      latest.current = null;
+      setPending(null); setOutcome(null); setError('');
+      if (!edit) router.replace('/');
+    } catch { setError(c.bookingStorageError); }
+  }
+
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
   const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
@@ -274,15 +348,25 @@ export default function Book() {
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<>
-      <Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
+    <Screen scrollRef={scrollRef} footer={pending ? undefined : <>
+      <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
         onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || (!available && !pending)} />
       {requestReason && <Reason>{requestReason}</Reason>}
       {quoteFailed && <Button title={c.retry} variant="ghost" onPress={() => setPriceTick(n => n + 1)} />}
     </>}>
       <Header title={c[service]} back />
-      {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
-        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
+      {pending && <Card tone="clay">
+        <Txt variant="title">{c.bookingPending}</Txt>
+        <Txt variant="caption">{c.bookingRetryHint}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
+        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
+        <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
+          <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
+          <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
+          <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
+        </Row>
+        {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
+      </Card>}
       {!available && !pending && <Card tone="clay">
         <Txt variant="title">{c.serviceUnavailable}</Txt>
         <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />

@@ -9,7 +9,11 @@ export type BookingPayload = {
   recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
 };
-export type PendingBooking = { requestId: string; payload: BookingPayload };
+export type PendingBooking = {
+  requestId: string; payload: BookingPayload;
+  sentAt?: number; // first save; locates the order this command may have created
+  attemptedAt?: number; // last POST start; absence is only trusted once the server can no longer be committing it
+};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function newRequestId(): string {
@@ -28,7 +32,13 @@ export function retryIds() {
     sent(text: string) { ids.delete(text); },
   };
 }
-export const newBooking = (payload: BookingPayload): PendingBooking => ({ requestId: newRequestId(), payload });
+export const newBooking = (payload: BookingPayload): PendingBooking => {
+  const now = Date.now();
+  return { requestId: newRequestId(), payload, sentAt: now, attemptedAt: now };
+};
+
+/** The account's own slot: another account on the same device never reads this payload. */
+export const pendingKey = (userId: number) => `booking.${userId}`;
 
 /** Wire body for POST /orders: a locked quote travels by id alone (quotedPrice beside it is a 400). */
 export function orderRequest(command: PendingBooking) {
@@ -74,12 +84,49 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || ['recipientName', 'recipientPhone'].some(key => p[key as 'recipientName'] !== undefined && typeof p[key as 'recipientName'] !== 'string')
     || (p.pricing !== undefined && p.pricing !== 'smart')
     || (p.quoteId !== undefined && !uuid.test(p.quoteId))
+    || (booking.sentAt !== undefined && !Number.isFinite(booking.sentAt))
+    || (booking.attemptedAt !== undefined && !Number.isFinite(booking.attemptedAt))
     || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
     || p.pickupPoint === undefined) {
     throw new Error('invalid_pending_booking');
   }
   return booking;
 }
+
+/** How long after a POST starts the server could still be routing and then committing it. */
+export const SETTLE_MS = 2 * 60_000;
+// Phone clocks drift from the server's createdAt; a wrong "present" costs a retry, a wrong "absent" costs a duplicate order.
+const CLOCK_SKEW = 15 * 60_000;
+
+/** The read-only answer to "did this stored command become an order?" Unknown is never an absence. */
+export type PendingOutcome = { state: 'present'; orderId: number } | { state: 'absent' } | { state: 'unknown' };
+
+const pin = (point: Point | null | undefined) => point ? `${point.latitude},${point.longitude}` : '';
+
+/** The fields the server echoes for this customer's order: enough to recognise this command's order. */
+function sameBooking(p: BookingPayload, o: Order) {
+  return o.service === p.service && o.pickupCity === p.pickupCity && o.dropoffCity === p.dropoffCity
+    && o.option === p.option && o.loadingHelp === p.loadingHelp && o.price === p.quotedPrice
+    && o.pickupNote === p.pickupNote.trim() && o.dropoffNote === p.dropoffNote.trim() && o.detail === p.detail.trim()
+    && (o.scheduledFor ?? null) === (p.scheduledFor ?? null)
+    && pin(o.pickupPoint) === pin(p.pickupPoint) && pin(o.dropoffPoint) === pin(p.dropoffPoint);
+}
+
+/**
+ * `orders` is the customer's own list read from the server, never a local guess. The pending command is written before
+ * its POST and the server may still be committing for a moment after the app gives up, so a fresh absence is unknown.
+ */
+export function pendingOutcome(command: PendingBooking, orders: readonly Order[], now = Date.now()): PendingOutcome {
+  const since = (command.sentAt ?? 0) - CLOCK_SKEW;
+  const found = orders.find(order => order.createdAt >= since && sameBooking(command.payload, order));
+  if (found) return { state: 'present', orderId: found.id };
+  // A record written before sentAt existed is old enough unless the app just updated.
+  const started = command.attemptedAt ?? command.sentAt ?? 0;
+  return now - started < SETTLE_MS ? { state: 'unknown' } : { state: 'absent' };
+}
+
+/** Editing or discarding is only safe on a server-confirmed absence; present or unknown keep the frozen form. */
+export const pendingReleasable = (outcome: PendingOutcome | null) => outcome?.state === 'absent';
 
 // Scheduling is in Palestine time whatever the phone's zone, matching how every booked time is displayed.
 export const HEBRON = 'Asia/Hebron';
