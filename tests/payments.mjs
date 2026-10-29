@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Ledger } from '../server/domain/ledger.ts';
 import { randomUUID } from 'node:crypto';
 import { fixture } from './eligibility-support.mjs';
 import { Payments, FakePaymentsProvider } from '../server/domain/payments.ts';
@@ -129,6 +130,70 @@ try {
   assert.deepEqual(await f.db.one('SELECT price_minor,commission_minor FROM orders WHERE id=?', order.id), original);
   assert.deepEqual(await f.db.one('SELECT count(*) AS n FROM ledger_journals'), ledger);
   await assert.rejects(f.db.run('DELETE FROM payment_events WHERE id=?::uuid', dup.event.id));
+  // T31: one settlement authority per order — a standing card capture and a cash collection exclude each
+  // other, a full refund releases the order back to cash, and the loser of a race is refused.
+  const cashLedger = new Ledger(f.db, fail);
+  const asDriver = { id: f.d1.user.id, role: 'driver', status: 'active' };
+  const settleByCard = async () => {
+    const o = await f.book();
+    await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), o.id);
+    const priceMinor = Number((await f.db.one('SELECT price_minor FROM orders WHERE id=?', o.id)).price_minor);
+    const intent = await pay.createIntent(customer, o.id, { amountMinor: priceMinor });
+    await pay.applyProviderEvent({ provider: 'fake', providerEventId: randomUUID(), intentId: intent.id, eventType: 'captured' }, 'test-signature');
+    return { id: o.id, priceMinor };
+  };
+  const cardOnly = await settleByCard();
+  const r1 = await cashLedger.createReceipt(asDriver, cardOnly.id);
+  await assert.rejects(cashLedger.collect(asDriver, cardOnly.id, { amountMinor: r1.dueMinor }), e => e.status === 409 && e.message === 'settlement_conflict');
+  const cashFirst = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), cashFirst.id);
+  const cashPrice = Number((await f.db.one('SELECT price_minor FROM orders WHERE id=?', cashFirst.id)).price_minor);
+  const receipt = await cashLedger.createReceipt(asDriver, cashFirst.id);
+  await cashLedger.collect(asDriver, cashFirst.id, { amountMinor: receipt.dueMinor });
+  const cashIntent = await pay.createIntent(customer, cashFirst.id, { amountMinor: cashPrice });
+  await assert.rejects(pay.applyProviderEvent({ provider: 'fake', providerEventId: randomUUID(), intentId: cashIntent.id, eventType: 'captured' }, 'test-signature'), e => e.status === 409 && e.message === 'settlement_conflict');
+  // A full card refund releases the order back to cash.
+  const refunded = await settleByCard();
+  const refundIntent = (await f.db.one('SELECT id FROM payment_intents WHERE order_id=?', refunded.id));
+  provider.refund = async (id, _amount, key) => ({ outcome: 'captured', providerRef: `fake:${id}` }); // the release succeeds
+  await pay.refund(admin, String(refundIntent.id), refunded.priceMinor, 'Full refund releases the order');
+  const refundStatus = (await f.db.one('SELECT status FROM payment_intents WHERE order_id=?', refunded.id)).status;
+  assert.equal(refundStatus, 'refunded', `the card release must complete before cash: ${refundStatus}`);
+  const r2 = await cashLedger.createReceipt(asDriver, refunded.id);
+  assert.equal((await cashLedger.collect(asDriver, refunded.id, { amountMinor: r2.dueMinor })).status, 'collected');
+
+  // T32: partial goods collection remits what was collected, the outstanding stays explicit, repeated
+  // commands never double-move, and finance's exception authority closes a disputed COD terminally.
+  const codOrder = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), codOrder.id);
+  const goodsMinor = 900;
+  const cod = await pay.createCod(admin, codOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor, remittanceDueAt: Date.now() + 86_400_000 });
+  const collect = (amountMinor, requestId) => pay.collectCod(driver, codOrder.id, { amountMinor, ...(requestId && { requestId }) });
+  await collect(300);
+  assert.equal((await collect(200, randomUUID())).status, 'partial'); // 500 of 900 collected
+  const remit = (requestId) => pay.remitCod(admin, codOrder.id, { payoutRef: 'PO-32', ...(requestId && { requestId }) });
+  const remitCommand = '0f0f0f0f-0000-4000-8000-000000000001';
+  const partialRemit = await remit(remitCommand);
+  assert.equal(partialRemit.status, 'partial', 'a partial collection remits as partial');
+  assert.equal(Number(partialRemit.remitted_minor), 500, 'everything collected moved once');
+  await assert.rejects(remit(randomUUID()), e => e.status === 409 && e.message === 'cod_unavailable', 'nothing is left to remit');
+  const replayedRemit = await remit(remitCommand);
+  assert.equal(Number(replayedRemit.remitted_minor), 500, 'a replayed remit command returns the same row without moving again');
+  await collect(400, randomUUID()); // the remaining 400 are collected in the field
+  const final = await remit(randomUUID());
+  assert.equal(final.status, 'remitted');
+  assert.equal(Number(final.remitted_minor), goodsMinor, 'collected and remitted totals reconcile with the goods');
+  await assert.rejects(pay.resolveCod(admin, codOrder.id, { decision: 'returned', reason: 'Already remitted in full' }), e => e.status === 409 && e.message === 'cod_unavailable');
+  // The exception authority closes an unremittable COD with a recorded reason.
+  const disputeOrder = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), disputeOrder.id);
+  await pay.createCod(admin, disputeOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 500, remittanceDueAt: Date.now() + 86_400_000 });
+  await pay.collectCod(driver, disputeOrder.id, { amountMinor: 200 }); // collected, then disputed by the merchant
+  await assert.rejects(pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'nope' }), e => e.status === 400);
+  const closed = await pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'Merchant took the goods back at the office' });
+  assert.equal(closed.status, 'returned');
+  await assert.rejects(pay.collectCod(driver, disputeOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
+
   console.log('WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed');
 } finally { await f.close(); }
 

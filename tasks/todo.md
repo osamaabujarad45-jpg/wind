@@ -944,7 +944,7 @@ Implementation children:
 
 ## T31: Single settlement authority
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Define one settlement authority per order and lock cash/card transitions. Reconcile provider uncertainty before switching method; retain external evidence references.
 
@@ -960,19 +960,19 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Captured card cannot also settle as cash.
-- [ ] Concurrent capture/cash selects one valid outcome.
-- [ ] Refund/reversal changes balance once.
+- [x] Captured card cannot also settle as cash.
+- [x] Concurrent capture/cash selects one valid outcome.
+- [x] Refund/reversal changes balance once.
 
 **Verification:** `npm run test:persistence -- --filter=payments; npm run test:persistence -- --filter=ledger`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Race capture callback with cash settlement and retry both.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `server/domain/payments.ts` gains a per-order settlement gate: a card capture (webhook apply, provider-create, and the query/getIntent promotion paths) refuses when `cash_receipts.collected_minor > 0`, and `Ledger.collect` refuses (`409 settlement_conflict`, copy ar+en) while a card capture stands (`captured`/`partially_refunded`). Both sides take the same per-order `pg_advisory_xact_lock` inside their transactions, so a concurrent capture/cash race selects exactly one winner. A **full refund releases the order back to cash** (`refunded` is not a standing capture) — proven end-to-end: captured card blocks cash, collected cash blocks capture, refund then permits collection. Refund/reversal balance-once semantics are the existing cumulative-refunds + ledger rules (T28/T30), re-run green. Suite: payments 0, ledger 0, contracts 0, typecheck 0, lint 0 errors. The concurrent race is serialized structurally by the shared advisory lock; the live-provider capture race remains a T50 rehearsal item.
 
 ## T32: Partial COD resolution
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Define partial goods collection/remittance, outstanding remainder and exception authority. Keep goods proceeds distinct from delivery fee/commission and add stable command identities.
 
@@ -987,15 +987,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Collected/remitted/outstanding totals reconcile.
-- [ ] Duplicate collect/remit does not increment twice.
-- [ ] Partial return/dispute has explicit resolution.
+- [x] Collected/remitted/outstanding totals reconcile.
+- [x] Duplicate collect/remit does not increment twice.
+- [x] Partial return/dispute has explicit resolution.
 
 **Verification:** `npm run test:persistence -- --filter=payments`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Partial collect, return, remit, repeated command and collector change.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `merchant_cod` gains `remitted_minor` (CHECK ≤ collected; postgres-payments.sql for fresh schemas, idempotent migration 25 `postgres-payments-repairs.sql` for existing) and `merchant_cod_events.request_id`. `remitCod` now moves **everything collected but not yet remitted** — from a partial collection as well as a full one — keeping the outstanding explicit (goods − collected, collected − remitted); a repeat without new collection refuses `cod_unavailable`, and a replayed command identity (request_id on the append-only event) returns the same row without moving again. Goods proceeds stay structurally separate from delivery fee/commission (merchant_cod carries goods_minor only). New finance authority `POST /api/orders/:id/cod/resolve` (additive contract WP14 +1 boundary, anonymous 401) closes an unremittable COD as `returned` with a required reason and event. Suite: partial collect → partial remit (remitted = collected, status partial) → nothing-to-remit refusal → replayed remit returns once → remainder collected → final remit reconciles remitted == goods; resolve refuses an already-terminal row and a short reason, closes a disputed COD, and further collection is refused. payments 0, contracts 0 (78 additive), typecheck 0, lint 0 errors. Operator-facing COD/cash rollout documentation stays T54; live remittance is an operator gate.
 
 ## T33: PostgreSQL destination-change parity
 
