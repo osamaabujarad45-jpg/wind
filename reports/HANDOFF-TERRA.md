@@ -46,7 +46,7 @@ Two were actionable and are fixed: the fixed `height: 56` could clip at a large 
 
 Rejected with code evidence:
 
-- **OSRM URL**: when `OSRM_URL` is unset the main server falls back to `router.project-osrm.org`; when a present URL fails, `roadRoute` returns `fallbackRoute` for any non-404 error. A booked quote therefore degrades to the marked estimate, not a 503. The internal `ingress.fqdn` is a deploy-time property and still needs one what-if check.
+- **OSRM URL**: the committed quote and track paths catch a road-route failure and use the marked estimate (`/api/price` catches around `roadRoute`; the track call sites resolve to null), so a bad internal FQDN does not break booking or tracking. `/api/route` itself can still 503. The internal `ingress.fqdn` still needs one staging what-if check. A concurrent uncommitted change adds a public-router fallback; it is not part of `d99ed22` and was not reviewed here.
 - **SQLite rebuild is dead code**: `git log -S 'order_id INTEGER NOT NULL REFERENCES orders(id)'` shows `c0a5c37` removed that exact clause; `reports/verify-2026-10-29/migrate-audit.mjs` rebuilds a legacy table and inserts a NULL-order audit row. The branch is real and tested.
 - **`USER_UPDATED` outside a transaction**: the insert sits inside `editUser`'s `BEGIN IMMEDIATE` … `COMMIT` block, alongside the user update and courier-release writes.
 - **Migration 21 ordering/idempotency**: `initializePostgres` applies base migration 3 first, then 21; `ALTER COLUMN … DROP NOT NULL` is a no-op on an already-nullable column. The rehearsal CLI also goes through `initializePostgres`.
@@ -54,6 +54,10 @@ Rejected with code evidence:
 - **`.invalid` image URL**: the `image` job builds a local smoke image and never pushes it; using a real host would be riskier.
 
 Deployment traps, not code defects: the `osrm-graph` share must be populated before activation (an empty share crash-loops, already documented), and the internal OSRM FQDN must be confirmed in a staging what-if.
+
+### Concurrent uncommitted changes (not reviewed here)
+
+Before `d99ed22` was committed, the tree also contained uncommitted edits outside this audit: `Dockerfile` (adds `OSRM_URL=https://router.project-osrm.org`), `server/main.ts` (public OSRM fallback, 6 s timeout, 15 s GPS grace) and `src/model.ts` (service radius 15 → 20 km, env-overridable). They were left untouched and not committed. Review/decide them separately; the service-radius change is a product decision.
 
 ---
 
