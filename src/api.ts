@@ -59,6 +59,8 @@ export function useApi<T>(path: string | null, pollMs?: number) {
     } catch (e) {
       const code = errorCode(e);
       if (current !== generation.current || latestPath.current !== path) return undefined;
+      // Keep the last snapshot for transient failures, but never display data after access is revoked.
+      if (terminal(code)) setResult(previous => previous?.path === path ? undefined : previous);
       setError({ path, value: code });
       return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }

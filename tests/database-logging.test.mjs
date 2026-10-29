@@ -4,8 +4,25 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { freshPostgres, connectionString } from './pg-support.mjs';
+import { connect, freshPostgres, connectionString, schemaName } from './pg-support.mjs';
 import { startApiProcess } from './support/api-process.mjs';
+import { MIGRATION_LOCK } from '../server/db/postgres-schema.ts';
+
+// Independently named fixture schemas still serialize extension/schema migrations on one advisory lock.
+// Another local suite may hold that lock longer than the normal production request lock timeout.
+const blocker = connect(schemaName('lock'));
+let acquired;
+const locked = new Promise(resolve => { acquired = resolve; });
+const holding = blocker.migrate(MIGRATION_LOCK, async () => {
+  acquired();
+  await new Promise(resolve => setTimeout(resolve, 800));
+});
+try {
+  await Promise.race([locked, holding]);
+  const waitingFixture = await freshPostgres('wait');
+  await waitingFixture.database.close();
+  await holding;
+} finally { await holding.catch(() => {}); await blocker.close(); }
 
 const { schema, database } = await freshPostgres('log');
 const token = randomBytes(32).toString('hex');
