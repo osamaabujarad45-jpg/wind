@@ -911,6 +911,7 @@ const ar = {
   err_cash_outstanding: 'يجب تسوية النقد المستحق لـ ويند أولاً.',
   err_already_decided: 'تم الرد على هذا التسليم مسبقاً.',
   err_cannot_cancel: 'لم يعد بالإمكان إلغاء هذا الطلب.',
+  err_too_many_searching: 'لديك طلبات كثيرة قيد البحث عن سائق. أكملها أو ألغِ واحداً قبل إرسال طلب جديد.',
   err_not_found: 'غير موجود أو لم يعد متاحاً.',
   // Every refusal the API can return gets its own words: a generic message hides what actually changed.
   err_cannot_advance: 'هذه الخطوة لم تعد متاحة. حدّث الصفحة.',
@@ -1826,6 +1827,7 @@ const en: Copy = {
   err_cash_outstanding: 'Settle the cash owed to Wind first.',
   err_already_decided: 'This handover was already answered.',
   err_cannot_cancel: 'This order can no longer be cancelled.',
+  err_too_many_searching: 'You have several orders still searching for a driver. Complete or cancel one before sending a new request.',
   err_not_found: 'Not found or no longer available.',
   // Every refusal the API can return gets its own words: a generic message hides what actually changed.
   err_cannot_advance: 'This step is not available any more. Refresh the screen.',

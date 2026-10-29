@@ -1017,6 +1017,23 @@ async function dispatchOrBroadcast(service: Service, orderId: number, customerId
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
 }
+/** T21: stale unscheduled searching demand is system-cancelled so it cannot occupy the board forever. */
+export async function expireStaleDemand(now = Date.now()) {
+  return persistence.atomic({ purpose: 'stale_demand_expiry' }, async () => {
+    if (draining) return 0;
+    const stale = (await all(`SELECT id, customer_id FROM orders WHERE status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL
+      AND created_at < ? LIMIT 50`, now - SEARCH_EXPIRY_MS));
+    let expired = 0;
+    for (const o of stale) {
+      // CAS: only still searching, unassigned and unscheduled at the moment of the update.
+      if (!(await run(`UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?
+        AND status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL`, now, o.id)).changes) continue;
+      expired++;
+      await queuePush([o.customer_id as number], 'cancelled', o.id as number); // the sender learns why their order left the board
+    }
+    return expired;
+  }).then(expired => { void (async () => { if (expired) await flushPush(); })(); return expired; });
+}
 async function releaseJobAlerts(now: number) {
   if (draining) return;
 
@@ -1178,7 +1195,19 @@ route('POST', '/api/price', async ({ user, body }) => {
   };
 });
 
+// T21: a customer's unscheduled searching demand is capped so spam cannot bury matching supply, and stale
+// unclaimed demand stops occupying the board. Both are policy bounds, not money: assigned custody and
+// not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
+const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
+const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 24 * 86_400_000, 3_600_000);
+
 async function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
+  // T21: the cap check and the insert share the caller's write transaction — every booking path enters
+  // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
+  // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
+  if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+  const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status = 'searching' AND scheduled_for IS NULL", user.id)) as { n: number };
+  if (Number(searching.n) >= SEARCHING_LIMIT) fail(409, 'too_many_searching');
   // WP08: quote-bound path enforces immutable itinerary/scope, minor-unit lines, versioned ETA and 120s expiry.
   // Legacy path preserves recomputed price/price_changed and promo_changed contracts.
   if (body.quoteId != null) {
@@ -3088,6 +3117,7 @@ if (import.meta.main) {
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
+    setInterval(async () => { try { (await expireStaleDemand()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

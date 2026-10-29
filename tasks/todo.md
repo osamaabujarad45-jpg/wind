@@ -474,10 +474,10 @@ Implementation children:
 
 ### Checkpoint C05 — after T15
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T13/T14/T15 complete; renderer device passes stay explicitly batched into D06/D07/D10/D12.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (Full `npm test` 87 suites 0, `test:scenarios` 15 groups 0, `test:persistence` 0 incl. 21 legacy-parity suites, `test:contracts` 0, lint 0, typecheck 0 on the wave tree.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (Web export exercised by test:scenarios; baseline behavior unchanged with zero Google calls.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated. (Money/feasibility untouched; the paid-call policy is client-side gating on top of the server's trigger table.)
 
 ## T16: Local address search enhancement
 
@@ -634,7 +634,7 @@ Implementation children:
 
 ## T21: Marketplace abuse limits
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Add transactional per-customer active-search limits and safe stale-demand expiry. Preserve pagination and future scheduled orders; never expire assigned custody automatically.
 
@@ -650,15 +650,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Spam cannot bury legitimate matching demand indefinitely.
-- [ ] Concurrent creates cannot bypass limit.
-- [ ] Expiry cannot cancel assigned or not-yet-due scheduled work.
+- [x] Spam cannot bury legitimate matching demand indefinitely.
+- [x] Concurrent creates cannot bypass limit.
+- [x] Expiry cannot cancel assigned or not-yet-due scheduled work.
 
 **Verification:** `npm run test -- --filter=jobs-pagination; npm run test -- --filter=schedule`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Use many synthetic searching orders and test all pages remain reachable.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `server/main.ts`: `WIND_SEARCHING_LIMIT` (default 5, env-tunable) caps a customer's **unscheduled** searching orders inside the write transaction — every booking path enters `createOrder` under `BEGIN IMMEDIATE` (SQLite) or `persistence.atomic` (PostgreSQL), and PostgreSQL additionally takes `pg_advisory_xact_lock` per customer so concurrent creates cannot slip past the count under READ COMMITTED (a real 9-concurrent-create race in `pg-jobs-pagination.mjs` yields exactly 5 created and 4 `409 too_many_searching`); refusals carry a new `err_too_many_searching` copy pair (ar+en). `expireStaleDemand` (exported, hourly timer next to the scheduled-release sweep, own `stale_demand_expiry` transaction) system-cancels searching orders older than `WIND_SEARCH_EXPIRY_MS` (default 24 h, floored at 1 h) with a CAS predicate — assigned custody and not-yet-due scheduled orders are never touched, and the sender gets the existing `cancelled` push. Pagination untouched. Suites: jobs-pagination (cap, cancel-frees-a-slot, scheduled exclusion, expiry CAS vs assigned/scheduled) 0; schedule 0; `test:persistence --filter=pg-jobs-pagination` 0; lint 0; typecheck 0. Job-push throttling (5/10 min) already existed and is preserved.
 
 ### Checkpoint C07 — after T21
 

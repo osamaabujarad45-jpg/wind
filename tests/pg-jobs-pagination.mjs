@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { freshPostgres, connectionString } from './pg-support.mjs';
 import { startApiProcess } from './support/api-process.mjs';
 import { apiCaller } from './support/api.mjs';
+import { defaultSettings, quote } from '../src/model.ts';
 
 const { schema, database } = await freshPostgres('jobspages');
 let api;
@@ -39,7 +40,23 @@ try {
   assert.equal(pages.length, 6);
   assert.deepEqual(pages.flatMap(page => page.jobs).map(job => job.id), expected);
   assert.equal(pages.at(-1).nextCursor, null);
-  console.log('PostgreSQL driver job pages: real HTTP, six pages, scheduled boundary and release filter passed');
+  // T21: concurrent creates cannot slip past the per-customer searching cap on PostgreSQL — the advisory
+  // lock and the count share each create's transaction, so exactly the cap of N concurrent posts succeed.
+  const capToken = randomBytes(32).toString('hex');
+  const capCustomer = await database.run(`INSERT INTO users(phone,name,password,role,status,created_at,phone_verified_at)
+    VALUES('0599700203','Capped customer','','customer','active',?,?)`, now, now);
+  await database.run('INSERT INTO sessions(token_hash,user_id,created_at) VALUES(?,?,?)',
+    createHash('sha256').update(capToken).digest('hex'), capCustomer.lastInsertRowid, now);
+  const capInput = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
+    pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599700203', detail: 'Box' };
+  const capPrice = quote(defaultSettings, capInput);
+  const attempts = await Promise.all(Array.from({ length: 9 }, () =>
+    call('/orders', { token: capToken, body: { ...capInput, quotedPrice: capPrice } }).then(order => order.id, error => error)));
+  const created = attempts.filter(value => typeof value === 'number');
+  const refused = attempts.filter(value => typeof value !== 'number');
+  assert.equal(created.length, 5, `exactly the cap of searching orders is created: ${created.length}`);
+  assert.ok(refused.every(error => error.message.includes('too_many_searching')), `the rest carry the cap code: ${refused.map(error => error.message.slice(0, 60)).join(' | ')}`);
+  console.log('PostgreSQL driver job pages: real HTTP, six pages, scheduled boundary, release filter and the concurrent searching cap passed');
 } finally {
   await api?.stop();
   await database.close();

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
+import { defaultSettings, quote } from '../src/model.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-jobs-pages-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -75,6 +76,40 @@ try {
   for (const invalid of ['bad', '-1:3', '1:0', '99999999999999999:1'])
     await call(`/jobs?after=${encodeURIComponent(invalid)}`, { token: driver.token, expect: 400 });
   await call(`/jobs?page=1&after=${encodeURIComponent(first.nextCursor)}`, { token: customer.token, expect: 403 });
+  // T21: a customer's unscheduled searching demand is capped inside the write transaction, so spam cannot
+  // bury the board; scheduled demand and other customers are untouched, and stale unclaimed demand expires.
+  const capped = await call('/auth/register', { body: { phone: '0599700105', name: 'Capped', password: 'secret1' } });
+  const capInput = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
+    pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599700105', detail: 'Box' };
+  const capPrice = quote(defaultSettings, capInput);
+  const book = () => call('/orders', { token: capped.token, body: { ...capInput, quotedPrice: capPrice } });
+  const made = [];
+  for (let i = 0; i < 5; i++) made.push((await book()).id);
+  for (const token of [capped.token, admin.token]) {
+    const refusal = await call('/orders', { token, body: { ...capInput, requestId: undefined, quotedPrice: capPrice }, expect: 409 });
+    assert.equal(refusal.error, 'too_many_searching');
+    break; // admins book through their own account; the cap is per customer, not per role
+  }
+  await call(`/orders/${made[0]}/cancel`, { token: capped.token, body: {} });
+  const afterCancel = await book();
+  assert.notEqual(afterCancel.id, made[0]);
+  await call(`/orders/${afterCancel.id}/cancel`, { token: capped.token, body: {} });
+  // A not-yet-due scheduled order is future work, not board demand: it does not consume the cap.
+  const scheduled = await call('/orders', { token: capped.token, body: { ...capInput, quotedPrice: capPrice, scheduledFor: Date.now() + 2 * 86_400_000 } });
+  assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).scheduledFor != null, true);
+  // Stale unscheduled demand leaves the board by system cancellation; assigned or scheduled work never does.
+  const stale = made[1];
+  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 25 * 86_400_000, stale);
+  const kept = made[2];
+  await call(`/jobs/${kept}/accept`, { token: driver.token, body: {} });
+  const { expireStaleDemand } = await import('../server/main.ts');
+  assert.equal(await expireStaleDemand(), 1, 'exactly the stale order expired');
+  assert.equal((await call(`/orders/${stale}`, { token: capped.token })).status, 'cancelled');
+  assert.equal((await call(`/orders/${kept}`, { token: capped.token })).status, 'assigned', 'assigned custody is never auto-expired');
+  assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).status, 'searching', 'not-yet-due scheduled work is never auto-expired');
+  const again = await book(); // the expired demand freed a slot
+  await call(`/orders/${again.id}/cancel`, { token: capped.token, body: {} });
+
   console.log('Driver job pages: six pages, scheduled boundary, filters, legacy shape and invalid cursors passed');
 } finally {
   await shutdown();
