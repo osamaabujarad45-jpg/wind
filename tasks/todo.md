@@ -564,6 +564,10 @@ Implementation children:
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T19.1: Account-scoped pending payload, recovery card (retry same requestId / edit or discard after confirmed absence), corrupt-record clearing (src/booking.ts, src/app/book.tsx, src/copy.ts, tests/booking-auth.test.mjs). Complete — see evidence.md "Delegation wave 1–2 results".
+- [ ] T19.2: A53 recovery journey (server committed + response lost, restart, account switch) batched into the D07 physical pass. Presence matching is list-based with a 2-minute settle window (delegate's noted residual risk); retry stays the idempotent path. Parent stays open until then.
+
 **Description / implementation:** Provide reconciliation and retry for persisted pending booking commands. Permit discard/edit only after resolving uncertain success; scope stored payload to its account and preserve request identity.
 
 **Dependencies:** T01.
@@ -586,7 +590,7 @@ Implementation children:
 
 **Manual / failure-case check:** Phone: server committed but response lost, restart, account switch and recovery.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T19.1):** Delegate commit `5b66a48` (branch t3/2b5c1e5b, DeepSeek V4.1 Flash 1017 via Modal dedicated) cherry-picked; coexists with the T16 sheet wiring in book.tsx (both verified by typecheck and suites). booking-auth suite exit 0 (recovery checks + authority checks), presentation 0, lint 0, typecheck 0; local fallback. Server-side "at most one order" relies on existing commandId idempotency (T20 formalizes the contract). Dead `confirmBooking` keys removed at integration.
 
 ## T20: Booking idempotency contract
 
@@ -802,7 +806,7 @@ Implementation children:
 
 ## T27: Declared-scope authorization
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Replace blanket searching-driver visibility with active status, service/vehicle eligibility and release exclusions. Minimize preassignment declaredValue/sourceRef/custody fields; retain owner/assigned/admin policy.
 
@@ -825,7 +829,7 @@ Implementation children:
 
 **Manual / failure-case check:** Two customers and multiple driver roles; verify unauthorized sourceRef access is impossible.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete. Delegate commit `e3399ed` (branch t3/f672ee2d, DeepSeek V4.1 Flash 1017 via Modal dedicated) cherry-picked unchanged; resource-scope persistence suites (5 lines incl. the new "browsing-driver scope is active, vehicle-bound, release-aware and redacted") exit 0 on PostgreSQL under the shared lock, local fallback. Preassignment field minimization and SQLite capability gating verified by the same suites. Full-suite closure at the checkpoint window.
 
 ### Checkpoint C09 — after T27
 
@@ -1313,7 +1317,7 @@ Implementation children:
 
 ## T44: Test harness debt
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Resolve reproduced fixed-delay push flakes, duplicate suite imports and owned-schema cleanup. Document shared port/export serialization. Split timing-budget tests into deterministic assertions where feasible.
 
@@ -1337,7 +1341,7 @@ Implementation children:
 
 **Manual / failure-case check:** Preserve failures as evidence; do not broaden deadlines to conceal incorrect behavior.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete. Delegate work `62d1f5d` (branch t3/733b16b2) — the child's summary claimed a commit that did not exist; the leader committed its uncommitted diff verbatim after review. Selection discipline now uses a reasoned exemption map plus a duplicate-registration guard; check-contracts delegates to the runner registry (single source of truth); pg-test-server drops only fixture-owned schemas (`wp03_legacy_<uuid32>`, asserted by regex, and drops on init failure); push-server settle waits on recorded `persistence.detached` promises instead of a 50 ms sleep (the legacy PG generator's replace target now matches the commented original, documented in the child's summary and in docs/implementation/test-harness.md). Verification: full `npm test` sequential at the checkpoint window below; lint/typecheck 0; presentation and customer-location suites 0 post-integration (duplicate import removed). No deadline widening observed in the diff.
 
 ## T45: Dependency and SDK upgrade audit
 
