@@ -1345,7 +1345,7 @@ Implementation children:
 
 ## T45: Dependency and SDK upgrade audit
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Stay on SDK 57 unless a documented blocker requires migration. Run compatibility/audit checks, assess reachable advisories, and preserve tested local vendor patches until a verified replacement exists.
 
@@ -1369,7 +1369,7 @@ Implementation children:
 
 **Manual / failure-case check:** 1.27.2 is the fetched SDK 57 react-native-maps recommendation; newer alone is not an upgrade reason.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete. 29 Oct 2026 local fallback, sequential exits 0: `npx expo-doctor` 21/21; `npx expo install --check` up to date; `npm audit --audit-level=high` one high (deepmerge GHSA-gcqx-w48m-w2h4) with no SDK-57-line fix — dispositioned in docs/implementation/dependency-security.md as a carried vendor patch with regression tests (the stale "zero vulnerabilities" claim corrected); seven lows under threshold. No blind installs, no lockfile change, no native dependency change (so no rebuilt-device gate triggered); SDK stays 57 per plan decision 1. dependency-security suite result rides in the checkpoint full-gate run.
 
 ### Checkpoint C15 — after T45
 
