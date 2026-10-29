@@ -13,6 +13,7 @@ const suites = [
   "api.test.mjs",
   "admin-settings.test.mjs",
   "client-address.test.mjs",
+  "unblock-custody.test.mjs",
   "deployment.test.mjs",
   "deployment-probe.test.mjs",
   "registration.test.mjs",

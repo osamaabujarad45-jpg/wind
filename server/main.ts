@@ -2611,10 +2611,17 @@ const editUser: Handler = async ({ user, params, body }) => {
 };
 route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
-route('POST', '/api/admin/users/:id/approve', async ({ user, params }) => {
+route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => {
   need(user, 'admin');
   const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
+  // Unblocking a courier must not skip what blocking enforces. The admin users screen sends
+  // this route to clear a block, so without this check a blocked driver holding parcels came
+  // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
+  if (target.role === 'driver' && target.status === 'blocked') {
+    const carrying = await all(`SELECT id, status FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+    if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+  }
   (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
   if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
   return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
