@@ -10,12 +10,16 @@ One Expo app serves three roles, chosen by the account that signs in:
 
 The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
 
-## Current workspace verification — 22 October 2026
+## Current workspace verification — 29 October 2026
 
-The workspace targets Android 1.0.13 / code 14 and Expo SDK 57; that signed build is
-installed on the connected A53 and was tested there, including native background
-tracking against this branch's API. The API changes have not been deployed. Email
-codes (Cloudflare Email Service) need a sending domain first. The live-tracking
+The workspace targets Android 1.0.13 / code 17 and Expo SDK 57; the signed preview
+(code 16) is installed on the connected A53 and was tested there, including native
+background tracking against this branch's API. On 29 October the candidate API
+image and corrected web bundle were deployed to
+`https://windapi236.swedencentral.cloudapp.azure.com`; the Android and web apps
+now share that origin and `check:deployment` passes. The release is still not
+public; see the [29 October readiness report](reports/release-readiness-2026-10-29.md).
+Email codes (Cloudflare Email Service) need a sending domain first. The live-tracking
 pass of 22 October (plausible GPS yardstick, driver identity in the live push,
 follow-camera on every platform, background polling pauses) is recorded in
 [the QA report](docs/QA-2026-10-21.md) and the
@@ -23,7 +27,7 @@ follow-camera on every platform, background polling pauses) is recorded in
 
 ## Release reference — 4 October 2026 (historical)
 
-- **Live API:** `https://wind-production-72aa.up.railway.app`
+- **API at that release:** `https://wind-production-72aa.up.railway.app` (legacy)
 - **Android:** package `ps.wind.app`, version 1.0.4 / code 5.
 - **iPhone access:** [Wind web app](https://wind-production-72aa.up.railway.app) is installable from Safari's Share menu → **Add to Home Screen**. It uses the same account, API and foreground GPS flow; [iOS distribution notes](docs/IOS-ACCESS.md) cover the future native TestFlight release.
 - **Accounts:** `WIND_IDENTITY_MODE=self-service` accepts name, email,
@@ -102,7 +106,8 @@ The logo is drawn by `scripts/make_icon.py` (icons, splash, favicon) and by `<Lo
 
 The [29 October release readiness report](reports/release-readiness-2026-10-29.md)
 records the current Azure endpoint, verified checks and remaining public-launch
-gates. The historical Railway release reference above is a separate deployment.
+gates. The historical Railway release reference above is a legacy deployment; the
+live web app no longer calls it.
 
 ### 1. API
 

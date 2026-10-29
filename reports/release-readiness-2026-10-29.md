@@ -2,11 +2,12 @@
 
 ## Decision
 
-**Not ready for a public release.** The API is reachable, but the live Azure web
-bundle calls the older Railway API, the Azure VM has no road-routing provider,
-Entra tenant, SMS provider or native push configuration, and the release has not
-been validated end to end with real customers and drivers. A healthy endpoint or
-an exported JavaScript bundle is not evidence that deliveries work in production.
+**Not ready for a public release.** The API is reachable and, after the 29
+October deployment, the live web app and Android build both point at Azure. The
+Azure VM still has no road-routing provider, Entra tenant, SMS provider or
+native push configuration, and the release has not been validated end to end
+with real customers and drivers. A healthy endpoint or an exported JavaScript
+bundle is not evidence that deliveries work in production.
 
 The candidate in this review is based on `df43da8` plus this task's release fixes.
 Another session is editing app screens and server code in the shared checkout;
@@ -15,18 +16,26 @@ below. Run the complete gate again on the exact combined revision before release
 
 ## Live checks
 
-At 02:14 UTC, the Azure VM at
+At 02:14 UTC, before the deployment, the Azure VM at
 `https://windapi236.swedencentral.cloudapp.azure.com` returned HTTP 200 from
 `/api/health` and `/api/ready` (`schema: 3`), and 401 for unauthenticated live
 tracking. The privacy, terms and account-deletion pages returned HTTP 200.
-`/api/auth/options` reported open registration and `emailReset: false`.
+`/api/auth/options` reported open registration and `emailReset: false`. The
+served web bundle contained the Railway hostname and not the Azure API hostname,
+and `/map.html` differed from the current source; `check:deployment` failed both.
 
-The served web bundle contained the Railway hostname and did not contain the
-Azure API hostname. `/map.html` differed from the current source after newline
-normalization. `npm run check:deployment -- --origin https://windapi236.swedencentral.cloudapp.azure.com`
-reports both differences as failures; its synthetic tests cover healthy and six
-unavailable, stale, or cross-origin cases. A 200 response alone is not a release
-check. The separate Azure Container App endpoint returned Azure's unavailable
+At 04:06 UTC the smoke-tested candidate image was deployed to `wind-vm` as
+`windprodacr.azurecr.io/wind-api:20261029-candidate`
+(`sha256:390aaaa5de5ecf3f987dfbfe06baa66ec00e53bac942d9ea76d2904734512dd6`).
+The served web bundle now contains the Azure origin and not the Railway origin,
+`/map.html` matches the source, and all eight
+`npm run check:deployment -- --origin https://windapi236.swedencentral.cloudapp.azure.com`
+checks pass; health, readiness and auth options are unchanged. The previous
+container is stopped and retained as `wind-api-pre-20261029` for rollback. A
+fresh encrypted snapshot was taken and restore-verified immediately before the
+deploy: 1 user, 0 sessions, 0 orders, SQLite integrity `ok`, zero foreign-key
+violations. A post-deploy snapshot repeated the same counts and integrity result.
+The separate Azure Container App endpoint still returns Azure's unavailable
 page, so it is not a verified alternative to the VM.
 
 Read-only VM configuration inspection found `WIND_IDENTITY_MODE=self-service`,
@@ -42,10 +51,12 @@ A real monitored support channel has not been verified.
 
 The existing `SouqWind-Railway-Backups` task last recorded a successful backup
 on 21 October; its recent run failed. Both the local Railway login and the stored
-protected token returned unauthorized, although Railway's SSH port was reachable.
-Because the live Azure web bundle currently calls Railway, a recent verified
-backup of that legacy service remains important and could not be established
-with the available account access. The shared Railway backup task was not changed.
+protected token remain unauthorized, although Railway's SSH port is reachable.
+The live web app no longer calls Railway, and no Railway data was migrated
+because that account access is still unavailable. The Azure snapshot above is
+the only recent verified backup. If Railway held real accounts or orders, they
+remain only in Railway and need owner access to export. The shared Railway
+backup task was not changed.
 
 Microsoft's [routing coverage table](https://learn.microsoft.com/en-us/azure/azure-maps/routing-coverage)
 does not separately list Palestine and marks real-time traffic unavailable for
@@ -127,8 +138,11 @@ terms. The production App Bundle (`versionCode 17`, 75,708,394 bytes, SHA-256
 passed `bundletool validate` 1.18.3 and `jarsigner -verify`; it packages
 `ps.wind.app` at versionName `1.0.13` and is signed by the same certificate as
 the preview APK. It has not been uploaded to Google Play or installed from the
-bundle. The phone check created no account, order or payment, and the QA
-emulator was shut down after it. iOS preview failed before building because
+bundle. A `pilot` submit profile now targets the Play internal track, but EAS has
+no Google Service Account key configured, so the upload cannot run
+non-interactively; the preview's EAS install link is the current pilot
+distribution path. The phone check created no account, order or payment, and the
+QA emulator was shut down after it. iOS preview failed before building because
 suitable Apple distribution credentials were not available in non-interactive mode. A successful EAS build
 would still need device testing and store processing; see [Expo's submission
 guide](https://docs.expo.dev/deploy/submit-to-app-stores/).
@@ -152,6 +166,7 @@ routing and operational monitoring have not been verified.
 
 Before public release, establish unattended backup monitoring and retention with
 an independent key-recovery plan, activate and exercise the chosen identity, messaging, routing
-and push providers, verify service licensing and support, produce and test signed
-Android/iOS builds, and run a controlled customer/driver delivery with real device
-background behavior. Preserve the current database and a tested rollback path.
+and push providers, verify service licensing and support, finish device testing
+of the signed Android build and produce a signed iOS build, and run a controlled
+customer/driver delivery with real device background behavior. Preserve the
+current database and the retained rollback container.

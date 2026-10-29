@@ -13,6 +13,11 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "pilot": {
+      "android": {
+        "track": "internal"
+      }
+    }
   }
 }
