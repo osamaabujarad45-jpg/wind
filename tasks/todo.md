@@ -683,6 +683,10 @@ Implementation children:
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T23.1: Fail-closed forgiveness gate in recordCash + copy keys + cash-suite re-baseline (server/main.ts, src/copy.ts, tests/cash.test.mjs, docs/operations/cash-controls.md). Complete — see evidence.md "T23 — fail-closed forgiveness gate".
+- [ ] T23.2: Owner policy acceptance of docs/operations/cash-controls.md thresholds (external gate; parent stays open).
+
 **Description / implementation:** Prepare a fail-closed dual-control policy for debt forgiveness. Preserve current amount cap and no-negative-balance. Default proposal: forgiveness requires second approval; owner policy acceptance precedes activation.
 
 **Dependencies:** T01.
@@ -704,7 +708,7 @@ Implementation children:
 
 **Manual / failure-case check:** Do not enact new financial policy on live data during implementation.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T23.1):** Local fallback, sequential exits 0: cash suite (SQLite: forgiveness without approval 409 `approval_required`, missing approval table 503 `approval_unsupported`, positive adjustments and payout boundary unchanged), persistence ops on PostgreSQL under the shared lock, lint, typecheck. Gate order: amount/boundary checks first (400s preserved), then approval binding before insert, inside the same transaction. One-time consumption and atomic approval+mutation remain T24; UI T25; policy acceptance T23.2.
 
 ## T24: Cash approval persistence
 

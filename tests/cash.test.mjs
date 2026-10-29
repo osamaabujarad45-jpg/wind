@@ -85,15 +85,17 @@ try {
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, reason: 'x' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 0, reason: 'Nothing at all' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1_000_001, reason: 'Too much money' }, expect: 400 });
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, reason: 'Customer paid by mistake to office' } });
+  await call('/admin/approvals', { token: admin.token, body: { subjectType: 'cash_adjustment', subjectId: String(driver.user.id), amountMinor: 200, reason: 'Forgive test debt' }, expect: 409 }); // SQLite cannot host the protocol
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, reason: 'Customer paid by mistake to office' }, expect: 409 }); // no approval: refused, not forgiven
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, approvalId: 999, reason: 'Customer paid by mistake to office' }, expect: 503 }); // SQLite has no approval table: capability refusal
   cash = await call('/driver/cash', { token: driver.token });
-  assert.equal(cash.adjustmentsCents, -200);
-  assert.equal(cash.owedCents, commissionCents - 700);
-  assert.deepEqual(cash.entries.map(e => [e.kind, e.status]), [['adjustment', 'confirmed'], ['remittance', 'disputed'], ['remittance', 'confirmed']]);
+  assert.equal(cash.adjustmentsCents, 0);
+  assert.equal(cash.owedCents, commissionCents - 500);
+  assert.deepEqual(cash.entries.map(e => [e.kind, e.status]), [['remittance', 'disputed'], ['remittance', 'confirmed']]);
 
   const list = await call('/admin/cash', { token: admin.token });
   assert.deepEqual(list.map(r => r.driverId), [driver.user.id, other.user.id]); // highest debt first
-  assert.equal(list[0].owedCents, commissionCents - 700);
+  assert.equal(list[0].owedCents, commissionCents - 500);
   assert.ok(list[0].lastRemittanceAt > 0);
   assert.equal(list[1].owedCents, 0);
 
@@ -104,7 +106,7 @@ try {
   assert.equal(cash.entries.filter(e => e.status !== 'pending').length, 50); // the history stays one page
   assert.deepEqual(cash.entries.filter(e => e.status === 'pending').map(e => e.id), [handover.id]);
   await call(`/driver/cash/${handover.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, reason: 'Undo the fuel top-ups' } }); // owed as before
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, reason: 'Undo the fuel top-ups' }, expect: 409 }); // forgiveness stays approval-bound on every backend
 
   // ---- Ship review: exact rounding, returned jobs, no payouts, no leaving with debt, append-only ----
   assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, asserted independently of the server formula

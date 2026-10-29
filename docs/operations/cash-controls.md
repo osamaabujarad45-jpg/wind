@@ -1,6 +1,6 @@
 # Cash adjustment and recovery contract
 
-Status: proposed implementation policy for T23–T25; owner acceptance and live activation remain open. This document does not claim the current adjustment handler enforces approval. T01 identified that recordCash currently bypasses the separately gated approval protocol.
+Status: proposed implementation policy for T23–T25; owner acceptance and live activation remain open. As of 29 Oct 2026 the adjustment handler enforces the fail-closed gate (T23): a negative adjustment books only against an approved `financial_approvals` row bound to driver and amount, decided by a finance approver other than the recording admin; backends without a usable approval table reject with `approval_unsupported`. One-time consumption and atomic approval+mutation execution are T24; the admin review/approve UI is T25.
 
 ## Units and existing invariants
 

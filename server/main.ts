@@ -2545,6 +2545,20 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
     if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
     if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
+    // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
+    // finance approver, never to the recording admin; a backend that cannot host the approval protocol
+    // rejects instead of forgiving. Amount/subject binding re-checks happen in T24's atomic execution.
+    if (kind === 'adjustment' && amount < 0) {
+      const approvalId = Number(body.approvalId);
+      if (!Number.isSafeInteger(approvalId) || approvalId < 1) fail(409, 'approval_required');
+      let approval: Row | undefined;
+      try { approval = await one('SELECT * FROM financial_approvals WHERE id = ?', approvalId); }
+      catch { fail(503, 'approval_unsupported'); }
+      if (!approval || approval.subject_type !== 'cash_adjustment' || approval.subject_id !== String(Number(body.driverId))
+        || Number(approval.amount_minor) !== -amount || approval.status !== 'approved' || approval.decided_by == null
+        || Number(approval.decided_by) === Number(approval.requested_by) || Number(approval.decided_by) === user.id)
+        fail(409, 'approval_required');
+    }
     const id = Number((await run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
