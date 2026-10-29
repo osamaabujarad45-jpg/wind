@@ -310,8 +310,12 @@ cap at `main.ts:2463` and the driver decision route at `:2428` already exist, an
   mean nobody reaches that crash-loop by accident. Severity holds at P1 because the fix must land before
   anyone tries; the "hard boot failure" label in the tally table was wrong.
 - **The biggest one:** treating the P2 block as "latent" inverted the risk. Only #1–#5 are gated; #6–#14
-  are ungated `main.ts` routes, four of them takeover-shaped. A reader of the draft would have deprioritised
-  an admin takeover primitive because it sat under a heading about Postgres.
+  are ungated `main.ts` routes, and three of them are takeover-shaped (#6 plaintext password to support,
+  #7 `editUser` unlogged identity rewrite, #8 approve re-activates a blocked driver). A reader of the draft
+  would have deprioritised an admin takeover primitive because it sat under a heading about Postgres.
+  Against that: `editUser` is *better* guarded than #7 implies — it re-checks stranded orders inside the
+  write transaction (`:2570-2571`) and requires `recovery:'return'` before blocking a driver mid-custody
+  (`:2574-2576`). What is missing there is only the audit row, not the guard.
 - "`canSee` covers every id-bearing route" contradicted P2 #5. It covers every route that *uses* it; the
   scope route deliberately does not, and that is the finding.
 - **The cold-start push finding is stronger than R3 wrote it.** Expo SDK 57's own docs
