@@ -95,15 +95,21 @@ three keys are non-empty. Then update the owner-gate comment to list all five ga
 `typedNumber('')` returns `0`, the form posts every field, and the server accepts `0`. Three distinct
 consequences, in rising order of cost:
 
-- `commission: 0` → `minorUnits(0)` throws → **every `/api/price` call 500s** after the admin sees "Saved".
+- `commission: 0` → **pricing breaks, but only after the Postgres cutover.** *Executed and corrected:*
+  on the shipped SQLite path `/api/price` returns 200, because `quotesAvailable()` is false and
+  `main.ts:1042` returns the legacy base **before** reaching `minorUnits(commissionOn(...))` at `:1061`.
+  The 500 the first pass predicted is real, and latent. An order accepted with `commission: 0` stores
+  `commission: 0` and completes the accept step normally (probe `E2`).
 - `plusPrice: 0` / `proPrice: 0` → `main.ts:2480-2481` writes the plan price from settings, `:2672-2675`
-  activates it without re-pricing → **every customer subscribes for ₪0**.
+  activates it without re-pricing → **every customer subscribes for ₪0**. *Executed:* a subscription
+  created after `plusPrice: 2000` stored `price: 2000` verbatim and activation never re-priced it.
 - There is no upper bound either (`settings.tsx:46-48` has no `maxLength`, `main.ts:2688` no ceiling), so a
   fat-fingered `2000` instead of `20` quotes every parcel at ₪2 000.
 
 **Fix:** reject empty and non-finite per key on the client, add a per-key ceiling server-side, and refuse
 `minorUnits(0)` at the settings boundary rather than at quote time.
-**Confidence:** HIGH. The chain was traced end to end by two agents independently.
+**Confidence:** HIGH on the validation gap (executed: `commission:0` → 200, `plusPrice:2000` → 200,
+stored and charged verbatim). MEDIUM on the `minorUnits` 500, which is latent behind the cutover.
 
 ### 3. Per-address auth limits are keyed on attacker-chosen headers
 `server/main.ts:2778-2780` (same pattern `:1543`, `server/domain/phone-identity.ts:48`), enabled by `infra/main.bicep:317`
@@ -115,20 +121,33 @@ against the phone flows, unlimited reset requests — each still bounded only by
 
 **Caveat that decides the severity:** whether the Container Apps ingress overwrites `X-Real-IP` is not in
 this repo. The leftmost-XFF half is certain; the `X-Real-IP` half needs one probe.
+**Executed (probe P1-3 + control):** 25 registrations with a unique `X-Real-IP` each → **0 × 429**.
+The same 25 with one fixed `X-Real-IP` → **5 × 429**. The limiter is present, wired, and bypassable by a
+header the caller chooses — the only open question is whether the ingress rewrites it first.
 **Fix:** key on the rightmost trusted hop (or the ingress-injected client IP), and never on a header the
 client can set. One 6-request probe against the live host settles it.
-**Confidence:** HIGH on the code, MEDIUM on the deployed hop.
+**Confidence:** HIGH on the code (executed), MEDIUM on the deployed hop.
 
 ### 4. `npm test` runs a hand-maintained list, and CI never runs the other half
 `scripts/run-tests.mjs:5,88`, `.github/workflows/ci.yml:22`, `tests/deployment.test.mjs:43,46,48`
 
-- The runner holds 78 hardcoded names. **Four real `*.test.mjs` files never run** — `db-persistence`,
-  `db-api`, `database-logging`, `azure-infra` — and any new test file is invisible until someone edits the list.
+- The runner holds 78 hardcoded entries (69 `*.test.mjs`). **Three real suites run in neither gate** —
+  `db-persistence`, `db-api`, `database-logging` (they are listed in `check-persistence.mjs` but that script
+  is in no workflow), plus `azure-infra.test.mjs`, which **nothing** runs: it is absent from both lists and
+  is invoked only by hand from `docs/operations/deploy.md`. Any new test file is invisible until someone
+  edits the list. Verified by probe: each of the four exists on disk and is absent from `run-tests.mjs`.
 - `test:persistence` (50 files, including `outbox.mjs`, `native-push.mjs` and the pg adapter) is in **no**
-  workflow, so the `PUSH_KINDS` change shipped in `5f941fd` is ungated.
+  workflow, so the `PUSH_KINDS` change shipped in `5f941fd` is ungated. `.github/workflows/ci.yml` runs
+  exactly `npm ci`, `typecheck`, `lint`, `npm test`, `npm audit`, `expo export` — verified by reading the file.
 - The Docker module-copy guard queues files only when `target.startsWith('src/')`, so it never recurses
   into `server/domain/*.ts`; and its regex `from '(\.{1,2}\/[^']+\.ts)'` only matches single quotes, so a
   double-quoted or dynamic import is invisible even in `server/main.ts`.
+  **Verified by isolated probe** (`reports/verify-2026-10-29/probe-guard-isolated.mjs`): running the
+  guard's own collection loop against this tree visits **6 files, 0 of them in `server/domain/`**, and
+  collects only `src/model.ts` + `src/map-math.ts`. Injecting an import of the uncopied `src/copy.ts` into
+  `server/domain/statistics.ts` is collected **not at all**, while `Dockerfile` never copies that file —
+  so the guard stays green through exactly the 5 October failure shape. Five domain modules already import
+  `src/model.ts`; they only pass because `Dockerfile:26` names that one file explicitly.
 
 The current tree is green because no nested file imports an uncopied module yet. That is luck, not a guard.
 **Fix:** glob `tests/**/*.test.mjs` instead of listing names; add `persistence` and `docker build` to CI;
@@ -196,7 +215,7 @@ Rows without **(PG)** are live today.
 | 6 | Support password reset returns a **plaintext password** in the response and writes no audit row — unlike every other sensitive admin action | `server/main.ts:2631-2644` |
 | 7 | `editUser` lets any admin rewrite a victim's phone/email, clear verification and kill sessions with **no** `security_events`/`staff_actions` row. A stronger takeover primitive than the password route, and it falsifies "every other admin action is audited" | `server/main.ts:2552-2588` |
 | 8 | `POST /api/admin/users/:id/approve` has no `status` predicate: one call re-activates a driver blocked for a safety incident, skipping the `carrying_parcels`/`recovery:'return'` guard that blocking enforces — potentially with parcels still in custody | `server/main.ts:2615-2621` |
-| 9 | Password hashing is `scryptSync` on the single event loop, on every unauthenticated login/reset/register (~50 ms each). A modest concurrent flood stalls all traffic | `server/main.ts:178-191`, `:540`, `:669` |
+| 9 | Password hashing is `scryptSync` on the single event loop, on every unauthenticated login/reset/register. *Measured: **26 ms per hash** on this host* — a modest concurrent flood stalls all traffic | `server/main.ts:178-191`, `:540`, `:669` |
 | 10 | `checkPassword` throws a 500 on a stored hash without a `salt:hash` separator — a corrupt row turns a login into a server error | `server/main.ts:183-186` |
 
 ### Marketplace and money operations
@@ -204,9 +223,9 @@ Rows without **(PG)** are live today.
 | # | Finding | Where |
 |---|---|---|
 | 11 | A pending cash remittance can only be decided by the driver. Block the driver (or they lose their phone) and `cashSettled` blocks deletion and role change **forever** — no admin route exists | `server/main.ts:2428-2433`, `:2410-2412`, `:2742` |
-| 12 | A double-tapped "Subscribe" creates two pending subscriptions, both activatable, charged twice for one 30-day period: check-then-insert with no transaction and no unique index | `server/main.ts:2476-2481` |
-| 13 | One customer can freeze the driver job board: unlimited open orders, `GET /api/jobs` returns `LIMIT 50` ordered by `COALESCE(scheduled_for, created_at)`, and searching orders are never swept. 50 spam orders hide every real job behind them until an admin cancels by hand | `server/main.ts:1310-1313`, `:1773-1776` |
-| 14 | Any single admin can forgive up to ₪10 000 of driver debt with no second approver, although `server/domain/ops.ts:73-82` contains the approval table meant to prevent exactly that | `server/main.ts:2443-2446` |
+| 12 | **Latent, not live.** A double-tapped "Subscribe" *would* create two pending subscriptions — `subscriptions` has **no unique index** (verified: `sqlite_master` returns `[]`), and the handler is a check-then-insert with no transaction. But **760 concurrent attempts with the mutex saturated produced zero duplicates**: `sqliteLock()` serialises every statement in one process. The missing constraint is the defect; it opens on Postgres or two replicas | `server/main.ts:2476-2481`, `server/db/persistence.ts:122-135` |
+| 13 | **Verified by execution.** One customer can freeze the driver job board: 55 spam orders were accepted (no per-customer quota), `GET /api/jobs` returned exactly 50, and a later real order was **invisible**. Searching orders are never swept, so they hide every real job until an admin cancels by hand | `server/main.ts:1310-1313`, `:1773-1776` |
+| 14 | **Verified, but bounded by arithmetic rather than policy.** One admin can forgive debt with no second approver (`financial_approvals` does not exist on SQLite at all). The damage is capped by the `abs(amount) ≤ 1_000_000` guard at `:2446` **and** the no-negative-balance rule at `:2464`: with ₪13 500 owed, one −₪10 000 adjustment succeeded, a second was rejected 400. What is missing is the approver, not the ceiling | `server/main.ts:2443-2446`, `:2464` |
 
 ### Backend cutover and release
 
@@ -222,7 +241,9 @@ Rows without **(PG)** are live today.
 
 **Correctness (cheap, do with the P2s):** proof-lock `reattempt` leaves the five failures so the parcel
 can never complete (`main.ts:1999` vs `:2001-2003`); rating is a check-then-write with no `WHERE rating IS
-NULL` (`:1512`, `:1519`); reschedule never re-checks `searching` (`:1497-1500`); first-order-promo race
+NULL` (`:1512`, `:1519`); reschedule *does* check `searching` at `:1497` — **executed and refuted**, 40 races
+produced no double-success — leaving only a theoretical TOCTOU (read outside the transaction, `UPDATE` at
+`:1500` without a status predicate); first-order-promo race
 (`:804`,`:810`); `sessions` has no `user_id` index (`postgres-schema.sql:237-240`); `GET /api/orders`
 still 4–6 queries per row (`main.ts:248-250`).
 
@@ -261,8 +282,10 @@ This is the part the critique round earned.
 
 **Killed —**
 *"Road-report authorization is a deny-list, not an allow-list"* (`main.ts:1723-1725`). `Role` is only
-`customer | driver | admin` (`src/model.ts:18`, with a CHECK constraint in both schemas), so
-`role !== 'customer'` **is** the allow-list. Not a finding.
+`customer | driver | admin` (`src/model.ts:18`), so `role !== 'customer'` **is** the allow-list. Not a finding.
+*(The kill stands, but this report's original justification was wrong: SQLite enforces the set with a CHECK
+constraint (`sqlite-schema.ts:14`), PostgreSQL does **not** — `role TEXT NOT NULL` at
+`postgres-schema.sql:261`, no CHECK. The allow-list argument survives on the TypeScript type alone.)*
 
 **Downgraded to P3 —**
 `/api/ready` taking the SQLite write lock (every SQLite read already serialises on that mutex, the
@@ -305,8 +328,7 @@ cap at `main.ts:2463` and the driver decision route at `:2428` already exist, an
 | `estimated: !trip` at `1035-1036` | `:1035` | P1 #5 |
 | "`copy.ts` drift checked mechanically" | true, but only 2 key prefixes are tested | "genuinely good" |
 
-**Four framing corrections of my own:**
-- P1 #1 is an unfollowable instruction, not a live boot failure. `enableWorkloads=false` and `deploy.md:3`
+**Four framing corrections of my own:**- P1 #1 is an unfollowable instruction, not a live boot failure. `enableWorkloads=false` and `deploy.md:3`
   mean nobody reaches that crash-loop by accident. Severity holds at P1 because the fix must land before
   anyone tries; the "hard boot failure" label in the tally table was wrong.
 - **The biggest one:** treating the P2 block as "latent" inverted the risk. Only #1–#5 are gated; #6–#14
@@ -323,6 +345,32 @@ cap at `main.ts:2463` and the driver decision route at `:2428` already exist, an
   show the required pattern as `Notifications.getLastNotificationResponse()` **plus** the listener.
   `src/native-push.ts:14` registers only the listener, so a tap that launches the process is dropped —
   a missing API call, not a race. Verified against the versioned docs, not memory.
+
+---
+
+## Execution pass — what a real server proved
+
+The findings above were re-tested by booting `server/main.ts` on a throwaway SQLite database, registering
+real accounts, calling real routes, and reading the rows back. Probes are checked in at
+`reports/verify-2026-10-29/`; the full log is `reports/verify-2026-10-29/EVIDENCE.md`.
+
+**Reproduced (19):** P1 #1 (all three boot throws), #2 (settings accept `0` and `2000`; the price is
+stored and charged verbatim), #3 (0 × 429 with rotating `X-Real-IP`, 5 × 429 with a fixed one), #4 (guard
+visits 6 files, 0 in `server/domain/`), #5 (`estimated:true`, 46.3 km straight-line), #6 (gates return 409);
+P2 #6, #7, #8, #9 (26 ms/hash measured), #10, #11, #13, #14; plus the P2 #15 destination route running
+**on** SQLite.
+
+**Refuted (4) — the report was wrong:**
+- **P1 #2's `minorUnits` 500 does not fire today.** `/api/price` returns 200 with `commission: 0`, because
+  `main.ts:1042` returns the legacy base before reaching `:1061`. Real, but latent behind the cutover.
+- **P2 #12's double charge does not reproduce** — 760 concurrent attempts, zero duplicates. The missing
+  unique index is real; the mutex closes the window in one process.
+- **P3's "reschedule never re-checks `searching`"** — it does, at `:1497`. 40 races, no double-success.
+- **P3's throttle framing** was measured at 26 ms, not the assumed ~50 ms.
+
+**Corrected reasoning (3):** the killed claim's "CHECK in both schemas" (Postgres has none); P2 #15's
+direction (runs on SQLite, 409s after cutover); P1 #4's "four files never run" (three run in
+`check-persistence`, which is merely in no workflow).
 
 ---
 
