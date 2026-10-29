@@ -1,10 +1,15 @@
 // Web map (browser and iPhone home-screen app): MapLibre GL + OpenFreeMap vector tiles — OSM data, no key.
 // The library is fetched on first use so screens without a map never pay for it; any failure shows the diagram.
+// A Google-keyed build (extra.googleMaps.web) that the user opted into draws with google-map.web.tsx instead.
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
+import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.web';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import { bearing, ease, farJump, fitBounds, glideMs, labelField, routeFramePoints, turn } from './map-math';
+import { selectRenderer } from './map-provider';
+import { useMapMode } from './map-mode';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -147,7 +152,12 @@ const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
-  return <LiveMap key={`${a.latitude},${a.longitude},${b.latitude},${b.longitude}`} {...props} />;
+  const [mode] = useMapMode();
+  // T06/T12: the renderer must be one this bundle actually contains — the capability is baked at build time,
+  // so a mode change or kill switch can never select an absent renderer.
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
+  if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GoogleRouteMap key={key} {...props} />;
+  return <LiveMap key={key} {...props} />;
 }
 
 function LiveMap(props: RouteMapProps) {
@@ -313,7 +323,13 @@ function LiveMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap(props: PinMapProps) {
+  const [mode] = useMapMode();
+  if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
+  return <MapLibrePin {...props} />;
+}
+
+function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);
   const callbacks = useRef({ onChange, onFail, onReady });

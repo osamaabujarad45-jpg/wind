@@ -125,9 +125,18 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
 }
 
 // Same-origin app; OpenFreeMap serves the map style, tiles, glyphs and sprites. React Native Web injects <style> tags.
-const webCsp = ["default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://tiles.openfreemap.org",
-  "font-src 'self' data:", "connect-src 'self' https://tiles.openfreemap.org", "worker-src 'self' blob:", "manifest-src 'self'",
+// The Google web renderer (T12) widens these rules only when a restricted browser key is configured for the
+// deployment — a baseline deployment never opens its CSP to Google at all.
+export const webCspFor = (googleBrowserKey: boolean) => [
+  "default-src 'self'",
+  googleBrowserKey ? "script-src 'self' https://maps.googleapis.com" : "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'" + (googleBrowserKey ? ' https://fonts.googleapis.com https://maps.googleapis.com' : ''),
+  "img-src 'self' data: blob: https://tiles.openfreemap.org" + (googleBrowserKey ? ' https://*.googleapis.com https://*.gstatic.com *.google.com *.googleusercontent.com' : ''),
+  "font-src 'self' data:" + (googleBrowserKey ? ' https://fonts.gstatic.com' : ''),
+  "connect-src 'self' https://tiles.openfreemap.org" + (googleBrowserKey ? ' https://maps.googleapis.com' : ''),
+  "worker-src 'self' blob:", "manifest-src 'self'",
   "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
+const webCsp = webCspFor(!!process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY);
 const compressible = (type: string) => /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml|font\/ttf)/.test(type);
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.

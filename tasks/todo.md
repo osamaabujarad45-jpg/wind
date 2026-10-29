@@ -323,6 +323,10 @@ Implementation children:
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T11.1: iOS selection wiring onto the shared Google renderer with the Apple baseline as default (src/route-map.native.tsx, tests/map.test.mjs). Complete — `--filter=map` 0; lint 0; typecheck 0 (29 Oct local fallback).
+- [ ] T11.2: Physical iPhone and signed-build evidence — blocked: no physical iPhone and no iOS signing access; never a simulator. Parent stays open until then.
+
 **Description / implementation:** Wire the shared native Google renderer on iOS and retain Apple baseline without Google-sourced overlays. Review platform resolution, attribution, safe areas and permission handling.
 
 **Dependencies:** T10.
@@ -344,11 +348,15 @@ Implementation children:
 
 **Manual / failure-case check:** No iPhone/signing access means device acceptance stays blocked; never use a simulator.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T11.1):** `src/route-map.native.tsx` now resolves `selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode)` for both `RouteMap` and `PinMap`: the Google mode reaches the shared `google-map.native.tsx` renderer only when the binary was built with `GOOGLE_MAPS_IOS_KEY`, and the Apple `RouteMap`/`PinMap` (renamed `AppleRouteMap`/`ApplePin`) remain the default and fallback. Marker motion is shared (`Car`), so Google iOS animates exactly like the Apple baseline. Map suite asserts the iOS selection source and that the Apple baseline stays default. Both provider modes cannot be exercised on device without a signed iPhone build (T11.2/D06-iOS gate). No Google-sourced overlay can reach the Apple map: the T06 provenance guard in `useRoad` applies to every renderer.
 
 ## T12: Google web renderer
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T12.1: Renderer, singleton loader, CSP gating and web-entry selection (src/google-map.web.tsx new, src/route-map.tsx, server/main.ts webCspFor, app.config.js web capability, tests/map.test.mjs, docs/operations/provider-failures.md). Complete — see evidence below. `--filter=map` 0; lint 0; typecheck 0 (29 Oct local fallback).
+- [ ] T12.2: Physical A53 Chrome acceptance (Arabic/English labels, RTL pin drag, blocked-SDK retry/fallback, attribution visible) batched into the D06 pass; needs the restricted browser key configured. Parent stays open until then.
 
 **Description / implementation:** Load Google JS once with restricted browser key and documented narrow CSP. Implement pin, marker, camera and route parity with cleanup; retain MapLibre and visible provider attribution.
 
@@ -372,7 +380,7 @@ Implementation children:
 
 **Manual / failure-case check:** Browser automation is diagnostic; physical A53 Chrome supplies UI acceptance.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence (T12.1):** New `src/google-map.web.tsx`: Maps JS fetched once per page through a singleton loader (script id `wind-google-maps`, failed loads reset so Retry can refetch), readiness gated on `tilesloaded` (never map construction), per-instance listeners/overlays removed on unmount (`l.remove()`, `setMap(null)`, source-asserted), pins/no-entry/driver-arrow/accuracy-halo drawn as Google symbols, gliding driver snapped across far jumps, follow camera until the user grabs the map, diagram+Retry fallback for blocked SDK/quota/deadline, Google's own attribution untouched. Web entry (`src/route-map.tsx`) selects via `selectRenderer('web', extra.googleMaps, mode)` with MapLibre as default and fallback; `map-mode` now stores the preference in localStorage on web (SecureStore stays native-only). Server CSP is now `webCspFor(key)`: the baseline deployment keeps the exact installed policy (asserted byte-for-byte), and only a deployment with `EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` opens the narrow Google origins (script/connect/img/font/style), framing guard intact. `app.config.js` bakes `extra.googleMaps.web` from the same variable. Suite: `--filter=map` 0 (CSP both variants, source wiring, server-key absence from web code), `--filter=phone-test-build` 0 (web capability case), lint 0, typecheck 0; `npm run test:scenarios` 0 after fixing its own stale reference — the T19 integration removed the `confirmBooking` copy keys and made reconciliation automatic, but `check-scenarios.mjs:126` still clicked a button named `^undefined`; the lost-response branch now reloads and lets the T19 recovery find the committed order on its own (it navigates to `/order/:id` without a second booking), which is the behavior the task ships. Labels follow the browser locale (the Maps JS language is fixed per page load); the Arabic-label check rides T12.2/D06. Tier: fixture + browser automation; physical Chrome acceptance deferred to T12.2.
 
 ### Checkpoint C04 — after T12
 

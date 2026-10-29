@@ -8,7 +8,8 @@ const require = createRequire(import.meta.url);
 const plugin = require('../plugins/with-phone-test.js');
 const releasePlugin = require('../plugins/with-release-guard.js');
 const variables = ['WIND_TEST_ROLE', 'WIND_LOCAL_TEST', 'EAS_BUILD', 'WIND_RELEASE', 'EXPO_PUBLIC_API_URL',
-  'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM'];
+  'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM',
+  'EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY'];
 const saved = Object.fromEntries(variables.map(key => [key, process.env[key]]));
 const setEnv = overrides => {
   for (const key of variables) delete process.env[key];
@@ -73,19 +74,24 @@ try {
   };
   const mapsPlugin = built => built.plugins.find(entry => Array.isArray(entry) && entry[0] === 'react-native-maps')[1];
 
-  for (const key of ['GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM']) delete process.env[key];
+  for (const key of ['GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM', 'EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY']) delete process.env[key];
   const savedRole = process.env.WIND_TEST_ROLE;
   delete process.env.WIND_TEST_ROLE;
   try {
     let built = build();
-    assert.deepEqual(built.extra.googleMaps, { android: false, ios: false }, 'baseline binary bakes no Google capability');
+    assert.deepEqual(built.extra.googleMaps, { android: false, ios: false, web: false }, 'baseline binary bakes no Google capability');
     assert.equal(mapsPlugin(built).androidGoogleMapsApiKey, undefined, 'baseline build embeds no Android key');
 
     process.env.GOOGLE_MAPS_API_KEY = 'legacy-single-key';
     built = build();
-    assert.deepEqual(built.extra.googleMaps, { android: true, ios: false }, 'the legacy single-key secret keeps existing EAS builds working');
+    assert.deepEqual(built.extra.googleMaps, { android: true, ios: false, web: false }, 'the legacy single-key secret keeps existing EAS builds working');
     assert.equal(mapsPlugin(built).androidGoogleMapsApiKey, 'legacy-single-key');
     delete process.env.GOOGLE_MAPS_API_KEY;
+
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY = 'referrer-restricted-browser-key';
+    built = build();
+    assert.deepEqual(built.extra.googleMaps, { android: false, ios: false, web: true }, 'the browser key bakes only the web capability');
+    delete process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
 
     process.env.WIND_GOOGLE_MAPS = '1';
     assert.throws(build, /missing: android, ios/, 'an opted-in build of unknown platform demands both restricted keys');
@@ -93,7 +99,7 @@ try {
     assert.throws(build, /missing: android/, 'an opted-in Android build fails early without its platform key');
     process.env.GOOGLE_MAPS_ANDROID_KEY = 'restricted-android-key';
     built = build();
-    assert.deepEqual(built.extra.googleMaps, { android: true, ios: false });
+    assert.deepEqual(built.extra.googleMaps, { android: true, ios: false, web: false });
     assert.equal(mapsPlugin(built).androidGoogleMapsApiKey, 'restricted-android-key');
     assert.equal(mapsPlugin(built).iosGoogleMapsApiKey, undefined, 'an Android build never embeds the iOS key');
     assert.equal(JSON.stringify(built.extra).includes('restricted-android-key'), false, 'key strings never enter public config');

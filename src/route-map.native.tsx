@@ -1,19 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { bearing, glider } from './map-math';
+import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
+import { selectRenderer } from './map-provider';
+import { useMapMode } from './map-mode';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
-// iOS: Apple Maps, no key. Android uses route-map.android.tsx (no Google Maps key in the build).
+// iOS: Apple Maps is the baseline (no key). When this binary was built with a restricted Google key
+// (extra.googleMaps.ios) and the user selected the Google mode, the shared native Google renderer draws.
 export const canPin = true;
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
+  const { pickup, dropoff } = props;
+  const [mode] = useMapMode();
+  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google')
+    return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
+  return <AppleRouteMap {...props} />;
+}
+
+function AppleRouteMap(props: RouteMapProps) {
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
   const { c } = useCopy();
   const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
@@ -127,7 +140,13 @@ const styles = StyleSheet.create({
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
 
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap(props: PinMapProps) {
+  const [mode] = useMapMode();
+  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
+  return <ApplePin {...props} />;
+}
+
+function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);

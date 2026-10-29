@@ -18,7 +18,7 @@ const legacy = new DatabaseSync(process.env.DB_PATH);
 legacy.exec('CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY, lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL)');
 legacy.close();
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, db, promote, liveWatcherCount } = await import('../server/main.ts');
+const { shutdown, server, db, promote, liveWatcherCount, webCspFor } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -276,12 +276,32 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
   assert.ok(androidSource.includes("selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode)"), 'Android must resolve the renderer from baked capability and mode');
+  const iosSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
+  assert.ok(iosSource.includes("selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode)"), 'iOS must resolve the renderer from baked capability and mode');
+  assert.ok(iosSource.includes('AppleRouteMap'), 'the Apple baseline stays the iOS default');
   const googleSource = readFileSync(new URL('../src/google-map.native.tsx', import.meta.url), 'utf8');
   assert.ok(googleSource.includes('onMapLoaded'), 'Google readiness waits for loaded tiles');
   assert.ok(!googleSource.includes('onMapReady'), 'map initialization alone is not a readiness signal');
   assert.ok(googleSource.includes('provider={PROVIDER_GOOGLE}'), 'the Google renderer must actually select the Google provider');
   const modeSource = readFileSync(new URL('../src/map-mode.ts', import.meta.url), 'utf8');
   assert.ok(modeSource.includes("?? 'baseline'"), 'an unreadable preference must fall back to the baseline');
+  // T12: the web entry resolves the renderer the same way, and the CSP opens Google origins only for a
+  // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
+  const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
+  assert.ok(webEntry.includes("selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode)"), 'web must resolve the renderer from baked capability and mode');
+  const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
+  assert.ok(googleWeb.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
+  assert.ok(googleWeb.includes('l.remove()'), 'map listeners are removed on unmount');
+  assert.ok(googleWeb.includes('setMap(null)'), 'overlays are detached from the map on unmount');
+  assert.ok(!googleWeb.includes('GOOGLE_MAPS_SERVER_KEY'), 'the server route key never reaches the web renderer');
+  const baselineCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' data:; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+  assert.equal(webCspFor(false), baselineCsp, 'a baseline deployment keeps the exact installed CSP');
+  const googleCsp = webCspFor(true);
+  assert.match(googleCsp, /script-src 'self' https:\/\/maps\.googleapis\.com/);
+  assert.match(googleCsp, /connect-src 'self' https:\/\/tiles\.openfreemap\.org https:\/\/maps\.googleapis\.com/);
+  assert.match(googleCsp, /img-src [^;]*https:\/\/\*\.googleapis\.com https:\/\/\*\.gstatic\.com/);
+  assert.match(googleCsp, /font-src 'self' data: https:\/\/fonts\.gstatic\.com/);
+  assert.ok(googleCsp.includes("frame-ancestors 'none'"), 'Google never weakens the framing guard');
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));

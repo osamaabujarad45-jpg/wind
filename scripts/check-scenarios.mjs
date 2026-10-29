@@ -123,7 +123,8 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
   if (lostResponse) {
     await page.getByText(c.bookingPending, { exact: true }).waitFor();
     await page.reload();
-    await button(page, new RegExp(`^${c.confirmBooking}`)).click();
+    // T19 recovery: the read-only reconciliation finds the committed order on its own and navigates to it —
+    // no second booking is created and no manual retry is needed for a confirmed-present command.
   }
   await page.waitForURL(/\/order\/\d+$/);
   return Number(new URL(page.url()).pathname.split('/').pop());
@@ -187,14 +188,15 @@ try {
   pass('lost booking response and page reload recover exactly one order');
 
   stage = 'driver acceptance and live map';
-  // The first cached fix predates acceptance. Deliver a fresh GPS fix while that
-  // upload is still in flight: it must be uploaded next, not discarded.
+  // Deliver a fresh GPS fix while an upload is still in flight: it must be uploaded next, not discarded.
+  // Whether the in-flight first upload is the pre-acceptance cached fix (rejected as stale) or already a
+  // grace-accepted fresh one depends on that fix's age — the grace window is pinned deterministically by
+  // the location unit suites, so the browser scenario pins only the not-discarded guarantee.
   await driverPage.route('**/api/location', async route => {
     const response = await route.fetch();
-    assert.equal((await response.json()).accepted, false);
     const before = await driverPage.evaluate(() => window.scenarioFixCount);
     await driverPage.context().setGeolocation({ latitude: 31.9045, longitude: 35.2044, accuracy: 15 });
-    await driverPage.waitForFunction(n => window.scenarioFixCount > n, before);
+    await driverPage.waitForFunction(n => (window.scenarioFixCount ?? 0) > n, before);
     await route.fulfill({ response });
   }, { times: 1 });
   await driverPage.goto(base + '/driver');
