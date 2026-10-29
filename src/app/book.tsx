@@ -1,5 +1,5 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -78,7 +78,14 @@ function BookForm() {
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>(params.when === 'later' ? 'later' : 'now');
   const [slot, setSlot] = useState<number | null>(null);
-  const slots = scheduleSlots();
+  // T40: the ~227 Intl formattings behind scheduleSlots belong to the half-hour bucket, not to every keystroke.
+  // The bucket is derived in an effect; the render keeps the last list until the next half-hour begins.
+  const [slotBucket, setSlotBucket] = useState(() => Math.floor(Date.now() / (30 * 60_000)));
+  useEffect(() => {
+    const timer = setInterval(() => setSlotBucket(Math.floor(Date.now() / (30 * 60_000))), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const slots = useMemo(() => scheduleSlots(), [slotBucket]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);

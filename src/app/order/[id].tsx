@@ -23,13 +23,13 @@ const DONE = ZoomIn.duration(300);
 const steps = statusFlow.slice(1); // assigned → completed
 
 // Exact pins open turn-by-turn directions; without one, a search for the landmark is the best we can do.
-function openMaps(point: Point | null, place: string, landmark: string) {
+function openMaps(point: Point | null, place: string, landmark: string, region: string) {
   if (point) {
     const at = `${point.latitude},${point.longitude}`;
     if (Platform.OS === 'android') return Linking.openURL(`google.navigation:q=${at}`).catch(() => Linking.openURL(`geo:${at}?q=${at}`));
     return Linking.openURL(Platform.select({ ios: `maps:?daddr=${at}&dirflg=d`, default: `https://www.google.com/maps/dir/?api=1&destination=${at}` }));
   }
-  const q = encodeURIComponent(`${landmark}, ${place}, فلسطين`);
+  const q = encodeURIComponent(`${landmark}, ${place}, ${region}`);
   return Linking.openURL(Platform.select({ ios: `maps:0,0?q=${q}`, android: `geo:0,0?q=${q}`, default: `https://www.google.com/maps/search/?api=1&query=${q}` }));
 }
 
@@ -439,7 +439,7 @@ export default function OrderScreen() {
         </Card>}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
-          openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote)
+          openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)
             .catch(() => setActionError(c.mapUnavailable));
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}

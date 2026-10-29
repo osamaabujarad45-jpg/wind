@@ -15,10 +15,20 @@ const CANDIDATE = 'wind.active-gps.candidate';
 const SEQUENCE = 'wind.active-gps.sequence';
 export const activeGpsTestEnabled = typeof __DEV__ !== 'undefined' && __DEV__ && process.env.EXPO_PUBLIC_TEST_ACTIVE_GPS === '1';
 const accessible = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
+// T39: the driver screen's 3 s tracking poll re-reads the same context/receipt records every tick. A short
+// per-key cache with write invalidation keeps that poll off SecureStore without weakening freshness: any
+// write (and every delete) refreshes or drops the entry, so the delivery path still reads what it just wrote
+// and authority changes take effect immediately. The auth token is never cached — logout must win at once.
+const readCache = new Map<string, { at: number; value: string | null }>();
+const READ_TTL_MS = 2_000;
 async function read<T>(key: string): Promise<T | null> {
-  const value = await SecureStore.getItemAsync(key);
+  const cached = readCache.get(key);
+  const value = cached && Date.now() - cached.at < READ_TTL_MS
+    ? cached.value
+    : await SecureStore.getItemAsync(key).then(found => { readCache.set(key, { at: Date.now(), value: found }); return found; });
   try { return value ? JSON.parse(value) as T : null; } catch { return null; }
 }
+function invalidateRead(key: string) { readCache.delete(key); }
 let queue = Promise.resolve();
 // A restored native registration is not authority for this JavaScript launch.
 let trackingEnabled = false;
@@ -38,6 +48,7 @@ export function stopBackgroundLocation(expectedId?: string) {
     trackingEnabled = false;
     await SecureStore.deleteItemAsync(CONTEXT);
     await SecureStore.deleteItemAsync(RECEIPT);
+    invalidateRead(CONTEXT); invalidateRead(RECEIPT);
     if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
   });
 }
@@ -86,7 +97,7 @@ export function startBackgroundLocation(actor: number, orderId: number, orderIds
       context = trackingEnabled && previous?.token === token && previous.actor === actor && previous.orderId === orderId
         ? previous : { id: Crypto.randomUUID(), token, actor, orderId };
     }
-    await SecureStore.setItemAsync(CONTEXT, JSON.stringify(context), accessible);
+    await SecureStore.setItemAsync(CONTEXT, JSON.stringify(context), accessible); invalidateRead(CONTEXT);
     if (generation !== authorityGeneration || !valid() || await SecureStore.getItemAsync('token') !== token) return;
     // Registration can survive process replacement while its Android foreground service does not.
     // Re-register from the foreground so Expo refreshes the consumer and restarts that service.
@@ -131,12 +142,12 @@ const deliveryIO = {
       const last = saved?.sessionId === context.activeGps.sessionId && Number.isSafeInteger(saved.seq) ? Math.max(saved.seq, context.activeGps.seq) : context.activeGps.seq;
       if (!Number.isSafeInteger(last + 1) || !trackingEnabled || generation !== authorityGeneration || await SecureStore.getItemAsync('token') !== context.token) return null;
       const activeGps = { ...context.activeGps, seq: last + 1 };
-      await SecureStore.setItemAsync(SEQUENCE, JSON.stringify({ sessionId: activeGps.sessionId, seq: activeGps.seq }), accessible);
+      await SecureStore.setItemAsync(SEQUENCE, JSON.stringify({ sessionId: activeGps.sessionId, seq: activeGps.seq }), accessible); invalidateRead(SEQUENCE);
       if (!trackingEnabled || generation !== authorityGeneration) return null;
-      await SecureStore.setItemAsync(CONTEXT, JSON.stringify({ ...context, activeGps }), accessible);
+      await SecureStore.setItemAsync(CONTEXT, JSON.stringify({ ...context, activeGps }), accessible); invalidateRead(CONTEXT);
       return trackingEnabled && generation === authorityGeneration ? activeGps : null;
     }),
-    acknowledge: receipt => SecureStore.setItemAsync(RECEIPT, JSON.stringify(receipt), accessible),
+    acknowledge: receipt => SecureStore.setItemAsync(RECEIPT, JSON.stringify(receipt), accessible).then(() => invalidateRead(RECEIPT)),
     monotonic: () => globalThis.performance?.now?.() ?? Date.now(),
     post: async (token, body) => {
       const controller = new AbortController();
