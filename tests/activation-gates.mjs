@@ -6,7 +6,7 @@ import { eligibilityDefaults, dispatchEnabled } from '../server/domain/eligibili
 import { boardingEnabled } from '../server/domain/ride-lifecycle.ts';
 
 assert.deepEqual(ledgerConfig(), { projectedCashCapMinor: 100000, cashCapActivated: false });
-assert.deepEqual(paymentsConfig({}), { configured: false, testFake: false });
+assert.deepEqual(paymentsConfig({}), { testFake: false });
 assert.deepEqual(objectsConfig({}), { testFake: false, blobConfigured: false });
 for (const key of ['cashCapActivated', 'futureDispatchActivated', 'futureBoardingChallengeActivated', 'insertionOptimization', 'guaranteedReservation']) {
   assert.equal(eligibilityDefaults[key], false, `${key} must default to off`);

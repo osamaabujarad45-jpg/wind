@@ -26,8 +26,11 @@ export class FakePaymentsProvider implements PaymentsProvider {
   async refund(id: string, _amountMinor: number) { return { outcome: this.outcome, providerRef: `fake:${id}` }; }
 }
 export const COD_LIMIT_MINOR = 1000000;
+// No payment provider is wired yet. The BoP slice adds its config together with the real
+// provider class, so a stray WIND_BOP_* env var can never look like a live enable switch;
+// only the test fake can turn payments on, and every other case reaches the 409 gate.
 export function paymentsConfig(env: NodeJS.ProcessEnv = process.env) {
-  return { configured: env.WIND_BOP_ENABLED === '1' && !!env.WIND_BOP_MERCHANT_ID && !!env.WIND_BOP_SECRET, testFake: env.NODE_ENV === 'test' && env.WIND_PAYMENTS_TEST_ONLY === '1' };
+  return { testFake: env.NODE_ENV === 'test' && env.WIND_PAYMENTS_TEST_ONLY === '1' };
 }
 export async function paymentsAvailable(db: Persistence) {
   if (db.backend !== 'postgres') return false;
