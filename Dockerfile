@@ -4,15 +4,17 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY vendor ./vendor
 RUN npm ci
-COPY app.json app.config.js tsconfig.json expo-env.d.ts index.js ./
+COPY app.json app.config.js tsconfig.json index.js ./
 COPY assets ./assets
 COPY plugins ./plugins
 COPY src ./src
 COPY public ./public
-ENV EXPO_PUBLIC_API_URL=https://wind-production-72aa.up.railway.app WIND_RELEASE=1 WIND_LOCAL_TEST=0 NODE_ENV=production
+ARG EXPO_PUBLIC_API_URL
+ARG WIND_BUILD_HEAP_MB=768
+ENV EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL} WIND_RELEASE=1 WIND_LOCAL_TEST=0 NODE_ENV=production
 # Metro tree shaking: drops unused library exports (674 -> 482 kB gzip, SPEC-web-bundle.md).
 ENV EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1
-RUN npx expo export --platform web
+RUN NODE_OPTIONS="--max-old-space-size=${WIND_BUILD_HEAP_MB}" npx expo export --platform web --max-workers 1
 COPY scripts/runtime-dependencies.mjs ./scripts/runtime-dependencies.mjs
 RUN node scripts/runtime-dependencies.mjs api-runtime
 

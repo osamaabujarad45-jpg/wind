@@ -16,7 +16,6 @@
     },
     "android": {
       "package": "ps.wind.app",
-      "versionCode": 14,
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",

@@ -6,6 +6,8 @@ node_modules/
 # Expo
 .expo/
 dist/
+!vendor/deepmerge/dist/
+!vendor/deepmerge/dist/*.js
 web-build/
 expo-env.d.ts
 

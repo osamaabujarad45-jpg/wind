@@ -131,6 +131,19 @@ async function advance(page, id, current, next, code) {
   await atStatus(id, next);
 }
 try {
+  stage = 'recovery messaging when phone codes are unavailable';
+  for (const language of ['en', 'ar']) for (const emailReset of [false, true]) {
+    const page = await newPage(language), text = copy[language];
+    await page.route('**/api/auth/options', route => route.fulfill({ json: { registrationOpen: true, emailReset } }));
+    await page.route('**/api/phone/capabilities', route => route.fulfill({ json: { available: false, enabled: false } }));
+    await page.goto(base + '/auth');
+    const warning = page.getByText(text.phone_recovery_unavailable, { exact: true });
+    await warning.waitFor();
+    assert.doesNotMatch(await warning.innerText(), /email|البريد/i, 'Do not suggest a recovery method that may be unavailable');
+    await page.getByRole('link', { name: emailReset ? text.forgotPasswordEmail : text.forgotPassword, exact: true }).waitFor();
+  }
+  pass('recovery guidance matches available methods in Arabic and English');
+
   stage = 'phone recovery capability retry';
   const phoneRetry = await newPage();
   let capabilityAttempts = 0;

@@ -100,15 +100,25 @@ The logo is drawn by `scripts/make_icon.py` (icons, splash, favicon) and by `<Lo
 
 ## Deploy
 
+The [29 October release readiness report](reports/release-readiness-2026-10-29.md)
+records the current Azure endpoint, verified checks and remaining public-launch
+gates. The historical Railway release reference above is a separate deployment.
+
 ### 1. API
 
 Any Docker host with a persistent volume and HTTPS in front (Fly.io, Railway, a VPS with Caddy).
 
 ```bash
-docker build -t wind-api .
+docker build --build-arg EXPO_PUBLIC_API_URL=https://<public-api-origin> -t wind-api .
 docker run -d -p 127.0.0.1:4000:4000 -v wind-data:/data \
   -e WIND_IDENTITY_MODE=self-service -e SUPPORT_CONTACT="<actual support contact>" wind-api
 ```
+
+The API origin is a required build argument: it is embedded in the web bundle.
+Build on a machine with sufficient memory rather than on the active API host.
+After deployment, `npm run check:deployment -- --origin https://<api>` checks
+health, authentication options, access controls, the map file and the bundle's
+API origin. Provider delivery and real user journeys need separate checks.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -164,6 +174,12 @@ Back up on a schedule with a consistent snapshot, then copy the file off the hos
 ```bash
 docker exec <container> node -e "new (require('node:sqlite').DatabaseSync)('/data/wind.db').exec(\"VACUUM INTO '/data/backup-$(date +%F).db'\")"
 ```
+
+For the existing Azure VM, PowerShell 7 on the authorized Windows workstation
+can run `./scripts/backup-azure.ps1` and `./scripts/backup-azure.ps1 -VerifyLatest`.
+It encrypts the snapshot with the current Windows account's DPAPI keys and tests
+an isolated restore. This manual snapshot does not set up a recurring backup or
+an independent recovery of the Windows account's encryption keys.
 
 The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch.
 

@@ -14,10 +14,15 @@ import { DatabaseSync } from 'node:sqlite';
   const root = new URL('../', import.meta.url), read = rel => readFileSync(new URL(rel, root), 'utf8');
   const pkg = JSON.parse(read('package.json')), docker = read('Dockerfile');
   const build = docker.split(/^FROM /m)[1];
+  assert.match(build, /^ARG EXPO_PUBLIC_API_URL$/m, 'Release origin must be supplied by the deployment');
+  assert.match(build, /ENV EXPO_PUBLIC_API_URL=\$\{EXPO_PUBLIC_API_URL\}/);
+  assert.doesNotMatch(build, /EXPO_PUBLIC_API_URL=https?:/, 'Docker cannot silently select an old deployment');
+  assert.doesNotMatch(build, /^COPY .*\bexpo-env\.d\.ts\b/m, 'Docker must build from a clean checkout without generated Expo types');
   for (const file of [pkg.main, ...Object.values(pkg.dependencies).filter(value => value.startsWith('file:')).map(value => value.slice(5).replace(/^\.\//, ''))]) {
     const isDirectory = !file.includes('.js');
     for (const ignore of ['.dockerignore', '.railwayignore']) {
       const rules = read(ignore).split(/\r?\n/);
+      assert.ok(rules.lastIndexOf('**/node_modules') > rules.lastIndexOf('!vendor/**'), `${ignore} excludes generated dependencies after including vendored packages`);
       const parent = file.split('/')[0];
       assert.ok(rules.includes(`!${file}${isDirectory ? '/' : ''}`) || (isDirectory && rules.includes(`!${parent}/`) && rules.includes(`!${parent}/**`)), `${ignore} must upload ${file}`);
     }

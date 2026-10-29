@@ -20,3 +20,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm audit --audit-level=high
+      - name: Export release bundles for Android, iOS and web
+        run: npx expo export --platform all --output-dir .expo/ci-release
+        env:
+          EXPO_PUBLIC_API_URL: https://windapi236.swedencentral.cloudapp.azure.com
+          WIND_RELEASE: '1'
+          WIND_LOCAL_TEST: '0'
+          NODE_ENV: production

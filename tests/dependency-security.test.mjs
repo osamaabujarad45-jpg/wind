@@ -3,9 +3,49 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createRequire } from 'node:module';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { runInNewContext } from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const zod = require('zod');
+
+test('Expo deepmerge and its browser bundle keep attacker keys out of result prototypes', async () => {
+  const expoRequire = createRequire(require.resolve('@expo/config'));
+  const bundle = await readFile(new URL('../vendor/deepmerge/dist/umd.js', import.meta.url), 'utf8');
+  const browser = {};
+  runInNewContext(bundle, browser);
+  for (const merge of [expoRequire('deepmerge'), browser.deepmerge]) {
+    const poison = JSON.parse('{"__proto__":{"polluted":true}}');
+    const result = merge(poison, { nested: { safe: true } });
+    assert.equal(Object.getPrototypeOf(result).polluted, undefined);
+    assert.equal(result.polluted, undefined);
+    assert.equal(Object.hasOwn(result, '__proto__'), true);
+    assert.equal(result.__proto__.polluted, true, 'an own data key cannot change the prototype');
+    const both = merge(poison, JSON.parse('{"__proto__":{"injected":true}}'));
+    assert.equal(both.injected, undefined);
+    assert.equal(Object.getPrototypeOf(both).injected, undefined);
+    const nullTarget = Object.assign(Object.create(null), poison);
+    assert.equal(merge(nullTarget, {}).polluted, undefined);
+    assert.equal(merge({}, poison).polluted, undefined);
+    assert.equal({}.polluted, undefined);
+  }
+});
+
+test('patched deepmerge preserves arrays, symbols, clones and custom merge compatibility', () => {
+  const merge = createRequire(require.resolve('@expo/config'))('deepmerge');
+  const symbol = Symbol('synthetic');
+  const target = { list: [{ a: 1 }], nested: { a: 1 }, [symbol]: { a: 1 } };
+  const result = merge(target, { list: [{ b: 2 }], nested: { b: 2 }, [symbol]: { b: 2 } });
+  assert.deepEqual(result.list, [{ a: 1 }, { b: 2 }]);
+  assert.deepEqual(result.nested, { a: 1, b: 2 });
+  assert.deepEqual(result[symbol], { a: 1, b: 2 });
+  assert.notEqual(result.list[0], target.list[0]);
+  assert.notEqual(result.nested, target.nested);
+  assert.deepEqual(merge.all([{ nested: { a: 1 } }, { nested: { b: 2 } }]), { nested: { a: 1, b: 2 } });
+  assert.deepEqual(merge({ list: [1] }, { list: [2] }, { arrayMerge: (_a, b) => b }), { list: [2] });
+  assert.deepEqual(merge({ nested: { a: 1 } }, { nested: { b: 2 } }, {
+    customMerge: key => key === 'nested' ? () => ({ custom: true }) : undefined,
+  }), { nested: { custom: true } });
+});
 
 test('Expo build tools resolve patched Zod 4 and reject oversized bounded arrays before walking items', () => {
   assert.match(require('zod/package.json').version, /^4\.6\.[6-9]\d*$/);
