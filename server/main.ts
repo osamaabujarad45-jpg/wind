@@ -1492,9 +1492,13 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   const order = (await partnerOrder(req, Number(params[0])));
   if (order.status === 'cancelled') return order;
   if (!cancellable.includes(order.status)) fail(409, 'cannot_cancel');
-  if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-  if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
-  return (await partnerOrder(req, order.id));
+  // The KDF carve-out runs partner routes outside the HTTP envelope, so the cancelled push needs its
+  // own mutation transaction (enqueuePush refuses without one); same short boundary as partner create.
+  return (await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
+    if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
+    if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
+    return (await partnerOrder(req, order.id));
+  }));
 }, true);
 
 route('GET', '/api/orders', async ({ user, query }) => {
@@ -2317,7 +2321,7 @@ let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 
 const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
 registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
   reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm' };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
 const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
 let roadCachePoints = 0;
@@ -2403,7 +2407,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
       return { km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
-        avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name),
+        avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
     found = { promise, points: 0 };

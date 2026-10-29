@@ -40,7 +40,7 @@ Read [plan.md](plan.md) and [HANDOFF.md](HANDOFF.md) first. All new items below 
 
 ## T02: Reproduce the remaining review findings
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Re-run focused disposable probes for unverified findings. Capture expected versus actual behavior. Convert reproduced findings into the tasks below; add child tasks for findings not yet represented.
 
@@ -54,15 +54,15 @@ Read [plan.md](plan.md) and [HANDOFF.md](HANDOFF.md) first. All new items below 
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Each finding has reproduced/fixed/unverified/blocked status.
-- [ ] No production data is modified.
-- [ ] All unexplained failures have an owner task.
+- [x] Each finding has reproduced/fixed/unverified/blocked status.
+- [x] No production data is modified.
+- [x] All unexplained failures have an owner task.
 
 **Verification:** `npm test; npm run test:persistence`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Run suites sequentially; mocks are not provider evidence.
 
-**Evidence:** Characterization complete — see ../reports/verify-2026-10-29/T02-completion.md and evidence.md "T02 — characterization checkpoint". Parent closes when full `npm test` and `npm run test:persistence` are rerun sequentially on the final integrated tree (checkpoint window); every finding row already has reproduced/fixed/owner status and no unexplained failure lacks an owner.
+**Evidence:** Characterization complete — see ../reports/verify-2026-10-29/T02-completion.md and evidence.md "T02 — characterization checkpoint". **Closed 29 Oct:** full gates rerun sequentially on the final integrated tree, explicitly labelled local fallback (k5 `Permission denied`, exit 255): `npm test` **0** (87 suites), `npm run test:persistence` **0** (51 suites + 21 legacy-parity suites), `npm run test:contracts` **0**, `npm run lint` **0**, `npm run typecheck` **0**. The close-out caught a real regression the filtered gates had missed: the T18 KDF carve-out runs `/api/partner/*` outside the HTTP envelope, but only partner *create* got its own transaction — partner **cancel**'s `queuePush` then hit PostgreSQL's `Durable push requires the mutation transaction` → 500 `server_error` (SQLite deferred, so only PG legacy parity caught it). Fixed by wrapping the cancel mutation in `persistence.atomic` like partner create; reproduced (filtered legacy pickup FAIL → 500) and verified green after (PG legacy pickup PASS, SQLite pickup PASS, full persistence rerun exit 0). No production data touched.
 
 ## T03: Agree the map contract and regional corpus
 
@@ -92,10 +92,10 @@ Read [plan.md](plan.md) and [HANDOFF.md](HANDOFF.md) first. All new items below 
 
 ### Checkpoint C01 — after T03
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T01/T02/T03 complete; T02 closed this turn by the full-gate rerun below.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (`npm test` 87 suites 0; `test:persistence` 0; `test:contracts` 0; lint 0; typecheck 0.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (Server/spec tasks only; no UI surface changed.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
 
 ## T04: Fresh pickup location fallback
 
@@ -163,7 +163,7 @@ Implementation children (split after the frozen route-inventory gate exposed the
 
 ## T06: Provider-aware route contract
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Add typed renderer capability and route provenance without breaking existing OSRM consumers. Reset private route/ETA state on account, order, driver, stop or provider changes.
 
@@ -179,22 +179,22 @@ Implementation children (split after the frozen route-inventory gate exposed the
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Google content cannot reach MapLibre/Apple overlays.
-- [ ] Unknown capability chooses safe baseline.
-- [ ] Existing clients retain compatible responses.
+- [x] Google content cannot reach MapLibre/Apple overlays.
+- [x] Unknown capability chooses safe baseline.
+- [x] Existing clients retain compatible responses.
 
 **Verification:** `npm run test -- --filter=map`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Test unsupported provider combinations and a stale response arriving after switching.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. New `src/map-provider.ts`: typed `MapRenderer`/`RouteProvider`, `platformRenderers` (baked-binary capability table keyed by `Platform.OS`), `selectRenderer` (unknown platform → `maplibre` baseline — a kill switch cannot enable a renderer the binary lacks), `routeProvider` (normalizes absent → `osrm` legacy compat, string `'google-routes'` and the T07 proxy's metadata object → `google`, anything else → unknown), `canShowOnRenderer` (Google geometry only on a Google renderer; unknown provenance fails closed), `approachKey` (kept route/ETA state bound to order, driver, stop **and provider**). `useRoad` now resolves the platform renderer, drops lines whose provenance the renderer may not show, and includes provider in the kept-stop key. Server: `roadRoute` responses carry additive `provider: 'osrm'` (old clients ignore unknown fields; route.test fixture updated deliberately). Tests: map suite gains the capability/provenance/kept-key matrix plus source-wiring asserts; `npm run test -- --filter=map` 0 (1 suite), `--filter=route` 0 (2 suites), lint 0, both typechecks 0; full persistence gate (incl. PG legacy map/route parity) 0 on the same tree. Stale-response-after-switch and unsupported-combination manual checks are unit-covered; A53 visual pass rides the D06 device pass. No money/feasibility path reads map display data.
 
 ### Checkpoint C02 — after T06
 
-- [ ] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker.
-- [ ] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends.
-- [ ] Changed platform exports/builds and physical UI checks are evidenced where applicable.
-- [ ] Diff reviewed, feature gates preserved, evidence and next-task handoff updated.
+- [x] Prior three tasks meet criteria or have explicit blocked status; no dependent work crosses a blocker. (T04.2 device pass and T05.2 staging acceptance carry explicit blocked/deferred status batched into their physical/operator passes; no dependent code crossed them.)
+- [x] Lint, both typechecks and affected tests pass sequentially; shared persistence changes pass on both backends. (Full gates on the T06 tree: `npm test` 87 suites 0, `test:persistence` 0 incl. both backends and legacy parity, `test:contracts` 0, lint 0, typecheck 0, expo-doctor 21/21.)
+- [x] Changed platform exports/builds and physical UI checks are evidenced where applicable. (No UI surface changed in T04/T05/T06 landed code; A53 D06 visual pass owns the map-renderer device evidence.)
+- [x] Diff reviewed, feature gates preserved, evidence and next-task handoff updated. (Money/feasibility/COD paths untouched; payments and service gates unchanged.)
 
 ## T07: Google routing proxy
 

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
 import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { approachKey, canShowOnRenderer, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -225,6 +226,43 @@ assert.ok(!backtracks([[35.2, 32.0], [35.201, 32.0], [35.2, 32.0001], [35.19, 32
 assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+
+  // T06: renderer capability and route provenance (tasks/maps-contract.md).
+  // Each platform selects the renderer family actually baked into its binary; an unknown platform still
+  // gets the safe baseline, never a renderer that may be absent from the build.
+  assert.equal(selectRenderer('ios'), 'apple');
+  assert.equal(selectRenderer('android'), 'maplibre');
+  assert.equal(selectRenderer('web'), 'maplibre');
+  assert.equal(selectRenderer('windows'), 'maplibre', 'an unknown platform chooses the safe baseline');
+  assert.equal(selectRenderer(''), 'maplibre');
+  // Baseline OSRM geometry renders everywhere; Google content only on a Google renderer; unknown provenance nowhere.
+  for (const renderer of ['maplibre', 'apple', 'google']) assert.equal(canShowOnRenderer('osrm', renderer), true);
+  assert.equal(canShowOnRenderer('google', 'google'), true);
+  assert.equal(canShowOnRenderer('google', 'maplibre'), false, 'Google content cannot reach a MapLibre overlay');
+  assert.equal(canShowOnRenderer('google', 'apple'), false, 'Google content cannot reach an Apple overlay');
+  assert.equal(canShowOnRenderer('future-provider', 'google'), false, 'unknown provenance fails closed');
+  // Provenance normalization: absent names baseline (legacy responses), Google proxy metadata maps to 'google'.
+  assert.equal(routeProvider(undefined), 'osrm');
+  assert.equal(routeProvider(null), 'osrm');
+  assert.equal(routeProvider('osrm'), 'osrm');
+  assert.equal(routeProvider('google-routes'), 'google');
+  assert.deepEqual(routeProvider({ provider: 'google-routes' }), 'google');
+  assert.equal(routeProvider(7), 'unknown');
+  assert.equal(routeProvider({}), 'unknown');
+  // A kept route/ETA is bound to order, driver, stop and provider: any change drops it.
+  const target = { latitude: 32, longitude: 35 };
+  const key = order => approachKey(order, target, 'osrm');
+  assert.equal(key({ id: 7, driverId: 3 }), key({ id: 7, driverId: 3 }));
+  assert.notEqual(key({ id: 7, driverId: 3 }), key({ id: 7, driverId: 4 }), 'a driver change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), key({ id: 8, driverId: 3 }), 'an order change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, { latitude: 32, longitude: 35.001 }, 'osrm'), 'a stop change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, target, 'google'), 'a provider change drops the kept ETA');
+  assert.equal(approachKey({ id: 7, driverId: null }, target, 'osrm'), approachKey({ id: 7 }, target, 'osrm'), 'no driver means no driver, however it is spelled');
+  // The hook that fetches routes must pass provenance through the renderer guard (same style as the vendoring asserts).
+  const roadSource = readFileSync(new URL('../src/road.tsx', import.meta.url), 'utf8');
+  assert.ok(roadSource.includes('canShowOnRenderer'), 'useRoad must guard route lines by renderer capability');
+  assert.ok(roadSource.includes('routeProvider'), 'useRoad must read provenance off the route data');
+  assert.ok(roadSource.includes('approachKey'), 'useRoad must bind kept route state to order, driver, stop and provider');
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));

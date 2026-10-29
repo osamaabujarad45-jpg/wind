@@ -55,7 +55,7 @@ try {
   for (const bad of ['from=91,35&to=32,35', 'from=abc&to=32,35', 'to=32,35'])
     await call(`/route?${bad}`, { token: customer.token, expect: 400 });
   const road = await call('/route?from=31.90381,35.20341&to=32.2211,35.2544', { token: customer.token });
-  assert.deepEqual(road, { km: 61.2, minutes: 55, line: [[35.2034, 31.9038], [35.23, 32], [35.2544, 32.2211]], avoids: [], through: [], closed: [] });
+  assert.deepEqual(road, { km: 61.2, minutes: 55, line: [[35.2034, 31.9038], [35.23, 32], [35.2544, 32.2211]], avoids: [], through: [], closed: [], provider: 'osrm' });
   assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true);
   await call('/route?from=31.90383,35.20344&to=32.2211,35.2544', { token: customer.token });
   assert.equal(calls, 1, 'a fix a few metres away reuses the cached route');

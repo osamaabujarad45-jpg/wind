@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApi } from './api';
+import { approachKey, canShowOnRenderer, routeProvider, selectRenderer } from './map-provider';
 import { etaRange, fromDriver, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
-export type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids?: string[]; through?: string[]; closed?: Point[] };
+export type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids?: string[]; through?: string[]; closed?: Point[]; provider?: string };
 
 /**
  * Road line pickup→dropoff and the live driver's ETA to the next stop (SPEC-routing-eta.md).
@@ -16,7 +17,11 @@ export function useRoad(order: Order | undefined) {
   const from = order && (order.pickupPoint ?? city(order.pickupCity));
   const to = order && (order.dropoffPoint ?? city(order.dropoffCity));
   const active = !!order && activeStatuses.includes(order.status);
-  const route = useApi<RoadRoute>(from && to && (active || order?.status === 'searching') ? roadPath(from, to, 5) : null).data;
+  // T06: a route drawn here must come from a provider this platform's renderer may show (tasks/maps-contract.md):
+  // Google-sourced geometry never reaches a MapLibre/Apple overlay, and unknown provenance fails closed.
+  const renderer = selectRenderer(Platform.OS);
+  const showable = (route: RoadRoute | undefined) => route && canShowOnRenderer(routeProvider(route.provider), renderer) ? route : undefined;
+  const route = showable(useApi<RoadRoute>(from && to && (active || order?.status === 'searching') ? roadPath(from, to, 5) : null).data);
   // Before collection (and when returning to the sender) the driver heads to pickup, otherwise to dropoff.
   const toPickup = !!order && ['assigned', 'at_pickup', 'returning'].includes(order.status);
   // A courier with other stops first is not heading straight here: no ETA or approach line (SPEC-courier-run-eta.md).
@@ -24,10 +29,11 @@ export function useRoad(order: Order | undefined) {
   const target = toPickup ? from : to;
   const approach = useApi<RoadRoute>(driver && target ? roadPath(driver, target, 3, driver.heading) : null);
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
-  const fetched = approach.error ? undefined : approach.data;
+  const fetched = approach.error ? undefined : showable(approach.data);
   // Keep showing the previous ETA while the next one (after ~110 m of movement) is fetched, but only to the same stop:
-  // a new stop or a failed fetch drops it rather than show an ETA to somewhere the driver is no longer heading.
-  const stop = order && target ? `${order.id}:${order.driverId}:${target.latitude},${target.longitude}` : '';
+  // a new order, driver, stop or provider drops it rather than show an ETA to somewhere the driver is no longer heading.
+  const provider = routeProvider(route?.provider ?? fetched?.provider);
+  const stop = order ? approachKey(order, target, provider) : '';
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   if (fetched && (fetched !== kept?.route || kept.stop !== stop)) setKept({ stop, route: fetched });
   const eta = driver ? shownApproach(fetched, !!approach.error, kept, stop) : undefined;
