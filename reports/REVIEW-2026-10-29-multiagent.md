@@ -411,9 +411,10 @@ direction (runs on SQLite, 409s after cutover); P1 #4's "four files never run" (
 
 ## Needs a live probe (cannot be settled from source)
 
-1. Does the Container Apps ingress overwrite a client-set `X-Real-IP`? (decides P1 #3 live vs latent)
-2. Does the stack boot once the five gaps in P1 #1 are supplied? (no deploy was run, and `enableWorkloads`
-   is `false`, so this was never exercised)
+1. Does the Container Apps ingress overwrite a client-set `X-Real-IP`? (decides P1 #3 live vs latent —
+   the header keying itself is now **executed and proven bypassable**)
+2. Do the `(PG)` findings behave as read, against a real PostgreSQL? The gates were executed and return
+   409 on SQLite; their internals were not run. Needs `NODE_ENV=test`, `WIND_POSTGRES_TEST_ONLY=1`, loopback.
 3. Font-scale clipping threshold on a real device at 130–200 %.
 4. Play's actual reaction to `versionCode 1`.
 
