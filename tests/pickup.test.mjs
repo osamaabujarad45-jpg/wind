@@ -90,6 +90,22 @@ try {
   await advance(driver.token, await call(`/jobs/${partnerOrder.id}/accept`, { token: driver.token, body: {} }));
   assert.equal((await call(`/partner/orders/${partnerOrder.id}/cancel`, { partnerKey, body: {} })).status, 'cancelled');
 
+  // T26 disposition of the historical P3 claim: the five-miss lock survives a reattempt — only the
+  // return leg starts its own five attempts, and a support proof-reset is the deliberate unlock.
+  let locked = await advance(driver.token, await atPickup('parcel')); // in_transit, driver assigned by the helper
+  const goodCode = (await call(`/orders/${locked.id}`, { token: customer.token })).handoverCode;
+  for (let i = 0; i < 5; i++) await advance(driver.token, locked, { code: '0000', expectedStatus: 'in_transit' }, 400);
+  await advance(driver.token, locked, { code: goodCode, expectedStatus: 'in_transit' }, 409); // proof_locked
+  assert.equal((await call(`/orders/${locked.id}/exception`, { token: driver.token,
+    body: { reason: 'unreachable', requestId: randomUUID(), expectedStatus: 'in_transit' } })).status, 'on_hold');
+  await call(`/admin/orders/${locked.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient reached by phone' } });
+  await advance(driver.token, locked, { code: goodCode, expectedStatus: 'in_transit' }, 409); // the lock survived the reattempt
+  await call(`/orders/${locked.id}/exception`, { token: driver.token,
+    body: { reason: 'refused', requestId: randomUUID(), expectedStatus: 'in_transit' } }); // back on hold for the return decision
+  await call(`/admin/orders/${locked.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Bring the parcel back' } });
+  const returned = await call(`/orders/${locked.id}`, { token: customer.token });
+  await advance(driver.token, returned, { code: returned.returnCode }); // the return leg has its own five attempts
+
   console.log('pickup: ok');
 } finally {
   await shutdown();

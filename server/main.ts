@@ -862,6 +862,12 @@ async function promoFor(user: User, input: unknown, price: number) {
     return { id: null, referrerId: ref.user_id as number, code, discount: Math.min(REFERRAL_REWARD, price - 1) };
   }
   if (((await one('SELECT user_id FROM promo_owners WHERE promo_id = ?', p.id))?.user_id ?? user.id) !== user.id) fail(400, 'invalid_promo'); // someone's reward
+  // T26: the use count and the redemption insert share the caller's write transaction; PostgreSQL takes a
+  // per-promo-and-customer advisory lock so concurrent bookings cannot slip past the count under READ
+  // COMMITTED. A cancelled order frees its redemption (promoUses ignores cancelled orders), so a plain
+  // unique index would wrongly block the legitimate re-use of a cancelled booking's code.
+  if (persistence.backend === 'postgres')
+    (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_promo_use:' || ? || ':' || ?, 0))", p.id, user.id));
   if ((await one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id))!.n > 0 || (await one(promoUses, p.id))!.n >= p.max_uses
     || (p.first_order_only && (await one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)))) fail(409, 'promo_used');
   if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below â‚ª1, so nothing would be discounted
@@ -1612,14 +1618,29 @@ route('POST', '/api/orders/:id/rate', async ({ user, params, body }) => {
     const customerRating = stars(body.customerRating);
     if (order.status !== 'completed' || customerRating == null || (order.customerRating && order.customerRating !== customerRating)) fail(409, 'cannot_rate');
     if (order.customerRating === customerRating) return order; // a lost response must not make a saved rating look rejected
-    (await run('UPDATE orders SET customer_rating = ? WHERE id = ?', customerRating, order.id));
+    // T26: the claim is conditional on the column still being empty or already equal, so a concurrent
+    // second rating can neither overwrite the first with a different value nor double-write, while a
+    // replay of a lost response (same value) still succeeds.
+    if (!(await run('UPDATE orders SET customer_rating = ? WHERE id = ? AND (customer_rating IS NULL OR customer_rating = ?)',
+      customerRating, order.id, customerRating)).changes) {
+      const saved = Number((await one('SELECT customer_rating FROM orders WHERE id = ?', order.id))!.customer_rating);
+      if (saved !== customerRating) fail(409, 'cannot_rate');
+    }
     return (await getOrder(order.id, user));
   }
   const rating = stars(body.rating), priceRating = stars(body.priceRating);
   if (order.customerId !== user.id || order.status !== 'completed' || (rating == null && priceRating == null)
     || (rating != null && order.rating && order.rating !== rating)
     || (priceRating != null && order.priceRating && order.priceRating !== priceRating)) fail(409, 'cannot_rate');
-  (await run('UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?', rating, priceRating, order.id));
+  // T26: each provided column must still be empty or already equal (a raced different value is refused; a
+  // replay of a lost response, alone or beside a new field, still succeeds against the saved row).
+  const claims = [rating != null ? '(rating IS NULL OR rating = ?)' : '', priceRating != null ? '(price_rating IS NULL OR price_rating = ?)' : ''].filter(Boolean);
+  const claimValues = [rating, priceRating].filter(v => v != null);
+  if (!(await run(`UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?${claims.length ? ` AND ${claims.join(' AND ')}` : ''}`,
+    rating, priceRating, order.id, ...claimValues)).changes) {
+    const saved = (await one('SELECT rating, price_rating FROM orders WHERE id = ?', order.id))!;
+    if ((rating != null && Number(saved.rating) !== rating) || (priceRating != null && Number(saved.price_rating) !== priceRating)) fail(409, 'cannot_rate');
+  }
   return (await getOrder(order.id, user));
 });
 

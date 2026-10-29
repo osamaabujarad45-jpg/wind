@@ -790,7 +790,7 @@ Implementation children:
 
 ## T26: Order transition race review
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Reproduce P3 reattempt/proof lock, conditional rating, schedule and first-order promo races. Split each proven defect into a child if this exceeds one session. Never reset a proof lock without verified recipient recovery.
 
@@ -806,15 +806,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Every assertion has an executable disposition.
-- [ ] Expected-state conditions prevent stale transitions.
-- [ ] Wrong-code retries and first-order discounts remain bounded.
+- [x] Every assertion has an executable disposition.
+- [x] Expected-state conditions prevent stale transitions.
+- [x] Wrong-code retries and first-order discounts remain bounded.
 
 **Verification:** `npm run test -- --filter=pickup; npm run test -- --filter=schedule; npm run test -- --filter=promo; npm run test -- --filter=customer-rating`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Retain already-fixed reschedule ownership tests; use synchronized concurrent requests.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. **Rating race (real, fixed):** both rating branches read a snapshot then wrote unconditionally — a concurrent second rating with a different value could overwrite the first. Both UPDATEs are now conditional (`customer_rating IS NULL OR customer_rating = ?`, and per-provided-field equivalents for rating/price_rating), so a raced different value is refused `cannot_rate`, a raced or replayed same value (lost response) still succeeds, and a replay beside a new field (rating already saved + first priceRating) works — proven by a Promise.all race in customer-rating.test.mjs plus the existing replay suite. **Promo race (fixed without a constraint):** a unique `(promo_id, customer_id)` index was tried and correctly REJECTED — a cancelled order's redemption deliberately frees the code (`promoUses` ignores cancelled orders), so the index would block legitimate re-use; reverted before commit. The count-then-insert race is instead closed by a per-promo-and-customer `pg_advisory_xact_lock` inside the booking transaction (the T21 pattern); SQLite serializes through `BEGIN IMMEDIATE`. **Proof lock (by design, now executable):** the five-miss lock survives a driver reattempt — pickup.test.mjs walks five wrong codes → `proof_locked` with the correct code → on_hold → admin reattempt → still locked → return leg starts its own five attempts and completes. **Schedule race:** refuted in T01 (do not reopen); the reschedule ownership assertion remains green (schedule suite 0). Suites: customer-rating 0, pickup 0, promo 0, schedule 0, contracts 0, pg-contracts 0 (readiness migration expectation updated to the current 23 with the reason recorded), lint 0, typecheck 0.
 
 ## T27: Declared-scope authorization
 
