@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { fixture, polygon } from './eligibility-support.mjs';
+import { openToDriver } from '../server/domain/eligibility.ts';
 import { NON_LEGACY_TABLES } from '../server/migrate.ts';
 
 const parcelScope = (f, over = {}) => ({ itemCount: 2, lengthMm: 100, widthMm: 100, heightMm: 100, massGrams: 2000,
@@ -204,3 +205,55 @@ try {
   assert.ok(await q.db.one('SELECT order_id FROM capacity_reservations WHERE order_id=?', negotiated.id), 'the negotiated acceptance reserves the declared load');
   console.log('WP12 resource-scope: freight equipment/crew mismatch and negotiated acceptance passed');
 } finally { await q.close(); }
+
+// --- Browsing drivers see the load, never the value, reference or custody ----
+const v = await fixture('resview');
+try {
+  await v.setupCoverage(); await v.verify();
+  const open = await v.book({ declaredScope: parcelScope(v, { sourceRef: 'merchant:preassignment-1' }) });
+  const browseDriver = await v.account('driver', 'car');
+  const browseVehicle = await v.post('/vehicles', { ...v.vehicleBody, plate: 'SYNTHETIC-RESVIEW-CAR' });
+  await v.verify(browseDriver, browseVehicle.id);
+  const truckDriver = await v.account('driver', 'truck');
+  const openRow = await v.db.one('SELECT * FROM orders WHERE id=?', open.id);
+  process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight'; // what the test server runs with; the direct check reads this same variable
+  assert.equal(await openToDriver(v.db, { id: v.d1.user.id, role: 'driver', status: 'blocked', vehicle: 'car' }, openRow), false,
+    'a driver who is not active is not shown an open load');
+  assert.equal(await openToDriver(v.db, { id: v.d1.user.id, role: 'driver', status: 'active', vehicle: null }, openRow), false,
+    'no vehicle on file serves nothing');
+  assert.equal(await openToDriver(v.db, { id: v.d1.user.id, role: 'driver', status: 'active', vehicle: 'car' }, openRow), true,
+    'an active driver whose vehicle serves the service browses the order');
+  const browsed = await v.call(`/orders/${open.id}/scope`, { token: browseDriver.token });
+  assert.equal(browsed.declaredScope.massGrams, 2000, 'an eligible browsing driver sees the declared load');
+  assert.equal(browsed.declaredScope.declaredValueMinor, null, 'the insured value stays with the parties');
+  assert.equal(browsed.declaredScope.sourceRef, null, 'the merchant reference stays with the parties');
+  assert.deepEqual(browsed.custody, [], 'no custody is exposed before assignment');
+  const card = await v.call(`/orders/${open.id}`, { token: browseDriver.token });
+  assert.equal(card.declaredScope.declaredValueMinor, null, 'the job card redacts the insured value too');
+  assert.equal(card.declaredScope.sourceRef, null);
+  assert.equal((await v.call('/jobs', { token: browseDriver.token })).find(j => j.id === open.id)?.declaredScope?.sourceRef, null,
+    'the browsing list redacts the merchant reference too');
+  await v.call(`/orders/${open.id}/scope`, { token: truckDriver.token, expect: 404 });
+  assert.equal((await v.call(`/orders/${open.id}`, { token: truckDriver.token, expect: 404 })).error, 'not_found',
+    'the order itself was already hidden from a vehicle that does not serve its service');
+  const owner = await v.call(`/orders/${open.id}/scope`, { token: v.customer.token });
+  assert.equal(owner.declaredScope.declaredValueMinor, 5000, 'the customer keeps the full record');
+  assert.equal(owner.declaredScope.sourceRef, 'merchant:preassignment-1');
+  assert.equal((await v.call(`/orders/${open.id}/scope`, { token: v.admin.token })).declaredScope.sourceRef, 'merchant:preassignment-1',
+    'the admin keeps the full record');
+  await approachDeclared(v, open, browseVehicle.id);
+  assert.equal((await accept(v, browseDriver.token, open, 1)).status, 'assigned');
+  const assigned = await v.call(`/orders/${open.id}/scope`, { token: browseDriver.token });
+  assert.equal(assigned.declaredScope.declaredValueMinor, 5000, 'the assigned driver keeps the full record');
+  assert.equal(assigned.declaredScope.sourceRef, 'merchant:preassignment-1');
+  await v.call(`/orders/${open.id}/release`, { token: browseDriver.token, body: {} });
+  assert.equal((await v.call(`/orders/${open.id}`, { token: v.customer.token })).status, 'searching');
+  await v.call(`/orders/${open.id}/scope`, { token: browseDriver.token, expect: 404 });
+  assert.equal((await v.call(`/orders/${open.id}/scope`, { token: v.d1.token })).declaredScope.massGrams, 2000,
+    'another eligible driver still browses the released load');
+  const later = await v.book({ scheduledFor: v.now + 3600000, declaredScope: parcelScope(v) });
+  await v.call(`/orders/${later.id}/scope`, { token: browseDriver.token, expect: 404 });
+  assert.equal((await v.call(`/orders/${later.id}/scope`, { token: v.customer.token })).declaredScope.massGrams, 2000,
+    'the customer sees their own scheduled declaration');
+  console.log('WP12 resource-scope: browsing-driver scope is active, vehicle-bound, release-aware and redacted');
+} finally { await v.close(); }

@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
-import { offerRange } from '../../src/model.ts';
+import { offerRange, vehicleServices, type Vehicle } from '../../src/model.ts';
 import { declaredScopeRow } from './resource-scope.ts';
 
 type Fail = (status: number, message: string) => never;
@@ -48,6 +48,18 @@ export async function measuredScopes(db: Persistence, orderIds: number[]) {
   return Object.fromEntries(rows.map(r=>[r.order_id,Object.freeze({requirementsRevision:r.revision,grams:r.grams,cm3:r.cm3,pieces:r.pieces,seats:r.seats,
     items:r.items,equipment:r.equipment,rotationPolicy:r.rotation_policy,routeSeconds:r.route_seconds,serviceSeconds:r.service_seconds,
     pickupAfter:r.pickup_after,pickupBefore:r.pickup_before,dropoffBefore:r.dropoff_before})]));
+}
+
+/** The open pool is browsable only by an active driver whose own vehicle may carry the
+ *  service, once a scheduled order is released, and never by a driver who released it. */
+export async function openToDriver(db: Persistence, driver: { id: number; role: string; status?: string; vehicle?: string | null },
+  order: Row, now = Date.now()): Promise<boolean> {
+  if (driver.role !== 'driver' || driver.status !== 'active' || order.status !== 'searching') return false;
+  const enabled = (process.env.WIND_ENABLED_SERVICES ?? 'parcel').split(',').map(service => service.trim());
+  if (!services.includes(order.service) || !enabled.includes(order.service)) return false;
+  if (!(vehicleServices[driver.vehicle as Vehicle] ?? []).includes(order.service)) return false;
+  if (order.scheduled_for != null && Number(order.scheduled_for) > now + eligibilityDefaults.scheduleReleaseMinutes * 60_000) return false;
+  return !(await db.one('SELECT 1 FROM order_releases WHERE order_id=? AND driver_id=?', order.id, driver.id));
 }
 
 /** One implementation for actual HTTP offer/accept paths; no client eligibility assertion is trusted. */

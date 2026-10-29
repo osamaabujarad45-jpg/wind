@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { openToDriver } from './eligibility.ts';
 
 type Fail = (status: number, message: string) => never;
-type Actor = { id: number; role: string; status: string };
+type Actor = { id: number; role: string; status: string; vehicle?: string | null };
 type Context = { user: Actor; body: Row; params: string[] };
 type Register = (method: string, path: string, handler: (ctx: Context) => Promise<unknown>) => unknown;
 
@@ -174,6 +175,13 @@ export async function custodyFor(db: Persistence, orderId: number): Promise<Row[
   return rows.map(r => ({ id: Number(r.id), orderId: Number(r.order_id), kind: r.kind, actorId: Number(r.actor_id), actorRole: r.actor_role, createdAt: Number(r.created_at) }));
 }
 
+/** What a driver still browsing needs to judge the load: the insured value and the
+ *  merchant reference belong to the parties on the order, and custody starts with
+ *  the assignment. */
+function preassignmentScope(row: Row): Row {
+  return { ...serializeScope(row), declaredValueMinor: null, sourceRef: null };
+}
+
 type ActualLoad = { itemCount: number; massGrams: number; lengthMm: number; widthMm: number; heightMm: number };
 
 export class ResourceScope {
@@ -181,12 +189,12 @@ export class ResourceScope {
   private fail: Fail;
   constructor(db: Persistence, fail: Fail) { this.db = db; this.fail = fail; }
   private async requireAvailable() { if (!(await scopeAvailable(this.db))) this.fail(409, 'scope_unavailable'); }
-  async summary(orderId: number, viewer: { id: number; role: string }, order: Row): Promise<Row | null> {
+  async summary(orderId: number, viewer: Actor, order: Row): Promise<Row | null> {
     const row = await declaredScopeRow(this.db, orderId);
     if (!row) return null;
-    const visible = viewer.role === 'admin' || viewer.id === Number(order.customer_id) || viewer.id === Number(order.driver_id)
-      || (viewer.role === 'driver' && order.status === 'searching');
-    return visible ? serializeScope(row) : null;
+    const party = viewer.role === 'admin' || viewer.id === Number(order.customer_id) || viewer.id === Number(order.driver_id);
+    if (party) return serializeScope(row);
+    return (await openToDriver(this.db, viewer, order)) ? preassignmentScope(row) : null;
   }
   private async orderFor(orderId: number): Promise<Row> {
     return (await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId)) ?? this.fail(404, 'not_found');
@@ -250,10 +258,12 @@ export class ResourceScope {
   async getScope(actor: Actor, orderId: number) {
     await this.requireAvailable();
     const order = (await this.db.one('SELECT * FROM orders WHERE id=?', orderId)) ?? this.fail(404, 'not_found');
-    const searchingDriver = actor.role === 'driver' && order!.status === 'searching';
-    if (!searchingDriver) this.participant(order!, actor);
     const row = await declaredScopeRow(this.db, orderId);
-    return { declaredScope: row ? serializeScope(row) : null, custody: await custodyFor(this.db, orderId) };
+    if (actor.role === 'admin' || actor.id === Number(order!.customer_id) || actor.id === Number(order!.driver_id))
+      return { declaredScope: row ? serializeScope(row) : null, custody: await custodyFor(this.db, orderId) };
+    // A browsing driver is told what the load is, never its value, merchant reference or custody trail.
+    if (!(await openToDriver(this.db, actor, order!))) this.fail(404, 'not_found');
+    return { declaredScope: row ? preassignmentScope(row) : null, custody: [] };
   }
 
   async appendCustody(actor: Actor, orderId: number, body: Row) {
