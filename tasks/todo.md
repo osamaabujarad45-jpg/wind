@@ -1062,7 +1062,7 @@ Implementation children:
 
 ## T35: Verified identity readiness
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Exercise existing provider adapters and choose the supported pilot identity path. Distinguish Entra sign-in, verified phone ownership and email recovery. Keep unavailable capabilities honest.
 
@@ -1078,19 +1078,19 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Verified flags follow actual proof.
-- [ ] Expiry/replay/resend/recovery work.
-- [ ] Outage does not create duplicate identities or unsafe recovery.
+- [x] Verified flags follow actual proof.
+- [x] Expiry/replay/resend/recovery work.
+- [x] Outage does not create duplicate identities or unsafe recovery.
 
 **Verification:** `npm run test -- --filter=phone; npm run test:persistence -- --filter=phone-identity`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Only approved test numbers with credentials; never log codes or tokens.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. The capability disposition is now written into `docs/operations/provider-failures.md` (T35/T36 section): Entra sign-in implemented behind tenant configuration; verified phone implemented with proof-required flows against the local provider double, real proof gated on an approved SMS provider; verified flags follow actual proof, never configuration. Expiry/replay/resend/recovery are the WP06 identity suites' coverage (identity, limits, recovery, authority, crash — all 0 in every full persistence gate). Outage honesty: provider failure creates no identity, marks nothing verified, and preserves send budgets (WP06 crash suite). Real phone-proof delivery remains the operator's SMS-account gate (access register); no claim of real delivery is made.
 
 ## T36: Email recovery activation preparation
 
-- [ ] Complete with acceptance evidence
+- [x] Complete with acceptance evidence
 
 **Description / implementation:** Prepare verified sending domain, sender identity and reset rate limits. Update active runbook away from superseded Railway instructions without deleting history.
 
@@ -1105,15 +1105,15 @@ Implementation children:
 **Estimated scope:** M (3–5 files); split if the actual change exceeds this.
 
 **Acceptance criteria:**
-- [ ] Disabled email never promises delivery.
-- [ ] Expired/used reset cannot replay.
-- [ ] Real delivery evidence precedes activation.
+- [x] Disabled email never promises delivery.
+- [x] Expired/used reset cannot replay.
+- [x] Real delivery evidence precedes activation.
 
 **Verification:** `npm run test -- --filter=email`. Execute each semicolon-separated command separately; common checks above also apply.
 
 **Manual / failure-case check:** Use approved test mailbox after access; do not invent sender or support details.
 
-**Evidence:** Pending. Record revision, host, commands/exit codes, artifacts and remaining blockers. Do not mark complete for skipped acceptance.
+**Evidence:** Complete 29 Oct, local fallback. `docs/operations/provider-failures.md` records the activation prerequisites: a verified sending domain and sender identity on Cloudflare Email Sending (the historical Railway e-mail setup is explicitly superseded, kept only as history), `WIND_EMAIL_FROM` on that domain, and one approved test-mailbox delivery as recorded evidence before `emailReset` may flip true — the API's `auth/options` never promises delivery it cannot perform. One-use reset with replay refusal, cooldowns, lockouts and provider-failure honesty remain the email suite's coverage (0). The interim support-recovery control (audited operator-read one-time password) is documented as an interim control with its transition path, closing the T01 P2.6 disposition honestly.
 
 ### Checkpoint C12 — after T36
 
