@@ -14,7 +14,7 @@ export interface PaymentsProvider {
   query(id: string): Promise<Result>;
   capture(id: string): Promise<Result>;
   void(id: string): Promise<Result>;
-  refund(id: string, amountMinor: number): Promise<Result>;
+  refund(id: string, amountMinor: number, idempotencyKey: string): Promise<Result>;
 }
 export class FakePaymentsProvider implements PaymentsProvider {
   outcome: Outcome; queryOutcome: Outcome; calls = 0;
@@ -23,7 +23,7 @@ export class FakePaymentsProvider implements PaymentsProvider {
   async query(id: string) { return { outcome: this.queryOutcome, providerRef: `fake:${id}` }; }
   async capture(id: string) { return { outcome: this.outcome, providerRef: `fake:${id}` }; }
   async void(id: string) { return { outcome: 'voided' as const, providerRef: `fake:${id}` }; }
-  async refund(id: string, _amountMinor: number) { return { outcome: this.outcome, providerRef: `fake:${id}` }; }
+  async refund(id: string, _amountMinor: number, _idempotencyKey: string) { return { outcome: this.outcome, providerRef: `fake:${id}` }; }
 }
 export const COD_LIMIT_MINOR = 1000000;
 // No payment provider is wired yet. The BoP slice adds its config together with the real
@@ -75,7 +75,8 @@ export class Payments {
       // Refund states are set only by refund(), which keeps cumulative refund rows authoritative; webhook events never move them.
       const transitions: Record<string, string[]> = { created: ['pending'], pending: ['captured','failed','voided'], captured: [], partially_refunded: [] };
       const applied = (transitions[intent.status] ?? []).includes(event.eventType);
-      if (applied) await this.db.run('UPDATE payment_intents SET status=?,updated_at=? WHERE id=?::uuid', event.eventType, Date.now(), intent.id);
+      // Compare-and-set: a duplicate or out-of-order event can never move a row that already left intent.status.
+      if (applied) await this.db.run('UPDATE payment_intents SET status=?,updated_at=? WHERE id=?::uuid AND status=?', event.eventType, Date.now(), intent.id, intent.status);
       return { event: inserted, applied };
     });
   }
@@ -84,26 +85,59 @@ export class Payments {
     if (!Number.isSafeInteger(amount) || amount <= 0 || typeof reason !== 'string' || reason.trim().length < 5) this.fail(400, 'invalid_input');
     if (requestId !== undefined && (typeof requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(requestId))) this.fail(400, 'invalid_input');
     if (this.db.inTransaction) this.fail(409, 'refund_in_transaction');
-    const reservation = await this.tx(async () => {
+    const reservation: { prior?: Row; id?: string; businessRef?: string } = await this.tx(async () => {
       if (requestId) { const prior = await this.db.one('SELECT * FROM refunds WHERE business_ref=?', `refund:${requestId}`); if (prior) { if (String(prior.intent_id) !== intentId || Number(prior.amount_minor) !== amount) this.fail(409, 'idempotency_conflict'); return { prior }; } }
       const intent = await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid FOR UPDATE', intentId) ?? this.fail(404, 'not_found');
       if (requestId) { const prior = await this.db.one('SELECT * FROM refunds WHERE business_ref=?', `refund:${requestId}`); if (prior) { if (String(prior.intent_id) !== intentId || Number(prior.amount_minor) !== amount) this.fail(409, 'idempotency_conflict'); return { prior }; } }
       if (!['captured','partially_refunded'].includes(intent.status)) this.fail(409, 'payment_not_captured');
       const total = Number((await this.db.one("SELECT COALESCE(sum(amount_minor),0) AS total FROM refunds WHERE intent_id=?::uuid AND status IN ('requested','approved','completed')", intentId))!.total);
       if (total + amount > Number(intent.amount_minor)) this.fail(400, 'refund_exceeds_capture');
-      const id = randomUUID(); const inserted = await this.db.one("INSERT INTO refunds(id,intent_id,business_ref,amount_minor,reason,status,actor_id,created_at) VALUES(?::uuid,?::uuid,?,?,?,'requested',?,?) ON CONFLICT(business_ref) DO NOTHING RETURNING *", id, intentId, `refund:${requestId ?? id}`, amount, reason.trim(), actor.id, Date.now());
-      if (!inserted) { const prior = (await this.db.one('SELECT * FROM refunds WHERE business_ref=?', `refund:${requestId}`))!; if (String(prior.intent_id) !== intentId || Number(prior.amount_minor) !== amount) this.fail(409, 'idempotency_conflict'); return { prior }; }
-      return { id };
+      const id = randomUUID(), businessRef = `refund:${requestId ?? id}`;
+      const inserted = await this.db.one("INSERT INTO refunds(id,intent_id,business_ref,amount_minor,reason,status,actor_id,created_at) VALUES(?::uuid,?::uuid,?,?,?,'requested',?,?) ON CONFLICT(business_ref) DO NOTHING RETURNING *", id, intentId, businessRef, amount, reason.trim(), actor.id, Date.now());
+      if (!inserted) { const prior = (await this.db.one('SELECT * FROM refunds WHERE business_ref=?', businessRef))!; if (String(prior.intent_id) !== intentId || Number(prior.amount_minor) !== amount) this.fail(409, 'idempotency_conflict'); return { prior }; }
+      return { id, businessRef };
     });
     if (reservation.prior) return reservation.prior;
-    const id = reservation.id!;
-    let result: Result; try { result = await provider.refund(intentId, amount); } catch { result = { outcome: 'timeout', providerRef: '' }; }
+    let result: Result; try { result = await provider.refund(intentId, amount, reservation.businessRef!); } catch { result = { outcome: 'timeout', providerRef: '' }; }
+    return this.recordRefund(intentId, reservation.id!, 'requested', result);
+  }
+  /** The reserved row stays `requested` until a definitive provider outcome; nothing terminal ever moves again. */
+  private async recordRefund(intentId: string, refundId: string, from: 'requested' | 'approved', result: Result) {
+    const next = result.outcome === 'captured' ? 'completed' : ['failed','voided'].includes(result.outcome) ? 'rejected' : null;
     return this.tx(async () => {
-      const intent = (await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid FOR UPDATE', intentId))!;
-      if (result.outcome === 'captured') { await this.db.run("UPDATE refunds SET status='completed' WHERE id=?::uuid", id); const total = Number((await this.db.one("SELECT COALESCE(sum(amount_minor),0) AS total FROM refunds WHERE intent_id=?::uuid AND status='completed'", intentId))!.total); await this.db.run('UPDATE payment_intents SET status=?,updated_at=? WHERE id=?::uuid', total === Number(intent.amount_minor) ? 'refunded' : 'partially_refunded', Date.now(), intentId); }
-      else await this.db.run("UPDATE refunds SET status='rejected' WHERE id=?::uuid", id);
-      return (await this.db.one('SELECT * FROM refunds WHERE id=?::uuid', id))!;
+      if (!next) {
+        if (from === 'approved') await this.db.run("UPDATE refunds SET status='requested' WHERE id=?::uuid AND status='approved'", refundId);
+        return (await this.db.one('SELECT * FROM refunds WHERE id=?::uuid', refundId))!;
+      }
+      const moved = await this.db.run('UPDATE refunds SET status=? WHERE id=?::uuid AND status=?', next, refundId, from);
+      if (next === 'completed' && Number(moved.changes) > 0) {
+        const intent = (await this.db.one('SELECT amount_minor FROM payment_intents WHERE id=?::uuid FOR UPDATE', intentId))!;
+        const total = Number((await this.db.one("SELECT COALESCE(sum(amount_minor),0) AS total FROM refunds WHERE intent_id=?::uuid AND status='completed'", intentId))!.total);
+        await this.db.run("UPDATE payment_intents SET status=?,updated_at=? WHERE id=?::uuid AND status IN ('captured','partially_refunded')", total >= Number(intent.amount_minor) ? 'refunded' : 'partially_refunded', Date.now(), intentId);
+      }
+      return (await this.db.one('SELECT * FROM refunds WHERE id=?::uuid', refundId))!;
     });
+  }
+  /**
+   * Bounded sweep for refunds stuck after an uncertain provider call. A claim is a compare-and-set
+   * (`requested` -> `approved`), so one worker owns the retry; it reuses the stored business ref as
+   * the provider idempotency key, and releases the claim only on a definitive answer.
+   * shortcut: two conflicting definitive answers for the same key are settled by whichever lands
+   * first; upgrade to a provider statement feed if a PSP ever answers both ways.
+   */
+  async reconcileRefunds(limit = 20, staleMs = 60_000) {
+    const provider = this.provider;
+    if (!provider || !(await paymentsAvailable(this.db))) return 0;
+    const stale = await this.db.all("SELECT id,intent_id,business_ref,amount_minor FROM refunds WHERE status='requested' AND created_at<=? ORDER BY created_at LIMIT ?", Date.now() - staleMs, limit);
+    let settled = 0;
+    for (const row of stale) {
+      const claimed = await this.db.run("UPDATE refunds SET status='approved' WHERE id=?::uuid AND status='requested'", row.id);
+      if (Number(claimed.changes) < 1) continue;
+      let result: Result; try { result = await provider.refund(String(row.intent_id), Number(row.amount_minor), String(row.business_ref)); } catch { result = { outcome: 'timeout', providerRef: '' }; }
+      const refund = await this.recordRefund(String(row.intent_id), String(row.id), 'approved', result);
+      if (['completed','rejected'].includes(String(refund.status))) settled++;
+    }
+    return settled;
   }
   async refundOrder(actor: Actor, orderId: number, body: Row) { await this.providerGate(); needStaff(await staffActor(this.db, actor), this.fail, 'finance'); const intent = await this.db.one('SELECT id FROM payment_intents WHERE order_id=?', orderId) ?? this.fail(404, 'not_found'); return this.refund(actor, String(intent.id), body.amountMinor, body.reason, body.requestId); }
   async createCod(actor: Actor, orderId: number, body: Row) {

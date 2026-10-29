@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { fixture } from './eligibility-support.mjs';
 import { Payments, FakePaymentsProvider } from '../server/domain/payments.ts';
+import { DurableWorker } from '../server/worker.ts';
 import { NON_LEGACY_TABLES } from '../server/migrate.ts';
 const f = await fixture('payments');
 const fail = (status, message) => { throw Object.assign(new Error(message), {status}); };
@@ -48,7 +49,12 @@ try {
   assert.equal((await pay.getIntent(customer, order2.id)).status, 'captured');
   const intent2 = await pay.getIntent(customer, order2.id);
   provider.refund = async () => { throw new Error('provider unavailable'); };
-  assert.equal((await pay.refund(admin, intent2.id, price2, 'test reason')).status, 'rejected');
+  const unresolved = await pay.refund(admin, intent2.id, price2, 'test reason');
+  assert.equal(unresolved.status, 'requested', 'a thrown provider call leaves the refund reserved, never terminal');
+  await assert.rejects(pay.refund(admin, intent2.id, price2, 'test reason'), e => e.status === 400 && e.message === 'refund_exceeds_capture');
+  provider.refund = async () => ({ outcome: 'failed', providerRef: 'fake' });
+  assert.equal(await pay.reconcileRefunds(10, 0), 1, 'a definitive provider failure releases the reservation');
+  assert.equal((await f.db.one('SELECT status FROM refunds WHERE id=?::uuid', unresolved.id)).status, 'rejected');
   let release; const waiting = new Promise(resolve => { release = resolve; });
   let called; const started = new Promise(resolve => { called = resolve; });
   let refundCalls = 0;
@@ -70,6 +76,40 @@ try {
   const rid3 = randomUUID(); const both = Promise.all([pay.refund(admin, intent3.id, price3, 'test reason', rid3), pay.refund(admin, intent3.id, price3, 'test reason', rid3)]);
   release3(); const [ra, rb] = await both; assert.equal(ra.id, rb.id); assert.equal(calls3, 1);
   assert.equal((await f.db.one('SELECT status FROM refunds WHERE id=?::uuid', ra.id)).status, 'completed');
+  // T28 unknown refund: a pending/timeout outcome keeps the amount reserved and blocked, and every
+  // provider attempt carries the stored business ref so a retry cannot double-spend.
+  const order4 = await f.book(); await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=created_at WHERE id=?", driver.id, order4.id);
+  const price4 = (await f.db.one('SELECT price_minor FROM orders WHERE id=?', order4.id)).price_minor; provider.outcome = 'pending';
+  assert.equal((await pay.createIntent(customer, order4.id, { amountMinor: price4 })).status, 'pending');
+  const intent4 = await pay.getIntent(customer, order4.id); assert.equal(intent4.status, 'captured');
+  const keys = []; provider.refund = async (id, _amount, key) => { keys.push(key); return { outcome: 'pending', providerRef: `fake:${id}` }; };
+  const unknown = await pay.refund(admin, intent4.id, price4, 'synthetic unknown refund');
+  assert.equal(unknown.status, 'requested', 'an uncertain provider outcome stays reserved, never rejected');
+  const stored = await f.db.one('SELECT business_ref FROM refunds WHERE id=?::uuid', unknown.id);
+  assert.equal(keys[0], stored.business_ref, 'provider refund carries the stored business ref as its idempotency key');
+  await assert.rejects(pay.refund(admin, intent4.id, price4, 'synthetic retry refund'), e => e.status === 400 && e.message === 'refund_exceeds_capture');
+  assert.equal(keys.length, 1, 'the blocked retry never reaches the provider');
+  // Bounded sweep: CAS-claims only stale reserved rows, retries with the same key, never regresses a terminal state.
+  const worker = new DurableWorker(f.db, { payments: pay, refundStaleMs: 0 });
+  assert.equal(await worker.processRefundReconciliation(), 0, 'an unresolved sweep keeps the row reserved');
+  assert.equal((await f.db.one('SELECT status FROM refunds WHERE id=?::uuid', unknown.id)).status, 'requested');
+  assert.equal(keys[1], keys[0], 'the sweep retry reuses the same idempotency key');
+  provider.refund = async (id, _amount, key) => { keys.push(key); return { outcome: 'captured', providerRef: `fake:${id}` }; };
+  assert.equal(await worker.processRefundReconciliation(), 1);
+  assert.equal(keys[2], keys[0], 'the definitive retry reuses the same idempotency key');
+  assert.equal((await f.db.one('SELECT status FROM refunds WHERE id=?::uuid', unknown.id)).status, 'completed');
+  assert.equal((await pay.getIntent(customer, order4.id)).status, 'refunded');
+  provider.refund = async () => { throw new Error('a terminal refund must never be re-sent'); };
+  assert.equal(await worker.processRefundReconciliation(), 0);
+  const late = await pay.applyProviderEvent({ provider: 'fake', providerEventId: randomUUID(), intentId: intent4.id, eventType: 'failed' }, 'test-signature');
+  assert.equal(late.applied, false, 'a late provider event cannot regress a refunded intent');
+  assert.equal((await pay.getIntent(customer, order4.id)).status, 'refunded');
+  for (const n of [1, 2, 3]) await f.db.run("INSERT INTO refunds(id,intent_id,business_ref,amount_minor,reason,status,actor_id,created_at) VALUES(?::uuid,?::uuid,?,1,'synthetic sweep bound','requested',?,?)", randomUUID(), intent4.id, `refund:sweep-${n}`, admin.id, Date.now() - 1);
+  let boundedCalls = 0; provider.refund = async () => { boundedCalls++; return { outcome: 'failed', providerRef: 'fake' }; };
+  const limited = new DurableWorker(f.db, { payments: pay, refundStaleMs: 0, refundSweepLimit: 2 });
+  assert.equal(await limited.processRefundReconciliation(), 2); assert.equal(boundedCalls, 2, 'one sweep settles at most refundSweepLimit rows');
+  assert.equal(await limited.processRefundReconciliation(), 1); assert.equal(boundedCalls, 3);
+  assert.equal(await limited.processRefundReconciliation(), 0);
   // Real HTTP envelope: provider routes own short transactions, so the route reaches the provider
   // instead of failing refund_in_transaction inside the request-long atomic wrapper.
   const h = await fixture('paymentshttp', { WIND_PAYMENTS_TEST_ONLY: '1' });
@@ -79,7 +119,7 @@ try {
     const hPrice = (await h.db.one('SELECT price_minor FROM orders WHERE id=?', hOrder.id)).price_minor;
     assert.equal((await h.call(`/orders/${hOrder.id}/payments`, { token: h.customer.token, body: { amountMinor: hPrice } })).status, 'pending');
     assert.equal((await h.call(`/orders/${hOrder.id}/payments`, { token: h.customer.token })).status, 'captured');
-    assert.equal((await h.call(`/orders/${hOrder.id}/payments/refund`, { token: h.admin.token, body: { amountMinor: hPrice, reason: 'test reason', requestId: randomUUID() } })).status, 'rejected');
+    assert.equal((await h.call(`/orders/${hOrder.id}/payments/refund`, { token: h.admin.token, body: { amountMinor: hPrice, reason: 'test reason', requestId: randomUUID() } })).status, 'requested');
   } finally { await h.close(); }
   await pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000});
   assert.equal((await pay.collectCod(driver,order.id,{amountMinor:400})).status,'partial');
