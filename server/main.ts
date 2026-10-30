@@ -10,11 +10,11 @@ import { customerStatistics, driverStatistics } from './domain/statistics.ts';
 import { durableProtocolAvailable, enqueuePush, publicEvent } from './domain/events.ts';
 import { versionedCommand } from './domain/commands.ts';
 import { PhoneIdentity, registerPhoneRoutes } from './domain/phone-identity.ts';
-import { Eligibility, measuredCapability, measuredScopes, registerEligibilityRoutes } from './domain/eligibility.ts';
+import { Eligibility, measuredCapability, measuredScopes, openToDriver, registerEligibilityRoutes } from './domain/eligibility.ts';
 import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
-import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
+import { ResourceScope, prefetchDeclaredScopes, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
 import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
 import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
@@ -23,7 +23,7 @@ import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
-import { destinationAvailable, destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
+import { destinationAvailable, destinationEligible, pendingDestination, prefetchPendingDestinations, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
@@ -293,7 +293,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
-      ? (await one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id)) as Order['safetyReport'] ?? null
+      ? (await persistence.memo(`safety-report:${r.id}:${viewer.id}`, () => one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id))) as Order['safetyReport'] ?? null
       : null,
     dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null,
       credit: r.dispute_credit_code ? { code: r.dispute_credit_code as string, amount: r.dispute_credit_amount as number } : null } : null,
@@ -352,18 +352,33 @@ async function jobCardData(rows: Row[], driverId: number): Promise<JobCardData> 
   for (const row of rowsWithOffers) offers.set(Number(row.order_id), { price: Number(row.price), createdAt: Number(row.created_at) });
   return { customers, offers };
 }
-const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.all((await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
-  WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL))
+const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.all((await persistence.memo(`offers:${orderId}`, () => all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
+  WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL)))
   .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) }))));
+
+/** T43.2: a page of orders costs one query per summary kind; toOrder's per-row reads then hit the request memo. */
+async function prefetchOrders(rows: Row[], viewer: User) {
+  const ids = rows.map(r => Number(r.id)), marks = (list: unknown[]) => list.map(() => '?').join(',');
+  const parties = rows.filter(r => viewer.id === r.customer_id || viewer.id === r.driver_id);
+  const reported = viewer.role === 'admin' ? [] : rows.filter(r => r.safety_count > 0 && (viewer.id === r.customer_id || viewer.id === r.driver_id)).map(r => Number(r.id));
+  const offered = rows.filter(r => viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null).map(r => Number(r.id));
+  await Promise.all([
+    dispatch.prefetch(ids, viewer.role === 'driver' ? viewer.id : undefined), rideLifecycle.prefetch(ids), prefetchDeclaredScopes(persistence, ids),
+    prefetchPendingDestinations(persistence, parties),
+    reported.length && all(`SELECT order_id, status, kind, resolution FROM safety_incidents WHERE reporter_id = ? AND order_id IN (${marks(reported)}) ORDER BY id DESC`, viewer.id, ...reported)
+      .then(found => { const latest = new Map<number, Row>(); for (const { order_id, ...report } of found) if (!latest.has(Number(order_id))) latest.set(Number(order_id), report);
+        for (const id of reported) void persistence.memo(`safety-report:${id}:${viewer.id}`, async () => latest.get(id)); }),
+    offered.length && all(`SELECT f.order_id, f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
+      WHERE f.order_id IN (${marks(offered)}) ${offerOpen} ORDER BY f.price, f.created_at`, ...offered, Date.now() - OFFER_TTL)
+      .then(found => { for (const id of offered) void persistence.memo(`offers:${id}`, async () => found.filter(f => Number(f.order_id) === id).slice(0, 20).map(({ order_id, ...f }) => f)); }),
+  ]);
+}
 
 async function getOrder(id: number, viewer: User): Promise<Order> {
   const r = (await one(`${orderSelect} WHERE o.id = ?`, id)) ?? fail(404, 'not_found');
-  const released = viewer.role === 'driver' && r.status === 'searching' &&
-    !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
-  const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
-    (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && enabledServices.includes(r.service) && servesFor(viewer.vehicle).includes(r.service)
-      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
-  if (!canSee || released) fail(404, 'not_found');
+  // T27.2: parties always see their order; anyone else only a job openToDriver would offer them (one shared policy).
+  const party = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id;
+  if (!party && !(await openToDriver(persistence, viewer, r))) fail(404, 'not_found');
   const order = await toOrder(r, viewer);
   // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
   if (order.driverId && (viewer.role === 'admin' || viewer.id === r.customer_id || viewer.id === r.driver_id))
@@ -1594,13 +1609,15 @@ route('GET', '/api/orders', async ({ user, query }) => {
   // Load more: the next page of ended orders below the oldest one the client holds. Open work is never paged.
   if (before !== null) {
     const id = /^[1-9]\d{0,14}$/.test(before) ? Number(before) : fail(400, 'invalid_input');
-    return (await Promise.all((await all(`${orderSelect} WHERE ${where}${filter} AND NOT (${open}) AND o.id < ? ORDER BY o.id DESC LIMIT ${HISTORY_PAGE}`, ...args, id))
-      .map(async r => (await toOrder(r, user)))));
+    const rows = await all(`${orderSelect} WHERE ${where}${filter} AND NOT (${open}) AND o.id < ? ORDER BY o.id DESC LIMIT ${HISTORY_PAGE}`, ...args, id);
+    await prefetchOrders(rows, user);
+    return await Promise.all(rows.map(r => toOrder(r, user)));
   }
   // First page: every open order, however much newer history there is, plus the newest page of ended ones.
   const newest = `SELECT o.id FROM orders o WHERE ${where}${filter} AND NOT (${open}) ORDER BY o.id DESC LIMIT 1 OFFSET ${HISTORY_PAGE - 1}`;
-  return (await Promise.all((await all(`${orderSelect} WHERE ${where}${filter} AND (${open} OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args))
-    .map(async r => (await toOrder(r, user)))));
+  const rows = await all(`${orderSelect} WHERE ${where}${filter} AND (${open} OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args);
+  await prefetchOrders(rows, user);
+  return await Promise.all(rows.map(r => toOrder(r, user)));
 });
 
 async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {

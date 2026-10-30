@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
+import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, firstSlotKey, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { browserPickupWatch, cachedPickup, findPickup, withPickupPermission } from '../customer-location';
 import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { type PlaceCandidate } from '../place-search';
@@ -78,14 +78,16 @@ function BookForm() {
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>(params.when === 'later' ? 'later' : 'now');
   const [slot, setSlot] = useState<number | null>(null);
-  // T40: the ~227 Intl formattings behind scheduleSlots belong to the half-hour bucket, not to every keystroke.
-  // The bucket is derived in an effect; the render keeps the last list until the next half-hour begins.
-  const [slotBucket, setSlotBucket] = useState(() => Math.floor(Date.now() / (30 * 60_000)));
+  // T40: the ~227 Intl formattings behind scheduleSlots rebuild only when the first bookable slot moves, not on
+  // every keystroke. The key is derived each render so a shown list never starts under an hour ahead; the
+  // timer only re-renders an idle form once that slot has passed.
+  const [, setSlotTick] = useState(firstSlotKey);
   useEffect(() => {
-    const timer = setInterval(() => setSlotBucket(Math.floor(Date.now() / (30 * 60_000))), 60_000);
+    const timer = setInterval(() => setSlotTick(firstSlotKey()), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const slots = useMemo(() => scheduleSlots(), [slotBucket]);
+  const slotKey = firstSlotKey();
+  const slots = useMemo(() => scheduleSlots(slotKey * 30 * 60_000 - 60 * 60_000), [slotKey]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);

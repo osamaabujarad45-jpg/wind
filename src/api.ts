@@ -50,7 +50,9 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
   useEffect(() => { latestPath.current = path; }, [path]);
   const inFlight = useRef<number | null>(null);
   const load = useCallback(async (force = false) => {
-    if (!path) return undefined;
+    // A reload bound to a path the screen has left (a save finishing after a new search) must not cancel the
+    // current path's load: its forced generation bump would drop that answer and leave the screen loading.
+    if (!path || path !== latestPath.current) return undefined;
     if (inFlight.current === generation.current) {
       if (!force) return undefined;
       generation.current++; // a manual refresh must not wait for an older snapshot

@@ -59,6 +59,7 @@ try {
   await call(`/orders/${other.id}/messages`, { token: driver2.token, body: { body: 'Gate code 4411' } });
   await call(`/orders/${other.id}/release`, { token: driver2.token, body: {} });
   await call(`/orders/${other.id}/messages`, { token: driver2.token, expect: 404 });
+  await call(`/orders/${other.id}`, { token: driver2.token, expect: 404 }); // T27.2: a released job is not offered back
   assert.deepEqual(await call(`/orders/${other.id}/messages`, { token: customer.token }), []); // unassigned: nothing shown
   assert.equal((await call(`/orders/${other.id}/messages`, { token: admin.token })).length, 1); // support still sees it
   void second;

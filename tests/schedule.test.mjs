@@ -4,11 +4,18 @@ import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
-import { dayKey, scheduleSlots } from '../src/booking.ts';
+import { dayKey, firstSlotKey, scheduleSlots } from '../src/booking.ts';
 import { apiCaller } from './support/api.mjs';
 
 // Slots follow Palestine time even on a phone set elsewhere.
 process.env.TZ = 'Europe/London';
+// T40: the booking form memoizes the slot list on firstSlotKey; every instant sharing a key gets the same first
+// slot, at least an hour ahead, and no slot past the server's seven days.
+for (let now = Date.UTC(2026, 9, 4, 4, 0), end = now + 3 * 3_600_000; now < end; now += 7 * 60_000 + 13_001) {
+  const memo = scheduleSlots(firstSlotKey(now) * 30 * 60_000 - 60 * 60_000), fresh = scheduleSlots(now);
+  assert.equal(memo[0], fresh[0], `first slot at ${new Date(now).toISOString()}`);
+  assert.ok(memo[0] >= now + 60 * 60_000 && memo.at(-1) <= now + 7 * 86_400_000);
+}
 {
   const now = Date.UTC(2026, 9, 4, 17, 10); // 20:10 in Hebron (UTC+3)
   const slots = scheduleSlots(now);

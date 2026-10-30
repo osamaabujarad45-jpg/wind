@@ -88,11 +88,24 @@ export class RideLifecycle {
     return row!;
   }
 
+  /** T43.2: one query per table for a page of orders seeds the per-order reads summary makes. */
+  async prefetch(orderIds: number[]) {
+    if (!orderIds.length || !(await this.available())) return;
+    const marks = orderIds.map(() => '?').join(',');
+    const rows = new Map((await this.db.all(`SELECT * FROM ride_lifecycle WHERE order_id IN (${marks})`, ...orderIds)).map(row => [Number(row.order_id), row]));
+    const attempts = new Map((await this.db.all(`SELECT order_id, failures FROM ride_boarding_attempts WHERE order_id IN (${marks})`, ...orderIds))
+      .map(row => [Number(row.order_id), { failures: row.failures }]));
+    for (const id of orderIds) {
+      void this.db.memo(`ride-lifecycle:${id}`, async () => rows.get(id));
+      void this.db.memo(`ride-attempts:${id}`, async () => attempts.get(id));
+    }
+  }
+
   async summary(orderId: number, viewer: { id: number; role: string }, order: Row) {
     if (!(await this.available())) return null;
-    const row = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=?', orderId);
+    const row = await this.db.memo(`ride-lifecycle:${orderId}`, () => this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=?', orderId));
     if (!row) return null;
-    const attempts = await this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', orderId);
+    const attempts = await this.db.memo(`ride-attempts:${orderId}`, () => this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', orderId));
     const failures = Number(attempts?.failures ?? 0);
     const arrivedAt = row.arrived_at == null ? null : Number(row.arrived_at);
     const canSeeCode = !!row.boarding_code && Number(row.assignment_epoch) === Number(order.assignment_epoch)

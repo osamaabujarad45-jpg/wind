@@ -309,8 +309,9 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     }
     if (!servicesEnabled) { void stopBackgroundLocation().catch(() => {}); return; }
     let cancelled = false;
+    // T39: an unchanged answer keeps the same state object, so the 3 s poll does not re-render every consumer.
     const status = () => backgroundLocationState().then(value => {
-      if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value });
+      if (!cancelled) setTrackingResult(prev => prev?.actor === actor && prev.orderId === nativeOrderId && prev.value === value ? prev : { actor, orderId: nativeOrderId, value });
     }).catch(() => {});
     if (activeGpsTestEnabled) void stopBackgroundLocation().catch(() => {});
     void Location.getBackgroundPermissionsAsync().then(p => { if (!cancelled) setBgResult({ actor, granted: p.granted }); }).catch(() => {});

@@ -37,9 +37,17 @@ export async function scopeAvailable(db: Persistence): Promise<boolean> {
 
 /** The declared row for an order, or null when migration 15 has not run. */
 export async function declaredScopeRow(db: Persistence, orderId: number): Promise<Row | null> {
-  if (db.backend !== 'postgres') return null;
-  if (!(await db.one("SELECT to_regclass('order_declared_scope') AS t"))?.t) return null;
-  return (await db.one('SELECT * FROM order_declared_scope WHERE order_id=?', orderId)) ?? null;
+  if (!(await declaredScopeTable(db))) return null;
+  return (await db.memo(`declared-scope:${orderId}`, () => db.one('SELECT * FROM order_declared_scope WHERE order_id=?', orderId))) ?? null;
+}
+const declaredScopeTable = async (db: Persistence) => db.backend === 'postgres'
+  && db.memo('declaredScopeTable', async () => !!(await db.one("SELECT to_regclass('order_declared_scope') AS t"))?.t);
+/** T43.2: one query for a page of orders seeds the per-order reads declaredScopeRow makes. */
+export async function prefetchDeclaredScopes(db: Persistence, orderIds: number[]) {
+  if (!orderIds.length || !(await declaredScopeTable(db))) return;
+  const rows = new Map((await db.all(`SELECT * FROM order_declared_scope WHERE order_id IN (${orderIds.map(() => '?').join(',')})`, ...orderIds))
+    .map(row => [Number(row.order_id), row]));
+  for (const id of orderIds) void db.memo(`declared-scope:${id}`, async () => rows.get(id));
 }
 
 function intField(fail: Fail, value: unknown, min: number, max: number): number {

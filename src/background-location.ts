@@ -15,23 +15,17 @@ const CANDIDATE = 'wind.active-gps.candidate';
 const SEQUENCE = 'wind.active-gps.sequence';
 export const activeGpsTestEnabled = typeof __DEV__ !== 'undefined' && __DEV__ && process.env.EXPO_PUBLIC_TEST_ACTIVE_GPS === '1';
 const accessible = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
-// T39: the driver screen's 3 s tracking poll re-reads the same context/receipt records every tick. A short
-// per-key cache with write invalidation keeps that poll off SecureStore without weakening freshness: any
-// write (and every delete) refreshes or drops the entry, so the delivery path still reads what it just wrote
-// and authority changes take effect immediately. The auth token is never cached — logout must win at once.
-const readCache = new Map<string, { at: number; value: string | null }>();
-const READ_TTL_MS = 2_000;
 async function read<T>(key: string): Promise<T | null> {
-  const cached = readCache.get(key);
-  const value = cached && Date.now() - cached.at < READ_TTL_MS
-    ? cached.value
-    : await SecureStore.getItemAsync(key).then(found => { readCache.set(key, { at: Date.now(), value: found }); return found; });
+  const value = await SecureStore.getItemAsync(key);
   try { return value ? JSON.parse(value) as T : null; } catch { return null; }
 }
-function invalidateRead(key: string) { readCache.delete(key); }
 let queue = Promise.resolve();
 // A restored native registration is not authority for this JavaScript launch.
 let trackingEnabled = false;
+// T39: the driver screen's 3 s status poll answers from this launch's own writes instead of SecureStore.
+// Only this launch can enable tracking, so its context and receipts are the only ones the poll may count.
+let currentId: string | null = null;
+let lastReceipt: TrackingReceipt | null = null;
 let authorityGeneration = 0;
 const serial = <T,>(action: () => Promise<T>): Promise<T> => {
   const next = queue.then(action, action);
@@ -48,7 +42,7 @@ export function stopBackgroundLocation(expectedId?: string) {
     trackingEnabled = false;
     await SecureStore.deleteItemAsync(CONTEXT);
     await SecureStore.deleteItemAsync(RECEIPT);
-    invalidateRead(CONTEXT); invalidateRead(RECEIPT);
+    currentId = null; lastReceipt = null;
     if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
   });
 }
@@ -85,7 +79,7 @@ export function startBackgroundLocation(actor: number, orderId: number, orderIds
             } finally { clearTimeout(timer); }
           },
         });
-      } catch (error) { await SecureStore.deleteItemAsync(CONTEXT); throw error; }
+      } catch (error) { currentId = null; await SecureStore.deleteItemAsync(CONTEXT); throw error; }
       if (!activeGps || !stillValid() || await SecureStore.getItemAsync('token') !== token) return;
       const saved = await read<{ sessionId: string; seq: number }>(SEQUENCE);
       if (!stillValid() || await SecureStore.getItemAsync('token') !== token) return;
@@ -97,7 +91,7 @@ export function startBackgroundLocation(actor: number, orderId: number, orderIds
       context = trackingEnabled && previous?.token === token && previous.actor === actor && previous.orderId === orderId
         ? previous : { id: Crypto.randomUUID(), token, actor, orderId };
     }
-    await SecureStore.setItemAsync(CONTEXT, JSON.stringify(context), accessible); invalidateRead(CONTEXT);
+    await SecureStore.setItemAsync(CONTEXT, JSON.stringify(context), accessible); currentId = context.id;
     if (generation !== authorityGeneration || !valid() || await SecureStore.getItemAsync('token') !== token) return;
     // Registration can survive process replacement while its Android foreground service does not.
     // Re-register from the foreground so Expo refreshes the consumer and restarts that service.
@@ -113,16 +107,14 @@ export function startBackgroundLocation(actor: number, orderId: number, orderIds
           notificationBody: 'مشاركة الموقع أثناء التوصيل · Sharing location during delivery',
           notificationColor: '#12342A', killServiceOnDestroy: false },
       });
-    } catch (error) { trackingEnabled = false; await SecureStore.deleteItemAsync(CONTEXT); throw error; }
+    } catch (error) { trackingEnabled = false; currentId = null; await SecureStore.deleteItemAsync(CONTEXT); throw error; }
   });
 }
 export async function backgroundLocationState(): Promise<'off' | 'starting' | 'sharing'> {
-  if (!trackingEnabled) return 'off';
-  const context = await read<TrackingContext>(CONTEXT);
-  if (!context || !await Location.hasStartedLocationUpdatesAsync(TASK)) return 'off';
-  const receipt = await read<TrackingReceipt>(RECEIPT);
+  if (!trackingEnabled || !currentId || !await Location.hasStartedLocationUpdatesAsync(TASK)) return 'off';
+  const receipt = lastReceipt;
   const age=receipt ? Date.now()-receipt.lastSentAt : -1;
-  return receipt?.id === context.id && !receipt.failed && age>=0 && age<60_000 ? 'sharing' : 'starting';
+  return receipt?.id === currentId && !receipt.failed && age>=0 && age<60_000 ? 'sharing' : 'starting';
 }
 
 const deliveryIO = {
@@ -142,12 +134,12 @@ const deliveryIO = {
       const last = saved?.sessionId === context.activeGps.sessionId && Number.isSafeInteger(saved.seq) ? Math.max(saved.seq, context.activeGps.seq) : context.activeGps.seq;
       if (!Number.isSafeInteger(last + 1) || !trackingEnabled || generation !== authorityGeneration || await SecureStore.getItemAsync('token') !== context.token) return null;
       const activeGps = { ...context.activeGps, seq: last + 1 };
-      await SecureStore.setItemAsync(SEQUENCE, JSON.stringify({ sessionId: activeGps.sessionId, seq: activeGps.seq }), accessible); invalidateRead(SEQUENCE);
+      await SecureStore.setItemAsync(SEQUENCE, JSON.stringify({ sessionId: activeGps.sessionId, seq: activeGps.seq }), accessible);
       if (!trackingEnabled || generation !== authorityGeneration) return null;
-      await SecureStore.setItemAsync(CONTEXT, JSON.stringify({ ...context, activeGps }), accessible); invalidateRead(CONTEXT);
+      await SecureStore.setItemAsync(CONTEXT, JSON.stringify({ ...context, activeGps }), accessible);
       return trackingEnabled && generation === authorityGeneration ? activeGps : null;
     }),
-    acknowledge: receipt => SecureStore.setItemAsync(RECEIPT, JSON.stringify(receipt), accessible).then(() => invalidateRead(RECEIPT)),
+    acknowledge: receipt => SecureStore.setItemAsync(RECEIPT, JSON.stringify(receipt), accessible).then(() => { lastReceipt = receipt; }),
     monotonic: () => globalThis.performance?.now?.() ?? Date.now(),
     post: async (token, body) => {
       const controller = new AbortController();

@@ -822,7 +822,7 @@ Implementation children:
 
 Implementation children:
 - [x] T27.1: Scope predicates and redaction (server/domain/eligibility.ts, server/domain/resource-scope.ts, tests/resource-scope.mjs, tests/resource-scope-sqlite.mjs) — complete; sqlite capability suite registered in scripts/run-tests.mjs by the leader so `npm test` always covers the fail-closed gate.
-- [ ] T27.2: Rewire getOrder's inline `canSee` (server/main.ts ~L348-355) onto `openToDriver` to remove the duplicated visibility policy (semantics verified equal at integration; drift risk only). Shares main.ts with T22/T29, so schedule after wave 3 merges.
+- [x] T27.2: getOrder's inline `canSee` now delegates non-party visibility to `openToDriver` (server/main.ts getOrder). Complete 30 Oct — see evidence.md "T38–T43 continuation".
 
 **Description / implementation:** Replace blanket searching-driver visibility with active status, service/vehicle eligibility and release exclusions. Minimize preassignment declaredValue/sourceRef/custody fields; retain owner/assigned/admin policy.
 
@@ -1155,6 +1155,8 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 
 - [ ] Complete with acceptance evidence
 
+**Status 30 Oct:** blocked — every criterion is a staging/phone exercise (T05/T50 staging, A53 pass). Commit 47bb779's "T38.1" label covered T39's poll cache; no T38 code has landed.
+
 **Description / implementation:** Exercise online/offline leases, stale eligibility and reservation races on staging. Preserve legacy job flow until supported fleet client versions are known.
 
 **Dependencies:** T05, T34, T35, T37.
@@ -1182,6 +1184,10 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 ## T39: Driver render and battery budget
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T39.1: the 3 s status poll answers from this launch's own writes (0 SecureStore reads per tick) and an unchanged answer no longer re-renders every driver-work consumer (src/background-location.ts, src/driver-work.tsx, tests/background-registration.test.mjs). Replaces 47bb779's TTL read cache — see evidence.md "T38–T43 continuation". Complete 30 Oct.
+- [ ] T39.2: A53 locked-screen walk/drive: duration, battery delta and GPS ages (D-pass; fixture GPS is not field proof). Parent stays open until then.
 
 **Description / implementation:** Measure unnecessary provider re-renders and SecureStore reads. Separate frequently changing location from unrelated consumers while preserving revocation and secure persistence.
 
@@ -1218,6 +1224,10 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T40.1: the slot list is memoized on `firstSlotKey` (rebuilds only when the first bookable slot moves) and never shows a first slot under an hour ahead; submit's expired-slot rejection and city-change-only landmark clearing verified at source (src/booking.ts, src/app/book.tsx, tests/schedule.test.mjs). Complete 30 Oct.
+- [ ] T40.2: A53 keyboard, large text, offline retry and Arabic dates (D-pass). Parent stays open until then.
+
 **Description / implementation:** Memoize schedule generation using relevant inputs, validate the submitted slot rather than a different value, preserve landmarks and show accessible loading/error states.
 
 **Dependencies:** T19, T21.
@@ -1244,6 +1254,10 @@ Code-side children (device delivery remains the EAS/FCM operator gate):
 ## T41: Sensitive administration UX
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T41.1: dispute resolution, subscription activate/reject and cash record/adjust each confirm with the target named (`actionConfirm`), serialized by the existing busy guards plus server CAS / requestId idempotency (src/app/admin/orders.tsx, subscriptions.tsx, cash.tsx, src/copy.ts). Complete 30 Oct.
+- [ ] T41.2: A53 pass with synthetic users, including that unauthorized roles cannot reach the controls (D-pass). Parent stays open until then.
 
 **Description / implementation:** Add deliberate confirmation with target/reason/consequence for destructive admin actions. Serialize competing submits and preserve server permissions.
 
@@ -1313,7 +1327,7 @@ Implementation children:
 
 Implementation children:
 - [x] T43.1: the PostgreSQL `sessions(user_id)` index ships as migration 27 (logout-all/admin edits/account-deletion scans stop being sequential). Complete 29 Oct — see evidence.
-- [ ] T43.2: batch the order-list per-row summary queries with a before/after load comparison on identical populated fixtures (production claim waits for staging).
+- [x] T43.2: `GET /api/orders` prefetches each per-row summary once per page into the request memo (server/main.ts prefetchOrders; dispatch, ride-lifecycle, resource-scope, destination-change prefetches; tests/order-list-queries.test.mjs + tests/pg-order-list-queries.mjs). Complete 30 Oct — production capacity claim still waits for staging (T50).
 
 **Description / implementation:** Measure order-list N+1 and session lookup plans; add justified batching/indexes with upgrade coverage. Compare identical populated fixtures rather than empty boards.
 
@@ -1331,7 +1345,7 @@ Implementation children:
 **Acceptance criteria:**
 - [x] Migration creates required indexes safely.
 - [x] Latency improves without access or totals regressions. (The measured batching comparison is the open T43.2.)
-- [ ] Query count scales by page.
+- [x] Query count scales by page. (T43.2: constant per page on both backends, see evidence.)
 
 **Verification:** `npm run test:persistence -- --filter=pg-dialect; npm run test:load`. Execute each semicolon-separated command separately; common checks above also apply.
 

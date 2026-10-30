@@ -78,7 +78,8 @@ export default function AdminCash() {
             <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || !Number.isFinite(cents(open.amount)) || cents(open.amount) === 0 || (open.kind === 'adjustment' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : open.kind === 'adjustment' && open.note.trim().length < 5 ? c.reason_min5 : c.cash_amount_needed}
-              onPress={submit} />
+              onPress={() => confirm(fill(c.actionConfirm, { action: open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, target: `${row.name} · ${money(cents(open.amount) / 100)}` }),
+                () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />
             <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={row.owedCents - row.pendingCents <= 0} reason={c.cash_none_owed}

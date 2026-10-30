@@ -53,15 +53,28 @@ function destinationView(p: Row, r: Row) {
 /** The live proposal that still matches the order as it stands, or null. */
 export async function pendingDestination(db: Persistence, r: Row) {
   if (!destinationEligible(r)) return null;
-  const p = await db.one("SELECT * FROM destination_changes WHERE order_id = ? AND driver_id = ? AND state = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 1", r.id, r.driver_id, Date.now());
+  const p = await db.memo(`destination-pending:${r.id}:${r.driver_id}`, () => db.one("SELECT * FROM destination_changes WHERE order_id = ? AND driver_id = ? AND state = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 1", r.id, r.driver_id, Date.now()));
   return p && p.original === destinationOriginal(r) ? destinationView(p, r) : null;
+}
+
+/** T43.2: one query for a page of orders seeds the per-order reads pendingDestination makes. */
+export async function prefetchPendingDestinations(db: Persistence, rows: Row[]) {
+  const eligible = rows.filter(destinationEligible);
+  if (!eligible.length || !(await destinationAvailable(db))) return;
+  const latest = new Map<string, Row>();
+  for (const p of await db.all(`SELECT * FROM destination_changes WHERE order_id IN (${eligible.map(() => '?').join(',')}) AND state = 'pending' AND expires_at > ?
+    ORDER BY created_at DESC`, ...eligible.map(r => r.id), Date.now()))
+    if (!latest.has(`${p.order_id}:${p.driver_id}`)) latest.set(`${p.order_id}:${p.driver_id}`, p);
+  for (const r of eligible) void db.memo(`destination-pending:${r.id}:${r.driver_id}`, async () => latest.get(`${r.id}:${r.driver_id}`));
 }
 
 /** T33: the capability follows the storage, not the dialect — either backend that hosts the tables serves it. */
 export async function destinationAvailable(db: Persistence) {
-  if (db.backend === 'postgres') return !!(await db.one("SELECT to_regclass('destination_changes') AS t"))?.t;
-  if (db.backend !== 'sqlite') return false;
-  return !!(await db.one("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'destination_changes'"));
+  if (db.backend !== 'postgres' && db.backend !== 'sqlite') return false;
+  // Request-scoped: list endpoints call this once per row, and the answer cannot change mid-request.
+  return db.memo('destinationAvailable', async () => db.backend === 'postgres'
+    ? !!(await db.one("SELECT to_regclass('destination_changes') AS t"))?.t
+    : !!(await db.one("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'destination_changes'")));
 }
 export function registerDestinationRoutes(route: Register, deps: DestinationDeps) {
   const { need, needActive, fail, limit, identityKey, text, isCity, bookedPoint, uuid, db, settings, tariffVersionFor,

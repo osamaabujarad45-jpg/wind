@@ -60,16 +60,31 @@ export class Dispatch {
   private async requireAvailable() { if (!(await this.available())) this.fail(409, 'dispatch_unavailable'); }
   private isConflict(error: unknown) { return !!error && typeof error === 'object' && (error as { status?: unknown }).status === 409; }
 
+  /** T43.2: one query per table for a page of orders seeds the per-order reads summary makes. */
+  async prefetch(orderIds: number[], viewerDriverId?: number) {
+    if (!orderIds.length || !(await this.available())) return;
+    const marks = orderIds.map(() => '?').join(',');
+    const rounds = new Map((await this.db.all(`SELECT DISTINCT ON (order_id) * FROM dispatch_rounds WHERE order_id IN (${marks})
+      ORDER BY order_id, round_number DESC`, ...orderIds)).map(row => [Number(row.order_id), row]));
+    for (const id of orderIds) void this.db.memo(`dispatch-round:${id}`, async () => rounds.get(id));
+    if (!viewerDriverId) return;
+    const offers = new Map((await this.db.all(`SELECT DISTINCT ON (o.order_id) o.*, s.auth_session_hash FROM dispatch_offers o
+      LEFT JOIN driver_presence_sessions s ON s.id=o.presence_session_id AND s.driver_id=o.driver_id
+      WHERE o.order_id IN (${marks}) AND o.driver_id=? AND o.state='open' ORDER BY o.order_id, o.issued_at DESC`, ...orderIds, viewerDriverId))
+      .map(row => [Number(row.order_id), row]));
+    for (const id of orderIds) void this.db.memo(`dispatch-offer:${id}:${viewerDriverId}`, async () => offers.get(id));
+  }
+
   async summary(orderId: number, viewerDriverId?: number) {
     if (!(await this.available())) return null;
-    const round = await this.db.one('SELECT * FROM dispatch_rounds WHERE order_id=? ORDER BY round_number DESC LIMIT 1', orderId);
+    const round = await this.db.memo(`dispatch-round:${orderId}`, () => this.db.one('SELECT * FROM dispatch_rounds WHERE order_id=? ORDER BY round_number DESC LIMIT 1', orderId));
     if (!round) return null;
     const result: Row = { roundId: round.id, state: round.state, closeReason: round.close_reason ?? null,
       offersIssued: Number(round.offers_issued), deadlineAt: Number(round.deadline_at), startedAt: Number(round.started_at) };
     if (viewerDriverId) {
-      const offer = await this.db.one(`SELECT o.*, s.auth_session_hash FROM dispatch_offers o
+      const offer = await this.db.memo(`dispatch-offer:${orderId}:${viewerDriverId}`, () => this.db.one(`SELECT o.*, s.auth_session_hash FROM dispatch_offers o
         LEFT JOIN driver_presence_sessions s ON s.id=o.presence_session_id AND s.driver_id=o.driver_id
-        WHERE o.order_id=? AND o.driver_id=? AND o.state='open' ORDER BY o.issued_at DESC LIMIT 1`, orderId, viewerDriverId);
+        WHERE o.order_id=? AND o.driver_id=? AND o.state='open' ORDER BY o.issued_at DESC LIMIT 1`, orderId, viewerDriverId));
       result.myOffer = offer ? { id: offer.id, offerId: offer.id, expiresAt: Number(offer.expires_at), issuedAt: Number(offer.issued_at),
         leaseNonce: offer.auth_session_hash ? leaseNonceFor(offer.id, offer.auth_session_hash) : null,
         pickupEtaSeconds: Number(offer.pickup_eta_seconds), idleSeconds: Number(offer.idle_seconds),

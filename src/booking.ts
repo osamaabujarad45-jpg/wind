@@ -135,6 +135,10 @@ const partsOf = (ms: number) => Object.fromEntries(clock.formatToParts(ms).map(p
 /** Calendar day in Palestine, e.g. "2026-10-05". */
 export const dayKey = (ms: number) => { const p = partsOf(ms); return `${p.year}-${p.month}-${p.day}`; };
 
+// The first bookable half-hour, in half-hours since the epoch. scheduleSlots(firstSlotKey(now) * 30 min - 1 h) has the
+// same first slot as scheduleSlots(now), so a list memoized on this key never offers a slot under an hour ahead.
+export const firstSlotKey = (now = Date.now()) => Math.ceil((now + 60 * 60_000) / (30 * 60_000));
+
 /** 30-minute pickup slots from 06:00 to 22:00 Palestine time, one hour to just under seven days ahead. */
 export function scheduleSlots(now = Date.now()) {
   const out: number[] = [];

@@ -16,7 +16,7 @@ const modules = {
   'expo-task-manager': `export const isTaskDefined=()=>false;export function defineTask(name,task){globalThis.__windNative.task=task;}`,
   'expo-crypto': `let n=0;export const randomUUID=()=>\`synthetic-\${++n}\`;`,
   'expo-secure-store': `const n=globalThis.__windNative;export const AFTER_FIRST_UNLOCK=8;
-    export const getItemAsync=async key=>n.store.get(key)??null;
+    export const getItemAsync=async key=>{n.reads=(n.reads??0)+1;return n.store.get(key)??null};
     export const setItemAsync=async(key,value,options)=>{n.writes.push({key,options});n.store.set(key,value)};
     export const deleteItemAsync=async key=>{n.store.delete(key)};`,
   './api': `export const API_URL='https://example.test';`,
@@ -75,6 +75,9 @@ try {
   now+=15000;
   await native.task({data:{locations:[{...fix,timestamp:now}]}});
   assert.equal(await location.backgroundLocationState(),'sharing','Accepted upload confirms native GPS sharing');
+  const reads=native.reads;now+=3_000; // the next poll tick
+  assert.equal(await location.backgroundLocationState(),'sharing');
+  assert.equal(native.reads,reads,'the 3 s status poll answers without a SecureStore read (T39)');now-=3_000;
   now-=60_000;
   assert.equal(await location.backgroundLocationState(),'starting','A clock rewind cannot make an old receipt look current');
   now+=90_000;
