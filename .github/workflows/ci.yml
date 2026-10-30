@@ -87,4 +87,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build the release image without pushing it
-        run: docker build --build-arg EXPO_PUBLIC_API_URL=https://ci.invalid -t wind:ci .
+        # app.config.js rejects reserved hosts (.invalid, .test, .example) for release builds, so CI builds
+        # against the public production origin; the image is never pushed.
+        run: docker build --build-arg EXPO_PUBLIC_API_URL=https://windapi236.swedencentral.cloudapp.azure.com -t wind:ci .
