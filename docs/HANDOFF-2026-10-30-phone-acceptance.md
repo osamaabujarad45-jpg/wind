@@ -1,6 +1,6 @@
 # Handoff — 30 October 2026: phone acceptance, k5 gates, cloud subscription check
 
-Branch `claude/cloud-features-app-completion-d38b55`, base `65509bb`. Nothing committed, pushed or deployed.
+Branch `claude/cloud-features-app-completion-d38b55`, base `65509bb`, work committed as `bf64cb0`. Not pushed or deployed.
 
 ## What the Part 2 research did and did not do
 
