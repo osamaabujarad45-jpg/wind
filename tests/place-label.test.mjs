@@ -28,13 +28,18 @@ assert.equal(await placeLabel('k+1', ramallah, 'ar', base), 'يافا، رام �
 assert.equal(seen[0].url, '/v2/reverse-geocode?key=k%2B1');
 assert.deepEqual(seen[0].body, { QueryPosition: [35.2034, 31.9038], Language: 'ar', MaxResults: 1, IntendedUse: 'SingleUse',
   Filter: { IncludePlaceTypes: ['Street', 'PointAddress', 'InterpolatedAddress', 'Intersection'] } });
-answer = { Street: 'Derech HaAvot', Locality: 'الخليل' };
-assert.equal(await placeLabel('k', ramallah, 'ar', base), 'الخليل', 'Latin dropped from an Arabic label');
-assert.equal(await placeLabel('k', ramallah, 'en', base), 'Derech HaAvot, الخليل');
+const hebron = { latitude: 31.5246, longitude: 35.1107 }; // by the Ibrahimi Mosque
+answer = { Street: 'عيمك حيفرون', Locality: 'كريات أربع' }; // the live answer there
+assert.equal(await placeLabel('k', hebron, 'ar', base), 'عيمك حيفرون، الخليل', "the place is Wind's served city, never the provider's locality");
+answer = { Street: 'Emek Hevron', Locality: 'Kiryat Arba' };
+assert.equal(await placeLabel('k', hebron, 'en', base), 'Emek Hevron, Hebron');
+assert.equal(await placeLabel('k', hebron, 'ar', base), null, 'Latin street in an Arabic label: no label');
 answer = { Street: 'דרך האבות', Locality: 'Hebron' };
-assert.equal(await placeLabel('k', ramallah, 'en', base), 'Hebron', 'Hebrew never shown');
+assert.equal(await placeLabel('k', hebron, 'en', base), null, 'Hebrew never shown');
 answer = { District: 'البالوع', Locality: 'البيرة' };
-assert.equal(await placeLabel('k', ramallah, 'ar', base), 'البالوع، البيرة', 'district when there is no street');
+assert.equal(await placeLabel('k', ramallah, 'ar', base), 'البالوع، رام الله', 'district when there is no street');
+answer = { Locality: 'رام الله' };
+assert.equal(await placeLabel('k', ramallah, 'ar', base), null, 'a city alone adds nothing the app does not know');
 answer = null;
 assert.equal(await placeLabel('k', ramallah, 'ar', base), null);
 answer = 500;

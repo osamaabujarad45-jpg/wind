@@ -1,15 +1,16 @@
 // Street name under a map pin from Amazon Location ReverseGeocode (docs/operations/aws-credits.md). AWS Service Terms
 // 82.4a: a SingleUse result is shown once and never stored or cached; HERE supplies the data, so its attribution travels
 // with every label (82.10). Only the pin's coordinates reach AWS.
-import { servedCity, type Point } from '../src/model.ts';
+import { city, servedCity, type Point } from '../src/model.ts';
 
 export const PLACE_LABEL_ATTRIBUTION = '© AWS, HERE';
 const HEBREW = /[֐-׿]/, LATIN = /[A-Za-z]/;
-type Address = { Street?: unknown; District?: unknown; Locality?: unknown };
+type Address = { Street?: unknown; District?: unknown };
 
 /** Null outside the served area (no paid lookup), when nothing readable comes back, or when the provider fails. */
 export async function placeLabel(key: string, point: Point, language: 'ar' | 'en', base = 'https://places.geo.eu-north-1.amazonaws.com'): Promise<string | null> {
-  if (!servedCity(point)) return null;
+  const served = servedCity(point);
+  if (!served) return null;
   try {
     const res = await fetch(`${base.replace(/\/$/, '')}/v2/reverse-geocode?key=${encodeURIComponent(key)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(5000),
@@ -18,10 +19,11 @@ export async function placeLabel(key: string, point: Point, language: 'ar' | 'en
     });
     if (!res.ok) return null;
     const address = ((await res.json()) as { ResultItems?: { Address?: Address }[] } | null)?.ResultItems?.[0]?.Address;
-    // Never Hebrew; Latin only when English was asked for (a settlement name came back in Latin inside Hebron).
-    const parts = [address?.Street ?? address?.District, address?.Locality].filter((part): part is string =>
-      typeof part === 'string' && !!part.trim() && !HEBREW.test(part) && (language === 'en' || !LATIN.test(part)));
-    return parts.length ? parts.join(language === 'ar' ? '، ' : ', ').slice(0, 120) : null;
+    // Only the street comes from HERE: never Hebrew, Latin only when English was asked for. The place name is Wind's own
+    // served city, because HERE files the Ibrahimi Mosque area under a settlement (live check, 30 Oct 2026).
+    const street = address?.Street ?? address?.District;
+    if (typeof street !== 'string' || !street.trim() || HEBREW.test(street) || (language === 'ar' && LATIN.test(street))) return null;
+    return `${street.trim()}${language === 'ar' ? '، ' : ', '}${city(served)[language]}`.slice(0, 120);
   } catch {
     return null; // a label is a convenience: the pin and the typed landmark still decide the place
   }
