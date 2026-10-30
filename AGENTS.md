@@ -43,5 +43,5 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Test device and heavy work (owner rule, 29 Oct 2026)
 
 - **Never use an emulator.** All acceptance and UI testing uses the connected physical Android phone (`SM-A5360`, adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask instead of starting one.
-- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 29 Oct 2026 the configured `k5` keys are refused (`Permission denied (publickey)`), so the owner must supply the authorized account/key before remote-only testing can resume.
+- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 30 Oct 2026 `ssh k5` works (Windows, i5-4460, no Node/Git/PostgreSQL installed); a portable copy lives in `C:\wq-k5` and runs every gate except the browser suites (setup and the two workarounds: `docs/HANDOFF-2026-10-30-phone-acceptance.md`).
 - Keep the phone's test backend on `adb reverse` (the QA sandbox binds `127.0.0.1`), and do not clear the phone's Chrome profile.

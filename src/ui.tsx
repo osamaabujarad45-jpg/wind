@@ -177,9 +177,10 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
   children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
 }) {
-  const { align } = useCopy();
+  const { align, language } = useCopy();
   // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
-  return <Text maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  // Keyed by language: Android kept the Arabic width after an in-app switch and clipped "Your current order".
+  return <Text key={language} maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").

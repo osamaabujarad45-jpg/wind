@@ -121,8 +121,8 @@ Implementation children:
 
 **Acceptance criteria:**
 - [ ] Old GPS is never presented as current.
-- [ ] GPS refresh preserves typed landmark.
-- [ ] Denied permission still allows manual pinning.
+- [x] GPS refresh preserves typed landmark. (A53 native, 30 Oct: typed landmark kept after "Use my current location" set the pickup)
+- [x] Denied permission still allows manual pinning. (A53 native, 30 Oct: denied prompt → "Location unavailable" copy → Pickup on map works; evidence.md 30 Oct)
 
 **Verification:** `npm run test -- --filter=customer-location`. Execute each semicolon-separated command separately; common checks above also apply.
 

@@ -8,7 +8,7 @@ try {
   await call('/me/phone/challenges',{token:customer.token,body:{commandId:randomUUID(),deviceId:customer.deviceId,phone:customer.phone,countryContext:'PS',purpose:'verify',expectedRevision:1},expect:429});
   assert.equal((await db.one('SELECT count(*) n FROM phone_challenges WHERE delivery_state<>?', 'suppressed')).n,1,'cooldown checked before provider reservation');
   for(let i=0;i<2;i++) {
-    await db.run('UPDATE phone_challenges SET resend_at=? WHERE canonical_group=?',Date.now()-1,'+970'+customer.phone.slice(1));
+    await db.run('UPDATE phone_challenges SET resend_at=? WHERE canonical_group=?',Date.now()-1000,'+970'+customer.phone.slice(1));
     // Suppressed requests also consume the shared rolling request allowance.
     const response=await fetch(f.a.base+'/me/phone/challenges',{method:'POST',headers:{Authorization:`Bearer ${customer.token}`,'Content-Type':'application/json'},body:JSON.stringify({commandId:randomUUID(),deviceId:customer.deviceId,phone:customer.phone,countryContext:'PS',purpose:'verify',expectedRevision:1})});
     if(i===0)assert.equal(response.status,200);else assert.equal(response.status,429);

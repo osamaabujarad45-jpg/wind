@@ -1063,17 +1063,19 @@ async function dispatchOrBroadcast(service: Service, orderId: number, customerId
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
 }
-/** T21: stale unscheduled searching demand is system-cancelled so it cannot occupy the board forever. */
+/** T21: stale searching demand is system-cancelled so it cannot occupy the board forever. A scheduled order
+ * ages from its pickup time, so future work is untouched but a slot missed long ago leaves the board too. */
 export async function expireStaleDemand(now = Date.now()) {
   return persistence.atomic({ purpose: 'stale_demand_expiry' }, async () => {
     if (draining) return 0;
-    const stale = (await all(`SELECT id, customer_id FROM orders WHERE status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL
-      AND created_at < ? LIMIT 50`, now - SEARCH_EXPIRY_MS));
+    const before = now - SEARCH_EXPIRY_MS;
+    const stale = (await all(`SELECT id, customer_id FROM orders WHERE status = 'searching' AND driver_id IS NULL
+      AND COALESCE(scheduled_for, created_at) < ? LIMIT 50`, before));
     let expired = 0;
     for (const o of stale) {
-      // CAS: only still searching, unassigned and unscheduled at the moment of the update.
+      // CAS: only still searching, unassigned and stale (not rescheduled) at the moment of the update.
       if (!(await run(`UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?
-        AND status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL`, now, o.id)).changes) continue;
+        AND status = 'searching' AND driver_id IS NULL AND COALESCE(scheduled_for, created_at) < ?`, now, o.id, before)).changes) continue;
       expired++;
       await queuePush([o.customer_id as number], 'cancelled', o.id as number); // the sender learns why their order left the board
     }
@@ -1245,7 +1247,7 @@ route('POST', '/api/price', async ({ user, body }) => {
 // unclaimed demand stops occupying the board. Both are policy bounds, not money: assigned custody and
 // not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
 const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
-const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 24 * 86_400_000, 3_600_000);
+const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 86_400_000, 3_600_000); // 24 h
 
 async function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
   // T21: the cap check and the insert share the caller's write transaction — every booking path enters

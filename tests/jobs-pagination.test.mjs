@@ -97,14 +97,22 @@ try {
   // A not-yet-due scheduled order is future work, not board demand: it does not consume the cap.
   const scheduled = await call('/orders', { token: capped.token, body: { ...capInput, quotedPrice: capPrice, scheduledFor: Date.now() + 2 * 86_400_000 } });
   assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).scheduledFor != null, true);
-  // Stale unscheduled demand leaves the board by system cancellation; assigned or scheduled work never does.
+  // Stale demand (default 24 h) leaves the board by system cancellation; assigned or future scheduled work never does.
+  const hour = 3_600_000;
   const stale = made[1];
-  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 25 * 86_400_000, stale);
+  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 25 * hour, stale);
+  const recent = made[3];
+  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 23 * hour, recent);
+  const missed = await call('/orders', { token: capped.token, body: { ...capInput, quotedPrice: capPrice, scheduledFor: Date.now() + 2 * 86_400_000 } });
+  db.prepare('UPDATE orders SET scheduled_for = ?, created_at = ? WHERE id = ?').run(Date.now() - 25 * hour, Date.now() - 30 * hour, missed.id);
   const kept = made[2];
   await call(`/jobs/${kept}/accept`, { token: driver.token, body: {} });
+  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 25 * hour, kept);
   const { expireStaleDemand } = await import('../server/main.ts');
-  assert.equal(await expireStaleDemand(), 1, 'exactly the stale order expired');
+  assert.equal(await expireStaleDemand(), 2, 'exactly the stale order and the long-missed scheduled slot expired');
   assert.equal((await call(`/orders/${stale}`, { token: capped.token })).status, 'cancelled');
+  assert.equal((await call(`/orders/${missed.id}`, { token: capped.token })).status, 'cancelled', 'a scheduled slot missed by a day leaves the board');
+  assert.equal((await call(`/orders/${recent}`, { token: capped.token })).status, 'searching', 'demand younger than 24 h stays');
   assert.equal((await call(`/orders/${kept}`, { token: capped.token })).status, 'assigned', 'assigned custody is never auto-expired');
   assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).status, 'searching', 'not-yet-due scheduled work is never auto-expired');
   const again = await book(); // the expired demand freed a slot

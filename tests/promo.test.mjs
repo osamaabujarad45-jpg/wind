@@ -74,7 +74,7 @@ try {
   assert.equal((await call('/promos/check', { token: third.token, body: { code: 'FIRST20', price } })).discount, 20);
 
   // Expired and deactivated codes.
-  db.prepare("UPDATE promo_codes SET expires_at = ? WHERE code = 'HUGE99'").run(Date.now() - 1);
+  db.prepare("UPDATE promo_codes SET expires_at = ? WHERE code = 'HUGE99'").run(Date.now() - 1000);
   assert.equal((await call('/promos/check', { token: third.token, body: { code: 'HUGE99', price }, expect: 400 })).error, 'invalid_promo');
   const promos = await call('/admin/promos', { token: admin.token });
   const first20 = promos.find(p => p.code === 'FIRST20');
