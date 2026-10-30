@@ -517,6 +517,18 @@
           "anonymousStatus": 503
         }
       ]
+    },
+    {
+      "packet": "AWS-place-label",
+      "source": "server/place-label.ts",
+      "registrar": "registerPlaceLabelRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/place-label",
+          "anonymousStatus": 401
+        }
+      ]
     }
   ]
 }
