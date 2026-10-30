@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Wind API: Node 24 HTTP server with owned async SQLite/PostgreSQL persistence.
-// Run: node server/main.ts Â· Make an admin: node server/main.ts promote 0599XXXXXX
+// Run: node server/main.ts · Make an admin: node server/main.ts promote 0599XXXXXX
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { initializeSqlite } from './db/sqlite-schema.ts';
@@ -31,6 +31,7 @@ import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
+import { sesConfig, sesSend } from './ses.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
@@ -652,37 +653,43 @@ async function me(user: User) {
   return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
 }
 
-// Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
-// support confirm a caller owns the account. Off until all three settings exist; the app then shows these flows.
+// Email (Cloudflare Email Service REST API, or Amazon SES v2 with WIND_EMAIL_PROVIDER=ses): a 6-digit code verifies the
+// address, resets a forgotten password, and lets support confirm a caller owns the account. Off until the sender and the
+// chosen provider's settings exist; the app then shows these flows.
 const emailFrom = process.env.WIND_EMAIL_FROM?.trim();
+const emailProvider = process.env.WIND_EMAIL_PROVIDER?.trim() || 'cloudflare';
+if (!['cloudflare', 'ses'].includes(emailProvider)) throw new Error('WIND_EMAIL_PROVIDER must be cloudflare or ses');
+const ses = emailProvider === 'ses' ? sesConfig(process.env) : null;
 const cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID?.trim(), cloudflareToken = process.env.CLOUDFLARE_EMAIL_TOKEN?.trim();
-const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
+const emailReady = !!emailFrom && (emailProvider === 'ses' ? !!ses : !!(cloudflareAccount && cloudflareToken));
 const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
 type CodePurpose = 'verify' | 'reset' | 'support';
 const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
-  verify: code => [`Ø±Ù…Ø² ÙˆÙŠÙ†Ø¯ ${code} Â· Wind code`, [`Ø±Ù…Ø² ØªØ£ÙƒÙŠØ¯ Ø¨Ø±ÙŠØ¯Ùƒ ÙÙŠ ÙˆÙŠÙ†Ø¯: ${code}`, 'ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©. Ø¥Ù† Ù„Ù… ØªØ·Ù„Ø¨Ù‡ ÙØªØ¬Ø§Ù‡Ù„ Ù‡Ø°Ù‡ Ø§Ù„Ø±Ø³Ø§Ù„Ø©.', '',
+  verify: code => [`رمز ويند ${code} · Wind code`, [`رمز تأكيد بريدك في ويند: ${code}`, 'ينتهي خلال 15 دقيقة. إن لم تطلبه فتجاهل هذه الرسالة.', '',
     `Your Wind email confirmation code: ${code}`, 'It expires in 15 minutes. If you did not ask for it, ignore this email.']],
-  reset: code => [`Ø±Ù…Ø² Ø¥Ø¹Ø§Ø¯Ø© ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± ${code} Â· Wind password code`, [`Ø±Ù…Ø² Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± ÙˆÙŠÙ†Ø¯: ${code}`, 'ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©. Ù„Ø§ ØªØ´Ø§Ø±ÙƒÙ‡ Ù…Ø¹ Ø£Ø­Ø¯ØŒ ÙØ±ÙŠÙ‚ ÙˆÙŠÙ†Ø¯ Ù„Ù† ÙŠØ·Ù„Ø¨Ù‡ Ù…Ù†Ùƒ.', '',
+  reset: code => [`رمز إعادة كلمة المرور ${code} · Wind password code`, [`رمز إعادة تعيين كلمة مرور ويند: ${code}`, 'ينتهي خلال 15 دقيقة. لا تشاركه مع أحد، فريق ويند لن يطلبه منك.', '',
     `Your Wind password reset code: ${code}`, 'It expires in 15 minutes. Never share it; Wind staff will never ask for it.']],
-  support: code => [`Ø±Ù…Ø² Ø§Ù„ØªØ­Ù‚Ù‚ Ù„Ù„Ø¯Ø¹Ù… ${code} Â· Wind support check`, [`Ø¯Ø¹Ù… ÙˆÙŠÙ†Ø¯ ÙŠØªØ­Ù‚Ù‚ Ù…Ù† Ù‡ÙˆÙŠØªÙƒ. Ø§Ù„Ø±Ù…Ø²: ${code}`, 'Ø§Ù‚Ø±Ø£Ù‡ Ù„Ù…ÙˆØ¸Ù Ø§Ù„Ø¯Ø¹Ù… ÙÙ‚Ø· Ø¥Ù† ÙƒÙ†Øª Ø£Ù†Øª Ù…Ù† ØªÙˆØ§ØµÙ„ Ù…Ø¹ ÙˆÙŠÙ†Ø¯. ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©.', '',
+  support: code => [`رمز التحقق للدعم ${code} · Wind support check`, [`دعم ويند يتحقق من هويتك. الرمز: ${code}`, 'اقرأه لموظف الدعم فقط إن كنت أنت من تواصل مع ويند. ينتهي خلال 15 دقيقة.', '',
     `Wind support is confirming it is you. Code: ${code}`, 'Read it to the agent only if you contacted Wind support yourself. It expires in 15 minutes.']],
 };
 
 async function sendEmail(to: string, subject: string, lines: string[]) {
   if (!emailReady) fail(503, 'email_unavailable');
+  // Every line is fixed text plus digits: nothing user-supplied reaches the HTML.
+  const text = lines.join('\n'), html = `<div dir="auto" style="font-family:sans-serif;font-size:16px">${lines.map(l => l ? `<p>${l}</p>` : '<hr>').join('')}</div>`;
   let sent = false;
   try {
-    const res = await fetch(`${cloudflareApi}/accounts/${cloudflareAccount}/email/sending/send`, {
-      method: 'POST', signal: AbortSignal.timeout(10_000),
-      headers: { Authorization: `Bearer ${cloudflareToken}`, 'Content-Type': 'application/json' },
-      // Every line is fixed text plus digits: nothing user-supplied reaches the HTML.
-      body: JSON.stringify({ to, from: emailFrom, subject, text: lines.join('\n'),
-        html: `<div dir="auto" style="font-family:sans-serif;font-size:16px">${lines.map(l => l ? `<p>${l}</p>` : '<hr>').join('')}</div>` }),
-    });
+    // ponytail: SES reports bounces later (suppression list, event destination), so only Cloudflare answers email_bounced.
+    const res = ses ? await sesSend(ses, { from: emailFrom!, to, subject, text, html })
+      : await fetch(`${cloudflareApi}/accounts/${cloudflareAccount}/email/sending/send`, {
+        method: 'POST', signal: AbortSignal.timeout(10_000),
+        headers: { Authorization: `Bearer ${cloudflareToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, from: emailFrom, subject, text, html }),
+      });
     const j = await res.json().catch(() => null) as { success?: boolean; errors?: unknown; result?: { permanent_bounces?: string[] } } | null;
-    if (res.ok && j?.success === true && (j.result?.permanent_bounces ?? []).includes(to)) fail(422, 'email_bounced'); // a wrong address
-    sent = res.ok && j?.success === true;
+    if (!ses && res.ok && j?.success === true && (j.result?.permanent_bounces ?? []).includes(to)) fail(422, 'email_bounced'); // a wrong address
+    sent = res.ok && (!!ses || j?.success === true);
     if (!sent) logServerError('email_provider_failed', undefined, { httpStatus: res.status });
   } catch (error) {
     if (error instanceof HttpError) throw error;
@@ -921,7 +928,7 @@ route('POST', '/api/promos/check', async ({ user, body }) => {
   const { code, discount } = (await promoFor(user, body.code, price));
   return { code, discount };
 });
-// Personal codes: invite codes (Wâ€¦) and inviter rewards (Râ€¦) share the promo namespace.
+// Personal codes: invite codes (W…) and inviter rewards (R…) share the promo namespace.
 const REFERRAL_REWARD = 10;
 // ponytail: flat cap against farming with throwaway accounts; per-phone verification is the real fix once SMS exists.
 const REFERRAL_REWARDS_PER_30_DAYS = 5;
@@ -933,7 +940,7 @@ async function freshCode(prefix: string, length: number) {
     if (!(await codeTaken(code))) return code;
   }
 }
-/** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (Râ€¦) and goodwill credits (Câ€¦). */
+/** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (R…) and goodwill credits (C…). */
 async function ownedCode(prefix: string, ownerId: number, amount: number, createdBy: number, now: number) {
   const promoId = Number((await run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
     (await freshCode(prefix, 7)), amount, now + 90 * DAY, createdBy, now)).lastInsertRowid);
@@ -1684,7 +1691,7 @@ route('POST', '/api/orders/:id/rate', async ({ user, params, body }) => {
 });
 
 // Trip sharing: the customer hands a rotating link to a recipient who has no account. Only the token's hash is
-// stored, and the public view is an explicit allowlist â€” no phones, notes, codes, price or customer identity.
+// stored, and the public view is an explicit allowlist — no phones, notes, codes, price or customer identity.
 const SHARE_GRACE = DAY; // a finished trip's final status stays readable for a day
 async function shareOrder(id: number, customerId: number) {
   const r = (await one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', id, customerId)) ?? fail(404, 'not_found');
@@ -2457,7 +2464,7 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
 }
 
 // Best road route (SPEC-checkpoint-routing.md): OSRM's fastest (car profile, multi-level Dijkstra), unless it crosses a
-// checkpoint drivers report closed â€” then the fastest alternative or forced detour that stays clear of every closed one.
+// checkpoint drivers report closed — then the fastest alternative or forced detour that stays clear of every closed one.
 // A known driver heading is a bearing hint so the route starts the way the car moves. Full geometry: simplified lines
 // cut corners through buildings at street zoom.
 // The closed checkpoints a route must go around; one request reads the road state once and passes it on.
@@ -2493,7 +2500,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         const usable = (r: OsrmRoute) => !crossed(r).length && !backtracks(r.line); // no out-and-back to a dead-end via point
         let options = routes.filter(usable);
         if (!options.length) {
-          // Perpendicular to the route at the first blocking checkpoint, 1â€“8 km to either side.
+          // Perpendicular to the route at the first blocking checkpoint, 1–8 km to either side.
           const c = blocked[0].point, gap = (p: [number, number]) => Math.hypot(p[0] - c.longitude, p[1] - c.latitude);
           const i = fastest.line.reduce((best, p, k) => gap(p) < gap(fastest.line[best]) ? k : best, 0); // route point nearest the checkpoint
           const p1 = fastest.line[Math.max(0, i - 3)], p2 = fastest.line[Math.min(fastest.line.length - 1, i + 3)];

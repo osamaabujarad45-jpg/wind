@@ -51,6 +51,7 @@ try {
   assert.equal(welcome.auth, 'Bearer cf-email-token');
   assert.equal(welcome.from, 'no-reply@wind.example');
   assert.match(welcome.subject, new RegExp(welcome.code));
+  assert.ok(welcome.subject.startsWith('رمز ويند') && welcome.text.includes('رمز تأكيد بريدك'), 'Arabic copy is real Arabic, not mojibake');
   assert.ok(welcome.html.includes(welcome.code) && !JSON.stringify(customer).includes(welcome.code));
 
   // A minute between codes; a wrong code is refused; the right one verifies once and for good.

@@ -58,6 +58,7 @@ const suites = [
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",
   "email.test.mjs",
+  "email-ses.test.mjs",
   "dependencies.test.mjs",
   "clean-typecheck.test.mjs",
   "background-location.test.mjs",

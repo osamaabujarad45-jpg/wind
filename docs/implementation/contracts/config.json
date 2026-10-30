@@ -106,6 +106,24 @@
       "behavior": "Override for isolated provider tests only in this baseline."
     },
     {
+      "name": "WIND_EMAIL_PROVIDER",
+      "classification": "provider selection",
+      "baselineDefault": "cloudflare",
+      "behavior": "cloudflare or ses; any other value refuses to start. Readiness still needs WIND_EMAIL_FROM plus the chosen provider's settings."
+    },
+    {
+      "name": "AWS_REGION / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN",
+      "classification": "secret (key halves); provider account (Region)",
+      "baselineDefault": "unset",
+      "behavior": "Read only when WIND_EMAIL_PROVIDER=ses; key scoped to ses:SendEmail on the verified identity. Server only; never fixture, log or bundle."
+    },
+    {
+      "name": "WIND_SES_ENDPOINT",
+      "classification": "provider endpoint",
+      "baselineDefault": "https://email.<AWS_REGION>.amazonaws.com",
+      "behavior": "Override for isolated provider tests only."
+    },
+    {
       "name": "WIND_PUSH_SUBJECT",
       "classification": "public VAPID subject",
       "baselineDefault": "existing application HTTPS origin in source",
