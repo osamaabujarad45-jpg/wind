@@ -102,8 +102,8 @@ A vector tile over Ramallah (z12, 41 KB) and one over Nablus (z14, 15 KB) both r
 ### Recommendation
 
 - **Do not use Places search for Arabic landmarks or POIs.** 3 of 5 landmark searches resolved to other countries, and the hospital search surfaces Israeli facilities (some with Hebrew-only names) rather than Palestinian ones. Keep the local city/saved-place search.
-- **ReverseGeocode is worth integrating** for Arabic pin labels (street-level in 4/5 cities). Call it through a server proxy so the key stays server-side, cache by rounded coordinate, and filter results that come back in Latin/Hebrew script.
-- **Routes are a credible hosted fallback for OSRM** at USD 0.50 per 1,000. The two diverging pairs (Ramallah–Tulkarm, Tulkarm–Jenin) choose different roads and need a field check before either provider is trusted there. Integration would add a third route provenance (the contract allows only `osrm` | `google` today) and hits the Free-plan end date unless the owner upgrades.
+- **ReverseGeocode pin labels: implemented 30 Oct 2026** (`server/place-label.ts`, `GET /api/place-label`, shown under the pin in `src/pin-sheet.tsx`). Server key `WIND_LOCATION_KEY` only; `IntendedUse: SingleUse`, no POI results, Hebrew dropped and Latin dropped from Arabic labels, never cached or stored (AWS Service Terms §82.4a), "© AWS, HERE" shown with each label (§82.10), 30 lookups per user per 10 minutes, no lookup outside the served area. Off (capability absent) without the key. The privacy page now discloses it.
+- **Routes fallback: not built.** The v2 default provider is HERE (style attribution "© AWS, HERE"), and AWS Service Terms §82.5b forbids layering HERE routes on another provider's map. Wind's MapLibre draws on OpenFreeMap tiles, so an Amazon route line there would breach the terms. Routes become usable only together with Amazon map tiles (the separate MapLibre/EAS decision), or as numbers-only fares/ETAs, which changes money policy and is the owner's call. Routes may be cached for at most 30 days (§82.4a(i)).
 - **Maps tiles** cover the area. Adopting them means swapping the MapLibre style (and an EAS rebuild for native), which is the owner's separate decision.
 
 ## Staging option (documented, not deployed)
@@ -126,7 +126,10 @@ Any deploy (creating a Lightsail or RDS resource included) needs the owner's exp
 |---|---|---|---|---|---|
 | Location API key `wind-location-eval` | `arn:aws:geo:eu-north-1:366754056464:api-key/wind-location-eval` | eu-north-1 | none (pay per call; ≈ USD 0.02 used) | 2026-11-29 | Owner decides: keep for re-runs or delete |
 
-Nothing else was created: no SES identity, IAM user, budget, Lightsail or RDS resource.
+| Location API key `wind-api-place-label` (server only, `geo-places:ReverseGeocode` only) | `arn:aws:geo:eu-north-1:366754056464:api-key/wind-api-place-label` | eu-north-1 | none (USD 0.50 per 1,000 calls) | 2027-04-30 | Set as `WIND_LOCATION_KEY` on the API to turn pin labels on |
+| Budget `wind-credit-burn` (USD 10/month, credits excluded, alerts at 50 % actual and 100 % forecast to the owner's email) | `arn:aws:budgets::366754056464:budget/wind-credit-burn` | global (us-east-1 API) | none | none | Keep |
+
+Nothing else was created: no SES identity, IAM user, Lightsail or RDS resource.
 
 ## Considered and not recommended now
 

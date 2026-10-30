@@ -32,6 +32,7 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { sesConfig, sesSend } from './ses.ts';
+import { registerPlaceLabelRoutes } from './place-label.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
@@ -650,7 +651,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(locationKey && { placeLabels: true }) } };
 }
 
 // Email (Cloudflare Email Service REST API, or Amazon SES v2 with WIND_EMAIL_PROVIDER=ses): a 6-digit code verifies the
@@ -2544,6 +2545,11 @@ route('GET', '/api/route', async ({ user, query }) => {
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
   return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
 });
+
+// Pin labels (server/place-label.ts): one reverse geocode per settled pin, never stored; off without the server key.
+const locationKey = process.env.WIND_LOCATION_KEY?.trim();
+registerPlaceLabelRoutes(route, { key: locationKey, endpoint: process.env.WIND_LOCATION_ENDPOINT?.trim() || undefined,
+  fail, limit, budgetKey: id => identityKey('place-label', id), point: queryPoint });
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
 // module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.

@@ -69,6 +69,7 @@ const suites = [
   "background-permission.test.mjs",
   "customer-location.test.mjs",
   "place-search.test.mjs",
+  "place-label.test.mjs",
   "google-routing.test.mjs",
   "url-decoder.test.mjs",
   "background-registration.test.mjs",

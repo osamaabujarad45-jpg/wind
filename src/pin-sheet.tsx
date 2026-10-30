@@ -2,19 +2,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { api } from './api';
 import type { Point } from './model';
 import { PinMap } from './route-map';
+import { useSession } from './session';
 import { Button, palette, Txt, useCopy } from './ui';
 
 // Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
 export default function PinSheet({ title, hint, start, onClose, onConfirm }: { title: string; hint?: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void }) {
-  const { c } = useCopy();
+  const { c, language } = useCopy();
+  const labels = !!useSession().me?.capabilities?.placeLabels;
   const { height } = useWindowDimensions();
   const [point, setPoint] = useState<Point>({ latitude: start.latitude, longitude: start.longitude });
   const dragged = useRef(false);
   useEffect(() => { if (!dragged.current) setPoint({ latitude: start.latitude, longitude: start.longitude }); }, [start.latitude, start.longitude]);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
+  // The street under a pin that has settled for a moment: shown, never saved (AWS terms), so the landmark stays the address.
+  const query = `at=${point.latitude},${point.longitude}&lang=${language}`;
+  const [fetched, setFetched] = useState<{ query: string; label: string | null; attribution: string | null } | null>(null);
+  useEffect(() => {
+    if (!labels || !ready) return;
+    const abort = new AbortController();
+    const timer = setTimeout(() => api<{ label: string | null; attribution: string | null }>(`/place-label?${query}`, undefined, 'GET', abort.signal)
+      .then(answer => setFetched({ ...answer, query }), () => {}), 800);
+    return () => { clearTimeout(timer); abort.abort(); };
+  }, [labels, ready, query]);
+  const label = fetched?.query === query ? fetched : null; // a moved pin hides the old street at once
   return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
     <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
     <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
@@ -25,6 +39,10 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm }: { t
       <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
         <PinMap center={start} onChange={p => { dragged.current = true; setPoint(p); }} onReady={() => { setReady(true); setFailed(false); }} onFail={() => { setReady(false); setFailed(true); }} height={Math.min(360, Math.max(150, height * 0.45))} />
       </View>
+      {!!label?.label && <View accessibilityLiveRegion="polite" style={{ marginBottom: 12 }}>
+        <Txt variant="caption">{c.pinNear}{label.label}</Txt>
+        <Txt variant="micro">{label.attribution}</Txt>
+      </View>}
       {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c.pinUnavailable}</Txt>
         : <Button title={c.confirmPin} icon="checkmark" disabled={!ready} reason={c.pin_wait} onPress={() => { if (ready) onConfirm(point); }} />}
       <Button title={c.cancel} variant="ghost" onPress={onClose} />
