@@ -85,7 +85,8 @@ function BookForm() {
     const timer = setInterval(() => setSlotBucket(Math.floor(Date.now() / (30 * 60_000))), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const slots = useMemo(() => scheduleSlots(slotBucket * 30 * 60_000), [slotBucket]); // bucket start: ≤30 min stale, inside the server's slack
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- slotBucket is the recompute trigger; slots read the real clock
+  const slots = useMemo(() => scheduleSlots(), [slotBucket]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);

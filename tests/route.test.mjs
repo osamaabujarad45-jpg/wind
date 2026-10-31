@@ -33,7 +33,15 @@ let geoCalls = 0, geoMode = 'ok', geoUrl = '';
 const geocoder = createServer((req, res) => {
   geoCalls++; geoUrl = req.url;
   if (geoMode === 'down') return res.destroy();
-  if (new URL(req.url, 'http://x').searchParams.get('q') === 'manara') return res.end(JSON.stringify([
+  const q = new URL(req.url, 'http://x').searchParams.get('q');
+  if (q === 'fourpart') return res.end(JSON.stringify([{ lat: '31.9038', lon: '35.2034', name: 'Bakery', address: { road: 'شارع الإرسال', suburb: 'الماصيون', village: 'بيتونيا', city: 'مجلس ماتي بنيامين الإقليمي' } }]));
+  if (q === 'notalist') return res.end(JSON.stringify({ error: 'Nominatim is busy' }));
+  if (q === 'دوار المنارة') return res.end(JSON.stringify([{ lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة' }]));
+  if (q === 'المنارة') return res.end(JSON.stringify([
+    { lat: '31.9039', lon: '35.2042', name: 'ميدان المنارة', display_name: 'ميدان المنارة' },
+    { lat: '31.6600', lon: '35.1700', name: 'خربة المنارة', display_name: 'خربة المنارة' },
+  ]));
+  if (q === 'manara') return res.end(JSON.stringify([
     { lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة, الخليل' },
     { lat: '31.9039', lon: '35.2042', name: 'دوار المنارة', display_name: 'دوار المنارة, رام الله' },
   ]));
@@ -199,6 +207,21 @@ try {
   assert.deepEqual(await manara(''), ['الخليل', 'رام الله']);
   assert.deepEqual(await manara('&near=31.9038,35.2034'), ['رام الله', 'الخليل']);
   assert.equal(geoCalls, 4);
+  // Up to two of street/neighbourhood/village, then always our served town (never the council in `city`); English joins with commas.
+  assert.equal((await call('/places/search?q=fourpart', { token: customer.token })).hits[0].detail, 'شارع الإرسال، الماصيون، رام الله');
+  assert.equal((await call('/places/search?q=fourpart&lang=en', { token: customer.token })).hits[0].detail, 'شارع الإرسال, الماصيون, Ramallah');
+  assert.equal(geoCalls, 6);
+  // An upstream error body is a failure, not "no places": nothing is cached and the next search asks again.
+  await call('/places/search?q=notalist', { token: customer.token, expect: 503 });
+  await call('/places/search?q=notalist', { token: customer.token, expect: 503 });
+  assert.equal(geoCalls, 8);
+  // A square query also asks for the bare name and keeps only squares carrying it: Ramallah's ميدان first, the ruin dropped.
+  const squares = await call(`/places/search?q=${encodeURIComponent('دوار المنارة')}&near=31.9038,35.2034`, { token: customer.token });
+  assert.deepEqual(squares.hits.map(h => h.name), ['ميدان المنارة', 'دوار المنارة']);
+  assert.equal(geoCalls, 10);
+  // Identical searches in flight share one upstream lookup.
+  await Promise.all([1, 2].map(() => call('/places/search?q=dedupe', { token: customer.token })));
+  assert.equal(geoCalls, 11, 'two concurrent misses, one upstream call');
 
   console.log('route: ok');
 } finally {

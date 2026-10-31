@@ -3,7 +3,7 @@
 // explicit Confirm tap, while the parent owns the booking. A confirmed pin is never moved by a search tap.
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { api } from './api';
+import { api, errorCode } from './api';
 import { city, type Point, type SavedPlace } from './model';
 import { confirmPlace, mapChoices, proposePlace, searchPlaces, type MapHit, type PlaceCandidate, type PlaceChoice } from './place-search';
 import { Button, Card, ErrorText, Field, palette, Press, Row, Txt, useCopy } from './ui';
@@ -33,7 +33,7 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
   const { c, language } = useCopy();
   const [query, setQuery] = useState('');
   const [choice, setChoice] = useState<PlaceChoice | null>(null);
-  const [map, setMap] = useState<{ term: string; choices: PlaceChoice[] | null; failed?: boolean } | null>(null);
+  const [map, setMap] = useState<{ term: string; choices: PlaceChoice[] | null; failed?: string } | null>(null); // failed: the message to show
   const term = query.trim();
   const result = searchPlaces(query, saved, online);
   const proposal = choice && proposePlace(selected, choice);
@@ -44,7 +44,7 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
     setMap({ term, choices: null });
     api<{ hits: MapHit[] }>(`/places/search?q=${encodeURIComponent(term)}&lang=${language}${near ? `&near=${near.latitude.toFixed(4)},${near.longitude.toFixed(4)}` : ''}`)
       .then(r => setMap(m => m?.term === term ? { term, choices: mapChoices(r.hits) } : m))
-      .catch(() => setMap(m => m?.term === term ? { term, choices: [], failed: true } : m));
+      .catch(e => setMap(m => m?.term === term ? { term, choices: [], failed: errorCode(e) === 'too_many_attempts' ? c.err_too_many_attempts : c.searchMapFailed } : m));
   };
   const name = (item: PlaceChoice) => item.detail !== undefined ? item.note : item.saved
     ? item.saved.label === 'other' ? item.saved.note : c[`place_${item.saved.label}`]
@@ -63,16 +63,16 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
 
   return <View style={styles.panel}>
     <Field label={text.label} value={query} onChangeText={value => { setQuery(value); setChoice(null); onQuery?.(value.trim()); }} icon="search"
-      onSubmitEditing={searchMap} returnKeyType="go" />
+      onSubmitEditing={searchMap} returnKeyType="go" maxLength={100} />
     {!term && <Txt variant="caption" style={styles.note}>{text.empty}</Txt>}
     {!online && <Txt variant="caption" style={styles.note}>{text.offline}</Txt>}
     <ErrorText>{outside ? c.pinOutsideArea : undefined}</ErrorText>
     {!!term && !result.choices.length && !canSearchMap && <Txt variant="caption" center style={styles.note}>{c.noCities}</Txt>}
     {result.choices.map(row)}
     {canSearchMap && (!shown || !shown.choices || shown.failed) && <View style={styles.note}>
-      <Button title={c.searchMap.replace('{q}', term)} icon="map-outline" variant="outline" loading={!!shown && !shown.choices} onPress={searchMap} />
+      <Button title={c.searchMap.replace('{q}', () => term)} icon="map-outline" variant="outline" loading={!!shown && !shown.choices} onPress={searchMap} />
     </View>}
-    <ErrorText>{shown?.failed ? c.searchMapFailed : undefined}</ErrorText>
+    <ErrorText>{shown?.failed}</ErrorText>
     {shown?.choices && !shown.failed && !shown.choices.length && <Txt variant="caption" center style={styles.note}>{c.searchMapNone}</Txt>}
     {shown?.choices?.map(row)}
     {!!shown?.choices?.length && <Txt variant="micro" style={styles.note}>{c.mapCredit}</Txt>}

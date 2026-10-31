@@ -14,16 +14,63 @@ type Guards = {
   limitKey: (userId: number) => string;
 };
 export type PlaceHit = { name: string; detail: string; latitude: number; longitude: number };
+type Row = { lat?: unknown; lon?: unknown; name?: unknown; display_name?: unknown; address?: Record<string, unknown> };
 
 const DAY = 86_400_000;
 const inRange = (v: number, max: number) => Number.isFinite(v) && v >= -max && v <= max;
-// The detail line is street/neighbourhood/village + our served town. OSM's `city`/`county` are skipped: for Ramallah
-// streets they name an Israeli settlement regional council and an Oslo area, not an address a customer recognises.
+// OSM names the same kind of square دوار, ميدان or ساحة (Ramallah's Manara is ميدان المنارة, Hebron's is دوار المنارة).
+const SQUARE = /^(?:دوار|ميدان|ساحة)\s+/;
+
+// The detail line is up to two of street/neighbourhood/village, then always our served town. OSM's `city`/`county` are
+// skipped: for Ramallah streets they name an Israeli settlement regional council and an Oslo area, not an address.
+function toHits(rows: Row[], lang: 'ar' | 'en'): PlaceHit[] {
+  return rows.flatMap(r => {
+    const latitude = Number(r?.lat), longitude = Number(r?.lon), served = servedCity({ latitude, longitude });
+    const name = (typeof r?.name === 'string' && r.name.trim() ? r.name : String(r?.display_name ?? '').split(',')[0]).trim().slice(0, 120);
+    if (!name || !inRange(latitude, 90) || !inRange(longitude, 180) || !served) return [];
+    const a = r.address ?? {};
+    const area = [...new Set([a.road, a.neighbourhood ?? a.suburb ?? a.quarter, a.village ?? a.town ?? a.hamlet]
+      .filter((v): v is string => typeof v === 'string' && !!v.trim() && v !== name))].slice(0, 2);
+    const town = city(served)[lang];
+    return [{ name, detail: [...area, ...(area.includes(town) || town === name ? [] : [town])].join(lang === 'ar' ? '، ' : ', ').slice(0, 160),
+      latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6 }];
+  });
+}
 
 export function registerPlaceSearchRoutes(route: Register, guards: Guards, geocoderUrl = 'https://nominatim.openstreetmap.org'): void {
   const base = geocoderUrl.trim().replace(/\/+$/, '');
   const cache = new Map<string, { at: number; hits: PlaceHit[] }>(); // insertion order = age
+  const inFlight = new Map<string, Promise<PlaceHit[]>>(); // identical concurrent searches share one upstream lookup
   let next = 0;
+  const queueTooLong = () => Math.max(Date.now(), next) - Date.now() > 5000; // upstream is the bottleneck: say so now
+
+  const lookup = async (q: string, lang: 'ar' | 'en'): Promise<PlaceHit[]> => {
+    if (queueTooLong()) return guards.fail(503, 'search_unavailable');
+    const now = Date.now(), at = Math.max(now, next);
+    next = at + 1100;
+    if (at > now) await new Promise(r => setTimeout(r, at - now));
+    try {
+      const res = await fetch(`${base}/search?${new URLSearchParams({ q, format: 'jsonv2', limit: '20', 'accept-language': lang,
+        countrycodes: 'ps', viewbox: '34.2,32.6,35.6,31.2', bounded: '1', addressdetails: '1' })}`, { headers: { 'User-Agent': 'Wind/1.0 (delivery app; small pilot)' }, signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`geocoder ${res.status}`);
+      const rows = await res.json();
+      if (!Array.isArray(rows)) throw new Error('geocoder reply is not a list'); // an error body must never be cached as "no places"
+      return toHits(rows, lang);
+    } catch { return guards.fail(503, 'search_unavailable'); }
+  };
+
+  // A square query also asks once for the bare name and keeps only the squares carrying it.
+  const search = async (q: string, lang: 'ar' | 'en') => {
+    const hits = await lookup(q, lang);
+    const bare = SQUARE.test(q) ? q.replace(SQUARE, '') : '';
+    if (bare.length >= 2) {
+      const seen = new Set(hits.map(h => `${h.latitude},${h.longitude}`));
+      for (const h of await lookup(bare, lang).catch(() => [] as PlaceHit[])) // best effort: the first answer stands alone
+        if (SQUARE.test(h.name) && h.name.includes(bare) && !seen.has(`${h.latitude},${h.longitude}`)) hits.push(h);
+    }
+    return hits;
+  };
+
   route('GET', '/api/places/search', async ({ user, query }) => {
     const q = (query.get('q') ?? '').trim();
     if (q.length < 2 || q.length > 100) return guards.fail(400, 'invalid_input');
@@ -34,28 +81,14 @@ export function registerPlaceSearchRoutes(route: Register, guards: Guards, geoco
     const key = `${lang}:${q.toLowerCase()}`;
     const cached = cache.get(key);
     if (cached && Date.now() - cached.at < DAY) return ranked(cached.hits);
+    if (queueTooLong()) return guards.fail(503, 'search_unavailable'); // before charging the user's allowance
     await guards.limit(guards.limitKey(user.id), 60, 10 * 60_000);
-    const now = Date.now(), at = Math.max(now, next);
-    if (at - now > 5000) return guards.fail(503, 'search_unavailable'); // a long queue means upstream is the bottleneck
-    next = at + 1100;
-    if (at > now) await new Promise(r => setTimeout(r, at - now));
-    let rows: unknown;
-    try {
-      const res = await fetch(`${base}/search?${new URLSearchParams({ q, format: 'jsonv2', limit: '20', 'accept-language': lang,
-        countrycodes: 'ps', viewbox: '34.2,32.6,35.6,31.2', bounded: '1', addressdetails: '1' })}`, { headers: { 'User-Agent': 'Wind/1.0 (delivery app; small pilot)' }, signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error(`geocoder ${res.status}`);
-      rows = await res.json();
-    } catch { return guards.fail(503, 'search_unavailable'); }
-    const hits: PlaceHit[] = (Array.isArray(rows) ? rows : []).flatMap((r: { lat?: unknown; lon?: unknown; name?: unknown; display_name?: unknown; address?: Record<string, unknown> }) => {
-      const latitude = Number(r?.lat), longitude = Number(r?.lon), served = servedCity({ latitude, longitude });
-      const name = String(r?.name || String(r?.display_name ?? '').split(',')[0] || '').trim().slice(0, 120);
-      if (!name || !inRange(latitude, 90) || !inRange(longitude, 180) || !served) return [];
-      const a = r.address ?? {};
-      const parts = [a.road, a.neighbourhood ?? a.suburb ?? a.quarter, a.village ?? a.town ?? a.hamlet, city(served)[lang]]
-        .filter((v): v is string => typeof v === 'string' && !!v.trim() && v !== name);
-      return [{ name, detail: [...new Set(parts)].slice(0, 3).join(lang === 'ar' ? '، ' : ', ').slice(0, 160),
-        latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6 }];
-    });
+    let pending = inFlight.get(key);
+    if (!pending) {
+      pending = search(q, lang).finally(() => inFlight.delete(key));
+      inFlight.set(key, pending);
+    }
+    const hits = await pending;
     cache.delete(key);
     cache.set(key, { at: Date.now(), hits });
     if (cache.size > 2000) cache.delete(cache.keys().next().value!);
