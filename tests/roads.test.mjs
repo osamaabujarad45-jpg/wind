@@ -7,7 +7,7 @@ import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-roads-'));
 process.env.DB_PATH = join(dir, 'test.db');
-const { shutdown, server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote, seedCheckpoints } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -91,6 +91,15 @@ try {
   roads = await call(`/admin/roads/${a.id}/remove`, { token: admin.token, body: {} });
   assert.deepEqual(roads.map(r => r.name), ['Checkpoint B']);
   await call(`/roads/${a.id}/report`, { token: driver2.token, body: { status: 'open' }, expect: 404 });
+
+  // Pilot checkpoints (Nablus, Ramallah, Jenin): added once with their mapped positions, never duplicated.
+  assert.equal(await seedCheckpoints(), 7);
+  assert.equal(await seedCheckpoints(), 0, 'a second run adds nothing');
+  roads = await call('/roads', { token: driver2.token });
+  const qalandia = roads.find(r => r.name.includes('Qalandia'));
+  assert.deepEqual([qalandia.cities, qalandia.point], [['ramallah', 'bireh'], { latitude: 31.8623, longitude: 35.2275 }]);
+  const pilot = roads.filter(r => r.name.includes(' · '));
+  assert.deepEqual([pilot.length, pilot.every(r => r.point && r.cities.length)], [7, true], 'every pilot checkpoint has a position and cities');
 
   console.log('roads: ok');
 } finally {

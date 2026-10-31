@@ -3,6 +3,10 @@ import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, 
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
+// +970 and +972 are the same West Bank line: every written form signs in to one account.
+for (const same of ['0597127547', '+972597127547', '+970597127547', '00972597127547', '972597127547', '+972 (59) 712.7547', '‎+972 59 712 7547‏', '٠٥٩٧١٢٧٥٤٧'])
+  assert.equal(normalizePhone(same), '0597127547', same);
+for (const bad of ['+972541234567', '+9725971275470', '+971597127547']) assert.equal(normalizePhone(bad), null, bad); // Israeli carrier, too long, wrong country
 
 const km = distanceKm(city('ramallah'), city('nablus'));
 assert.ok(km > 40 && km < 50, `ramallah-nablus ${km}km`);

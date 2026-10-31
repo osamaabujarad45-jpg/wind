@@ -257,9 +257,11 @@ export const typedNumber = (text: string) => Number(latinDigits(text.trim()).rep
 
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
 // and +970 / 00970 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
+// A West Bank mobile (Jawwal 059, Ooredoo 056) is the same line written +970 or +972, so both map to one identity.
+// Contacts copied from an Arabic phone carry brackets, dots and invisible direction marks; they are not part of the number.
 export function normalizePhone(input: string): string | null {
-  const ascii = latinDigits(input).replace(/[\s-]/g, '');
-  const match = /^(?:(?:\+|00)?970|0)?(5[69]\d{7})$/.exec(ascii);
+  const ascii = latinDigits(input).replace(/[\s\-().‎‏‪-‮⁦-⁩]/g, '');
+  const match = /^(?:(?:\+|00)?97[02]|0)?(5[69]\d{7})$/.exec(ascii);
   return match ? `0${match[1]}` : null;
 }
 
