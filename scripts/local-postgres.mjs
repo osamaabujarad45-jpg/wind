@@ -24,7 +24,7 @@ function run(name, args, required = true) {
   const output = startsServer ? openSync(outputPath, 'w') : undefined;
   let result;
   try {
-    result = spawnSync(join(bin, executable(name)), args, { encoding: 'utf8', windowsHide: true, timeout: 30_000,
+    result = spawnSync(join(bin, executable(name)), args, { encoding: 'utf8', windowsHide: true, timeout: 330_000,
       ...(output !== undefined && { stdio: ['ignore', output, output] }) });
   } finally { if (output !== undefined) closeSync(output); }
   if (startsServer) result.stdout = readFileSync(outputPath, 'utf8');
@@ -37,14 +37,17 @@ if (action === 'status') {
   console.log(running ? `Isolated PostgreSQL running on 127.0.0.1:${port}` : 'Isolated PostgreSQL stopped');
   process.exit(running ? 0 : 1);
 }
+// -w returns as soon as the server is ready/stopped; 300 s covers a slow disk's shutdown checkpoint or crash
+// recovery (a 15 s stop timed out on k5, the session then killed the server mid-checkpoint, and every later start
+// needed recovery longer than 15 s).
 if (action === 'stop') {
-  if (running) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', '-t', '15', 'stop']);
+  if (running) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', '-t', '300', 'stop']);
   console.log('Isolated PostgreSQL stopped; test data retained.');
   process.exit(0);
 }
 mkdirSync(scratch, { recursive: true });
 if (!initialized) run('initdb', ['-D', data, '-U', user, '--auth=trust', '--encoding=UTF8', '--locale=C']);
-if (!running) run('pg_ctl', ['-D', data, '-l', join(scratch, 'postgresql-test.log'), '-o', `-p ${port} -h 127.0.0.1 -c timezone=UTC`, '-w', '-t', '15', 'start']);
+if (!running) run('pg_ctl', ['-D', data, '-l', join(scratch, 'postgresql-test.log'), '-o', `-p ${port} -h 127.0.0.1 -c timezone=UTC`, '-w', '-t', '300', 'start']);
 const found = run('psql', [...connection, '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT 1 FROM pg_database WHERE datname='fastship_test'"]).stdout.trim();
 if (found !== '1') run('createdb', [...connection, database]);
 const version = run('psql', [...connection, '-d', database, '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE EXTENSION IF NOT EXISTS postgis; SELECT postgis_version();']).stdout.trim();
