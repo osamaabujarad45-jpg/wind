@@ -34,6 +34,7 @@ const geocoder = createServer((req, res) => {
   geoCalls++; geoUrl = req.url;
   if (geoMode === 'down') return res.destroy();
   const q = new URL(req.url, 'http://x').searchParams.get('q');
+  if (geoMode === 'bare-down' && q === 'المنارة') return res.destroy();
   if (q === 'fourpart') return res.end(JSON.stringify([{ lat: '31.9038', lon: '35.2034', name: 'Bakery', address: { road: 'شارع الإرسال', suburb: 'الماصيون', village: 'بيتونيا', city: 'مجلس ماتي بنيامين الإقليمي' } }]));
   if (q === 'notalist') return res.end(JSON.stringify({ error: 'Nominatim is busy' }));
   if (q === 'دوار المنارة') return res.end(JSON.stringify([{ lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة' }]));
@@ -222,6 +223,14 @@ try {
   // Identical searches in flight share one upstream lookup.
   await Promise.all([1, 2].map(() => call('/places/search?q=dedupe', { token: customer.token })));
   assert.equal(geoCalls, 11, 'two concurrent misses, one upstream call');
+  // A failed second lookup returns the first answer uncached; a stop-word bare name ("ساحة ال") makes no second lookup.
+  geoMode = 'bare-down';
+  await call(`/places/search?q=${encodeURIComponent('ميدان المنارة')}`, { token: customer.token });
+  geoMode = 'ok';
+  await call(`/places/search?q=${encodeURIComponent('ميدان المنارة')}`, { token: customer.token });
+  assert.equal(geoCalls, 15, 'the partial answer was not cached: both lookups ran again');
+  await call(`/places/search?q=${encodeURIComponent('ساحة ال')}`, { token: customer.token });
+  assert.equal(geoCalls, 16);
 
   console.log('route: ok');
 } finally {

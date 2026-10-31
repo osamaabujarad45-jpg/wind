@@ -26,11 +26,11 @@ const SQUARE = /^(?:دوار|ميدان|ساحة)\s+/;
 function toHits(rows: Row[], lang: 'ar' | 'en'): PlaceHit[] {
   return rows.flatMap(r => {
     const latitude = Number(r?.lat), longitude = Number(r?.lon), served = servedCity({ latitude, longitude });
-    const name = (typeof r?.name === 'string' && r.name.trim() ? r.name : String(r?.display_name ?? '').split(',')[0]).trim().slice(0, 120);
+    const name = (typeof r?.name === 'string' && r.name.trim() ? r.name : typeof r?.display_name === 'string' ? r.display_name.split(',')[0] : '').trim().slice(0, 120);
     if (!name || !inRange(latitude, 90) || !inRange(longitude, 180) || !served) return [];
     const a = r.address ?? {};
     const area = [...new Set([a.road, a.neighbourhood ?? a.suburb ?? a.quarter, a.village ?? a.town ?? a.hamlet]
-      .filter((v): v is string => typeof v === 'string' && !!v.trim() && v !== name))].slice(0, 2);
+      .filter((v): v is string => typeof v === 'string' && !!v.trim() && v !== name).map(v => v.trim().slice(0, 60)))].slice(0, 2); // room for the town
     const town = city(served)[lang];
     return [{ name, detail: [...area, ...(area.includes(town) || town === name ? [] : [town])].join(lang === 'ar' ? '، ' : ', ').slice(0, 160),
       latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6 }];
@@ -40,7 +40,7 @@ function toHits(rows: Row[], lang: 'ar' | 'en'): PlaceHit[] {
 export function registerPlaceSearchRoutes(route: Register, guards: Guards, geocoderUrl = 'https://nominatim.openstreetmap.org'): void {
   const base = geocoderUrl.trim().replace(/\/+$/, '');
   const cache = new Map<string, { at: number; hits: PlaceHit[] }>(); // insertion order = age
-  const inFlight = new Map<string, Promise<PlaceHit[]>>(); // identical concurrent searches share one upstream lookup
+  const inFlight = new Map<string, Promise<{ hits: PlaceHit[]; complete: boolean }>>(); // identical concurrent searches share one lookup
   let next = 0;
   const queueTooLong = () => Math.max(Date.now(), next) - Date.now() > 5000; // upstream is the bottleneck: say so now
 
@@ -59,16 +59,17 @@ export function registerPlaceSearchRoutes(route: Register, guards: Guards, geoco
     } catch { return guards.fail(503, 'search_unavailable'); }
   };
 
-  // A square query also asks once for the bare name and keeps only the squares carrying it.
+  // A square query also asks once for the bare name and keeps only the squares carrying it. The second lookup is best
+  // effort: if it fails the first answer is returned but not cached, so the next search tries again.
   const search = async (q: string, lang: 'ar' | 'en') => {
     const hits = await lookup(q, lang);
     const bare = SQUARE.test(q) ? q.replace(SQUARE, '') : '';
-    if (bare.length >= 2) {
-      const seen = new Set(hits.map(h => `${h.latitude},${h.longitude}`));
-      for (const h of await lookup(bare, lang).catch(() => [] as PlaceHit[])) // best effort: the first answer stands alone
-        if (SQUARE.test(h.name) && h.name.includes(bare) && !seen.has(`${h.latitude},${h.longitude}`)) hits.push(h);
-    }
-    return hits;
+    if (bare.replace(/^ال/, '').length < 3) return { hits, complete: true }; // "ساحة ال" must not fetch every square
+    const seen = new Set(hits.map(h => `${h.latitude},${h.longitude}`));
+    const more = await lookup(bare, lang).catch(() => null);
+    for (const h of more ?? [])
+      if (SQUARE.test(h.name) && h.name.includes(bare) && !seen.has(`${h.latitude},${h.longitude}`)) hits.push(h);
+    return { hits, complete: more !== null };
   };
 
   route('GET', '/api/places/search', async ({ user, query }) => {
@@ -83,15 +84,19 @@ export function registerPlaceSearchRoutes(route: Register, guards: Guards, geoco
     if (cached && Date.now() - cached.at < DAY) return ranked(cached.hits);
     if (queueTooLong()) return guards.fail(503, 'search_unavailable'); // before charging the user's allowance
     await guards.limit(guards.limitKey(user.id), 60, 10 * 60_000);
+    const answered = cache.get(key); // another request may have filled it while the allowance was checked
+    if (answered && Date.now() - answered.at < DAY) return ranked(answered.hits);
     let pending = inFlight.get(key);
     if (!pending) {
       pending = search(q, lang).finally(() => inFlight.delete(key));
       inFlight.set(key, pending);
     }
-    const hits = await pending;
-    cache.delete(key);
-    cache.set(key, { at: Date.now(), hits });
-    if (cache.size > 2000) cache.delete(cache.keys().next().value!);
+    const { hits, complete } = await pending;
+    if (complete) {
+      cache.delete(key);
+      cache.set(key, { at: Date.now(), hits });
+      if (cache.size > 2000) cache.delete(cache.keys().next().value!);
+    }
     return ranked(hits);
   });
 }
