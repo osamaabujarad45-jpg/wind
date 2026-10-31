@@ -40,6 +40,13 @@ async function mailTo(to, count = 1) {
   return { ...mail, code: /: (\d{6})/.exec(mail.text)[1] };
 }
 const other = code => String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+// A refused send clears its cooldown only after the provider answers, a moment after the mail reached the fake inbox.
+async function refusedCode(token) {
+  for (let i = 0; ; i++) {
+    try { return await call('/me/email/code', { token, body: {}, expect: 503 }); }
+    catch (error) { if (i >= 100 || !String(error.message).includes('code_recently_sent')) throw error; await new Promise(resolve => setTimeout(resolve, 20)); }
+  }
+}
 
 try {
   assert.deepEqual(await call('/auth/options'), { registrationOpen: true, emailReset: true });
@@ -76,7 +83,7 @@ try {
   mode = 'fail';
   const third = await register(3);
   await mailTo('user3@mail.example');
-  assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
+  assert.equal((await refusedCode(third.token)).error, 'email_unavailable');
   mode = 'bounce';
   assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 422 })).error, 'email_bounced');
   mode = 'ok';
