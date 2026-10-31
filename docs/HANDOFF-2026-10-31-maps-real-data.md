@@ -68,6 +68,16 @@ Getting there took four test-harness fixes, none of them in product code:
 
 Merging with that branch may still conflict lightly in `src/app/book.tsx`, `server/main.ts` and `CLAUDE.md`.
 
+## Pilot readiness (Nablus, Ramallah, Jenin)
+
+- **Support:** production `SUPPORT_CONTACT=+972597127547` is set, so the privacy and deletion pages show it. EAS `EXPO_PUBLIC_SUPPORT_WHATSAPP=972597127547` is set for preview and production, and the Docker web build now takes the same value as a build arg. "Contact support" opens WhatsApp to that business account; verified on the A53.
+- **Phones:** `059…`, `+970 59…`, `+972 59…`, `00972…` and Arabic digits are one account (owner decision recorded in WP06). Production register validation was checked without creating an account: `+972`/`+970`/`059` pass, and an Israeli-carrier number is rejected.
+- **Cities:** live routes are Ramallah→Nablus 53.6 km/62 min, Nablus→Jenin 43.1 km/50 min and Ramallah→Jenin 97.4 km/105 min. 17 of 18 everyday places resolved inside the right city. The miss was "دوار المنارة", which now also finds Ramallah's ميدان المنارة.
+- **Checkpoints:** production has none yet. `node server/main.ts seed-checkpoints` adds Huwara, Za'tara, Deir Sharaf, Shavei Shomron, Atara, Jaba' and Qalandia at OSM positions, each within 2–26 m of the live routes. It needs an active admin.
+- **Blocking for real users: production has no admin.** Its only user is a blocked test customer. Once the owner registers in the app, run on the VM:
+  `docker exec wind-api node server/main.ts verify-phone <phone> --phone-verified` (operator attests the number is theirs), then `... promote <phone>`, then `... seed-checkpoints`.
+  An admin is needed to approve self-service drivers (`pending_approval` until then), to manage orders and to place checkpoints.
+
 ## Refreshing the road graph
 
 ACR Tasks are blocked on this subscription (`TasksOperationsNotAllowed`). The VM builds the graph itself
