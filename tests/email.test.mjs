@@ -92,6 +92,7 @@ try {
 
   // A taken address (verified or not) cannot be signed up or switched to again.
   const owner = await register(4, { email: 'owner@mail.example' });
+  await mailTo('owner@mail.example'); // its sign-up email goes out after the reply; it must land before the count below
   await call('/auth/register', { body: { name: 'Late', email: 'OWNER@mail.example', phone: '0599700006', password, consent: true }, expect: 409 });
   assert.equal((await call('/me/email', { token: third.token, body: { email: 'owner@mail.example' }, expect: 409 })).error, 'already_verified');
   assert.equal((await call('/me/email', { token: owner.token, body: { email: 'user3b@mail.example' }, expect: 409 })).error, 'email_taken');

@@ -69,7 +69,7 @@ try {
   assert.deepEqual(await jobs(free), ['hebron', 'nablus']);
 
   // ---- expiry and clearing restore everything ----
-  db.prepare('UPDATE users SET heading_until = ? WHERE id = ?').run(Date.now() - 1, homebound.user.id);
+  db.prepare('UPDATE users SET heading_until = ? WHERE id = ?').run(Date.now() - 1000, homebound.user.id);
   assert.equal((await call('/me', { token: homebound.token })).user.heading, null);
   assert.deepEqual(await jobs(homebound), ['hebron', 'nablus']);
   sent.length = 0;

@@ -46,7 +46,7 @@ try {
   await db.run('INSERT INTO users(phone,name,password,role,status,created_at) SELECT ?,name,password,role,status,created_at FROM users WHERE id=?','+972'+collision.phone.slice(1),collision.user.id);
   await call('/admin/phone/mappings',{token:f.admin.token,body:{userId:collision.user.id,phone:collision.phone,countryContext:'PS',routingPhone:'+972'+collision.phone.slice(1),state:'reviewed',expectedVersion:0,reason:'Synthetic collision review must fail',evidenceRef:'synthetic:collision'},expect:409});
   assert.equal((await db.one('SELECT count(*) n FROM users WHERE phone_identity_group(phone)=?','+970'+collision.phone.slice(1))).n,2,'conflicting identities remain intact');
-  const expired=await f.account();await f.map(expired);const old=await f.issue(expired),oldSms=await f.delivered(old);await db.run('UPDATE phone_challenges SET expires_at=? WHERE id=?::uuid',Date.now()-1,old.challengeId);
+  const expired=await f.account();await f.map(expired);const old=await f.issue(expired),oldSms=await f.delivered(old);await db.run('UPDATE phone_challenges SET expires_at=? WHERE id=?::uuid',Date.now()-1000,old.challengeId);
   await f.prove(expired,old,{code:oldSms.code,expect:400});
   // Explicit change needs reviewed target, password, current session/revision and fresh phone proof.
   const newPhone='0568700999';await f.map(customer,newPhone,'+972'+newPhone.slice(1));

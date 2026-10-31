@@ -77,7 +77,7 @@ try {
   const second=await call('/driver/presence/online',{token:d1.token,body:otherDevice});
   await call('/driver/presence/heartbeat',{token:d1.token,body:{...envelope,seq:2},expect:409});
   await call('/driver/presence/location',{token:d1.token,body:{...sample,deviceId:otherDevice.deviceId,sessionId:second.sessionId,seq:1}});
-  await db.run('UPDATE driver_presence_sessions SET lease_until=? WHERE driver_id=?',Date.now()-1,d1.user.id);
+  await db.run('UPDATE driver_presence_sessions SET lease_until=? WHERE driver_id=?',Date.now()-1000,d1.user.id);
   assert.equal((await call('/driver/presence/heartbeat',{token:d1.token,body:{deviceId:otherDevice.deviceId,sessionId:second.sessionId,seq:1},expect:409})).error,'presence_expired');
   const competing=connect(f.schema);
   try {

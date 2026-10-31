@@ -28,6 +28,23 @@ const osrm = createServer((req, res) => {
   res.end(JSON.stringify({ code: 'Ok', routes }));
 });
 await new Promise(r => osrm.listen(0, '127.0.0.1', r));
+// Fake Nominatim for map search: one served place, one outside the area, one malformed row; 'down' drops the socket.
+let geoCalls = 0, geoMode = 'ok', geoUrl = '';
+const geocoder = createServer((req, res) => {
+  geoCalls++; geoUrl = req.url;
+  if (geoMode === 'down') return res.destroy();
+  if (new URL(req.url, 'http://x').searchParams.get('q') === 'manara') return res.end(JSON.stringify([
+    { lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة, الخليل' },
+    { lat: '31.9039', lon: '35.2042', name: 'دوار المنارة', display_name: 'دوار المنارة, رام الله' },
+  ]));
+  res.end(JSON.stringify([
+    { lat: '31.9605', lon: '35.1830', name: 'جامعة بيرزيت', display_name: 'جامعة بيرزيت, بيرزيت', address: { road: '4566', village: 'بيرزيت', city: 'مجلس ماتي بنيامين الإقليمي', county: 'منطقة أ' } },
+    { lat: '32.0853', lon: '34.7818', name: 'Tel Aviv', display_name: 'Tel Aviv, Israel' },
+    { lat: 'x', lon: '35.2', name: 'Broken', display_name: 'Broken' },
+  ]));
+});
+await new Promise(r => geocoder.listen(0, '127.0.0.1', r));
+process.env.GEOCODER_URL = `http://127.0.0.1:${geocoder.address().port}/`;
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}/`;
 process.env.OSRM_TIMEOUT_MS = '3000'; // The fixture's health contract must not inherit operator timeout settings.
 const dir = mkdtempSync(join(tmpdir(), 'wind-route-'));
@@ -162,9 +179,31 @@ try {
   r = await call(trip(31.9038), { token: customer.token });
   assert.deepEqual([r.avoids, r.through, r.minutes], [[], [], 55], 'reported open again: fastest route back');
 
+  // Map search: session required, bounded input, only served-area places, cached repeats, failures not cached.
+  await call('/places/search?q=birzeit', { expect: 401 });
+  for (const bad of ['q=a', `q=${'x'.repeat(101)}`, 'lang=en']) await call(`/places/search?${bad}`, { token: customer.token, expect: 400 });
+  const found = await call(`/places/search?q=${encodeURIComponent('جامعة بيرزيت')}&lang=ar`, { token: customer.token });
+  // The detail is street/village + our served town: never a settlement council or an Oslo area label.
+  assert.deepEqual(found, { hits: [{ name: 'جامعة بيرزيت', detail: '4566، بيرزيت، البيرة', latitude: 31.9605, longitude: 35.183 }] });
+  const sent = new URL(geoUrl, 'http://x').searchParams;
+  assert.deepEqual([sent.get('format'), sent.get('accept-language'), sent.get('countrycodes'), sent.get('viewbox'), sent.get('bounded'), sent.get('addressdetails')], ['jsonv2', 'ar', 'ps', '34.2,32.6,35.6,31.2', '1', '1']);
+  await call(`/places/search?q=${encodeURIComponent('جامعة بيرزيت')}&lang=ar`, { token: customer.token });
+  assert.equal(geoCalls, 1, 'a repeated search is answered from the cache');
+  geoMode = 'down';
+  await call('/places/search?q=nablus', { token: customer.token, expect: 503 });
+  geoMode = 'ok';
+  assert.equal((await call('/places/search?q=nablus', { token: customer.token })).hits.length, 1, 'a failure is not cached');
+  assert.equal(geoCalls, 3);
+  // Same name in two towns: upstream order without `near`, closest first with it, one cached upstream call for both.
+  const manara = async near => (await call(`/places/search?q=manara${near}`, { token: customer.token })).hits.map(h => h.detail);
+  assert.deepEqual(await manara(''), ['الخليل', 'رام الله']);
+  assert.deepEqual(await manara('&near=31.9038,35.2034'), ['رام الله', 'الخليل']);
+  assert.equal(geoCalls, 4);
+
   console.log('route: ok');
 } finally {
   await shutdown();
   rmSync(dir, { recursive: true, force: true });
   osrm.close();
+  geocoder.close();
 }
