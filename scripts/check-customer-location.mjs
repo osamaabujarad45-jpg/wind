@@ -8,6 +8,7 @@ process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-location-review-')),
 process.env.WEB_ROOT = resolve('.expo/location-review-web');
 process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+delete process.env.OSRM_URL; // exercise the truthful fallback when road routing is unavailable
 const { server, db } = await import('../server/main.ts');
 const { copy } = await import('../src/copy.ts');
 const c = copy.en;
@@ -58,6 +59,16 @@ try {
     'saving becomes available for the side whose city was explicitly chosen');
 
   await page.goto(base + '/book?from=ramallah&to=nablus');
+  await page.getByText(c.destinationEstimated, { exact: true }).waitFor();
+  // If the quote is road-routed, the fallback warning must disappear as well.
+  await page.route('**/api/price', async route => {
+    const response = await route.fetch();
+    const quote = await response.json();
+    await route.fulfill({ response, json: { ...quote, estimated: false } });
+  }, { times: 1 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByText(c.standardParcel, { exact: true }).first().waitFor();
+  assert.equal(await page.getByText(c.destinationEstimated, { exact: true }).count(), 0);
   await page.getByRole('textbox', { name: c.pickupNote, exact: true }).fill('Old Ramallah landmark');
   await page.getByRole('button', { name: c.useLocation, exact: true }).click();
   await page.getByText('Tulkarm', { exact: true }).waitFor();

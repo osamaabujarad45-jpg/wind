@@ -19,6 +19,9 @@ param probes array = []
 param volumeName string = ''
 param volumeMountPath string = ''
 param storageName string = ''
+param keyVaultSecrets array = []
+var secretConfigs = [for secret in keyVaultSecrets: { name: secret.name, keyVaultUrl: secret.keyVaultUrl, identity: secret.identity }]
+var secretEnvs = [for secret in keyVaultSecrets: { name: secret.envName, secretRef: secret.name }]
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -29,7 +32,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: environmentId
     configuration: {
       activeRevisionsMode: 'Single'
-      secrets: empty(acsAccessKey) ? [] : [{ name: 'acs-key', value: acsAccessKey }]
+      secrets: concat(empty(acsAccessKey) ? [] : [{ name: 'acs-key', value: acsAccessKey }], secretConfigs)
       ...(ingressEnabled ? { ingress: { external: true, targetPort: ingressPort, transport: 'http', allowInsecure: false } } : {})
     }
     template: {
@@ -38,7 +41,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         image: image
         ...(empty(command) ? {} : { command: command })
         env: concat([{ name: 'NODE_ENV', value: 'production' }], environmentVariables,
-          empty(acsAccessKey) ? [] : [{ name: 'WIND_ACS_KEY', secretRef: 'acs-key' }])
+          empty(acsAccessKey) ? [] : [{ name: 'WIND_ACS_KEY', secretRef: 'acs-key' }], secretEnvs)
         resources: { cpu: json(cpu), memory: memory }
         ...(empty(probes) ? {} : { probes: probes })
         ...(empty(volumeName) ? {} : { volumeMounts: [{ volumeName: volumeName, mountPath: volumeMountPath }] })

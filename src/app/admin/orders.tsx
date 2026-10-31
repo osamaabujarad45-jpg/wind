@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../api';
 import { latinDigits, ltr, orderCode, type OrderStatus, type SafetyKind } from '../../model';
 import { MoreOrders, OrderRow, useFormat, useOrders } from '../../parts';
-import { Button, Card, Empty, ErrorText, Field, FilterChips, Header, Loading, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, FilterChips, Header, Loading, Screen, Txt, useCopy, confirm } from '../../ui';
 
 type Filter = 'all' | 'disputes' | 'safety' | OrderStatus;
 const filters: Filter[] = ['all', 'safety', 'on_hold', 'disputes', 'searching', 'assigned', 'at_pickup', 'in_transit', 'returning', 'completed', 'returned', 'cancelled'];
@@ -118,7 +118,7 @@ function Disputes() {
           <View>
             <Button title={creditOf(credits[d.id]) ? `${c.resolveDispute} + ${money(creditOf(credits[d.id])!)}` : c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
               disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5 || creditOf(credits[d.id]) === undefined}
-              reason={busy !== null ? c.wait_busy : (drafts[d.id] ?? '').trim().length < 5 ? c.reason_min5 : c.creditInvalid} onPress={() => resolve(d.id)} />
+              reason={busy !== null ? c.wait_busy : (drafts[d.id] ?? '').trim().length < 5 ? c.reason_min5 : c.creditInvalid} onPress={() => confirm(`${c.resolveDispute}: ${orderCode(d.orderId)}${creditOf(credits[d.id]) ? ` + ${money(creditOf(credits[d.id])!)}` : ''}?`, () => resolve(d.id), c.resolveDispute, c.cancel)} />
           </View>
         </>}
     </Card>)}

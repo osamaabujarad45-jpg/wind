@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
+import { hashPassword, verifyPassword, passwordKdfStatus, PasswordBusyError } from '../server/domain/passwords.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-registration-'));
 const path = join(dir, 'test.db');
@@ -42,6 +43,18 @@ try {
   assert.equal(db.prepare('SELECT name FROM users WHERE id=1').get().name, 'Existing admin');
   assert.equal((await call('/me', legacyToken)).user.email, null);
   const admin = await call('/auth/login', null, { phone: '0599000090', password });
+  // Corrupt only this disposable account. Stored credentials must fail like a wrong password.
+  try {
+    for (const malformed of ['', 'missing-separator', ':', 'salt:ab', `salt:${'g'.repeat(64)}`, `${stored}:extra`]) {
+      db.prepare('UPDATE users SET password=? WHERE id=2').run(malformed);
+      db.prepare('DELETE FROM request_limits').run();
+      assert.deepEqual(await call('/auth/login', null, { phone: '0599000091', password }, 401), { error: 'wrong_credentials' });
+    }
+  } finally {
+    db.prepare('UPDATE users SET password=? WHERE id=2').run(stored);
+    db.prepare('DELETE FROM request_limits').run();
+  }
+  assert.equal((await call('/auth/login', null, { phone: '0599000091', password })).user.id, 2, 'legacy non-hex salt remains compatible');
   assert.deepEqual(await call('/auth/options'), { registrationOpen: true, emailReset: false });
   await call('/auth/register', null, { ...input, password: 'short' }, 400);
   await call('/auth/register', null, { ...input, password: 'a'.repeat(101) }, 400);
@@ -127,6 +140,28 @@ try {
   assert.equal(retainedOrder.contact, ''); assert.equal(retainedOrder.detail, '');
   // Anonymization frees both identifiers for a new independent account.
   await call('/auth/register', null, { ...input, email: 'edited@example.test', phone: '0599000004' });
+  // T18: the KDF stays off the event loop with bounded admission, and the stored format is unchanged.
+  const kdf = passwordKdfStatus();
+  assert.equal(await verifyPassword(password, stored), true, 'legacy non-hex salt remains valid through the async pool');
+  assert.equal(await verifyPassword('Synthetic_Wrong_Password123', stored), false);
+  for (const malformed of ['', 'missing-separator', ':', 'salt:ab', `salt:${'g'.repeat(64)}`, `${stored}:extra`])
+    assert.equal(await verifyPassword(password, malformed), false, `malformed stored key ${JSON.stringify(malformed)} denies without a KDF`);
+  const fresh = await hashPassword(password);
+  assert.match(fresh, /^[0-9a-f]{32}:[0-9a-f]{64}$/);
+  assert.equal(await verifyPassword(password, fresh), true);
+  const burst = Array.from({ length: kdf.queueLimit + kdf.workers + 4 }, () => verifyPassword(password, stored));
+  const settledPromise = Promise.allSettled(burst); // attach rejection handlers before yielding
+  assert.ok(passwordKdfStatus().active <= kdf.workers, 'active KDFs stay within the pool');
+  assert.ok(passwordKdfStatus().queued <= kdf.queueLimit, 'waiting KDFs stay within the queue bound');
+  const healthAt = performance.now();
+  await call('/health');
+  const healthMs = performance.now() - healthAt;
+  const settled = await settledPromise;
+  const busy = settled.filter(result => result.status === 'rejected' && result.reason instanceof PasswordBusyError).length;
+  assert.equal(settled.length - busy, kdf.queueLimit + kdf.workers, 'bounded admission accepts exactly the pool and queue capacity');
+  for (const result of settled) if (result.status === 'rejected') assert.ok(result.reason instanceof PasswordBusyError, String(result.reason));
+  assert.ok(healthMs < 1000, `health answers while KDFs are queued (${Math.round(healthMs)}ms)`);
+  assert.equal(passwordKdfStatus().queued, 0);
   assert.equal(await (await fetch(base + '/terms')).text().then(s => s.includes('Synthetic support')), true);
   assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);

@@ -5,6 +5,7 @@ import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-driver-destination-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -68,7 +69,7 @@ try {
   assert.deepEqual(await jobs(free), ['hebron', 'nablus']);
 
   // ---- expiry and clearing restore everything ----
-  db.prepare('UPDATE users SET heading_until = ? WHERE id = ?').run(Date.now() - 1, homebound.user.id);
+  db.prepare('UPDATE users SET heading_until = ? WHERE id = ?').run(Date.now() - 1000, homebound.user.id);
   assert.equal((await call('/me', { token: homebound.token })).user.heading, null);
   assert.deepEqual(await jobs(homebound), ['hebron', 'nablus']);
   sent.length = 0;

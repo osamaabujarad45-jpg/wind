@@ -36,7 +36,7 @@ assert.match(app, /@secure\(\)\s*param acsAccessKey string/);
 assert.match(app, /name: 'WIND_ACS_KEY', secretRef: 'acs-key'/);
 assert.doesNotMatch(main, /postgresAdministratorPassword\s*=\s*'[^']+'/i);
 assert.doesNotMatch(main, /accountKey\s*:/i);
-assert.doesNotMatch(main, /DefaultEndpointsProtocol=|AccountKey=|postgres(?:ql)?:\/\/[^\s'"`]+/i);
+assert.doesNotMatch(main, /DefaultEndpointsProtocol=|AccountKey=|postgres(?:ql)?:\/\/[^\s'"`$]+/i);
 for (const file of examples) {
   const content = readFileSync(path.join(root, 'infra/examples', file), 'utf8');
   assert.match(content, /enableWorkloads = false/);
@@ -85,7 +85,22 @@ assert.equal(enabled.enableWorkloads.value, true);
 assert.ok(enabled.imageDigest.value && enabled.osrmImageDigest.value);
 assert.equal(deployment('api').condition, workloadCondition);
 assert.equal(deployment('worker').condition, workloadCondition);
-assert.ok(!api.environmentVariables.value.some(entry => entry.name === 'WIND_DATABASE_URL'), 'Database binding remains an explicit owner gate');
+const apiEnv = Object.fromEntries(api.environmentVariables.value.map(entry => [entry.name, entry]));
+for (const name of ['SUPPORT_CONTACT', 'WIND_IDENTITY_MODE', 'OSRM_URL', 'DB_PATH']) {
+  assert.ok(typeof apiEnv[name]?.value === 'string' && apiEnv[name].value.length > 0, `${name} must render non-empty`);
+}
+assert.ok(api.keyVaultSecrets.value.some(secret => secret.name === 'database-url' && secret.envName === 'WIND_DATABASE_URL' && secret.keyVaultUrl.includes('secrets/database-url')));
+assert.equal(apiEnv.DB_PATH.value, '/data/wind.db');
+assert.equal(api.volumeMountPath.value, '/data');
+assert.equal(api.storageName.value, 'wind-data');
+assert.ok(api.keyVaultSecrets.value.some(secret => secret.name === 'database-url' && secret.keyVaultUrl.includes('secrets/database-url')));
+assert.ok(deployment('worker').properties.parameters.keyVaultSecrets.value.some(secret => secret.envName === 'WIND_DATABASE_URL'), 'The worker receives the same gated database binding');
+const vaultSecret = compiled.resources.find(resource => resource.type === 'Microsoft.KeyVault/vaults/secrets');
+assert.ok(vaultSecret && String(vaultSecret.name).includes('database-url'), 'The database URL is stored in Key Vault');
+assert.ok(compiled.resources.some(resource => resource.type === 'Microsoft.Authorization/roleAssignments'
+  && String(resource.properties.roleDefinitionId).includes('7f951dda-4ed3-4680-a7ca-43fe172d538d')), 'The runtime identity can pull the reviewed image');
+assert.ok(compiled.resources.some(resource => resource.type === 'Microsoft.Authorization/roleAssignments'
+  && String(resource.properties.roleDefinitionId).includes('4633458b-17de-408a-b874-0445c86b69e6')), 'The runtime identity can read the database secret');
 
 // Exercise configuration gates without connecting to a database.
 const { runtimePersistence } = await import('../server/db/runtime.ts');

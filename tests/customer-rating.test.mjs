@@ -83,6 +83,17 @@ try {
   order = await book();
   assert.deepEqual(await jobStats(order.id), { rating: 3.7, trips: 3 });
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).customerStats, undefined);
+  // T26: a raced second rating can neither overwrite the first with a different value nor double-write;
+  // a same-value replay of a lost response still succeeds against the saved row.
+  order = await finish(order);
+  const raced = await Promise.all([
+    call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 4 } }).then(() => 'rated', e => e.message.includes('cannot_rate') ? 'cannot_rate' : e.message),
+    call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 2 } }).then(() => 'rated', e => e.message.includes('cannot_rate') ? 'cannot_rate' : e.message),
+  ]);
+  assert.deepEqual([...raced].sort(), ['cannot_rate', 'rated'], `exactly one different-value rating lands: ${raced.join(' | ')}`);
+  assert.equal((await call(`/orders/${order.id}`, { token: admin.token })).customerRating, 4, 'the first claim stands');
+  await call(`/orders/${order.id}/rate`, { token: sami.token, body: { customerRating: 4 } }); // replay of a lost response
+
   console.log('Customer rating checks passed: drivers rate once, see the record from 3 ratings, customers never see it.');
 } finally {
   await shutdown();

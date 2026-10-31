@@ -4,6 +4,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+if (process.platform === 'win32') {
+  process.env.PATH = (process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\Android\\Sdk\\platform-tools;` : '') + process.env.PATH;
+}
+
 const output = resolve('.expo/phone-qa/device');
 mkdirSync(output, { recursive: true });
 // The attached phone: WIND_PHONE_SERIAL overrides it, so the script does not rot with the device.

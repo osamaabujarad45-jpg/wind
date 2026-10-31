@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { browserPickupWatch, findPickup, pickupFromFix, withPickupPermission } from '../src/customer-location.ts';
+import { browserPickupWatch, cachedPickup, findPickup, pickupFromFix, withPickupPermission } from '../src/customer-location.ts';
 
 const now = Date.now();
 const fix = (extra = {}) => ({ timestamp: now, coords: { latitude: 32.312773, longitude: 35.048039, accuracy: 52.4 }, ...extra });
@@ -59,4 +59,16 @@ await assert.rejects(findPickup(withPickupPermission(async () => ({ granted: fal
 assert.equal(nativeStarts, 0, 'denied permission cannot start GPS');
 assert.equal((await findPickup(withPickupPermission(async () => ({ granted: true }), nativeWatch))).city, 'tulkarm');
 assert.equal(nativeStarts, 1);
+const cacheSignal = new AbortController();
+assert.deepEqual(await cachedPickup(async () => fix(), cacheSignal.signal), { latitude: 32.312773, longitude: 35.048039 });
+assert.equal(await cachedPickup(async () => fix({ timestamp: Date.now() - 31_000 }), cacheSignal.signal), null);
+assert.equal(await cachedPickup(async () => fix({ coords: { ...fix().coords, accuracy: 101 } }), cacheSignal.signal), null);
+assert.equal(await cachedPickup(async () => { throw new Error('permission'); }, cacheSignal.signal), null);
+let lateCache;
+assert.equal(await cachedPickup(() => new Promise(resolve => { lateCache = resolve; }), cacheSignal.signal, 5), null);
+lateCache(fix()); // Late native completion cannot change the already chosen fallback.
+const closedPicker = new AbortController();
+const cancelledCache = cachedPickup(() => new Promise(() => {}), closedPicker.signal);
+closedPicker.abort();
+assert.equal(await cancelledCache, null);
 console.log('Customer pickup location: Tulkarm selection, freshness, accuracy, bounds, timeout and cancellation passed');

@@ -179,8 +179,8 @@ export function nearestCity(point: Point): CityId {
   }).id;
 }
 
-// ponytail: 15 km as the crow flies from a served city centre stands in for real service zones; the app and the API share the bound.
-export const SERVICE_KM = 15;
+// ponytail: 20 km as the crow flies from a served city centre stands in for real service zones; the app and the API share the one bound.
+export const SERVICE_KM = 20;
 export function servedCity(point: Point): CityId | null {
   const near = nearestCity(point);
   return crowKm(city(near), point) <= SERVICE_KM ? near : null;
@@ -256,10 +256,13 @@ export const latinDigits = (text: string) =>
 export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
 
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
-// and +970 / 00970 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
+// and +970 / +972 / 00970 / 00972 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
+// A West Bank mobile (Jawwal 059, Ooredoo 056) is the same line written +970 or +972, so both map to one identity
+// (owner decision 31 Oct 2026; docs/implementation/WP06.md). Israeli carrier blocks (050–055, 058) stay rejected.
+// Contacts copied from an Arabic phone carry brackets, dots and invisible direction marks; they are not part of the number.
 export function normalizePhone(input: string): string | null {
-  const ascii = latinDigits(input).replace(/[\s-]/g, '');
-  const match = /^(?:(?:\+|00)?970|0)?(5[69]\d{7})$/.exec(ascii);
+  const ascii = latinDigits(input).replace(/[\s\-().\u00ad\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g, '');
+  const match = /^(?:(?:\+|00)?97[02]|0)?(5[69]\d{7})$/.exec(ascii);
   return match ? `0${match[1]}` : null;
 }
 

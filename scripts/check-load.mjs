@@ -17,6 +17,7 @@ const percentile = (values, quantile) => values.length ? Math.round([...values].
 if (process.argv.includes('--serve')) {
   assert.ok(process.send, 'Load server must be started by the local harness');
   const { db, server, shutdown } = await import('../server/main.ts');
+  const { hashPassword } = await import('../server/domain/passwords.ts');
   const now = Date.now(), actors = [], usedPhones = new Set();
   function actor(role, number) {
     let phone;
@@ -31,6 +32,9 @@ if (process.argv.includes('--serve')) {
   const orderInsert = db.prepare(`INSERT INTO orders(customer_id,driver_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,
     detail,option,loading_help,price,commission,status,handover_code,created_at,updated_at,completed_at,assigned_at)
     VALUES(?,?,'parcel',0,'ramallah','nablus','Load private pickup','Load private dropoff',?,'Load private contents','small',0,20,3,?,'1234',?,?,?,?)`);
+  // Password logins under a bounded KDF: one shared synthetic credential, eight accounts.
+  const loginPassword = 'Synthetic-load-password', loginHash = await hashPassword(loginPassword);
+  const loginPhones = Array.from({ length: 8 }, (_, i) => `05690000${String(i + 1).padStart(2, '0')}`);
   db.exec('BEGIN IMMEDIATE');
   for (let i = 0; i < 60; i++) {
     const customer = actor('customer', i), driver = actor('driver', i);
@@ -44,11 +48,20 @@ if (process.argv.includes('--serve')) {
     const a = actors[i % actors.length], at = now - (i + 1) * 60_000;
     orderInsert.run(a.customer.id, a.driver.id, a.customer.phone, 'completed', at, at, at, at);
   }
+  // A full job board is materially more expensive than an empty one; include enough for three pages.
+  for (let i = 0; i < 120; i++) {
+    const a = actors[i % actors.length];
+    orderInsert.run(a.customer.id, null, a.customer.phone, 'searching', now + i, now + i, null, null);
+  }
+  // Password logins under a bounded KDF: one shared synthetic credential, eight accounts.
+  for (const phone of loginPhones)
+    db.prepare('INSERT INTO users(phone,name,password,role,status,created_at) VALUES(?,?,?,?,?,?)')
+      .run(phone, 'Load login', loginHash, 'customer', 'active', now);
   db.exec('COMMIT');
   const eventLoop = monitorEventLoopDelay({ resolution: 10 });
   eventLoop.enable();
   await new Promise(r => server.listen(0, '127.0.0.1', r));
-  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000 });
+  process.send({ type: 'ready', port: server.address().port, actors, admin, history: 10_000, queued: 120, logins: { phones: loginPhones, password: loginPassword } });
   process.on('message', async message => {
     if (message === 'stop') {
       process.send({ type: 'runtime', memory: process.memoryUsage(), cpu: process.cpuUsage(),
@@ -108,7 +121,13 @@ if (process.argv.includes('--serve')) {
     ready.base = `http://127.0.0.1:${ready.port}`;
     const { actors, admin } = ready;
     await request('/ready');
-    console.log(`Local-only API fixture ready: ${actors.length * 2 + 1} synthetic accounts, ${ready.history} historical orders`);
+    console.log(`Local-only API fixture ready: ${actors.length * 2 + 1} synthetic accounts, ${ready.history} historical orders, ${ready.queued} searching orders`);
+    const jobsPage = await request('/jobs?page=1', { token: actors[0].driver.token, operation: 'populated-jobs-page' });
+    assert.equal(jobsPage.data.jobs.length, 20);
+    assert.ok(jobsPage.data.nextCursor);
+    const jobsNext = await request(`/jobs?page=1&after=${encodeURIComponent(jobsPage.data.nextCursor)}`, { token: actors[0].driver.token, operation: 'populated-jobs-next-page' });
+    assert.equal(jobsNext.data.jobs.length, 20);
+    assert.ok(!jobsNext.data.jobs.some(job => jobsPage.data.jobs.some(first => first.id === job.id)));
     async function work(kind, phase) {
       const i = serial++, a = actors[i % actors.length];
       const n = i % (kind === 'read' ? 6 : 10);
@@ -126,14 +145,14 @@ if (process.argv.includes('--serve')) {
       } else {
         const paths = [
           ['/me', a.customer.token, 'customer-profile'], ['/orders', a.customer.token, 'customer-history'], ['/orders', a.driver.token, 'driver-history'],
-          ['/jobs', a.driver.token, 'driver-jobs'], [`/orders/${a.orderId}/live?since=0`, a.customer.token, 'live-fix-immediate'], ['/admin/stats', admin.token, 'admin-dashboard'],
+          ['/jobs?page=1', a.driver.token, 'driver-jobs'], [`/orders/${a.orderId}/live?since=0`, a.customer.token, 'live-fix-immediate'], ['/admin/stats', admin.token, 'admin-dashboard'],
         ];
         const [path, token, operation] = paths[n % paths.length];
         await request(path, { token, phase, operation });
       }
     }
     const selectedPhase = process.argv.find(value => value.startsWith('--phase='))?.slice('--phase='.length);
-    if (selectedPhase && !/^(read|mixed)-(1|10|30|60)$/.test(selectedPhase)) throw new Error('Unknown load phase');
+    if (selectedPhase && !/^(?:(?:read|mixed)-(?:1|10|30|60)|auth-8)$/.test(selectedPhase)) throw new Error('Unknown load phase');
     for (const concurrency of [1, 10, 30, 60]) for (const kind of ['read', 'mixed']) {
       if (selectedPhase && selectedPhase !== `${kind}-${concurrency}`) continue;
       const phase = `${kind}-${concurrency}`, phaseStart = performance.now(), until = phaseStart + 8_000;
@@ -153,6 +172,37 @@ if (process.argv.includes('--serve')) {
       result.requestsPerSecond = Math.round(result.requests / elapsedSeconds * 100) / 100;
       phases.push(result);
       console.log(JSON.stringify(result));
+    }
+    if (!selectedPhase || selectedPhase === 'auth-8') {
+      // Uncontended KDF burst: eight closed-loop clients, 40 real logins (inside the 50/10-minute
+      // address limit), with health and order reads interleaved to prove the event loop stays free.
+      const phase = 'auth-8', phaseStart = performance.now(), until = phaseStart + 4_000, { phones, password } = ready.logins;
+      let issued = 0;
+      await Promise.all(Array.from({ length: 8 }, async () => {
+        while (performance.now() < until && issued < 40) {
+          const index = issued++;
+          await request('/auth/login', { body: { phone: phones[index % phones.length], password }, phase, operation: 'login-kdf' });
+          if (index % 2 === 0) await request('/health', { phase, operation: 'health-during-kdf' });
+          if (index % 4 === 0) {
+            const a = actors[index % actors.length];
+            await request(`/orders/${a.orderId}`, { token: a.customer.token, phase, operation: 'order-read-during-kdf' });
+          }
+        }
+      }));
+      const elapsedSeconds = (performance.now() - phaseStart) / 1000;
+      const result = { phase, concurrency: 8, kind: 'auth', elapsedSeconds: Math.round(elapsedSeconds * 100) / 100,
+        ...summarize(records.filter(r => r.phase === phase)) };
+      result.requestsPerSecond = Math.round(result.requests / elapsedSeconds * 100) / 100;
+      phases.push(result);
+      console.log(JSON.stringify(result));
+      const health = records.filter(record => record.phase === phase && record.operation === 'health-during-kdf');
+      const healthP95 = percentile(health.map(record => record.ms), .95);
+      const orders = records.filter(record => record.phase === phase && record.operation === 'order-read-during-kdf');
+      const orderP95 = percentile(orders.map(record => record.ms), .95);
+      performanceGates.push({ gate: 'auth-8: health p95 < 250ms while password KDFs run', actualMs: healthP95, passed: healthP95 !== null && healthP95 < 250 });
+      performanceGates.push({ gate: 'auth-8: order read p95 < 500ms while password KDFs run', actualMs: orderP95, passed: orderP95 !== null && orderP95 < 500 });
+      const logins = records.filter(record => record.phase === phase && record.operation === 'login-kdf');
+      checks.push(`${logins.length} password logins stayed inside the bounded KDF pool without refusal; health p95 ${healthP95}ms, order read p95 ${orderP95}ms`);
     }
     await Promise.all(actors.map((a, i) => request(`/orders/${a.orderId}`, { token: actors[(i + 1) % actors.length].customer.token, expected: 404, operation: 'foreign-order-denied' })));
     await Promise.all(actors.map(a => request(`/orders/${a.orderId}`, { expected: 401, operation: 'anonymous-order-denied' })));
@@ -186,11 +236,18 @@ if (process.argv.includes('--serve')) {
     assert.deepEqual(lock.prepare('PRAGMA foreign_key_check').all(), []);
     assert.equal(lock.prepare('SELECT COUNT(*) n FROM order_commands').get().n, expectedCommands.size);
     assert.equal(duplicateIds.length, 0);
-    assert.equal(lock.prepare("SELECT COUNT(*) n FROM orders WHERE status='searching'").get().n, 0);
+    assert.equal(lock.prepare("SELECT COUNT(*) n FROM orders WHERE status='searching'").get().n, ready.queued);
     checks.push(`Integrity OK, zero foreign-key errors, ${expectedCommands.size} idempotent bookings each stored once and cancelled`);
     console.log(checks.map(c => `PASS ${c}`).join('\n'));
     // These are the handoff's engineering targets, not a production SLA. Exclude deliberate held reads/lock faults.
     for (const phase of phases) performanceGates.push({ gate: `${phase.phase}: non-provider API p95 < 500ms`, actualMs: phase.p95, passed: phase.p95 < 500 });
+    for (const phase of phases.filter(item => item.concurrency === 60)) {
+      const jobs = records.filter(record => record.phase === phase.phase && record.operation === 'driver-jobs');
+      if (jobs.length) {
+        const p95 = percentile(jobs.map(record => record.ms), .95);
+        performanceGates.push({ gate: `${phase.phase}: populated driver jobs p95 < 500ms`, actualMs: p95, passed: p95 < 500 });
+      }
+    }
     const commands = records.filter(record => ['book-idempotent', 'cancel-load-booking'].includes(record.operation));
     if (commands.length) {
       const p95 = percentile(commands.map(record => record.ms), .95);
@@ -206,7 +263,7 @@ if (process.argv.includes('--serve')) {
     writeFileSync(join(output, 'server.log'), serverOutput);
     writeFileSync(join(output, 'results.json'), JSON.stringify({ startedAt, finishedAt: new Date().toISOString(),
       environment: { node: process.version, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model, logicalCpus: cpus().length, memoryGiB: Math.round(totalmem() / 1024 ** 3),
-        target: 'ephemeral loopback child process; disposable SQLite WAL database', historicalOrders: ready?.history, syntheticAccounts: 121, pacingOperationsPerSecond: 250, phaseSeconds: 8 },
+        target: 'ephemeral loopback child process; disposable SQLite WAL database', historicalOrders: ready?.history, searchingOrders: ready?.queued, syntheticAccounts: 121, pacingOperationsPerSecond: 250, phaseSeconds: 8 },
       phases, checks, performanceGates, unexpectedErrors: unexpected, correctness: summarize(records.filter(r => r.phase === 'correctness')), runtime }, null, 2));
     writeFileSync(join(output, 'requests.json'), JSON.stringify(records, null, 2));
   }

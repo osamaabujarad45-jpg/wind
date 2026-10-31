@@ -7,6 +7,7 @@ import { freshPostgres,connect } from './pg-support.mjs';
 import { DurableWorker } from '../server/worker.ts';
 import { enqueuePush } from '../server/domain/events.ts';
 import { PUSH_KINDS } from '../server/domain/native-push.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: the worker refuses an unconfigured VAPID subject
 
 const booking=`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,detail,option,loading_help,price,status,created_at,updated_at)
  VALUES(?,'parcel',0,'ramallah','nablus','PRIVATE_ADDRESS','PRIVATE_ADDRESS','0599800001','PRIVATE_DETAIL','small',0,20,'searching',?,?)`;

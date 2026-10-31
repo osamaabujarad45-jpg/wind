@@ -1,19 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { bearing, glider } from './map-math';
+import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
+import { selectRenderer } from './map-provider';
+import { useMapMode } from './map-mode';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
-// iOS: Apple Maps, no key. Android uses route-map.android.tsx (no Google Maps key in the build).
+// iOS: Apple Maps is the baseline (no key). When this binary was built with a restricted Google key
+// (extra.googleMaps.ios) and the user selected the Google mode, the shared native Google renderer draws.
 export const canPin = true;
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
+  const { pickup, dropoff } = props;
+  const [mode] = useMapMode();
+  const renderer = props.forceBaseline ? 'apple' : selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode);
+  if (renderer === 'google') return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
+  return <AppleRouteMap {...props} />;
+}
+
+function AppleRouteMap(props: RouteMapProps) {
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
   const { c } = useCopy();
   const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
@@ -85,8 +98,8 @@ export default function RouteMap(props: RouteMapProps) {
 // The driver marker glides to each fix over the gap between fixes, like web/Android: still moving when the next fix
 // lands, no hop-and-wait. Driven from JS, not animateMarkerToCoordinate: on iOS that drops a request while one runs
 // and truncates its duration to whole seconds. Own component so a frame re-renders the marker, not the map.
-// ponytail: one setState per frame on one marker; Reanimated if low-end phones drop frames.
-function Car({ driver, title, approach, still, stale }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean; stale: boolean }) {
+// Exported for the Google renderer (google-map.native.tsx): marker motion is provider-agnostic.
+export function Car({ driver, title, approach, still, stale }: { driver: NonNullable<RouteMapProps['driver']>; title?: string; approach: RouteMapProps['approach']; still: boolean; stale: boolean }) {
   const [glide] = useState(() => glider({ latitude: driver.latitude, longitude: driver.longitude, rotation: driver.heading ?? 0 }));
   const [pose, setPose] = useState(() => glide.frame(0).now);
   const [lineAt, setLineAt] = useState(pose); // the approach line's first point: the marker, redrawn ~10x/s like web/Android
@@ -127,7 +140,13 @@ const styles = StyleSheet.create({
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
 
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap(props: PinMapProps) {
+  const [mode] = useMapMode();
+  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
+  return <ApplePin {...props} />;
+}
+
+function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);

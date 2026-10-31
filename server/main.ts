@@ -16,22 +16,27 @@ import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/disp
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
-import { Ledger, registerLedgerRoutes } from './domain/ledger.ts';
+import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
 import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
-import { destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
+import { destinationAvailable, destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
+import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
+import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
+import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
+import { registerPlaceSearchRoutes } from './domain/place-search.ts';
+import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
-import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { accessSync, constants, createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import { accessSync, constants, createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompress } from 'node:zlib';
@@ -42,7 +47,7 @@ import {
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
-import { b64url, encrypt, pushEndpoint, vapid } from './push.ts';
+import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
@@ -68,6 +73,7 @@ const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path
 // Dev (`npm run server`): serve public/ so the Android app's map page (/map.html + /vendor) loads; without it the WebView 404s
 // and every Android map falls back to the diagram.
 const webRoot = process.env.WEB_ROOT ? resolve(process.env.WEB_ROOT) : production ? null : fileURLToPath(new URL('../public', import.meta.url));
+if (production && webRoot && !existsSync(webRoot)) throw new Error('Production WEB_ROOT does not exist');
 const webContentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -121,9 +127,18 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
 }
 
 // Same-origin app; OpenFreeMap serves the map style, tiles, glyphs and sprites. React Native Web injects <style> tags.
-const webCsp = ["default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://tiles.openfreemap.org",
-  "font-src 'self' data:", "connect-src 'self' https://tiles.openfreemap.org", "worker-src 'self' blob:", "manifest-src 'self'",
+// The Google web renderer (T12) widens these rules only when a restricted browser key is configured for the
+// deployment — a baseline deployment never opens its CSP to Google at all.
+export const webCspFor = (googleBrowserKey: boolean) => [
+  "default-src 'self'",
+  googleBrowserKey ? "script-src 'self' https://maps.googleapis.com" : "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'" + (googleBrowserKey ? ' https://fonts.googleapis.com https://maps.googleapis.com' : ''),
+  "img-src 'self' data: blob: https://tiles.openfreemap.org" + (googleBrowserKey ? ' https://*.googleapis.com https://*.gstatic.com *.google.com *.googleusercontent.com' : ''),
+  "font-src 'self' data:" + (googleBrowserKey ? ' https://fonts.gstatic.com' : ''),
+  "connect-src 'self' https://tiles.openfreemap.org" + (googleBrowserKey ? ' https://maps.googleapis.com' : ''),
+  "worker-src 'self' blob:", "manifest-src 'self'",
   "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
+const webCsp = webCspFor(!!process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY);
 const compressible = (type: string) => /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg\+xml|font\/ttf)/.test(type);
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
@@ -176,14 +191,15 @@ async function settings(): Promise<Settings> {
   return { ...defaultSettings, ...stored };
 }
 
-function hashPassword(password: string) {
-  const salt = randomBytes(16).toString('hex');
-  return `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;
+// scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
+async function hashPassword(password: string) {
+  try { return await createPasswordHash(password); }
+  catch (error) { if (error instanceof PasswordBusyError) fail(503, 'password_busy'); throw error; }
 }
 
-function checkPassword(password: string, stored: string) {
-  const [salt, hash] = stored.split(':');
-  return timingSafeEqual(Buffer.from(hash, 'hex'), scryptSync(password, salt, 32));
+async function checkPassword(password: string, stored: string) {
+  try { return await verifyPassword(password, stored); }
+  catch (error) { if (error instanceof PasswordBusyError) fail(503, 'password_busy'); throw error; }
 }
 
 function newPassword(value: unknown, minimum = production || selfService ? 12 : 6) {
@@ -241,7 +257,10 @@ const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.pho
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
   LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0) LEFT JOIN order_disputes od ON od.order_id = o.id`;
 
-async function toOrder(r: Row, viewer: User): Promise<Order> {
+type JobCardData = { customers: Map<number, { rating: number | null; trips: number }>;
+  offers: Map<number, { price: number; createdAt: number }> };
+
+async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order> {
   const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
   const assigned = viewer.id === r.driver_id;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
@@ -249,7 +268,8 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
-  const destinationChange = persistence.backend === 'sqlite' && (viewer.id === r.customer_id || viewer.id === r.driver_id)
+  // T33: the pending destination card follows the capability, not the dialect.
+  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -287,10 +307,12 @@ async function toOrder(r: Row, viewer: User): Promise<Order> {
     recommendedPrice: r.recommended_price ?? null, priceRating: r.price_rating ?? null, routeKm: r.route_km ?? null,
     // The courier has other stops on this run, so a straight-to-you ETA would be wrong (SPEC-courier-run-eta.md).
     sharedRun: (owner || assigned) && activeStatuses.includes(r.status) && !!r.shared_run,
-    myOffer: viewer.role === 'driver' && r.status === 'searching' ? (await myOffer(r.id, viewer.id)) : null,
+    myOffer: viewer.role === 'driver' && r.status === 'searching'
+      ? cards ? cards.offers.get(Number(r.id)) ?? null : await myOffer(r.id, viewer.id) : null,
     // Drivers rate the customer; customers never see per-order or summary ratings (SPEC-customer-rating.md).
     customerRating: assigned || viewer.role === 'admin' ? r.customer_rating ?? null : null,
-    ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: (await customerStats(r.customer_id)) }),
+    ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: cards
+      ? cards.customers.get(Number(r.customer_id)) ?? { rating: null, trips: 0 } : await customerStats(r.customer_id) }),
     ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: (await offersFor(r.id)) }),
     ...(dispatchInfo ? { dispatch: dispatchInfo as Order['dispatch'] } : {}),
     ...(rideInfo ? { ride: rideInfo as Order['ride'] } : {}),
@@ -311,6 +333,26 @@ const myOffer = async (orderId: number, driverId: number) => {
   const f = (await one('SELECT price, created_at FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', orderId, driverId, Date.now() - OFFER_TTL));
   return f ? { price: f.price as number, createdAt: f.created_at as number } : null;
 };
+
+// A job page can contain 50 customers and 50 offers. Fetch each relation once per request;
+// neither result is cached across requests, so ratings and the driver's offers stay current.
+async function jobCardData(rows: Row[], driverId: number): Promise<JobCardData> {
+  const customers = new Map<number, { rating: number | null; trips: number }>();
+  const offers = new Map<number, { price: number; createdAt: number }>();
+  if (!rows.length) return { customers, offers };
+  const customerIds = [...new Set(rows.map(row => Number(row.customer_id)))];
+  const orderIds = rows.map(row => Number(row.id));
+  const stats = await all(`SELECT customer_id, AVG(customer_rating) rating, COUNT(customer_rating) rated,
+    COUNT(*) FILTER (WHERE status IN (${finishedSql})) trips FROM orders
+    WHERE customer_id IN (${customerIds.map(() => '?').join(',')}) GROUP BY customer_id`, ...customerIds);
+  for (const row of stats) customers.set(Number(row.customer_id), {
+    rating: Number(row.rated) >= 3 ? Math.round(Number(row.rating) * 10) / 10 : null, trips: Number(row.trips),
+  });
+  const rowsWithOffers = await all(`SELECT order_id, price, created_at FROM order_offers
+    WHERE driver_id = ? AND created_at > ? AND order_id IN (${orderIds.map(() => '?').join(',')})`, driverId, Date.now() - OFFER_TTL, ...orderIds);
+  for (const row of rowsWithOffers) offers.set(Number(row.order_id), { price: Number(row.price), createdAt: Number(row.created_at) });
+  return { customers, offers };
+}
 const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.all((await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
   WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL))
   .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) }))));
@@ -355,6 +397,7 @@ const identityKey = (kind: string, value: string | number) => `${kind}:${sha(Str
 // Entra External ID exchange: the app completes PKCE in the system browser, then trades the
 // ID token here. The server verifies signature/issuer/audience/expiry itself and only then
 // links or creates the Wind account — the password path above stays available during migration.
+type EntraClaims = Awaited<ReturnType<typeof verifyEntraIdToken>>;
 const entraExchange = async ({ body }: { body: Row }) => {
   if (!entra) fail(503, 'entra_unavailable');
   const idToken = typeof body.idToken === 'string' ? body.idToken : '';
@@ -375,9 +418,17 @@ const entraExchange = async ({ body }: { body: Row }) => {
     (await run('INSERT INTO entra_replay (token_hash, expires_at) VALUES (?, ?)', sha(claims!.tokenId || idToken), claims!.expiresAt));
   } catch { fail(401, 'invalid_token'); }
   (await limit(identityKey('entra', claims!.oid), 10, 10 * 60_000));
-  let user = (await one('SELECT * FROM users WHERE entra_oid = ?', claims!.oid));
-  const phone = claims!.phoneVerified && claims!.phone ? normalizePhone(claims!.phone) : null;
-  const email = claims!.emailVerified && claims!.email ? normalizeEmail(claims!.email) : null;
+  // The passwordless placeholder is derived before the write transaction; the bounded KDF must
+  // never run while one is open. A linked identity needs no new placeholder.
+  const known = (await one('SELECT id FROM users WHERE entra_oid = ?', claims!.oid));
+  const placeholder = known ? '' : await hashPassword(randomBytes(32).toString('hex'));
+  return persistence.atomic({ purpose: 'http_public' }, () => entraAccount(claims!, body, placeholder));
+};
+
+async function entraAccount(claims: EntraClaims, body: Row, placeholder: string) {
+  let user = (await one('SELECT * FROM users WHERE entra_oid = ?', claims.oid));
+  const phone = claims.phoneVerified && claims.phone ? normalizePhone(claims.phone) : null;
+  const email = claims.emailVerified && claims.email ? normalizeEmail(claims.email) : null;
   if (body.email !== undefined) {
     const enteredEmail = normalizeEmail(String(body.email));
     if (!enteredEmail) fail(400, 'invalid_email');
@@ -397,7 +448,7 @@ const entraExchange = async ({ body }: { body: Row }) => {
       if (user.status === 'blocked') fail(403, 'blocked');
       if (user.role === 'admin' || user.entra_oid) fail(403, 'entra_link_required');
       const linked = await run(`UPDATE users SET entra_oid = ? WHERE id = ? AND entra_oid IS NULL AND role <> 'admin' AND status <> 'blocked'
-        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND email_verified_at IS NOT NULL))`, claims!.oid, user.id, phone, email);
+        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND email_verified_at IS NOT NULL))`, claims.oid, user.id, phone, email);
       if (!linked.changes) fail(403, 'entra_link_required');
     } else {
       if (!registrationOpen) fail(403, 'registration_closed');
@@ -412,10 +463,11 @@ const entraExchange = async ({ body }: { body: Row }) => {
       const role: Role = requestedRole === 'driver' ? 'driver' : 'customer';
       const vehicle = role === 'driver' ? (vehicles.includes(body.vehicle ?? 'car') ? (body.vehicle ?? 'car') as Vehicle : fail(400, 'invalid_vehicle')) : null;
       const plate = role === 'driver' ? text(body.plate, 12, false) || null : null;
-      const name = claims!.name ?? text(body.name, 60);
+      const name = claims.name ?? text(body.name, 60);
+      if (!placeholder) fail(409, 'entra_link_required'); // raced with a linked-row removal: retry the exchange
       const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version, entra_oid, phone_verified_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        registrationPhone, name, hashPassword(randomBytes(32).toString('hex')), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
-        selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims!.oid,
+        registrationPhone, name, placeholder, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+        selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims.oid,
         phone === registrationPhone ? Date.now() : null, email ? Date.now() : null)).lastInsertRowid);
       if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
       user = (await one('SELECT * FROM users WHERE id = ?', id))!;
@@ -430,7 +482,7 @@ const entraExchange = async ({ body }: { body: Row }) => {
   if (!contactAllowed(user)) fail(403, 'verification_required');
   if (production && !selfService && !user.phone_verified_at) fail(403, 'phone_not_verified');
   return (await startSession(user.id));
-};
+}
 
 // ---------- routes ----------
 
@@ -461,6 +513,43 @@ registerResourceScopeRoutes(route, resourceScope);
 const privateObjects = createPrivateObjects(persistence, fail);
 registerPrivateObjectRoutes(route, privateObjects);
 const ledger = new Ledger(persistence, fail);
+
+// T29/T30: live ledger posting on the PostgreSQL capability. Journals reuse importLegacy's stable business
+// references, so a later import meets the posted journals and dedupes on the business_ref instead of
+// double-counting. SQLite has no ledger tables: the legacy cash flow stays the sole authority there, and
+// posting is skipped. A posting failure fails the enclosing money transition (same transaction).
+async function ledgerReady() {
+  return persistence.backend === 'postgres' && !!(await ledgerAvailable(persistence));
+}
+const postOrderJournals = async (orderId: number) => {
+  if (!(await ledgerReady())) return;
+  const o = (await one('SELECT * FROM orders WHERE id = ?', orderId))!;
+  const receivable = await ledger.ensureAccount(`driver:${o.driver_id}:receivable`, 'driver_receivable', Number(o.driver_id));
+  const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+  const promo = await ledger.ensureAccount('platform:promo_expense', 'promo_expense', null);
+  const commission = Number(o.commission_minor ?? 0), discount = Number(o.discount_minor ?? 0);
+  if (commission > 0) await ledger.postJournal({ businessRef: `order:${o.id}:commission`, kind: 'commission_accrual', orderId: o.id as number,
+    entries: [{ accountId: receivable.id as number, debitMinor: commission }, { accountId: revenue.id as number, creditMinor: commission }] });
+  if (discount > 0) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
+    entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
+};
+const postCashJournal = async (entryId: number) => {
+  if (!(await ledgerReady())) return;
+  const e = (await one('SELECT * FROM cash_entries WHERE id = ?', entryId))!;
+  if (e.kind === 'remittance' && e.status !== 'confirmed') return; // pending and disputed handovers stay unsettled
+  const amount = Number(e.amount_cents);
+  if (!amount) return;
+  const receivable = await ledger.ensureAccount(`driver:${e.driver_id}:receivable`, 'driver_receivable', Number(e.driver_id));
+  const clearing = await ledger.ensureAccount('platform:provider_clearing', 'provider_clearing', null);
+  const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+  const other = e.kind === 'remittance' ? clearing : revenue;
+  // Sign-aware, exactly like the import: a positive adjustment increases the debt, a negative one relieves it.
+  const debitReceivable = e.kind === 'adjustment' ? amount > 0 : amount < 0;
+  const n = Math.abs(amount);
+  await ledger.postJournal({ businessRef: `cash-entry:${e.id}`, kind: e.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: e.id as number,
+    entries: debitReceivable ? [{ accountId: receivable.id as number, debitMinor: n }, { accountId: other.id as number, creditMinor: n }]
+      : [{ accountId: other.id as number, debitMinor: n }, { accountId: receivable.id as number, creditMinor: n }] });
+};
 registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
@@ -486,8 +575,8 @@ route('GET', '/api/ready', async () => {
       await one('SELECT COUNT(*) n FROM sqlite_schema');
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
-      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 20'))?.n ?? 0);
-      if (schema < 20 || applied !== 18) fail(503, 'unavailable');
+      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
+      if (schema < 21 || applied !== 19) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -517,12 +606,16 @@ route('POST', '/api/auth/register', async ({ body }) => {
   // ponytail: an unverified address still blocks a second sign-up with it; taking it over would silently strip email
   // sign-in from the first account while most addresses are unverified. Support edits the address if it is squatted.
   if (email && (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE', email))) fail(409, 'email_taken');
-  const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
-    selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
-  // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
-  if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
-  const session = (await startSession(id));
+  const hashed = await hashPassword(password);
+  // The KDF stays outside this short transaction; the user, its alert and its session commit together.
+  const [id, session] = await persistence.atomic({ purpose: 'http_public' }, async () => {
+    const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      phone, name, hashed, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+      selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
+    // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
+    if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
+    return [id, await startSession(id)] as const;
+  });
   if (!emailReady || !email) return session;
   // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
   const account = (await one('SELECT * FROM users WHERE id = ?', id))!;
@@ -538,7 +631,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
   const r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
-  if (!r || !checkPassword(String(body.password ?? ''), r.password)) {
+  if (!r || !await checkPassword(String(body.password ?? ''), r.password)) {
     (await limit(key, 5, 10 * 60_000));
     fail(401, 'wrong_credentials');
   }
@@ -667,7 +760,7 @@ route('POST', '/api/auth/reset/code', async ({ body }) => {
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', async ({ body }) => {
-  const password = hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
+  const password = await hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
   // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
   const r = (await accountFor(body.identifier)) ?? fail(400, 'wrong_email_code');
   try { (await useCode(r, 'reset', body.code)); }
@@ -707,12 +800,13 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
   (await limit(key, 5, 10 * 60_000, false));
   const stored = (await one('SELECT password FROM users WHERE id = ?', user.id))!.password;
-  if (!checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, 'wrong_password'); }
-  const password = hashPassword(newPassword(body.password));
+  if (!await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, 'wrong_password'); }
+  const password = await hashPassword(newPassword(body.password));
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    (await run('UPDATE users SET password = ? WHERE id = ?', password, user.id));
+    // Re-check the exact credential the KDF approved: a concurrent change must not be overwritten.
+    if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', password, user.id, stored)).changes) fail(401, 'wrong_password');
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
     (await run('DELETE FROM request_limits WHERE key = ?', key));
     (await persistence.exec('COMMIT'));
@@ -732,7 +826,8 @@ async function deleteAccount(user: User) {
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
-    if (persistence.backend === 'sqlite') await run("UPDATE destination_changes SET original = '[]', dropoff_note = '', dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?", user.id);
+    // T33: the privacy scrub follows the capability on both backends (destination_changes hosts proposals).
+    if ((await destinationAvailable(persistence))) await run("UPDATE destination_changes SET original = '[]', dropoff_note = '', dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?", user.id);
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
@@ -807,6 +902,12 @@ async function promoFor(user: User, input: unknown, price: number) {
     return { id: null, referrerId: ref.user_id as number, code, discount: Math.min(REFERRAL_REWARD, price - 1) };
   }
   if (((await one('SELECT user_id FROM promo_owners WHERE promo_id = ?', p.id))?.user_id ?? user.id) !== user.id) fail(400, 'invalid_promo'); // someone's reward
+  // T26: the use count and the redemption insert share the caller's write transaction; PostgreSQL takes a
+  // per-promo-and-customer advisory lock so concurrent bookings cannot slip past the count under READ
+  // COMMITTED. A cancelled order frees its redemption (promoUses ignores cancelled orders), so a plain
+  // unique index would wrongly block the legitimate re-use of a cancelled booking's code.
+  if (persistence.backend === 'postgres')
+    (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_promo_use:' || ? || ':' || ?, 0))", p.id, user.id));
   if ((await one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id))!.n > 0 || (await one(promoUses, p.id))!.n >= p.max_uses
     || (p.first_order_only && (await one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)))) fail(409, 'promo_used');
   if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below â‚ª1, so nothing would be discounted
@@ -891,8 +992,8 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined';
-// ponytail: a fixed subject; set WIND_PUSH_SUBJECT to the operator's mailto: or site when it changes.
-const PUSH_SUBJECT = process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app';
+// T37: the subject is read at send time and must be configured (no obsolete host default).
+const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
 async function pushKeys() {
   if (pushKeyCache) return pushKeyCache;
@@ -930,7 +1031,7 @@ async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   try {
     const { privateKey, publicRaw } = (await pushKeys());
     const res = await fetch(s.endpoint as string, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
-      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT) } });
+      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT()) } });
     await res.body?.cancel();
     if (res.status === 404 || res.status === 410) (await run('DELETE FROM push_subscriptions WHERE endpoint = ?', s.endpoint)); // the browser dropped it
   } catch { /* best effort: the app still shows everything on next open */ }
@@ -962,6 +1063,23 @@ async function dispatchOrBroadcast(service: Service, orderId: number, customerId
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
+}
+/** T21: stale unscheduled searching demand is system-cancelled so it cannot occupy the board forever. */
+export async function expireStaleDemand(now = Date.now()) {
+  return persistence.atomic({ purpose: 'stale_demand_expiry' }, async () => {
+    if (draining) return 0;
+    const stale = (await all(`SELECT id, customer_id FROM orders WHERE status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL
+      AND created_at < ? LIMIT 50`, now - SEARCH_EXPIRY_MS));
+    let expired = 0;
+    for (const o of stale) {
+      // CAS: only still searching, unassigned and unscheduled at the moment of the update.
+      if (!(await run(`UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?
+        AND status = 'searching' AND driver_id IS NULL AND scheduled_for IS NULL`, now, o.id)).changes) continue;
+      expired++;
+      await queuePush([o.customer_id as number], 'cancelled', o.id as number); // the sender learns why their order left the board
+    }
+    return expired;
+  }).then(expired => { void (async () => { if (expired) await flushPush(); })(); return expired; });
 }
 async function releaseJobAlerts(now: number) {
   if (draining) return;
@@ -1124,7 +1242,19 @@ route('POST', '/api/price', async ({ user, body }) => {
   };
 });
 
+// T21: a customer's unscheduled searching demand is capped so spam cannot bury matching supply, and stale
+// unclaimed demand stops occupying the board. Both are policy bounds, not money: assigned custody and
+// not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
+const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
+const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 24 * 86_400_000, 3_600_000);
+
 async function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
+  // T21: the cap check and the insert share the caller's write transaction — every booking path enters
+  // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
+  // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
+  if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+  const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status = 'searching' AND scheduled_for IS NULL", user.id)) as { n: number };
+  if (Number(searching.n) >= SEARCHING_LIMIT) fail(409, 'too_many_searching');
   // WP08: quote-bound path enforces immutable itinerary/scope, minor-unit lines, versioned ETA and 120s expiry.
   // Legacy path preserves recomputed price/price_changed and promo_changed contracts.
   if (body.quoteId != null) {
@@ -1353,7 +1483,12 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
     (await persistence.exec('COMMIT'));
     return order;
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  } catch (error) {
+    (await persistence.exec('ROLLBACK'));
+    // A concurrent retry can commit this key while we wait on it; answer with the winner.
+    if ((error as { code?: string }).code === '23505') { const won = (await replay()); if (won) return won; }
+    throw error;
+  }
 });
 
 // A partner key stays on the two API servers; never ship it in a mobile bundle.
@@ -1370,7 +1505,7 @@ async function partnerUser(): Promise<User> {
   let row = (await one('SELECT * FROM users WHERE phone = ?', phone));
   if (!row) {
     const id = Number((await run("INSERT INTO users (phone, name, password, role, status, vehicle, created_at) VALUES (?, 'سوقنا', ?, 'customer', 'active', NULL, ?)",
-      phone, hashPassword(randomBytes(32).toString('hex')), Date.now())).lastInsertRowid);
+      phone, await hashPassword(randomBytes(32).toString('hex')), Date.now())).lastInsertRowid);
     row = (await one('SELECT * FROM users WHERE id = ?', id));
   }
   return (await toUser(row!));
@@ -1405,14 +1540,23 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
     }
     return (await getOrder(existing.order_id, (await partnerUser())));
   }
-  (await persistence.exec('BEGIN'));
+  const user = await partnerUser(); // its one-time placeholder KDF must precede the transaction
+  // Same short atomic boundary the HTTP envelope used, including the partner_api audit purpose.
   try {
-    const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
-    const order = (await createOrder((await partnerUser()), { ...input, service: 'parcel' }));
-    (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
-    (await persistence.exec('COMMIT'));
-    return order;
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+    return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
+      const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
+      const order = (await createOrder(user, { ...input, service: 'parcel' }));
+      (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
+      return order;
+    });
+  } catch (error) {
+    // A concurrent retry of this reference won the insert; map both callers to its order.
+    if ((error as { code?: string }).code !== '23505') throw error;
+    const winner = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
+    if (!winner) throw error;
+    if (winner.payload_hash !== hash) fail(409, 'idempotency_conflict');
+    return (await getOrder(winner.order_id, (await partnerUser())));
+  }
 }, true);
 
 async function partnerOrder(req: IncomingMessage, id: number) {
@@ -1433,9 +1577,13 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   const order = (await partnerOrder(req, Number(params[0])));
   if (order.status === 'cancelled') return order;
   if (!cancellable.includes(order.status)) fail(409, 'cannot_cancel');
-  if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-  if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
-  return (await partnerOrder(req, order.id));
+  // The KDF carve-out runs partner routes outside the HTTP envelope, so the cancelled push needs its
+  // own mutation transaction (enqueuePush refuses without one); same short boundary as partner create.
+  return (await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
+    if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
+    if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
+    return (await partnerOrder(req, order.id));
+  }));
 }, true);
 
 route('GET', '/api/orders', async ({ user, query }) => {
@@ -1510,14 +1658,29 @@ route('POST', '/api/orders/:id/rate', async ({ user, params, body }) => {
     const customerRating = stars(body.customerRating);
     if (order.status !== 'completed' || customerRating == null || (order.customerRating && order.customerRating !== customerRating)) fail(409, 'cannot_rate');
     if (order.customerRating === customerRating) return order; // a lost response must not make a saved rating look rejected
-    (await run('UPDATE orders SET customer_rating = ? WHERE id = ?', customerRating, order.id));
+    // T26: the claim is conditional on the column still being empty or already equal, so a concurrent
+    // second rating can neither overwrite the first with a different value nor double-write, while a
+    // replay of a lost response (same value) still succeeds.
+    if (!(await run('UPDATE orders SET customer_rating = ? WHERE id = ? AND (customer_rating IS NULL OR customer_rating = ?)',
+      customerRating, order.id, customerRating)).changes) {
+      const saved = Number((await one('SELECT customer_rating FROM orders WHERE id = ?', order.id))!.customer_rating);
+      if (saved !== customerRating) fail(409, 'cannot_rate');
+    }
     return (await getOrder(order.id, user));
   }
   const rating = stars(body.rating), priceRating = stars(body.priceRating);
   if (order.customerId !== user.id || order.status !== 'completed' || (rating == null && priceRating == null)
     || (rating != null && order.rating && order.rating !== rating)
     || (priceRating != null && order.priceRating && order.priceRating !== priceRating)) fail(409, 'cannot_rate');
-  (await run('UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?', rating, priceRating, order.id));
+  // T26: each provided column must still be empty or already equal (a raced different value is refused; a
+  // replay of a lost response, alone or beside a new field, still succeeds against the saved row).
+  const claims = [rating != null ? '(rating IS NULL OR rating = ?)' : '', priceRating != null ? '(price_rating IS NULL OR price_rating = ?)' : ''].filter(Boolean);
+  const claimValues = [rating, priceRating].filter(v => v != null);
+  if (!(await run(`UPDATE orders SET rating = COALESCE(?, rating), price_rating = COALESCE(?, price_rating) WHERE id = ?${claims.length ? ` AND ${claims.join(' AND ')}` : ''}`,
+    rating, priceRating, order.id, ...claimValues)).changes) {
+    const saved = (await one('SELECT rating, price_rating FROM orders WHERE id = ?', order.id))!;
+    if ((rating != null && Number(saved.rating) !== rating) || (priceRating != null && Number(saved.price_rating) !== priceRating)) fail(409, 'cannot_rate');
+  }
   return (await getOrder(order.id, user));
 });
 
@@ -1746,6 +1909,29 @@ function checkpointPoint(raw: unknown, list: CityId[]) {
   if (point && !list.some(id => distanceKm(city(id), point) <= 25)) fail(400, 'checkpoint_too_far');
   return point;
 }
+// Pilot cities' checkpoints at OpenStreetMap positions read 31 Oct 2026: military=checkpoint nodes, the Qalandia checkpoint
+// building and the Tapuach (Za'tara) junction. Only missing names are added, owned by an admin; Roads moves or adds more.
+// ponytail: Al-Jalama (Jenin) and Beit Iba have no mapped position yet, so an admin pins them from the Roads screen.
+const pilotCheckpoints: [name: string, cities: CityId[], latitude: number, longitude: number][] = [
+  ['حاجز حوارة · Huwara', ['nablus'], 32.178, 35.2735],
+  ["حاجز زعترة · Za'tara", ['nablus', 'ramallah'], 32.1153, 35.2573],
+  ['حاجز دير شرف · Deir Sharaf', ['nablus', 'tulkarm'], 32.2551, 35.1852],
+  ['حاجز شافي شمرون · Shavei Shomron', ['nablus', 'jenin'], 32.2642, 35.1879],
+  ['حاجز عطارة · Atara', ['ramallah', 'bireh'], 31.9828, 35.2006],
+  ["حاجز جبع · Jaba'", ['ramallah', 'bireh', 'jericho'], 31.8539, 35.2564],
+  ['حاجز قلنديا · Qalandia', ['ramallah', 'bireh'], 31.8623, 35.2275],
+];
+export async function seedCheckpoints() {
+  const admin = (await one("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1")) ?? fail(409, 'promote an admin first');
+  let added = 0;
+  for (const [name, cities, latitude, longitude] of pilotCheckpoints) {
+    if (await one('SELECT 1 FROM checkpoints WHERE name = ?', name)) continue;
+    const point = checkpointPoint({ latitude, longitude }, cities)!;
+    (await run('INSERT INTO checkpoints (name, cities, lat, lng, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', name, JSON.stringify(cities), point.latitude, point.longitude, admin.id, Date.now()));
+    added++;
+  }
+  return added;
+}
 route('POST', '/api/admin/roads/:id/place', async ({ user, params, body }) => {
   need(user, 'admin');
   const row = (await one('SELECT cities FROM checkpoints WHERE id = ? AND active = 1', Number(params[0]))) ?? fail(404, 'not_found');
@@ -1765,16 +1951,34 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   needActive(user);
   if (!servesFor(user.vehicle).length) fail(409, 'no_vehicle'); // say why the list is empty
   const allowed = servesFor(user.vehicle).filter(service => enabledServices.includes(service));
-  if (!allowed.length) return [];
+  const paging = query.get('page') === '1';
+  const pageSize = paging ? 20 : 50; // keep legacy responses stable while bounding mobile rendering and per-request work
+  if (!allowed.length) return paging ? { version: 1, jobs: [], nextCursor: null } : [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
   // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md).
   const heading = user.heading?.city ?? '';
-  const jobs=(await Promise.all((await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
+  const after = query.get('after');
+  let cursor: [number, number] | undefined;
+  if (after !== null) {
+    if (!/^\d{1,16}:\d{1,16}$/.test(after)) fail(400, 'invalid_input');
+    const [at, id] = after.split(':').map(Number);
+    if (!Number.isSafeInteger(at) || !Number.isSafeInteger(id) || id < 1) fail(400, 'invalid_input');
+    cursor = [at, id];
+  }
+  const rows = await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
     AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?)
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
-    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT 50`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id))
-    .map(async r => (await toOrder(r, user)))));
-  return query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
+    ${cursor ? 'AND (COALESCE(o.scheduled_for, o.created_at) > ? OR (COALESCE(o.scheduled_for, o.created_at) = ? AND o.id > ?))' : ''}
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id,
+    ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
+  const visible = rows.slice(0, pageSize);
+  const cards = await jobCardData(visible, user.id);
+  const jobs = await Promise.all(visible.map(r => toOrder(r, user, cards)));
+  const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
+  if (!paging) return result;
+  const last = visible.at(-1);
+  const nextCursor = rows.length > pageSize && last ? `${last.scheduled_for ?? last.created_at}:${last.id}` : null;
+  return { version: 1, jobs: result, nextCursor };
 });
 
 route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
@@ -1795,7 +1999,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
-      if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id);
+      await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id); // T33: both backends bind the rate snapshot
       await rideLifecycle.ensureAssignment(offered.id, user.id, 'dispatch');
       (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', offered.id, user.id));
       if (!carryingOffer.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
@@ -1823,7 +2027,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
   if (!changed) fail(409, 'already_taken');
-  if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id);
+  await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id); // T33: both backends bind the rate snapshot
   await rideLifecycle.ensureAssignment(order.id, user.id, 'legacy');
   (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id)); // settled, and this driver is busy now
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
@@ -1874,7 +2078,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     // A promo or credit never discounts more than the fare minus â‚ª1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
-    if (persistence.backend === 'sqlite') await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id);
+    await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id); // T33: both backends bind the rate snapshot
     await rideLifecycle.ensureAssignment(r.id, Number(f.id), 'legacy');
     (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id));
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', f.id));
@@ -1949,6 +2153,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
       next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
+    await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
@@ -2122,9 +2327,11 @@ route('POST', '/api/location', async ({ user, body, req }) => {
   // Older builds send no age: their fixes are taken as current, as before.
   const age = body.age == null ? 0 : finite(body.age, 86_400_000, 0) ? Math.round(body.age) : fail(400, 'invalid_location');
   const fixAt = Date.now() - age;
-  // A late upload must not move the driver backward or show a fix from before this job on it.
+  // A late upload must not move the driver backward. A fix timestamped up to 15 s before this
+  // assignment is still accepted: location providers may batch a fix captured just before the
+  // accept, and the marker upsert itself cannot move backward. Older fixes are dropped.
   // Still 2xx: a background task stops on 409, and newer fixes keep coming.
-  if (age > 60_000 || fixAt < Number(since)) return { ok: true, accepted: false };
+  if (age > 60_000 || fixAt < Number(since) - 15_000) return { ok: true, accepted: false };
   // A jump no vehicle can make (over 70 m/s, ~250 km/h, beyond both fixes' error) is a GPS outlier (urban multipath,
   // a network fix): keep the last good one. A more precise fix always wins.
   // Two yardsticks: the last *plausible* fix (good_*), which the reference follows, and the last displayed fix, which
@@ -2164,7 +2371,7 @@ route('POST', '/api/location', async ({ user, body, req }) => {
         AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.email_verified_at IS NOT NULL OR u.approved_at IS NOT NULL)
         AND (? = 0 OR u.phone_verified_at IS NOT NULL)
     ) AND EXISTS (SELECT 1 FROM orders o WHERE o.driver_id = ? AND o.status IN (${activeSql})
-      AND (o.assigned_at IS NULL OR o.assigned_at <= ?))`;
+      AND (o.assigned_at IS NULL OR o.assigned_at <= ? + 15000))`;
     locationArgs.push(user.id, sha(token), checkedAt - SESSION_DAYS * DAY, checkedAt - SESSION_IDLE_DAYS * DAY,
       contactVerificationRequired ? 1 : 0, production && !selfService ? 1 : 0, user.id, fixAt);
   }
@@ -2233,7 +2440,12 @@ async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, re
 
 // Road routing (SPEC-routing-eta.md): self-hosted OSRM on the private network. Without it clients draw no route line.
 const osrmUrl = process.env.OSRM_URL?.trim().replace(/\/$/, '');
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[] };
+let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 'not_checked' | 'route_unavailable' | null } =
+  { healthy: null, checkedAt: null, reason: 'not_checked' };
+const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
+registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
+  reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm' };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
 const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
 let roadCachePoints = 0;
@@ -2244,19 +2456,28 @@ const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpo
 const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking checkpoint (10 parallel OSRM calls, cached)
 
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
-  const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
-    { signal: AbortSignal.timeout(3000) });
-  if (!res.ok) fail(503, 'route_unavailable');
-  const j: any = await res.json();
-  if (j?.code === 'NoRoute') return [];
-  // An upstream error must not become a cached success containing null metrics or a line MapLibre cannot draw.
-  const valid = (r: any) => typeof r?.distance === 'number' && Number.isFinite(r.distance) && r.distance >= 0
-    && typeof r.duration === 'number' && Number.isFinite(r.duration) && r.duration >= 0
-    && Array.isArray(r.geometry?.coordinates) && r.geometry.coordinates.length >= 2
-    && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
-  if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
-  return j.routes
-    .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+  try {
+    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
+      { signal: AbortSignal.timeout(routingTimeout) });
+    if (!res.ok) fail(503, 'route_unavailable');
+    const j: any = await res.json();
+    if (j?.code === 'NoRoute') {
+      routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
+      return [];
+    }
+    // An upstream error must not become a cached success containing null metrics or a line MapLibre cannot draw.
+    const valid = (r: any) => typeof r?.distance === 'number' && Number.isFinite(r.distance) && r.distance >= 0
+      && typeof r.duration === 'number' && Number.isFinite(r.duration) && r.duration >= 0
+      && Array.isArray(r.geometry?.coordinates) && r.geometry.coordinates.length >= 2
+      && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
+    if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
+    routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
+    return j.routes
+      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+  } catch (error) {
+    routingHealth = { healthy: false, checkedAt: Date.now(), reason: 'route_unavailable' };
+    throw error;
+  }
 }
 
 // Best road route (SPEC-checkpoint-routing.md): OSRM's fastest (car profile, multi-level Dijkstra), unless it crosses a
@@ -2310,7 +2531,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
       return { km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
-        avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name),
+        avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
     found = { promise, points: 0 };
@@ -2340,6 +2561,16 @@ route('GET', '/api/route', async ({ user, query }) => {
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
   return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
 });
+
+// Map search (real OpenStreetMap places, server/domain/place-search.ts).
+registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('place-search', id) }, process.env.GEOCODER_URL || undefined);
+
+// T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
+// module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.
+const googleRoutes = createGoogleRoutes({ apiKey: process.env.GOOGLE_MAPS_SERVER_KEY });
+registerGoogleRouteRoutes(route, googleRoutes, { fail, limit, budgetKey: id => identityKey('google-route', id) });
+
+
 
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
@@ -2412,6 +2643,8 @@ async function cashSettled(userId: number) {
 }
 const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
+// T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
+registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');
@@ -2431,6 +2664,7 @@ route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => 
   if (!(await run("UPDATE cash_entries SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
     body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), entry.id)).changes) fail(409, 'already_decided');
   if (body.decision === 'dispute') await queuePush([entry.recorded_by], 'attention', 0, '/admin/cash'); // the admin who recorded it decides
+  else await postCashJournal(entry.id); // T30: the confirmed handover settles in the same transaction
   return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', entry.id))!);
 });
 
@@ -2438,6 +2672,7 @@ route('GET', '/api/admin/cash', async ({ user }) => {
   need(user, 'admin');
   return (await cashBalances('1 = 1')).sort((a, b) => b.owedCents - a.owedCents || a.driverId - b.driverId);
 });
+
 
 async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   need(user, 'admin');
@@ -2461,8 +2696,28 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
     if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
     if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
+    // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
+    // finance approver, never to the recording admin; a backend that cannot host the approval protocol
+    // rejects instead of forgiving. Amount/subject binding re-checks happen in T24's atomic execution.
+    if (kind === 'adjustment' && amount < 0) {
+      const approvalId = Number(body.approvalId);
+      if (!Number.isSafeInteger(approvalId) || approvalId < 1) fail(409, 'approval_required');
+      let approval: Row | undefined;
+      try { approval = await one('SELECT * FROM financial_approvals WHERE id = ?', approvalId); }
+      catch { fail(503, 'approval_unsupported'); }
+      if (!approval || approval.subject_type !== 'cash_adjustment' || approval.subject_id !== String(Number(body.driverId))
+        || Number(approval.amount_minor) !== -amount || approval.status !== 'approved' || approval.decided_by == null
+        || Number(approval.decided_by) === Number(approval.requested_by) || Number(approval.decided_by) === user.id)
+        fail(409, 'approval_required');
+      // T24: the decision is spent exactly once, in the same transaction as the cash entry — a second
+      // request (new requestId) holding the same approval finds it consumed and is refused.
+      if (persistence.backend === 'postgres' &&
+        !(await run("UPDATE financial_approvals SET consumed_at = ? WHERE id = ? AND status = 'approved' AND consumed_at IS NULL", Date.now(), approvalId)).changes)
+        fail(409, 'approval_used');
+    }
     const id = Number((await run('INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);
+    if (kind === 'adjustment') await postCashJournal(id); // T30: adjustments settle as they are recorded
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     (await persistence.exec('COMMIT'));
     return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', id))!);
@@ -2476,8 +2731,14 @@ route('POST', '/api/subscriptions', async ({ user }) => {
   const plan = planForRole[user.role] ?? fail(403, 'forbidden');
   if ((await latestSubscription(user.id))) fail(409, 'already_subscribed');
   const s = (await settings());
-  (await run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
-    user.id, plan, plan === 'plus' ? s.plusPrice : s.proPrice, Date.now()));
+  try {
+    (await run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
+      user.id, plan, plan === 'plus' ? s.plusPrice : s.proPrice, Date.now()));
+  } catch (error) {
+    // T22: a concurrent double tap committed its pending row first; the unique index turns it into one record.
+    if ((error as { code?: string }).code === '23505') fail(409, 'already_subscribed');
+    throw error;
+  }
   await queuePush((await adminIds()), 'attention', 0, '/admin/subscriptions');
   return (await me(user));
 });
@@ -2507,18 +2768,18 @@ route('GET', '/api/admin/stats', async ({ user }) => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - 13);
-  const from = start.getTime();
-  const day = (ms: number) => new Date(ms).toLocaleDateString('en-CA'); // YYYY-MM-DD
-  const byDay = new Map<string, { commission: number; subscriptions: number }>();
-  for (let i = 0; i < 14; i++) byDay.set(day(new Date(start).setDate(start.getDate() + i)), { commission: 0, subscriptions: 0 });
-  for (const r of (await all(`SELECT completed_at t, commission v FROM orders WHERE status IN (${finishedSql}) AND completed_at >= ?`, from))) {
-    const bucket = byDay.get(day(r.t));
-    if (bucket) bucket.commission += r.v;
-  }
-  for (const r of (await all('SELECT activated_at t, price v FROM subscriptions WHERE activated_at >= ?', from))) {
-    const bucket = byDay.get(day(r.t));
-    if (bucket) bucket.subscriptions += r.v;
-  }
+  const boundaries = Array.from({ length: 15 }, (_, i) => new Date(start).setDate(start.getDate() + i));
+  const daily = boundaries.slice(0, 14).map(ms => ({ date: new Date(ms).toLocaleDateString('en-CA'), commission: 0, subscriptions: 0 }));
+  // Group in the database instead of formatting every historical row on the event loop.
+  // Boundaries are local midnights, so a 23- or 25-hour DST day remains one bucket.
+  const bucketCase = (column: string) => `CASE ${boundaries.slice(1, 14).map((_, i) => `WHEN ${column} < ? THEN ${i}`).join(' ')} ELSE 13 END`;
+  const params = [...boundaries.slice(1, 14), boundaries[0], boundaries[14]];
+  const commissions = await all(`SELECT ${bucketCase('completed_at')} bucket, COALESCE(SUM(commission), 0) amount
+    FROM orders WHERE status IN (${finishedSql}) AND completed_at >= ? AND completed_at < ? GROUP BY bucket`, ...params);
+  const subscriptions = await all(`SELECT ${bucketCase('activated_at')} bucket, COALESCE(SUM(price), 0) amount
+    FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY bucket`, ...params);
+  for (const row of commissions) daily[Number(row.bucket)].commission = Number(row.amount);
+  for (const row of subscriptions) daily[Number(row.bucket)].subscriptions = Number(row.amount);
   return {
     gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, discounts: orders.discounts,
     // Promo discounts are Wind's cost (the driver's ledger credits them), so they come off the profit.
@@ -2530,7 +2791,7 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
-    daily: [...byDay].map(([date, v]) => ({ date, ...v })),
+    daily,
   };
 });
 
@@ -2586,6 +2847,17 @@ const editUser: Handler = async ({ user, params, body }) => {
     }
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
     const now = Date.now();
+    const auditFields = [
+      name !== target.name ? 'name' : null,
+      phone !== target.phone ? 'phone' : null,
+      email !== (target.email ?? null) ? 'email' : null,
+      status !== target.status ? 'status' : null,
+      roleChanged ? 'role' : null,
+      vehicle !== (target.vehicle ?? null) ? 'vehicle' : null,
+      plate !== (target.plate ?? null) ? 'plate' : null,
+    ].filter(Boolean);
+    if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
+      user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
         const backPrice = (o.recommended_price ?? o.price) as number;
@@ -2639,13 +2911,18 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params }) => {
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
   const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   const password = randomBytes(12).toString('base64url');
-  const hashed = hashPassword(password);
-  (await persistence.exec('BEGIN IMMEDIATE'));
-  try {
-    (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
-    (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
-    (await persistence.exec('COMMIT'));
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  const hashed = await hashPassword(password);
+  // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
+  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, async () => {
+    (await persistence.exec('BEGIN IMMEDIATE'));
+    try {
+      (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
+      (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+      (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
+        user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true }), Date.now()));
+      (await persistence.exec('COMMIT'));
+    } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  });
   return { password };
 });
 
@@ -2674,17 +2951,25 @@ route('GET', '/api/admin/subscriptions', async ({ user }) => {
 
 route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => {
   need(user, 'admin');
-  const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
-  if (body.action === 'activate') {
-    const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-    if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
-    (await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ?", Date.now(), Date.now() + 30 * DAY, sub.id));
-  }
-  else if (body.action === 'reject') (await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ?", sub.id));
-  else fail(400, 'invalid_action');
-  const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-  await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
-  return { ok: true };
+  // T22: the decision reads, checks and writes inside one transaction with a status predicate on the
+  // update, so a concurrent activate/reject race has exactly one outcome; the loser is already_decided.
+  return (await persistence.atomic({ purpose: 'admin_subscription_decision' }, async () => {
+    const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
+    if (body.action === 'activate') {
+      const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+      if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
+      if (!(await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ? AND status = 'pending'", Date.now(), Date.now() + 30 * DAY, sub.id)).changes)
+        fail(409, 'subscription_decided');
+    }
+    else if (body.action === 'reject') {
+      if (!(await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ? AND status = 'pending'", sub.id)).changes)
+        fail(409, 'subscription_decided');
+    }
+    else fail(400, 'invalid_action');
+    const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+    await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
+    return { ok: true };
+  }));
 });
 
 route('POST', '/api/admin/settings', async ({ user, body }) => {
@@ -2823,6 +3108,16 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // Phone issuance commits its budget/challenge before the detached provider call, then rechecks
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
+    } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/password|admin\/users\/\d+\/password)$/.test(url.pathname)
+        || /^\/api\/partner\//.test(url.pathname))) {
+      // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
+      // envelope would hold a pooled connection and a transaction for the whole hash. Entra and
+      // partner create passwordless placeholder credentials, so they take the same path.
+      if (body.commandId !== undefined) fail(400, 'unsupported_command');
+      if (persistence.backend === 'postgres' && /^\/api\/partner\/orders(?:\/|$)/.test(url.pathname)
+        && !(await durableProtocolAvailable(persistence))) fail(503, 'durable_schema_required');
+      payload = await invoke();
     } else if (req.method === 'POST' && /^\/api\/orders\/[^/]+\/payments(?:\/refund)?$/.test(url.pathname)) {
       // Payment create/refund call the provider between their own short reserve and settle
       // transactions (WP14). They own their idempotency instead of an HTTP-long lock.
@@ -2879,7 +3174,7 @@ export async function shutdown() {
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }
-  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await persistence.close(); db.close(); }
+  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
 }
 
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.
@@ -2918,9 +3213,13 @@ if (import.meta.main) {
       const name = text(process.argv[5], 60), password = newPassword(readFileSync(0, 'utf8').trimEnd());
       if ((await one('SELECT id FROM users WHERE phone = ?', phone))) fail(409, 'phone_taken');
       (await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, phone_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        phone, name, hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
+        phone, name, await hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
       console.log('Verified account enrolled; drivers still require approval');
     } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
+    finally { db.close(); }
+  } else if (process.argv[2] === 'seed-checkpoints') {
+    try { console.log(`${(await seedCheckpoints())} pilot checkpoints added`); }
+    catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
     finally { db.close(); }
   } else if (process.argv[2] === 'promote') {
     try { console.log(`${(await promote(process.argv[3] ?? ''))} is now an admin`); }
@@ -2937,6 +3236,7 @@ if (import.meta.main) {
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
+    setInterval(async () => { try { (await expireStaleDemand()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

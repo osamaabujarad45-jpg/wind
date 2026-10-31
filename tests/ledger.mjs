@@ -75,6 +75,31 @@ try {
   const free = await f.book();
   await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=created_at,price=0,commission=0,discount=0 WHERE id=?", f.d1.user.id, free.id);
   await assert.rejects(ledger.createReceipt({ ...f.d1.user, status: 'active' }, free.id), e => e.status === 409);
+  // T29/T30: completion posts balanced journals through the real HTTP flow; a later import meets the same
+  // business references and does not double-count; confirmed handovers settle in their own transaction.
+  const live = await f.book();
+  const advance = (token, order, extra = {}) => f.call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra } });
+  const atPickup = await advance(f.d1.token, await f.call(`/jobs/${live.id}/accept`, { token: f.d1.token, body: {} }));
+  const inTransit = await advance(f.d1.token, atPickup);
+  const code = (await f.call(`/orders/${inTransit.id}`, { token: f.customer.token })).handoverCode;
+  const done = await advance(f.d1.token, inTransit, { code });
+  assert.equal(done.status, 'completed');
+  const refsFor = async id => (await f.db.all('SELECT business_ref FROM ledger_journals WHERE order_id=?', id)).map(r => r.business_ref).sort();
+  const doneRefs = await refsFor(done.id);
+  const doneRow = await f.db.one('SELECT commission_minor FROM orders WHERE id=?', done.id);
+  if (Number(doneRow.commission_minor) > 0) assert.ok(doneRefs.includes(`order:${done.id}:commission`), 'the commission journal posted with the import reference');
+  await f.call('/admin/ledger/import', { token: f.admin.token, body: {} });
+  assert.deepEqual(await refsFor(done.id), doneRefs, 'the import meets the posted journals and adds none for the same order');
+  const remit = await f.call('/admin/cash/remittance', { token: f.admin.token, body: { driverId: f.d1.user.id, amountCents: 500, note: 'Live handover', requestId: randomUUID() } });
+  const pendingBalance = await ledger.driverBalance(f.d1.user.id);
+  await f.call(`/driver/cash/${remit.id}/confirm`, { token: f.d1.token, body: { decision: 'confirm' } });
+  assert.ok(await f.db.one('SELECT id FROM ledger_journals WHERE business_ref=?', `cash-entry:${remit.id}`), 'the confirmed handover posts its journal');
+  assert.ok(await ledger.driverBalance(f.d1.user.id) < pendingBalance, 'the settled handover lowers the receivable');
+  const beforeAdjustment = await ledger.driverBalance(f.d1.user.id);
+  await f.call('/admin/cash/adjustment', { token: f.admin.token, body: { driverId: f.d1.user.id, amountCents: 100, reason: 'Missed fuel top-up', requestId: randomUUID() } });
+  assert.ok(await f.db.one("SELECT id FROM ledger_journals WHERE kind='cash_adjustment' ORDER BY id DESC LIMIT 1"), 'the adjustment posted as it was recorded');
+  assert.ok(await ledger.driverBalance(f.d1.user.id) > beforeAdjustment, 'a positive adjustment raises the receivable');
+
   console.log('WP13 ledger: migration, balance constraints, replay, import reconciliation, receipts and cap passed');
 } finally { await f.close(); }
 

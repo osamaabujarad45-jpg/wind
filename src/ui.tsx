@@ -4,7 +4,7 @@ import {
   type ColorValue, type LayoutRectangle, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { css, cubicBezier, FadeInDown, LinearTransition, useReducedMotion } from './motion';
+import Animated, { css, cubicBezier, FadeInDown, useReducedMotion } from './motion';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -178,7 +178,8 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
 }) {
   const { align } = useCopy();
-  return <Text numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
+  return <Text maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
@@ -198,10 +199,12 @@ export function Card({ children, style, tone = 'card' }: { children: React.React
 }
 
 // Staggered entrance for content the user is waiting on. Not for virtualized rows.
+// No layout transition here: on Fabric it fought the ScrollView's measurement and stretched the
+// home search row to the viewport on the A53 until a scroll (reproduced 29 Oct 2026). Entrance only.
 export function Appear({ index = 0, children, style }: { index?: number; children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   const reduced = useReducedMotion();
   const entering = useMemo(() => FadeInDown.duration(240).delay(Math.min(index, 8) * 40), [index]);
-  return <Animated.View entering={reduced ? undefined : entering} layout={reduced ? undefined : LinearTransition.duration(200)} style={style}>{children}</Animated.View>;
+  return <Animated.View entering={reduced ? undefined : entering} style={style}>{children}</Animated.View>;
 }
 
 export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; size?: number; tone?: 'forest' | 'olive' | 'blue' }) {
@@ -217,14 +220,14 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // ---------- controls ----------
 
 // Press feedback: 3% scale over 120ms on the UI thread.
-export function Press({ children, onPress, style, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
-  children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean;
+export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
+  children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
   accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
-  return <Pressable onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
+  return <Pressable style={containerStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
@@ -281,14 +284,14 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
 
 // Plus/minus counter: passengers, quantities.
 export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }: { value: number; min?: number; max?: number; onChange: (n: number) => void; label: string; disabled?: boolean }) {
-  const { row, language } = useCopy();
+  const { row, c } = useCopy();
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'إنقاص' : 'Decrease'} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
     <Text accessibilityLabel={`${label}: ${value}`} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${language === 'ar' ? 'زيادة' : 'Increase'} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
   </View>;

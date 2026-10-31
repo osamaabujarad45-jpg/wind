@@ -45,5 +45,16 @@ try {
   await assert.rejects(payments.refund({...f.admin.user,status:'active'},'00000000-0000-0000-0000-000000000000',100,'test reason'),e=>e.status===404);
   await grant(support,null);
   assert.ok((await f.call('/admin/staff-actions',{token:support.token})).length>=6, 'role removal restores the legacy platform-admin fallback');
+  // T24: two eligible second approvers race one decision — exactly one lands, the loser finds the row
+  // no longer pending. The requester is barred by the self-approval guard either way.
+  await grant(support, 'finance');
+  const race = await f.call('/admin/approvals', { token: finance.token, body: { subjectType: 'cash_adjustment', subjectId: '7', amountMinor: 500, reason: 'Race fixture' } });
+  const [approved, rejectedAgain] = await Promise.all([
+    f.call(`/admin/approvals/${race.id}/decide`, { token: f.admin.token, body: { decision: 'approved', purpose: 'Race decision' } }).then(() => 'decided', e => e.message),
+    f.call(`/admin/approvals/${race.id}/decide`, { token: support.token, body: { decision: 'rejected', purpose: 'Race decision' } }).then(() => 'decided', e => e.message),
+  ]);
+  assert.equal((approved === 'decided') !== (rejectedAgain === 'decided'), true, `exactly one decision lands: ${approved} / ${rejectedAgain}`);
+  assert.ok(approved.includes('approval_decided') || rejectedAgain.includes('approval_decided'), `the loser names the single-outcome code: ${approved.slice(0, 60)} / ${rejectedAgain.slice(0, 60)}`);
+  await grant(support, 'support');
   assert.ok(urgent.id); console.log('WP15 ops: migration, scoping, audit, roles, approvals and finance checks passed');
 } finally { await f.close(); }

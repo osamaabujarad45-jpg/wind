@@ -1,0 +1,383 @@
+{
+ "places": [
+  {
+   "query": "Birzeit University",
+   "azure": {
+    "km": 0.3,
+    "name": "Birzeit University, West Bank"
+   },
+   "osm": {
+    "km": 0.07,
+    "name": "Birzeit University, 4566, ابو قش, بيرزيت, منطقة ب, الضفة الغربية, 620,"
+   },
+   "aws": {
+    "km": 64.79,
+    "name": "مسجد الجامعة الاردنية (University Of Jordan Mosque)"
+   }
+  },
+  {
+   "query": "جامعة بيرزيت",
+   "azure": {
+    "km": 0.3,
+    "name": "Birzeit University, West Bank"
+   },
+   "osm": {
+    "km": 0.07,
+    "name": "Birzeit University, 4566, ابو قش, بيرزيت, منطقة ب, الضفة الغربية, 620,"
+   },
+   "aws": {
+    "km": 67.75,
+    "name": "بيرزيت للترجمة القانونية (بيرزيت)"
+   }
+  },
+  {
+   "query": "An-Najah National University Nablus",
+   "azure": {
+    "km": 2.58,
+    "name": "Nablus, West Bank"
+   },
+   "osm": {
+    "km": 0.81,
+    "name": "جامعة النجاح الوطنية - الحرم الجديد, شارع رفيديا, رفيديا البلد, نابلس,"
+   },
+   "aws": {
+    "km": 48.2,
+    "name": "הג הלאמ האנבסטא טבצ'נק (Tabechnik National and University Garden)"
+   }
+  },
+  {
+   "query": "جامعة النجاح الوطنية",
+   "azure": {
+    "km": 1587.33,
+    "name": "Imam Abdulrahman Bin Faisal University, Saudi Arabia"
+   },
+   "osm": {
+    "km": 1.45,
+    "name": "جامعة النجاح الوطنية - الحرم القديم, شارع الجامعة, نابلس - مركز المدين"
+   },
+   "aws": {
+    "km": 58.9,
+    "name": "جامعة عجلون الوطنية"
+   }
+  },
+  {
+   "query": "Church of the Nativity Bethlehem",
+   "azure": {
+    "km": 0.12,
+    "name": "Bethlehem, West Bank"
+   },
+   "osm": {
+    "km": 0.01,
+    "name": "كنيسة المهد, ساحة المهد, حارة العناترة, مجلس غوش عصيون الاقليمي, منطقة"
+   },
+   "aws": {
+    "km": 0.1,
+    "name": "Church of the Nativity"
+   }
+  },
+  {
+   "query": "كنيسة المهد",
+   "azure": {
+    "km": 2083.8,
+    "name": "Al Mahad, Yemen"
+   },
+   "osm": {
+    "km": 0.01,
+    "name": "كنيسة المهد, ساحة المهد, حارة العناترة, مجلس غوش عصيون الاقليمي, منطقة"
+   },
+   "aws": {
+    "km": 0.1,
+    "name": "Church of the Nativity (كنيسة المهد)"
+   }
+  },
+  {
+   "query": "Al-Manara Square Ramallah",
+   "azure": {
+    "km": 0.13,
+    "name": "Al Manara Square, West Bank"
+   },
+   "osm": {
+    "km": 0.13,
+    "name": "ميدان المنارة, رام الله التحتة, مجلس ماتي بنيامين الإقليمي, منطقة أ, ا"
+   },
+   "aws": {
+    "km": 0.13,
+    "name": "Al Manara Roundabout, Ramallah"
+   }
+  },
+  {
+   "query": "دوار المنارة رام الله",
+   "azure": {
+    "km": 0.86,
+    "name": "Ramallah, West Bank"
+   },
+   "osm": {
+    "km": 0.13,
+    "name": "Al Manarah دوار المنارة, رام الله التحتة, مجلس ماتي بنيامين الإقليمي, "
+   },
+   "aws": {
+    "km": 0.13,
+    "name": "دوار ألمنارة, Ramallah (رام الله)"
+   }
+  },
+  {
+   "query": "Rafidia Hospital Nablus",
+   "azure": {
+    "km": 2.03,
+    "name": "Nablus, West Bank"
+   },
+   "osm": {
+    "km": 0.51,
+    "name": "Rafidia Hospital, Al-Mustashfa, المخفية, نابلس, منطقة أ, الضفة الغربية"
+   },
+   "aws": {
+    "km": 69.49,
+    "name": "مستشفى الامل (Al-Amal Hospital)"
+   }
+  },
+  {
+   "query": "مستشفى رفيديا",
+   "azure": {
+    "km": 1120.04,
+    "name": "Npistanbul Brain Hospital, Türkiye"
+   },
+   "osm": {
+    "km": 0.45,
+    "name": "مستشفى رفيديا, Al-Ayoubiyeen, رفيديا البلد, نابلس, منطقة أ, الضفة الغر"
+   },
+   "aws": {
+    "km": 66.45,
+    "name": "مجوهرات رفيدي"
+   }
+  },
+  {
+   "query": "Hebron University",
+   "azure": {
+    "km": 1.82,
+    "name": "Hebron, West Bank"
+   },
+   "osm": {
+    "km": 0.55,
+    "name": "جامعة الخليل, شارع الجامعة, الخليل, University Neighborhood, מועצה אזו"
+   },
+   "aws": {
+    "km": 31.13,
+    "name": "האוניברסיטה העברית (Hebrew University - Givat Ram Campus)"
+   }
+  },
+  {
+   "query": "Ibrahimi Mosque Hebron",
+   "azure": {
+    "km": 1.61,
+    "name": "Hebron, West Bank"
+   },
+   "osm": {
+    "km": 0.09,
+    "name": "Ibrahimi Mosque Garden, المدينة القديمة, מועצה אזורית הר חברון, אזור H"
+   },
+   "aws": {
+    "km": 92.59,
+    "name": "مسجدإبراهيمعايش (Ibrahimi Mosque)"
+   }
+  },
+  {
+   "query": "الحرم الإبراهيمي الخليل",
+   "azure": {
+    "km": 1.61,
+    "name": "Hebron, West Bank"
+   },
+   "osm": {
+    "km": 0.01,
+    "name": "מערת המכפלה, المدينة القديمة, الخليل, אזור H2, יהודה ושומרון, الأراضي "
+   },
+   "aws": {
+    "km": 1216.99,
+    "name": "⁧طريق ابراهيم الخليل, الحرم, 24231 مكة, السعودية⁩"
+   }
+  },
+  {
+   "query": "Arab American University Jenin",
+   "azure": {
+    "km": 7.06,
+    "name": "Jenin, West Bank"
+   },
+   "osm": {
+    "km": 0.41,
+    "name": "الجامعة العربية الامريكية - جنين, Main Road Of American University, تن"
+   },
+   "aws": {
+    "km": 54.75,
+    "name": "Arab American University"
+   }
+  },
+  {
+   "query": "Hisham Palace Jericho",
+   "azure": {
+    "km": 3.27,
+    "name": "Jericho, West Bank"
+   },
+   "osm": {
+    "km": 0.25,
+    "name": "قصر هشام, شارع قصر هشام, النويعمة, مخيم عين السلطان, أريحا, منطقة أ, ا"
+   },
+   "aws": {
+    "km": 3.25,
+    "name": "Jericho, West Bank"
+   }
+  },
+  {
+   "query": "Qalandia checkpoint",
+   "azure": {
+    "km": 8776.68,
+    "name": "Mataas na Lupa, Philippines"
+   },
+   "osm": null,
+   "aws": {
+    "km": 45.24,
+    "name": "نقطه تفتيش (Checkpoint)"
+   }
+  },
+  {
+   "query": "Huwara",
+   "azure": {
+    "km": 0.11,
+    "name": "Huwara, West Bank"
+   },
+   "osm": {
+    "km": 0.11,
+    "name": "حُوّاره‎, منطقة ب, الضفة الغربية, الأراضي الفلسطينية"
+   },
+   "aws": {
+    "km": 72.09,
+    "name": "مجمع حوارة وبشرى وسال (Huwara, Bushra And Sal Complex)"
+   }
+  },
+  {
+   "query": "حوارة",
+   "azure": {
+    "km": 0.11,
+    "name": "Huwara, West Bank"
+   },
+   "osm": {
+    "km": 0.18,
+    "name": "Cuntry Hawwarah, حُوّاره‎, منطقة ب, الضفة الغربية, الأراضي الفلسطينية"
+   },
+   "aws": {
+    "km": 73.3,
+    "name": "حوارة, اربد, الأردن"
+   }
+  },
+  {
+   "query": "Tulkarm",
+   "azure": {
+    "km": 0.13,
+    "name": "Tulkarm, West Bank"
+   },
+   "osm": {
+    "km": 0.13,
+    "name": "طولكرم, منطقة أ, الضفة الغربية, 302, الأراضي الفلسطينية"
+   },
+   "aws": {
+    "km": 70.78,
+    "name": "مؤسسة فجر البلقاء العقارية (Tulkarm Real Estate Services)"
+   }
+  }
+ ],
+ "routes": [
+  {
+   "label": "Ramallah→Nablus",
+   "straightKm": 35.6,
+   "azure": {
+    "km": 54.5,
+    "min": 54,
+    "viaJerusalem": false
+   },
+   "osrm": {
+    "km": 53.5,
+    "min": 62,
+    "viaJerusalem": false
+   },
+   "aws": {
+    "km": 53.2,
+    "min": 55,
+    "viaJerusalem": false
+   }
+  },
+  {
+   "label": "Jenin→Nablus",
+   "straightKm": 26.9,
+   "azure": {
+    "km": 41.5,
+    "min": 65,
+    "viaJerusalem": false
+   },
+   "osrm": {
+    "km": 43.1,
+    "min": 53,
+    "viaJerusalem": false
+   },
+   "aws": {
+    "km": 43.2,
+    "min": 55,
+    "viaJerusalem": false
+   }
+  },
+  {
+   "label": "Hebron→Bethlehem",
+   "straightKm": 21.5,
+   "azure": {
+    "km": 31.5,
+    "min": 41,
+    "viaJerusalem": false
+   },
+   "osrm": {
+    "km": 28.1,
+    "min": 29,
+    "viaJerusalem": false
+   },
+   "aws": {
+    "km": 27.7,
+    "min": 33,
+    "viaJerusalem": false
+   }
+  },
+  {
+   "label": "Ramallah→Jericho",
+   "straightKm": 23.6,
+   "azure": {
+    "km": 40.3,
+    "min": 43,
+    "viaJerusalem": false
+   },
+   "osrm": {
+    "km": 40.1,
+    "min": 41,
+    "viaJerusalem": false
+   },
+   "aws": {
+    "km": 39.7,
+    "min": 40,
+    "viaJerusalem": false
+   }
+  },
+  {
+   "label": "Ramallah→Bethlehem",
+   "straightKm": 22.1,
+   "azure": {
+    "km": 29.5,
+    "min": 40,
+    "viaJerusalem": false
+   },
+   "osrm": {
+    "km": 27.2,
+    "min": 31,
+    "viaJerusalem": true
+   },
+   "aws": {
+    "km": 35.1,
+    "min": 44,
+    "viaJerusalem": true
+   }
+  }
+ ]
+}

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { freshPostgres, selectRuntime, connect } from './pg-support.mjs';
 import { apiCaller } from './support/api.mjs';
 import { Realtime } from '../server/domain/realtime.ts';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: the worker refuses an unconfigured VAPID subject
 
 const { schema, database: setupDb } = await freshPostgres('realtime');
 await setupDb.close();

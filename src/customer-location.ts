@@ -8,6 +8,25 @@ type Failure = 'unavailable' | 'permission' | 'blocked' | 'disabled' | 'timeout'
 export type PickupWatch = (receive: (fix: Fix) => void, fail: (reason: string) => void, signal: AbortSignal) => Promise<Subscription>;
 const failureCodes = new Set<Failure>(['unavailable', 'permission', 'blocked', 'disabled', 'timeout', 'inaccurate']);
 
+/** A cached pin hint must never hold the picker open or outlive its request. */
+export function cachedPickup(read: () => Promise<Fix | null>, signal: AbortSignal, timeoutMs = 250): Promise<Point | null> {
+  return new Promise(resolve => {
+    let finished = false;
+    const finish = (point: Point | null) => {
+      if (finished) return;
+      finished = true; clearTimeout(timer); signal.removeEventListener('abort', cancel); resolve(point);
+    };
+    const cancel = () => finish(null);
+    const timer = setTimeout(cancel, timeoutMs);
+    signal.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) { cancel(); return; }
+    Promise.resolve().then(() => finished ? null : read()).then(fix => {
+      const result = fix && pickupFromFix(fix);
+      finish(result && !('error' in result) ? result.point : null);
+    }, cancel);
+  });
+}
+
 /** Keep the native permission prompt inside the same timeout/cancellation as GPS. */
 export function withPickupPermission(request: () => Promise<{ granted: boolean }>, watch: PickupWatch): PickupWatch {
   return async (receive, fail, signal) => {

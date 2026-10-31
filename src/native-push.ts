@@ -11,10 +11,19 @@ if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
   });
-  Notifications.addNotificationResponseReceivedListener(response => {
-    const url = response.notification.request.content.data?.url;
-    if (typeof url === 'string' && url.startsWith('/')) router.push(url as never);
-  });
+  // T37: a tap that LAUNCHED the app never reaches the listener — the response is waiting in
+  // getLastNotificationResponseAsync. Both paths can report the same tap, so each identifier opens once.
+  let lastOpened: string | undefined;
+  const open = (response: Notifications.NotificationResponse | null) => {
+    const url = response?.notification.request.content.data?.url;
+    if (typeof url !== 'string' || !url.startsWith('/')) return;
+    const identifier = response?.notification.request.identifier;
+    if (identifier && identifier === lastOpened) return;
+    lastOpened = identifier;
+    router.push(url as never);
+  };
+  Notifications.addNotificationResponseReceivedListener(open);
+  Notifications.getLastNotificationResponseAsync().then(open).catch(() => { /* no cold-start tap */ });
 }
 
 // Native push registration (Expo Push). Best-effort by design: any failure —

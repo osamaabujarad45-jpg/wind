@@ -26,6 +26,15 @@ const advance = (token, order, extra = {}) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Cashier', password: 'secret1' } });
   await promote('0599300001');
+  // T23.1: forgiving debt needs a request approved by a different finance approver, so the suite needs a second admin.
+  const approver = await call('/auth/register', { body: { phone: '0599300005', name: 'Approver', password: 'secret1' } });
+  await promote('0599300005');
+  const forgive = async amountMinor => {
+    const request = await call('/admin/approvals', { token: admin.token, body: { subjectType: 'cash_adjustment',
+      subjectId: String(driver.user.id), amountMinor, reason: 'Synthetic cash forgiveness request' } });
+    const decided = await call(`/admin/approvals/${request.id}/decide`, { token: approver.token, body: { decision: 'approved', purpose: 'Synthetic second approval' } });
+    return decided.id;
+  };
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599300003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599300004', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -88,7 +97,12 @@ try {
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, reason: 'x' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 0, reason: 'Nothing at all' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1_000_001, reason: 'Too much money' }, expect: 400 });
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, reason: 'Customer paid by mistake to office' } });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, reason: 'Customer paid by mistake to office' }, expect: 409 }); // no approval: refused, not forgiven
+  const forgiveness = await forgive(200);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -201, approvalId: forgiveness, reason: 'Customer paid by mistake to office' }, expect: 409 }); // approval amount is bound
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, approvalId: forgiveness, reason: 'Customer paid by mistake to office' } });
+  // T24: the decision was spent exactly once — a second entry cannot reuse it, on any request identity.
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, approvalId: forgiveness, requestId: randomUUID(), reason: 'Customer paid by mistake to office' }, expect: 409 });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.adjustmentsCents, -200);
   assert.equal(cash.owedCents, commissionCents - 700);
@@ -107,7 +121,7 @@ try {
   assert.equal(cash.entries.filter(e => e.status !== 'pending').length, 50); // the history stays one page
   assert.deepEqual(cash.entries.filter(e => e.status === 'pending').map(e => e.id), [handover.id]);
   await call(`/driver/cash/${handover.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, reason: 'Undo the fuel top-ups' } }); // owed as before
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, approvalId: await forgive(49), reason: 'Undo the fuel top-ups' } }); // owed as before
 
   // ---- Ship review: exact rounding, returned jobs, no payouts, no leaving with debt, append-only ----
   assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, asserted independently of the server formula

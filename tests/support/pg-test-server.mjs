@@ -10,6 +10,14 @@ export async function openLegacyPgServer() {
   opened = open();
   return opened;
 }
+// Every fixture schema is named by this module, so cleanup can only ever drop one it created.
+const ownSchema = /^wp03_legacy_[0-9a-f]{32}$/;
+async function dropOwnedSchema(connectionString, schema) {
+  if (!ownSchema.test(schema)) throw new Error('Refusing to drop a schema this fixture did not create: ' + schema);
+  const admin = new Persistence({ connectionString });
+  try { await admin.run(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); }
+  finally { await admin.close(); }
+}
 async function open() {
   const connectionString = process.env.WIND_TEST_DATABASE_URL ?? 'postgresql://fastship_test@127.0.0.1:55473/fastship_test';
   const url = new URL(connectionString);
@@ -17,9 +25,17 @@ async function open() {
     throw new Error('Legacy parity requires the dedicated loopback fastship_test database');
   const schema = `wp03_legacy_${randomUUID().replaceAll('-', '')}`;
   const fixture = new Persistence({ connectionString, pool: { options: `-c search_path=${schema},public` } });
-  await initializePostgres(fixture, schema);
+  try { await initializePostgres(fixture, schema); }
+  catch (error) {
+    await fixture.close().catch(() => {});
+    await dropOwnedSchema(connectionString, schema).catch(() => {});
+    throw error;
+  }
   Object.assign(process.env, { NODE_ENV: 'test', WIND_DATABASE_URL: connectionString,
-    WIND_POSTGRES_TEST_ONLY: '1', WIND_POSTGRES_TEST_SCHEMA: schema });
+    WIND_POSTGRES_TEST_ONLY: '1', WIND_POSTGRES_TEST_SCHEMA: schema,
+    // T37: the worker refuses an unconfigured VAPID subject; legacy parity suites send real Web Push
+    // through the local fetch double, so the fixture supplies a synthetic operator subject.
+    WIND_PUSH_SUBJECT: process.env.WIND_PUSH_SUBJECT ?? 'mailto:wind-push-suite@example.invalid' });
   const main = await import('../../server/main.ts');
   const worker = new DurableWorker(fixture);
   const drainOutbox = async () => {
@@ -37,7 +53,12 @@ async function open() {
   const shutdown = async () => {
     if (closed) return;
     closed = true;
-    try { await main.shutdown(); } finally { await fixture.close(); }
+    try { await main.shutdown(); }
+    finally {
+      try { await fixture.close(); }
+      // A cleanup failure must fail the gate without hiding an earlier assertion failure.
+      finally { await dropOwnedSchema(connectionString, schema).catch(error => { console.error('Legacy fixture cleanup failed: ' + error.message); process.exitCode = 1; }); }
+    }
   };
   const prepare = sql => {
     if (/\b(?:PRAGMA|sqlite_schema|sqlite_master)\b/i.test(sql)) throw new Error('SQLite-specific inspection requires separate PostgreSQL evidence');

@@ -1,0 +1,41 @@
+// Which map family the device draws with when more than one is baked into the binary (T10/T12).
+// Baseline stays the default and the fallback: a missing or unreadable preference must never select a
+// renderer the binary may not contain. The choice is a plain UI preference: localStorage on web,
+// SecureStore (the app's only key-value store) on native.
+import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+
+export type MapMode = 'baseline' | 'google';
+
+const KEY = 'map-mode';
+const modes: MapMode[] = ['baseline', 'google'];
+let cached: MapMode | undefined;
+const listeners = new Set<(mode: MapMode) => void>();
+
+const load = (): Promise<string | null> => Platform.OS === 'web'
+  ? Promise.resolve(globalThis.localStorage?.getItem(KEY) ?? null)
+  : SecureStore.getItemAsync(KEY).catch(() => null);
+const save = (mode: MapMode) => {
+  if (Platform.OS === 'web') globalThis.localStorage?.setItem(KEY, mode);
+  else SecureStore.setItemAsync(KEY, mode).catch(() => undefined); // the session keeps the choice even if it cannot persist
+};
+
+export async function storeMapMode(mode: MapMode) {
+  cached = mode;
+  save(mode);
+  for (const listener of listeners) listener(mode);
+}
+
+/** [current mode, setter]; 'baseline' until a stored choice says otherwise. */
+export function useMapMode(): [MapMode, (mode: MapMode) => void] {
+  const [mode, setMode] = useState<MapMode>(cached ?? 'baseline');
+  useEffect(() => {
+    listeners.add(setMode);
+    load().then(value => {
+      if (modes.includes(value as MapMode)) { cached = value as MapMode; setMode(value as MapMode); }
+    }).catch(() => undefined); // unreadable storage leaves the safe baseline
+    return () => { listeners.delete(setMode); };
+  }, []);
+  return [mode, storeMapMode];
+}

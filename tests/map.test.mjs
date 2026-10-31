@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
 import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -17,7 +18,7 @@ const legacy = new DatabaseSync(process.env.DB_PATH);
 legacy.exec('CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY, lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL)');
 legacy.close();
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, db, promote, liveWatcherCount } = await import('../server/main.ts');
+const { shutdown, server, db, promote, liveWatcherCount, webCspFor } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -46,7 +47,7 @@ try {
     assert.equal((await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), pickupPoint }, expect: 400 })).error, 'outside_area');
   }
   assert.equal((await book({ pickupPoint: { latitude: 31.9107, longitude: 35.2164 } })).pickupCity, 'ramallah'); // Al-Bireh's centre, 1.5 km away
-  await call('/price', { token: customer.token, body: { ...input, pickupPoint: { latitude: 31.9038, longitude: 35.0734 } } }); // 12 km out: inside the 15 km bound
+  await call('/price', { token: customer.token, body: { ...input, pickupPoint: { latitude: 31.9038, longitude: 35.0234 } } }); // ~17 km out: inside the 20 km bound, outside the old 15
   const plain = await book({});
   assert.equal(plain.dropoffPoint, null);
   await call(`/orders/${plain.id}/cancel`, { token: customer.token, body: {} });
@@ -59,6 +60,11 @@ try {
   assert.equal(job.dropoffPoint, null);
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   assert.deepEqual((await call(`/orders/${order.id}`, { token: driver.token })).dropoffPoint, order.dropoffPoint);
+  // A fix captured 14 s before the accept is inside the grace window and must be stored; the
+  // inline SQLite guard used to require assigned_at <= fixAt and silently dropped it.
+  const assignedAt = Number(db.prepare('SELECT assigned_at FROM orders WHERE id = ?').get(order.id).assigned_at);
+  const grace = await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21, accuracy: 5, age: Date.now() - assignedAt + 14_000 } });
+  assert.equal(grace.accepted, true, 'a fix 14 s before assignment is accepted');
 
   // Heading/accuracy: optional, validated, -1 means unknown.
   for (const bad of [{ heading: 361 }, { heading: 'n' }, { accuracy: -2 }, { accuracy: 9000 }])
@@ -220,6 +226,107 @@ assert.ok(!backtracks([[35.2, 32.0], [35.201, 32.0], [35.2, 32.0001], [35.19, 32
 assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+
+  // T06: renderer capability and route provenance (tasks/maps-contract.md).
+  // Each platform selects the renderer family actually baked into its binary; an unknown platform still
+  // gets the safe baseline, never a renderer that may be absent from the build.
+  assert.equal(selectRenderer('ios'), 'apple');
+  assert.equal(selectRenderer('android'), 'maplibre');
+  assert.equal(selectRenderer('web'), 'maplibre');
+  assert.equal(selectRenderer('windows'), 'maplibre', 'an unknown platform chooses the safe baseline');
+  assert.equal(selectRenderer(''), 'maplibre');
+  // T10: a Google family is selectable only when the build actually baked it in for that platform.
+  assert.equal(selectRenderer('android', { android: true }, 'google'), 'google');
+  assert.equal(selectRenderer('android', { android: false }, 'google'), 'maplibre', 'a kill switch cannot enable a renderer absent from the binary');
+  assert.equal(selectRenderer('android', undefined, 'google'), 'maplibre');
+  assert.equal(selectRenderer('ios', { ios: true }, 'google'), 'google');
+  assert.equal(selectRenderer('ios', { android: true }, 'google'), 'apple', 'another platform capability does not select Google');
+  assert.equal(selectRenderer('web', { web: true }, 'google'), 'google');
+  assert.equal(selectRenderer('android', { android: true }, 'baseline'), 'maplibre');
+  assert.equal(selectRenderer('android', { android: true }), 'maplibre', 'no preference keeps the baseline');
+  // Baseline OSRM geometry renders everywhere; Google content only on a Google renderer; unknown provenance nowhere.
+  for (const renderer of ['maplibre', 'apple', 'google']) assert.equal(canShowOnRenderer('osrm', renderer), true);
+  assert.equal(canShowOnRenderer('google', 'google'), true);
+  assert.equal(canShowOnRenderer('google', 'maplibre'), false, 'Google content cannot reach a MapLibre overlay');
+  assert.equal(canShowOnRenderer('google', 'apple'), false, 'Google content cannot reach an Apple overlay');
+  assert.equal(canShowOnRenderer('future-provider', 'google'), false, 'unknown provenance fails closed');
+  // Provenance normalization: absent names baseline (legacy responses), Google proxy metadata maps to 'google'.
+  assert.equal(routeProvider(undefined), 'osrm');
+  assert.equal(routeProvider(null), 'osrm');
+  assert.equal(routeProvider('osrm'), 'osrm');
+  assert.equal(routeProvider('google-routes'), 'google');
+  assert.deepEqual(routeProvider({ provider: 'google-routes' }), 'google');
+  assert.equal(routeProvider(7), 'unknown');
+  assert.equal(routeProvider({}), 'unknown');
+  // A kept route/ETA is bound to order, driver, stop and provider: any change drops it.
+  const target = { latitude: 32, longitude: 35 };
+  const key = order => approachKey(order, target, 'osrm');
+  assert.equal(key({ id: 7, driverId: 3 }), key({ id: 7, driverId: 3 }));
+  assert.notEqual(key({ id: 7, driverId: 3 }), key({ id: 7, driverId: 4 }), 'a driver change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), key({ id: 8, driverId: 3 }), 'an order change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, { latitude: 32, longitude: 35.001 }, 'osrm'), 'a stop change drops the kept ETA');
+  assert.notEqual(key({ id: 7, driverId: 3 }), approachKey({ id: 7, driverId: 3 }, target, 'google'), 'a provider change drops the kept ETA');
+  assert.equal(approachKey({ id: 7, driverId: null }, target, 'osrm'), approachKey({ id: 7 }, target, 'osrm'), 'no driver means no driver, however it is spelled');
+  // T13: the booking screen's only Google call, billed as a first shown preview or a changed pin pair — never
+  // a rerender, refocus or poll; the server 400s anything else (T08's policy table).
+  assert.equal(googlePreviewPath({ latitude: 31.90411, longitude: 35.20421 }, { latitude: 32.2215, longitude: 35.2601 }, false),
+    '/route/google?from=31.90411,35.20421&to=32.22150,35.26010&trigger=preview&shown=1');
+  assert.equal(googlePreviewPath({ latitude: 31.90411, longitude: 35.20421 }, { latitude: 32.2215, longitude: 35.2601 }, true),
+    '/route/google?from=31.90411,35.20421&to=32.22150,35.26010&trigger=destination&changed=1');
+  // T14: tracking's approach bills as a first shown preview, then only for a significant foreground movement;
+  // the client threshold mirrors the server's policy constant (kept in step by this source read).
+  assert.equal(googleApproachPath({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.2, longitude: 35.26 }, 0),
+    '/route/google?from=31.90000,35.20000&to=32.20000,35.26000&trigger=preview&shown=1');
+  assert.equal(googleApproachPath({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.2, longitude: 35.26 }, 312.4),
+    '/route/google?from=31.90000,35.20000&to=32.20000,35.26000&trigger=movement&foreground=1&metres=312');
+  const serverRouting = readFileSync(new URL('../server/domain/google-routing.ts', import.meta.url), 'utf8');
+  assert.match(serverRouting, /SIGNIFICANT_MOVEMENT_METRES = 250;/);
+  assert.match(readFileSync(new URL('../src/map-provider.ts', import.meta.url), 'utf8'), /SIGNIFICANT_MOVEMENT_METRES = 250;/);
+  const bookSource = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+  assert.ok(bookSource.includes('refetchOnFocus: false'), 'a Google preview must not re-bill on remount or foreground bounce');
+  assert.ok(bookSource.includes('canShowOnRenderer'), 'the booking preview is provenance-guarded like every other line');
+  // T14/T15: the road hook gates billable approach calls on foreground and movement, and the anonymous
+  // tracking page forces the free baseline regardless of a Google-capable build.
+  assert.ok(SIGNIFICANT_MOVEMENT_METRES === 250, 'the client keeps the server movement threshold');
+  const trackSource = readFileSync(new URL('../src/app/track/[token].tsx', import.meta.url), 'utf8');
+  assert.ok(trackSource.includes('<RouteMap forceBaseline'), 'public tracking draws the free baseline only');
+  // The hook that fetches routes must pass provenance through the renderer guard (same style as the vendoring asserts).
+  const roadSource = readFileSync(new URL('../src/road.tsx', import.meta.url), 'utf8');
+  assert.ok(roadSource.includes('canShowOnRenderer'), 'useRoad must guard route lines by renderer capability');
+  assert.ok(roadSource.includes('routeProvider'), 'useRoad must read provenance off the route data');
+  assert.ok(roadSource.includes('approachKey'), 'useRoad must bind kept route state to order, driver, stop and provider');
+  assert.ok(roadSource.includes("refetchOnFocus: renderer !== 'google'"), 'a Google approach never re-bills on refocus');
+  assert.ok(roadSource.includes('googleApproachPath(billed.fix'), 'the approach URL is built from the last billed fix, so stationary fixes cannot refetch');
+  // The Android entry must choose the renderer from the baked capability plus the stored mode — never
+  // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
+  const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
+  assert.ok(androidSource.includes("selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode)"), 'Android must resolve the renderer from baked capability and mode');
+  const iosSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
+  assert.ok(iosSource.includes("selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode)"), 'iOS must resolve the renderer from baked capability and mode');
+  assert.ok(iosSource.includes('AppleRouteMap'), 'the Apple baseline stays the iOS default');
+  const googleSource = readFileSync(new URL('../src/google-map.native.tsx', import.meta.url), 'utf8');
+  assert.ok(googleSource.includes('onMapLoaded'), 'Google readiness waits for loaded tiles');
+  assert.ok(!googleSource.includes('onMapReady'), 'map initialization alone is not a readiness signal');
+  assert.ok(googleSource.includes('provider={PROVIDER_GOOGLE}'), 'the Google renderer must actually select the Google provider');
+  const modeSource = readFileSync(new URL('../src/map-mode.ts', import.meta.url), 'utf8');
+  assert.ok(modeSource.includes("?? 'baseline'"), 'an unreadable preference must fall back to the baseline');
+  // T12: the web entry resolves the renderer the same way, and the CSP opens Google origins only for a
+  // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
+  const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
+  assert.ok(webEntry.includes("selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode)"), 'web must resolve the renderer from baked capability and mode');
+  const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
+  assert.ok(googleWeb.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
+  assert.ok(googleWeb.includes('l.remove()'), 'map listeners are removed on unmount');
+  assert.ok(googleWeb.includes('setMap(null)'), 'overlays are detached from the map on unmount');
+  assert.ok(!googleWeb.includes('GOOGLE_MAPS_SERVER_KEY'), 'the server route key never reaches the web renderer');
+  const baselineCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' data:; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+  assert.equal(webCspFor(false), baselineCsp, 'a baseline deployment keeps the exact installed CSP');
+  const googleCsp = webCspFor(true);
+  assert.match(googleCsp, /script-src 'self' https:\/\/maps\.googleapis\.com/);
+  assert.match(googleCsp, /connect-src 'self' https:\/\/tiles\.openfreemap\.org https:\/\/maps\.googleapis\.com/);
+  assert.match(googleCsp, /img-src [^;]*https:\/\/\*\.googleapis\.com https:\/\/\*\.gstatic\.com/);
+  assert.match(googleCsp, /font-src 'self' data: https:\/\/fonts\.gstatic\.com/);
+  assert.ok(googleCsp.includes("frame-ancestors 'none'"), 'Google never weakens the framing guard');
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));

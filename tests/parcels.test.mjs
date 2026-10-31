@@ -10,6 +10,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-parcels-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 delete process.env.OSRM_URL;
 const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));

@@ -3,6 +3,10 @@ import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, 
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
+// +970 and +972 are the same West Bank line: every written form signs in to one account.
+for (const same of ['0597127547', '+972597127547', '+970597127547', '00972597127547', '972597127547', '+972 (59) 712.7547', '‎+972 59 712 7547‏', '٠٥٩٧١٢٧٥٤٧', String.fromCharCode(0x200b) + '0597127547' + String.fromCharCode(0xfeff)])
+  assert.equal(normalizePhone(same), '0597127547', same);
+for (const bad of ['+972541234567', '+9725971275470', '+971597127547']) assert.equal(normalizePhone(bad), null, bad); // Israeli carrier, too long, wrong country
 
 const km = distanceKm(city('ramallah'), city('nablus'));
 assert.ok(km > 40 && km < 50, `ramallah-nablus ${km}km`);
@@ -24,10 +28,11 @@ assert.equal(nextStatus('cancelled'), 'cancelled');
 assert.equal(nextStatus('assigned'), 'at_pickup');
 assert.equal(new Set(statusFlow).size, statusFlow.length);
 assert.equal(nearestCity({ latitude: 31.9038, longitude: 35.2034 }), 'ramallah');
-// A pin belongs to a city only within its 15 km service bound.
+// A pin belongs to a city only within its 20 km service bound.
 assert.equal(servedCity({ latitude: 31.90, longitude: 35.19 }), 'ramallah');
 assert.equal(servedCity({ latitude: 0, longitude: 0 }), null);
 assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0734 }), 'ramallah'); // 12 km as the crow flies (16 by road)
+assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0234 }), 'ramallah'); // ~17 km: inside 20, outside the old 15
 assert.equal(servedCity({ latitude: 31.40, longitude: 34.40 }), null); // nearest is Hebron, but 70 km out
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-destination-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -106,7 +107,7 @@ try {
   await post(next.id, 'decision', driver.token, { id: withdrawn.id, decision: 'accept' }, 409);
   const expired = await post(next.id, 'quote', customer.token, { city: 'hebron', note: 'Expired proposal' });
   await post(next.id, 'propose', customer.token, { id: expired.id });
-  db.prepare('UPDATE destination_changes SET expires_at = ? WHERE id = ?').run(Date.now() - 1, expired.id);
+  db.prepare('UPDATE destination_changes SET expires_at = ? WHERE id = ?').run(Date.now() - 1000, expired.id);
   await post(next.id, 'decision', driver.token, { id: expired.id, decision: 'accept' }, 409);
   const staleQuote = await post(next.id, 'quote', customer.token, { city: 'hebron', note: 'Third address' });
   await post(next.id, 'propose', customer.token, { id: staleQuote.id });

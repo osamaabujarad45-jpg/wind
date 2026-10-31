@@ -89,6 +89,30 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-sessions.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(20,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 21'))) {
+      await database.run(readFileSync(new URL('./postgres-audit.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(21,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 22'))) {
+      await database.run(readFileSync(new URL('./postgres-subscriptions.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(22,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 23'))) {
+      await database.run(readFileSync(new URL('./postgres-ops-repairs.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(23,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 25'))) {
+      await database.run(readFileSync(new URL('./postgres-payments-repairs.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(25,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 26'))) {
+      await database.run(readFileSync(new URL('./postgres-destinations.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(26,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 27'))) {
+      await database.run(readFileSync(new URL('./postgres-sessions-repairs.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(27,?)', Date.now());
+    }
   });
 }
 

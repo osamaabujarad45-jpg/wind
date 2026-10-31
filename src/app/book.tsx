@@ -1,15 +1,20 @@
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
-import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, orderRequest, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking } from '../booking';
-import { browserPickupWatch, findPickup, withPickupPermission } from '../customer-location';
-import { cities, city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
+import { browserPickupWatch, cachedPickup, findPickup, withPickupPermission } from '../customer-location';
+import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { type PlaceCandidate } from '../place-search';
+import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
 import { roadPath } from '../map-math';
+import { canShowOnRenderer, googlePreviewPath, routeProvider, selectRenderer } from '../map-provider';
+import { useMapMode } from '../map-mode';
 import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
@@ -18,6 +23,12 @@ import { useSession } from '../session';
 import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
+  const { me } = useSession();
+  // An account switch remounts the form: no field from the previous account stays on screen.
+  return <BookForm key={me?.user.id ?? 0} />;
+}
+
+function BookForm() {
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
@@ -32,6 +43,9 @@ export default function Book() {
   const routeChosen = pickupChosen && dropoffChosen;
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
+  const gpsAt = useRef(0);
+  const pinRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => pinRequest.current?.abort(), []);
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
   const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
@@ -50,6 +64,13 @@ export default function Book() {
   const locationRequest = useRef<AbortController | null>(null);
   useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
+  const [outcome, setOutcome] = useState<PendingOutcome | null>(null); // the last read-only answer; null = not checked
+  const [resolving, setResolving] = useState(false);
+  const reading = useRef(false);
+  const settled = useRef(false);
+  const alive = useRef(true);
+  const latest = useRef<PendingBooking | null>(null); // what the screen is actually holding, for late answers
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
   const [sameFrom, setSameFrom] = useState(false); // send another: only the pickup was copied
@@ -57,11 +78,20 @@ export default function Book() {
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
   const [when, setWhen] = useState<'now' | 'later'>(params.when === 'later' ? 'later' : 'now');
   const [slot, setSlot] = useState<number | null>(null);
-  const slots = scheduleSlots();
+  // T40: the ~227 Intl formattings behind scheduleSlots belong to the half-hour bucket, not to every keystroke.
+  // The bucket is derived in an effect; the render keeps the last list until the next half-hour begins.
+  const [slotBucket, setSlotBucket] = useState(() => Math.floor(Date.now() / (30 * 60_000)));
+  useEffect(() => {
+    const timer = setInterval(() => setSlotBucket(Math.floor(Date.now() / (30 * 60_000))), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- slotBucket is the recompute trigger; slots read the real clock
+  const slots = useMemo(() => scheduleSlots(), [slotBucket]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const sending = useRef(false);
-  const pendingKey = `booking.${me!.user.id}`;
+  const savedKey = pendingKey(me!.user.id);
+  const releasable = pendingReleasable(outcome);
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
@@ -83,8 +113,25 @@ export default function Book() {
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
-  // Road line for the preview map (never a straight line); absent while loading or without routing.
-  const preview = useApi<RoadRoute>(routeChosen ? roadPath(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity), 5) : null).data;
+  // T13: the preview line follows the selected renderer. The OSRM preview is free and refreshes on focus;
+  // a Google display route is billed once per shown pin pair (never a rerender or refocus: refetchOnFocus
+  // is off, and a changed pin pair is the only re-request), falls back to the free OSRM line when Google is
+  // unavailable or exhausted, and is provenance-guarded like every other line. Money never reads it: fares,
+  // feasibility and the servedCity bound stay on the server's /price and /orders policy.
+  const [mapMode] = useMapMode();
+  const mapRenderer = selectRenderer(Platform.OS, Constants.expoConfig?.extra?.googleMaps, mapMode);
+  const previewFrom = pickupPoint ?? city(pickupCity), previewTo = dropoffPoint ?? city(dropoffCity);
+  const pinPair = routeChosen ? `${previewFrom.latitude},${previewFrom.longitude}|${previewTo.latitude},${previewTo.longitude}` : null;
+  // Which trigger the next Google preview may claim: the first shown pair bills as a preview, every different
+  // pair afterwards as a destination change (render-phase adjustment, the sanctioned React pattern).
+  const [previewTrigger, setPreviewTrigger] = useState<{ pair: string | null; changed: boolean }>({ pair: null, changed: false });
+  if (pinPair !== previewTrigger.pair) setPreviewTrigger({ pair: pinPair, changed: previewTrigger.pair != null && pinPair != null });
+  const osrmPreviewPath = routeChosen && pinPair ? roadPath(previewFrom, previewTo, 5) : null;
+  const googlePreview = useApi<RoadRoute>(routeChosen && mapRenderer === 'google' && pinPair ? googlePreviewPath(previewFrom, previewTo, previewTrigger.changed) : null, undefined, { refetchOnFocus: false });
+  const osrmPreview = useApi<RoadRoute>(mapRenderer === 'google' ? (pinPair && googlePreview.error ? osrmPreviewPath : null) : osrmPreviewPath);
+  // A line renders only when its provenance is allowed on this renderer (T06); pins stay either way.
+  const preview = [osrmPreview.data, googlePreview.data].find(line =>
+    !!line && canShowOnRenderer(routeProvider(line.provider), mapRenderer));
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
@@ -108,8 +155,8 @@ export default function Book() {
         : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
       if (request.signal.aborted) return;
-      if (result.city !== pickupCity) setPickupNote('');
       setPickupCity(result.city); setPickupChosen(true);
+      gpsAt.current = Date.now();
       setPickupPoint(result.point); setGpsPoint(result.point);
       setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
     } catch (e) {
@@ -118,19 +165,52 @@ export default function Book() {
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
 
+  // Read-only reconciliation: the customer's own order list decides whether the stored command became an order.
+  const checkPending = useCallback(async (command: PendingBooking) => {
+    if (reading.current || settled.current) return;
+    reading.current = true;
+    setResolving(true);
+    try {
+      const answer = pendingOutcome(command, await api<Order[]>('/orders'));
+      const held = latest.current;
+      // Only apply an answer about the attempt this screen still holds: a late reply must not act for another account.
+      if (!alive.current || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
+      setOutcome(answer);
+      if (answer.state === 'present') {
+        settled.current = true;
+        await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely re-finds this order
+        if (!alive.current) return;
+        latest.current = null;
+        setPending(null);
+        router.replace(`/order/${answer.orderId}`);
+      }
+    } catch {
+      if (alive.current && !settled.current) setOutcome({ state: 'unknown' }); // a failed check never unlocks editing
+    } finally {
+      reading.current = false;
+      setResolving(false);
+    }
+  }, [savedKey]);
+
   useEffect(() => {
     let mounted = true;
-    storage.get(pendingKey).then(async saved => {
-      const existing = readBooking(saved);
+    storage.get(savedKey).then(async saved => {
+      let existing: PendingBooking | null = null;
+      if (saved !== null) {
+        try { existing = readBooking(saved); }
+        catch { await storage.set(savedKey, null).catch(() => {}); } // an unreadable command must not lock the form forever
+      }
       if (!mounted) return;
       if (existing) {
         const p = existing.payload;
+        latest.current = existing;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupChosen(true); setDropoffChosen(true);
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
+        void checkPending(existing);
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
@@ -154,7 +234,16 @@ export default function Book() {
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [pendingKey, c.bookingStorageError, params.again, params.keep]);
+  }, [savedKey, checkPending, c.bookingStorageError, params.again, params.keep]);
+
+  // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
+  useEffect(() => {
+    if (!pending) return;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && !sending.current) void checkPending(pending);
+    });
+    return () => subscription.remove();
+  }, [pending, checkPending]);
 
   const settings = me!.settings;
   const plus = me?.plan === 'plus';
@@ -229,15 +318,21 @@ export default function Book() {
     setError('');
     let saved = !!pending; // a pending command is already on the device
     try {
-      const command = pending ?? newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
-        contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
-        ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
-        ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
-      await storage.set(pendingKey, JSON.stringify(command), true);
+      // Retry keeps the stored identity and payload: the server's command idempotency makes a lost answer safe to repeat.
+      const command = pending ? { ...pending, attemptedAt: Date.now() }
+        : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
+          contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
+          ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
+          ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
+      setOutcome(null); // a new attempt invalidates the answer that arrived before it
+      await storage.set(savedKey, JSON.stringify(command), true);
       saved = true;
+      latest.current = command;
       setPending(command);
       const order = await api<Order>('/orders', orderRequest(command));
-      await storage.set(pendingKey, null, true).catch(() => {}); // a retained successful command safely replays
+      settled.current = true;
+      latest.current = null;
+      await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely replays
       haptic.success();
       router.replace(`/order/${order.id}`);
     } catch (e) {
@@ -249,7 +344,7 @@ export default function Book() {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
         if (e.status && e.status < 500 && ![401, 408, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
-          try { await storage.set(pendingKey, null, true); setPending(null); }
+          try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
           catch { setError(c.bookingStorageError); }
         }
       }
@@ -262,6 +357,18 @@ export default function Book() {
     } finally { sending.current = false; setBusy(false); }
   }
 
+  /** Drop a command the server has confirmed absent. Edit keeps the draft; discard leaves the form. */
+  async function release(edit: boolean) {
+    if (!pending || busy || sending.current || !releasable) return;
+    haptic.tap();
+    try {
+      await storage.set(savedKey, null, true);
+      latest.current = null;
+      setPending(null); setOutcome(null); setError('');
+      if (!edit) router.replace('/');
+    } catch { setError(c.bookingStorageError); }
+  }
+
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
   const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
@@ -269,15 +376,25 @@ export default function Book() {
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={<>
-      <Button title={pending ? c.confirmBooking : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
+    <Screen scrollRef={scrollRef} footer={pending ? undefined : <>
+      <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
         onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || (!available && !pending)} />
       {requestReason && <Reason>{requestReason}</Reason>}
       {quoteFailed && <Button title={c.retry} variant="ghost" onPress={() => setPriceTick(n => n + 1)} />}
     </>}>
       <Header title={c[service]} back />
-      {pending && <Card tone="clay"><Txt variant="title">{c.bookingPending}</Txt><Txt variant="caption">{c.bookingRetryHint}</Txt>
-        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}</Card>}
+      {pending && <Card tone="clay">
+        <Txt variant="title">{c.bookingPending}</Txt>
+        <Txt variant="caption">{c.bookingRetryHint}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
+        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
+        <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
+          <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
+          <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
+          <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
+        </Row>
+        {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
+      </Card>}
       {!available && !pending && <Card tone="clay">
         <Txt variant="title">{c.serviceUnavailable}</Txt>
         <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
@@ -327,7 +444,22 @@ export default function Book() {
           {(['pickup', 'dropoff'] as const).map(which => {
             const set = which === 'pickup' ? pickupPoint : dropoffPoint;
             const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
-            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { haptic.tap(); setLocationError(''); setPinFor(which); }}>
+            const openPin = async (w: 'pickup' | 'dropoff') => {
+              haptic.tap(); setLocationError('');
+              pinRequest.current?.abort();
+              const request = new AbortController(); pinRequest.current = request;
+              if (w === 'pickup' && !pickupPoint && Platform.OS !== 'web') {
+                if (Date.now() - gpsAt.current > 30_000) {
+                  setGpsPoint(null);
+                  const point = await cachedPickup(() => Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 100 }), request.signal);
+                  if (request.signal.aborted) return;
+                  if (point) setGpsPoint(point); // Revalidate cached hints on every opening; only live fixes set gpsAt.
+                }
+              }
+              if (request.signal.aborted) return;
+              setPinFor(w);
+            };
+            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { void openPin(which); }}>
               <Row gap={6} style={styles.chip}>
                 <Ionicons name={set ? 'checkmark-circle' : 'pin-outline'} size={14} color={palette.olive} />
                 <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{label}</Txt>
@@ -395,6 +527,7 @@ export default function Book() {
             {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
             <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
           </>}
+        {smart.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
       </Card>}
 
       <Card style={{ paddingVertical: 10 }}>
@@ -444,7 +577,7 @@ export default function Book() {
     </Screen>
 
     {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
-      start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
+      start={(pinFor === 'pickup' ? (pickupPoint ?? gpsPoint) : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
       onClose={() => setPinFor(null)} onConfirm={point => {
         const near = servedCity(point);
         if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
@@ -460,19 +593,25 @@ export default function Book() {
         setPinFor(null);
       }} />}
 
-    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff} selected={picker === 'pickup' ? (pickupChosen ? pickupCity : null) : (dropoffChosen ? dropoffCity : null)}
+    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff}
       places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
         .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
       onPlace={(id, note) => {
         haptic.tap();
-        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(null); edit('pickupNote', setPickupNote)(note); }
-        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); edit('dropoffNote', setDropoffNote)(note); }
+        // A saved-place tap is explicit but must not silently drop a confirmed pin in the same city.
+        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(pickupCity === id ? pickupPoint : null); edit('pickupNote', setPickupNote)(note); }
+        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(dropoffCity === id ? dropoffPoint : null); edit('dropoffNote', setDropoffNote)(note); }
         setPicker(null);
       }}
-      onClose={() => setPicker(null)} onPick={id => {
+      onClose={() => setPicker(null)}
+      selectedPlace={picker === 'pickup' ? (pickupChosen ? { city: pickupCity, note: pickupNote, point: pickupPoint } : null) : (dropoffChosen ? { city: dropoffCity, note: dropoffNote, point: dropoffPoint } : null)}
+      outside={locationError === c.pinOutsideArea}
+      text={{ label: c.searchLabel, empty: c.searchEmpty, offline: c.searchOffline, pinKept: c.searchPinKept, pinCleared: c.searchPinCleared, apply: c.searchApply }}
+      near={picker === 'pickup' ? pickupPoint ?? city(pickupCity) : dropoffPoint ?? city(dropoffCity)}
+      onConfirm={place => {
         haptic.tap();
-        if (picker === 'pickup') { if (id !== pickupCity) setPickupNote(''); setPickupCity(id); setPickupChosen(true); setPickupPoint(null); }
-        else { if (id !== dropoffCity) setDropoffNote(''); setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(null); }
+        if (picker === 'pickup') { if (place.city !== pickupCity) setPickupNote(''); setPickupCity(place.city); setPickupChosen(true); setPickupPoint(place.point); if (place.note) edit('pickupNote', setPickupNote)(place.note); }
+        else { if (place.city !== dropoffCity) setDropoffNote(''); setDropoffCity(place.city); setDropoffChosen(true); setDropoffPoint(place.point); if (place.note) edit('dropoffNote', setDropoffNote)(place.note); }
         setPicker(null);
       }} />
   </KeyboardAvoidingView>;
@@ -497,26 +636,20 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
   </View>;
 }
 
-// Searchable city list in a bottom sheet (Arabic and English names both match), with the customer's places first.
-function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, onForget }: { open: boolean; title: string; selected: CityId | null; onClose: () => void; onPick: (id: CityId) => void;
-  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void }) {
-  const { c, language, row, align } = useCopy();
-  const [query, setQuery] = useState('');
-  const term = query.trim().toLowerCase();
-  const list = cities.filter(item => !term || item.ar.includes(term) || item.en.toLowerCase().includes(term));
+// Bottom sheet with the customer's places and the T16 search panel (Arabic folding, pin-safe proposal).
+function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedPlace, outside, text, onConfirm, near }: { open: boolean; title: string; onClose: () => void;
+  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void; selectedPlace: PlaceCandidate | null;
+  outside: boolean; text: PlaceSearchText; onConfirm: (place: PlaceCandidate) => void; near: Point }) {
+  const { c, language } = useCopy();
+  const [term, setTerm] = useState('');
   const insets = useSafeAreaInsets();
   // The keyboard never resizes a modal window: lift the sheet above it, leaving the sheet's own bottom inset behind the keyboard.
-  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setQuery('')}>
+  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setTerm('')}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={-insets.bottom}>
       <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
       <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
         <View style={styles.grip} />
         <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
-        <View style={[styles.searchBox, { flexDirection: row }]}>
-          <Ionicons name="search" size={17} color={palette.faint} />
-          <TextInput value={query} onChangeText={setQuery} placeholder={c.chooseCity} placeholderTextColor={palette.faint} accessibilityLabel={c.chooseCity}
-            style={[styles.searchInput, { textAlign: align }]} autoCorrect={false} />
-        </View>
         <ScrollView keyboardShouldPersistTaps="handled">
           {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
             <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
@@ -535,24 +668,8 @@ function CityPicker({ open, title, selected, onClose, onPick, places, onPlace, o
                 {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
               </Row>;
             })}
-            <Txt variant="label" style={{ marginTop: 12 }}>{c.cities}</Txt>
           </>}
-          {list.length === 0 && <Txt center style={{ paddingVertical: 24 }}>{c.noCities}</Txt>}
-          {list.map(item => {
-            const on = item.id === selected;
-            return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={item[language]} aria-checked={on} onPress={() => onPick(item.id)}>
-              <Row gap={12} style={styles.sheetRow}>
-                <View style={[styles.pin, on && { backgroundColor: palette.forest }]}>
-                  <Ionicons name="location" size={15} color={on ? palette.lime : palette.secondary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="title">{item[language]}</Txt>
-                  <Txt variant="micro">{item[language === 'ar' ? 'en' : 'ar']}</Txt>
-                </View>
-                {on && <Ionicons name="checkmark" size={18} color={palette.olive} />}
-              </Row>
-            </Pressable>;
-          })}
+          <PlaceSearch saved={places.saved} selected={selectedPlace} outside={outside} text={text} onConfirm={onConfirm} onQuery={setTerm} near={near} />
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>

@@ -12,7 +12,9 @@ export const line={type:'LineString',coordinates:[pickup,dropoff]};
 export async function fixture(label='eligibility',extraEnv={}) {
   const {schema,database:db}=await freshPostgres(label);
   const dir=await mkdtemp(join(tmpdir(),'fastship-wp05-'));
-  const storage={DB_PATH:join(dir,'legacy.sqlite'),WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema,...extraEnv};
+  // The WP05 fixtures book many searching orders through HTTP; the T21 per-customer cap is a product
+  // policy for real customers, so fixtures raise it explicitly instead of tripping it.
+  const storage={DB_PATH:join(dir,'legacy.sqlite'),WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema,WIND_SEARCHING_LIMIT:extraEnv.WIND_SEARCHING_LIMIT??'200',...extraEnv};
   const a=await startApiProcess(storage),b=await startApiProcess(storage),call=apiCaller(()=>a.base),other=apiCaller(()=>b.base);
   let phone=598700000;
   const account=async(role='customer',vehicle='car')=>{
@@ -60,7 +62,7 @@ export async function fixture(label='eligibility',extraEnv={}) {
     const current=await db.one('SELECT pickup_lng,pickup_lat FROM orders WHERE id=?',order.id);
     return await post(`/orders/${order.id}`,{expectedRevision:req.revision,approach:{vehicleId:vehicle.id,expectedVehicleRevision:v.revision,expectedRunRevision:run.revision,
       from:{longitude:last?.dropoff_lng??35.18,latitude:last?.dropoff_lat??31.89},to:{longitude:current.pickup_lng,latitude:current.pickup_lat},seconds:30,
-      observedAt:Date.now()-100,validUntil:Date.now()+3600000,method:'operator_attested',...extra}},expect);
+      observedAt:Date.now()-1000,validUntil:Date.now()+3600000,method:'operator_attested',...extra}},expect); // 1 s clock-correction margin
   };
   const assess=async(order,extra={})=>{
     const {approach:withApproach=true,...assessment}=extra;

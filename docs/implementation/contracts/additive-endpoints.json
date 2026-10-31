@@ -3,6 +3,59 @@
   "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
   "modules": [
     {
+      "packet": "maps-real-data",
+      "source": "server/domain/place-search.ts",
+      "registrar": "registerPlaceSearchRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/places/search",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "T07-google-routing",
+      "source": "server/domain/google-routing.ts",
+      "registrar": "registerGoogleRouteRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/route/google",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "T25-cash-ops",
+      "source": "server/domain/cash-ops.ts",
+      "registrar": "registerCashOpsRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/admin/cash/pending",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/cash/:id/resolve",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "T05-routing",
+      "source": "server/domain/routing-status.ts",
+      "registrar": "registerRoutingStatusRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/admin/routing",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
       "packet": "WP05",
       "source": "server/domain/eligibility.ts",
       "registrar": "registerEligibilityRoutes",
@@ -377,6 +430,11 @@
         {
           "method": "POST",
           "path": "/api/orders/:id/cod/remit",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/cod/resolve",
           "anonymousStatus": 401
         }
       ]

@@ -74,7 +74,7 @@ try {
   const sameCity = await call('/price', { token: customer.token, body: { ...orderInput, pickupCity: 'ramallah', dropoffCity: 'ramallah' } });
   assert.ok(sameCity.quoteId);
   assert.ok(sameCity.feasibility);
-  // Rural pin within SERVICE_KM (15km) of Ramallah should be allowed
+  // Rural pin within SERVICE_KM (20km) of Ramallah should be allowed
   const ruralPoint = { latitude: 31.95, longitude: 35.25 }; // ~7km from Ramallah
   const ruralPrice = await call('/price', { token: customer.token, body: { ...orderInput, pickupPoint: ruralPoint, dropoffCity: 'nablus' } });
   assert.ok(ruralPrice.quoteId);

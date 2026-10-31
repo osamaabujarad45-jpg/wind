@@ -5,6 +5,7 @@ import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
+process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-signup-alert-'));
 process.env.DB_PATH = join(dir, 'test.db');

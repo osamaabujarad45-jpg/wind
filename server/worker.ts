@@ -4,13 +4,16 @@ import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
 import { encrypt, pushEndpoint, vapid } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
-import { nativeSuppression, PUSH_KINDS } from './domain/native-push.ts';
+import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
+import { pushSubject } from './push.ts';
 import { Dispatch } from './domain/dispatch.ts';
 import { Eligibility } from './domain/eligibility.ts';
 import { logServerError } from './domain/diagnostics.ts';
+import { createPayments, type Payments } from './domain/payments.ts';
 
 type Work = Row & { event_id: string; destination: string; lease_owner: string; payload: Row };
 type WorkerOptions = { leaseMs?: number; maxAttempts?: number; baseBackoffMs?: number;
+  payments?: Payments; refundSweepLimit?: number; refundStaleMs?: number;
   transport?: (subscription: Row, message: string, ttl: number) => Promise<void>;
   expoTransport?: (token: Row, message: string, ttl: number) => Promise<void>;
   afterPublish?: (work: Work) => Promise<void> };
@@ -24,6 +27,9 @@ export class DurableWorker {
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
   private readonly baseBackoff: number;
+  private readonly refundSweepLimit: number;
+  private readonly refundStaleMs: number;
+  private readonly payments: Payments;
   readonly db: Persistence;
   private readonly options: WorkerOptions;
   constructor(db: Persistence, options: WorkerOptions = {}) {
@@ -32,9 +38,15 @@ export class DurableWorker {
     this.leaseMs = options.leaseMs ?? 30_000;
     this.maxAttempts = options.maxAttempts ?? 8;
     this.baseBackoff = options.baseBackoffMs ?? 1_000;
+    this.refundSweepLimit = options.refundSweepLimit ?? 20;
+    this.refundStaleMs = options.refundStaleMs ?? 60_000;
+    this.payments = options.payments ?? createPayments(db, (status, message) => { throw Object.assign(new Error(message), { status }); });
     for (const bound of [this.leaseMs,this.maxAttempts,this.baseBackoff])
       if (!Number.isSafeInteger(bound) || bound < 1) throw new Error('Invalid worker bounds');
+    for (const bound of [this.refundSweepLimit,this.refundStaleMs])
+      if (!Number.isSafeInteger(bound) || bound < 0) throw new Error('Invalid worker bounds');
     if (this.maxAttempts > 20 || this.leaseMs > 300_000 || this.baseBackoff > 60_000) throw new Error('Worker bounds exceeded');
+    if (this.refundSweepLimit < 1 || this.refundSweepLimit > 100 || this.refundStaleMs > 3_600_000) throw new Error('Worker bounds exceeded');
   }
   async claim(): Promise<Work | undefined> {
     return this.db.transaction(async () => {
@@ -121,8 +133,13 @@ export class DurableWorker {
     const fail = (status: number, message: string): never => { throw Object.assign(new Error(message), { status }); };
     return new Dispatch(this.db, new Eligibility(this.db, fail), fail).processExpiries();
   }
+  /** Bounded refund recovery: only stale reservations, one CAS-claimed provider retry per row. */
+  async processRefundReconciliation(): Promise<number> {
+    return this.payments.reconcileRefunds(this.refundSweepLimit, this.refundStaleMs);
+  }
   async runOnce() {
     try { await this.processDispatchExpiries(); } catch (error) { logServerError('outbox_worker_failed', error); }
+    try { await this.processRefundReconciliation(); } catch (error) { logServerError('outbox_worker_failed', error); }
     const work=await this.claim(); if (!work) return false;
     try {
       if (await this.db.one('SELECT event_id FROM consumer_inbox WHERE event_id=?::uuid AND destination=?',work.event_id,work.destination)) {
@@ -142,7 +159,7 @@ export class DurableWorker {
         else await this.expoSend((target as { token: Row }).token,message,target.remaining);
       } else if (this.options.transport) await this.options.transport((target as unknown as { subscription: Row }).subscription,message,target.remaining);
       else {
-        const invalid = await this.webPush((target as unknown as { subscription: Row }).subscription,message,target.remaining);
+        const invalid = await this.webPush((target as unknown as { subscription: Row }).subscription,message,target.remaining,String(work.payload.kind));
         if (invalid) { await this.finish(work,'obsolete',`provider_http_${invalid}`); return true; }
       }
       await this.options.afterPublish?.(work);
@@ -182,7 +199,7 @@ export class DurableWorker {
     }
     if (ticket?.status!=='ok') throw Object.assign(new Error('provider_failed'),{providerStatus:502});
   }
-  private async webPush(subscription: Row,message: string,ttl: number) {
+  private async webPush(subscription: Row,message: string,ttl: number,kind: string) {
     const endpoint=pushEndpoint(subscription.endpoint);
     if (!endpoint) throw new Error('invalid_endpoint');
     let keys=await this.db.one('SELECT private_jwk FROM push_keys WHERE id=1');
@@ -199,8 +216,8 @@ export class DurableWorker {
     const publicRaw=Buffer.concat([Buffer.from([4]),Buffer.from(jwk.x,'base64url'),Buffer.from(jwk.y,'base64url')]);
     const response=await fetch(endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10_000),
       body:encrypt(Buffer.from(message),Buffer.from(subscription.p256dh,'base64url'),Buffer.from(subscription.auth,'base64url')),
-      headers:{TTL:String(ttl),Urgency:'high','Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream',
-        Authorization:vapid(endpoint,publicRaw,privateKey,process.env.WIND_PUSH_SUBJECT ?? 'https://wind-production-72aa.up.railway.app')}});
+      headers:{TTL:String(ttl),Urgency:URGENT_KINDS.includes(kind)?'high':'normal','Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream',
+        Authorization:vapid(endpoint,publicRaw,privateKey,pushSubject())}});
     await response.body?.cancel();
     if (response.status===404 || response.status===410) {
       await this.db.run('DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=? AND created_at=?',endpoint,subscription.user_id,subscription.created_at);

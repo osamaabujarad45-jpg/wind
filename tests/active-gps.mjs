@@ -28,6 +28,12 @@ try {
  const firstSession=await acquire({sessionId:first,previousSessionId:null,expectedGeneration:initial.generation});
  assert.equal(firstSession.assignments.length,1); assert.equal(typeof firstSession.assignments[0].assignmentEpoch,'number');
  const fix={latitude:31.9601,longitude:35.2201,accuracy:5};
+ // Parity with SQLite: a fix captured 14 s before the accept stays inside the grace.
+ const graceAssignedAt=Number((await database.one('SELECT assigned_at FROM orders WHERE id=?',order.id)).assigned_at);
+ process.env.WIND_TEST_ACTIVE_GPS='0';
+ const grace=await call('/location',{token:driver.token,body:{...fix,age:Date.now()-graceAssignedAt+14_000}});
+ assert.equal(grace.accepted,true,'Postgres accepts a fix 14 s before assignment');
+ process.env.WIND_TEST_ACTIVE_GPS='1';
  const upload=(activeGps,expect=200)=>call('/location',{token:driver.token,body:{...fix,activeGps},expect});
  const env={deviceId,sessionId:first,seq:1,assignments:firstSession.assignments};
  assert.equal((await upload(env)).accepted,true);

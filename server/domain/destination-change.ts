@@ -53,17 +53,30 @@ function destinationView(p: Row, r: Row) {
 /** The live proposal that still matches the order as it stands, or null. */
 export async function pendingDestination(db: Persistence, r: Row) {
   if (!destinationEligible(r)) return null;
-  const p = await db.one("SELECT * FROM destination_changes WHERE order_id = ? AND driver_id = ? AND state = 'pending' AND expires_at > ? ORDER BY rowid DESC LIMIT 1", r.id, r.driver_id, Date.now());
+  const p = await db.one("SELECT * FROM destination_changes WHERE order_id = ? AND driver_id = ? AND state = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 1", r.id, r.driver_id, Date.now());
   return p && p.original === destinationOriginal(r) ? destinationView(p, r) : null;
 }
 
+/** T33: the capability follows the storage, not the dialect — either backend that hosts the tables serves it. */
+export async function destinationAvailable(db: Persistence) {
+  if (db.backend === 'postgres') return !!(await db.one("SELECT to_regclass('destination_changes') AS t"))?.t;
+  if (db.backend !== 'sqlite') return false;
+  return !!(await db.one("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'destination_changes'"));
+}
 export function registerDestinationRoutes(route: Register, deps: DestinationDeps) {
   const { need, needActive, fail, limit, identityKey, text, isCity, bookedPoint, uuid, db, settings, tariffVersionFor,
     activePlan, safetyFree, queuePush, getOrder, recommend, restoredDiscount, commissionOn } = deps;
-  const sqliteOnly = () => { if (db.backend !== 'sqlite') fail(409, 'destination_unavailable'); };
+  const available = async () => { if (!(await destinationAvailable(db))) fail(409, 'destination_unavailable'); };
+  // The HTTP envelope already owns a transaction on PostgreSQL — join it; SQLite keeps its short write transaction.
+  const inTx = async (work: () => Promise<unknown>) => {
+    if (db.inTransaction) return work();
+    await db.exec(db.backend === 'postgres' ? 'BEGIN' : 'BEGIN IMMEDIATE');
+    try { const value = await work(); await db.exec('COMMIT'); return value; }
+    catch (error) { try { if (db.inTransaction) await db.exec('ROLLBACK'); } catch { /* the owner rolls back */ } throw error; }
+  };
 
   route('POST', '/api/orders/:id/destination/quote', async ({ user, params, body }) => {
-    need(user, 'customer'); needActive(user); sqliteOnly();
+    need(user, 'customer'); needActive(user); await available();
     await limit(identityKey('destination-quote', user.id), 60, 10 * 60_000);
     const id = Number(params[0]);
     const before = await db.one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', id, user.id) ?? fail(404, 'not_found');
@@ -81,8 +94,7 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       pickupPoint: before.pickup_lat == null ? null : { latitude: before.pickup_lat, longitude: before.pickup_lng }, dropoffPoint: point });
     const discount = await restoredDiscount(id, proposal.price, before.discount);
     const changeId = randomUUID(), now = Date.now();
-    await db.exec('BEGIN IMMEDIATE');
-    try {
+    return inTx(async () => {
       const current = await db.one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', id, user.id) ?? fail(404, 'not_found');
       if (!destinationEligible(current) || destinationOriginal(current) !== destinationOriginal(before)) fail(409, 'order_changed');
       if (await pendingDestination(db, current)) fail(409, 'destination_pending');
@@ -95,22 +107,18 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       changeId, id, user.id, current.driver_id, destinationOriginal(current), body.city, point?.latitude ?? null, point?.longitude ?? null,
       note, proposal.price, discount, commissionOn(proposal.price, current.commission_rate), proposal.km, JSON.stringify(road), tariff, plan, now, now + 120_000);
       const saved = (await db.one('SELECT * FROM destination_changes WHERE id = ?', changeId))!;
-      await db.exec('COMMIT');
       return destinationView(saved, current);
-    } catch (error) { await db.exec('ROLLBACK'); throw error; }
+    });
   });
 
   route('POST', '/api/orders/:id/destination/propose', async ({ user, params, body }) => {
-    need(user, 'customer'); needActive(user); sqliteOnly();
+    need(user, 'customer'); needActive(user); await available();
     if (typeof body.id !== 'string' || !uuid.test(body.id)) fail(400, 'invalid_input');
     const id = Number(params[0]);
-    await db.exec('BEGIN IMMEDIATE');
-    try {
+    return inTx(async () => {
       const r = await db.one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', id, user.id) ?? fail(404, 'not_found');
       const p = await db.one('SELECT * FROM destination_changes WHERE id = ? AND order_id = ? AND customer_id = ?', body.id, id, user.id) ?? fail(404, 'not_found');
-      if (p.state === 'pending' && p.expires_at > Date.now() && p.original === destinationOriginal(r)) {
-        await db.exec('COMMIT'); return await getOrder(id, user);
-      }
+      if (p.state === 'pending' && p.expires_at > Date.now() && p.original === destinationOriginal(r)) return getOrder(id, user);
       if (p.state !== 'quote' || p.expires_at <= Date.now()) fail(409, 'destination_expired');
       if (!destinationEligible(r) || p.original !== destinationOriginal(r)) fail(409, 'order_changed');
       if (await pendingDestination(db, r)) fail(409, 'destination_pending');
@@ -119,20 +127,18 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       // Uber parity: the polled in-app pending card is the authoritative channel; push only nudges, so it never gates a proposal.
       await db.run("UPDATE destination_changes SET state = 'pending', expires_at = ? WHERE id = ? AND state = 'quote'", Date.now() + 10 * 60_000, p.id);
       await queuePush([r.driver_id], 'destination_request', id);
-      await db.exec('COMMIT');
-      return await getOrder(id, user);
-    } catch (error) { await db.exec('ROLLBACK'); throw error; }
+      return getOrder(id, user);
+    });
   });
 
   route('POST', '/api/orders/:id/destination/decision', async ({ user, params, body }) => {
-    need(user, 'driver'); needActive(user); sqliteOnly();
+    need(user, 'driver'); needActive(user); await available();
     if (typeof body.id !== 'string' || !uuid.test(body.id) || !['accept', 'decline'].includes(body.decision)) fail(400, 'invalid_input');
     const id = Number(params[0]);
-    await db.exec('BEGIN IMMEDIATE');
-    try {
+    return inTx(async () => {
       const p = await db.one('SELECT * FROM destination_changes WHERE id = ? AND order_id = ? AND driver_id = ?', body.id, id, user.id) ?? fail(404, 'not_found');
       const desired = body.decision === 'accept' ? 'accepted' : 'declined';
-      if (p.state === desired) { await db.exec('COMMIT'); return await getOrder(id, user); }
+      if (p.state === desired) return getOrder(id, user);
       if (p.state !== 'pending' || p.expires_at <= Date.now()) fail(409, 'destination_expired');
       const r = await db.one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
       if (!destinationEligible(r) || r.driver_id !== user.id || p.original !== destinationOriginal(r)) fail(409, 'order_changed');
@@ -148,25 +154,22 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
         user.id, id, desired === 'accepted' ? 'DESTINATION_ACCEPTED' : 'DESTINATION_DECLINED',
         JSON.stringify({ proposalId: p.id, oldPrice: r.price, newPrice: p.price, oldDiscount: r.discount ?? 0, newDiscount: p.discount ?? 0 }), now);
       await queuePush([r.customer_id], desired === 'accepted' ? 'destination_accepted' : 'destination_declined', id);
-      await db.exec('COMMIT');
-      return await getOrder(id, user);
-    } catch (error) { await db.exec('ROLLBACK'); throw error; }
+      return getOrder(id, user);
+    });
   });
 
   route('POST', '/api/orders/:id/destination/withdraw', async ({ user, params, body }) => {
-    need(user, 'customer'); needActive(user); sqliteOnly();
+    need(user, 'customer'); needActive(user); await available();
     if (typeof body.id !== 'string' || !uuid.test(body.id)) fail(400, 'invalid_input');
     const id = Number(params[0]);
-    await db.exec('BEGIN IMMEDIATE');
-    try {
+    return inTx(async () => {
       const p = await db.one('SELECT * FROM destination_changes WHERE id = ? AND order_id = ? AND customer_id = ?', body.id, id, user.id) ?? fail(404, 'not_found');
-      if (p.state === 'withdrawn') { await db.exec('COMMIT'); return await getOrder(id, user); }
+      if (p.state === 'withdrawn') return getOrder(id, user);
       if (p.state !== 'pending' || p.expires_at <= Date.now()) fail(409, 'destination_expired');
       const r = await db.one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', id, user.id) ?? fail(404, 'not_found');
       if (!destinationEligible(r) || p.original !== destinationOriginal(r)) fail(409, 'order_changed');
       await db.run("UPDATE destination_changes SET state = 'withdrawn', decided_at = ? WHERE id = ?", Date.now(), p.id);
-      await db.exec('COMMIT');
-      return await getOrder(id, user);
-    } catch (error) { await db.exec('ROLLBACK'); throw error; }
+      return getOrder(id, user);
+    });
   });
 }

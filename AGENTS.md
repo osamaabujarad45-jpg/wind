@@ -39,3 +39,9 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Test device and heavy work (owner rule, 29 Oct 2026)
+
+- **Never use an emulator.** All acceptance and UI testing uses the connected physical Android phone (`SM-A5360`, adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask instead of starting one.
+- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 29 Oct 2026 the configured `k5` keys are refused (`Permission denied (publickey)`), so the owner must supply the authorized account/key before remote-only testing can resume.
+- Keep the phone's test backend on `adb reverse` (the QA sandbox binds `127.0.0.1`), and do not clear the phone's Chrome profile.

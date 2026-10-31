@@ -33,14 +33,14 @@ try {
   // A later challenge invalidates an older code even when the older provider response arrives last.
   const reordered=await f.account();await f.map(reordered);const delayed=deferred();state.modes.set('+970'+reordered.phone.slice(1),{wait:delayed.wait});
   const older=await f.issue(reordered);await f.waitFor(()=>state.messages.some(m=>m.transactionId===older.challengeId));
-  await db.run('UPDATE phone_challenges SET resend_at=? WHERE id=?::uuid',Date.now()-1,older.challengeId);state.modes.delete('+970'+reordered.phone.slice(1));
+  await db.run('UPDATE phone_challenges SET resend_at=? WHERE id=?::uuid',Date.now()-1000,older.challengeId);state.modes.delete('+970'+reordered.phone.slice(1));
   const newer=await f.issue(reordered),newSms=await f.delivered(newer);delayed.release();const oldSms=await f.delivered(older);
   await f.prove(reordered,older,{code:oldSms.code,expect:400});await f.prove(reordered,newer,{code:newSms.code});
   const late=await f.account();await f.map(late);const delayedResult=deferred();state.modes.set('+970'+late.phone.slice(1),{wait:delayedResult.wait});
   const leased=await f.issue(late);await f.waitFor(()=>state.messages.some(m=>m.transactionId===leased.challengeId),'delayed local provider');
   const activeLease=await db.one('SELECT send_lease_until FROM phone_challenges WHERE id=?::uuid',leased.challengeId);
   assert.ok(activeLease.send_lease_until>Date.now()+20000,'in-flight provider gets a 30s lease');
-  await db.run('UPDATE phone_challenges SET send_lease_until=? WHERE id=?::uuid',Date.now()-1,leased.challengeId);
+  await db.run('UPDATE phone_challenges SET send_lease_until=? WHERE id=?::uuid',Date.now()-1000,leased.challengeId);
   await call('/admin/phone/review',{token:f.admin.token});
   assert.equal((await db.one('SELECT delivery_state FROM phone_challenges WHERE id=?::uuid',leased.challengeId)).delivery_state,'unknown');
   delayedResult.release();await new Promise(resolve=>setTimeout(resolve,100));
@@ -71,7 +71,7 @@ try {
   const commandId=randomUUID(),pending=await crash.issue(crash.customer,{commandId});await crash.waitFor(()=>crash.state.tokenCalls>0);
   assert.equal((await crash.db.one('SELECT delivery_state FROM phone_challenges WHERE id=?::uuid',pending.challengeId)).delivery_state,'prepared');
   crash.a.child.kill('SIGKILL');await crash.a.stop();paused.release();crash.state.tokensPaused=null;
-  await crash.db.run('UPDATE phone_challenges SET send_lease_until=? WHERE id=?::uuid',Date.now()-1,pending.challengeId);
+  await crash.db.run('UPDATE phone_challenges SET send_lease_until=? WHERE id=?::uuid',Date.now()-1000,pending.challengeId);
   extra=await startApiProcess(crash.storage);const invoke=apiCaller(()=>extra.base);
   assert.equal((await crash.db.one('SELECT delivery_state FROM phone_challenges WHERE id=?::uuid',pending.challengeId)).delivery_state,'unknown','restart durably reconciles stale prepared receipt');
   const replay=await crash.issue(crash.customer,{commandId,client:invoke});assert.equal(replay.deliveryState,'unknown');assert.equal(crash.state.messages.length,0);

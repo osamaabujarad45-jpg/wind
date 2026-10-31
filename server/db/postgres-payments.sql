@@ -3,7 +3,18 @@ CREATE TABLE payment_intents (id UUID PRIMARY KEY, business_ref TEXT NOT NULL UN
 CREATE TABLE payment_attempts (id UUID PRIMARY KEY, intent_id UUID NOT NULL REFERENCES payment_intents(id), provider_ref TEXT, outcome TEXT NOT NULL, created_at BIGINT NOT NULL);
 CREATE TABLE payment_events (id UUID PRIMARY KEY, provider TEXT NOT NULL, provider_event_id TEXT NOT NULL, intent_id UUID NOT NULL REFERENCES payment_intents(id), event_type TEXT NOT NULL, payload_sha256 TEXT NOT NULL, received_at BIGINT NOT NULL, UNIQUE(provider,provider_event_id));
 CREATE TRIGGER payment_events_append_only BEFORE UPDATE OR DELETE ON payment_events FOR EACH ROW EXECUTE FUNCTION wp05_append_only();
+-- refunds: 'requested' reserves the amount until the provider answers definitively; 'approved' is the
+-- reconciliation sweep's compare-and-set claim; 'completed'/'rejected' are terminal and never move again.
 CREATE TABLE refunds (id UUID PRIMARY KEY, intent_id UUID NOT NULL REFERENCES payment_intents(id), business_ref TEXT NOT NULL UNIQUE, amount_minor BIGINT NOT NULL CHECK(amount_minor > 0), reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('requested','approved','rejected','completed')), actor_id BIGINT NOT NULL REFERENCES users(id), created_at BIGINT NOT NULL);
-CREATE TABLE merchant_cod (id UUID PRIMARY KEY, order_id BIGINT NOT NULL UNIQUE REFERENCES orders(id), beneficiary TEXT NOT NULL, goods_minor BIGINT NOT NULL CHECK(goods_minor >= 0), collected_minor BIGINT NOT NULL DEFAULT 0 CHECK(collected_minor >= 0 AND collected_minor <= goods_minor), collector_id BIGINT REFERENCES users(id), status TEXT NOT NULL CHECK(status IN ('expected','partial','collected','returned','remitted')), remittance_due_at BIGINT NOT NULL, payout_ref TEXT, created_at BIGINT NOT NULL);
-CREATE TABLE merchant_cod_events (id UUID PRIMARY KEY, cod_id UUID NOT NULL REFERENCES merchant_cod(id), action TEXT NOT NULL, actor_id BIGINT NOT NULL REFERENCES users(id), amount_minor BIGINT, created_at BIGINT NOT NULL);
+CREATE TABLE merchant_cod (id UUID PRIMARY KEY, order_id BIGINT NOT NULL UNIQUE REFERENCES orders(id), beneficiary TEXT NOT NULL, goods_minor BIGINT NOT NULL CHECK(goods_minor >= 0), collected_minor BIGINT NOT NULL DEFAULT 0 CHECK(collected_minor >= 0 AND collected_minor <= goods_minor), remitted_minor BIGINT NOT NULL DEFAULT 0 CHECK(remitted_minor >= 0 AND remitted_minor <= collected_minor), collector_id BIGINT REFERENCES users(id), status TEXT NOT NULL CHECK(status IN ('expected','partial','collected','returned','remitted')), remittance_due_at BIGINT NOT NULL, payout_ref TEXT, created_at BIGINT NOT NULL);
+CREATE TABLE merchant_cod_events (id UUID PRIMARY KEY, cod_id UUID NOT NULL REFERENCES merchant_cod(id), action TEXT NOT NULL, actor_id BIGINT NOT NULL REFERENCES users(id), amount_minor BIGINT, request_id TEXT, created_at BIGINT NOT NULL);
 CREATE TRIGGER merchant_cod_events_append_only BEFORE UPDATE OR DELETE ON merchant_cod_events FOR EACH ROW EXECUTE FUNCTION wp05_append_only();
+
+-- T32, additive and idempotent (also shipped as migration 25): partial COD remittance tracking and
+-- stable command identities for collect/remit replays.
+ALTER TABLE merchant_cod ADD COLUMN IF NOT EXISTS remitted_minor BIGINT NOT NULL DEFAULT 0;
+DO $$ BEGIN
+  ALTER TABLE merchant_cod ADD CONSTRAINT merchant_cod_remitted CHECK (remitted_minor >= 0 AND remitted_minor <= collected_minor) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL; -- fresh schemas already carry it from the CREATE TABLE
+END $$;
+ALTER TABLE merchant_cod_events ADD COLUMN IF NOT EXISTS request_id TEXT;

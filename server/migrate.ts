@@ -16,7 +16,8 @@ const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
-const SQLITE_ONLY_COLUMNS = new Set(['commission_rate']);
+// T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
+const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
 const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
@@ -229,7 +230,10 @@ if (import.meta.main) {
   if (!source || !destination || !schema || !report || !process.env.WIND_DATABASE_URL) throw new Error('Usage: WIND_DATABASE_URL=<local test URL> node server/migrate.ts source.sqlite new-snapshot.sqlite wp03_<name> report.json');
   const url = new URL(process.env.WIND_DATABASE_URL);
   if (process.env.NODE_ENV !== 'test' || !['localhost','127.0.0.1','[::1]'].includes(url.hostname)) throw new Error('Only isolated loopback migration rehearsals are enabled');
-  const database = new Persistence({ connectionString: url.href, pool: { options: `-c search_path=${isolatedSchema(schema)},public` }, statementTimeoutMs: 30_000 });
+  // Rehearsals share one migration lock. A concurrent schema setup may legitimately take
+  // longer than the short request lock budget; keep this CLI bounded but allow it to finish.
+  const database = new Persistence({ connectionString: url.href, pool: { options: `-c search_path=${isolatedSchema(schema)},public` },
+    statementTimeoutMs: 30_000, lockTimeoutMs: 30_000 });
   try {
     const result = await importSnapshot(await snapshotSqlite(source, destination, process.argv.includes('--freeze-writes')), database, schema, report);
     console.log(JSON.stringify({ ok: result.ok, schema, report, runtimeActivated: false }));

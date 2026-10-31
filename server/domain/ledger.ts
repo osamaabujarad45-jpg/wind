@@ -157,6 +157,11 @@ export class Ledger {
       if (!body || Object.keys(body).some(k => !['amountMinor', 'collectorId'].includes(k)) || (body.collectorId !== undefined && body.collectorId !== actor.id) || !Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0) this.fail(400, 'invalid_amount');
       const row = (await this.db.one('SELECT * FROM cash_receipts WHERE order_id=? FOR UPDATE', orderId)) ?? this.fail(404, 'not_found');
       if (!['due','partial'].includes(row.status)) this.fail(409, 'receipt_unavailable');
+      // T31: cash may not collect on top of a standing card capture; the per-order advisory lock is the
+      // same one the card capture path takes, so a concurrent race picks exactly one settlement.
+      if (this.db.backend === 'postgres') await this.db.run("SELECT pg_advisory_xact_lock(hashtextextended('wind_settlement:' || ?, 0))", orderId);
+      const card = await this.db.one("SELECT id FROM payment_intents WHERE order_id=? AND status IN ('captured','partially_refunded')", orderId);
+      if (card) this.fail(409, 'settlement_conflict');
       const total = Number(row.collected_minor ?? 0) + body.amountMinor;
       if (!Number.isSafeInteger(total) || total > Number(row.due_minor)) this.fail(400, 'invalid_amount');
       const status = total === Number(row.due_minor) ? 'collected' : 'partial';

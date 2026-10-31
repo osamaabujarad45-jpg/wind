@@ -25,6 +25,14 @@ export function encrypt(plaintext: Buffer, uaPublic: Buffer, authSecret: Buffer,
 }
 
 /** VAPID Authorization header for one push service origin, valid 12 hours. */
+/** T37: the VAPID subject identifies the operator to push services. The obsolete Railway host default is
+ * gone — set WIND_PUSH_SUBJECT (a mailto: address or https: origin you control) before web push can send. */
+export function pushSubject(env: NodeJS.ProcessEnv = process.env): string {
+  const subject = env.WIND_PUSH_SUBJECT?.trim();
+  if (!subject) throw new Error('missing_push_subject');
+  return subject;
+}
+
 export function vapid(endpoint: string, publicRaw: Buffer, privateKey: KeyObject, subject: string) {
   const part = (o: object) => b64url(Buffer.from(JSON.stringify(o)));
   const unsigned = `${part({ typ: 'JWT', alg: 'ES256' })}.${part({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: subject })}`;

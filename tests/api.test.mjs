@@ -81,6 +81,11 @@ try {
   assert.equal((await call('/orders', { token: customer.token, body: Object.fromEntries(Object.entries(retryInput).reverse()) })).id, duplicate[0].id);
   await call('/orders', { token: customer.token, body: { ...retryInput, detail: 'Other parcel' }, expect: 409 });
   await call(`/orders/${duplicate[0].id}/cancel`, { token: customer.token, body: {} });
+  // T20: identity is optional; a client without requestId keeps per-call creation until a transition is agreed.
+  const fresh = { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) };
+  const plain = await Promise.all([call('/orders', { token: customer.token, body: fresh }), call('/orders', { token: customer.token, body: fresh })]);
+  assert.notEqual(plain[0].id, plain[1].id);
+  for (const extra of plain) await call(`/orders/${extra.id}/cancel`, { token: customer.token, body: {} });
 
   // Souqna's server can book once and safely retry; the partner key never grants access to ordinary orders.
   const partnerKey = process.env.SOUQ_PARTNER_KEY;
@@ -95,6 +100,10 @@ try {
   assert.equal((await call('/partner/orders', { partnerKey, body: delivery })).id, partnerOrder.id);
   assert.equal((await call('/partner/orders', { partnerKey, body: Object.fromEntries(Object.entries(delivery).reverse()) })).id, partnerOrder.id);
   await call('/partner/orders', { partnerKey, body: { ...delivery, pickupNote: 'changed' }, expect: 409 });
+  const partnerRace = { ...delivery, externalRef: 'listing:buyer:race' };
+  const partnerRaced = await Promise.all(Array.from({ length: 4 }, () => call('/partner/orders', { partnerKey, body: partnerRace })));
+  assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
+  await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
   await call(`/partner/orders/${order.id}`, { partnerKey, expect: 404 });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}`, { partnerKey })).status, 'searching');
   assert.equal((await call(`/partner/orders/by-reference?externalRef=${encodeURIComponent(delivery.externalRef)}`, { partnerKey })).id, partnerOrder.id);
@@ -136,8 +145,9 @@ try {
   assert.equal(job.customerName, '');
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {}, expect: 409 });
-  // A late upload of a fix taken before this assignment never shows on this job.
-  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 5000 } })).accepted, false);
+  // A fix taken more than 15 s before this assignment never shows on this job; a fix inside
+  // the grace window is covered positively in map.test and active-gps.mjs.
+  assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2, age: 20_000 } })).accepted, false);
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation, null);
   assert.equal((await call('/location', { token: driver.token, body: { latitude: 31.95, longitude: 35.21 } })).accepted, true);
   await call('/location', { token: driver.token, body: { latitude: null, longitude: 35.21 }, expect: 400 });
@@ -199,9 +209,31 @@ try {
   // Subscriptions: request, admin activates, plan applies
   const pending = await call('/subscriptions', { token: driver.token, body: {} });
   assert.equal(pending.subscription.status, 'pending');
-  await call('/subscriptions', { token: driver.token, body: {}, expect: 409 });
+  // T22: a burst of concurrent requests yields exactly one pending record — the envelope serializes the
+  // check with the insert on SQLite, and the unique pending index backs the same guarantee on PostgreSQL.
+  const spare = await call('/auth/register', { body: { phone: '0599000422', name: 'Spare', password: 'secret1' } });
+  const burst = await Promise.all(Array.from({ length: 4 }, () =>
+    call('/subscriptions', { token: spare.token, body: {} }).then(() => 'created', e => e.message.includes('already_subscribed') ? 'already_subscribed' : e.message)));
+  assert.deepEqual([...burst].sort(), ['already_subscribed', 'already_subscribed', 'already_subscribed', 'created'],
+    `concurrent requests produce one pending subscription: ${burst.join()}`);
+  const pendingSubs = (await call('/admin/subscriptions', { token: admin.token })).filter(s => s.status === 'pending');
+  const target = pendingSubs.find(s => s.userPhone === '0599000422') ?? pendingSubs[0];
+  // T22: one concurrent activate/reject race decides once; the loser is refused with its own words.
+  const [activated, rejected] = await Promise.all([
+    call(`/admin/subscriptions/${target.id}`, { token: admin.token, body: { action: 'activate' } }).then(() => 'activated', e => e.message.includes('subscription_decided') ? 'subscription_decided' : e.message),
+    call(`/admin/subscriptions/${target.id}`, { token: admin.token, body: { action: 'reject' } }).then(() => 'rejected', e => e.message.includes('subscription_decided') ? 'subscription_decided' : e.message),
+  ]);
+  const decided = [activated, rejected].filter(result => result === 'activated' || result === 'rejected');
+  const refused = [activated, rejected].filter(result => result !== 'activated' && result !== 'rejected');
+  assert.equal(decided.length, 1, `exactly one decision lands: ${activated} / ${rejected}`);
+  assert.ok(refused.every(result => result.includes('subscription_decided') || result.includes('not_found')),
+    `the loser is refused: ${refused.join(' | ')}`);
+  // A pending or active plan still gates a re-request; a rejected applicant may reapply (one live row either way).
+  if (decided[0] === 'activated') await call('/subscriptions', { token: spare.token, body: {}, expect: 409 });
   const subs = await call('/admin/subscriptions', { token: admin.token });
-  await call(`/admin/subscriptions/${subs[0].id}`, { token: admin.token, body: { action: 'activate' } });
+  const driverPending = subs.find(s => s.status === 'pending' && s.userId === pending.subscription.userId) ?? subs.find(s => s.status === 'pending' && s.userPhone === pending.subscription.userPhone) ?? subs.find(s => s.status === 'pending');
+  assert.ok(driverPending, 'the driver request is still pending');
+  await call(`/admin/subscriptions/${driverPending.id}`, { token: admin.token, body: { action: 'activate' } });
   assert.equal((await call('/me', { token: driver.token })).plan, 'pro');
 
   const plusSub = await call('/subscriptions', { token: customer.token, body: {} });
@@ -213,7 +245,7 @@ try {
   // Profits
   const stats = await call('/admin/stats', { token: admin.token });
   assert.equal(stats.commission, done.commission);
-  assert.equal(stats.subscriptions, defaultSettings.proPrice + defaultSettings.plusPrice);
+  assert.equal(stats.subscriptions, defaultSettings.proPrice + defaultSettings.plusPrice + (decided[0] === 'activated' ? defaultSettings.plusPrice : 0), 'the spare race decision counts once');
   assert.equal(stats.profit, stats.commission + stats.subscriptions);
   assert.equal(stats.daily.length, 14);
   assert.equal(stats.daily.at(-1).subscriptions, stats.subscriptions);
@@ -245,6 +277,10 @@ try {
   await call('/me', { token: customer.token }); // failed reset must preserve the complete previous credential state
   db.exec('DROP TRIGGER fail_reset_revoke');
   const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {} });
+  const resetAudit = db.prepare("SELECT * FROM security_events WHERE action = 'SUPPORT_PASSWORD_RESET' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(resetAudit?.order_id, null, 'account-level audit rows have no order');
+  assert.equal(resetAudit?.actor_id, admin.user.id);
+  assert.match(resetAudit?.detail ?? '', new RegExp(`"targetId":${customer.user.id}`));
   await call('/me', { token: customer.token, expect: 401 }); // reset signs out everywhere
   const relogged = await call('/auth/login', { body: { phone: '0599000002', password: temp } });
 
@@ -260,6 +296,10 @@ try {
   });
   await new Promise(resolve => setTimeout(resolve, 30));
   await call(`/admin/users/${customer.user.id}`, { token: admin.token, body: { status: 'blocked' } });
+  const editAudit = db.prepare("SELECT * FROM security_events WHERE action = 'USER_UPDATED' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(editAudit?.order_id, null, 'admin identity edits are account-level audit rows');
+  assert.equal(editAudit?.actor_id, admin.user.id);
+  assert.match(editAudit?.detail ?? '', /"status"/);
   finishSlowBody();
   assert.equal((await slowMutation).status, 401);
   assert.notEqual(db.prepare('SELECT name FROM users WHERE id = ?').get(customer.user.id).name, 'Revoked mutation');
