@@ -29,6 +29,7 @@ GHSA-qr28-fpjm-wq7f (published 29 Oct 2026, high: the fallback decoder ran one f
 - `npm run lint` — passed with the overridden Zod.
 - `npm run typecheck` — passed.
 - `npm audit --audit-level=high` — 29 Oct 2026: one high (deepmerge GHSA-gcqx-w48m-w2h4, dispositioned above as a carried vendor patch) plus seven low-severity items under the gate threshold; no actionable fix exists inside SDK 57. The earlier "zero reported vulnerabilities" line referred to the pre-deepmerge-advisory publication state and is superseded.
+- `npm audit --audit-level=high` — 31 Oct 2026: GHSA-qr28-fpjm-wq7f (decode-uri-component `<=0.5.0`, quadratic replacement of percent-encoded runs; published 29 Oct) flagged the vendored 0.5.0 decoder Expo Router's query-string uses. `vendor/decode-uri-component` now carries upstream 0.5.1 verbatim (the fixed release, single-pass replacement) with only the export changed to CommonJS; output is identical on the edge cases and a 20,000-distinct-run malformed input decodes in 10 ms instead of 741 ms. The audit gate exits 0.
 - `npx expo export --platform web` — passed with `WIND_LOCAL_TEST=1` and `EXPO_PUBLIC_API_URL=http://127.0.0.1:4191`. A production-mode export correctly rejected the reserved `.example` placeholder host before this local-mode run.
 
 No Expo or React Native API was changed. The SDK 57 versioned documentation confirms `npx expo install` is the SDK module installer; no new Expo module was added.

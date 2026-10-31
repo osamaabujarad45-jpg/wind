@@ -607,6 +607,7 @@ function BookForm() {
       selectedPlace={picker === 'pickup' ? (pickupChosen ? { city: pickupCity, note: pickupNote, point: pickupPoint } : null) : (dropoffChosen ? { city: dropoffCity, note: dropoffNote, point: dropoffPoint } : null)}
       outside={locationError === c.pinOutsideArea}
       text={{ label: c.searchLabel, empty: c.searchEmpty, offline: c.searchOffline, pinKept: c.searchPinKept, pinCleared: c.searchPinCleared, apply: c.searchApply }}
+      near={picker === 'pickup' ? pickupPoint ?? city(pickupCity) : dropoffPoint ?? city(dropoffCity)}
       onConfirm={place => {
         haptic.tap();
         if (picker === 'pickup') { if (place.city !== pickupCity) setPickupNote(''); setPickupCity(place.city); setPickupChosen(true); setPickupPoint(place.point); if (place.note) edit('pickupNote', setPickupNote)(place.note); }
@@ -636,9 +637,9 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
 }
 
 // Bottom sheet with the customer's places and the T16 search panel (Arabic folding, pin-safe proposal).
-function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedPlace, outside, text, onConfirm }: { open: boolean; title: string; onClose: () => void;
+function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedPlace, outside, text, onConfirm, near }: { open: boolean; title: string; onClose: () => void;
   places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void; selectedPlace: PlaceCandidate | null;
-  outside: boolean; text: PlaceSearchText; onConfirm: (place: PlaceCandidate) => void }) {
+  outside: boolean; text: PlaceSearchText; onConfirm: (place: PlaceCandidate) => void; near: Point }) {
   const { c, language } = useCopy();
   const [term, setTerm] = useState('');
   const insets = useSafeAreaInsets();
@@ -668,7 +669,7 @@ function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedP
               </Row>;
             })}
           </>}
-          <PlaceSearch saved={places.saved} selected={selectedPlace} outside={outside} text={text} onConfirm={onConfirm} onQuery={setTerm} />
+          <PlaceSearch saved={places.saved} selected={selectedPlace} outside={outside} text={text} onConfirm={onConfirm} onQuery={setTerm} near={near} />
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>

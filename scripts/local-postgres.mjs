@@ -24,7 +24,7 @@ function run(name, args, required = true) {
   const output = startsServer ? openSync(outputPath, 'w') : undefined;
   let result;
   try {
-    result = spawnSync(join(bin, executable(name)), args, { encoding: 'utf8', windowsHide: true, timeout: 330_000,
+    result = spawnSync(join(bin, executable(name)), args, { encoding: 'utf8', windowsHide: true, timeout: name === 'pg_ctl' ? 200_000 : 30_000,
       ...(output !== undefined && { stdio: ['ignore', output, output] }) });
   } finally { if (output !== undefined) closeSync(output); }
   if (startsServer) result.stdout = readFileSync(outputPath, 'utf8');
@@ -37,18 +37,24 @@ if (action === 'status') {
   console.log(running ? `Isolated PostgreSQL running on 127.0.0.1:${port}` : 'Isolated PostgreSQL stopped');
   process.exit(running ? 0 : 1);
 }
-// -w returns as soon as the server is ready/stopped; 300 s covers a slow disk's shutdown checkpoint or crash
-// recovery (a 15 s stop timed out on k5, the session then killed the server mid-checkpoint, and every later start
-// needed recovery longer than 15 s).
 if (action === 'stop') {
-  if (running) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', '-t', '300', 'stop']);
+  if (running) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', '-t', '180', 'stop']); // the shutdown checkpoint takes 20+ s on a slow disk
   console.log('Isolated PostgreSQL stopped; test data retained.');
   process.exit(0);
 }
 mkdirSync(scratch, { recursive: true });
 if (!initialized) run('initdb', ['-D', data, '-U', user, '--auth=trust', '--encoding=UTF8', '--locale=C']);
-if (!running) run('pg_ctl', ['-D', data, '-l', join(scratch, 'postgresql-test.log'), '-o', `-p ${port} -h 127.0.0.1 -c timezone=UTC`, '-w', '-t', '300', 'start']);
-const found = run('psql', [...connection, '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT 1 FROM pg_database WHERE datname='fastship_test'"]).stdout.trim();
+if (!running) run('pg_ctl', ['-D', data, '-l', join(scratch, 'postgresql-test.log'), '-o', `-p ${port} -h 127.0.0.1 -c timezone=UTC`, '-w', '-t', '180', 'start']);
+// After an interrupted shutdown, recovery fsyncs the data directory (60+ s on a slow disk), so the start above waits up to
+// 3 min and pg_ctl -w can still return before connections are accepted ("the database system is starting up").
+let probe;
+for (let attempt = 0; ; attempt++) {
+  probe = run('psql', [...connection, '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT 1 FROM pg_database WHERE datname='fastship_test'"], false);
+  if (probe.status === 0 || attempt >= 180 || !/starting up|could not connect|refused/i.test(probe.stderr ?? '')) break;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+}
+if (probe.error || probe.status !== 0) throw new Error(`psql failed: ${probe.error?.message ?? probe.stderr ?? probe.stdout}`);
+const found = probe.stdout.trim();
 if (found !== '1') run('createdb', [...connection, database]);
 const version = run('psql', [...connection, '-d', database, '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE EXTENSION IF NOT EXISTS postgis; SELECT postgis_version();']).stdout.trim();
 console.log(`PostGIS verified: ${version}`);

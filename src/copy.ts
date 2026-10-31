@@ -446,6 +446,10 @@ const ar = {
   searchPinKept: 'نقطتك المثبتة تبقى كما هي.',
   searchPinCleared: 'التأكيد ينقل المدينة ويزيل النقطة المثبتة.',
   searchApply: 'استخدام هذا المكان',
+  searchMap: 'ابحث في الخريطة عن «{q}»',
+  searchMapNone: 'لم نجد هذا المكان داخل منطقة خدمتنا. جرّب اسماً آخر أو ضع الدبوس على الخريطة.',
+  searchMapFailed: 'تعذّر البحث في الخريطة الآن. حاول مرة أخرى.',
+  mapCredit: 'بيانات الأماكن © مساهمو OpenStreetMap',
   bookingPending: 'بانتظار تأكيد الطلب',
   bookingRetryHint: 'أكّد نفس الطلب قبل بدء طلب جديد.',
   // The command is saved to storage before the POST, so a transport failure
@@ -1391,6 +1395,10 @@ const en: Copy = {
   searchPinKept: 'Your confirmed pin stays where it is.',
   searchPinCleared: 'Confirming moves to another city and drops the confirmed pin.',
   searchApply: 'Use this place',
+  searchMap: 'Search the map for “{q}”',
+  searchMapNone: 'No place by that name inside our service area. Try another name or drop the pin on the map.',
+  searchMapFailed: 'Map search is unavailable right now. Try again.',
+  mapCredit: 'Place data © OpenStreetMap contributors',
   bookingPending: 'Awaiting booking confirmation',
   bookingRetryHint: 'Confirm this same request before starting a new one.',
   // Mirrors the Arabic rationale: the command is saved before the POST.

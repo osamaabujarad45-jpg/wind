@@ -1,7 +1,7 @@
 {
   "name": "decode-uri-component",
   "version": "0.5.1",
-  "description": "Upstream 0.5.1 decoder with a CommonJS export for Expo Router's query-string 7",
+  "description": "Upstream 0.5.1 decoder (GHSA-qr28-fpjm-wq7f fix) with a CommonJS export for Expo Router's query-string 7",
   "license": "MIT",
   "repository": "SamVerschueren/decode-uri-component",
   "private": true,

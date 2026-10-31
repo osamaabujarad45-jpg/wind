@@ -28,6 +28,32 @@ const osrm = createServer((req, res) => {
   res.end(JSON.stringify({ code: 'Ok', routes }));
 });
 await new Promise(r => osrm.listen(0, '127.0.0.1', r));
+// Fake Nominatim for map search: one served place, one outside the area, one malformed row; 'down' drops the socket.
+let geoCalls = 0, geoMode = 'ok', geoUrl = '';
+const geocoder = createServer((req, res) => {
+  geoCalls++; geoUrl = req.url;
+  if (geoMode === 'down') return res.destroy();
+  const q = new URL(req.url, 'http://x').searchParams.get('q');
+  if (geoMode === 'bare-down' && q === 'المنارة') return res.destroy();
+  if (q === 'fourpart') return res.end(JSON.stringify([{ lat: '31.9038', lon: '35.2034', name: 'Bakery', address: { road: 'شارع الإرسال', suburb: 'الماصيون', village: 'بيتونيا', city: 'مجلس ماتي بنيامين الإقليمي' } }]));
+  if (q === 'notalist') return res.end(JSON.stringify({ error: 'Nominatim is busy' }));
+  if (q === 'دوار المنارة') return res.end(JSON.stringify([{ lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة' }]));
+  if (q === 'المنارة') return res.end(JSON.stringify([
+    { lat: '31.9039', lon: '35.2042', name: 'ميدان المنارة', display_name: 'ميدان المنارة' },
+    { lat: '31.6600', lon: '35.1700', name: 'خربة المنارة', display_name: 'خربة المنارة' },
+  ]));
+  if (q === 'manara') return res.end(JSON.stringify([
+    { lat: '31.5296', lon: '35.0973', name: 'دوار المنارة', display_name: 'دوار المنارة, الخليل' },
+    { lat: '31.9039', lon: '35.2042', name: 'دوار المنارة', display_name: 'دوار المنارة, رام الله' },
+  ]));
+  res.end(JSON.stringify([
+    { lat: '31.9605', lon: '35.1830', name: 'جامعة بيرزيت', display_name: 'جامعة بيرزيت, بيرزيت', address: { road: '4566', village: 'بيرزيت', city: 'مجلس ماتي بنيامين الإقليمي', county: 'منطقة أ' } },
+    { lat: '32.0853', lon: '34.7818', name: 'Tel Aviv', display_name: 'Tel Aviv, Israel' },
+    { lat: 'x', lon: '35.2', name: 'Broken', display_name: 'Broken' },
+  ]));
+});
+await new Promise(r => geocoder.listen(0, '127.0.0.1', r));
+process.env.GEOCODER_URL = `http://127.0.0.1:${geocoder.address().port}/`;
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}/`;
 process.env.OSRM_TIMEOUT_MS = '3000'; // The fixture's health contract must not inherit operator timeout settings.
 const dir = mkdtempSync(join(tmpdir(), 'wind-route-'));
@@ -162,9 +188,54 @@ try {
   r = await call(trip(31.9038), { token: customer.token });
   assert.deepEqual([r.avoids, r.through, r.minutes], [[], [], 55], 'reported open again: fastest route back');
 
+  // Map search: session required, bounded input, only served-area places, cached repeats, failures not cached.
+  await call('/places/search?q=birzeit', { expect: 401 });
+  for (const bad of ['q=a', `q=${'x'.repeat(101)}`, 'lang=en']) await call(`/places/search?${bad}`, { token: customer.token, expect: 400 });
+  const found = await call(`/places/search?q=${encodeURIComponent('جامعة بيرزيت')}&lang=ar`, { token: customer.token });
+  // The detail is street/village + our served town: never a settlement council or an Oslo area label.
+  assert.deepEqual(found, { hits: [{ name: 'جامعة بيرزيت', detail: '4566، بيرزيت، البيرة', latitude: 31.9605, longitude: 35.183 }] });
+  const sent = new URL(geoUrl, 'http://x').searchParams;
+  assert.deepEqual([sent.get('format'), sent.get('accept-language'), sent.get('countrycodes'), sent.get('viewbox'), sent.get('bounded'), sent.get('addressdetails')], ['jsonv2', 'ar', 'ps', '34.2,32.6,35.6,31.2', '1', '1']);
+  await call(`/places/search?q=${encodeURIComponent('جامعة بيرزيت')}&lang=ar`, { token: customer.token });
+  assert.equal(geoCalls, 1, 'a repeated search is answered from the cache');
+  geoMode = 'down';
+  await call('/places/search?q=nablus', { token: customer.token, expect: 503 });
+  geoMode = 'ok';
+  assert.equal((await call('/places/search?q=nablus', { token: customer.token })).hits.length, 1, 'a failure is not cached');
+  assert.equal(geoCalls, 3);
+  // Same name in two towns: upstream order without `near`, closest first with it, one cached upstream call for both.
+  const manara = async near => (await call(`/places/search?q=manara${near}`, { token: customer.token })).hits.map(h => h.detail);
+  assert.deepEqual(await manara(''), ['الخليل', 'رام الله']);
+  assert.deepEqual(await manara('&near=31.9038,35.2034'), ['رام الله', 'الخليل']);
+  assert.equal(geoCalls, 4);
+  // Up to two of street/neighbourhood/village, then always our served town (never the council in `city`); English joins with commas.
+  assert.equal((await call('/places/search?q=fourpart', { token: customer.token })).hits[0].detail, 'شارع الإرسال، الماصيون، رام الله');
+  assert.equal((await call('/places/search?q=fourpart&lang=en', { token: customer.token })).hits[0].detail, 'شارع الإرسال, الماصيون, Ramallah');
+  assert.equal(geoCalls, 6);
+  // An upstream error body is a failure, not "no places": nothing is cached and the next search asks again.
+  await call('/places/search?q=notalist', { token: customer.token, expect: 503 });
+  await call('/places/search?q=notalist', { token: customer.token, expect: 503 });
+  assert.equal(geoCalls, 8);
+  // A square query also asks for the bare name and keeps only squares carrying it: Ramallah's ميدان first, the ruin dropped.
+  const squares = await call(`/places/search?q=${encodeURIComponent('دوار المنارة')}&near=31.9038,35.2034`, { token: customer.token });
+  assert.deepEqual(squares.hits.map(h => h.name), ['ميدان المنارة', 'دوار المنارة']);
+  assert.equal(geoCalls, 10);
+  // Identical searches in flight share one upstream lookup.
+  await Promise.all([1, 2].map(() => call('/places/search?q=dedupe', { token: customer.token })));
+  assert.equal(geoCalls, 11, 'two concurrent misses, one upstream call');
+  // A failed second lookup returns the first answer uncached; a stop-word bare name ("ساحة ال") makes no second lookup.
+  geoMode = 'bare-down';
+  await call(`/places/search?q=${encodeURIComponent('ميدان المنارة')}`, { token: customer.token });
+  geoMode = 'ok';
+  await call(`/places/search?q=${encodeURIComponent('ميدان المنارة')}`, { token: customer.token });
+  assert.equal(geoCalls, 15, 'the partial answer was not cached: both lookups ran again');
+  await call(`/places/search?q=${encodeURIComponent('ساحة ال')}`, { token: customer.token });
+  assert.equal(geoCalls, 16);
+
   console.log('route: ok');
 } finally {
   await shutdown();
   rmSync(dir, { recursive: true, force: true });
   osrm.close();
+  geocoder.close();
 }
