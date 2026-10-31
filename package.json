@@ -73,6 +73,11 @@
     "test:persistence": "node scripts/check-persistence.mjs",
     "db:migrate:staging": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/migrate-postgres.mjs"
   },
+  "zroScripts": {
+    "install": "npm install -g @moonmath-ai/zro || true",
+    "login": "zro login --api-key $ZRO_API_KEY",
+    "launch:opencode": "zro launch opencode --model deepseek-v4.1-flash"
+  },
   "private": true,
   "overrides": {
     "decode-uri-component": "$decode-uri-component",

@@ -1,0 +1,14 @@
+sso_third_party_scheme = https
+line_auth_scheme = line.1486487802
+ub__fb_login_protocol_scheme = fb277064115737714
+app_name = Proto SimpleStore
+total <string> entries: 15380
+pattern AIza : 3 matches
+pattern AKIA : 0 matches
+pattern sk_live : 0 matches
+pattern begin_key : 0 matches
+pattern ghp : 0 matches
+pattern api_key_named : 1 matches
+pattern secret_named : 0 matches
+pattern bearer : 0 matches
+pattern firebaseio : 1 matches

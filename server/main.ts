@@ -59,6 +59,14 @@ const registrationOpen = selfService || (!production && process.env.WIND_IDENTIT
 // Entra External ID stays dark until the tenant is configured; password auth is untouched while it is off.
 // A partial or mistyped Entra config must never crash-loop the whole API.
 const entra = (() => { try { return entraConfig(); } catch (error) { console.error('Entra disabled:', error instanceof Error ? error.message : error); return null; } })();
+
+// Zro / MoonMath provider config placeholder
+const ZRO_PROVIDER_NAME = process.env.ZRO_PROVIDER_NAME ?? process.env.ZRO_PROVIDER ?? '';
+const ZRO_API_KEY = process.env.ZRO_API_KEY ?? process.env.ZRO_KEY ?? '';
+if (ZRO_PROVIDER_NAME && ZRO_API_KEY) {
+  // Small runtime notice so local runs show the provider is available. Real wiring belongs in a provider module.
+  console.log(`ZRO provider configured: ${ZRO_PROVIDER_NAME}`);
+}
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
   if (!process.env.SUPPORT_CONTACT?.trim()) throw new Error('Production requires a real SUPPORT_CONTACT');

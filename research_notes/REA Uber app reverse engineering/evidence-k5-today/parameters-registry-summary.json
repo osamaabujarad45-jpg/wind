@@ -1,0 +1,3042 @@
+{
+ "asset": "assets/parameters.json",
+ "bytes": 5259028,
+ "sha256": "516b14301769bf2318043f2b37f65bd7a7a57d3d8a2a4950534a16bffb926d6d",
+ "counts_by_type": {
+  "int64Parameters": 1844,
+  "float64Parameters": 622,
+  "stringParameters": 1420,
+  "boolParameters": 7258,
+  "pluginSwitch": 3372
+ },
+ "total_parameters": 14516,
+ "namespaces": {
+  "rider_growth_mobile": 536,
+  "cx_mobile": 501,
+  "audio_recording_mobile": 494,
+  "u4b_mobile": 458,
+  "payment_methods_mobile": 453,
+  "maps_experience_mobile": 420,
+  "maps_navigation_mobile": 416,
+  "rider_foundations_mobile": 407,
+  "customer_obsession_mobile": 395,
+  "mobile_data_platform_mobile": 384,
+  "rx_mobile": 382,
+  "networking_platform_mobile": 358,
+  "bx_mobile": 342,
+  "payment_feature_mobile": 329,
+  "membership_mobile": 328,
+  "tx_mobile": 317,
+  "scheduled_rides_mobile": 307,
+  "customer_identity_platform_mobile": 300,
+  "financial_products_mobile": 280,
+  "uberai_mobile": 265,
+  "autonomous_mobile": 259,
+  "connect_mobile": 252,
+  "teens_mobile": 234,
+  "comms_platform_mobile": 228,
+  "trusted_identity_mobile": 211,
+  "eats_platform_mobile": 200,
+  "ce_mobile": 200,
+  "safety_controls_mobile": 192,
+  "ads_formats_mobile": 191,
+  "hcv_rider_mobile": 186,
+  "product_equity_mobile": 184,
+  "privacy_mobile": 171,
+  "driver_success_experiments_mobile": 163,
+  "risk_experience_mobile": 161,
+  "web_mobile": 157,
+  "airports_and_venues_mobile": 153,
+  "safety_controls_br_mobile": 148,
+  "rider_applink_plugins_mobile": 148,
+  "uber_eats_orders_mobile": 144,
+  "sensors_mobile": 141,
+  "active_safety_mobile": 125,
+  "bug_reporter_mobile": 122,
+  "map_display_mobile": 106,
+  "eats_messaging_mobile": 105,
+  "data_intelligence_mobile": 93,
+  "driver_platform_mobile": 93,
+  "earner_foundations_mobile": 93,
+  "platform_ui_mobile": 89,
+  "rider_ads_mobile": 88,
+  "emobility_mobile": 87,
+  "dp_mobile": 85,
+  "driver_engagement_mobile": 82,
+  "xp_mobile": 80,
+  "fares_experience_mobile": 71,
+  "shared_rides_mobile": 71,
+  "intercity_mobile": 70,
+  "transit_mobile": 67,
+  "healthline_mobile": 64,
+  "new_verticals_hourly_mobile": 64,
+  "mdx_mobile": 58,
+  "eater_growth_mobile": 57,
+  "rider_platform_mobile": 56,
+  "rider_payment_mobile": 53,
+  "mobile_security_mobile": 52,
+  "foundations_mobile": 51,
+  "marketing_attribution_mobile": 50,
+  "safety_driver_id_mobile": 50,
+  "maps_search_growth_mobile": 47,
+  "kids_mobile": 46,
+  "hailables_rider_mobile": 43,
+  "reserve_dispatch_exp_mobile": 38,
+  "payment_foundation_mobile": 38,
+  "u4b_guest_verticals_mobile": 33,
+  "tax_and_compliance_mobile": 33,
+  "car_rentals_rider_mobile": 32,
+  "women_safety_mobile": 32,
+  "legacy_morpheus_plugins_mobile": 32,
+  "road_safety_mobile": 28,
+  "route_share_mobile": 25,
+  "rex_mobile": 25,
+  "pricing_experience_mobile": 24,
+  "eats_ads_platform_mobile": 24,
+  "maps_platform_mobile": 23,
+  "eats_funnel_optimization": 22,
+  "shifts_rider_mobile": 22,
+  "edge_streaming_mobile": 20,
+  "platform_sdtoolkit_mobile": 20,
+  "mobile_studio_mobile": 19,
+  "localcab_rider_mobile": 19,
+  "foundations_performance_mobile": 19,
+  "dispatch_config_shared_mobile": 18,
+  "matching_intent_mobile": 17,
+  "safety_response_mobile": 16,
+  "mobility_verticals_mobile": 16,
+  "driving_mobile": 15,
+  "earner_engagement_mobile": 14,
+  "r2e_mobile": 14,
+  "in_person_payment_mobile": 14,
+  "xp_config_mobile": 13,
+  "booking_innovation_commute_mobile": 13,
+  "ad_tracking_mobile": 13,
+  "device_intelligence_mobile": 12,
+  "travel_platform_mobile": 11,
+  "reserve_airport_pickup_mobile": 11,
+  "component_api_mobile": 10,
+  "emissions_savings_mobile": 10,
+  "rider_checkout_mobile": 10,
+  "restricted_items_mobile": 9,
+  "tipping_mobile": 9,
+  "internationalization_mobile": 8,
+  "map_marker_display_mobile": 8,
+  "e4b_mobile": 6,
+  "cornershop_mobile": 6,
+  "eats_shopping_mechanics_mobile": 6,
+  "rider_server_driven_plugins_mobile": 6,
+  "uber_market_mobile": 5,
+  "booking_growth_mobile": 5,
+  "eats_discovery_mobile": 5,
+  "over_the_top_mobile": 5,
+  "unified_session_mobile": 4,
+  "uber_explore_mobile": 4,
+  "legacy_morpheus_experiments_mobile": 4,
+  "driver_payment_mobile": 4,
+  "safety_media_mobile": 4,
+  "fleet_mobile": 4,
+  "eats_orders_platform_mobile": 4,
+  "safety_mobile": 3,
+  "uberai_features_mobile": 3,
+  "uber_money_compliance_mobile": 3,
+  "pwv_migration_mobile": 3,
+  "communication_experience_mobile": 3,
+  "new_verticals_growth_mobile": 2,
+  "travel_mobile": 2,
+  "eats_pickup_mobile": 2,
+  "merchant_crm_mobile": 2,
+  "ucomponent_mobile": 2,
+  "direct_mobile": 1,
+  "group_rides_mobile": 1,
+  "carpool_mobile": 1,
+  "experimentation-mobile": 1,
+  "money_payment_operation_mobile": 1,
+  "eats_mobile": 1,
+  "customer_obsession_common_mobile": 1,
+  "hailables_driver_mobile": 1,
+  "driver_earnings_experience_mobile": 1,
+  "bid_ask_mobile": 1,
+  "pick_pack_mobile": 1,
+  "gss_automation_mobile": 1,
+  "uber_assistant_mobile": 1,
+  "pool_mobile": 1,
+  "eats_payment_mobile": 1,
+  "app_rating_mobile": 1,
+  "eater_acquisition_mobile": 1
+ },
+ "categories": {
+  "FEATURE_FLAG": 5467,
+  "CONFIGURATION": 4151,
+  "PLUGIN": 3374,
+  "BUG_FIX": 1517,
+  "OTHER": 7
+ },
+ "registry_classes_top60": {
+  "com.ubercab.helix.experiment.core.HelixPluginsDeprecated": 406,
+  "com.ubercab.android.nav.NavigationParameters": 229,
+  "com.uber.applink.core.plugins.ApplinkPlugins": 224,
+  "com.ubercab.safety_media_recording.parameters.SafetyMediaRecordingParameters": 150,
+  "com.uber.reporter.ReporterConfigurationParameters": 141,
+  "com.uber.order_selection_experimentation.core.OrderSelectionParametersV2": 140,
+  "com.uber.uberfamily.familyParameters.UberFamilyParameters": 131,
+  "com.uber.reporter.ReporterParameters": 128,
+  "com.ubercab.helix.experiment.core.HelixParameters": 123,
+  "com.ubercab.navigation.XplorerGeneratedParameters": 117,
+  "com.uber.reserve.experiment.ReserveParametersV2": 115,
+  "com.ubercab.presidio.payment.experiment.core.PaymentPlugins": 109,
+  "com.uber.autonomousvehicle.AutonomousVehicleParameters": 106,
+  "com.ubercab.profiles.SharedProfileParameters": 104,
+  "com.uber.libraries.common.bugreporter.parameters.BugReporterParameters": 104,
+  "com.uber.connect.core.ConnectParameters": 97,
+  "com.uber.membership.MembershipParametersV2": 88,
+  "com.uber.restaurants.featureparameter.FeatureParametersV2": 84,
+  "com.ubercab.profiles.SharedProfileParametersKt": 81,
+  "com.uber.eatsweb.parameters.EatsWebParametersV2": 81,
+  "com.ubercab.profiles.ProfilePlugins": 81,
+  "com.ubercab.risk.experiment.RiskPlugins": 80,
+  "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters": 77,
+  "com.uber.driver_platform_mobile_parameter.core.DpmParams": 74,
+  "com.ubercab.audio_recording.parameters.AudioRecordingParameters": 73,
+  "com.uber.performance.metricprofiler.parameter.MetricProfilerParameters": 73,
+  "com.uber.ringnativecomponent.common.RingNativeComponentParameters": 73,
+  "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters": 72,
+  "com.uber.presidio_webview.core.api.PresidioWebViewStaticParameters": 71,
+  "com.ubercab.presidio.uview.injection.core.UiParameters": 66,
+  "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2": 66,
+  "com.uber.hcv_common_data.parameters.HCVRidesParametersV2": 66,
+  "com.uber.rider_request.optional.event.handlers.RequestEventHandlerPlugins": 64,
+  "com.uber.restaurants.featureparameter.FeatureParameters": 63,
+  "com.ubercab.chat.core.ChatCitrusParameters": 62,
+  "com.uber.reporter.ReporterDevParameters": 61,
+  "com.uber.libraries.common.healthlinesdk.parameters.HealthlineCommonParameters": 61,
+  "com.ubercab.sensors.core.fusion.FusionParameters": 60,
+  "com.ubercab.presidio.app.core.root.main.ride.trip.TripExperienceParamsV3": 59,
+  "com.uber.connect.core.ConnectConfigsParameters": 58,
+  "com.uber.bindings.params.TripBindingsPlugins": 58,
+  "com.uber.presidio.payment.feature.checkoutcomponents.api.paymentselection.PaymentSelectionParameters": 57,
+  "com.uber.identity.api.experiments.UslParameters": 54,
+  "com.uber.finprod.utils.FinancialProductsParameters": 53,
+  "com.uber.order_selection_experimentation.core.OrderSelectionParameters": 50,
+  "com.uber.presidio_webview.core.api.PresidioWebviewParameters": 49,
+  "com.uber.presidio.guest_rides.GuestRidesParameters": 48,
+  "com.ubercab.emobility.experiment.MiMoXPParameters": 47,
+  "com.uber.connect.ConnectPluginSwitches": 47,
+  "com.uber.ringnativecomponent.common.RingNativeComponentParametersV2": 45,
+  "com.uber.reserve.experiment.ReserveParameters": 44,
+  "com.uber.display_messaging.DisplayMessagingParameters": 42,
+  "com.uber.rider_wayfinding.experiments.WayfindingParametersV2": 42,
+  "com.ubercab.presidio.pricing.core.parameters.FaresParameters": 40,
+  "com.uber.hcv_common_data.parameters.HCVRidesParameters": 40,
+  "com.ubercab.help.feature.workflow.HelpWorkflowCitrusParameters": 40,
+  "com.uber.rider_request.v2.optional.noncorestateplugins.RequestNonCoreStatePlugins": 40,
+  "com.ubercab.chat.core.ChatParameters": 39,
+  "com.uber.booking_agent.BookingDialogParameters": 39,
+  "com.uber.appuistate.scenestate.SceneStateParameters": 38
+ },
+ "pluginSwitch_entries": [],
+ "pluginSwitch_count": 3372,
+ "map_location_geo_parameter_count": 1722,
+ "map_location_geo_parameters_sample": [
+  {
+   "namespace": "active_safety_mobile",
+   "name": "safety_ems_rider_teens_share_location_enabled",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.safety.emergency.SafetyEmergencyParameters"
+  },
+  {
+   "namespace": "ads_formats_mobile",
+   "name": "ads_formats_sponsored_items_client_data_map_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.adssdk.EatsAdReporterParameters"
+  },
+  {
+   "namespace": "ads_formats_mobile",
+   "name": "client_data_map_android_passthrough",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "ads_formats_mobile",
+   "name": "vehicle_icon_lifecycle_observability_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_ui.experiment.MapUiParametersV2"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "direct_dispatch_rrv2_nearby_vehicle_refresh_seconds",
+   "defaultValue": "60",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "direct_dispatch_rrv2_nearby_vehicles_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "directed_dispatch_hide_wait_in_line_marker",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "directed_dispatch_map_layer_presenter_v2",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "hotels_tab_shimmer_mapping",
+   "defaultValue": "[{\"regex\": \"^/home\", \"page\": \"home\"}, {\"regex\": \"/dates$\", \"page\": \"dates\"}, {\"regex\": \"^/location\", \"page\": \"search\"}, {\"regex\": \"^/reservation\", \"page\": \"reservation\"}]",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.hotels_mode.gating.HotelsModeParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "location_editor_snap_worker_zone_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_map_layer_device_location_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_map_layer_dispatch_waiting_callout_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_map_layer_driver_callout_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_map_layer_dta_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_map_layer_pickup_tooltip_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_pickup_callout_map_layer_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rapu_standard_camera_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.reserve.airport.experiment.ReservePickupMapPluginSwitches"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rider_reassurance_minimum_driver_count",
+   "defaultValue": "4.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rider_reassurance_zoom_map_view",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.directed_dispatch.experiments.DirectedDispatchMapLayerParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rider_venue_homescreen_widget_airport_code_mapping",
+   "defaultValue": "{}",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.helix.venues.homescreen.VenueHomeScreenParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rider_venue_homescreen_widget_tappable_map",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.venues.homescreen.VenueHomeScreenParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "rider_wayfinding_map_experience_v3",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.airports_common.experiment.AirportsCommonParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "trip_map_layer_dispatch_direct_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_insights_fetch_without_geofence_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.venues.venue_insights.VenueInsightsParameters"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_map_widget_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.venues.homescreen.VenueHomeScreenPlugins"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_widget_camera_control_map_layer_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.venues.revamped_widget.VenueWidgetPlugins"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_widget_device_location_map_layer_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.venues.revamped_widget.VenueWidgetPlugins"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_widget_pickup_location_map_layer_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.venues.revamped_widget.VenueWidgetPlugins"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_widget_reuse_map_view_on_reattach",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.helix.venues.homescreen.VenueHomeScreenParametersV2"
+  },
+  {
+   "namespace": "airports_and_venues_mobile",
+   "name": "venue_widget_walking_eta_map_layer_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.venues.revamped_widget.VenueWidgetPlugins"
+  },
+  {
+   "namespace": "audio_recording_mobile",
+   "name": "iavr_thermalstate_mapping_on_device_event_provider",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.safety_media_recording.parameters.SafetyMediaRecordingParameters"
+  },
+  {
+   "namespace": "audio_recording_mobile",
+   "name": "siar_battery_level_null_safe_mapping_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.safety_media_recording.parameters.SafetyMediaRecordingParameters"
+  },
+  {
+   "namespace": "audio_recording_mobile",
+   "name": "siar_dgd_fix_adaptive_health_validator_error_mapping",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.safety_media.dynamic_graceful_degradation.parameters.DynamicGracefulDegradationParameters"
+  },
+  {
+   "namespace": "audio_recording_mobile",
+   "name": "stream_mapper_coroutine_subworker",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.safety_media_recording.parameters.SafetyMediaRecordingParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_confirmation_map_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_confirmation_screen_map_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_dynamic_vehicle_on_offer_card_map",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_geofence_exclusion_zones_zoom_threshold",
+   "defaultValue": "13.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_geofence_map_layer_worker_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_interest_list_atl_dark_map_url",
+   "defaultValue": "https://tb-static.uber.com/prod/amd-mobile-content/mobility/waymo-interestlist-atl-map-night-image.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.interestlist.AvInterestListParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_interest_list_atl_light_map_url",
+   "defaultValue": "https://tb-static.uber.com/prod/amd-mobile-content/mobility/waymo-interestlist-atl-map-day-image.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.interestlist.AvInterestListParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_interest_list_post_sign_up_map_day_image",
+   "defaultValue": "https://tb-static.uber.com/prod/amd-mobile-content/mobility/waymo-interestlist-map-day-image.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.interestlist.AvInterestListParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_interest_list_post_sign_up_map_night_image",
+   "defaultValue": "https://tb-static.uber.com/prod/amd-mobile-content/mobility/waymo-interestlist-map-day-image.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.interestlist.AvInterestListParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_location_editor_lrm_owns_camera_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorParametersV2"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_map_based_offer_card_minimum_walking_distance_in_meters",
+   "defaultValue": "80",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_map_based_offer_card_round_2",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_map_ftux_tooltip_content_key",
+   "defaultValue": "autonomous_trip_enroute_tooltip_set",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_max_dropoff_location_count",
+   "defaultValue": "1",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_original_pickup_map_layer_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBasePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pickup_editor_location_editor_sheet_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBasePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pickup_location_changes_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pickup_location_map_layer_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBasePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pickup_location_walking_effort_binding_resolver_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pickup_location_walking_effort_binding_resolver_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.bindings.params.TripBindingsPlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pudo_refinement_auto_select_nearby_location",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pudo_refinement_location_loading_success_snackbar_duration_ms",
+   "defaultValue": "3000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_pudo_refinement_map_worker_plugin_switch_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.pudo_refinement.worker.AvPudoRefinementMapPluginSwitches"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_screen_use_dynamic_maps",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_dialog_image_url_mapping",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_geofence_location_accuracy_meters",
+   "defaultValue": "100",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_geofence_location_editor_partner_name",
+   "defaultValue": "Waymo",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_geofence_location_timeout_seconds",
+   "defaultValue": "3",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_location_editor_on_screen_ready_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_area_location_refinement_bounding_radius_meters",
+   "defaultValue": "200.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_service_map_use_backend_source",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_should_enable_map_on_offer_card",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_show_forward_dispatch_marker",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_show_geofence_map_boundaries",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_show_multiple_geofence_boundaries",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_trip_actions_unlock_walk_eta_location_accuracy_meters",
+   "defaultValue": "5",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleBaseParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_trip_edit_pickup_tooltip_map_layer_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "av_trip_location_refinement_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehiclePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "mmdf_map_marker_enable_animated_anchor",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParametersV2"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "offer_card_map_zoom_threshold",
+   "defaultValue": "5",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.autonomousvehicle.AutonomousVehicleParameters"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "post_dropoff_device_location_map_layer_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.postdropoff.PostDropoffPlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "post_dropoff_static_walking_line_map_layer_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.postdropoff.PostDropoffPlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "post_dropoff_walking_navigation_map_layer_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.postdropoff.PostDropoffBasePlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "trip_map_layer_ftux_tooltip_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerPlugins"
+  },
+  {
+   "namespace": "autonomous_mobile",
+   "name": "trip_map_layer_v2_zoom_toggle_camera_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "booking_innovation_commute_mobile",
+   "name": "commute_location_editor_map_hub_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.commute.pluginswitch.CommutePluginSwitch"
+  },
+  {
+   "namespace": "booking_innovation_commute_mobile",
+   "name": "commute_location_editor_title_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.commute.pluginswitch.CommutePluginSwitch"
+  },
+  {
+   "namespace": "bug_reporter_mobile",
+   "name": "reporting_analytics_value_map_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.libraries.common.bugreporter.parameters.BugReporterParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "cx_location_editor_order_selection_prefetch_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "cx_location_editor_prefetch_destination_count",
+   "defaultValue": "3",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "is_simple_mode_supported",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_fare_consistency_sox_m2_location_guard",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_geohash_resolution_override",
+   "defaultValue": "-1",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_increase_map_padding_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.pudo_header.core.PudoHeaderParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_m2_fares_preserve_selection_on_location_change",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_m2_nbv_disabled_for_home_map",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2Parameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_m2_sobriety_upfront_fare_location_sync_retry_cap",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "bx_mobile",
+   "name": "order_selection_use_fare_estimate_style_location",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.order_selection_experimentation.core.OrderSelectionM2FaresParameters"
+  },
+  {
+   "namespace": "car_rentals_rider_mobile",
+   "name": "car_rental_product_details_map_crash_test_fix_ks",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.car_rentals.common.CarRentalsParameterV2"
+  },
+  {
+   "namespace": "car_rentals_rider_mobile",
+   "name": "car_rentals_edit_pickup_location_by_default",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.car_rentals.common.CarRentalsParameterV2"
+  },
+  {
+   "namespace": "car_rentals_rider_mobile",
+   "name": "car_rentals_location_editor_header_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.car_rentals.common.CarRentalsPluginSwitches"
+  },
+  {
+   "namespace": "car_rentals_rider_mobile",
+   "name": "car_rentals_mle_map_basic_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.car_rentals.common.CarRentalsPluginSwitches"
+  },
+  {
+   "namespace": "ce_mobile",
+   "name": "ce_mc_map_host_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.messagingcomponent.MessagingComponentParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_batch_arc_trip_map_layer_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.connect.ConnectPluginSwitches"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_default_camera_update_map_padding",
+   "defaultValue": "100",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.connect.core.ConnectConfigsParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_default_map_animate_duration_ms",
+   "defaultValue": "2500",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.connect.core.ConnectConfigsParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_enable_plugins_modifier",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_location_editor_completed_event_handler_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.rider_request.optional.event.handlers.RequestEventHandlerPlugins"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_location_editor_compose_migration",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.connect.core.ConnectParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_location_editor_context_based_autofill_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.connect.core.ConnectParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_location_key",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.connect.core.ConnectConfigsParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_mle_map_hub_basic_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_no_current_location_nava_default_pickup_focus_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.connect.core.ConnectParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_partner_deeplink_location_editor_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.connect.core.ConnectParameters"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_request_location_editor_state_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.connect.ConnectPluginSwitches"
+  },
+  {
+   "namespace": "connect_mobile",
+   "name": "connect_request_pickup_location_timeout_ms",
+   "defaultValue": "3000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.connect.core.ConnectConfigsParameters"
+  },
+  {
+   "namespace": "customer_identity_platform_mobile",
+   "name": "enable_dom_exception_mapping",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.identity.passkeys.experiment.PasskeyParameters"
+  },
+  {
+   "namespace": "customer_identity_platform_mobile",
+   "name": "enable_no_create_option_mapping",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.identity.passkeys.experiment.PasskeyParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "co_help_unified_web_location_timeout",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.unified_help.other_user_type.container.rib.HelpOtherUserTypeLinkCitrusParams"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "help_chat_avatar_mapping",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.help.feature.chat.HelpChatCitrusParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "help_issues_list_webview_chat_node_id_context_id_mapping",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.helix.help.core.HelixHelpPluginCitrusParametersV2"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "help_other_user_type_url_location_append_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.unified_help.other_user_type.container.rib.HelpOtherUserTypeLinkCitrusParams"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "help_url_plugin_namespace_mapping",
+   "defaultValue": "driving-and-delivering:partners,riders:riders,ubereats:ubereats",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.help.feature.http_link.HelpUrlCitrusParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "lost_and_found_v2_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_hub.experimentation.MapHubParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "past_trip_map_platform_illustration",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.presidio.past_trips.PastTripCitrusParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "photo_flow_abort_on_null_bitmap",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.photo_flow.base.PhotoFlowParameters"
+  },
+  {
+   "namespace": "customer_obsession_mobile",
+   "name": "photo_flow_skip_null_bitmap_result",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.photo_flow.base.PhotoFlowParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "animated_where_established_riders_cohort",
+   "defaultValue": "Control",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.location_entry_prompt.optional.LocationPromptParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "animated_where_to_animation_time",
+   "defaultValue": "3000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.location_entry_prompt.optional.LocationPromptParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "animated_where_to_new_elc_riders_cohort",
+   "defaultValue": "Control",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.location_entry_prompt.optional.LocationPromptParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "bind_location_upsell_from_root_scope_enabeld",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.experiment.core.HelixParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "ce_clc_city_insights_component_name_fix",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "current_location_component_factory_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.homescreencontainer.plugins.HomeScreenPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "current_location_pill_plugin_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.planning.core.experiments.MdxMobilePlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_clc_hide_on_travel_masthead",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_clc_poi_map_distance_threshold",
+   "defaultValue": "1500.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_clc_poi_map_location_stream_throttle",
+   "defaultValue": "60.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_clc_poi_map_radius",
+   "defaultValue": "2000.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_clc_poi_map_touch_intercept_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.current_location_component.CurrentLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_device_location_priority",
+   "defaultValue": "1",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.presidio_location.core.LocationExperimentParametersV2"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_disable_map_gesture_analytics",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.uber_home_hub_api.core.UberHomeHubParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_home_screen_layout_location_move_reason_fix_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_home_screen_layout_update_max_location_pulls",
+   "defaultValue": "3",
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_home_screen_pull_guest_trip_location_leak_fix_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_home_screen_pull_request_filter_location_age_ms",
+   "defaultValue": "3600000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_home_screen_pull_request_filter_location_timeout_ms",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_location_timeout_for_no_location_pull_ms",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.helix.experiment.core.HelixParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_nava_enable_mapper_caching",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.nav_grid.NavGridParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_shortcuts_location_pull_debounce_seconds",
+   "defaultValue": "30",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.shortcuts.core.ShortcutParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_uas_search_pinned_to_location_header_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.unifiedaddressselector.impl.UnifiedAddressSelectorParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_header_service_action_treatment",
+   "defaultValue": "treatment_2",
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_city_search_visible_use_cases",
+   "defaultValue": "",
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_prefer_fallback_label",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_tooltip_far_away_threshold_meters",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_tooltip_far_away_timeout_ms",
+   "defaultValue": "100",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "cx_unified_location_tooltip_impression_caps",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "default_home_map_control_center_me_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.home_map.HomeMapPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "enable_default_analytics_for_animated_where_to_tap",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.location_entry_prompt.optional.LocationPromptParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "home_screen_layout_location_force_pull_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "ifood_location_worker_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.ifood.web.IFoodPluginSwitch"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "location_upsell_large_image_url",
+   "defaultValue": "https://d1goeicueq33a8.cloudfront.net/Ring/Icon/location_large.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.messaginghome.HubMessagingRiderCXMobileParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "location_upsell_small_image_url",
+   "defaultValue": "https://d1goeicueq33a8.cloudfront.net/Ring/Icon/location_small.png",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.messaginghome.HubMessagingRiderCXMobileParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "min_trip_count_for_an_established_user",
+   "defaultValue": "5",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.location_entry_prompt.optional.LocationPromptParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "nearby_map_card_timeout_ms",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.uber_home_hub_api.core.UberHomeHubParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "non_adaptive_splash_location_freshness_max_age_ms",
+   "defaultValue": "3600000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.helix.experiment.core.HelixParametersV2"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "rider_req_home_hub_set_destination_on_map_shortcut_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "rider_unified_location_snap_tooltip_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "rider_unified_location_tooltip_max_impressions",
+   "defaultValue": "1",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.riderunifiedheader.parameters.UnifiedLocationParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "ring_component_location_cta_handler_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.ringcomponent.RingComponentApiPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "ring_location_upsell_fallback_fix_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.homescreencontainer.core.HomeScreenContainerParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "save_location_deeplink_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.applink.core.plugins.ApplinkPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "search_tabs_location_editor_plugin_enabled_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.rider_unified_search.RiderUnifiedSearchPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "shortcuts_anchored_location_timeout_ms",
+   "defaultValue": "500",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.shortcuts.core.ShortcutParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "shortcuts_prefetch_helix_anchor_location_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.shortcuts.core.ShortcutParameters"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "simple_mode_location_entry_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "unified_header_unavailable_tab_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.riderunifiedheader.workers.UnifiedLocationPlugins"
+  },
+  {
+   "namespace": "cx_mobile",
+   "name": "unified_location_simple_mode_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.riderunifiedheader.workers.UnifiedLocationPlugins"
+  },
+  {
+   "namespace": "data_intelligence_mobile",
+   "name": "disable_ui_state_mapping_rule_downloader",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.appuistate.scenestate.SceneStateParameters"
+  },
+  {
+   "namespace": "data_intelligence_mobile",
+   "name": "scene_disable_ui_state_mapping",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.analytics.core.UIStateParameters"
+  },
+  {
+   "namespace": "data_intelligence_mobile",
+   "name": "ui_state_worker_location_editor_plugin_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.appuistate.scenestate.SceneStatePlugins"
+  },
+  {
+   "namespace": "data_intelligence_mobile",
+   "name": "uistate_mapping_hash_and_url",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.appuistate.scenestate.SceneStateParameters"
+  },
+  {
+   "namespace": "data_intelligence_mobile",
+   "name": "uistate_mapping_hash_and_url_timeout",
+   "defaultValue": "2147483647",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.appuistate.scenestate.SceneStateParameters"
+  },
+  {
+   "namespace": "driver_engagement_mobile",
+   "name": "de_attach_glide_map_with_delay",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.driver_engagement_mobile_parameter.core.DriverEngagementMobileV2Parameters"
+  },
+  {
+   "namespace": "driver_engagement_mobile",
+   "name": "de_bug_fix_scope_holder_anr",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.MapSDKManualParameters"
+  },
+  {
+   "namespace": "driver_engagement_mobile",
+   "name": "de_fix_map_destroy_anr",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_engagement_mobile_parameter.core.DriverEngagementMobileParameters"
+  },
+  {
+   "namespace": "driver_engagement_mobile",
+   "name": "de_lazy_initialize_location_manager",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_engagement_mobile_parameter.core.DriverEngagementMobileV2Parameters"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "defer_map_destroy_idle_timeout_ms",
+   "defaultValue": "10000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "defer_map_destroy_until_idle",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "fix_dispatch_map_worker_on_stop_leak",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "fix_map_presenter_listener_leak",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "fix_refueling_break_map_controls_scope_leak",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driver_platform_mobile",
+   "name": "use_non_immediate_main_dispatcher_map_worker",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.driver_platform_mobile_parameter.core.DpmParams"
+  },
+  {
+   "namespace": "driving_mobile",
+   "name": "carbon_location_optimization",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.sensors.core.location.experiments.LocationParameters"
+  },
+  {
+   "namespace": "driving_mobile",
+   "name": "location_optimization_courier_mobile_cache_serve_interval_ms",
+   "defaultValue": "1000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.sensors.core.location.experiments.LocationParameters"
+  },
+  {
+   "namespace": "earner_engagement_mobile",
+   "name": "oc_revamp_location_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.driver_engagement_mobile_parameter.core.OcRevampParameters"
+  },
+  {
+   "namespace": "eater_growth_mobile",
+   "name": "ewf_deeplink_pinned_shopping_location_enabled",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.eats_common.EatsWebModeParametersV2"
+  },
+  {
+   "namespace": "eater_growth_mobile",
+   "name": "ewf_page_deeplink_location_manager",
+   "defaultValue": "uber://ubereats/feed?mod=locationManager",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.eats_common.EatsWebModeParametersV2"
+  },
+  {
+   "namespace": "eater_growth_mobile",
+   "name": "ewf_page_deeplink_map_feed",
+   "defaultValue": "uber://ubereats/feed?diningMode=PICKUP",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.eats_common.EatsWebModeParametersV2"
+  },
+  {
+   "namespace": "eats_funnel_optimization",
+   "name": "eats_improve_time_to_location_subscription",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.sensors.core.location.experiments.LocationParameters"
+  },
+  {
+   "namespace": "eats_funnel_optimization",
+   "name": "enable_location_provider_state_manager_anr_fix",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio_location.core.LocationExperimentParametersV2"
+  },
+  {
+   "namespace": "eats_funnel_optimization",
+   "name": "enable_location_provider_state_manager_bug_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.presidio_location.core.LocationExperimentParameters"
+  },
+  {
+   "namespace": "eats_messaging_mobile",
+   "name": "mg_fix_action_union_type_name_mapping",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.display_messaging.DisplayMessagingParametersV2"
+  },
+  {
+   "namespace": "eats_messaging_mobile",
+   "name": "vertical_list_modal_location_change_handler_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.display_messaging.DisplayMessagingParameters"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_enable_location_query_params_in_url_config",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_location_bounded_legacy_fetch",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_location_coarse_precision_handling",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_location_fix_max_age_ms",
+   "defaultValue": "120000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_location_fix_timeout_ms",
+   "defaultValue": "8000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_location_skip_pre_permission_sheet",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "eats_web_request_location_migrate_as_unbounded_flow_to_as_flow",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.eatsweb.parameters.EatsWebParametersV2"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "ewf_requested_location_update_bridge_worker_plugin_switch_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.eatsweb.bridge.worker.EWFWorkerPluginSwitches"
+  },
+  {
+   "namespace": "eats_platform_mobile",
+   "name": "ewf_store_location_update_bridge_worker_plugin_switch_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.eatsweb.bridge.worker.EWFWorkerPluginSwitches"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "enable_main_dispatcher_for_map_component_creation",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "enable_main_thread_map_layer_update",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_default_map_zoom_level_pre_trip",
+   "defaultValue": "17",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_ignore_user_map_interaction_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_map_layer_action_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.emobility.experiment.MiMoPlugins"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_map_zoom_inner_radius_in_meter",
+   "defaultValue": "40",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_map_zoom_maximum_radius_in_meter",
+   "defaultValue": "3000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_map_zoom_minimum_bikes",
+   "defaultValue": "3",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_scanner_map_button_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.emobility.experiment.MiMoPlugins"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_station_map_marker_count_thresholds",
+   "defaultValue": "5, 10, 50, 100",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "mimo_vehicle_map_marker_count_thresholds",
+   "defaultValue": "5, 10, 50, 100",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.emobility.experiment.MiMoXPParameters"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "rider_emobility_vehicles_on_map_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "emobility_mobile",
+   "name": "rider_nearby_emobility_vehicles_on_map",
+   "defaultValue": "disabled",
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.emobility.experiment.EMobilityFeatureGateParameters"
+  },
+  {
+   "namespace": "experimentation-mobile",
+   "name": "geoip_test_string_regulatory",
+   "defaultValue": "default",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.parameters.manager.CanaryParameters"
+  },
+  {
+   "namespace": "fares_experience_mobile",
+   "name": "update_via_locations_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "financial_products_mobile",
+   "name": "currency_picker_currency_to_country_mappings",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.currency_picker.parameters.CurrencyPickerParameters"
+  },
+  {
+   "namespace": "financial_products_mobile",
+   "name": "currency_picker_use_uber_provided_map_currency_to_country",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.currency_picker.parameters.CurrencyPickerParameters"
+  },
+  {
+   "namespace": "financial_products_mobile",
+   "name": "gift_mall_location_query_params_optional",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.finprod.experiments.gifting.GiftingWebViewParameters"
+  },
+  {
+   "namespace": "financial_products_mobile",
+   "name": "refresh_pcp_addon_data_with_location",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.finprod.experiments.preferred_currency_pricing.PreferredCurrencyPricingParameters"
+  },
+  {
+   "namespace": "foundations_mobile",
+   "name": "device_location_throttle_time_in_millis",
+   "defaultValue": "100",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.fraud.experiment.DeviceDataCitrusParameter"
+  },
+  {
+   "namespace": "foundations_mobile",
+   "name": "geo_rx2_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.geo.rx.GeoRxParameters"
+  },
+  {
+   "namespace": "hailables_rider_mobile",
+   "name": "enable_destination_only_location_editor_event_handler_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.rider_request.optional.event.handlers.RequestEventHandlerPlugins"
+  },
+  {
+   "namespace": "hailables_rider_mobile",
+   "name": "enable_ush_rider_pairing",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_hub.experimentation.MapHubParameters"
+  },
+  {
+   "namespace": "hailables_rider_mobile",
+   "name": "grab_location_fetch_timeout_ms",
+   "defaultValue": "2000",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.grab.GrabParameters"
+  },
+  {
+   "namespace": "hailables_rider_mobile",
+   "name": "request_non_core_state_destination_only_location_editor_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.rider_request.v2.optional.noncorestateplugins.RequestNonCoreStatePluginsV2"
+  },
+  {
+   "namespace": "hailables_rider_mobile",
+   "name": "where_to_interstitial_geofence_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.grab.GrabParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "configure_location_editor_parameters_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "confirmation_map_control_route_toggle_hcv_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "confirmation_map_multi_model_configuration_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.multimodal_map.plugin.MultiModalMapPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "disable_map_route_line_for_vehicle_views",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_home_location_picker_enhancements",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_location_editor_header_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.uber.hcv_common_data.parameters.HcvRequestPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_location_selector_sheet_dismiss_cta",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_map_camera_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_map_route_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_map_tooltip_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_map_waypoint_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_mle_map_hub_basic_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_nava_home_show_pickup_map_marker",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_pickup_dot_current_location_tint",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_schedule_picker_send_target_location_via_nava",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_seed_previous_location_on_initial_pickup",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_should_use_new_location_stream",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "hcv_show_snackbar_on_pickup_location_change",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParametersV2"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "headers_log_nan_location_details",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.networkmodule.realtime.core.header.HeadersParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "home_map_hcv_route_polyline_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.home_map_hcv.optional.HcvHomeMapPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "home_map_hcv_route_tooltip_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.home_map_hcv.optional.HcvHomeMapPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "home_map_hcv_tooltip_click_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.home_map_hcv.optional.HcvHomeMapPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "multi_modal_map_allow_non_event_shuttle",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "multi_modal_map_eligible_product_type_classifications",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.hcv_common_data.parameters.HCVRidesParameters"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "multi_modal_map_layer_worker_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.multimodal_map.plugin.MultiModalMapPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "pretrip_map_plugin_switch_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.pretrip.ui.plugin.PreTripPlugins"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "rex_confirmation_map_hcv_route_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "hcv_rider_mobile",
+   "name": "trip_map_layer_hcv_trip_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "healthline_mobile",
+   "name": "enable_memory_mappings_in_tombstone",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.libraries.common.healthlinesdk.parameters.HealthlineCommonParameters"
+  },
+  {
+   "namespace": "healthline_mobile",
+   "name": "should_add_location_coordinates_report_to_healthline",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.libraries.common.healthlinesdk.parameters.HealthlineCommonParameters"
+  },
+  {
+   "namespace": "intercity_mobile",
+   "name": "intercity_confirmation_screen_location_fix_threshold_mtr",
+   "defaultValue": "50",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.feature.intercity.IntercityRoundTripParameters"
+  },
+  {
+   "namespace": "intercity_mobile",
+   "name": "intercity_disable_confirmation_map_callouts",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.rider_request.core.parameters.RiderRequestParametersV2"
+  },
+  {
+   "namespace": "intercity_mobile",
+   "name": "mle_select_all_configuration_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentParameters"
+  },
+  {
+   "namespace": "intercity_mobile",
+   "name": "mle_set_selection_index_fix_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentParameters"
+  },
+  {
+   "namespace": "legacy_morpheus_plugins_mobile",
+   "name": "pass_geofence_pickup_location_worker_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "legacy_morpheus_plugins_mobile",
+   "name": "pickup_request_location_device_location_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "localcab_rider_mobile",
+   "name": "localcab_map_tooltip_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.map_hub.map_layer.tooltip.local_cab.LocalCabTooltipPlugin"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "b2b_analytics_log_epudos_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "camera_update_logging_enabled",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.mapdisplay_framework.parameters.MapDisplayFrameworkParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "city_route_style_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "default_map_tilt_for_3d_maps",
+   "defaultValue": "20.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.mapdisplay_framework.parameters.MapDisplayFrameworkParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "destination_editor_entry_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "helix_destination_required_and_editable",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.experiment.core.HelixParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "map_display_rotate_analytics_threshold",
+   "defaultValue": "1.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.presidio.map.core.PresidioMapParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "map_display_tilt_analytics_threshold",
+   "defaultValue": "1.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.presidio.map.core.PresidioMapParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "map_provider_manager_request_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.mapprovider.MapProviderPlugins"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "map_provider_manager_trip_worker_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.uber.mapprovider.MapProviderPlugins"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "map_usage_reporter_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.presidio.map.core.mapprovider.MapPlugins"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_aps_escape_route_traffic_areas",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.accesspointselection.AccessPointSelectionParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_enable_3d_map_entry_point",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_enable_streetview_preview_image_override",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.presidio.app.optional.root.main.ride.trip.map_layer.v2.map_layers.rider_street_view.RiderStreetViewParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_enable_tilt_rotate_gesture_analytics",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.presidio.map.core.PresidioMapParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_active_map_count_threshold",
+   "defaultValue": "3",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_android_street_view_distance_scaling_factor",
+   "defaultValue": "0.05925",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_auto_stylesheet",
+   "defaultValue": "https://tc2.uber.com/style/auto/native?o=DEFAULT",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_available_map_providers",
+   "defaultValue": "{\\\"initialMapProvider\\\":\\\"uber\\\",\\\"fallbackMapProviders\\\":[\\\"google\\\"],\\\"missingProviderDefault\\\":\\\"uber\\\"}",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_bicycle_stylesheet",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_build_line_labels_in_place",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_collision_grid_clear",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_debug_options",
+   "defaultValue": "0.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_dedupe_sprite_store",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_defer_street_view_signal",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.MapSDKManualParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_drop_unused_label_precompute",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_2d_google_puck_animations",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_android_bug_reporter_integration",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.MapSDKManualParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_arena_mem_fix",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_dyn_param_stylesheet",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_event_reporting",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_event_sender_atomic_access",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_extruded_mesh_merge_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_gltf_rendering",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_ui.experiment.MapUiParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_gltf_rendering",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_gms_indoor",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_google_maps_background_initialization",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_google_view_marker_puck",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_high_tilt_improvements",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_label_compact",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_latlng_alloc_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_main_thread_map_event_handling",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.MapSDKManualParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_map_usage_reporting",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_padding_debug_view",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_post_destruction_access_log",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_precise_indoor",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_shared_label_property_pool",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_shield_text_offset_fix",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_stencil_clip_interleave",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enable_xray_polyline",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_enabled_events",
+   "defaultValue": "{}",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_fix_native_pattern_polyline_teardown",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_fix_pattern_polyline_update_distances",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_fix_polyline_view_v2_stroke_start_animation",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_fix_view_marker_padded_taps",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_frame_rate",
+   "defaultValue": "0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_gmap_buildings_disabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_gmap_camera_update_safe_padding_percentage",
+   "defaultValue": "0.45",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_gmap_hifi_disabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_grey_map_detection_threshold",
+   "defaultValue": "30",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_highlight_inclusion_radius_meters",
+   "defaultValue": "3.7",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_indoor_precision_meters",
+   "defaultValue": "25.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.mapdisplay_framework.parameters.MapDisplayFrameworkParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_log_level",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_map_provider",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_map_provider_manager",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_max_feature_request_polygon_vertices",
+   "defaultValue": "1000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_max_pitch",
+   "defaultValue": "0.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_max_tile_query_polygon_area_m2",
+   "defaultValue": "25000000.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_missing_on_map_ready_analytics_time_out_ms",
+   "defaultValue": "30000",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.MapSDKManualParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_multisample_count",
+   "defaultValue": "1",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_num_workqueue_tasks_to_report",
+   "defaultValue": "10",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_per_tile_reparse_v2",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_placement_filter_heading_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_placement_filter_heading_threshold",
+   "defaultValue": "1.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_reduce_collision_tile_allocations",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_render_frame_allocator_capacity",
+   "defaultValue": "10485760",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_satellite_stylesheet",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_single_pass_feature_values",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_storage_directory",
+   "defaultValue": "UberMapsStorageV3",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_streetview_google_key",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_streetview_provider",
+   "defaultValue": "google",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_stylesheet_path",
+   "defaultValue": "https://tc2.uber.com/style/default/native?o=DEFAULT",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_tile_experiment_versions",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_tile_overlay_cache_size",
+   "defaultValue": "24",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_tile_query_cache_size",
+   "defaultValue": "131072",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_ubm2_disk_cache_namespace",
+   "defaultValue": "",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_use_overscale_cache",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mapdisplay_flipr_workqueue_length_initial_reporting_threshold",
+   "defaultValue": "100",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.maps_sdk_integration.core.GeneratedMapSDKParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mmdf_enable_cluster_id",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParametersV2"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "mmdf_outside_padding_reduction",
+   "defaultValue": "48.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "pickup_editor_entry_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "route_presenter_migration",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.map_ui.experiment.MapUiParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_dropoff_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_etd_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_pickup_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_route_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_trip_points_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_v2_standard_camera_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_v2_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_v2_walking_camera_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_layer_vehicle_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "trip_map_type_selection_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerPlugins"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "umdf_enable_coordinate_on_maps_idl_deprecation_warning_logs",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.mapdisplay_framework.parameters.MapDisplayFrameworkParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "umdf_enable_main_thread_lumber_logs",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.uber.mapdisplay_framework.parameters.MapDisplayFrameworkParameters"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "vehicle_presenter_pluggable_sprite_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.map_ui.MapUiPlugins"
+  },
+  {
+   "namespace": "map_display_mobile",
+   "name": "zoom_level_threshold_to_enable_3d_map_control",
+   "defaultValue": "15.0",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug_anchor_point",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug_floating_positions",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug_hit_box",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug_hit_box_with_cluster_padding",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_debug_hit_box_with_padding",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_enable_query_too_large_logging",
+   "defaultValue": null,
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.map_marker_display.experiments.MapMarkerDisplayParameters"
+  },
+  {
+   "namespace": "map_marker_display_mobile",
+   "name": "mmdf_remove_drop_shadow_padding_callout_marker",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.map_marker_ui.core.experiments.MapMarkerUIParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "action_sheet_help_link_android",
+   "defaultValue": "http://t.uber.com/and-loc",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.location_sharing.LocationSharingParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "add_saved_place_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.presidio.favoritesv2.experimentation.FavoritesV2Plugins"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "add_saved_places_deeplink_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentPlugins"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "address_entry_header_plugin_enabled",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.presidio.app.core.root.main.ride.location_edit.experiments.LocationEditorExperimentParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "agent_accuracy_capture_vehicle_routeline_timestamps",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.job_tracker.agent_accuracy.AgentAccuracyParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "airport_destination_reset_need_refinement_plugin_tnkch8",
+   "defaultValue": "false",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.presidio.airport.xp.config.AirportDestinationRefinementPlugins"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "app_scope_trip_eta_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.presidio.app.optional.root.main.ride.trip.worker.eta.TripEtaPlugins"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "autocomplete_minimum_query_length",
+   "defaultValue": "1",
+   "category": "CONFIGURATION",
+   "fileName": "com.ubercab.pudo_experimentation.core.PudoCoreParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "av_enable_rdls",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.location_sharing.LocationSharingParametersV2"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "bulk_route_points_track_response",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.map_hub_common.MapHubCommonParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "bulk_route_points_warn_null_data_response",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.map_hub_common.MapHubCommonParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "bulk_route_points_warn_null_polyline",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.map_hub_common.MapHubCommonParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "camera_out_of_bound_when_switch_to_on_trip",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.uber.rider_wayfinding.experiments.WayfindingParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "deeplink_favorites_v2_tnkch8",
+   "defaultValue": "true",
+   "category": "PLUGIN",
+   "fileName": "com.ubercab.helix.experiment.core.HelixPluginsDeprecated"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "disable_venue_pickup_location_override",
+   "defaultValue": null,
+   "category": "FEATURE_FLAG",
+   "fileName": "com.ubercab.helix.venues.VenueParameters"
+  },
+  {
+   "namespace": "maps_experience_mobile",
+   "name": "dispatch_camera_follows_map_padding",
+   "defaultValue": null,
+   "category": "BUG_FIX",
+   "fileName": "com.ubercab.trip_map_layers.experiments.TripMapLayerParametersV2"
+  }
+ ]
+}

@@ -1,0 +1,49 @@
+{
+ "captured": "2026-10-31",
+ "method": "passive device reads over the owner's USB connection (adb getprop / pm / dumpsys / wm / adb pull + local hash)",
+ "device": {
+  "model": "SM-A5360",
+  "device": "a53x",
+  "serial": "R5CTB0FJP9Z",
+  "android_release": "16",
+  "sdk": "36",
+  "display": "1080x2400 @ 450 dpi (density factor 2.8125)",
+  "gles": "196610 (OpenGL ES 3.2)",
+  "gpu": "ARM Mali-G68, driver OpenGL ES 3.2 v1.r32p1",
+  "vulkan_property": "mali",
+  "egl_property": "mali"
+ },
+ "package": {
+  "name": "com.ubercab",
+  "versionName": "4.654.10002",
+  "versionCode": "322019",
+  "minSdk": "29",
+  "targetSdk": "36",
+  "installerPackageName": "com.android.vending",
+  "firstInstallTime": "2026-10-30 19:07:03",
+  "lastUpdateTime": "2026-10-30 19:07:03",
+  "codePath": "/data/app/~~YsLVeOETWwPvrA44akhRKg==/com.ubercab-qjzWHZvYw7cY_0nof1jCtw=="
+ },
+ "installed_apk": {
+  "pulled": "base.apk",
+  "bytes": 207761677,
+  "sha256": "55663c738053f8f9e11bc30f414d693473de1272082db4d3edf95b1ad1c3e4a2",
+  "matches_studied_package": true,
+  "note": "byte-identical to the studied file; upgrades the earlier claim (which rested on the package manager's version report) to an exact artifact comparison"
+ },
+ "splits_installed": [
+  "base.apk",
+  "split_BarcodeScanner.apk",
+  "split_BarcodeScanner.config.arm64_v8a.apk",
+  "split_FlashNacional.apk",
+  "split_GooglePaySdk.apk",
+  "split_VoipTwilio.apk",
+  "split_VoipTwilio.config.arm64_v8a.apk",
+  "split_config.ar.apk",
+  "split_config.arm64_v8a.apk",
+  "split_config.xxhdpi.apk"
+ ],
+ "other_uber_family_packages_installed": [],
+ "release_comparison_status": "not possible: exactly one build of com.ubercab exists on the device (2026-10-30 install), and no second build exists on either study host",
+ "driver_app_status": "com.ubercab.driver is not installed on this device"
+}

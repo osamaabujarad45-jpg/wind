@@ -1,0 +1,194 @@
+{
+ "apk": "base.apk",
+ "apk_bytes": 207761677,
+ "dex_count": 23,
+ "per_dex": [
+  {
+   "dex": "classes.dex",
+   "strings": 68979,
+   "types": 8992,
+   "methods": 29708,
+   "fields": 65028,
+   "classes": 5200
+  },
+  {
+   "dex": "classes10.dex",
+   "strings": 33005,
+   "types": 16333,
+   "methods": 65173,
+   "fields": 35047,
+   "classes": 13294
+  },
+  {
+   "dex": "classes11.dex",
+   "strings": 35078,
+   "types": 17680,
+   "methods": 64613,
+   "fields": 36275,
+   "classes": 13594
+  },
+  {
+   "dex": "classes12.dex",
+   "strings": 45852,
+   "types": 22316,
+   "methods": 53668,
+   "fields": 39321,
+   "classes": 12604
+  },
+  {
+   "dex": "classes13.dex",
+   "strings": 43081,
+   "types": 21568,
+   "methods": 53326,
+   "fields": 36919,
+   "classes": 11125
+  },
+  {
+   "dex": "classes14.dex",
+   "strings": 49077,
+   "types": 26568,
+   "methods": 65266,
+   "fields": 42687,
+   "classes": 13442
+  },
+  {
+   "dex": "classes15.dex",
+   "strings": 47801,
+   "types": 27652,
+   "methods": 65405,
+   "fields": 40583,
+   "classes": 14829
+  },
+  {
+   "dex": "classes16.dex",
+   "strings": 62914,
+   "types": 22319,
+   "methods": 65347,
+   "fields": 65064,
+   "classes": 12941
+  },
+  {
+   "dex": "classes17.dex",
+   "strings": 48517,
+   "types": 26621,
+   "methods": 65280,
+   "fields": 41237,
+   "classes": 13577
+  },
+  {
+   "dex": "classes18.dex",
+   "strings": 41793,
+   "types": 25211,
+   "methods": 65113,
+   "fields": 31855,
+   "classes": 11886
+  },
+  {
+   "dex": "classes19.dex",
+   "strings": 45370,
+   "types": 26503,
+   "methods": 65225,
+   "fields": 37562,
+   "classes": 13042
+  },
+  {
+   "dex": "classes2.dex",
+   "strings": 79964,
+   "types": 30702,
+   "methods": 65530,
+   "fields": 47118,
+   "classes": 13724
+  },
+  {
+   "dex": "classes20.dex",
+   "strings": 51599,
+   "types": 25050,
+   "methods": 65457,
+   "fields": 42930,
+   "classes": 14349
+  },
+  {
+   "dex": "classes21.dex",
+   "strings": 34367,
+   "types": 16232,
+   "methods": 64788,
+   "fields": 36908,
+   "classes": 13658
+  },
+  {
+   "dex": "classes22.dex",
+   "strings": 36231,
+   "types": 15956,
+   "methods": 65005,
+   "fields": 39656,
+   "classes": 13054
+  },
+  {
+   "dex": "classes23.dex",
+   "strings": 89,
+   "types": 45,
+   "methods": 38,
+   "fields": 8,
+   "classes": 5
+  },
+  {
+   "dex": "classes3.dex",
+   "strings": 57247,
+   "types": 26579,
+   "methods": 65532,
+   "fields": 32253,
+   "classes": 11784
+  },
+  {
+   "dex": "classes4.dex",
+   "strings": 53687,
+   "types": 21358,
+   "methods": 65536,
+   "fields": 55552,
+   "classes": 15171
+  },
+  {
+   "dex": "classes5.dex",
+   "strings": 50960,
+   "types": 24538,
+   "methods": 65536,
+   "fields": 40321,
+   "classes": 13636
+  },
+  {
+   "dex": "classes6.dex",
+   "strings": 44337,
+   "types": 25434,
+   "methods": 65507,
+   "fields": 40677,
+   "classes": 15749
+  },
+  {
+   "dex": "classes7.dex",
+   "strings": 47810,
+   "types": 26493,
+   "methods": 65536,
+   "fields": 41245,
+   "classes": 14860
+  },
+  {
+   "dex": "classes8.dex",
+   "strings": 48640,
+   "types": 24488,
+   "methods": 65431,
+   "fields": 40556,
+   "classes": 13211
+  },
+  {
+   "dex": "classes9.dex",
+   "strings": 35293,
+   "types": 16901,
+   "methods": 64625,
+   "fields": 36484,
+   "classes": 13992
+  }
+ ],
+ "class_total": 288727,
+ "unique_method_names": 29468,
+ "unique_field_names": 127885
+}

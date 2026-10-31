@@ -1,0 +1,1021 @@
+{
+ "class_total": 60,
+ "member_cap": 80,
+ "classes": {
+  "com.uber.model.core.generated.go.rider.presentation.cxpresentation.views.cx.RingNativeMapMarker$Builder": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+   ],
+   "fields": [
+    "actionConfig",
+    "icon",
+    "latitude",
+    "longitude",
+    "placeId",
+    "text"
+   ],
+   "methods_total": 9,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.go.rider.presentation.cxpresentation.views.cx.RingNativeMapMarker$Companion": {
+   "methods": [
+    "<init>",
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.go.rider.presentation.cxpresentation.views.cx.RingNativeMapMarker": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "actionConfig",
+    "icon",
+    "latitude",
+    "longitude",
+    "placeId",
+    "text"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.go.rider.presentation.cxpresentation.views.cx.RingNativeMapMarker_GsonTypeAdapter": {
+   "methods": [
+    "<init>",
+    "read",
+    "write"
+   ],
+   "fields": [
+    "assetMedia_adapter",
+    "gson",
+    "richText_adapter",
+    "ringNativeActionConfig_adapter"
+   ],
+   "methods_total": 3,
+   "fields_total": 4
+  },
+  "com.ubercab.android.map.AnalyticsClientBridge": {
+   "methods": [
+    "<init>",
+    "sendEvent"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.AssertClientBridge": {
+   "methods": [
+    "<init>",
+    "assertionFailure"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.BaseMapQueryBridge": {
+   "methods": [
+    "<init>",
+    "fromNativeRoad",
+    "toRoadClass",
+    "toRoadUsage"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.CommonJniBridgeUtils": {
+   "methods": [
+    "doubleArrayToList",
+    "listToDoubleArray"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.DiskCacheClientBridge": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "clearAllResources",
+    "lambda$load$0",
+    "lambda$remove$1",
+    "load",
+    "nativeOnLoadResponse",
+    "nativeOnRemoveComplete",
+    "remove",
+    "save"
+   ],
+   "fields": [
+    "diskCacheDelegate"
+   ],
+   "methods_total": 11,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.ExperimentsBridge": {
+   "methods": [
+    "<init>",
+    "booleanParameter",
+    "create",
+    "doubleParameterForExperimentWithDefaultValue",
+    "intParameterWithDefaultValue",
+    "stringParameterForExperimentWithDefaultValue"
+   ],
+   "fields": [
+    "parameters"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.ExperimentsClientBridge": {
+   "methods": [
+    "<init>",
+    "booleanParameter",
+    "doubleParameter",
+    "intParameter",
+    "stringParameter"
+   ],
+   "fields": [
+    "parameters"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.GlyphProviderBridge": {
+   "methods": [
+    "<init>",
+    "loadGlyphRange"
+   ],
+   "fields": [
+    "delegate"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.GlyphRangeObserverBridge": {
+   "methods": [
+    "<init>",
+    "onGlyphRangeFailed",
+    "onGlyphRangeReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.LoggerClientBridge": {
+   "methods": [
+    "<init>",
+    "logRecord"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.ManifestObserverBridge": {
+   "methods": [
+    "<init>",
+    "onSourceReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 2,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.ModelObserverBridge": {
+   "methods": [
+    "<init>",
+    "a",
+    "lambda$onModelEvent$0",
+    "onModelEvent"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 4,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.NativeCancelable": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [
+    "canceled",
+    "handle",
+    "mapRef"
+   ],
+   "methods_total": 1,
+   "fields_total": 3
+  },
+  "com.ubercab.android.map.NativeCrashUtil": {
+   "methods": [
+    "<init>",
+    "testExceptionCrash",
+    "testSignalCrash"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.NativeMapView$OnMapChangeListener": {
+   "methods": [
+    "onMapChanged"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.NativeMapView$OnMapInvalidateListener": {
+   "methods": [
+    "onMapInvalidated"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.NativeMapView$OnPoiClickListener": {
+   "methods": [
+    "onPoiClick"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.NativeMapView": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "addCarMarker",
+    "addCircle",
+    "addClass",
+    "addGlyphRangePbfBuffer",
+    "addGroundOverlay",
+    "addMarker",
+    "addPatternPolyline",
+    "addPolygon",
+    "addPolyline",
+    "addPolylineV2",
+    "addRasterTileProvider",
+    "addViewMarker",
+    "allocateBitmap",
+    "allocateBitmap",
+    "animateCamera",
+    "cancelTransitions",
+    "cleanUp",
+    "clearFeatureOverrides",
+    "clearHighlighting",
+    "clearTileOverlayCache",
+    "clearTileOverlayCache",
+    "click",
+    "create",
+    "create",
+    "createExperimentsBridge",
+    "createSurface",
+    "createSurface",
+    "deallocateBitmap",
+    "deallocateBitmap",
+    "destroySurface",
+    "destroySurface",
+    "ensureOnMainThread",
+    "extractColorIndicesFromIndexedColorSpans",
+    "extractColorIntsFromPolylineColorPalette",
+    "extractColorRangeEndsFromIndexedColorSpans",
+    "featureOverrides",
+    "fromScreenLocation",
+    "fromScreenLocation",
+    "getBearing",
+    "getCameraPosition",
+    "getClasses",
+    "getLatLng",
+    "getMaxZoom",
+    "getMinZoom",
+    "getOffsetRatio",
+    "getPitch",
+    "getPointer",
+    "getProjection",
+    "getVisibleLatLngBounds",
+    "getVisibleLatLngBounds",
+    "getZoom",
+    "hasClass",
+    "highlightNearest",
+    "initializeContext",
+    "initializeDisplay",
+    "injectModelEvent",
+    "injectRasterTile",
+    "injectRasterTileOverlay",
+    "injectVectorTile",
+    "invalidate",
+    "is3DBuildingsEnabled",
+    "isClosuresEnabled",
+    "isNativeAccessSafe",
+    "isTrafficAreasEnabled",
+    "logPostDestructionAccess",
+    "moveBy",
+    "nativeAddCircle",
+    "nativeAddClass",
+    "nativeAddGlyphRangePbfBuffer",
+    "nativeAddGroundOverlay",
+    "nativeAddMarker",
+    "nativeAddModelInstance",
+    "nativeAddPatternPolyline",
+    "nativeAddPolygon",
+    "nativeAddPolyline",
+    "nativeAddPolylineV2",
+    "nativeAddRasterTileProvider",
+    "nativeAddViewMarker"
+   ],
+   "fields": [
+    "CAMERA_ANIMATION_CANCELED",
+    "CAMERA_ANIMATION_COMPLETE",
+    "DEFAULT_FEATURE_OVERRIDES",
+    "LIBRARY_LOADED",
+    "LIBRARY_NAME",
+    "POST_DESTRUCTION_CALL_ERROR_LOG_TAG",
+    "REGION_CHANGE",
+    "REGION_CHANGE_BEGIN",
+    "REGION_CHANGE_BEGIN_ANIMATED",
+    "REGION_CHANGE_COMPLETE",
+    "REGION_CHANGE_COMPLETE_ANIMATED",
+    "RENDER_FRAME_BEGIN",
+    "RENDER_FRAME_COMPLETE",
+    "RENDER_FRAME_COMPLETE_FULLY_RENDERED",
+    "RENDER_MAP_BEGIN",
+    "RENDER_MAP_COMPLETE",
+    "internalFeatureOverrides",
+    "isClientDebuggable",
+    "nativeMapViewPtr",
+    "nativeMapViewWasDestroyed",
+    "nativePointer",
+    "nativePolylineTeardownFix",
+    "nextAnnotationId",
+    "onMapChangedListener",
+    "onMapInvalidatedListener",
+    "onPoiClickListener"
+   ],
+   "methods_total": 239,
+   "fields_total": 26
+  },
+  "com.ubercab.android.map.NetworkClientBridge$NetworkClientCallback": {
+   "methods": [
+    "<init>",
+    "onError",
+    "onResponse"
+   ],
+   "fields": [
+    "nativeBridgePtr",
+    "requestHandle",
+    "this$0"
+   ],
+   "methods_total": 3,
+   "fields_total": 3
+  },
+  "com.ubercab.android.map.NetworkClientBridge": {
+   "methods": [
+    "<init>",
+    "access$000",
+    "cancel",
+    "initialize",
+    "nativeOnResponse",
+    "request"
+   ],
+   "fields": [
+    "networkDelegate"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.PackagedAssetsBridge": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "getAsset",
+    "lambda$getAsset$0",
+    "nativeOnGetAssetResponse"
+   ],
+   "fields": [
+    "packagedAssetsDelegate"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.RasterTileClientBridge$RasterTileClientCallback": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [
+    "nativeBridgePtr",
+    "requestHandle",
+    "this$0"
+   ],
+   "methods_total": 1,
+   "fields_total": 3
+  },
+  "com.ubercab.android.map.RasterTileClientBridge": {
+   "methods": [
+    "<init>",
+    "access$000",
+    "cancel",
+    "loadTile",
+    "nativeOnTileReady"
+   ],
+   "fields": [
+    "rasterTileDelegate"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.RasterTileObserverBridge": {
+   "methods": [
+    "<init>",
+    "onTileFailed",
+    "onTileReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.RasterTileProviderBridge": {
+   "methods": [
+    "<init>",
+    "cancelTile",
+    "loadTile"
+   ],
+   "fields": [
+    "delegate"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.SpriteObserverBridge": {
+   "methods": [
+    "<init>",
+    "onPackagedSpriteAtlasReady",
+    "onSpriteAtlasFailed",
+    "onSpriteAtlasReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 4,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.StyleObserverBridge": {
+   "methods": [
+    "<init>",
+    "onStyleReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 2,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.TileQueryBridge": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "fromNativeBuilding",
+    "fromNativeFailure",
+    "fromNativeHitTestSuccess",
+    "fromNativeMapFeaturesSuccess",
+    "fromNativeNearestRoadSuccess",
+    "lambda$onHitTestResult$2",
+    "lambda$onMapFeaturesResult$0",
+    "lambda$onNearestRoadResult$1",
+    "onHitTestResult",
+    "onMapFeaturesResult",
+    "onNearestRoadResult"
+   ],
+   "fields": [
+    "adapter",
+    "callbackRegistry"
+   ],
+   "methods_total": 15,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.TileQueryJniBridgeUtils": {
+   "methods": [
+    "roadClassSetToStringArray",
+    "roadUsageSetToStringArray",
+    "setToIntArray"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.UBMMapNativeImpl": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "addGlyphRangeObserver",
+    "addManifestObserver",
+    "addModelObserver",
+    "addRasterTileClient",
+    "addRasterTileObserver",
+    "addRasterTileSource",
+    "addSpriteObserver",
+    "addStyleObserver",
+    "addVectorTileObserver",
+    "addVectorTileProvider",
+    "cancelMapFeatureQuery",
+    "cancelRasterTileLoad",
+    "cancelVectorTileLoad",
+    "close",
+    "ensureNotDestroyed",
+    "getSource",
+    "getSpriteStore",
+    "getStyle",
+    "isRasterSource",
+    "isVectorSource",
+    "loadGlyphRange",
+    "loadModel",
+    "loadRasterTile",
+    "loadStyleWithUrl",
+    "loadVectorTile",
+    "nativeAddGlyphRangeObserver",
+    "nativeAddManifestObserver",
+    "nativeAddModelObserver",
+    "nativeAddRasterTileClient",
+    "nativeAddRasterTileObserver",
+    "nativeAddRasterTileSource",
+    "nativeAddSpriteObserver",
+    "nativeAddStyleObserver",
+    "nativeAddVectorTileObserver",
+    "nativeAddVectorTileProvider",
+    "nativeCancelMapFeatureQuery",
+    "nativeCancelRasterTileLoad",
+    "nativeCancelVectorTileLoad",
+    "nativeCreate",
+    "nativeDestroy",
+    "nativeGetSource",
+    "nativeGetSpriteStore",
+    "nativeGetStyle",
+    "nativeHitTestFeatures",
+    "nativeIsRasterSource",
+    "nativeIsVectorSource",
+    "nativeLoadGlyphRange",
+    "nativeLoadModel",
+    "nativeLoadRasterTileV2",
+    "nativeLoadStyleWithUrl",
+    "nativeLoadVectorTileV2",
+    "nativePause",
+    "nativeRemoveRasterTileClient",
+    "nativeRemoveVectorTileProvider",
+    "nativeRequestMapFeatures",
+    "nativeRequestNearestRoad",
+    "nativeResume",
+    "pause",
+    "removeRasterTileClient",
+    "removeVectorTileProvider",
+    "requestHitTest",
+    "requestMapFeatures",
+    "requestNearestMapFeature",
+    "resume"
+   ],
+   "fields": [
+    "LIBRARY_LOADED",
+    "LIBRARY_NAME",
+    "callbackRegistry",
+    "diskCacheDelegate",
+    "executorService",
+    "glyphRangeDelegate",
+    "handle",
+    "mainThreadDelegate",
+    "manifestDelegate",
+    "mapFeatureAdapter",
+    "maxFeatureRequestPolygonVertices",
+    "networkDelegate",
+    "packagedAssetsDelegate",
+    "rasterTileDelegates",
+    "spriteDelegate",
+    "styleDelegate",
+    "tileQueryBridge",
+    "vectorTileDelegates"
+   ],
+   "methods_total": 66,
+   "fields_total": 18
+  },
+  "com.ubercab.android.map.UMDFPolylineNativeAdapter$Companion": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "access$createBasePolylineUpdate-Q2Q30fc",
+    "access$toBasePolylineV2",
+    "access$toPulsePolylineV2",
+    "access$toPulseUpdateV2",
+    "createBasePolylineUpdate-Q2Q30fc",
+    "hasPulse",
+    "toBasePolylineV2",
+    "toPulsePolylineV2",
+    "toPulseUpdateV2"
+   ],
+   "fields": [],
+   "methods_total": 11,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.UMDFPolylineNativeAdapter": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$getFULL_SPAN$cp",
+    "access$getPULSE_ALPHA_DIVIDER_EASE$cp",
+    "access$getPULSE_COLOR_EASE$cp",
+    "add",
+    "remove",
+    "update-moChb0s"
+   ],
+   "fields": [
+    "Companion",
+    "FULL_SPAN",
+    "PULSE_ALPHA_DIVIDER_EASE",
+    "PULSE_COLOR_EASE",
+    "basePolyline",
+    "mapView",
+    "model",
+    "pulsePolyline"
+   ],
+   "methods_total": 8,
+   "fields_total": 8
+  },
+  "com.ubercab.android.map.UMDFPolylineNativePatternAdapter": {
+   "methods": [
+    "<init>",
+    "add",
+    "remove",
+    "update-moChb0s"
+   ],
+   "fields": [
+    "mapView",
+    "nativePatternPolyline"
+   ],
+   "methods_total": 4,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.UberMapView$NativeCallbackHandler$1": {
+   "methods": [
+    "<init>",
+    "handleMessage"
+   ],
+   "fields": [
+    "this$1",
+    "val$this$0"
+   ],
+   "methods_total": 2,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.UberMapView$NativeCallbackHandler": {
+   "methods": [
+    "<init>",
+    "a",
+    "addMapChangedListener",
+    "clear",
+    "lambda$addMapChangedListener$0",
+    "onMapChanged",
+    "onPoiClick"
+   ],
+   "fields": [
+    "handler",
+    "this$0"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.UberMapView$NativeMapInvalidateListener": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "onMapInvalidated"
+   ],
+   "fields": [
+    "this$0"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.ubercab.android.map.UberNativeHandle": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "get",
+    "isValid"
+   ],
+   "fields": [
+    "handle",
+    "invalidHandle"
+   ],
+   "methods_total": 4,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.VectorTileObserverBridge": {
+   "methods": [
+    "<init>",
+    "onTileFailed",
+    "onTileReady"
+   ],
+   "fields": [
+    "delegate",
+    "observer"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.VectorTileProviderBridge": {
+   "methods": [
+    "<init>",
+    "cancelTile",
+    "loadTile"
+   ],
+   "fields": [
+    "delegate"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.ubercab.presidio.payment.zaakpay.operation.nativeauth.ZaakpayNativeAuthApiProviderImpl$HashMapTypeToken": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapConfig$Builder": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "markers",
+    "routes",
+    "showDeviceLocation"
+   ],
+   "methods_total": 6,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapConfig$Companion": {
+   "methods": [
+    "<init>",
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapConfig": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "markers",
+    "routes",
+    "showDeviceLocation"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapConfig_GsonTypeAdapter": {
+   "methods": [
+    "<init>",
+    "read",
+    "write"
+   ],
+   "fields": [
+    "gson",
+    "immutableList__nativeMapPoint_adapter",
+    "immutableList__nativeMapRoute_adapter"
+   ],
+   "methods_total": 3,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapPoint$Builder": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "fields": [
+    "accessibilityText",
+    "address",
+    "enableRideToLocation",
+    "lat",
+    "lng",
+    "markerText",
+    "trailingIcon"
+   ],
+   "methods_total": 10,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapPoint$Companion": {
+   "methods": [
+    "<init>",
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapPoint": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "accessibilityText",
+    "address",
+    "enableRideToLocation",
+    "lat",
+    "lng",
+    "markerText",
+    "trailingIcon"
+   ],
+   "methods_total": 13,
+   "fields_total": 8
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapPoint_GsonTypeAdapter": {
+   "methods": [
+    "<init>",
+    "read",
+    "write"
+   ],
+   "fields": [
+    "gson",
+    "platformIcon_adapter"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapRoute$Builder": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [
+    "destinationLat",
+    "destinationLng",
+    "originLat",
+    "originLng",
+    "routeType"
+   ],
+   "methods_total": 8,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapRoute$Companion": {
+   "methods": [
+    "<init>",
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapRoute": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "destinationLat",
+    "destinationLng",
+    "originLat",
+    "originLng",
+    "routeType"
+   ],
+   "methods_total": 11,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.NativeMapRoute_GsonTypeAdapter": {
+   "methods": [
+    "<init>",
+    "read",
+    "write"
+   ],
+   "fields": [
+    "gson",
+    "routeType_adapter"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.uber.eatsweb.bridge.FeedWebAnalyticsBridge$mergeMetadata$1$additionalMap$1": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.eatsweb.bridge.FeedWebAnalyticsBridge$mergeMetadata$1$metadataMap$1": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.mapdisplay_framework.logging.model.adapter.MoshiGsonBridgeAdapter": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a"
+   ],
+   "fields": [
+    "INSTANCE"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.uber.model.core.generated.edge.services.rider.riderFoundations.baseCounterWebBridge.BaseCounterWebErrors$Companion$WhenMappings": {
+   "methods": [
+    "<clinit>"
+   ],
+   "fields": [
+    "$EnumSwitchMapping$0"
+   ],
+   "methods_total": 1,
+   "fields_total": 1
+  }
+ }
+}

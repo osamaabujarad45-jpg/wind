@@ -1,0 +1,20 @@
+{
+ "lib": "libeef0.so",
+ "bytes": 1104560,
+ "sha256": "ded97d6db6ad273b56977b1450edb236ca3daa977f11de330ad9f52e8339845f",
+ "sha256_iv_offset": 140512,
+ "jni_onload_disasm_lines": 50929,
+ "inline_svc_sites": 69,
+ "top_call_targets": {
+  "memset@plt": 54,
+  "__stack_chk_fail@plt": 36,
+  "__emutls_get_address@plt": 7,
+  "memcpy@plt": 5,
+  "memmove@plt": 2,
+  ".text": 2,
+  "JNI_OnLoad": 2,
+  "abort@plt": 2,
+  "malloc@plt": 2,
+  "read@plt": 1
+ }
+}

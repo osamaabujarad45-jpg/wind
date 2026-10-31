@@ -9,7 +9,7 @@ import { useSession } from '../session';
 import { InstallLink } from '../install-link';
 import { Button, fill, haptic, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
 
-const SLIDES = 3;
+const SLIDES = 5;
 
 export default function Welcome() {
   const { finishOnboarding, language, setLanguage } = useSession();
@@ -17,8 +17,14 @@ export default function Welcome() {
   const [index, setIndex] = useState(0);
   const reduced = useReducedMotion();
   const last = index === SLIDES - 1;
-  const title = [c.ob1Title, c.ob2Title, c.ob3Title][index];
-  const body = [c.ob1Body, c.ob2Body, c.ob3Body][index];
+  // Read model/provider info from public env (Expo) or fallback to known values.
+  const T3_MODEL = (process.env.EXPO_PUBLIC_T3_MODEL ?? process.env.ZRO_MODEL ?? 'deepseek-v4.1-flash') as string;
+  const T3_PROVIDER = (process.env.EXPO_PUBLIC_T3_PROVIDER ?? process.env.ZRO_PROVIDER_NAME ?? 'moonmath') as string;
+  const OPENCODE_MODEL = (process.env.EXPO_PUBLIC_OPENCODE_MODEL ?? T3_MODEL) as string;
+  const OPENCODE_PROVIDER = (process.env.EXPO_PUBLIC_OPENCODE_PROVIDER ?? T3_PROVIDER) as string;
+
+  const title = [c.ob1Title, c.ob2Title, c.ob3Title, 'T3 model', 'OpenCode model'][index];
+  const body = [c.ob1Body, c.ob2Body, c.ob3Body, `${T3_MODEL} (provider: ${T3_PROVIDER})`, `${OPENCODE_MODEL} (provider: ${OPENCODE_PROVIDER})`][index];
 
   return <SafeAreaView style={styles.safe}>
     <Row style={{ justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8 }}>
@@ -41,6 +47,8 @@ export default function Welcome() {
         {index === 0 && <ServicesArt />}
         {index === 1 && <PriceArt label={c.ob2Save} />}
         {index === 2 && <HandoverArt label={c.ob3Code} steps={[c.assigned, c.in_transit, c.completed]} />}
+        {index === 3 && <T3Art model={T3_MODEL} provider={T3_PROVIDER} />}
+        {index === 4 && <OpenCodeArt model={OPENCODE_MODEL} provider={OPENCODE_PROVIDER} />}
       </Animated.View>
       <Animated.View key={`text-${index}-${language}`} entering={reduced ? undefined : FadeInDown.duration(320).delay(80)} style={{ gap: 10 }}>
         <Txt variant="h1" center>{title}</Txt>
@@ -103,6 +111,28 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
         <Text style={styles.code}>4827</Text>
       </Row>
     </Animated.View>
+  </View>;
+}
+
+function T3Art({ model, provider }: { model: string; provider: string }) {
+  return <View style={{ alignItems: 'center', gap: 18 }}>
+    <Ionicons name="cog-outline" size={64} color={palette.blue} />
+    <View style={{ alignItems: 'center' }}>
+      <Txt variant="title">T3 model</Txt>
+      <Txt variant="body">{model}</Txt>
+      <Txt variant="caption" style={{ marginTop: 6 }}>{`provider: ${provider}`}</Txt>
+    </View>
+  </View>;
+}
+
+function OpenCodeArt({ model, provider }: { model: string; provider: string }) {
+  return <View style={{ alignItems: 'center', gap: 18 }}>
+    <Ionicons name="code-slash" size={64} color={palette.olive} />
+    <View style={{ alignItems: 'center' }}>
+      <Txt variant="title">OpenCode model</Txt>
+      <Txt variant="body">{model}</Txt>
+      <Txt variant="caption" style={{ marginTop: 6 }}>{`provider: ${provider}`}</Txt>
+    </View>
   </View>;
 }
 
