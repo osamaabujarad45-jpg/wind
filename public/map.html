@@ -10,9 +10,9 @@
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="data:,"><!-- the WebView never shows a favicon; without this it downloads the 14 kB /favicon.ico on cold opens -->
 <link rel="stylesheet" href="/vendor/maplibre-6.12.0/maplibre-gl.css">
-<!-- Fetch every MapLibre module this page uses at parse time (loadMap in src/route-map.tsx does the same on web): otherwise each waits for
-     the previous to download and run, one serial round trip per module on mobile data. The worker later reads its copy
-     from the HTTP cache (immutable vendor path). Preconnect the tile host for the same reason. -->
+<!-- Fetch every MapLibre module this page uses at parse time: otherwise each waits for the previous to download and run,
+     one serial round trip per module on mobile data (loadMap in src/route-map.tsx also fetches them in parallel on web).
+     The worker later reads its copy from the HTTP cache (immutable vendor path). Preconnect the tile host for the same reason. -->
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl.mjs">
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-shared.mjs">
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-worker.mjs">
