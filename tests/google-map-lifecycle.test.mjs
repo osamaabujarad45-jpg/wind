@@ -136,6 +136,16 @@ const first = { latitude: 31.9, longitude: 35.2 }, latest = { latitude: 32.2, lo
   assert.equal(h.lines[0].map, null, 'route overlays are detached on unmount');
 }
 {
+  // A route map that never draws tiles reports one terminal failure to its provider boundary, through the latest callback.
+  const h = harness(); let reported = 0;
+  const route = { pickup: first, dropoff: latest, pickupTitle: 'A', dropoffTitle: 'B', road: [], onFail: () => reported++ };
+  h.render(h.exports.default, route);
+  h.resolveSdk(); await flush();
+  h.deadline(); h.render(); h.render(undefined, { ...route });
+  assert.equal(reported, 1, 'the route map reports its tile deadline to the boundary exactly once');
+  h.unmount();
+}
+{
   const h = harness('map-mode.ts', true);
   let choice = h.render(h.exports.useMapMode); await flush(); choice = h.render();
   assert.equal(choice[0], 'baseline', 'blocked storage keeps the safe default');

@@ -79,6 +79,7 @@ try {
   // The provider has the sign-up mail, but the server clears that failed send's code row only once the refusal returns.
   for (let i = 0; i < 100 && await persistence.scope(() => persistence.one('SELECT 1 FROM email_codes WHERE user_id = ?', third.user.id)); i++)
     await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(!(await persistence.scope(() => persistence.one('SELECT 1 FROM email_codes WHERE user_id = ?', third.user.id))), 'the failed send left no cooldown behind');
   assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
   mode = 'bounce';
   assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 422 })).error, 'email_bounced');

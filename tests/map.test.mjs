@@ -317,7 +317,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
   // Every route/pin wrapper resolves through one provider boundary, which reads the baked capability and the stored mode.
   const boundarySource = readFileSync(new URL('../src/map-provider-boundary.tsx', import.meta.url), 'utf8');
-  assert.ok(boundarySource.includes('const baked = Constants.expoConfig?.extra?.googleMaps;') && boundarySource.includes('effectiveMapProvider(platform, baked, mode, route?.forceBaseline)'),
+  assert.ok(boundarySource.includes('const baked = Constants.expoConfig?.extra?.googleMaps;') && boundarySource.includes('effectiveMapProvider(platform, baked, mode, forceBaseline)') && boundarySource.includes('const forceBaseline = route?.forceBaseline ?? pin?.forceBaseline;'),
     'the provider boundary must resolve the renderer from baked capability and mode');
   assert.equal(androidSource.match(/<MapProviderBoundary platform="android"/g)?.length, 2, 'Android route and pin maps must resolve through the boundary');
   const iosSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');

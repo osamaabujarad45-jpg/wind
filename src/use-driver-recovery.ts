@@ -25,7 +25,7 @@ export function useDriverRecovery(order: Order | undefined, actorId: number | un
     setState({ state: 'checking' });
     try {
       const result = await recoverDriverAction(value.actorId, value.order, undefined, {}, valid);
-      if (!valid()) return;
+      if (!valid() || result.state === 'previous') return; // focus recovery requests no new action, so nothing ran before it
       setState({ state: result.state, ...('error' in result ? { error: result.error } : {}), ...('orderId' in result ? { orderId: result.orderId } : {}) });
       if (result.state === 'applied' || result.state === 'rejected' || result.state === 'conflict') {
         latest.current.recovered();

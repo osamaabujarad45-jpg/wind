@@ -31,6 +31,9 @@ export async function storeMapMode(mode: MapMode) {
   for (const listener of listeners) listener(mode);
 }
 
+/** The live mode outside React (event callbacks): the same value useMapMode renders with. */
+export const currentMapMode = (): MapMode => cached ?? effectiveRuntime().mapProviders.initialMapProvider;
+
 /** [current mode, setter]; 'baseline' until a stored choice says otherwise. */
 export function useMapMode(): [MapMode, (mode: MapMode) => void] {
   const [mode, setMode] = useState<MapMode>(cached ?? effectiveRuntime().mapProviders.initialMapProvider);

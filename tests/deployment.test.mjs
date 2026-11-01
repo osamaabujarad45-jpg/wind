@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,18 @@ import { copyRuntimeSources } from '../scripts/runtime-sources.mjs';
     const needed = copyRuntimeSources(fileURLToPath(root), output);
     assert.ok(needed.some(file => file.replaceAll('\\', '/') === 'src/model.ts'));
     for (const file of needed) assert.equal(readFileSync(join(output, file), 'utf8'), read(file.replaceAll('\\', '/')));
+    // Independent of the packager: every src module the server imports at runtime (transitively) must be in the closure.
+    const copied = new Set(needed.map(file => file.replaceAll('\\', '/'))), scanned = new Set();
+    const queue = readdirSync(new URL('server/', root), { recursive: true }).filter(f => f.endsWith('.ts')).map(f => `server/${f.replaceAll('\\', '/')}`);
+    while (queue.length) {
+      const file = queue.pop(), base = file.slice(0, file.lastIndexOf('/') + 1);
+      for (const [, spec] of read(file).matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from '(\.{1,2}\/[^']+\.ts)'/gm)) {
+        const target = new URL(spec, new URL(base, root)).pathname.slice(new URL(root).pathname.length);
+        if (target.startsWith('src/') && !scanned.has(target)) { scanned.add(target); queue.push(target); }
+      }
+    }
+    assert.ok(scanned.has('src/model.ts'));
+    for (const file of scanned) assert.ok(copied.has(file), `runtime source closure must include ${file}`);
   } finally { rmSync(output, { recursive: true, force: true }); }
 }
 

@@ -22,6 +22,7 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
     }
     if (!valid()) throw new ApiError('session_changed', 401);
     if (!saved && !action) return { state: 'empty' as const };
+    const earlier = !!saved && action !== undefined;
     if (!saved) {
       // A definite refusal advances recovery metadata without changing status.
       // Bind a new intent to a fresh snapshot, never the screen's last poll.
@@ -42,6 +43,9 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       // The fresh snapshot invalidates the old version/assignment; that command cannot change the new state.
       await recoveryStorage.write('command', null, 1);
     }
+    // A saved earlier command went first and was reconciled: it is not the action just requested,
+    // so its outcome is reported as the earlier one's, never as the new action's success.
+    if (earlier) return { state: 'previous' as const, previous: result };
     return result;
   });
   actionQueue = run.catch(() => undefined);

@@ -28,6 +28,7 @@ assert.equal(clientUpdateRequired(String(CLIENT_BUILD), {}), false, 'no minimum 
 assert.equal(clientUpdateRequired(undefined, { WIND_MIN_CLIENT_BUILD: '99999' }), false, 'legacy installs without the header pass');
 assert.equal(clientUpdateRequired('10013', { WIND_MIN_CLIENT_BUILD: '10014' }), true);
 assert.equal(clientUpdateRequired('10014', { WIND_MIN_CLIENT_BUILD: '10014' }), false);
-for (const [sent, min] of [['junk', '10014'], ['1', 'junk'], ['1', '-5'], ['', '10014']]) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: min }), false);
+for (const [sent, min] of [['junk', '10014'], ['1', 'junk'], ['1', '-5']]) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: min }), false);
+for (const sent of ['', '0']) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'an empty or zero build is gated');
 assert.equal(clientUpdateRequired('10012, 10014', { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'a repeated header cannot slip past with a later value');
 console.log('Runtime configuration bounds, expiry, authority separation, capability migration gaps and client build gate passed');

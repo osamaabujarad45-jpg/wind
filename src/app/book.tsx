@@ -365,7 +365,9 @@ function BookForm() {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
         // 426 is an outdated app, not a refusal of this booking: keep it to replay after the update.
-        if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
+        // An expired command may still have committed from an earlier, slower attempt: settle it by its receipt, never by clearing.
+        if (errorCode(e) === 'booking_command_expired' && latest.current) void checkPending(latest.current);
+        else if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
           try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
           catch { setError(c.bookingStorageError); }
         }

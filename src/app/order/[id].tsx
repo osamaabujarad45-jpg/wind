@@ -126,6 +126,12 @@ export default function OrderScreen() {
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
           key === 'advance' ? (code ? { code } : {}) : { reason: problem.reason, note: problem.note.trim() },
           () => apiSessionRevision() === session && focusRevision.current === focus);
+        if (result.state === 'previous') {
+          // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
+          const earlier = result.previous;
+          if ('order' in earlier && earlier.order) { setData(earlier.order); work.update(earlier.order); } else await reload();
+          throw new ApiError('driver_command_previous', 409);
+        }
         if (result.state === 'other_order') throw new ApiError('driver_command_pending', 409);
         if (result.state === 'conflict') throw new ApiError('order_changed', 409);
         if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);

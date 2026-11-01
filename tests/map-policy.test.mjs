@@ -16,4 +16,16 @@ retryMapProviders(selected.key); assert.equal(effectiveMapProvider('android', { 
 selected = effectiveMapProvider('android', { android:true }, 'google', true); assert.equal(selected.renderer, 'maplibre');
 recordMapFailure(selected.key, 'maplibre'); assert.equal(effectiveMapProvider('android', { android:true }, 'google', true).renderer, null, 'public maps never fall back to paid provider');
 resetRuntime(); retryMapProviders();
+// Attempt fence: a failure reported by a retired attempt (older generation) changes nothing; a retry starts a new generation.
+configureRuntime(config);
+let attempt = effectiveMapProvider('web', { web:true }, 'google');
+const retired = attempt.generation;
+retryMapProviders(attempt.key);
+attempt = effectiveMapProvider('web', { web:true }, 'google');
+assert.notEqual(attempt.generation, retired, 'retry starts a new attempt generation');
+recordMapFailure(attempt.key, 'google', retired);
+assert.equal(effectiveMapProvider('web', { web:true }, 'google').renderer, 'google', 'a late failure from a retired attempt is ignored');
+recordMapFailure(attempt.key, 'google', attempt.generation);
+assert.equal(effectiveMapProvider('web', { web:true }, 'google').renderer, 'maplibre', "the current attempt's failure falls back");
+resetRuntime(); retryMapProviders();
 console.log('Effective map provider fallback/exhaustion, public scope, route provenance and attempt isolation passed');

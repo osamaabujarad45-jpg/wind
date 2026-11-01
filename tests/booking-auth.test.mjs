@@ -92,7 +92,8 @@ try {
   const kept = { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 };
   const committed = await call('/orders', kept, owner.token);
   assert.equal((await call('/orders', { ...kept, commandExpiresAt: Date.now() - 1_000 }, owner.token)).id, committed.id);
-  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 11 * 60_000 }, owner.token, 400)).error, 'invalid_command_deadline');
+  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 12 * 60_000 }, owner.token, 400)).error, 'invalid_command_deadline');
+  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 10 * 60_000 + 30_000 }, owner.token)).status, 'searching', 'a slightly fast device clock is tolerated');
   let index = 0;
   for (const command of [false, true]) for (const change of ['logout', 'block', 'role', 'delete']) {
     const customer = await call('/auth/register', { phone: `059911100${++index}`, name: 'Customer', password: 'secret1' });

@@ -21,7 +21,11 @@ export type RouteMapProps = {
   /** Internal adapter failure signal; the shared provider boundary owns fallback and retry. */
   onFail?: () => void;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number };
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number;
+  /** A replacement renderer attempt started: not ready yet, but nothing failed. */
+  onReset?: () => void;
+  /** Public surfaces draw the baseline renderer only. */
+  forceBaseline?: boolean };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not

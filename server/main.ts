@@ -1488,7 +1488,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   // A command can commit only until its own deadline, so a missing receipt after it is a real absence.
   // Replays of a committed command still return their order; only a new commit is refused.
-  if (commandExpiresAt !== undefined && (!Number.isSafeInteger(commandExpiresAt) || (commandExpiresAt as number) > Date.now() + BOOKING_COMMAND_TTL_MS + 5_000))
+  if (commandExpiresAt !== undefined && (!Number.isSafeInteger(commandExpiresAt) || (commandExpiresAt as number) > Date.now() + BOOKING_COMMAND_TTL_MS + 60_000)) // a minute of device clock skew
     fail(400, 'invalid_command_deadline');
   const expired = () => commandExpiresAt !== undefined && Date.now() > (commandExpiresAt as number);
   const hash = payloadHash(input);
