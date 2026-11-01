@@ -22,7 +22,7 @@ async function approachDeclared(f, order, vehicleId = f.vehicle.id) {
   return f.post(`/orders/${order.id}`, { expectedRevision: revision, approach: { vehicleId, expectedVehicleRevision: v.revision,
     expectedRunRevision: run.revision, from: { longitude: last?.dropoff_lng ?? 35.18, latitude: last?.dropoff_lat ?? 31.89 },
     to: { longitude: current.pickup_lng, latitude: current.pickup_lat }, seconds: 30,
-    observedAt: Date.now() - 100, validUntil: Date.now() + 3600000, method: 'operator_attested' } });
+    observedAt: Date.now() - 1000, validUntil: Date.now() + 3600000, method: 'operator_attested' } }); // 1 s: the API runs in another process and Windows clock corrections exceed 100 ms
 }
 const accept = (f, token, order, revision, expect = 200) =>
   f.call(`/jobs/${order.id}/accept`, { token, body: { capacityProtocol: 1, expectedRequirementsRevision: revision }, expect });

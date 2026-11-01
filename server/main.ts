@@ -31,6 +31,7 @@ import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
+import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
@@ -1938,6 +1939,29 @@ function checkpointPoint(raw: unknown, list: CityId[]) {
   if (point && !list.some(id => distanceKm(city(id), point) <= 25)) fail(400, 'checkpoint_too_far');
   return point;
 }
+// Pilot cities' checkpoints at OpenStreetMap positions read 31 Oct 2026: military=checkpoint nodes, the Qalandia checkpoint
+// building and the Tapuach (Za'tara) junction. Only missing names are added, owned by an admin; Roads moves or adds more.
+// ponytail: Al-Jalama (Jenin) and Beit Iba have no mapped position yet, so an admin pins them from the Roads screen.
+const pilotCheckpoints: [name: string, cities: CityId[], latitude: number, longitude: number][] = [
+  ['حاجز حوارة · Huwara', ['nablus'], 32.178, 35.2735],
+  ["حاجز زعترة · Za'tara", ['nablus', 'ramallah'], 32.1153, 35.2573],
+  ['حاجز دير شرف · Deir Sharaf', ['nablus', 'tulkarm'], 32.2551, 35.1852],
+  ['حاجز شافي شمرون · Shavei Shomron', ['nablus', 'jenin'], 32.2642, 35.1879],
+  ['حاجز عطارة · Atara', ['ramallah', 'bireh'], 31.9828, 35.2006],
+  ["حاجز جبع · Jaba'", ['ramallah', 'bireh', 'jericho'], 31.8539, 35.2564],
+  ['حاجز قلنديا · Qalandia', ['ramallah', 'bireh'], 31.8623, 35.2275],
+];
+export async function seedCheckpoints() {
+  const admin = (await one("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1")) ?? fail(409, 'promote an admin first');
+  let added = 0;
+  for (const [name, cities, latitude, longitude] of pilotCheckpoints) {
+    if (await one('SELECT 1 FROM checkpoints WHERE name = ?', name)) continue;
+    const point = checkpointPoint({ latitude, longitude }, cities)!;
+    (await run('INSERT INTO checkpoints (name, cities, lat, lng, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', name, JSON.stringify(cities), point.latitude, point.longitude, admin.id, Date.now()));
+    added++;
+  }
+  return added;
+}
 route('POST', '/api/admin/roads/:id/place', async ({ user, params, body }) => {
   need(user, 'admin');
   const row = (await one('SELECT cities FROM checkpoints WHERE id = ? AND active = 1', Number(params[0]))) ?? fail(404, 'not_found');
@@ -2580,6 +2604,9 @@ route('GET', '/api/route', async ({ user, query }) => {
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
   return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
 });
+
+// Map search (real OpenStreetMap places, server/domain/place-search.ts).
+registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('place-search', id) }, process.env.GEOCODER_URL || undefined);
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
 // module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.
@@ -3233,6 +3260,10 @@ if (import.meta.main) {
         phone, name, await hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
       console.log('Verified account enrolled; drivers still require approval');
     } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
+    finally { db.close(); }
+  } else if (process.argv[2] === 'seed-checkpoints') {
+    try { console.log(`${(await seedCheckpoints())} pilot checkpoints added`); }
+    catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
     finally { db.close(); }
   } else if (process.argv[2] === 'promote') {
     try { console.log(`${(await promote(process.argv[3] ?? ''))} is now an admin`); }

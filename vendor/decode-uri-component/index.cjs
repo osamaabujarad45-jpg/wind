@@ -1,4 +1,3 @@
-// Backport of upstream fad01d65 (GHSA-qr28-fpjm-wq7f) with the existing CJS export.
 // Matches one or more consecutive percent-encoded bytes (e.g. `%C3%A5`).
 const token = '%[a-f0-9]{2}';
 const multiMatcher = new RegExp(`(${token})+`, 'gi');
@@ -81,11 +80,14 @@ function decode(input) {
 			// Continuation byte or invalid lead byte — emit one `%XX` literally.
 			if (sequenceLength === 0) {
 				const pair = input.slice(position, position + 6);
+
+				// UTF-16 BOM byte pairs become two replacement characters.
 				if (pair === '%FE%FF' || pair === '%FF%FE') {
 					output += '\uFFFD\uFFFD';
 					position += 6;
 					continue;
 				}
+
 				output += input.slice(position, position + 3);
 				position += 3;
 				continue;
@@ -119,6 +121,8 @@ function decode(input) {
 
 			// Missing continuation bytes or decode failure — emit the first byte literally.
 			const literal = input.slice(position, position + 3);
+
+			// A truncated `%C2` becomes a replacement character.
 			output += literal === '%C2' ? '\uFFFD' : literal;
 			position += 3;
 		}
@@ -128,8 +132,7 @@ function decode(input) {
 }
 
 function customDecodeURIComponent(input) {
-	// One pass replaces each original run exactly once. Never rescan decoded
-	// output or walk the entire input again for every distinct run.
+	// Decode each percent-encoded run in place in a single pass. Decoded output is never rescanned.
 	return input.replace(multiMatcher, run => decode(run));
 }
 

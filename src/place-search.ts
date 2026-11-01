@@ -6,8 +6,17 @@ import { cities, city, servedCity, type CityId, type Point, type SavedPlace } fr
 /** A place the booking form could accept: a town, a saved landmark, or a confirmed map pin. */
 export type PlaceCandidate = { city: CityId; note: string; point: Point | null };
 
-/** A search hit. `saved` is null for a served town. */
-export type PlaceChoice = PlaceCandidate & { key: string; saved: SavedPlace | null };
+/** A search hit. `saved` is null for a served town; `detail` is set for a map (OpenStreetMap) place. */
+export type PlaceChoice = PlaceCandidate & { key: string; saved: SavedPlace | null; detail?: string };
+
+/** A real place from the server's map search (GET /api/places/search). */
+export type MapHit = { name: string; detail: string; latitude: number; longitude: number };
+
+/** Map search hits as choices: each carries its exact point and becomes the pin; anything outside the area is dropped. */
+export const mapChoices = (hits: readonly MapHit[]): PlaceChoice[] => hits.flatMap((hit, i) => {
+  const point = { latitude: hit.latitude, longitude: hit.longitude }, near = servedCity(point);
+  return near ? [{ key: `map:${i}:${hit.latitude},${hit.longitude}`, city: near, note: hit.name, point, saved: null, detail: hit.detail }] : [];
+});
 
 /** A hit waiting for the customer's explicit confirmation; `keptPin` says the current pin rides along. */
 export type PlaceProposal = PlaceCandidate & { keptPin: boolean };

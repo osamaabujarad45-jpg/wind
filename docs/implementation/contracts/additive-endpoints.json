@@ -56,6 +56,18 @@
       ]
     },
     {
+      "packet": "maps-real-data",
+      "source": "server/domain/place-search.ts",
+      "registrar": "registerPlaceSearchRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/places/search",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
       "packet": "T07-google-routing",
       "source": "server/domain/google-routing.ts",
       "registrar": "registerGoogleRouteRoutes",

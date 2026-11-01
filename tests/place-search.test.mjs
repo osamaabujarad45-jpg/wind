@@ -3,7 +3,7 @@
 // survives until an explicit confirmation.
 import assert from 'node:assert/strict';
 import { cities } from '../src/model.ts';
-import { confirmPlace, placeAt, proposePlace, searchPlaces } from '../src/place-search.ts';
+import { confirmPlace, mapChoices, placeAt, proposePlace, searchPlaces } from '../src/place-search.ts';
 
 const places = [
   { id: 1, label: 'home', city: 'ramallah', note: 'Al-Manara' },
@@ -64,4 +64,9 @@ assert.equal(pinned.keptPin, false);
 assert.deepEqual(pinned.point, pin);
 assert.deepEqual(confirmPlace(pinned), { city: 'ramallah', note: '', point: pin });
 
-console.log('Place search: corpus, Arabic/English matching, empty/offline/outside feedback and pin safety passed');
+// Map search hits carry their exact point (it becomes the pin) and the place name as the landmark; outside is dropped.
+const hits = mapChoices([{ name: 'Birzeit University', detail: 'Birzeit', latitude: 31.9605, longitude: 35.183 }, { name: 'Tel Aviv', detail: '', latitude: 32.0853, longitude: 34.7818 }]);
+assert.deepEqual(hits.map(h => [h.city, h.note, h.detail]), [['bireh', 'Birzeit University', 'Birzeit']]);
+assert.deepEqual(confirmPlace(proposePlace(accepted, hits[0])), { city: 'bireh', note: 'Birzeit University', point: { latitude: 31.9605, longitude: 35.183 } });
+
+console.log('Place search: map hits, Arabic/English matching, empty/offline/outside feedback and pin safety passed');

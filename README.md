@@ -133,6 +133,8 @@ API origin. Provider delivery and real user journeys need separate checks.
 | `TZ` | `Asia/Hebron` | Calendar day for earnings and the dashboard |
 | `WIND_ENABLED_SERVICES` | `parcel` | Comma-separated services; opt into `ride` or `freight` after operational readiness is verified |
 | `SUPPORT_CONTACT` | empty | Real reachable contact on the privacy and deletion-request pages |
+| `OSRM_URL` | unset | Self-hosted OSRM (`infra/osrm/`, Geofabrik israel-and-palestine). Unset: no road lines, straight-line estimates. Production: `http://wind-osrm:5000` on the VM's Docker network |
+| `GEOCODER_URL` | `https://nominatim.openstreetmap.org` | OpenStreetMap place search behind `GET /api/places/search` (tap-to-search, cached, 1 req/s). Point at a self-hosted Nominatim when traffic grows |
 | `SOUQ_PARTNER_KEY` | disabled | 32+ character server-only key shared with سوقنا as `WIND_PARTNER_KEY` |
 | `WIND_IDENTITY_MODE` | required in production | Current launch: `self-service`; use `operator-verified` only to close public registration deliberately |
 | `WIND_CONTACT_VERIFICATION_REQUIRED` | `false` | Future verification gate. Leave false until a real proof or approval process can admit new users. |
