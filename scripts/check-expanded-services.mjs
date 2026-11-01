@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { fixture, polygon } from '../tests/eligibility-support.mjs';
 import { addDriver, assessRide, bookRide, myOffer } from '../tests/dispatch-support.mjs';
 import { connectionString } from '../tests/pg-support.mjs';
-import { copy, fill } from '../src/copy.ts';
+import { copy } from '../src/copy.ts';
 
 const cdp = process.env.WIND_PHYSICAL_CDP;
 if (cdp !== 'http://127.0.0.1:9228') throw new Error('Requires the explicitly forwarded physical-phone CDP on loopback 9228');
