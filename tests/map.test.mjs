@@ -427,11 +427,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const previousDeadline = Date.now() + 13_000;
   while (liveWatcherCount(order.id) && Date.now() < previousDeadline) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(liveWatcherCount(order.id), 0, 'prior live requests finish before testing the cap');
-  const holds = Array.from({ length: 20 }, () => call(future, { token: customer.token }));
-  const early = [];
-  for (const [index, hold] of holds.entries()) void hold.then(() => early.push(`resolved:${index}`), error => early.push(`rejected:${index}:${error.message}`));
-  const watcherDeadline = Date.now() + 5_000;
-  while (liveWatcherCount(order.id) < 20 && Date.now() < watcherDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  // One at a time: the cap is under test, not 20 simultaneous authentications racing a small CI connection pool.
+  const holds = [], early = [];
+  const watcherDeadline = Date.now() + 15_000;
+  for (let index = 0; index < 20; index++) {
+    const hold = call(future, { token: customer.token });
+    void hold.then(() => early.push(`resolved:${index}`), error => early.push(`rejected:${index}:${error.message}`));
+    holds.push(hold);
+    while (liveWatcherCount(order.id) <= index && Date.now() < watcherDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  }
   assert.equal(liveWatcherCount(order.id), 20, `all 20 watchers registered before testing the cap; early outcomes: ${early.join(',')}`);
   assert.notEqual(await pending(Date.now() + 60_000), 'held', 'the 21st watcher is answered, not held');
   const draining = Promise.all(holds).then(all => all[0]);
