@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { farJump, fitBounds, glideMs, routeFramePoints } from './map-math';
+import { useRendererFallback } from './map-mode';
+import { MAP_FOLLOW_ZOOM as FOLLOW_ZOOM } from './map-viewport';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
 import { loadGoogleMaps } from './google-maps-loader';
@@ -35,9 +37,6 @@ const SQUARE = 'M -8 -8 L 8 -8 L 8 8 L -8 8 Z';
 const NO_ENTRY = 'M 0 -11 A 11 11 0 1 1 -0.01 -11 Z M -7 -1.5 L 7 -1.5 L 7 1.5 L -7 1.5 Z';
 const ARROW = 'M 0 -12 L 8 10 L 0 4 L -8 10 Z';
 
-// The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
-const FOLLOW_ZOOM = 15;
-
 export default function RouteMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c } = useCopy();
@@ -46,6 +45,7 @@ export default function RouteMap(props: RouteMapProps) {
     driver?: any; halo?: any; shown?: { latitude: number; longitude: number }; at?: number; rotation?: number; frame?: number; moved?: boolean }>(
     { ls: [], closed: [] });
   const [failed, setFailed] = useState(false);
+  useRendererFallback(failed);
   const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [moved, setMoved] = useState(false);
@@ -212,6 +212,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
   useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  useRendererFallback(failed);
   const [attempt, setAttempt] = useState(0);
   const mapRef = useRef<GMap>(null);
   const centerRef = useRef(center);

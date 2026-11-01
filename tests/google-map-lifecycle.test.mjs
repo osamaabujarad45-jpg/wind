@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
-const require = createRequire(import.meta.url);
+const require = createRequire(import.meta.url), srcRequire = createRequire(new URL('../src/', import.meta.url));
 const math = require('../src/map-math.ts');
 const storage = require('../src/web-storage.ts');
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -59,9 +59,14 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, './map-math': math, './route-preview': { __esModule: true, default: 'RoutePreview' },
     './ui': { palette: {}, shadow: {}, useCopy: () => ({ c: { retry: 'Retry' } }) },
     './google-maps-loader': { loadGoogleMaps: () => loading }, './web-storage': storage,
+    // Fallback reporting is covered by map-policy.test.mjs; here only lifecycle and cleanup are under test.
+    './map-mode': { useRendererFallback: () => {} },
+    'expo-constants': { __esModule: true, default: { expoConfig: { extra: {} } } },
     'expo-secure-store': {},
   };
-  const context = { exports: {}, require: name => modules[name] ?? require(name), process: { env: {} },
+  // Unstubbed local imports are the real src modules (extensionless in .tsx sources, so add .ts).
+  const local = name => srcRequire(name.endsWith('.ts') ? name : `${name}.ts`);
+  const context = { exports: {}, require: name => modules[name] ?? (name.startsWith('./') ? local(name) : require(name)), process: { env: {} },
     document: { createElement: element }, setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), requestAnimationFrame: () => ++serial, cancelAnimationFrame() {}, performance };
   if (deniedStorage) Object.defineProperty(context, 'localStorage', { get() { throw new Error('Storage denied'); } });

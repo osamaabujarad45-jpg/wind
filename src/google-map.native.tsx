@@ -9,6 +9,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { Car } from './route-map.native';
+import { useRendererFallback } from './map-mode';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
@@ -32,6 +33,7 @@ export default function RouteMap(props: RouteMapProps) {
   const [moved, setMoved] = useState(false);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  useRendererFallback(failed);
   const [attempt, setAttempt] = useState(0);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
@@ -88,6 +90,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
   const { c } = useCopy();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  useRendererFallback(failed);
   const [attempt, setAttempt] = useState(0);
   const callbacks = useRef({ onFail, onReady, onChange });
   useEffect(() => { callbacks.current = { onFail, onReady, onChange }; });

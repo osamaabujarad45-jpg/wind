@@ -10,6 +10,7 @@ import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } fro
 import { bearing, ease, farJump, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn } from './map-math';
 import { selectRenderer } from './map-provider';
 import { useMapMode } from './map-mode';
+import { MAP_FOLLOW_ZOOM as FOLLOW_ZOOM } from './map-viewport';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -147,7 +148,7 @@ const halo = (meters: number, lat: number) => {
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
-const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
+const FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {

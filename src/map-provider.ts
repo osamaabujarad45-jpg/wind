@@ -5,7 +5,7 @@
 // and anything unknown fails closed: pins stay, no line, never an unlabelled guess.
 
 import { effectiveRuntime } from './runtime-config.ts';
-import { failedRenderers } from './map-failures.ts';
+import { failedRenderers, recordMapFailure } from './map-failures.ts';
 export type MapRenderer = 'maplibre' | 'apple' | 'google';
 export type RouteProvider = 'osrm' | 'google';
 
@@ -75,6 +75,14 @@ export function effectiveMapProvider(platform: string, baked?: BakedRenderers | 
   const key = `${platform.slice(0,30)}:${preference ?? 'configured'}:${configuration.revision}:${forceBaseline ? 'public' : 'private'}`;
   const policy = forceBaseline ? { initialMapProvider: 'baseline', fallbackMapProviders: [], missingProviderDefault: 'baseline' } : configuration.mapProviders;
   return { key, ...resolveMapProvider(platform, baked, { configuration: policy, preference: forceBaseline ? 'baseline' : preference, failed: failedRenderers(key) }) };
+}
+
+/**
+ * A renderer that could not draw (no tiles, blocked SDK, quota) hands the session to the next configured one:
+ * the effective renderer follows real failures, not only configuration. Choosing a map mode clears it.
+ */
+export function reportRendererFailure(platform: string, baked: BakedRenderers | null | undefined, preference: string | undefined, renderer: MapRenderer) {
+  recordMapFailure(effectiveMapProvider(platform, baked, preference).key, renderer);
 }
 
 /**
