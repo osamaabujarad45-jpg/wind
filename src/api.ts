@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
 import { useFocusEffect } from 'expo-router';
-import { errorCode, request } from './api-client';
-import { webGet, webSet, type WebStore } from './web-storage';
+import { apiSessionRevision, errorCode, request } from './api-client';
+import { cacheOrderSummaries } from './offline-recovery';
+import { readOrder } from './wire-contracts';
+export { storage } from './storage';
 export { ApiError, apiSessionRevision, configureApi, errorCode, invalidateApiSessionActions } from './api-client';
 
 // Dev: the API runs next to Metro on port 4000 (npm run server). Production: EXPO_PUBLIC_API_URL.
@@ -18,20 +19,15 @@ const supportContact = process.env.EXPO_PUBLIC_SUPPORT_CONTACT?.trim();
 export const SUPPORT_URL = supportNumber ? `https://wa.me/${supportNumber}`
   : supportContact && /^(mailto:|https:\/\/)/.test(supportContact) ? supportContact : null;
 
-// The getter, not the object: reading `localStorage` can itself throw in a blocked browser, and that must stay inside the guard.
-const webStore: WebStore = () => localStorage;
-
-export const storage = {
-  get: async (key: string, required = false) => Platform.OS === 'web' ? webGet(webStore, key, required) : SecureStore.getItemAsync(key),
-  set: async (key: string, value: string | null, required = false) => {
-    if (Platform.OS === 'web') return webSet(webStore, key, value, required);
-    return value === null ? SecureStore.deleteItemAsync(key) : SecureStore.setItemAsync(key, value,
-      key === 'token' ? { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } : undefined);
-  },
+export const api = async <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> => {
+  const revision = apiSessionRevision();
+  const data = await request<T>(`${API_URL}/api${path}`, body, method, signal);
+  if (revision === apiSessionRevision() && /^\/orders(?:\/\d+)?(?:\?|$)/.test(path)) {
+    if (Array.isArray(data)) void cacheOrderSummaries(data.map(readOrder));
+    else if (data && typeof data === 'object' && 'service' in data && 'id' in data) void cacheOrderSummaries([readOrder(data)]);
+  }
+  return data;
 };
-
-export const api = <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> =>
-  request(`${API_URL}/api${path}`, body, method, signal);
 
 // Loads on focus and, with pollMs, refreshes while the screen stays focused.
 // The poll pauses while the app is in the background (battery, server load), backs off after a failure and stops on a
@@ -94,7 +90,7 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
     // unless refetching this path costs money, in which case the next real change (a new pin pair) reloads it.
     const subscription = AppState.addEventListener('change', state => {
       foreground = state === 'active';
-      if (foreground) { if (!pending && (refetchOnFocus || firstForPath)) void tick(); } else clear();
+      if (foreground) { if (!pending && refetchOnFocus) void tick(); } else clear();
     });
     return () => { stopped = true; clear(); subscription.remove(); generation.current++; };
   }, [load, pollMs, refetchOnFocus, path]));

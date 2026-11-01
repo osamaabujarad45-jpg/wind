@@ -32,6 +32,9 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
+import { registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -276,7 +279,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
   // T33: the pending destination card follows the capability, not the dialect.
-  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence)
+  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && destinationEligible(r) && await destinationAvailable(persistence)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -560,8 +563,14 @@ const postCashJournal = async (entryId: number) => {
 registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
+// OpenCode / T3 provider service (runs zro CLI and records jobs)
+import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
+const opencodeService = createOpencode(persistence, fail);
+registerOpencodeRoutes(route, opencodeService);
 const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
+registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
+registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
 const nativePush = new NativePush(persistence, fail);
 registerNativePushRoutes(route, nativePush);
 const realtime = new Realtime(persistence, fail);
@@ -657,7 +666,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -725,7 +734,10 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
     fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
   }
-  (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose));
+  // A reset runs outside the request transaction while hashing. Two requests
+  // may read the same code; only the request that atomically consumes it wins.
+  if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
+    r.id, purpose, row.code_hash, Date.now(), CODE_TRIES)).changes) fail(400, 'code_expired');
 }
 
 route('POST', '/api/me/email/code', async ({ user }) => {
@@ -1498,6 +1510,8 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   }
 });
 
+registerBookingReceiptRoutes(route, { need, fail, uuid, one });
+
 // A partner key stays on the two API servers; never ship it in a mobile bundle.
 function partner(req: IncomingMessage) {
   const configured = process.env.SOUQ_PARTNER_KEY;
@@ -1615,9 +1629,17 @@ async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
   const scopes=await measuredScopes(persistence,orders.map(order=>order.id));
   return orders.map(order=>({...order,measuredScope:scopes[order.id]??null}));
 }
+async function recoveryMetadata(id: number) {
+  const row = await one('SELECT * FROM orders WHERE id=?', id) ?? fail(404, 'not_found');
+  const version = persistence.backend === 'postgres' ? Number(row.version ?? 0)
+    : Number((await one('SELECT COUNT(*) AS n FROM order_actions WHERE order_id=?', id))?.n ?? 0) + 1;
+  return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
+}
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
   const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user);
-  return query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  if (query.get('recoveryProtocol') !== '1') return result;
+  return { ...result, recovery: await recoveryMetadata(order.id) };
 });
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
 route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
@@ -2220,7 +2242,20 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
       if (saved.error) failure = new HttpError(saved.http_status, saved.error);
       else result = (await getOrder(id, user)); // acknowledge the original action with the current authoritative state
     } else {
-      try { result = (await apply(user, id, input)); }
+      try {
+        if (input.recoveryProtocol !== undefined) {
+          if (input.recoveryProtocol !== 1 || !Number.isSafeInteger(input.attemptCreatedAt) || !Number.isSafeInteger(input.attemptExpiresAt)
+            || input.attemptExpiresAt <= input.attemptCreatedAt || input.attemptExpiresAt - input.attemptCreatedAt > 60 * 60_000
+            || input.attemptCreatedAt > Date.now() + 5_000) fail(400, 'invalid_recovery_command');
+          const current = await one(`SELECT * FROM orders WHERE id=?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id) ?? fail(404, 'not_found');
+          const metadata = await recoveryMetadata(id);
+          if (Date.now() >= input.attemptExpiresAt) fail(409, 'command_expired');
+          if (input.expectedAssignedAt !== (current.assigned_at ?? null)
+            || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
+            || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
+        }
+        result = (await apply(user, id, input));
+      }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
         user.id, requestId, hash, id, failure?.status ?? 200, failure?.message ?? null));

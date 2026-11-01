@@ -104,7 +104,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
   </View>;
   return <View style={{ height, width: '100%' }}>
     <MapView key={attempt} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
-      initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+      initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
       pitchEnabled={false} rotateEnabled={false} onMapLoaded={() => setReady(true)}
       onRegionChangeComplete={r => callbacks.current.onChange({ latitude: r.latitude, longitude: r.longitude })} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>

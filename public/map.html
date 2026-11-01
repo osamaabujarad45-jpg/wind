@@ -28,12 +28,25 @@ let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
 // A missing/empty fragment used to throw on config.colors and leave a blank WebView; tell the app to fall back.
 if (!config || typeof config !== 'object') { send({ type: 'failed' }); throw new Error('bad config'); }
-const C = config.colors ?? { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
+const defaultColors = { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
+// The public page can be opened with an arbitrary URL fragment. These values
+// reach SVG markup and CSS, so accept only the app's six-digit hex colors.
+const incomingColors = config.colors && typeof config.colors === 'object' && !Array.isArray(config.colors) ? config.colors : {};
+const C = Object.fromEntries(Object.entries(defaultColors).map(([key, fallback]) => [key,
+  typeof incomingColors[key] === 'string' && incomingColors[key].length === 7 && /^#[0-9a-f]{6}$/i.test(incomingColors[key]) ? incomingColors[key] : fallback]));
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_ZOOM = 15, FOLLOW_OFFSET = [0, -60];
 
 // Same helpers as src/map-math.ts (tests/map.test.mjs checks this copy against them).
 const rad = d => d * Math.PI / 180;
+const MERCATOR_LATITUDE_LIMIT = 85.05112878;
+function metersPerPixelAtCoordinate(latitude, zoom, density = 1) {
+  if (![latitude, zoom, density].every(Number.isFinite) || density <= 0) throw new RangeError('invalid_map_resolution');
+  const clamped = Math.max(-MERCATOR_LATITUDE_LIMIT, Math.min(MERCATOR_LATITUDE_LIMIT, latitude));
+  const resolution = Math.cos(rad(clamped)) * 2 * Math.PI * 6378137 / (2 ** zoom * 512 * density);
+  if (!Number.isFinite(resolution) || resolution <= 0) throw new RangeError('invalid_map_resolution');
+  return resolution;
+}
 function bearing(a, b) {
   const y = Math.sin(rad(b.longitude - a.longitude)) * Math.cos(rad(b.latitude));
   const x = Math.cos(rad(a.latitude)) * Math.sin(rad(b.latitude)) -
@@ -140,7 +153,7 @@ function driverIcon(withArrow) {
   return el;
 }
 const halo = (meters, lat) => {
-  const base = meters / (78271.52 * Math.cos(lat * Math.PI / 180)); // MapLibre zoom levels use 512 px tiles
+  const base = meters / metersPerPixelAtCoordinate(lat, 0); // WebView map circles use CSS pixels, not physical screen pixels.
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 const empty = { type: 'FeatureCollection', features: [] };

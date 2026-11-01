@@ -4,6 +4,8 @@
 // for Google renderers only, so provenance is checked before any line reaches a MapLibre/Apple overlay,
 // and anything unknown fails closed: pins stay, no line, never an unlabelled guess.
 
+import { effectiveRuntime } from './runtime-config.ts';
+import { failedRenderers } from './map-failures.ts';
 export type MapRenderer = 'maplibre' | 'apple' | 'google';
 export type RouteProvider = 'osrm' | 'google';
 
@@ -14,6 +16,46 @@ export const platformRenderers: Record<string, MapRenderer[]> = {
   ios: ['apple'],
 };
 
+export type MapProviderChoice = 'baseline' | 'google' | 'unknown';
+export type MapProviderConfiguration = {
+  initialMapProvider: MapProviderChoice;
+  fallbackMapProviders: MapProviderChoice[];
+  missingProviderDefault: MapProviderChoice;
+};
+type BakedRenderers = { android?: boolean; ios?: boolean; web?: boolean };
+const baselineRenderer = (platform: string): MapRenderer => platformRenderers[platform]?.[0] ?? 'maplibre';
+const providerChoice = (value: unknown): MapProviderChoice => value === 'baseline' || value === 'google' ? value : 'unknown';
+
+/** Study §7.2: resolve configuration against shipped capabilities; never manufacture a renderer. */
+export function resolveMapProvider(platform: string, baked?: BakedRenderers | null, options: {
+  configuration?: unknown; preference?: string; failed?: readonly MapRenderer[];
+} = {}): {
+  provider: MapProviderChoice; renderer: MapRenderer | null; didFallback: boolean;
+  error: 'map_provider_unknown' | 'map_provider_unavailable' | null;
+} {
+  const value = options.configuration && typeof options.configuration === 'object'
+    ? options.configuration as Partial<MapProviderConfiguration> : {};
+  const initial = providerChoice(options.preference ?? value.initialMapProvider ?? 'baseline');
+  const missing = providerChoice(value.missingProviderDefault ?? 'baseline');
+  const requested = initial === 'unknown' ? missing : initial;
+  const fallbacks = Array.isArray(value.fallbackMapProviders)
+    ? value.fallbackMapProviders.slice(0, 8).map(providerChoice) : ['baseline'] as const;
+  const baseline = baselineRenderer(platform);
+  const googleAvailable = platform === 'android' ? baked?.android === true
+    : platform === 'ios' ? baked?.ios === true : platform === 'web' && baked?.web === true;
+  const candidates = [requested, ...fallbacks];
+  for (let index = 0; index < candidates.length; index++) {
+    const provider = candidates[index];
+    if (provider === 'unknown' || (provider === 'google' && !googleAvailable)) continue;
+    const renderer = provider === 'google' ? 'google' : baseline;
+    if (options.failed?.includes(renderer)) continue;
+    return { provider, renderer, didFallback: initial === 'unknown' || index > 0,
+      error: initial === 'unknown' ? 'map_provider_unknown' : index > 0 ? 'map_provider_unavailable' : null };
+  }
+  return { provider: 'unknown', renderer: null, didFallback: true,
+    error: initial === 'unknown' ? 'map_provider_unknown' : 'map_provider_unavailable' };
+}
+
 /**
  * The renderer this platform draws with today. The first family baked into the binary is the default; when
  * a Google family is also baked in (`baked` capability from the build, never a runtime fetch) and the user
@@ -21,12 +63,18 @@ export const platformRenderers: Record<string, MapRenderer[]> = {
  * client ships, never to a renderer that may be absent — a kill switch cannot enable a renderer the binary
  * does not contain.
  */
-export function selectRenderer(platform: string, baked?: { android?: boolean; ios?: boolean; web?: boolean } | null, preference?: string): MapRenderer {
-  if (preference === 'google') {
-    const available = platform === 'android' ? !!baked?.android : platform === 'ios' ? !!baked?.ios : !!baked?.web;
-    if (available) return 'google';
-  }
-  return platformRenderers[platform]?.[0] ?? 'maplibre';
+export function selectRenderer(platform: string, baked?: BakedRenderers | null, preference?: string): MapRenderer {
+  const resolved = effectiveMapProvider(platform, baked, preference);
+  if (resolved.error === 'map_provider_unknown') console.warn(resolved.error);
+  return resolved.renderer ?? baselineRenderer(platform);
+}
+
+/** A single session choice is shared by route requests and map presentation. Public maps stay baseline-only. */
+export function effectiveMapProvider(platform: string, baked?: BakedRenderers | null, preference?: string, forceBaseline = false) {
+  const configuration = effectiveRuntime();
+  const key = `${platform.slice(0,30)}:${preference ?? 'configured'}:${configuration.revision}:${forceBaseline ? 'public' : 'private'}`;
+  const policy = forceBaseline ? { initialMapProvider: 'baseline', fallbackMapProviders: [], missingProviderDefault: 'baseline' } : configuration.mapProviders;
+  return { key, ...resolveMapProvider(platform, baked, { configuration: policy, preference: forceBaseline ? 'baseline' : preference, failed: failedRenderers(key) }) };
 }
 
 /**

@@ -3,6 +3,59 @@
   "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
   "modules": [
     {
+      "packet": "adoption-driver-recovery",
+      "source": "server/domain/driver-receipts.ts",
+      "registrar": "registerDriverReceiptRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/orders/:id/actions/([^/]+)", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "adoption-runtime-policy",
+      "source": "server/domain/runtime-readiness.ts",
+      "registrar": "registerRuntimeRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/runtime/configuration", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/runtime/capabilities", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/runtime/diagnostics", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/runtime", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "audit-booking-receipts",
+      "source": "server/domain/booking-receipts.ts",
+      "registrar": "registerBookingReceiptRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/orders/commands/([^/]+)",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "opencode-admin",
+      "source": "server/domain/opencode.ts",
+      "registrar": "registerOpencodeRoutes",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/opencode/run",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/opencode/([^/]+)",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "GET",
+          "path": "/api/opencode",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
       "packet": "T07-google-routing",
       "source": "server/domain/google-routing.ts",
       "registrar": "registerGoogleRouteRoutes",

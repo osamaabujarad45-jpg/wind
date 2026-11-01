@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { farJump, fitBounds, glideMs, routeFramePoints } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
+import { loadGoogleMaps } from './google-maps-loader';
 
 // Referrer-restricted browser key: public by design, worthless off the licensed origins; the server's own
 // route-key secret is a different credential and never appears in web code.
@@ -19,26 +20,9 @@ type Listener = { remove(): void };
 declare global { interface Window { google?: { maps?: any } } }
 
 // One script per page: navigation unmounts maps, not the library. A failed load resets the promise so a
-// retry can fetch again (a succeeded one is cached by the browser and by `lib`).
-let lib: Promise<any> | null = null;
+// retry can fetch again; an initialized SDK is reused by the shared loader.
 function loadGoogle(): Promise<any> {
-  lib ??= new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { lib = null; reject(new Error('google maps timeout')); }, 25_000);
-    const existing = document.getElementById('wind-google-maps');
-    if (existing) return; // already loading or loaded for this page: its onload resolves below
-    const tag = Object.assign(document.createElement('script'), {
-      id: 'wind-google-maps', async: true,
-      src: `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(BROWSER_KEY ?? '')}&v=weekly&loading=async`,
-    });
-    tag.onload = () => {
-      clearTimeout(timer);
-      if (window.google?.maps) resolve(window.google.maps);
-      else { lib = null; reject(new Error('google maps did not initialize')); }
-    };
-    tag.onerror = () => { clearTimeout(timer); lib = null; tag.remove(); reject(new Error('google maps failed to load')); };
-    document.head.appendChild(tag);
-  });
-  return lib;
+  return loadGoogleMaps(BROWSER_KEY ?? '');
 }
 
 /** SVG path symbols with the same shapes the other renderers draw: dots, square pin, no-entry, car arrow. */
@@ -70,6 +54,8 @@ export default function RouteMap(props: RouteMapProps) {
   const roadKey = JSON.stringify([props.road, props.approach]);
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   const driverKey = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${props.focus}` : '';
+  const latest = useRef({ points, drawLines, drawClosed, drawDriver });
+  useEffect(() => { latest.current = { points, drawLines, drawClosed, drawDriver }; });
 
   useEffect(() => {
     let disposed = false;
@@ -85,12 +71,12 @@ export default function RouteMap(props: RouteMapProps) {
       });
       const s = state.current;
       s.map = map; s.maps = maps; s.ls = []; s.closed = [];
-      map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); });
+      s.ls.push(map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); }));
       // Tiles drawn, not map constructed, is the readiness signal: a revoked key or exhausted quota never
       // draws tiles, and the deadline below turns that into the labelled fallback.
       const tiles = map.addListener('tilesloaded', () => { tiles.remove(); setReady(true); });
       s.ls.push(tiles);
-      map.fitBounds(toBounds(maps, fitBounds(points)));
+      map.fitBounds(toBounds(maps, fitBounds(latest.current.points)));
       s.road = new maps.Polyline({ map, path: [], strokeColor: palette.forest, strokeOpacity: 0.85, strokeWeight: 4 });
       s.approach = new maps.Polyline({ map, path: [], strokeColor: palette.blue, strokeOpacity: 0.9, strokeWeight: 5 });
       s.halo = new maps.Circle({ map, center: toLng(maps, pickup), radius: 0, fillColor: palette.blue, fillOpacity: 0.12,
@@ -99,7 +85,7 @@ export default function RouteMap(props: RouteMapProps) {
       s.driver.setVisible(false);
       for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay]] as const)
         new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
-      drawLines(); drawClosed(); drawDriver();
+      latest.current.drawLines(); latest.current.drawClosed(); latest.current.drawDriver();
     }).catch(() => { if (!disposed) setFailed(true); });
     return () => {
       disposed = true;
@@ -112,6 +98,12 @@ export default function RouteMap(props: RouteMapProps) {
       state.current = { ls: [], closed: [] }; // a retry builds a fresh map: no listener or overlay survives
     };
   }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (ready || failed) return;
+    const timer = setTimeout(() => setFailed(true), 25_000);
+    return () => clearTimeout(timer);
+  }, [ready, failed, attempt]);
 
   // The camera rides along until the user grabs the map, like the other renderers.
   useEffect(() => {
@@ -200,7 +192,7 @@ export default function RouteMap(props: RouteMapProps) {
     <View ref={host} style={StyleSheet.absoluteFill} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
-      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>}
@@ -221,37 +213,57 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const mapRef = useRef<GMap>(null);
+  const centerRef = useRef(center);
+  useEffect(() => { centerRef.current = center; });
   useEffect(() => {
     let disposed = false;
+    let broken = false;
+    let cleanup: (() => void) | undefined;
     const hostElement = host.current;
+    const fail = () => {
+      if (disposed || broken) return;
+      broken = true;
+      setFailed(true); callbacks.current.onFail?.();
+    };
+    const timer = setTimeout(fail, 25_000);
     loadGoogle().then(maps => {
       if (disposed || !hostElement) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (hostElement as unknown as HTMLElement).appendChild(el);
       const map = new maps.Map(el, {
-        center: { lat: center.latitude, lng: center.longitude }, zoom: 16, gestureHandling: 'greedy',
+        center: { lat: centerRef.current.latitude, lng: centerRef.current.longitude }, zoom: 16, gestureHandling: 'greedy',
         mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false,
       });
       const listeners = [map.addListener('idle', () => {
+        if (disposed || broken) return;
         const p = map.getCenter();
         callbacks.current.onChange({ latitude: p.lat(), longitude: p.lng() });
-      }), map.addListener('tilesloaded', () => setReady(true))];
-      (el as unknown as { windCleanup?: () => void }).windCleanup = () => listeners.forEach(l => l.remove());
-    }).catch(() => { if (!disposed) { setFailed(true); callbacks.current.onFail?.(); } });
-    return () => { disposed = true; (hostElement?.firstChild as unknown as { windCleanup?: () => void } | undefined)?.windCleanup?.(); };
-  }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+      }), map.addListener('tilesloaded', () => { if (!disposed && !broken) { clearTimeout(timer); setReady(true); } })];
+      mapRef.current = map;
+      cleanup = () => { listeners.forEach(l => l.remove()); maps.event.clearInstanceListeners(map); el.remove(); mapRef.current = null; };
+    }).catch(fail);
+    return () => { disposed = true; clearTimeout(timer); cleanup?.(); };
+  }, [attempt]);
   useEffect(() => {
     if (!ready) return;
     callbacks.current.onReady?.();
   }, [ready]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const p = map.getCenter();
+    if (Math.abs(p.lat() - center.latitude) + Math.abs(p.lng() - center.longitude) > 0.000001)
+      map.setCenter({ lat: center.latitude, lng: center.longitude });
+  }, [center.latitude, center.longitude]);
   return <View style={{ height, width: '100%' }}>
     <View ref={host} style={StyleSheet.absoluteFill} />
     <View pointerEvents="none" style={[styles.pin, failed && { opacity: 0 }]}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
-      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>}

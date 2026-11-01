@@ -71,7 +71,7 @@ export default function Users() {
       <FilterChips items={(['all', 'customer', 'driver', 'admin'] as const).map(key => ({ key, label: key === 'all' ? c.all : c[key] }))} value={role} onChange={setRole} />
     </View>
     <ErrorText>{actionError || (error && err(error))}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="people-outline" title={c.nothingHere} />
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="people-outline" title={c.noUsers} />
       : data.map((user, i) => <Appear key={user.id} index={i}>
         <Card>
           <Row style={{ justifyContent: 'space-between' }}>

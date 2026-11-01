@@ -87,8 +87,7 @@ export default function Home() {
     {/* One card left (Plus members): full width, not a half-empty rail. */}
     {me?.plan ? <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
       : <>
-        <Section title={c.waysToSave} />
-        <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
+        <Rail gap={10} style={{ marginHorizontal: -16, marginTop: 10 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
           <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
           <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
             body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />

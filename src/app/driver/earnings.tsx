@@ -19,11 +19,12 @@ export default function Earnings() {
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
-        <Stat index={0} tone="olive" label={`${c.today} · ${fill(c.tripsCount, { n: data.today.jobs })}`} value={money(data.today.net)} />
-        <Stat index={1} label={`${c.week} · ${fill(c.tripsCount, { n: data.week.jobs })}`} value={money(data.week.net)} />
+        <Stat index={0} tone="olive" label={c.today} detail={fill(c.tripsCount, { n: data.today.jobs })} value={money(data.today.net)} />
+        <Stat index={1} label={c.week} detail={fill(c.tripsCount, { n: data.week.jobs })} value={money(data.week.net)} />
       </Row>
       <Card>
-        <Txt variant="title" style={{ marginBottom: 8 }}>{c.allTime} · {fill(c.tripsCount, { n: data.all.jobs })}</Txt>
+        <Txt variant="title">{c.allTime}</Txt>
+        <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: data.all.jobs })}</Txt>
         {([[c.gross, data.all.gross], [c.commission, -data.all.commission], [c.net, data.all.net]] as const).map(([label, value]) =>
           <Row key={label} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
             <Txt>{label}</Txt>

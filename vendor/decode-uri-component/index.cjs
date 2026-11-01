@@ -1,3 +1,4 @@
+// Backport of upstream fad01d65 (GHSA-qr28-fpjm-wq7f) with the existing CJS export.
 // Matches one or more consecutive percent-encoded bytes (e.g. `%C3%A5`).
 const token = '%[a-f0-9]{2}';
 const multiMatcher = new RegExp(`(${token})+`, 'gi');
@@ -79,6 +80,12 @@ function decode(input) {
 
 			// Continuation byte or invalid lead byte — emit one `%XX` literally.
 			if (sequenceLength === 0) {
+				const pair = input.slice(position, position + 6);
+				if (pair === '%FE%FF' || pair === '%FF%FE') {
+					output += '\uFFFD\uFFFD';
+					position += 6;
+					continue;
+				}
 				output += input.slice(position, position + 3);
 				position += 3;
 				continue;
@@ -111,7 +118,8 @@ function decode(input) {
 			}
 
 			// Missing continuation bytes or decode failure — emit the first byte literally.
-			output += input.slice(position, position + 3);
+			const literal = input.slice(position, position + 3);
+			output += literal === '%C2' ? '\uFFFD' : literal;
 			position += 3;
 		}
 
@@ -120,41 +128,9 @@ function decode(input) {
 }
 
 function customDecodeURIComponent(input) {
-	// Keep track of all the replacements and prefill the map with the `BOM`
-	const replaceMap = {
-		'%FE%FF': '\uFFFD\uFFFD',
-		'%FF%FE': '\uFFFD\uFFFD',
-	};
-
-	// Find percent-encoded runs separated by literal text or lone `%` characters.
-	let match = multiMatcher.exec(input);
-
-	while (match) {
-		try {
-			// Decode as big chunks as possible
-			replaceMap[match[0]] = decodeURIComponent(match[0]);
-		} catch {
-			const result = decode(match[0]);
-
-			if (result !== match[0]) {
-				replaceMap[match[0]] = result;
-			}
-		}
-
-		match = multiMatcher.exec(input);
-	}
-
-	// Add `%C2` at the end of the map to make sure it does not replace the combinator before everything else
-	replaceMap['%C2'] = '\uFFFD';
-
-	const entries = Object.keys(replaceMap);
-
-	for (const key of entries) {
-		// Replace all decoded components
-		input = input.split(key).join(replaceMap[key]);
-	}
-
-	return input;
+	// One pass replaces each original run exactly once. Never rescan decoded
+	// output or walk the entire input again for every distinct run.
+	return input.replace(multiMatcher, run => decode(run));
 }
 
 module.exports = function decodeUriComponent(encodedURI) {

@@ -5,10 +5,54 @@ import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
 import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
+import { capacityCommand, dispatchAcceptance, rideStep, secondsUntil } from '../src/ride-flow.ts';
+import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../src/freight-scope.ts';
+
+const loadDraft = { ...emptyFreightDraft(), pieces: '٢', lengthCm: '١٢٫٥', widthCm: '20', heightCm: '30', massKg: '12.345', value: '15.25', equipment: ['straps'] };
+const load = freightScope(loadDraft, 1000, 2);
+assert.equal(load.massGrams, 12345);
+assert.equal(load.lengthMm, 125);
+assert.equal(load.declaredValueMinor, 1525);
+assert.equal(load.loadingBefore, 7_201_000);
+assert.deepEqual(freightScope(freightDraftFromScope(load), 1000, 2), load, 'restoring an editable draft preserves exact terms');
+assert.equal(freightScope({ ...loadDraft, massKg: '1.0001' }, 1000, 2), null, 'sub-gram precision is rejected');
+assert.equal(freightScope({ ...loadDraft, pieces: '1.5' }, 1000, 2), null);
+assert.equal(freightScope({ ...loadDraft, massKg: '-2' }, 1000, 2), null);
+assert.equal(freightScope({ ...loadDraft, lengthCm: '10000', widthCm: '10000', heightCm: '10000' }, 1000, 2), null, 'unsafe aggregate volume is rejected');
+assert.equal(freightScope(loadDraft, 1000, 0), null);
+
+assert.deepEqual(capacityCommand({}), {});
+assert.deepEqual(capacityCommand({ declaredScope: { revision: 2 } }), { capacityProtocol: 1, expectedRequirementsRevision: 2 });
+assert.deepEqual(capacityCommand({ measuredScope: { requirementsRevision: 3 }, declaredScope: { revision: 2 } }),
+  { capacityProtocol: 1, expectedRequirementsRevision: 3 }, 'measured requirements take precedence over the declaration');
+
+const ride = { service: 'ride', status: 'assigned', ride: { arrivedAt: null, boardingRequired: true, boardingLocked: false } };
+assert.equal(rideStep(ride), 'arrive');
+assert.equal(rideStep({ ...ride, ride: null }), 'advance', 'legacy rides do not invent a lifecycle');
+assert.equal(rideStep({ ...ride, ride: { ...ride.ride, arrivedAt: 100 } }), 'advance');
+assert.equal(rideStep({ ...ride, status: 'at_pickup', ride: { ...ride.ride, arrivedAt: 100 } }), 'boarding');
+assert.equal(rideStep({ ...ride, status: 'at_pickup', ride: { ...ride.ride, arrivedAt: 100, boardingLocked: true } }), 'locked');
+assert.equal(rideStep({ ...ride, status: 'in_transit' }), 'advance');
+const leased = { dispatch: { state: 'open', myOffer: { offerId: 'lease', leaseNonce: 'secret', expiresAt: 200 } } };
+assert.deepEqual(dispatchAcceptance(leased, 199), { offerId: 'lease', leaseNonce: 'secret' });
+assert.equal(dispatchAcceptance(leased, 200), null, 'an expired lease never becomes a legacy acceptance');
+assert.equal(dispatchAcceptance({ dispatch: { ...leased.dispatch, state: 'exhausted' } }, 100), null);
+assert.equal(dispatchAcceptance({ dispatch: { state: 'open', myOffer: null } }, 100), null);
+assert.deepEqual(dispatchAcceptance({}, 100), {});
+noteServerDate(new Date(100_000).toUTCString(), 400_000);
+assert.deepEqual(dispatchAcceptance({ dispatch: { ...leased.dispatch, myOffer: { ...leased.dispatch.myOffer, expiresAt: 101_000 } } }, 400_000),
+  { offerId: 'lease', leaseNonce: 'secret' }, 'a phone five minutes ahead still sees a valid server lease');
+assert.equal(secondsUntil(101_000, 400_000), 1);
+assert.equal(secondsUntil(99_000, 400_000), 0);
+noteServerDate(new Date(400_000).toUTCString(), 400_000);
 
 const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
   pickupNote: 'محل', dropoffNote: 'الدوار', contact: '0599123456', detail: 'كتب', option: 'small', loadingHelp: false, shared: false, quotedPrice: 48 };
 const pending = newBooking(payload);
+const freightCommand = newBooking({ ...payload, service: 'freight', declaredScope: load });
+assert.deepEqual(readBooking(JSON.stringify(freightCommand)), freightCommand, 'load terms survive an offline restart');
+assert.deepEqual(orderRequest(freightCommand).declaredScope, load);
+assert.throws(() => readBooking(JSON.stringify({ ...freightCommand, payload: { ...freightCommand.payload, declaredScope: { ...load, massGrams: -1 } } })));
 assert.deepEqual(readBooking(JSON.stringify(pending)), pending); // restart keeps the same command and terms
 assert.notEqual(newBooking(payload).requestId, pending.requestId);
 // Quote-bound booking: the locked quote survives restart, and the wire body must not

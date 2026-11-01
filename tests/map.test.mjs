@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
-import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, routeProvider, selectRenderer } from '../src/map-provider.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, resolveMapProvider, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-map-'));
@@ -242,6 +242,21 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(selectRenderer('ios', { ios: true }, 'google'), 'google');
   assert.equal(selectRenderer('ios', { android: true }, 'google'), 'apple', 'another platform capability does not select Google');
   assert.equal(selectRenderer('web', { web: true }, 'google'), 'google');
+  assert.equal(selectRenderer('unsupported-platform', { web: true }, 'google'), 'maplibre', 'web capability cannot enable Google on an unknown platform');
+  const configured = { initialMapProvider: 'google', fallbackMapProviders: ['baseline'], missingProviderDefault: 'baseline' };
+  assert.deepEqual(resolveMapProvider('android', { android: true }, { configuration: configured }),
+    { provider: 'google', renderer: 'google', didFallback: false, error: null });
+  assert.deepEqual(resolveMapProvider('android', {}, { configuration: configured }),
+    { provider: 'baseline', renderer: 'maplibre', didFallback: true, error: 'map_provider_unavailable' });
+  assert.deepEqual(resolveMapProvider('ios', { ios: true }, { configuration: configured, failed: ['google'] }),
+    { provider: 'baseline', renderer: 'apple', didFallback: true, error: 'map_provider_unavailable' });
+  assert.deepEqual(resolveMapProvider('web', {}, { configuration: { ...configured, initialMapProvider: 'invented' } }),
+    { provider: 'baseline', renderer: 'maplibre', didFallback: true, error: 'map_provider_unknown' });
+  assert.equal(resolveMapProvider('web', {}, { configuration: { ...configured, fallbackMapProviders: [] } }).renderer, null,
+    'an explicit empty fallback set returns unavailable instead of inventing an allowed renderer');
+  assert.equal(resolveMapProvider('web', { web: true }, { configuration: { ...configured, initialMapProvider: 'baseline' }, preference: 'google' }).renderer, 'google');
+  assert.equal(resolveMapProvider('web', {}, { configuration: { ...configured, fallbackMapProviders: ['unknown', 'google'] } }).renderer, null);
+  assert.equal(resolveMapProvider('web', {}, { configuration: null }).renderer, 'maplibre');
   assert.equal(selectRenderer('android', { android: true }, 'baseline'), 'maplibre');
   assert.equal(selectRenderer('android', { android: true }), 'maplibre', 'no preference keeps the baseline');
   // Baseline OSRM geometry renders everywhere; Google content only on a Google renderer; unknown provenance nowhere.
@@ -309,13 +324,14 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.ok(!googleSource.includes('onMapReady'), 'map initialization alone is not a readiness signal');
   assert.ok(googleSource.includes('provider={PROVIDER_GOOGLE}'), 'the Google renderer must actually select the Google provider');
   const modeSource = readFileSync(new URL('../src/map-mode.ts', import.meta.url), 'utf8');
-  assert.ok(modeSource.includes("?? 'baseline'"), 'an unreadable preference must fall back to the baseline');
+  assert.ok(modeSource.includes('cached ?? effectiveRuntime().mapProviders.initialMapProvider'), 'an unreadable preference must use the validated runtime policy, whose default is baseline');
   // T12: the web entry resolves the renderer the same way, and the CSP opens Google origins only for a
   // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
   const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
   assert.ok(webEntry.includes("selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode)"), 'web must resolve the renderer from baked capability and mode');
   const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
-  assert.ok(googleWeb.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
+  const googleLoader = readFileSync(new URL('../src/google-maps-loader.ts', import.meta.url), 'utf8');
+  assert.ok(googleLoader.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
   assert.ok(googleWeb.includes('l.remove()'), 'map listeners are removed on unmount');
   assert.ok(googleWeb.includes('setMap(null)'), 'overlays are detached from the map on unmount');
   assert.ok(!googleWeb.includes('GOOGLE_MAPS_SERVER_KEY'), 'the server route key never reaches the web renderer');
@@ -343,7 +359,23 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
   const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
-  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, routeFramePoints, turn };`)();
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn };`)();
+  assert.ok(Math.abs(metersPerPixelAtCoordinate(0, 15, 2.8125) - 0.85) < 0.005, 'study A53 physical-pixel fixture at equator');
+  assert.ok(Math.abs(metersPerPixelAtCoordinate(25, 15, 2.8125) - 0.77) < 0.005, 'study latitude/density fixture');
+  assert.equal(metersPerPixelAtCoordinate(32, 16), metersPerPixelAtCoordinate(32, 15) / 2, 'one zoom level halves resolution');
+  assert.equal(metersPerPixelAtCoordinate(32, 15, 2), metersPerPixelAtCoordinate(32, 15) / 2, 'physical pixel density is explicit');
+  for (const latitude of [90, -90, 85.05112878, -85.05112878, 0, 31.9038]) {
+    for (const zoom of [0, 15, 22]) for (const density of [1, 2.8125]) {
+      const resolution = metersPerPixelAtCoordinate(latitude, zoom, density);
+      assert.ok(Number.isFinite(resolution) && resolution > 0, 'polar resolution remains finite and positive');
+      assert.equal(copy.metersPerPixelAtCoordinate(latitude, zoom, density), resolution, 'Android page and web projection agree');
+    }
+  }
+  assert.equal(metersPerPixelAtCoordinate(90, 15), metersPerPixelAtCoordinate(85.05112878, 15), 'Mercator clamps at square-world boundary');
+  for (const args of [[NaN, 15], [32, Infinity], [32, 15, 0], [32, 15, -1], [32, 15, NaN], [32, 2000]]) {
+    assert.throws(() => metersPerPixelAtCoordinate(...args), /invalid_map_resolution/);
+    assert.throws(() => copy.metersPerPixelAtCoordinate(...args), /invalid_map_resolution/);
+  }
   const a = { latitude: 31.9, longitude: 35.2 }, b = { latitude: 32.22, longitude: 35.26 };
   assert.equal(copy.bearing(a, b), bearing(a, b));
   assert.deepEqual(copy.ease(a, b, 0.3), ease(a, b, 0.3));

@@ -23,7 +23,7 @@ export default function AdminOrders() {
     {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
-        ? <Empty icon="receipt-outline" title={c.nothingHere} />
+        ? <Empty icon="receipt-outline" title={c.noOrdersFilter} />
         : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}
     </>}
   </Screen>;

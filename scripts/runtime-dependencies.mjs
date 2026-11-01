@@ -1,6 +1,7 @@
 // Copy the server's installed dependency closure from the frozen npm install, without the Expo toolchain.
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { copyRuntimeSources } from './runtime-sources.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const output = resolve(root, process.argv[2] ?? '.expo/api-runtime');
@@ -33,3 +34,4 @@ while (queue.length) {
     filter: path => !relative(source, path).split(sep).includes('node_modules') });
 }
 console.log(`Copied ${seen.size} locked server runtime packages to ${relative(root, output)}`);
+console.log(`Copied ${copyRuntimeSources(root, output).length} shared runtime source files`);

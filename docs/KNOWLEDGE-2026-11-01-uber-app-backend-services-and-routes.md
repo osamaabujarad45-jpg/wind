@@ -95,7 +95,7 @@ Reading: gRPC carries **surface-specific presentation services** (maps imagery a
 
 | Host | Literals | What it is used for |
 | --- | --- | --- |
-| `cn-geo1.uber.com` | 126 | the primary API host in this build's geography |
+| `cn-geo1.uber.com` | 126 | the primary API host in this build's geography, and the vendor's own public pages serve image assets from it — an independent confirmation that the name is an Uber property, not a third-party CDN |
 | `www.uber.com` | 53 | web links, legal, help redirects |
 | `tb-static.uber.com` | 33 | static assets |
 | `mobile-content.uber.com` | 32 | server-driven content bundles |
