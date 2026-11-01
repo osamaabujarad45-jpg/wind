@@ -8,7 +8,8 @@ import { basename, join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
-export const DECODER_SHA256 = '016b6254780445441542fd9466dd6dd7922f450a6eb26d8eb41b95b472f3a582';
+// vendor/decode-uri-component/index.cjs as reviewed in PR #2 (upstream 0.5.1 with the GHSA-qr28-fpjm-wq7f fix).
+export const DECODER_SHA256 = 'e82696ecdf0ee2c25bd90169cc7915e552d2ccb82a5006c55bc17aecdb55b919';
 const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
 const severities = ['info', 'low', 'moderate', 'high', 'critical'];

@@ -29,9 +29,14 @@ sitting uncommitted in a OneDrive folder.
 | 0 Land in-flight work | Done: commit `91b7405` (byte-identical) plus `e9fc3bd` (3 defects the k5 gate found). Not pushed. |
 | 1.1 Map fallback by real failure | Done (`b2af7ce`), unit-tested; no Google key in builds yet, so not phone-tested |
 | 1.2 Camera intent | Shared follow zoom only; `mapCameraIntent` deliberately left unwired (no overlapping sheets today) |
-| 1.3–1.7 | Coded by the earlier sessions; still need their own phone scenarios (airplane-mode reopen, kill-after-send, AR/EN UI pass) |
-| 2 Min-client gate, Arrive cue | Done (`7d17ccc`); A53 checks pass |
-| 3 Acceptance | k5 full gate green (101 suites + persistence); A53 5/5 |
+| 1.3 Offline launch | Done (`d9d9bee`). The saved summary was never rendered; it now shows read-only on the offline screen, and an online launch no longer flashes "Can't reach Wind". A53-checked with the API blocked |
+| 1.4 Lost acknowledgement | A53-checked: reply dropped after the server applied, reload, exactly one `order_actions` row |
+| 1.5 Contracts | Covered by `wire-contracts.test` in the gate; no phone-specific behaviour |
+| 1.6 Diagnostics | A53-checked: a bounded batch is delivered, with no coordinates, ids or credentials |
+| 1.7 AR/EN screens | `npm run screens` regenerated 96 shots on the merged tree; its UI assertions pass |
+| 2 Min-client gate, Arrive cue | Done (`7d17ccc`); A53-checked, including the far (~320 m) caption |
+| Merge GitHub `master` | `9f39a76`: local master had diverged (#2, #3). Conflicts resolved: decoder → reviewed 0.5.1; book.tsx slots on the real clock; endpoint inventory keeps both sides |
+| 3 Acceptance | k5 full gate and A53 9/9; see `tasks/UBER-ADOPTION-IMPLEMENTATION-2026-11-01.md` |
 
 ## Phase 0: land the in-flight work (first)
 
