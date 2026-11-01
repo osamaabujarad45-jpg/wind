@@ -22,6 +22,17 @@ Inputs: the six `docs/KNOWLEDGE-2026-11-01-*.md` deep-pass documents and the
 The biggest risk right now is not a missing feature. It is ~1,200 changed lines
 sitting uncommitted in a OneDrive folder.
 
+## Status (1 Nov, end of session)
+
+| Phase | State |
+|---|---|
+| 0 Land in-flight work | Done: commit `91b7405` (byte-identical) plus `e9fc3bd` (3 defects the k5 gate found). Not pushed. |
+| 1.1 Map fallback by real failure | Done (`b2af7ce`), unit-tested; no Google key in builds yet, so not phone-tested |
+| 1.2 Camera intent | Shared follow zoom only; `mapCameraIntent` deliberately left unwired (no overlapping sheets today) |
+| 1.3–1.7 | Coded by the earlier sessions; still need their own phone scenarios (airplane-mode reopen, kill-after-send, AR/EN UI pass) |
+| 2 Min-client gate, Arrive cue | Done (`7d17ccc`); A53 checks pass |
+| 3 Acceptance | k5 full gate green (101 suites + persistence); A53 5/5 |
+
 ## Phase 0: land the in-flight work (first)
 
 1. Copy the main checkout's modified and untracked files into this branch. Leave out

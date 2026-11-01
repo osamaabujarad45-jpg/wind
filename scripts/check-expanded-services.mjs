@@ -81,7 +81,8 @@ try {
   const issued = await myOffer(f, ride.id, who.driver);
   assert.ok(issued, JSON.stringify({ presence: await f.call('/driver/presence', { token: who.driver.token }),
     rounds: await f.db.all('SELECT state,close_reason FROM dispatch_rounds WHERE order_id=?', ride.id) }));
-  await page.getByText(/Ride offer · expires in/).waitFor({ timeout: 14_000 });
+  // Read the clock prefix from copy: the UI pass reworded it, and a stale literal only matched stale bundles.
+  await page.getByText(c.dispatchOfferClock.split('{n}')[0]).waitFor({ timeout: 14_000 });
   assert.equal(await page.getByRole('button', { name: c.offerPrice, exact: true }).count(), 0, 'leased rides cannot solicit a competing price');
   await page.getByRole('button', { name: /^(Accept at|Accept job)/ }).first().click();
   await page.waitForURL(new RegExp(`/order/${ride.id}$`));
@@ -149,7 +150,8 @@ try {
   try {
     await page.goto(base + '/');
     await page.getByText(c.updateRequired, { exact: true }).waitFor();
-    await page.getByRole('button', { name: c.updateRequiredWeb, exact: true }).waitFor();
+    // A trial click passes only once nothing covers the button (the launch intro replays on reload).
+    await page.getByRole('button', { name: c.updateRequiredWeb, exact: true }).click({ trial: true });
     await page.screenshot({ path: join(output, 'a53-update-required.png') });
   } finally { delete process.env.WIND_MIN_CLIENT_BUILD; }
   checks.push('A53 web build sends its client build; a raised server minimum shows only the update screen');
