@@ -44,7 +44,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
-      - run: npm audit --audit-level=high
+      - run: npm run check:audit
       - name: Export release bundles for Android, iOS and web
         run: npx expo export --platform all --output-dir .expo/ci-release
         env:

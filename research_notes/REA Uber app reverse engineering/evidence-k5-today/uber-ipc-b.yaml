@@ -1,0 +1,80 @@
+evidence_id: ev_e414e04161193e593ab3facee5805df84b7c30e0353bc6c131e1f54317dfdf8e
+subject:
+  name: uber-base.apk
+  digest:
+    sha256: 55663c738053f8f9e11bc30f414d693473de1272082db4d3edf95b1ad1c3e4a2
+  local_path: "C:\\Users\\pc gaming\\smartstore-tools\\fastship-tools\\uber-base.apk"
+  format: apk
+  architecture: null
+provider:
+  id: jadx
+  name: JADX headless
+  version: 0.7.1
+analysis_profile: null
+predicate_type: rea.analysis
+operation: inspect_android_class
+parameters:
+  path: "C:\\Users\\pc gaming\\smartstore-tools\\fastship-tools\\uber-base.apk"
+  class_name: com.uber.identity.ipcutils.usecase.b
+raw_result:
+  server:
+    name: rea-jadx-bridge
+    version: "7"
+  bridge_sha256: e5044a8312dd0731f53af3f095508b3e5cff54df6b971c95d4305e2f39b4fa30
+  jar_sha256: 6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75
+  loaded:
+    state: LOADED
+    apk_path: "C:\\Users\\pc gaming\\AppData\\Local\\Temp\\rea-android-4abf67ce7a3a98bd5481e8e7a7f6b0c8\\target.apk"
+    class_count: 174047
+    resource_count: 13049
+    threads: 1
+    resources: full
+  calls[3]:
+    - operation: rea_jvm_status
+      input:
+      response:
+        content[1]{type,text}:
+          text,"{\"available_processors\":4,\"java_version\":\"21.0.13\",\"max_heap_bytes\":6442450944,\"metadata_scope\":\"parsed_members\",\"engine_reported_version\":\"0.7.1\"}"
+        isError: false
+    - operation: load_apk
+      input:
+        path: "C:\\Users\\pc gaming\\AppData\\Local\\Temp\\rea-android-4abf67ce7a3a98bd5481e8e7a7f6b0c8\\target.apk"
+        threads: 1
+        resources: full
+      response:
+        content[1]{type,text}:
+          text,"{\"state\":\"LOADED\",\"apk_path\":\"C:\\\\Users\\\\pc gaming\\\\AppData\\\\Local\\\\Temp\\\\rea-android-4abf67ce7a3a98bd5481e8e7a7f6b0c8\\\\target.apk\",\"class_count\":174047,\"raw_class_count\":174047,\"resource_count\":13049,\"load_duration_ms\":59454,\"decompile_timeout_ms\":90000,\"threads\":1,\"code_cache_size\":64,\"resources\":\"full\"}"
+        isError: false
+    - operation: get_class_summary
+      input:
+        class_name: com.uber.identity.ipcutils.usecase.b
+        dex_static_values: true
+      response:
+        content[1]{type,text}:
+          text,"{\"raw_name\":\"com.uber.identity.ipcutils.usecase.b\",\"method_count\":4,\"full_name\":\"com.uber.identity.ipcutils.usecase.b\",\"field_count\":2,\"name\":\"b\",\"inner_class_count\":0,\"inner_classes\":[],\"methods\":[{\"def_pos\":0,\"signature\":\"\\u003cinit\\u003e(com.uber.identity.ipcutils.usecase.RunIpcDiagnosticUseCase$a, com.uber.identity.ipcutils.usecase.c, kotlin.coroutines.Continuation\\u003c? super com.uber.identity.ipcutils.usecase.b\\u003e): void\",\"dex_descriptor\":\"(Lcom/uber/identity/ipcutils/usecase/RunIpcDiagnosticUseCase$a;Lcom/uber/identity/ipcutils/usecase/c;Lkotlin/coroutines/Continuation;)V\",\"is_constructor\":true,\"name\":\"\\u003cinit\\u003e\"},{\"def_pos\":0,\"signature\":\"create(java.lang.Object, kotlin.coroutines.Continuation\\u003c?\\u003e): kotlin.coroutines.Continuation\\u003cnoc.d0\\u003e\",\"dex_descriptor\":\"(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Lkotlin/coroutines/Continuation;\",\"is_constructor\":false,\"name\":\"create\"},{\"def_pos\":0,\"signature\":\"invoke(kotlinx.coroutines.CoroutineScope, kotlin.coroutines.Continuation\\u003c? super noc.d0\\u003e): java.lang.Object\",\"dex_descriptor\":\"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;\",\"is_constructor\":false,\"name\":\"invoke\"},{\"def_pos\":0,\"signature\":\"invokeSuspend(java.lang.Object): java.lang.Object\",\"dex_descriptor\":\"(Ljava/lang/Object;)Ljava/lang/Object;\",\"is_constructor\":false,\"name\":\"invokeSuspend\"}],\"fields\":[{\"type\":\"com.uber.identity.ipcutils.usecase.c\",\"name\":\"b\",\"def_pos\":0},{\"type\":\"com.uber.identity.ipcutils.usecase.RunIpcDiagnosticUseCase$a\",\"name\":\"f٣٤١٣٣a\",\"def_pos\":0}]}"
+        isError: false
+normalized_result:
+  engine:
+    name: jadx-headless-mcp
+    version: 0.7.1
+    artifact_sha256: 6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75
+    source_revision: 5844800a486d2248fa949b74c9896285f5b54de2
+    worker_count: 1
+    heap_limit_mib: 6144
+  class_name: com.uber.identity.ipcutils.usecase.b
+  methods[4]{name,reported_signature,overload_index,is_constructor,dex_descriptor}:
+    <init>,"<init>(com.uber.identity.ipcutils.usecase.RunIpcDiagnosticUseCase$a, com.uber.identity.ipcutils.usecase.c, kotlin.coroutines.Continuation<? super com.uber.identity.ipcutils.usecase.b>): void",0,true,(Lcom/uber/identity/ipcutils/usecase/RunIpcDiagnosticUseCase$a;Lcom/uber/identity/ipcutils/usecase/c;Lkotlin/coroutines/Continuation;)V
+    create,"create(java.lang.Object, kotlin.coroutines.Continuation<?>): kotlin.coroutines.Continuation<noc.d0>",0,false,(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Lkotlin/coroutines/Continuation;
+    invoke,"invoke(kotlinx.coroutines.CoroutineScope, kotlin.coroutines.Continuation<? super noc.d0>): java.lang.Object",0,false,(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+    invokeSuspend,"invokeSuspend(java.lang.Object): java.lang.Object",0,false,(Ljava/lang/Object;)Ljava/lang/Object;
+  fields[2]{name,reported_type,dex_static_value}:
+    b,com.uber.identity.ipcutils.usecase.c,null
+    f٣٤١٣٣a,com.uber.identity.ipcutils.usecase.RunIpcDiagnosticUseCase$a,null
+  inner_classes: []
+confidence: observed
+authority: shipped-artifact
+environment: null
+limitations[5]: Static decompiler observations do not establish runtime behavior; the APK is never executed.,"Method signatures use provider display types; DEX prototypes come from frozen JADX metadata. Display names may be aliases, and overload indices are local to this engine and artifact.","Class inventories use parsed metadata before code generation, including synthetic members that may be omitted from decompiled source. Source positions remain unknown.","Incoming reference totals count JADX using nodes. Direct invoke entries within a using method report raw DEX code-unit offsets and method indexes, but coverage is limited to those nodes and directly matched invokes; it does not establish every possible dynamic or reflective call site.","Manifest summaries are parsed once by REA's bridge from the exact root AndroidManifest.xml resource, using namespace-aware XML attributes; decoded XML is retained. APK signatures, split APKs, native libraries and Android runtime capture are not verified by this provider."
+relationship_coverage: null
+locations: []
+evidence_links: []

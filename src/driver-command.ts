@@ -1,0 +1,79 @@
+import { activeStatuses, exceptionReasons, type Order, type OrderStatus } from './model.ts';
+import { newRequestId } from './booking.ts';
+
+export type DriverAction = 'advance' | 'exception';
+export type DriverCommand = { schemaVersion: 1; actorId: number; orderId: number; action: DriverAction; requestId: string;
+  createdAt: number; expiresAt: number; expectedStatus: OrderStatus; expectedAssignedAt: number | null;
+  expectedVersion?: number; expectedAssignmentEpoch?: number; payload: { code?: string; reason?: string; note?: string } };
+export type DriverReceipt = { schemaVersion: 1; orderId: number; requestId: string; state: 'unknown' | 'applied' | 'rejected'; error?: string; httpStatus?: number };
+export type CommandIO = { read: () => Promise<unknown>; write: (command: DriverCommand | null) => Promise<void>;
+  valid: () => boolean; receipt: (command: DriverCommand) => Promise<DriverReceipt>; send: (command: DriverCommand) => Promise<Order> };
+const integer = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+export function readDriverCommand(raw: unknown): DriverCommand | null {
+  if (raw === null) return null;
+  const c = raw as DriverCommand;
+  if (!c || c.schemaVersion !== 1 || !integer(c.actorId) || c.actorId < 1 || !integer(c.orderId) || c.orderId < 1
+    || !['advance', 'exception'].includes(c.action) || typeof c.requestId !== 'string' || !uuid.test(c.requestId)
+    || !integer(c.createdAt) || !integer(c.expiresAt) || c.expiresAt <= c.createdAt || c.expiresAt - c.createdAt > 60 * 60_000
+    || !activeStatuses.includes(c.expectedStatus) || !(c.expectedAssignedAt === null || integer(c.expectedAssignedAt))
+    || (c.expectedVersion !== undefined && (!integer(c.expectedVersion) || c.expectedVersion < 1))
+    || (c.expectedAssignmentEpoch !== undefined && !integer(c.expectedAssignmentEpoch))
+    || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload)
+    || Object.keys(c.payload).some(key => !['code', 'reason', 'note'].includes(key))
+    || (c.payload.code !== undefined && (typeof c.payload.code !== 'string' || !/^\d{4}$/.test(c.payload.code)))
+    || (c.action === 'exception' && (!exceptionReasons.includes(c.payload.reason as 'absent') || typeof c.payload.note !== 'string' || c.payload.note.length > 200))) throw new Error('invalid_pending_command');
+  return c;
+}
+
+export function newDriverCommand(actorId: number, order: Order, action: DriverAction, payload: DriverCommand['payload'], now: number, ttl: number): DriverCommand {
+  if (order.driverId !== actorId || !order.recovery) throw new Error('driver_recovery_unavailable');
+  return readDriverCommand({ schemaVersion: 1, actorId, orderId: order.id, action, requestId: newRequestId(), createdAt: now, expiresAt: now + ttl,
+    expectedStatus: order.status, expectedAssignedAt: order.assignedAt ?? null,
+    ...(order.recovery.version != null ? { expectedVersion: order.recovery.version } : {}),
+    ...(order.recovery.assignmentEpoch != null ? { expectedAssignmentEpoch: order.recovery.assignmentEpoch } : {}), payload })!;
+}
+export const driverCommandBody = (c: DriverCommand) => ({ ...c.payload, requestId: c.requestId, recoveryProtocol: 1,
+  expectedStatus: c.expectedStatus, expectedAssignedAt: c.expectedAssignedAt, attemptCreatedAt: c.createdAt, attemptExpiresAt: c.expiresAt,
+  ...(c.expectedVersion !== undefined ? { expectedVersion: c.expectedVersion } : {}),
+  ...(c.expectedAssignmentEpoch !== undefined ? { expectedAssignmentEpoch: c.expectedAssignmentEpoch } : {}) });
+export const commandMatches = (c: DriverCommand, actorId: number, order: Order) => c.actorId === actorId && c.orderId === order.id && order.driverId === actorId
+  && c.expectedStatus === order.status && c.expectedAssignedAt === (order.assignedAt ?? null)
+  && (c.expectedVersion === undefined || c.expectedVersion === order.recovery?.version)
+  && (c.expectedAssignmentEpoch === undefined || c.expectedAssignmentEpoch === order.recovery?.assignmentEpoch);
+
+/** This bounded outbox never runs a restored action without a fresh authorized order snapshot. */
+export async function resumeDriverCommand(io: CommandIO, actorId: number, order: Order) {
+  const command = readDriverCommand(await io.read());
+  if (!command) return { state: 'empty' as const };
+  if (!io.valid()) throw new Error('session_changed');
+  if (command.actorId !== actorId || command.orderId !== order.id) return { state: 'other_order' as const, orderId: command.orderId };
+  let receipt: DriverReceipt;
+  try { receipt = await io.receipt(command); }
+  catch (error) {
+    if (io.valid() && [403,404].includes((error as { status?: number }).status ?? 0)) await io.write(null);
+    throw error;
+  }
+  if (!io.valid()) throw new Error('session_changed');
+  if (receipt.orderId !== command.orderId || receipt.requestId !== command.requestId || receipt.schemaVersion !== 1
+    || !['unknown', 'applied', 'rejected'].includes(receipt.state)) throw new Error('invalid_response');
+  if (receipt.state !== 'unknown') {
+    await io.write(null);
+    return { state: receipt.state, error: receipt.error, httpStatus: receipt.httpStatus };
+  }
+  if (!commandMatches(command, actorId, order)) {
+    // A decision may have committed while its receipt was not yet visible. Keep the identity; never invent an ACK.
+    return { state: 'conflict' as const };
+  }
+  try {
+    const updated = await io.send(command);
+    if (!io.valid()) throw new Error('session_changed');
+    await io.write(null);
+    return { state: 'applied' as const, order: updated };
+  } catch (error) {
+    const e = error as { status?: number; message?: string };
+    if (io.valid() && e.status && e.status < 500 && ![401,408,426,429].includes(e.status) && e.message !== 'idempotency_conflict') await io.write(null);
+    throw error;
+  }
+}

@@ -100,7 +100,7 @@ export function EtaLine({ eta, toPickup, slow, km, now }: { eta: [number, number
   const head = here ? toPickup ? c.arrivingPickup : c.arrivingDropoff
     : fill(toPickup ? slow ? c.etaToPickupSlow : c.etaToPickup : slow ? c.etaToDropoffSlow : c.etaToDropoff, { lo, hi });
   // Arriving: no distance (a road route from a rounded origin still reads 0.2 km at the pin). "By" rounds up a minute.
-  const detail = here ? '' : [km != null && fill(c.kmAway, { km: kmLabel(km) }), !slow && fill(c.arriveBy, { t: stamp(Math.ceil((now + hi * 60_000) / 60_000) * 60_000) })].filter(Boolean).join(' · ');
+  const detail = here ? '' : [km != null && fill(c.kmAway, { km: kmLabel(km) }), !slow && fill(c.arriveBy, { t: stamp(Math.ceil((now + hi * 60_000) / 60_000) * 60_000) })].filter(Boolean).join(', ');
   // polite: a screen reader hears a new estimate when it changes, without interrupting
   return <View accessibilityLiveRegion="polite"><Row gap={10}>
     <Ionicons name={here ? 'flag' : 'time'} size={22} color={palette.olive} />
@@ -175,10 +175,15 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
               {/* a cancelled order was never charged and pays the driver nothing */}
               <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>
             </Row>
-            <Txt variant="caption" numberOfLines={1}>{c[order.service]}{/* private is the default and sat on every row; only shared, the exception, is marked */}{order.shared ? ` · ${c.shared}` : ''} · {order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
-            <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
+            {/* private is the default and sat on every row; only shared, the exception, is marked */}
+            <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
+            <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
               {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
-              <Txt variant="micro">{orderCode(order.id)}</Txt>
+              {/* time and code are separate facts: two plain labels, no separator glyph */}
+              <Row gap={8}>
+                <Txt variant="micro">{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
+                <Txt variant="micro">{orderCode(order.id)}</Txt>
+              </Row>
             </Row>
           </View>
         </Row>
@@ -317,7 +322,7 @@ export function PasswordCard() {
   // A row inside a ListGroup; opens in place into the form.
   if (!open) return <View>
     <ListRow icon="key-outline" label={c.changePassword} tone="muted" onPress={() => { setOpen(true); setMessage(''); }} />
-    {!!message && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', paddingBottom: 10 }}>{message}</Txt>}
+    {!!message && <View accessibilityLiveRegion="polite"><Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', paddingBottom: 10 }}>{message}</Txt></View>}
   </View>;
   return <Appear style={{ padding: 16 }}>
     <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password" />
@@ -330,7 +335,6 @@ export function PasswordCard() {
   </Appear>;
 }
 
-// Support and privacy policy: needed by both app stores and reachable before sign-in.
 /** Unverified email while the server can send codes: one row that opens the profile, where the code goes in. */
 export function VerifyEmailNudge() {
   const { me } = useSession();
@@ -349,6 +353,7 @@ export function VerifyEmailNudge() {
   </Press>;
 }
 
+// Support and privacy policy: needed by both app stores and reachable before sign-in.
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
   const { c } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>

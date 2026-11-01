@@ -17,6 +17,8 @@ async function startedRide(f) {
   await f.call(`/orders/${order.id}/dispatch/retry`, { token: f.customer.token, body: {} });
   const offer = await myOffer(f, order.id, who.driver);
   await acceptOffer(f, order.id, who.driver, offer);
+  // Report a fix now, as the app does on an active job: the setup above can outlast the 120 s arrival fix age on a loaded runner.
+  await f.call('/location', { token: who.driver.token, body: { latitude: 31.9, longitude: 35.19, accuracy: 20 } });
   await f.call(`/orders/${order.id}/arrive`, { token: who.driver.token, body: {} });
   await advance(f, who.driver.token, order.id, 'assigned');
   const code = (await f.call(`/orders/${order.id}`, { token: f.customer.token })).ride.boardingCode;

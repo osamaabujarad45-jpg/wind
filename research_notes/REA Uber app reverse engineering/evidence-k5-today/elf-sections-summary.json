@@ -1,0 +1,1430 @@
+[
+ {
+  "file": "libeef0.so",
+  "bytes": 1104560,
+  "file_entropy": 6.121,
+  "file_ascii_runs_6plus": 150,
+  "file_ascii_runs_unique": 139,
+  "section_count": 23,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".note.android.ident",
+    "type": 7,
+    "addr": "0x270",
+    "offset": 624,
+    "size": 152,
+    "entropy": 1.171,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".note.gnu.build-id",
+    "type": 7,
+    "addr": "0x308",
+    "offset": 776,
+    "size": 24,
+    "entropy": 3.201,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x320",
+    "offset": 800,
+    "size": 1848,
+    "entropy": 1.101,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0xa58",
+    "offset": 2648,
+    "size": 154,
+    "entropy": 1.291,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0xaf4",
+    "offset": 2804,
+    "size": 64,
+    "entropy": 2.105,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".hash",
+    "type": 5,
+    "addr": "0xb34",
+    "offset": 2868,
+    "size": 624,
+    "entropy": 1.326,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0xda4",
+    "offset": 3492,
+    "size": 878,
+    "entropy": 4.414,
+    "ascii_runs_6plus": 61
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0x1118",
+    "offset": 4376,
+    "size": 135600,
+    "entropy": 2.877,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0x222c8",
+    "offset": 139976,
+    "size": 504,
+    "entropy": 1.796,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0x224c0",
+    "offset": 140480,
+    "size": 2192,
+    "entropy": 6.665,
+    "ascii_runs_6plus": 8
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0x22d50",
+    "offset": 142672,
+    "size": 2292,
+    "entropy": 5.07,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0x23648",
+    "offset": 144968,
+    "size": 8868,
+    "entropy": 4.069,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x28000",
+    "offset": 163840,
+    "size": 863064,
+    "entropy": 6.666,
+    "ascii_runs_6plus": 50
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0xfab60",
+    "offset": 1026912,
+    "size": 368,
+    "entropy": 4.389,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data.rel.ro",
+    "type": 1,
+    "addr": "0xfc000",
+    "offset": 1032192,
+    "size": 72,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0xfc048",
+    "offset": 1032264,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0xfc058",
+    "offset": 1032280,
+    "size": 432,
+    "entropy": 1.514,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0xfc208",
+    "offset": 1032712,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got.plt",
+    "type": 1,
+    "addr": "0xfc218",
+    "offset": 1032728,
+    "size": 192,
+    "entropy": 1.433,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0x100000",
+    "offset": 1048576,
+    "size": 54288,
+    "entropy": 1.915,
+    "ascii_runs_6plus": 13
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0x10d410",
+    "offset": 1102864,
+    "size": 99752,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 1102864,
+    "size": 217,
+    "entropy": 4.171,
+    "ascii_runs_6plus": 16
+   }
+  ]
+ },
+ {
+  "file": "libse.so",
+  "bytes": 666496,
+  "file_entropy": 6.41,
+  "file_ascii_runs_6plus": 643,
+  "file_ascii_runs_unique": 630,
+  "section_count": 27,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".note.android.ident",
+    "type": 7,
+    "addr": "0x238",
+    "offset": 568,
+    "size": 152,
+    "entropy": 1.232,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x2f8",
+    "offset": 760,
+    "size": 2328,
+    "entropy": 1.007,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0xc10",
+    "offset": 3088,
+    "size": 194,
+    "entropy": 1.246,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0xcd4",
+    "offset": 3284,
+    "size": 64,
+    "entropy": 2.162,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.hash",
+    "type": 1879048182,
+    "addr": "0xd18",
+    "offset": 3352,
+    "size": 32,
+    "entropy": 1.809,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".hash",
+    "type": 5,
+    "addr": "0xd38",
+    "offset": 3384,
+    "size": 784,
+    "entropy": 1.368,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0x1048",
+    "offset": 4168,
+    "size": 1098,
+    "entropy": 4.45,
+    "ascii_runs_6plus": 87
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0x1498",
+    "offset": 5272,
+    "size": 63288,
+    "entropy": 2.799,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0x10bd0",
+    "offset": 68560,
+    "size": 2232,
+    "entropy": 1.966,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gcc_except_table",
+    "type": 1,
+    "addr": "0x11488",
+    "offset": 70792,
+    "size": 13572,
+    "entropy": 5.009,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0x14990",
+    "offset": 84368,
+    "size": 53436,
+    "entropy": 6.888,
+    "ascii_runs_6plus": 413
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0x21a4c",
+    "offset": 137804,
+    "size": 8732,
+    "entropy": 5.39,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0x23c68",
+    "offset": 146536,
+    "size": 52080,
+    "entropy": 5.324,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x307e0",
+    "offset": 198624,
+    "size": 414148,
+    "entropy": 6.81,
+    "ascii_runs_6plus": 114
+   },
+   {
+    "name": "__lcxx_override",
+    "type": 1,
+    "addr": "0x959a4",
+    "offset": 612772,
+    "size": 268,
+    "entropy": 5.569,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0x95ab0",
+    "offset": 613040,
+    "size": 1520,
+    "entropy": 4.691,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data.rel.ro",
+    "type": 1,
+    "addr": "0x9a0a0",
+    "offset": 614560,
+    "size": 33640,
+    "entropy": 1.58,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0xa2408",
+    "offset": 648200,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".init_array",
+    "type": 14,
+    "addr": "0xa2418",
+    "offset": 648216,
+    "size": 512,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0xa2618",
+    "offset": 648728,
+    "size": 480,
+    "entropy": 1.813,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0xa27f8",
+    "offset": 649208,
+    "size": 584,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got.plt",
+    "type": 1,
+    "addr": "0xa2a40",
+    "offset": 649792,
+    "size": 768,
+    "entropy": 1.521,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".relro_padding",
+    "type": 8,
+    "addr": "0xa2d40",
+    "offset": 650560,
+    "size": 704,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0xa6d40",
+    "offset": 650560,
+    "size": 13944,
+    "entropy": 7.904,
+    "ascii_runs_6plus": 5
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0xaa3c0",
+    "offset": 664504,
+    "size": 7280,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 664504,
+    "size": 263,
+    "entropy": 4.237,
+    "ascii_runs_6plus": 20
+   }
+  ]
+ },
+ {
+  "file": "libse_loader.so",
+  "bytes": 640488,
+  "file_entropy": 7.568,
+  "file_ascii_runs_6plus": 1115,
+  "file_ascii_runs_unique": 1113,
+  "section_count": 25,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x2f8",
+    "offset": 760,
+    "size": 1368,
+    "entropy": 0.948,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0x850",
+    "offset": 2128,
+    "size": 114,
+    "entropy": 1.245,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0x8c4",
+    "offset": 2244,
+    "size": 64,
+    "entropy": 2.105,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.hash",
+    "type": 1879048182,
+    "addr": "0x908",
+    "offset": 2312,
+    "size": 32,
+    "entropy": 1.993,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0x928",
+    "offset": 2344,
+    "size": 754,
+    "entropy": 4.455,
+    "ascii_runs_6plus": 56
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0xc20",
+    "offset": 3104,
+    "size": 32448,
+    "entropy": 2.63,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0x8ae0",
+    "offset": 35552,
+    "size": 1296,
+    "entropy": 1.915,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0x8ff0",
+    "offset": 36848,
+    "size": 425340,
+    "entropy": 7.996,
+    "ascii_runs_6plus": 1030
+   },
+   {
+    "name": ".gcc_except_table",
+    "type": 1,
+    "addr": "0x70d6c",
+    "offset": 462188,
+    "size": 3480,
+    "entropy": 4.352,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0x71b04",
+    "offset": 465668,
+    "size": 3100,
+    "entropy": 4.986,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0x72720",
+    "offset": 468768,
+    "size": 20336,
+    "entropy": 5.272,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x77690",
+    "offset": 489104,
+    "size": 135332,
+    "entropy": 6.465,
+    "ascii_runs_6plus": 10
+   },
+   {
+    "name": "__lcxx_override",
+    "type": 1,
+    "addr": "0x98734",
+    "offset": 624436,
+    "size": 268,
+    "entropy": 5.526,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0x98840",
+    "offset": 624704,
+    "size": 896,
+    "entropy": 4.614,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data.rel.ro",
+    "type": 1,
+    "addr": "0x9cbc0",
+    "offset": 625600,
+    "size": 11824,
+    "entropy": 0.244,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0x9f9f0",
+    "offset": 637424,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".init_array",
+    "type": 14,
+    "addr": "0x9fa00",
+    "offset": 637440,
+    "size": 24,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0x9fa18",
+    "offset": 637464,
+    "size": 448,
+    "entropy": 1.77,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0x9fbd8",
+    "offset": 637912,
+    "size": 168,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got.plt",
+    "type": 1,
+    "addr": "0x9fc80",
+    "offset": 638080,
+    "size": 456,
+    "entropy": 1.502,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".relro_padding",
+    "type": 8,
+    "addr": "0x9fe48",
+    "offset": 638536,
+    "size": 440,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0xa3e48",
+    "offset": 638536,
+    "size": 104,
+    "entropy": 0.156,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0xa3eb0",
+    "offset": 638640,
+    "size": 3264,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 638640,
+    "size": 243,
+    "entropy": 4.257,
+    "ascii_runs_6plus": 19
+   }
+  ]
+ },
+ {
+  "file": "libh3.so",
+  "bytes": 91768,
+  "file_entropy": 5.221,
+  "file_ascii_runs_6plus": 247,
+  "file_ascii_runs_unique": 245,
+  "section_count": 22,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".note.gnu.build-id",
+    "type": 7,
+    "addr": "0x1c8",
+    "offset": 456,
+    "size": 36,
+    "entropy": 4.192,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".hash",
+    "type": 5,
+    "addr": "0x1f0",
+    "offset": 496,
+    "size": 1704,
+    "entropy": 1.601,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x898",
+    "offset": 2200,
+    "size": 5448,
+    "entropy": 2.488,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0x1de0",
+    "offset": 7648,
+    "size": 3149,
+    "entropy": 5.04,
+    "ascii_runs_6plus": 196
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0x2a2e",
+    "offset": 10798,
+    "size": 454,
+    "entropy": 1.355,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0x2bf8",
+    "offset": 11256,
+    "size": 64,
+    "entropy": 2.224,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0x2c38",
+    "offset": 11320,
+    "size": 144,
+    "entropy": 1.946,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0x2cc8",
+    "offset": 11464,
+    "size": 720,
+    "entropy": 1.776,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0x2fa0",
+    "offset": 12192,
+    "size": 512,
+    "entropy": 4.554,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x31a0",
+    "offset": 12704,
+    "size": 40876,
+    "entropy": 6.494,
+    "ascii_runs_6plus": 4
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0xd150",
+    "offset": 53584,
+    "size": 21240,
+    "entropy": 2.616,
+    "ascii_runs_6plus": 31
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0x12448",
+    "offset": 74824,
+    "size": 1548,
+    "entropy": 4.839,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0x12a58",
+    "offset": 76376,
+    "size": 9152,
+    "entropy": 5.079,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".init_array",
+    "type": 14,
+    "addr": "0x25c90",
+    "offset": 89232,
+    "size": 8,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0x25c98",
+    "offset": 89240,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0x25ca8",
+    "offset": 89256,
+    "size": 544,
+    "entropy": 1.52,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0x25ec8",
+    "offset": 89800,
+    "size": 312,
+    "entropy": 1.17,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0x26000",
+    "offset": 90112,
+    "size": 8,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0x26008",
+    "offset": 90120,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".comment",
+    "type": 1,
+    "addr": "0x0",
+    "offset": 90120,
+    "size": 39,
+    "entropy": 4.414,
+    "ascii_runs_6plus": 1
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 90159,
+    "size": 196,
+    "entropy": 4.219,
+    "ascii_runs_6plus": 15
+   }
+  ]
+ },
+ {
+  "file": "libubermaps-gl.so",
+  "bytes": 4099192,
+  "file_entropy": 6.504,
+  "file_ascii_runs_6plus": 10141,
+  "file_ascii_runs_unique": 9806,
+  "section_count": 27,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".note.android.ident",
+    "type": 7,
+    "addr": "0x238",
+    "offset": 568,
+    "size": 152,
+    "entropy": 1.189,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".note.gnu.build-id",
+    "type": 7,
+    "addr": "0x2d0",
+    "offset": 720,
+    "size": 36,
+    "entropy": 4.192,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x2f8",
+    "offset": 760,
+    "size": 173208,
+    "entropy": 3.464,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0x2a790",
+    "offset": 173968,
+    "size": 14434,
+    "entropy": 1.108,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0x2dff4",
+    "offset": 188404,
+    "size": 112,
+    "entropy": 2.673,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.hash",
+    "type": 1879048182,
+    "addr": "0x2e068",
+    "offset": 188520,
+    "size": 48920,
+    "entropy": 6.694,
+    "ascii_runs_6plus": 52
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0x39f80",
+    "offset": 237440,
+    "size": 835730,
+    "entropy": 5.255,
+    "ascii_runs_6plus": 7163
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0x106018",
+    "offset": 1073176,
+    "size": 202464,
+    "entropy": 2.791,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0x1376f8",
+    "offset": 1275640,
+    "size": 81216,
+    "entropy": 2.531,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gcc_except_table",
+    "type": 1,
+    "addr": "0x14b438",
+    "offset": 1356856,
+    "size": 66276,
+    "entropy": 4.978,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0x15b720",
+    "offset": 1423136,
+    "size": 260520,
+    "entropy": 5.846,
+    "ascii_runs_6plus": 2706
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0x19b0c8",
+    "offset": 1683656,
+    "size": 56932,
+    "entropy": 6.159,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0x1a8f30",
+    "offset": 1740592,
+    "size": 330124,
+    "entropy": 5.521,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x1f98c0",
+    "offset": 2070720,
+    "size": 1870120,
+    "entropy": 6.651,
+    "ascii_runs_6plus": 195
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0x3c21f0",
+    "offset": 3940848,
+    "size": 54176,
+    "entropy": 4.973,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data.rel.ro",
+    "type": 1,
+    "addr": "0x3d3590",
+    "offset": 3995024,
+    "size": 65328,
+    "entropy": 0.232,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0x3e34c0",
+    "offset": 4060352,
+    "size": 24,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".init_array",
+    "type": 14,
+    "addr": "0x3e34d8",
+    "offset": 4060376,
+    "size": 352,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0x3e3638",
+    "offset": 4060728,
+    "size": 544,
+    "entropy": 2.067,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0x3e3858",
+    "offset": 4061272,
+    "size": 8096,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got.plt",
+    "type": 1,
+    "addr": "0x3e57f8",
+    "offset": 4069368,
+    "size": 27096,
+    "entropy": 1.548,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".relro_padding",
+    "type": 8,
+    "addr": "0x3ec1d0",
+    "offset": 4096464,
+    "size": 3632,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0x3f01d0",
+    "offset": 4096464,
+    "size": 384,
+    "entropy": 0.639,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0x3f0350",
+    "offset": 4096848,
+    "size": 16560,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".comment",
+    "type": 1,
+    "addr": "0x0",
+    "offset": 4096848,
+    "size": 335,
+    "entropy": 5.171,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 4097183,
+    "size": 275,
+    "entropy": 4.241,
+    "ascii_runs_6plus": 21
+   }
+  ]
+ },
+ {
+  "file": "libvendor-mapdisplay.so",
+  "bytes": 3920368,
+  "file_entropy": 6.539,
+  "file_ascii_runs_6plus": 7435,
+  "file_ascii_runs_unique": 7347,
+  "section_count": 28,
+  "sections": [
+   {
+    "name": "",
+    "type": 0,
+    "addr": "0x0",
+    "offset": 0,
+    "size": 0,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".note.android.ident",
+    "type": 7,
+    "addr": "0x238",
+    "offset": 568,
+    "size": 152,
+    "entropy": 1.189,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".note.gnu.build-id",
+    "type": 7,
+    "addr": "0x2d0",
+    "offset": 720,
+    "size": 36,
+    "entropy": 4.192,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynsym",
+    "type": 11,
+    "addr": "0x2f8",
+    "offset": 760,
+    "size": 104856,
+    "entropy": 3.474,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version",
+    "type": 1879048191,
+    "addr": "0x19c90",
+    "offset": 105616,
+    "size": 8738,
+    "entropy": 1.123,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.version_r",
+    "type": 1879048190,
+    "addr": "0x1beb4",
+    "offset": 114356,
+    "size": 96,
+    "entropy": 2.476,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".gnu.hash",
+    "type": 1879048182,
+    "addr": "0x1bf18",
+    "offset": 114456,
+    "size": 29188,
+    "entropy": 6.948,
+    "ascii_runs_6plus": 17
+   },
+   {
+    "name": ".dynstr",
+    "type": 3,
+    "addr": "0x2311c",
+    "offset": 143644,
+    "size": 304429,
+    "entropy": 5.141,
+    "ascii_runs_6plus": 4302
+   },
+   {
+    "name": ".rela.dyn",
+    "type": 4,
+    "addr": "0x6d650",
+    "offset": 448080,
+    "size": 221688,
+    "entropy": 2.853,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rela.plt",
+    "type": 4,
+    "addr": "0xa3848",
+    "offset": 669768,
+    "size": 35688,
+    "entropy": 2.456,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".rodata",
+    "type": 1,
+    "addr": "0xac3b0",
+    "offset": 705456,
+    "size": 183580,
+    "entropy": 5.703,
+    "ascii_runs_6plus": 2709
+   },
+   {
+    "name": ".gcc_except_table",
+    "type": 1,
+    "addr": "0xd90cc",
+    "offset": 889036,
+    "size": 79668,
+    "entropy": 4.976,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame_hdr",
+    "type": 1,
+    "addr": "0xec800",
+    "offset": 968704,
+    "size": 63028,
+    "entropy": 6.209,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".eh_frame",
+    "type": 1,
+    "addr": "0xfbe38",
+    "offset": 1031736,
+    "size": 379032,
+    "entropy": 5.557,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".text",
+    "type": 1,
+    "addr": "0x1586d0",
+    "offset": 1410768,
+    "size": 2387436,
+    "entropy": 6.667,
+    "ascii_runs_6plus": 376
+   },
+   {
+    "name": "__lcxx_override",
+    "type": 1,
+    "addr": "0x39f4bc",
+    "offset": 3798204,
+    "size": 268,
+    "entropy": 5.371,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".plt",
+    "type": 1,
+    "addr": "0x39f5d0",
+    "offset": 3798480,
+    "size": 23824,
+    "entropy": 4.923,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data.rel.ro",
+    "type": 1,
+    "addr": "0x3a92e0",
+    "offset": 3822304,
+    "size": 73816,
+    "entropy": 0.208,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".fini_array",
+    "type": 15,
+    "addr": "0x3bb338",
+    "offset": 3896120,
+    "size": 16,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".init_array",
+    "type": 14,
+    "addr": "0x3bb348",
+    "offset": 3896136,
+    "size": 184,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".dynamic",
+    "type": 6,
+    "addr": "0x3bb400",
+    "offset": 3896320,
+    "size": 464,
+    "entropy": 2.058,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got",
+    "type": 1,
+    "addr": "0x3bb5d0",
+    "offset": 3896784,
+    "size": 8376,
+    "entropy": -0.0,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".got.plt",
+    "type": 1,
+    "addr": "0x3bd688",
+    "offset": 3905160,
+    "size": 11920,
+    "entropy": 1.547,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".relro_padding",
+    "type": 8,
+    "addr": "0x3c0518",
+    "offset": 3917080,
+    "size": 2792,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".data",
+    "type": 1,
+    "addr": "0x3c4518",
+    "offset": 3917080,
+    "size": 864,
+    "entropy": 1.219,
+    "ascii_runs_6plus": 5
+   },
+   {
+    "name": ".bss",
+    "type": 8,
+    "addr": "0x3c4880",
+    "offset": 3917944,
+    "size": 11120,
+    "entropy": null,
+    "ascii_runs_6plus": 0
+   },
+   {
+    "name": ".comment",
+    "type": 1,
+    "addr": "0x0",
+    "offset": 3917944,
+    "size": 335,
+    "entropy": 5.171,
+    "ascii_runs_6plus": 2
+   },
+   {
+    "name": ".shstrtab",
+    "type": 3,
+    "addr": "0x0",
+    "offset": 3918279,
+    "size": 291,
+    "entropy": 4.273,
+    "ascii_runs_6plus": 22
+   }
+  ]
+ }
+]

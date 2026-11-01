@@ -1,0 +1,172 @@
+# Map renderer selection - bytecode extracts (platform disassembler output, classes16.dex)
+# APK: base.apk sha256 55663c738053f8f9e11bc30f414d693473de1272082db4d3edf95b1ad1c3e4a2
+# Extracted with dexdump-extract.py (dump: dexdump -d). Instruction offsets as printed.
+
+=== MapProvider.<clinit> (enum constants)
+method: Lcom/ubercab/android/map/compose/internal/MapProvider;.<clinit>
+0000: new-instance v0, Lcom/ubercab/android/map/compose/internal/MapProvider; // type@1b16
+0002: const-string v1, "UBER" // string@7c8c
+0004: const/4 v2, #int 0 // #0
+0005: invoke-direct {v0, v1, v2}, Lcom/ubercab/android/map/compose/internal/MapProvider;.<init>:(Ljava/lang/String;I)V // method@693e
+0008: sput-object v0, Lcom/ubercab/android/map/compose/internal/MapProvider;.UBER:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d13
+000a: new-instance v0, Lcom/ubercab/android/map/compose/internal/MapProvider; // type@1b16
+000c: const-string v1, "GOOGLE" // string@14f1
+000e: const/4 v2, #int 1 // #1
+000f: invoke-direct {v0, v1, v2}, Lcom/ubercab/android/map/compose/internal/MapProvider;.<init>:(Ljava/lang/String;I)V // method@693e
+0012: sput-object v0, Lcom/ubercab/android/map/compose/internal/MapProvider;.GOOGLE:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d12
+0014: new-instance v1, Lcom/ubercab/android/map/compose/internal/MapProvider; // type@1b16
+0016: const-string v2, "UNKNOWN" // string@7ccc
+0018: const/4 v3, #int 2 // #2
+0019: invoke-direct {v1, v2, v3}, Lcom/ubercab/android/map/compose/internal/MapProvider;.<init>:(Ljava/lang/String;I)V // method@693e
+001c: sput-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.UNKNOWN:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d14
+001e: invoke-static {}, Lcom/ubercab/android/map/compose/internal/MapProvider;.$values:()[Lcom/ubercab/android/map/compose/internal/MapProvider; // method@693c
+0021: move-result-object v1
+0022: sput-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.$VALUES:[Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d0f
+0024: invoke-static {v1}, Lwoc/a;.a:([Ljava/lang/Enum;)Lwoc/b; // method@f2ad
+0027: move-result-object v1
+0028: sput-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.$ENTRIES:Lkotlin/enums/EnumEntries; // field@2d0e
+002a: new-instance v1, Lcom/ubercab/android/map/compose/internal/MapProvider$Companion; // type@1b15
+002c: const/4 v2, #int 0 // #0
+002d: invoke-direct {v1, v2}, Lcom/ubercab/android/map/compose/internal/MapProvider$Companion;.<init>:(Lkotlin/jvm/internal/DefaultConstructorMarker;)V // method@6939
+0030: sput-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.Companion:Lcom/ubercab/android/map/compose/internal/MapProvider$Companion; // field@2d10
+0032: sput-object v0, Lcom/ubercab/android/map/compose/internal/MapProvider;.FALLBACK_MAP_PROVIDER:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d11
+0034: return-void
+[instructions shown: 27]
+
+=== MapFactory$WhenMappings.<clinit> (ordinal -> switch index)
+method: Lcom/ubercab/android/map/compose/internal/MapFactory$WhenMappings;.<clinit>
+0000: invoke-static {}, Lcom/ubercab/android/map/compose/internal/MapProvider;.values:()[Lcom/ubercab/android/map/compose/internal/MapProvider; // method@6942
+0003: move-result-object v0
+0004: array-length v0, v0
+0005: new-array v0, v0, [I // type@5472
+0007: sget-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.UBER:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d13
+0009: invoke-virtual {v1}, Ljava/lang/Enum;.ordinal:()I // method@abdf
+000c: move-result v1
+000d: const/4 v2, #int 1 // #1
+000e: aput v2, v0, v1
+0010: sget-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.GOOGLE:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d12
+0012: invoke-virtual {v1}, Ljava/lang/Enum;.ordinal:()I // method@abdf
+0015: move-result v1
+0016: const/4 v2, #int 2 // #2
+0017: aput v2, v0, v1
+0019: sget-object v1, Lcom/ubercab/android/map/compose/internal/MapProvider;.UNKNOWN:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d14
+001b: invoke-virtual {v1}, Ljava/lang/Enum;.ordinal:()I // method@abdf
+001e: move-result v1
+001f: const/4 v2, #int 3 // #3
+0020: aput v2, v0, v1
+0022: sput-object v0, Lcom/ubercab/android/map/compose/internal/MapFactory$WhenMappings;.$EnumSwitchMapping$0:[I // field@2d00
+0024: return-void
+[instructions shown: 21]
+
+=== MapFactory.create (provider -> factory)
+method: Lcom/ubercab/android/map/compose/internal/MapFactory;.create
+0000: invoke-virtual {v2}, Ljava/lang/Object;.getClass:()Ljava/lang/Class; // method@ac3c
+0003: invoke-virtual {v3}, Ljava/lang/Object;.getClass:()Ljava/lang/Class; // method@ac3c
+0006: sget-object v1, Lcom/ubercab/android/map/compose/internal/MapFactory$WhenMappings;.$EnumSwitchMapping$0:[I // field@2d00
+0008: invoke-virtual {v2}, Ljava/lang/Enum;.ordinal:()I // method@abdf
+000b: move-result v2
+000c: aget v1, v1, v2
+000e: const/4 v2, #int 1 // #1
+000f: if-eq v1, v2, 003e // +002f
+0011: const/4 v2, #int 2 // #2
+0012: if-eq v1, v2, 0022 // +0010
+0014: const/4 v2, #int 3 // #3
+0015: const/4 v3, #int 0 // #0
+0016: if-eq v1, v2, 001c // +0006
+0018: invoke-static {}, Lfga/a;.a:()V // method@982c
+001b: return-object v3
+001c: const-string v1, "Tried creating a map factory from an unknown provider" // string@7c32
+001e: invoke-static {v1}, Lsrc/g;.a:(Ljava/lang/String;)V // method@cf03
+0021: return-object v3
+0022: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getParameters$compose_release:()Lcom/ubercab/android/map/Parameters; // method@6811
+0025: move-result-object v1
+0026: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getEventReceiver$compose_release:()Lcom/ubercab/android/map/EventReceiver; // method@680f
+0029: move-result-object v2
+002a: invoke-static {v1, v2}, Lcom/ubercab/android/map/GoogleMapFactory;.builder:(Lcom/ubercab/android/map/Parameters;Lcom/ubercab/android/map/EventReceiver;)Lcom/ubercab/android/map/GoogleMapFactory$Builder; // method@5844
+002d: move-result-object v1
+002e: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getAssert$compose_release:()Lcom/ubercab/android/map/Assert; // method@680e
+0031: move-result-object v2
+0032: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/GoogleMapFactory$Builder;.assertClient:(Lcom/ubercab/android/map/Assert;)Lcom/ubercab/android/map/GoogleMapFactory$Builder; // method@5840
+0035: move-result-object v1
+0036: invoke-virtual {v1}, Lcom/ubercab/android/map/GoogleMapFactory$Builder;.build:()Lcom/ubercab/android/map/MapFactory; // method@5841
+0039: move-result-object v1
+003a: invoke-virtual {v1}, Ljava/lang/Object;.getClass:()Ljava/lang/Class; // method@ac3c
+003d: return-object v1
+003e: invoke-static {}, Lcom/ubercab/android/map/UberMapFactory;.builder:()Lcom/ubercab/android/map/UberMapFactory$Builder; // method@619c
+0041: move-result-object v1
+0042: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getNetwork$compose_release:()Lcom/ubercab/android/map/Network; // method@6810
+0045: move-result-object v2
+0046: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.network:(Lcom/ubercab/android/map/Network;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6195
+0049: move-result-object v1
+004a: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getParameters$compose_release:()Lcom/ubercab/android/map/Parameters; // method@6811
+004d: move-result-object v2
+004e: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.parameters:(Lcom/ubercab/android/map/Parameters;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6196
+0051: move-result-object v1
+0052: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getEventReceiver$compose_release:()Lcom/ubercab/android/map/EventReceiver; // method@680f
+0055: move-result-object v2
+0056: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.receiver:(Lcom/ubercab/android/map/EventReceiver;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6197
+0059: move-result-object v1
+005a: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getAssert$compose_release:()Lcom/ubercab/android/map/Assert; // method@680e
+005d: move-result-object v2
+005e: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.assertClient:(Lcom/ubercab/android/map/Assert;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6193
+0061: move-result-object v1
+0062: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getStorage$compose_release:()Lcom/ubercab/android/map/Storage; // method@6812
+0065: move-result-object v2
+0066: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.storage:(Lcom/ubercab/android/map/Storage;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6198
+0069: move-result-object v1
+006a: invoke-virtual {v3}, Lcom/ubercab/android/map/compose/MapDependencies;.getParameters$compose_release:()Lcom/ubercab/android/map/Parameters; // method@6811
+006d: move-result-object v2
+006e: const-string v3, "mapdisplay_flipr_stylesheet_path" // string@c1e2
+0070: const-string v0, "https://tc2.uber.com/style/default/native?o=DEFAULT" // string@b397
+0072: invoke-interface {v2, v3, v0}, Lcom/ubercab/android/map/Parameters;.getStringParameter:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String; // method@5d29
+0075: move-result-object v2
+0076: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/UberMapFactory$Builder;.styleUrl:(Ljava/lang/String;)Lcom/ubercab/android/map/UberMapFactory$Builder; // method@6199
+0079: move-result-object v1
+007a: invoke-virtual {v1}, Lcom/ubercab/android/map/UberMapFactory$Builder;.build:()Lcom/ubercab/android/map/UberMapFactory; // method@6194
+007d: move-result-object v1
+007e: invoke-virtual {v1}, Ljava/lang/Object;.getClass:()Ljava/lang/Class; // method@ac3c
+0081: return-object v1
+[instructions shown: 66]
+
+=== MapProviderState.setCompliantMapProvider (fallback rule)
+method: Lcom/ubercab/android/map/compose/internal/MapProviderState;.setCompliantMapProvider
+0000: sget-object v0, Lcom/ubercab/android/map/compose/internal/MapProvider;.UNKNOWN:Lcom/ubercab/android/map/compose/internal/MapProvider; // field@2d14
+0002: if-ne v2, v0, 000a // +0008
+0004: iget-object v2, v1, Lcom/ubercab/android/map/compose/internal/MapProviderState;.configuration:Lcom/ubercab/android/map/compose/internal/MapProviderConfiguration; // field@2d1f
+0006: invoke-virtual {v2}, Lcom/ubercab/android/map/compose/internal/MapProviderConfiguration;.getMissingProviderDefault:()Lcom/ubercab/android/map/compose/internal/MapProvider; // method@694c
+0009: move-result-object v2
+000a: iget-boolean v0, v1, Lcom/ubercab/android/map/compose/internal/MapProviderState;.didFallback:Z // field@2d21
+000c: if-nez v0, 002a // +001e
+000e: invoke-virtual {v1}, Lcom/ubercab/android/map/compose/internal/MapProviderState;.getCurrentMapProvider:()Lcom/ubercab/android/map/compose/internal/MapProvider; // method@695a
+0011: move-result-object v0
+0012: if-ne v2, v0, 0015 // +0003
+0014: goto 002a // +0016
+0015: iget-object v0, v1, Lcom/ubercab/android/map/compose/internal/MapProviderState;.configuration:Lcom/ubercab/android/map/compose/internal/MapProviderConfiguration; // field@2d1f
+0017: invoke-virtual {v0}, Lcom/ubercab/android/map/compose/internal/MapProviderConfiguration;.getFallbackMapProviders:()Lkotlinx/collections/immutable/ImmutableSet; // method@694a
+001a: move-result-object v0
+001b: invoke-interface {v0, v2}, Ljava/util/Set;.contains:(Ljava/lang/Object;)Z // method@ad94
+001e: move-result v0
+001f: if-eqz v0, 002a // +000b
+0021: const/4 v0, #int 1 // #1
+0022: iput-boolean v0, v1, Lcom/ubercab/android/map/compose/internal/MapProviderState;.didFallback:Z // field@2d21
+0024: invoke-virtual {v1, v2}, Lcom/ubercab/android/map/compose/internal/MapProviderState;.setCurrentMapProvider:(Lcom/ubercab/android/map/compose/internal/MapProvider;)V // method@695e
+0027: invoke-direct {v1}, Lcom/ubercab/android/map/compose/internal/MapProviderState;.reportMapUsage:()V // method@695c
+002a: return-void
+[instructions shown: 22]
+
+=== MapProviderState.onMapProvidersChanged
+method: Lcom/ubercab/android/map/compose/internal/MapProviderState;.onMapProvidersChanged
+0000: invoke-virtual {v2}, Ljava/lang/Object;.getClass:()Ljava/lang/Class; // method@ac3c
+0003: check-cast v2, Ljava/lang/Iterable; // type@33d0
+0005: invoke-interface {v2}, Ljava/lang/Iterable;.iterator:()Ljava/util/Iterator; // method@ac06
+0008: move-result-object v2
+0009: invoke-interface {v2}, Ljava/util/Iterator;.hasNext:()Z // method@ad3b
+000c: move-result v0
+000d: if-eqz v0, 0019 // +000c
+000f: invoke-interface {v2}, Ljava/util/Iterator;.next:()Ljava/lang/Object; // method@ad3c
+0012: move-result-object v0
+0013: check-cast v0, Lcom/ubercab/android/map/compose/internal/MapProvider; // type@1b16
+0015: invoke-direct {v1, v0}, Lcom/ubercab/android/map/compose/internal/MapProviderState;.setCompliantMapProvider:(Lcom/ubercab/android/map/compose/internal/MapProvider;)V // method@695d
+0018: goto 0009 // -000f
+0019: return-void
+[instructions shown: 13]

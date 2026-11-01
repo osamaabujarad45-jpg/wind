@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { newBooking, orderRequest, pendingKey, pendingOutcome, pendingReleasable, readBooking, SETTLE_MS } from '../src/booking.ts';
+import { newBooking, orderRequest, pendingKey, pendingOutcome, pendingReleasable, readBooking } from '../src/booking.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-booking-auth-'));
 let routeStarted, finishRoute;
@@ -28,6 +28,9 @@ async function call(path, body, token, expected = 200, method = 'POST') {
   return result;
 }
 try {
+  const bookSource = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+  assert.ok(bookSource.includes('storage.get(savedKey, true)'),
+    'pending-booking restoration must require storage access: a blocked read is not an empty receipt slot');
   // T19: a pending command is account-scoped, replayable with its first identity, and releasable only on a
   // server-confirmed absence.
   const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
@@ -43,40 +46,54 @@ try {
   // Retry reuses the stored identity even after a restart and another attempt; it never mints a second one.
   assert.equal(orderRequest(reloaded).requestId, command.requestId);
   assert.deepEqual(orderRequest({ ...reloaded, attemptedAt: Date.now() }), orderRequest(command));
-  // The order this command created: the fields the server echoes, created after the command was stored.
-  const booked = (overrides = {}) => ({ id: 701, service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus',
-    pickupPoint: null, dropoffPoint: null, pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599123456', detail: 'Box',
-    option: 'small', loadingHelp: false, price: 48, scheduledFor: null, recipientPhone: null,
-    createdAt: command.sentAt + 4_000, ...overrides });
-  const found = pendingOutcome(command, [booked()]);
+  // The server receipt is authoritative even when the order's price/destination has changed.
+  const found = pendingOutcome({ orderId: 701 });
   assert.deepEqual(found, { state: 'present', orderId: 701 });
   assert.equal(pendingReleasable(found), false); // an existing order is never discarded or edited away
-  // A lost answer is never an absence: the server may still be routing the command it received.
-  const fresh = pendingOutcome(command, [], command.sentAt + 1_000);
-  assert.deepEqual(fresh, { state: 'unknown' });
-  assert.equal(pendingReleasable(fresh), false);
-  assert.equal(pendingReleasable(null), false);
-  // A retry restarts the wait: the last attempt, not the first save, decides when absence is trustworthy.
-  assert.equal(pendingOutcome({ ...command, attemptedAt: command.sentAt + SETTLE_MS }, [], command.sentAt + SETTLE_MS + 1).state, 'unknown');
-  // Only the customer's own list, read after the create can no longer be committing, confirms the absence.
-  const absent = pendingOutcome(command, [], command.sentAt + SETTLE_MS + 1);
-  assert.deepEqual(absent, { state: 'absent' });
-  assert.equal(pendingReleasable(absent), true);
-  // A similar older order is not this command's order.
-  assert.equal(pendingOutcome(command, [booked({ id: 700, createdAt: command.sentAt - 60 * 60_000 })], command.sentAt + SETTLE_MS + 1).state, 'absent');
-  // Neither is a same-day order whose terms differ.
-  assert.equal(pendingOutcome(command, [booked({ price: 49 })], command.sentAt + SETTLE_MS + 1).state, 'absent');
-  // No trap: every confirmed absence unlocks editing, whatever the payload.
-  for (const variant of [command, newBooking({ ...payload, promoCode: 'WELCOME10', expectedDiscount: 10 }),
-    newBooking({ ...payload, scheduledFor: command.sentAt + 3_600_000 })]) {
-    const answer = pendingOutcome(variant, [], variant.sentAt + SETTLE_MS + 1);
-    assert.equal(answer.state, 'absent');
-    assert.equal(pendingReleasable(answer), true);
+  // A missing receipt cannot prove absence: a delayed original POST could still commit.
+  for (const receipt of [{ orderId: null }, null, {}, { orderId: '701' }, { orderId: 0 }, { orderId: -1 }, { orderId: 1.5 }, []]) {
+    assert.deepEqual(pendingOutcome(receipt), { state: 'unknown' });
+    assert.equal(pendingReleasable(pendingOutcome(receipt)), false);
   }
-  console.log('Pending booking recovery checks passed: account isolation, replay identity and confirmed-absence release');
+  assert.equal(pendingReleasable(null), false);
+  // Past the command's own deadline the server refuses it, so a missing receipt is a real absence and the form unlocks.
+  const deadline = command.commandExpiresAt;
+  assert.ok(Number.isSafeInteger(deadline) && orderRequest(command).commandExpiresAt === deadline, 'every attempt carries the same deadline');
+  assert.deepEqual(pendingOutcome({ orderId: null }, command, deadline + 29_000), { state: 'unknown' }, 'a POST may still be in flight just after the deadline');
+  assert.deepEqual(pendingOutcome({ orderId: null }, command, deadline + 31_000), { state: 'absent' });
+  assert.equal(pendingReleasable(pendingOutcome(null, command, deadline + 31_000)), true);
+  assert.deepEqual(pendingOutcome({ orderId: 701 }, command, deadline + 31_000), { state: 'present', orderId: 701 }, 'a receipt always wins');
+  assert.deepEqual(pendingOutcome({ orderId: null }, {}, Number.MAX_SAFE_INTEGER), { state: 'unknown' }, 'records saved before deadlines existed stay unknown');
+  assert.ok(bookSource.includes('/orders/commands/${encodeURIComponent(command.requestId)}'), 'recovery queries the exact command receipt');
+  console.log('Pending booking recovery checks passed: account isolation, replay identity, authoritative receipt and command deadline');
 
   const admin = await call('/auth/register', { phone: '0599111000', name: 'Admin', password: 'secret1' });
   await promote('0599111000');
+  const owner = await call('/auth/register', { phone: '0599111090', name: 'Receipt owner', password: 'secret1' });
+  const other = await call('/auth/register', { phone: '0599111091', name: 'Other customer', password: 'secret1' });
+  const driver = await call('/auth/register', { phone: '0599111092', name: 'Driver', password: 'secret1', registrationRole: 'driver', vehicle: 'bicycle' });
+  const requestId = randomUUID();
+  const created = await call('/orders', { ...payload, quotedPrice: 20, contact: owner.user.phone, requestId }, owner.token);
+  // Matching details on a separate order, and changed details on this order, do not affect identity.
+  await call('/orders', { ...payload, quotedPrice: 20, contact: owner.user.phone, requestId: randomUUID() }, owner.token);
+  db.prepare('UPDATE orders SET price = ?, dropoff_note = ? WHERE id = ?').run(35, 'Changed landmark', created.id);
+  const receiptPath = `/orders/commands/${requestId}`;
+  assert.deepEqual(await call(receiptPath, undefined, owner.token, 200, 'GET'), { orderId: created.id });
+  assert.deepEqual(await call(receiptPath, undefined, other.token, 200, 'GET'), { orderId: null });
+  await call(receiptPath, undefined, driver.token, 403, 'GET');
+  await call('/orders/commands/not-a-uuid', undefined, owner.token, 400, 'GET');
+  await call(receiptPath, undefined, undefined, 401, 'GET');
+  // The server enforces the deadline for new commits only: an expired new command is refused and leaves no receipt,
+  // a committed command still replays after its deadline, and a deadline beyond the allowed lifetime is invalid.
+  const booking = { ...payload, quotedPrice: 20, contact: owner.user.phone };
+  const late = randomUUID();
+  assert.equal((await call('/orders', { ...booking, requestId: late, commandExpiresAt: Date.now() - 1_000 }, owner.token, 409)).error, 'booking_command_expired');
+  assert.deepEqual(await call(`/orders/commands/${late}`, undefined, owner.token, 200, 'GET'), { orderId: null });
+  const kept = { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 };
+  const committed = await call('/orders', kept, owner.token);
+  assert.equal((await call('/orders', { ...kept, commandExpiresAt: Date.now() - 1_000 }, owner.token)).id, committed.id);
+  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 12 * 60_000 }, owner.token, 400)).error, 'invalid_command_deadline');
+  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 10 * 60_000 + 30_000 }, owner.token)).status, 'searching', 'a slightly fast device clock is tolerated');
   let index = 0;
   for (const command of [false, true]) for (const change of ['logout', 'block', 'role', 'delete']) {
     const customer = await call('/auth/register', { phone: `059911100${++index}`, name: 'Customer', password: 'secret1' });

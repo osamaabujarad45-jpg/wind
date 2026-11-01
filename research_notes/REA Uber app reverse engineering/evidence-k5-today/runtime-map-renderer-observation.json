@@ -1,0 +1,42 @@
+{
+ "captured": "2026-10-31",
+ "subject": "map screen renderer, observed on the owner's device",
+ "device": "SM-A5360 (a53x), Android 16 / SDK 36, 1080x2400 @ 450 dpi, ARM Mali-G68, OpenGL ES 3.2",
+ "package": "com.ubercab 4.654.10002 (322019), installed APK sha256 55663c738053f8f9e11bc30f414d693473de1272082db4d3edf95b1ad1c3e4a2",
+ "process_pid": 19258,
+ "steps_performed": [
+  "passive launch of the app's root activity (no account action)",
+  "one tap to dismiss the first-run survey sheet",
+  "one tap on the destination field (opens the trip-planning screen with a map)",
+  "one tap on 'set location on the map' (opens the full-screen pickup map)"
+ ],
+ "not_performed": [
+  "no destination search submitted",
+  "no ride requested, no payment, no profile change, no login",
+  "no interception of traffic, no live service contacted by the study"
+ ],
+ "observations": {
+  "google_maps_attribution_on_screen": true,
+  "screenshot": "runtime-map-screen.png (Google wordmark visible bottom-right)",
+  "threads_before_map": {
+   "count": 281,
+   "map_related": ["GmsDynamite", "GoogleApiHandle", "RenderThread"]
+  },
+  "threads_with_map_open": {
+   "count": 288,
+   "map_related": ["androidmapsapi-* (10-32 threads)", "google-maps-ini*", "GL-Map"],
+   "own_engine_threads_found": []
+  },
+  "absent_thread_families": ["msd*", "TileWorker*", "mapdisplay*", "uv-*", "ubermaps*"]
+ },
+ "interpretation": {
+  "result": "the map screens in this session are rendered by the Google Play services Maps client",
+  "contrast": "the shipped parameter default in assets/parameters.json is {\"initialMapProvider\":\"uber\",\"fallbackMapProviders\":[\"google\"],\"missingProviderDefault\":\"uber\"}",
+  "why_they_differ": "not determined: a server-delivered parameter override at launch, a fallback-path activation, or a Google provider supplied to the Compose map path would each produce this; distinguishing them needs deeper runtime inspection, which is outside this study's boundary"
+ },
+ "limitations": [
+  "single device, single session, single map flow",
+  "thread names are the process's own naming, not proof of which view class is mounted",
+  "no library-load listing is available without root; the negative evidence for the own engine is the absence of its thread families plus the on-screen Google attribution"
+ ]
+}

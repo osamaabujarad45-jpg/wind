@@ -1,0 +1,16 @@
+{
+  "code": "COMMAND_NOT_FOUND",
+  "message": "'inspect-android-jni-bindings' is not a command for 'rea'. Did you mean 'inspect-android-package'?",
+  "cta": {
+    "description": "Suggested commands:",
+    "commands": [
+      {
+        "command": "rea inspect-android-package uber-splits\\split_config.arm64_v8a.apk --format json"
+      },
+      {
+        "command": "rea --help",
+        "description": "see all available commands"
+      }
+    ]
+  }
+}

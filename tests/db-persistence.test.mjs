@@ -146,7 +146,9 @@ const warm = async (db) => {
     catch (error) { if (attempt >= 30 || !/connection timeout/i.test(error.message)) throw error; }
   }
 };
-const bounded = new Persistence({ ...pgOptions, poolSize: 1, acquireTimeoutMs: 100, statementTimeoutMs: 80, lockTimeoutMs: 60 });
+// Lock timeout well under statement timeout: with a 20 ms gap a loaded Windows runner (15.6 ms timer ticks) let
+// the statement timeout win the lock check. The statement check sleeps past its own limit either way.
+const bounded = new Persistence({ ...pgOptions, poolSize: 1, acquireTimeoutMs: 100, statementTimeoutMs: 1000, lockTimeoutMs: 60 });
 try {
   await warm(bounded);
   const entered = gate(), finish = gate();
@@ -156,7 +158,7 @@ try {
   await assert.rejects(bounded.one('SELECT 1'), /timeout/i);
   assert.ok(Date.now() - start < 1000, 'pool acquisition must be bounded');
   finish.release(); await held;
-  await assert.rejects(bounded.one('SELECT pg_sleep(1)'), error => error.code === '57014');
+  await assert.rejects(bounded.one('SELECT pg_sleep(3)'), error => error.code === '57014');
   const locker = new Persistence(pgOptions), locked = gate(), unlock = gate();
   try {
     await warm(locker);

@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { bearing, glider } from './map-math';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
+import { MapProviderBoundary } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -19,11 +17,11 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
-  const { pickup, dropoff } = props;
-  const [mode] = useMapMode();
-  const renderer = props.forceBaseline ? 'apple' : selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
-  return <AppleRouteMap {...props} />;
+  const { pickup: a, dropoff: b } = props;
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
+  return <MapProviderBoundary platform="ios" route={props} render={attempt => attempt.renderer === 'google'
+    ? <GoogleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />
+    : <AppleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />} />;
 }
 
 function AppleRouteMap(props: RouteMapProps) {
@@ -44,6 +42,9 @@ function AppleRouteMap(props: RouteMapProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
   // ponytail: a pan stops the follow camera; a pinch does not, because iOS reports the *fitted* region and no
@@ -141,9 +142,11 @@ const styles = StyleSheet.create({
 });
 
 export function PinMap(props: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
-  return <ApplePin {...props} />;
+  return <MapProviderBoundary platform="ios" pin={props} render={attempt => {
+    const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+      onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+    return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <ApplePin key={attempt.key} {...guarded} />;
+  }} />;
 }
 
 function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {

@@ -17,7 +17,8 @@ ENV EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL} EXPO_PUBLIC_SUPPORT_WHATSAPP=${EX
 # Metro tree shaking: drops unused library exports (674 -> 482 kB gzip, SPEC-web-bundle.md).
 ENV EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1
 RUN NODE_OPTIONS="--max-old-space-size=${WIND_BUILD_HEAP_MB}" npx expo export --platform web --max-workers 1
-COPY scripts/runtime-dependencies.mjs ./scripts/runtime-dependencies.mjs
+COPY server ./server
+COPY scripts/runtime-dependencies.mjs scripts/runtime-sources.mjs ./scripts/
 RUN node scripts/runtime-dependencies.mjs api-runtime
 
 # Wind API. Node 24 runs the TypeScript directly (node:http + node:sqlite).
@@ -25,8 +26,7 @@ FROM node:24-slim
 WORKDIR /app
 RUN mkdir -p /data && chown node:node /data
 COPY server ./server
-COPY src/model.ts ./src/model.ts
-COPY src/map-math.ts ./src/map-math.ts
+COPY --from=web-build /app/api-runtime/src ./src
 COPY --from=web-build /app/api-runtime/node_modules ./node_modules
 COPY --from=web-build /app/dist ./web
 COPY assets/icon.png ./web/wind-icon.png

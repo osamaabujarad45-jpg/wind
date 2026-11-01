@@ -7,6 +7,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { api, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
+import { FreightDetails } from '../../freight-details';
+import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
@@ -24,7 +26,7 @@ export default function Jobs() {
   const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
   const cursors = pages.scope === pageScope ? pages.cursors : [];
   const cursor = cursors.at(-1);
-  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
+  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
   const badCursor = !!page?.nextCursor && (!/^\d{1,16}:\d{1,16}$/.test(page.nextCursor) || page.nextCursor === cursor);
@@ -32,11 +34,17 @@ export default function Jobs() {
   const pagingUnavailable = (Array.isArray(data) && (!!cursor || data.length === 50)) || (!!data && !Array.isArray(data) && !page) || badCursor;
   const jobs = Array.isArray(data) ? (cursor ? [] : data) : page?.jobs;
   const work = useDriverWork();
+  const matching = useApi<{ eligibleForMatching: boolean }>(active && work.presenceState === 'online' ? '/driver/presence' : null, 8000);
   const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const focusRevision = useRef(0);
-  useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
+  const [now, setNow] = useState(Date.now);
+  useFocusEffect(useCallback(() => {
+    focusRevision.current++; setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => { focusRevision.current++; clearInterval(timer); };
+  }, []));
   const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
@@ -46,7 +54,7 @@ export default function Jobs() {
   // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
   const blocked = (order: Order) => !canTake(carrying, order.service);
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
-  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : !work.known ? c.accept_wait_status
+  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
@@ -63,7 +71,9 @@ export default function Jobs() {
         setActionError(c.locationOff);
         return;
       }
-      work.update(await api<Order>(`/jobs/${order.id}/accept`, {}));
+      const lease = dispatchAcceptance(order, Date.now()); // tracking permission can outlive a short offer
+      if (lease === null) { setActionError(c.dispatchExpired); reload(); return; }
+      work.update(await api<Order>(`/jobs/${order.id}/accept`, { ...lease, ...capacityCommand(order) }));
       haptic.success();
       router.push(`/order/${order.id}`);
     } catch (e) {
@@ -75,7 +85,7 @@ export default function Jobs() {
 
   // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
   async function offer(order: Order, price: number) {
-    if (busy !== null || blocked(order) || !work.known) return;
+    if (busy !== null || blocked(order) || !work.known || order.dispatch) return;
     setBusy(order.id);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
@@ -89,11 +99,20 @@ export default function Jobs() {
         setActionError(c.locationOff);
         return;
       }
-      await api<Order>(`/jobs/${order.id}/offer`, { price });
+      await api<Order>(`/jobs/${order.id}/offer`, { price, ...capacityCommand(order) });
       haptic.success();
       setOffering(null);
       reload();
     } catch (e) { haptic.error(); setActionError(err(e)); reload(); } finally { setBusy(null); }
+  }
+
+  async function decline(order: Order) {
+    const lease = dispatchAcceptance(order, Date.now());
+    if (busy !== null || !lease || !('offerId' in lease)) return;
+    setBusy(order.id); setActionError('');
+    try { await api(`/offers/${lease.offerId}/decline`, {}); haptic.success(); await reload(); }
+    catch (e) { haptic.error(); setActionError(err(e)); reload(); }
+    finally { setBusy(null); }
   }
 
   // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
@@ -139,7 +158,7 @@ export default function Jobs() {
     {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
     <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
       <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
-        requestsOn={false /* dispatch is not enabled: the server reports eligibleForMatching:false */}
+        requestsOn={work.presenceState === 'online' && matching.data?.eligibleForMatching === true}
         pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
         startDisabled={!work.known || assigned} startReason={!work.known ? c.presence_reason_status : assigned ? c.presence_reason_job : undefined}
         onConsentAndEnable={() => { void work.enablePresence(); }} onDisable={() => { void work.disablePresence(); }}
@@ -195,6 +214,10 @@ export default function Jobs() {
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
             </Row>}
             <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
+            <FreightDetails order={order} />
+            {order.dispatch?.myOffer && <Txt variant="label" style={{ marginTop: 8 }}>
+              {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now) })}
+            </Txt>}
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
               <Txt variant="caption" numberOfLines={2} style={{ flex: 1 }}>{order.detail}</Txt>
@@ -203,7 +226,7 @@ export default function Jobs() {
               <Ionicons name="hourglass-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.yourOffer, { p: money(order.myOffer.price) })}</Txt>
             </Row>}
-            {offering?.id === order.id && order.recommendedPrice != null && (() => {
+            {!order.dispatch && offering?.id === order.id && order.recommendedPrice != null && (() => {
               const [lo, hi] = offerRange(order.recommendedPrice), n = Number(offering.text);
               const ok = Number.isInteger(n) && n >= lo && n <= hi;
               return <View style={{ marginTop: 12 }}>
@@ -213,13 +236,15 @@ export default function Jobs() {
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
                   onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
-                {!ok && <Reason>{fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Reason>}
+                {!ok && <Reason>{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Reason>}
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
               <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
-                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || blocked(order) || !work.known} />
-              {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
+                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
+              {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
+                onPress={() => decline(order)} />}
+              {!order.dispatch && order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
                 disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
               {waiting && <Reason>{waiting}</Reason>}
             </View>

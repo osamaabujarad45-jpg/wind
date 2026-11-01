@@ -1,0 +1,1 @@
+{"normalized_result":{"source":{"status":"complete","text":"    @Override // android.content.ContentProvider\r\n    public final Cursor query(Uri uri, String[] strArr, String str, String[] strArr2, String str2) {\r\n        uri.getClass();\r\n        throw new UnsupportedOperationException();\r\n    }","reported_total_bytes":null}}}
