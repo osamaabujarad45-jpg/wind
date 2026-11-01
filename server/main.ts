@@ -33,7 +33,7 @@ import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
-import { registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
@@ -3062,7 +3062,7 @@ const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // Bearer [REDACTED], no cookies: open CORS is safe
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Wind-Client');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -3075,6 +3075,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     await persistence.scope(async () => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (draining) fail(503, 'unavailable');
+    if (url.pathname.startsWith('/api/') && clientUpdateRequired(req.headers['x-wind-client'])) fail(426, 'client_update_required');
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
     if (page) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page); return; }
     if (req.method === 'GET' && serveWeb(url.pathname, req, res)) return;

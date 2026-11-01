@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -7,6 +7,8 @@ import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
+import { SUPPORT_URL } from '../api';
+import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
 import { Button, Empty, palette, useCopy } from '../ui';
 
 SplashScreen.preventAutoHideAsync();
@@ -56,6 +58,13 @@ function IntroOverlay() {
 function Routes() {
   const { ready, offline, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
+  const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);
+  // The server refused this build (426): nothing else works, so nothing else is shown.
+  if (mustUpdate) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
+    <Empty icon="cloud-download-outline" title={c.updateRequired} body={c.updateRequiredDesc} action={Platform.OS === 'web'
+      ? <Button title={c.updateRequiredWeb} onPress={() => window.location.reload()} />
+      : SUPPORT_URL ? <Button title={c.support} icon="chatbubble-outline" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
+  </View>;
   if (!ready) return null;
   if (offline) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
     <Empty icon="cloud-offline-outline" title={c.offline} body={c.offlineDesc} action={<Button title={c.retry} onPress={refresh} />} />

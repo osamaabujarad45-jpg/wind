@@ -8,6 +8,13 @@ export class ApiError extends Error {
   constructor(message: string, status?: number) { super(message); this.status = status; }
 }
 
+/** app.json version as major·10000 + minor·100 + patch; tests keep the two equal. The server gates on it (426). */
+export const CLIENT_BUILD = 10013;
+let updateRequired = false;
+const updateListeners = new Set<() => void>();
+export const clientUpdateRequired = () => updateRequired;
+export function subscribeClientUpdate(listener: () => void) { updateListeners.add(listener); return () => { updateListeners.delete(listener); }; }
+
 let token: string | null = null;
 /** Internal protected-storage scope; never serialize or log this credential. */
 export const apiSessionCredential = () => token;
@@ -37,7 +44,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
     try {
       res = await fetch(url, {
         method: method ?? (body ? 'POST' : 'GET'), signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
+        headers: { 'Content-Type': 'application/json', 'X-Wind-Client': String(CLIENT_BUILD), ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
         body: body && JSON.stringify(body),
       });
     } catch { throw new ApiError(signal?.aborted ? 'aborted' : 'network'); }
@@ -46,6 +53,10 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
     let data;
     try { data = await res.json(); }
     catch { throw new ApiError(controller.signal.aborted ? 'network' : 'server_error', res.ok ? 502 : res.status); }
+    if (res.status === 426 && data?.error === 'client_update_required' && !updateRequired) {
+      updateRequired = true;
+      for (const listener of updateListeners) listener();
+    }
     if (requestToken !== token || requestRevision !== sessionRevision) throw new ApiError('session_changed', 401);
     noteServerDate(res.headers.get('date'), receivedAt, Math.max(0, receivedAt - startedAt));
     if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();

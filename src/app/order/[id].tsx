@@ -13,7 +13,8 @@ import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, u
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
-import { capacityCommand, dispatchAcceptance, rideStep, secondsUntil } from '../../ride-flow';
+import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
+import { kmLabel } from '../../map-math';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
 import { effectiveRuntime } from '../../runtime-config';
@@ -107,6 +108,9 @@ export default function OrderScreen() {
   const decisionReason = decision.id === id ? decision.reason : '';
   const disputeReason = dispute.id === id ? dispute.reason : '';
   const rideAction = rideStep(order);
+  // Like a geofence prompt: Arrive leads only once the latest fix is inside the server's arrival radius.
+  const arrivalKm = mine && rideAction === 'arrive' ? arrivalDistanceKm(order.pickupPoint, order.driverLocation, now) : null;
+  const arrivalFar = arrivalKm !== null && arrivalKm * 1000 > RIDE_ARRIVAL_RADIUS_METERS;
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
   const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
@@ -480,11 +484,11 @@ export default function OrderScreen() {
         {needsCode &&
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
-        {rideAction === 'arrive' && <Txt variant="caption">{c.rideArrivalHint}</Txt>}
+        {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
+          icon="arrow-forward-circle-outline" variant={arrivalFar ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
           reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`) : act('advance', `/orders/${order.id}/advance`, { code })} />}
         {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">

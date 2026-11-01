@@ -38,6 +38,13 @@ export function clientConfiguration(env: NodeJS.ProcessEnv = process.env, now = 
   return readRuntimeConfiguration({ schemaVersion: 1, revision, issuedAt: now, expiresAt: now + 30 * 60_000, values, mapProviders }, now);
 }
 
+/** Forced-upgrade gate: a client that reports a build below WIND_MIN_CLIENT_BUILD gets 426 and shows the update screen. */
+export function clientUpdateRequired(sent: string | string[] | undefined, env: NodeJS.ProcessEnv = process.env) {
+  // ponytail: no header passes (installs up to 1.0.13, scripts, public pages); only builds that send it can be gated.
+  const min = Number(env.WIND_MIN_CLIENT_BUILD || 0), build = Number(sent);
+  return typeof sent === 'string' && Number.isSafeInteger(min) && min > 0 && Number.isSafeInteger(build) && build < min;
+}
+
 /** Additive operator detail; bare legacy /ready remains a storage probe, not a feature activation claim. */
 export function registerRuntimeRoutes(route: Register, deps: { db: Persistence; need: (user: User, role: 'admin') => void;
   needActive: (user: User) => void; fail: (status: number, message: string) => never; limit: (key: string, count: number, window: number) => Promise<unknown> }) {

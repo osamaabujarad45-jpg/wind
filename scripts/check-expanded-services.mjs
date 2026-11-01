@@ -90,6 +90,8 @@ try {
   await page.getByText(c.rideBoardingCode, { exact: true }).waitFor();
   await login(who.driver, `/order/${ride.id}`);
   checks.push('A53 accepts a leased ride with nonce and capacity revision; driver never receives PIN');
+  // The synthetic fix sits on the pickup: inside the arrival radius the plain hint shows and Arrive leads.
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor();
   await click(c.rideArrive);
   await page.getByText(/Waiting time remaining/).waitFor();
   await click(c.advance_assigned);
@@ -142,6 +144,15 @@ try {
   await click(c.acceptOffer);
   await until(async () => (await f.call(`/orders/${freightId}`, { token: f.customer.token })).status === 'assigned', 'customer accepts freight offer');
   checks.push('A53 driver reviews inspected load and offers price; customer accepts with reviewed capacity revision');
+  // Forced upgrade: the web build names its client build on every call; above the minimum, only the update screen shows.
+  process.env.WIND_MIN_CLIENT_BUILD = '99999';
+  try {
+    await page.goto(base + '/');
+    await page.getByText(c.updateRequired, { exact: true }).waitFor();
+    await page.getByRole('button', { name: c.updateRequiredWeb, exact: true }).waitFor();
+    await page.screenshot({ path: join(output, 'a53-update-required.png') });
+  } finally { delete process.env.WIND_MIN_CLIENT_BUILD; }
+  checks.push('A53 web build sends its client build; a raised server minimum shows only the update screen');
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'results.json'), JSON.stringify({ host: process.env.COMPUTERNAME, device: 'physical SM-A5360 R5CTB0FJP9Z',
     fixtures: 'Synthetic operating approvals and GPS; loopback-only isolated PostgreSQL', checks, errors }, null, 2));

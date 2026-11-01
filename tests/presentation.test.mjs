@@ -5,7 +5,8 @@ import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
 import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
-import { capacityCommand, dispatchAcceptance, rideStep, secondsUntil } from '../src/ride-flow.ts';
+import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_FIX_MAX_AGE_MS, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../src/ride-flow.ts';
+import { RIDE_ARRIVAL_FIX_MAX_AGE_MS as serverArrivalFixAge, RIDE_ARRIVAL_RADIUS_METERS as serverArrivalRadius } from '../server/domain/ride-lifecycle.ts';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../src/freight-scope.ts';
 
 const loadDraft = { ...emptyFreightDraft(), pieces: '٢', lengthCm: '١٢٫٥', widthCm: '20', heightCm: '30', massKg: '12.345', value: '15.25', equipment: ['straps'] };
@@ -33,6 +34,19 @@ assert.equal(rideStep({ ...ride, ride: { ...ride.ride, arrivedAt: 100 } }), 'adv
 assert.equal(rideStep({ ...ride, status: 'at_pickup', ride: { ...ride.ride, arrivedAt: 100 } }), 'boarding');
 assert.equal(rideStep({ ...ride, status: 'at_pickup', ride: { ...ride.ride, arrivedAt: 100, boardingLocked: true } }), 'locked');
 assert.equal(rideStep({ ...ride, status: 'in_transit' }), 'advance');
+// The Arrive cue mirrors the server fence: same radius and fix age, a fresh fix only.
+assert.equal(RIDE_ARRIVAL_RADIUS_METERS, serverArrivalRadius);
+assert.equal(RIDE_ARRIVAL_FIX_MAX_AGE_MS, serverArrivalFixAge);
+{
+  noteServerDate(new Date(1_000_000_000_000).toUTCString(), 1_000_000_000_000, 0);
+  const at = 1_000_000_000_000, pickup = { latitude: 31.9, longitude: 35.2 };
+  const fix = (latitude, ageSeconds) => ({ latitude, longitude: 35.2, updatedAt: at - ageSeconds * 1000, ageSeconds });
+  assert.ok(Math.abs(arrivalDistanceKm(pickup, fix(31.91, 5), at) - 1.11) < 0.01, '~1.1 km north of pickup');
+  assert.ok(arrivalDistanceKm(pickup, fix(31.9015, 5), at) * 1000 < RIDE_ARRIVAL_RADIUS_METERS, '~170 m is inside the fence');
+  assert.equal(arrivalDistanceKm(pickup, fix(31.91, 121), at), null, 'a fix the server would call stale is no basis');
+  assert.equal(arrivalDistanceKm(null, fix(31.91, 5), at), null);
+  assert.equal(arrivalDistanceKm(pickup, null, at), null);
+}
 const leased = { dispatch: { state: 'open', myOffer: { offerId: 'lease', leaseNonce: 'secret', expiresAt: 200 } } };
 assert.deepEqual(dispatchAcceptance(leased, 199), { offerId: 'lease', leaseNonce: 'secret' });
 assert.equal(dispatchAcceptance(leased, 200), null, 'an expired lease never becomes a legacy acceptance');
