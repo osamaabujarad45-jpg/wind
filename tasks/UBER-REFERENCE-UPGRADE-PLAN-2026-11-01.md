@@ -37,6 +37,8 @@ sitting uncommitted in a OneDrive folder.
 | 2 Min-client gate, Arrive cue | Done (`7d17ccc`); A53-checked, including the far (~320 m) caption |
 | Merge GitHub `master` | `9f39a76`: local master had diverged (#2, #3). Conflicts resolved: decoder → reviewed 0.5.1; book.tsx slots on the real clock; endpoint inventory keeps both sides |
 | 3 Acceptance | k5 full gate and A53 9/9; see `tasks/UBER-ADOPTION-IMPLEMENTATION-2026-11-01.md` |
+| Parallel GPT 6.1 job | `0172be5`: its partial Astra-plan S1–S4 work was three-way merged in. Its `MapProviderBoundary` replaces this branch's simpler renderer-failure hook; remaining slices are listed at the top of `tasks/MAPS-GPS-HANDOFF-PLAN-2026-11-01.md` |
+| Haiku 5.5 review | `20454b2`: 8 findings fixed (booking deadline, freight window, opencode env, 426 gaps, offline retention, contract null, request ids); 2 answered (PIN cycling not reachable; outbox code by design). Outcomes are on PR #4 |
 
 ## Phase 0: land the in-flight work (first)
 
