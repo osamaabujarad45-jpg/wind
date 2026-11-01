@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { request } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { copyRuntimeSources } from '../scripts/runtime-sources.mjs';
 
 // New native entry points and local dependencies must survive both Railway upload and Docker's build context.
 {
@@ -49,7 +50,10 @@ import { DatabaseSync } from 'node:sqlite';
     }
   }
   assert.ok(needed.has('src/model.ts'));
-  for (const file of needed) assert.ok(runtime.includes(`COPY ${file} ./${file}`) || /^COPY src \.\/src$/m.test(runtime), `Dockerfile runtime stage must copy ${file}`);
+  // The build stage copies the import closure (scripts/runtime-sources.mjs); the runtime stage takes that folder whole.
+  const computed = /^COPY --from=web-build \/app\/api-runtime\/src \.\/src$/m.test(runtime);
+  const closure = computed ? new Set(copyRuntimeSources(fileURLToPath(root), mkdtempSync(join(tmpdir(), 'wind-src-'))).map(f => f.split(sep).join('/'))) : new Set();
+  for (const file of needed) assert.ok(runtime.includes(`COPY ${file} ./${file}`) || /^COPY src \.\/src$/m.test(runtime) || closure.has(file), `Dockerfile runtime stage must copy ${file}`);
 }
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-deploy-'));

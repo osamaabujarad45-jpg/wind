@@ -33,6 +33,8 @@ export function useDriverRecovery(order: Order | undefined, actorId: number | un
     focus.current++;
     if (authorized) void retry();
     return () => { focus.current++; };
+    // The callback reads refs; these values are re-run triggers (new order revision or actor), not inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id, order?.updatedAt, order?.recovery?.version, actorId, authorized, retry]));
   return { ...state, retry };
 }
