@@ -53,7 +53,7 @@ export function readOrder(value: unknown): Order {
 export function readPriceQuote(value: unknown): PriceQuote {
   requireContract(object(value)); const q = value as RecordValue;
   requireContract(finite(q.price) && finite(q.km) && finite(q.minutes) && finite(q.delayMinutes) && typeof q.estimated === 'boolean');
-  if (q.quoteId !== undefined) requireContract(uuid(q.quoteId) && integer(q.quoteExpiresAt) && q.currency === 'ILS' && integer(q.priceMinor) && integer(q.commissionMinor));
+  if (q.quoteId !== undefined) requireContract(uuid(q.quoteId) && integer(q.quoteExpiresAt) && q.currency === 'ILS' && integer(q.priceMinor) && (q.commissionMinor === null || integer(q.commissionMinor)));
   for (const key of ['slow','closed','avoids']) requireContract(Array.isArray(q[key]) && q[key].every((item: unknown) => typeof item === 'string'));
   return q as PriceQuote;
 }

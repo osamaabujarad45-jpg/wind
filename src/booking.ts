@@ -1,7 +1,13 @@
 import { isCity, optionsFor, services, type CityId, type Order, type Point, type Role, type Service } from './model.ts';
 import { validFreightScope, type FreightScope } from './freight-scope.ts';
 import { newRequestId } from './command-id.ts';
+import { serverOffset } from './api-clock.ts';
 export { newRequestId } from './command-id.ts';
+
+/** A booking command can commit only until its own deadline; the server refuses it afterwards. */
+export const BOOKING_COMMAND_TTL_MS = 10 * 60_000;
+// The client's 20 s request timeout plus margin: past the deadline by this much, no POST can still be committing.
+const SETTLED_AFTER_MS = 30_000;
 
 export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
@@ -17,6 +23,7 @@ export type PendingBooking = {
   requestId: string; payload: BookingPayload;
   sentAt?: number; // first save; locates the order this command may have created
   attemptedAt?: number; // last POST start; absence is only trusted once the server can no longer be committing it
+  commandExpiresAt?: number; // server clock; after it the server refuses this command, so a missing receipt is a real absence
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,7 +37,7 @@ export function retryIds() {
 }
 export const newBooking = (payload: BookingPayload): PendingBooking => {
   const now = Date.now();
-  return { requestId: newRequestId(), payload, sentAt: now, attemptedAt: now };
+  return { requestId: newRequestId(), payload, sentAt: now, attemptedAt: now, commandExpiresAt: now + serverOffset() + BOOKING_COMMAND_TTL_MS };
 };
 
 /** The account's own slot: another account on the same device never reads this payload. */
@@ -38,8 +45,9 @@ export const pendingKey = (userId: number) => `booking.${userId}`;
 
 /** Wire body for POST /orders: a locked quote travels by id alone (quotedPrice beside it is a 400). */
 export function orderRequest(command: PendingBooking) {
-  if (!command.payload.quoteId) return { ...command.payload, requestId: command.requestId };
-  const rest: BookingPayload & { requestId: string } = { ...command.payload, requestId: command.requestId };
+  const deadline = command.commandExpiresAt === undefined ? {} : { commandExpiresAt: command.commandExpiresAt };
+  if (!command.payload.quoteId) return { ...command.payload, requestId: command.requestId, ...deadline };
+  const rest: BookingPayload & { requestId: string } = { ...command.payload, requestId: command.requestId, ...deadline };
   delete (rest as { quotedPrice?: number }).quotedPrice;
   return rest;
 }
@@ -83,6 +91,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || (p.declaredScope !== undefined && (p.service !== 'freight' || !validFreightScope(p.declaredScope)))
     || (booking.sentAt !== undefined && !Number.isFinite(booking.sentAt))
     || (booking.attemptedAt !== undefined && !Number.isFinite(booking.attemptedAt))
+    || (booking.commandExpiresAt !== undefined && !Number.isSafeInteger(booking.commandExpiresAt))
     || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
     || p.pickupPoint === undefined) {
     throw new Error('invalid_pending_booking');
@@ -95,12 +104,13 @@ export type PendingOutcome = { state: 'present'; orderId: number } | { state: 'a
 
 /**
  * A command receipt identifies the exact booking even after its fare or destination changes.
- * A missing receipt remains unknown: the original POST could still commit. Retry keeps its identity.
+ * A missing receipt stays unknown while the original POST could still commit (retry keeps its identity);
+ * once the command's own deadline has passed, the server refuses it, so the absence is real.
  */
-export function pendingOutcome(receipt: unknown): PendingOutcome {
+export function pendingOutcome(receipt: unknown, command?: Pick<PendingBooking, 'commandExpiresAt'>, now = Date.now() + serverOffset()): PendingOutcome {
   const orderId = receipt && typeof receipt === 'object' && 'orderId' in receipt ? receipt.orderId : null;
-  return typeof orderId === 'number' && Number.isSafeInteger(orderId) && orderId > 0
-    ? { state: 'present', orderId } : { state: 'unknown' };
+  if (typeof orderId === 'number' && Number.isSafeInteger(orderId) && orderId > 0) return { state: 'present', orderId };
+  return command?.commandExpiresAt !== undefined && now > command.commandExpiresAt + SETTLED_AFTER_MS ? { state: 'absent' } : { state: 'unknown' };
 }
 
 /** Editing or discarding is only safe on a server-confirmed absence; present or unknown keep the frozen form. */

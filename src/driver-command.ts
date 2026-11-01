@@ -60,7 +60,7 @@ export async function resumeDriverCommand(io: CommandIO, actorId: number, order:
     || !['unknown', 'applied', 'rejected'].includes(receipt.state)) throw new Error('invalid_response');
   if (receipt.state !== 'unknown') {
     await io.write(null);
-    return { state: receipt.state, error: receipt.error };
+    return { state: receipt.state, error: receipt.error, httpStatus: receipt.httpStatus };
   }
   if (!commandMatches(command, actorId, order)) {
     // A decision may have committed while its receipt was not yet visible. Keep the identity; never invent an ACK.
@@ -73,7 +73,7 @@ export async function resumeDriverCommand(io: CommandIO, actorId: number, order:
     return { state: 'applied' as const, order: updated };
   } catch (error) {
     const e = error as { status?: number; message?: string };
-    if (io.valid() && e.status && e.status < 500 && ![401,408,429].includes(e.status) && e.message !== 'idempotency_conflict') await io.write(null);
+    if (io.valid() && e.status && e.status < 500 && ![401,408,426,429].includes(e.status) && e.message !== 'idempotency_conflict') await io.write(null);
     throw error;
   }
 }

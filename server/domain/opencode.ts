@@ -48,7 +48,7 @@ export class OpencodeService {
         // Run the operator-installed version; never download executable @latest
         // packages in response to an HTTP request.
         const cp = spawn(this.env.ZRO_CLI_PATH!.trim(), ['launch', 'opencode', '--model', model, '--auto', '--prompt', prompt],
-          { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+          { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: cliEnvironment(this.env) });
         let out = '';
         let stopped = false;
         const capture = (data: Buffer) => {
@@ -88,6 +88,10 @@ export class OpencodeService {
     return await this.db.all('SELECT * FROM opencode_jobs ORDER BY created_at DESC LIMIT ?', 100);
   }
 }
+
+/** The CLI gets what it needs to run and reach its own provider, never the API's database, partner or cloud secrets. */
+const CLI_ENV = /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|LANG|LC_ALL|ZRO_[A-Z0-9_]+|OPENCODE_[A-Z0-9_]+)$/i;
+export const cliEnvironment = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(env).filter(([key]) => CLI_ENV.test(key)));
 
 export function createOpencode(db: Persistence, fail: Fail, env: NodeJS.ProcessEnv = process.env) { return new OpencodeService(db, fail, env); }
 

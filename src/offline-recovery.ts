@@ -25,7 +25,9 @@ export function cacheOrderSummaries(orders: Order[]) {
     const now = Date.now() + serverOffset();
     const newest = offlineSummary(owner.id, owner.role, orders, now);
     const changed = new Set(orders.map(order => order.id));
-    const retained = previous?.actorId === owner.id && previous.role === owner.role ? previous.orders.filter(order => !changed.has(order.id)) : [];
+    // Orders missing from this fetch are kept only briefly: their status may have moved on without us.
+    const retained = previous?.actorId === owner.id && previous.role === owner.role && now - previous.savedAt <= 30 * 60_000
+      ? previous.orders.filter(order => !changed.has(order.id)) : [];
     newest.orders = [...newest.orders, ...retained].slice(0, 3);
     if (retained.length && previous) newest.savedAt = Math.min(newest.savedAt, previous.savedAt);
     await recoveryStorage.write('summary', newest, effectiveRuntime(now).values.offlineMaxAgeMs);

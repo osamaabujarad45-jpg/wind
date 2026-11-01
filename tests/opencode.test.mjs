@@ -6,7 +6,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { startApiProcess } from './support/api-process.mjs';
 import { apiCaller } from './support/api.mjs';
-import { OpencodeService } from '../server/domain/opencode.ts';
+import { cliEnvironment, OpencodeService } from '../server/domain/opencode.ts';
 
 // Even explicitly enabled production settings cannot launch a process under
 // the API's filesystem/credential identity.
@@ -14,6 +14,10 @@ const production = new OpencodeService({}, (status, message) => { throw Object.a
   { NODE_ENV: 'production', WIND_OPENCODE_ENABLED: '1', ZRO_CLI_PATH: process.execPath });
 await assert.rejects(() => production.runJob({ id: 1, role: 'admin' }, 'test', 'test', 'synthetic'),
   error => error.status === 409 && error.message === 'opencode_unavailable');
+
+// The child process inherits only runtime basics and its own provider settings.
+assert.deepEqual(Object.keys(cliEnvironment({ PATH: '/bin', ZRO_API_KEY: 'k', WIND_DATABASE_URL: 'postgres://secret', DATABASE_URL: 'x',
+  CLOUDFLARE_API_TOKEN: 't', WIND_PARTNER_KEY: 'p', WIND_ENTRA_CLIENT_SECRET: 's', HOME: '/h' })).sort(), ['HOME', 'PATH', 'ZRO_API_KEY']);
 
 // Starting the actual strip-only Node API catches unsupported TypeScript
 // constructor syntax; the real SQLite adapter catches PostgreSQL-only casts.

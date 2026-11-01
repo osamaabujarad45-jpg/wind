@@ -56,8 +56,16 @@ try {
     assert.equal(pendingReleasable(pendingOutcome(receipt)), false);
   }
   assert.equal(pendingReleasable(null), false);
+  // Past the command's own deadline the server refuses it, so a missing receipt is a real absence and the form unlocks.
+  const deadline = command.commandExpiresAt;
+  assert.ok(Number.isSafeInteger(deadline) && orderRequest(command).commandExpiresAt === deadline, 'every attempt carries the same deadline');
+  assert.deepEqual(pendingOutcome({ orderId: null }, command, deadline + 29_000), { state: 'unknown' }, 'a POST may still be in flight just after the deadline');
+  assert.deepEqual(pendingOutcome({ orderId: null }, command, deadline + 31_000), { state: 'absent' });
+  assert.equal(pendingReleasable(pendingOutcome(null, command, deadline + 31_000)), true);
+  assert.deepEqual(pendingOutcome({ orderId: 701 }, command, deadline + 31_000), { state: 'present', orderId: 701 }, 'a receipt always wins');
+  assert.deepEqual(pendingOutcome({ orderId: null }, {}, Number.MAX_SAFE_INTEGER), { state: 'unknown' }, 'records saved before deadlines existed stay unknown');
   assert.ok(bookSource.includes('/orders/commands/${encodeURIComponent(command.requestId)}'), 'recovery queries the exact command receipt');
-  console.log('Pending booking recovery checks passed: account isolation, replay identity and authoritative receipt');
+  console.log('Pending booking recovery checks passed: account isolation, replay identity, authoritative receipt and command deadline');
 
   const admin = await call('/auth/register', { phone: '0599111000', name: 'Admin', password: 'secret1' });
   await promote('0599111000');
@@ -75,6 +83,16 @@ try {
   await call(receiptPath, undefined, driver.token, 403, 'GET');
   await call('/orders/commands/not-a-uuid', undefined, owner.token, 400, 'GET');
   await call(receiptPath, undefined, undefined, 401, 'GET');
+  // The server enforces the deadline for new commits only: an expired new command is refused and leaves no receipt,
+  // a committed command still replays after its deadline, and a deadline beyond the allowed lifetime is invalid.
+  const booking = { ...payload, quotedPrice: 20, contact: owner.user.phone };
+  const late = randomUUID();
+  assert.equal((await call('/orders', { ...booking, requestId: late, commandExpiresAt: Date.now() - 1_000 }, owner.token, 409)).error, 'booking_command_expired');
+  assert.deepEqual(await call(`/orders/commands/${late}`, undefined, owner.token, 200, 'GET'), { orderId: null });
+  const kept = { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 };
+  const committed = await call('/orders', kept, owner.token);
+  assert.equal((await call('/orders', { ...kept, commandExpiresAt: Date.now() - 1_000 }, owner.token)).id, committed.id);
+  assert.equal((await call('/orders', { ...booking, requestId: randomUUID(), commandExpiresAt: Date.now() + 11 * 60_000 }, owner.token, 400)).error, 'invalid_command_deadline');
   let index = 0;
   for (const command of [false, true]) for (const change of ['logout', 'block', 'role', 'delete']) {
     const customer = await call('/auth/register', { phone: `059911100${++index}`, name: 'Customer', password: 'secret1' });

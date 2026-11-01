@@ -97,8 +97,11 @@ function BookForm() {
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
   const wantsScope = service === 'freight' && me?.capabilities?.declaredScope === true;
-  const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, scheduledFor ?? slotBucket.at, loadingHours) : undefined),
-    [pending?.payload.declaredScope, wantsScope, freight, scheduledFor, slotBucket.at, loadingHours]);
+  // An immediate load's window starts when its quote does: every re-quote (expiry, price change, retry) restarts it,
+  // so the declared start is at most one quote lifetime old, not a half-hour bucket.
+  const [quotedAt, setQuotedAt] = useState(() => Date.now());
+  const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, scheduledFor ?? Math.max(slotBucket.at, quotedAt), loadingHours) : undefined),
+    [pending?.payload.declaredScope, wantsScope, freight, scheduledFor, slotBucket.at, quotedAt, loadingHours]);
   const scopeInvalid = wantsScope && declaredScope === null;
   const sending = useRef(false);
   const savedKey = pendingKey(me!.user.id);
@@ -182,7 +185,7 @@ function BookForm() {
     reading.current = true;
     setResolving(true);
     try {
-      const answer = pendingOutcome(await api<{ orderId: number | null }>(`/orders/commands/${encodeURIComponent(command.requestId)}`));
+      const answer = pendingOutcome(await api<{ orderId: number | null }>(`/orders/commands/${encodeURIComponent(command.requestId)}`), command);
       const held = latest.current;
       // Only apply an answer about the attempt this screen still holds: a late reply must not act for another account.
       if (!alive.current || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
@@ -264,6 +267,7 @@ function BookForm() {
   const plus = me?.plan === 'plus';
   // Smart recommended price from the server (SPEC-driver-offers.md); without it (offline), the fixed tariff as before.
   const [priceTick, setPriceTick] = useState(0);
+  const requote = () => { setQuotedAt(Date.now()); setPriceTick(n => n + 1); };
   // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
   const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null } | null>(null);
@@ -360,13 +364,14 @@ function BookForm() {
       else {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
-        if (e.status && e.status < 500 && ![401, 408, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
+        // 426 is an outdated app, not a refusal of this booking: keep it to replay after the update.
+        if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
           try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
           catch { setError(c.bookingStorageError); }
         }
       }
-      if (errorCode(e) === 'price_changed') { await refresh(); setPriceTick(n => n + 1); } // new tariff or road state: customer confirms again
-      if (['quote_expired', 'quote_consumed'].includes(errorCode(e) ?? '')) setPriceTick(n => n + 1);
+      if (errorCode(e) === 'price_changed') { await refresh(); requote(); } // new tariff or road state: customer confirms again
+      if (['quote_expired', 'quote_consumed'].includes(errorCode(e) ?? '')) requote();
       if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
         setPromo(null);
         api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
@@ -398,7 +403,7 @@ function BookForm() {
       <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
         onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
       {requestReason && <Reason>{requestReason}</Reason>}
-      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={() => setPriceTick(n => n + 1)} />}
+      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
     </>}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay">

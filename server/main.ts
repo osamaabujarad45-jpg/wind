@@ -49,6 +49,8 @@ import {
   canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
+import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
+import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
 import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
 
@@ -565,7 +567,6 @@ registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
 // OpenCode / T3 provider service (runs zro CLI and records jobs)
-import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
 const opencodeService = createOpencode(persistence, fail);
 registerOpencodeRoutes(route, opencodeService);
 const ops = new Ops(persistence, fail);
@@ -1462,7 +1463,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   need(user, 'customer');
   needActive(user);
   if (body.promoCode != null) (await limit(identityKey('promo', user.id), 20, 60 * 60_000)); // no unlimited code guessing through booking
-  const { requestId, ...input } = body;
+  const { requestId, commandExpiresAt, ...input } = body;
   // Routing is async, so the recommendation is computed before the write transaction (SPEC-driver-offers.md).
   const smart = async () => input.pricing === 'smart' ? await recommend(user, input) : undefined;
   // Quote-bound clients cannot supply an authoritative total; legacy quotedPrice remains supported.
@@ -1485,6 +1486,11 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     try { const order = (await createOrder(user, input, recommended)); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   }
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
+  // A command can commit only until its own deadline, so a missing receipt after it is a real absence.
+  // Replays of a committed command still return their order; only a new commit is refused.
+  if (commandExpiresAt !== undefined && (!Number.isSafeInteger(commandExpiresAt) || (commandExpiresAt as number) > Date.now() + BOOKING_COMMAND_TTL_MS + 5_000))
+    fail(400, 'invalid_command_deadline');
+  const expired = () => commandExpiresAt !== undefined && Date.now() > (commandExpiresAt as number);
   const hash = payloadHash(input);
   const replay = async () => {
     const existing = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
@@ -1493,12 +1499,14 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   };
   const done = (await replay()); // a retried command returns its order even if today's price moved
   if (done) return done;
+  if (expired()) fail(409, 'booking_command_expired');
   const recommended = input.quoteId ? undefined : await smart();
   user = (await authorize());
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     const raced = (await replay()); // the same command may have committed while routing was awaited
     if (raced) { (await persistence.exec('ROLLBACK')); return raced; }
+    if (expired()) fail(409, 'booking_command_expired');
     const order = (await createOrder(user, input, recommended));
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
     (await persistence.exec('COMMIT'));
@@ -2287,7 +2295,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   if (failure) { await flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
-  return result;
+  return input.recoveryProtocol === 1 && result ? { ...result, recovery: await recoveryMetadata(id) } : result;
 }
 
 async function activeGpsAuthority(user: User, req: IncomingMessage) {
@@ -3197,6 +3205,9 @@ let presenceSweepTimer: ReturnType<typeof setInterval> | undefined;
 let presenceSweepJob: Promise<void> = Promise.resolve();
 let presenceSweepRunning = false;
 server.on('listening', () => {
+  const minimumBuild = process.env.WIND_MIN_CLIENT_BUILD;
+  if (minimumBuild && !(Number.isSafeInteger(Number(minimumBuild)) && Number(minimumBuild) > 0))
+    console.warn('WIND_MIN_CLIENT_BUILD is not a positive build number, so the forced-upgrade gate is off');
   if (production) void persistence.scope(async () => { const users = Number((await one('SELECT COUNT(*) n FROM users'))?.n ?? 0); if (!users) console.error('Wind API: production database has no users yet. If this is not a first boot, check that the persistent volume is mounted at DB_PATH.'); }).catch(() => undefined);
   const sweep = () => {
     if(presenceSweepRunning || draining)return;
