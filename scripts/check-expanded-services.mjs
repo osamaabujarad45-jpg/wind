@@ -9,7 +9,8 @@ import { chromium } from 'playwright';
 import { fixture, polygon } from '../tests/eligibility-support.mjs';
 import { addDriver, assessRide, bookRide, myOffer } from '../tests/dispatch-support.mjs';
 import { connectionString } from '../tests/pg-support.mjs';
-import { copy } from '../src/copy.ts';
+import { copy, fill, statusText } from '../src/copy.ts';
+import { city, orderCode } from '../src/model.ts';
 
 const cdp = process.env.WIND_PHYSICAL_CDP;
 if (cdp !== 'http://127.0.0.1:9228') throw new Error('Requires the explicitly forwarded physical-phone CDP on loopback 9228');
@@ -55,7 +56,9 @@ try {
     const permissionQuery = navigator.permissions.query.bind(navigator.permissions);
     navigator.permissions.query = descriptor => descriptor.name === 'geolocation'
       ? Promise.resolve({ state: 'granted', onchange: null, addEventListener() {}, removeEventListener() {} }) : permissionQuery(descriptor);
-    const position = () => ({ timestamp: Date.now(), coords: { latitude: 31.9, longitude: 35.19, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: 0 } });
+    // window.__windFix moves the synthetic driver for one document; navigation resets it to the pickup.
+    const position = () => ({ timestamp: Date.now(), coords: { latitude: window.__windFix?.latitude ?? 31.9, longitude: window.__windFix?.longitude ?? 35.19,
+      accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: 0 } });
     navigator.geolocation.getCurrentPosition = success => { success(position()); };
     navigator.geolocation.watchPosition = success => { success(position()); return setInterval(() => success(position()), 5000); };
     navigator.geolocation.clearWatch = id => clearInterval(id);
@@ -91,11 +94,31 @@ try {
   await page.getByText(c.rideBoardingCode, { exact: true }).waitFor();
   await login(who.driver, `/order/${ride.id}`);
   checks.push('A53 accepts a leased ride with nonce and capacity revision; driver never receives PIN');
-  // The synthetic fix sits on the pickup: inside the arrival radius the plain hint shows and Arrive leads.
-  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor();
+  // Geofence-style cue: ~320 m out (a pace the server's 70 m/s filter accepts) the caption names the distance and
+  // Arrive steps back; back on the pickup the plain hint returns and Arrive leads again.
+  await page.evaluate(() => { window.__windFix = { latitude: 31.90288, longitude: 35.19 }; });
+  await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ timeout: 30_000 });
+  await page.screenshot({ path: join(output, 'a53-arrive-far.png') });
+  await page.evaluate(() => { window.__windFix = undefined; });
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor({ timeout: 30_000 });
+  checks.push('A53 Arrive cue names the distance outside the 300 m fence and leads again at the pickup');
   await click(c.rideArrive);
   await page.getByText(/Waiting time remaining/).waitFor();
+  // Lost acknowledgement: the server applies the advance, the reply never reaches the phone, the app restarts.
+  const actions = async () => (await f.db.all('SELECT request_id FROM order_actions WHERE order_id=? AND user_id=?', ride.id, who.driver.user.id)).length;
+  assert.ok((await f.call(`/orders/${ride.id}?recoveryProtocol=1`, { token: who.driver.token })).recovery, 'the durable command path is the one under test');
+  const actionsBefore = await actions();
+  let dropped = 0;
+  const advanceUrl = `**/api/orders/${ride.id}/advance`;
+  await page.route(advanceUrl, async route => { await route.fetch(); dropped++; await route.abort('connectionreset'); });
   await click(c.advance_assigned);
+  await until(() => dropped === 1, 'advance applied on the server with its reply dropped');
+  await page.unroute(advanceUrl);
+  assert.equal((await f.call(`/orders/${ride.id}`, { token: who.driver.token })).status, 'at_pickup');
+  await page.reload();
+  await page.getByLabel(c.rideEnterCode, { exact: true }).waitFor();
+  assert.equal(await actions(), actionsBefore + 1, 'recovery replays the saved command identity: exactly one recorded transition');
+  checks.push('A53 recovers a lost advance acknowledgement after restart with exactly one recorded transition');
   await page.getByLabel(c.rideEnterCode, { exact: true }).waitFor();
   const customerView = await f.call(`/orders/${ride.id}`, { token: f.customer.token });
   await page.getByLabel(c.rideEnterCode, { exact: true }).fill(customerView.ride.boardingCode === '0000' ? '0001' : '0000');
@@ -145,6 +168,32 @@ try {
   await click(c.acceptOffer);
   await until(async () => (await f.call(`/orders/${freightId}`, { token: f.customer.token })).status === 'assigned', 'customer accepts freight offer');
   checks.push('A53 driver reviews inspected load and offers price; customer accepts with reviewed capacity revision');
+  // Timing diagnostics: one delivery inside the 60 s interval, durations only, no coordinates, ids or credentials.
+  const batches = [];
+  const onRequest = request => { if (request.url().endsWith('/api/runtime/diagnostics')) batches.push(request.postData() ?? ''); };
+  page.on('request', onRequest);
+  await login(f.customer, '/');
+  await page.getByText(`${city('ramallah').en} → ${city('nablus').en}`).first().waitFor(); // home loaded /orders, so the summary is saved
+  for (const end = Date.now() + 80_000; !batches.length && Date.now() < end;) await new Promise(r => setTimeout(r, 500));
+  page.off('request', onRequest);
+  assert.ok(batches.length, 'a diagnostics batch was delivered within 80 s');
+  const batch = JSON.parse(batches[0]);
+  assert.ok(batch.events.length && batch.events.every(event => Object.keys(event).every(key => ['id','category','at','durationMs','httpStatus','provider','outcome'].includes(key))));
+  assert.ok(!/latitude|longitude|Bearer|W-\d{5}/.test(batches[0]), 'no coordinates, credentials or order codes in diagnostics');
+  checks.push(`A53 delivers a bounded diagnostics batch (${batch.events.map(event => event.category).join(', ')}) without coordinates or ids`);
+
+  // Offline launch: with the API unreachable, the reopened app shows the saved order read-only, not a dead end.
+  await page.route('**/api/**', route => route.abort('internetdisconnected'));
+  try {
+    await page.reload();
+    await page.getByText(c.offline, { exact: true }).waitFor({ timeout: 30_000 });
+    await page.getByText(`${orderCode(freightId)}, ${statusText(c, { service: 'freight', status: 'assigned' })}`, { exact: true }).waitFor();
+    await page.screenshot({ path: join(output, 'a53-offline-saved-order.png') });
+  } finally { await page.unroute('**/api/**'); }
+  await click(c.retry);
+  await page.getByText(c.offline, { exact: true }).waitFor({ state: 'detached' });
+  checks.push('A53 offline launch shows the saved order read-only, and Retry returns to the live app');
+
   // Forced upgrade: the web build names its client build on every call; above the minimum, only the update screen shows.
   process.env.WIND_MIN_CLIENT_BUILD = '99999';
   try {

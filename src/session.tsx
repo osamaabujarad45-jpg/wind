@@ -110,11 +110,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // Refresh older native token accessibility while the app is open, before starting any tracker.
         if (token && Platform.OS !== 'web') await storage.set('token', token).catch(() => {});
         configureApi(token, forget);
-        const savedSummary = !phoneTest ? await savedOfflineSummary().catch(() => null) : null;
-        if (savedSummary?.orders.length) {
-          setOfflineSummary(savedSummary); setOffline(true); setReady(true);
-          void refresh();
-        } else await refresh();
+        // The saved read-only summary appears only if the account cannot be reached (refresh clears it on success),
+        // so an online launch never flashes the offline screen.
+        if (!phoneTest) setOfflineSummary(await savedOfflineSummary().catch(() => null));
+        await refresh();
       }
       setReady(true);
     })();
