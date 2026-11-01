@@ -128,7 +128,7 @@ export default function OrderScreen() {
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'other_order') throw new ApiError('driver_command_pending', 409);
         if (result.state === 'conflict') throw new ApiError('order_changed', 409);
-        if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', 400);
+        if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);
         if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);
         setAdvanceLocked(null);
         if ('order' in result && result.order) { setData(result.order); work.update(result.order); } else await reload();
@@ -167,6 +167,13 @@ export default function OrderScreen() {
       }
       after?.();
     } catch (e) {
+      if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+      // A rejected proof is a recorded decision and advances the recovery revision.
+      // Keep actions busy until the next attempt can bind to a fresh authorized snapshot.
+      if (mine && order.recovery && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) {
+        await reload();
+        if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+      }
       if (key === 'advance' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)
         && e.message !== 'idempotency_conflict') { advanceAttempt.current = null; setAdvanceLocked(null); }
       if (key === 'problem' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) problemAttempt.current = null;

@@ -13,10 +13,15 @@ export function useDriverRecovery(order: Order | undefined, actorId: number | un
   const focus = useRef(0);
   const current = useRef({ order, actorId, authorized });
   useEffect(() => { current.current = { order, actorId, authorized }; });
+  const identity = `${order?.id}:${order?.driverId}:${order?.updatedAt}:${order?.recovery?.version}:${order?.recovery?.assignmentEpoch}`;
   const retry = useCallback(async () => {
     const value = current.current, generation = focus.current;
-    if (!value.authorized || !value.actorId || value.order?.driverId !== value.actorId || !value.order.recovery) return;
-    const valid = () => generation === focus.current && current.current.authorized;
+    if (!authorized || !actorId || !value.authorized || value.actorId !== actorId || value.order?.driverId !== actorId || !value.order.recovery) return;
+    const valid = () => {
+      const latest = current.current;
+      return generation === focus.current && latest.authorized && latest.actorId === actorId
+        && `${latest.order?.id}:${latest.order?.driverId}:${latest.order?.updatedAt}:${latest.order?.recovery?.version}:${latest.order?.recovery?.assignmentEpoch}` === identity;
+    };
     setState({ state: 'checking' });
     try {
       const result = await recoverDriverAction(value.actorId, value.order, undefined, {}, valid);
@@ -28,13 +33,11 @@ export function useDriverRecovery(order: Order | undefined, actorId: number | un
         else await latest.current.refresh();
       }
     } catch (error) { if (valid()) setState({ state: 'pending', error: errorCode(error) }); }
-  }, []);
+  }, [identity, actorId, authorized]);
   useFocusEffect(useCallback(() => {
     focus.current++;
     if (authorized) void retry();
     return () => { focus.current++; };
-    // The callback reads refs; these values are re-run triggers (new order revision or actor), not inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id, order?.updatedAt, order?.recovery?.version, actorId, authorized, retry]));
+  }, [authorized, retry]));
   return { ...state, retry };
 }

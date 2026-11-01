@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { configureRuntime, resetRuntime } from '../src/runtime-config.ts';
-import { effectiveMapProvider, canShowOnRenderer, reportRendererFailure, selectRenderer } from '../src/map-provider.ts';
+import { effectiveMapProvider, canShowOnRenderer } from '../src/map-provider.ts';
 import { recordMapFailure, retryMapProviders } from '../src/map-failures.ts';
-import { mapCameraIntent, visibleMapInsets } from '../src/map-viewport.ts';
 import { clientConfiguration } from '../server/domain/runtime-readiness.ts';
 resetRuntime(); retryMapProviders();
 assert.equal(effectiveMapProvider('android', { android:true }).renderer, 'maplibre', 'missing preference/configuration retains the safe baked baseline');
@@ -16,18 +15,5 @@ recordMapFailure(selected.key, 'maplibre'); assert.equal(effectiveMapProvider('a
 retryMapProviders(selected.key); assert.equal(effectiveMapProvider('android', { android:true }).renderer, 'google');
 selected = effectiveMapProvider('android', { android:true }, 'google', true); assert.equal(selected.renderer, 'maplibre');
 recordMapFailure(selected.key, 'maplibre'); assert.equal(effectiveMapProvider('android', { android:true }, 'google', true).renderer, null, 'public maps never fall back to paid provider');
-assert.deepEqual(visibleMapInsets([{bottom:120},{bottom:80,left:30}],390,300),{top:0,right:0,bottom:120,left:30});
-const point = {latitude:31.9,longitude:35.2};
-assert.equal(mapCameraIntent({pickup:point,dropoff:point,driver:point,userControlled:true,width:390,height:220}).mode,'manual');
-assert.equal(mapCameraIntent({pickup:point,dropoff:point,driver:point,userControlled:false,width:390,height:220}).mode,'follow');
-assert.equal(mapCameraIntent({pickup:point,dropoff:point,userControlled:false,width:390,height:220}).mode,'fit');
 resetRuntime(); retryMapProviders();
-// A Google map that fails to draw reports itself; the same session key then selects the baseline.
-configureRuntime(config);
-assert.equal(selectRenderer('web', { web:true }, 'google'), 'google');
-reportRendererFailure('web', { web:true }, 'google', 'google');
-assert.equal(selectRenderer('web', { web:true }, 'google'), 'maplibre');
-assert.equal(selectRenderer('android', { android:true }, 'google'), 'google', 'a failure is scoped to its own platform key');
-retryMapProviders(); assert.equal(selectRenderer('web', { web:true }, 'google'), 'google', 'choosing a mode again retries');
-resetRuntime(); retryMapProviders();
-console.log('Effective map provider fallback/exhaustion, renderer failure reports, public scope, route provenance and shared camera policy passed');
+console.log('Effective map provider fallback/exhaustion, public scope, route provenance and attempt isolation passed');

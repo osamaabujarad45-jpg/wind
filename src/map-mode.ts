@@ -5,8 +5,6 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import Constants from 'expo-constants';
-import { reportRendererFailure } from './map-provider';
 import { webGet, webSet } from './web-storage';
 import { effectiveRuntime, subscribeRuntime } from './runtime-config';
 import { retryMapProviders, subscribeMapFailures } from './map-failures';
@@ -51,12 +49,4 @@ export function useMapMode(): [MapMode, (mode: MapMode) => void] {
     return () => { listeners.delete(setMode); };
   }, []);
   return [cached ?? effectiveRuntime().mapProviders.initialMapProvider ?? mode, storeMapMode];
-}
-
-/** A Google map that reached its failure state hands the screen to the next configured renderer. */
-export function useRendererFallback(failed: boolean) {
-  const [mode] = useMapMode();
-  useEffect(() => {
-    if (failed) reportRendererFailure(Platform.OS, Constants.expoConfig?.extra?.googleMaps, mode, 'google');
-  }, [failed, mode]);
 }

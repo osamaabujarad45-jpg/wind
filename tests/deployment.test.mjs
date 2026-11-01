@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,24 +36,18 @@ import { copyRuntimeSources } from '../scripts/runtime-sources.mjs';
   }
 }
 
-// The runtime image copies src files one by one: every module the server reaches must be listed (5 Oct 2026: a deploy
-// failed its health check because server/main.ts started importing src/map-math.ts).
+// The image packages the computed transitive source closure, rather than a brittle list of COPY lines.
 {
   const root = new URL('../', import.meta.url), read = rel => readFileSync(new URL(rel, root), 'utf8');
   const runtime = read('Dockerfile').split(/^FROM /m).at(-1);
-  const needed = new Set(), queue = readdirSync(new URL('server/', root)).filter(f => f.endsWith('.ts')).map(f => `server/${f}`);
-  while (queue.length) {
-    const file = queue.pop(), base = file.slice(0, file.lastIndexOf('/') + 1);
-    for (const [, spec] of read(file).matchAll(/from '(\.{1,2}\/[^']+\.ts)'/g)) {
-      const target = new URL(spec, new URL(base, root)).pathname.slice(new URL(root).pathname.length);
-      if (target.startsWith('src/') && !needed.has(target)) { needed.add(target); queue.push(target); }
-    }
-  }
-  assert.ok(needed.has('src/model.ts'));
-  // The build stage copies the import closure (scripts/runtime-sources.mjs); the runtime stage takes that folder whole.
-  const computed = /^COPY --from=web-build \/app\/api-runtime\/src \.\/src$/m.test(runtime);
-  const closure = computed ? new Set(copyRuntimeSources(fileURLToPath(root), mkdtempSync(join(tmpdir(), 'wind-src-'))).map(f => f.split(sep).join('/'))) : new Set();
-  for (const file of needed) assert.ok(runtime.includes(`COPY ${file} ./${file}`) || /^COPY src \.\/src$/m.test(runtime) || closure.has(file), `Dockerfile runtime stage must copy ${file}`);
+  assert.match(read('Dockerfile'), /node scripts\/runtime-dependencies\.mjs/);
+  assert.match(runtime, /COPY --from=[\w-]+ \/app\/api-runtime\/src \.\/src/);
+  const output = mkdtempSync(join(tmpdir(), 'wind-source-closure-'));
+  try {
+    const needed = copyRuntimeSources(fileURLToPath(root), output);
+    assert.ok(needed.some(file => file.replaceAll('\\', '/') === 'src/model.ts'));
+    for (const file of needed) assert.equal(readFileSync(join(output, file), 'utf8'), read(file.replaceAll('\\', '/')));
+  } finally { rmSync(output, { recursive: true, force: true }); }
 }
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-deploy-'));

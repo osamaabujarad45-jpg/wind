@@ -38,8 +38,6 @@ type Session = {
 
 const Context = createContext<Session | null>(null);
 const phoneTest = phoneTestConfig(Constants.expoConfig?.extra?.phoneTest, API_URL);
-// Measured from bundle load, so session-ready timing includes everything before the provider mounts.
-const bundleStartedAt = Date.now();
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -48,9 +46,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [onboarded, setOnboarded] = useState(false);
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
-  const announced = useRef(false);
+  const startedAt = useRef<number | null>(null), announced = useRef(false);
+  useEffect(() => { startedAt.current ??= Date.now(); }, []);
   useEffect(() => {
-    if (ready && !announced.current) { announced.current = true; clientDiagnostics.record('session_ready', { durationMs: Math.min(120_000, Math.max(0, Date.now() - bundleStartedAt)) }); }
+    if (ready && !announced.current && startedAt.current !== null) { announced.current = true; clientDiagnostics.record('session_ready', { durationMs: Math.min(120_000, Math.max(0, Date.now() - startedAt.current)) }); }
   }, [ready]);
 
   const forget = useCallback(async () => {

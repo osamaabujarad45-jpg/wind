@@ -27,6 +27,7 @@ try {
     expectedVersion: snapshot.recovery.version, attemptCreatedAt: now, attemptExpiresAt: now + 60_000 };
   const advanced = await call(`/orders/${booked.id}/advance`, { token: driver.token, body });
   assert.equal(advanced.status, 'at_pickup');
+  assert.ok(advanced.recovery.version > snapshot.recovery.version, 'mutation reply retains current opt-in recovery metadata');
   assert.equal((await call(path, { token: driver.token })).state, 'applied');
   assert.equal((await call(`/orders/${booked.id}/advance`, { token: driver.token, body })).status, 'at_pickup', 'same receipt replays before stale status');
   const expired = { ...body, requestId: randomUUID(), expectedStatus: advanced.status, attemptCreatedAt: now - 60_000, attemptExpiresAt: now - 1 };
@@ -37,5 +38,19 @@ try {
   assert.equal((await call('/runtime/capabilities', { token: driver.token })).capabilities.freightCrew.state, 'unavailable');
   await call('/admin/runtime', { token: driver.token, expect: 403 });
   assert.equal((await call('/admin/runtime', { token: admin.token })).backend, 'sqlite');
+  const attempt = async code => {
+    const current = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
+    const stamp = Date.now();
+    return { ...body, requestId: randomUUID(), expectedStatus: current.status, expectedAssignedAt: current.assignedAt,
+      expectedVersion: current.recovery.version, attemptCreatedAt: stamp, attemptExpiresAt: stamp + 60_000, ...(code ? { code } : {}) };
+  };
+  await call(`/orders/${booked.id}/advance`, { token: driver.token, body: await attempt() });
+  const proof = db.prepare('SELECT handover_code FROM orders WHERE id=?').get(booked.id).handover_code;
+  const wrong = await attempt(proof === '0000' ? '0001' : '0000');
+  await call(`/orders/${booked.id}/advance`, { token: driver.token, body: wrong, expect: 400 });
+  await call(`/orders/${booked.id}/advance`, { token: driver.token, body: wrong, expect: 400 });
+  assert.equal(db.prepare('SELECT failures FROM proof_attempts WHERE order_id=?').get(booked.id).failures, 1, 'replayed rejection counts once');
+  const corrected = await call(`/orders/${booked.id}/advance`, { token: driver.token, body: await attempt(proof) });
+  assert.equal(corrected.status, 'completed', 'fresh corrected proof completes immediately without a polling interval');
   console.log('Driver receipt privacy, legacy compatibility, exact replay, expiry and reassignment API fences passed');
 } finally { await shutdown(); }

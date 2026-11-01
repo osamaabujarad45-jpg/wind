@@ -3,14 +3,11 @@
 // A Google-keyed build (extra.googleMaps.web) that the user opted into draws with google-map.web.tsx instead.
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.web';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import { bearing, ease, farJump, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn } from './map-math';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
-import { MAP_FOLLOW_ZOOM as FOLLOW_ZOOM } from './map-viewport';
+import { MapProviderBoundary } from './map-provider-boundary';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -148,19 +145,15 @@ const halo = (meters: number, lat: number) => {
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
-const FOLLOW_OFFSET: [number, number] = [0, -60];
+const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
-  const [mode] = useMapMode();
-  // T06/T12/T15: the renderer must be one this bundle actually contains — the capability is baked at build
-  // time, so a mode change or kill switch can never select an absent renderer. A forced baseline (public
-  // tracking) draws MapLibre even for a Google-keyed build.
   const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
-  return <LiveMap key={key} {...props} />;
+  return <MapProviderBoundary platform="web" route={props} render={attempt => attempt.renderer === 'google'
+    ? <GoogleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />
+    : <LiveMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />} />;
 }
 
 function LiveMap(props: RouteMapProps) {
@@ -171,6 +164,8 @@ function LiveMap(props: RouteMapProps) {
     at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean; moved?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
   const { map, failed, loaded, retry } = useMap(host, points, language, { padding }, (m, ml) => {
     // A retried or relabelled map is new: markers of the old one went with it, and its camera follows the route again.
@@ -189,6 +184,9 @@ function LiveMap(props: RouteMapProps) {
     m.on('dragstart', () => { markers.current.moved = true; setMoved(true); });
     m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) { markers.current.moved = true; setMoved(true); } });
   });
+
+  // A terminal failure goes to the provider boundary, which owns fallback and retry for this attempt.
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
 
   // Road lines arrive after the map (and the driver leg changes as the car moves).
   const { road, approach } = props;
@@ -327,10 +325,13 @@ function LiveMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap(props: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
-  return <MapLibrePin {...props} />;
+  return <MapProviderBoundary platform="web" pin={props} render={attempt => {
+    const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+      onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+    return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
+  }} />;
 }
+
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);

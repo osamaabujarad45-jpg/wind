@@ -315,9 +315,13 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never
   // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
-  assert.ok(androidSource.includes("selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode)"), 'Android must resolve the renderer from baked capability and mode');
+  // Every route/pin wrapper resolves through one provider boundary, which reads the baked capability and the stored mode.
+  const boundarySource = readFileSync(new URL('../src/map-provider-boundary.tsx', import.meta.url), 'utf8');
+  assert.ok(boundarySource.includes('const baked = Constants.expoConfig?.extra?.googleMaps;') && boundarySource.includes('effectiveMapProvider(platform, baked, mode, route?.forceBaseline)'),
+    'the provider boundary must resolve the renderer from baked capability and mode');
+  assert.equal(androidSource.match(/<MapProviderBoundary platform="android"/g)?.length, 2, 'Android route and pin maps must resolve through the boundary');
   const iosSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
-  assert.ok(iosSource.includes("selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode)"), 'iOS must resolve the renderer from baked capability and mode');
+  assert.equal(iosSource.match(/<MapProviderBoundary platform="ios"/g)?.length, 2, 'iOS route and pin maps must resolve through the boundary');
   assert.ok(iosSource.includes('AppleRouteMap'), 'the Apple baseline stays the iOS default');
   const googleSource = readFileSync(new URL('../src/google-map.native.tsx', import.meta.url), 'utf8');
   assert.ok(googleSource.includes('onMapLoaded'), 'Google readiness waits for loaded tiles');
@@ -328,7 +332,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // T12: the web entry resolves the renderer the same way, and the CSP opens Google origins only for a
   // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
   const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
-  assert.ok(webEntry.includes("selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode)"), 'web must resolve the renderer from baked capability and mode');
+  assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
   const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
   const googleLoader = readFileSync(new URL('../src/google-maps-loader.ts', import.meta.url), 'utf8');
   assert.ok(googleLoader.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
