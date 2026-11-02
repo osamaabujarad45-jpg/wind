@@ -1,6 +1,8 @@
 @AGENTS.md
 
-Latest handoff: `docs/HANDOFF-2026-10-21-deploy.md` (earlier: `docs/HANDOFF-2026-09-29-uber-careem-redesign.md`, `docs/HANDOFF-2026-09-28-brand-and-screens.md`).
+Latest implementation handoff: `docs/HANDOFF-2026-11-02-OPUS-5.5-START-HERE.md`.
+
+Start there before selecting work. The workspace has user-owned changes, so inspect `git status` and preserve unrelated files.
 
 ## Seeing the app
 

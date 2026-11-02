@@ -1,6 +1,8 @@
 {
   "date": "2026-11-02",
   "head_before_preservation_commit": "13850b9",
+  "study_commit": "0ead4d143318cf54a6bd9604bb675557049cc217",
+  "study_tag": "fastship-study-2026-11-02",
   "note": "Hashes identify artifacts; they are not proof that a claim is true. All paths are relative to the Fastship repo root. These hashes were taken from the working copy on 2026-11-02. Git stores these files with LF while the working copy has LF/CRLF mixed, so a later checkout may rewrite line endings and change the bytes; re-hash from the commit (`git show <rev>:<path>`) when exact identity matters.",
   "preservation_legend": {
     "committed-local": "in git in this repository; nothing pushed",
@@ -128,6 +130,14 @@
       "bytes": 14237
     },
     {
+      "path": "docs/rea-work/fastship-screens-2026-11-02.zip",
+      "group": "session-2026-11-02",
+      "note": "92 Fastship Arabic and English screen captures",
+      "preservation": "committed-local",
+      "sha256": "d5a4773ea3229b1375ea4c16fe50f85ba5cd98393f6426e92cea44406a697274",
+      "bytes": 12977081
+    },
+    {
       "path": "docs/HANDOFF-2026-11-01-UBER-APP-KNOWLEDGE-FOR-OPUS-5.5.md",
       "group": "prior-session",
       "note": "prior-session research",
@@ -177,8 +187,9 @@
       "exists": true,
       "files": 92,
       "bytes": 13611786,
-      "preservation": "disk-only",
-      "why": "excluded by .gitignore:52 (.screens/)"
+      "preservation": "committed-local-copy",
+      "archive": "docs/rea-work/fastship-screens-2026-11-02.zip",
+      "why": "source path stays excluded by .gitignore:52 (.screens/); the session copy is committed"
     }
   ],
   "not_committed_on_purpose": [
