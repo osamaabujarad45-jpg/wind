@@ -1086,18 +1086,20 @@ export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
 }
 /** T21: stale searching demand is system-cancelled so it cannot occupy the board forever. A scheduled order
- * ages from its pickup time, so future work is untouched but a slot missed long ago leaves the board too. */
+ * ages from its pickup time, so future work is untouched but a slot missed long ago leaves the board too.
+ * An order a driver released (assigned_at kept, updated_at = release time) ages from its return to the board,
+ * not from its booking, so it is never cancelled the minute it comes back. */
 export async function expireStaleDemand(now = Date.now()) {
   return persistence.atomic({ purpose: 'stale_demand_expiry' }, async () => {
     if (draining) return 0;
     const before = now - SEARCH_EXPIRY_MS;
-    const stale = (await all(`SELECT id, customer_id FROM orders WHERE status = 'searching' AND driver_id IS NULL
-      AND COALESCE(scheduled_for, created_at) < ? LIMIT 50`, before));
+    const staleWhere = `status = 'searching' AND driver_id IS NULL AND COALESCE(scheduled_for, created_at) < ?
+      AND (assigned_at IS NULL OR updated_at < ?)`;
+    const stale = (await all(`SELECT id, customer_id FROM orders WHERE ${staleWhere} LIMIT 50`, before, before));
     let expired = 0;
     for (const o of stale) {
-      // CAS: only still searching, unassigned and stale (not rescheduled) at the moment of the update.
-      if (!(await run(`UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?
-        AND status = 'searching' AND driver_id IS NULL AND COALESCE(scheduled_for, created_at) < ?`, now, o.id, before)).changes) continue;
+      // CAS: only still searching, unassigned and stale (not rescheduled or released since) at the moment of the update.
+      if (!(await run(`UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND ${staleWhere}`, now, o.id, before, before)).changes) continue;
       expired++;
       await queuePush([o.customer_id as number], 'cancelled', o.id as number); // the sender learns why their order left the board
     }
@@ -3293,7 +3295,7 @@ if (import.meta.main) {
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
-    setInterval(async () => { try { (await expireStaleDemand()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board
+    setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

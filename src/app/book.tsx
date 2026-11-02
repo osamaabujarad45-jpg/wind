@@ -434,7 +434,7 @@ function BookForm() {
           return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={c[s]} onPress={() => switchService(s)}
             style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
             <Ionicons name={serviceMeta[s].icon} size={16} color={on ? palette.lime : palette.secondary} />
-            <Text numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
+            <Text key={language} numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
           </Press>;
         })}
       </Row>

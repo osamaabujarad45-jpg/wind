@@ -31,7 +31,7 @@ export type PinMapProps = { center: Point; onChange: (point: Point) => void; onR
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not
 // announce the city names twice or repeat them on screen.
 export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false }: RouteMapProps & { plain?: boolean }) {
-  const { rtl, c } = useCopy();
+  const { rtl, c, language } = useCopy();
   const [w, setW] = useState(0);
   const h = 156;
   const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
@@ -49,8 +49,8 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
       <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       {!plain && <>
-        <Text numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+        <Text key={`pickup-${language}`} numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
+        <Text key={`dropoff-${language}`} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
       </>}
     </>}
   </View>;

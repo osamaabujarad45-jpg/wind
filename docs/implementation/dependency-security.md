@@ -18,7 +18,7 @@ The 29 Oct 2026 `npm audit --audit-level=high` run still lists this advisory (an
 
 ## Carried decode-uri-component 0.5.1 (31 October 2026)
 
-GHSA-qr28-fpjm-wq7f (published 29 Oct 2026, high: the fallback decoder ran one full-string replacement per distinct percent-encoded run, so a ~224 KB malformed input blocked the event loop for seconds) reached the vendored 0.5.0 copy, whose `split/join` loop had the same quadratic shape. It is reachable at runtime through Expo Router's `query-string`. `vendor/decode-uri-component/index.cjs` now carries upstream 0.5.1 (`fad01d6`, single-pass `replace`) with only the CommonJS export changed; `tests/url-decoder.test.mjs` adds the upstream cases and the advisory input under a 3 s process deadline (old copy ~7 s, fixed ~0.15 s on the dev PC). GitHub has since rated GHSA-gcqx-w48m-w2h4 (deepmerge) low, so `npm audit --audit-level=high` exits 0 with seven low items.
+GHSA-qr28-fpjm-wq7f / CVE-2026-118664 (published 29 Oct 2026, high: the fallback decoder ran one full-string replacement per distinct percent-encoded run, so a ~224 KB malformed input blocked the event loop for seconds) reached the vendored 0.5.0 copy, whose `split/join` loop had the same quadratic shape. It is reachable at runtime through Expo Router's `query-string`. `vendor/decode-uri-component/index.cjs` now carries upstream 0.5.1 (`fad01d6`, single-pass `replace`) with only the CommonJS export changed; `tests/url-decoder.test.mjs` adds the upstream cases and the advisory input under a 3 s process deadline (old copy ~7 s, fixed ~0.15 s on the dev PC). GitHub has since rated GHSA-gcqx-w48m-w2h4 (deepmerge) low, so `npm audit --audit-level=high` exits 0 with seven low items.
 
 ## Checks
 

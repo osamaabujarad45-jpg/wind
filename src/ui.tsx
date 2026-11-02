@@ -426,11 +426,11 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
 export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
 }) {
-  const { row, rtl, align } = useCopy();
+  const { row, rtl, align, language } = useCopy();
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
-    <Text numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
+    <Text key={language} numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text style={styles.listValue}>{value}</Text>}
     {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
@@ -496,7 +496,7 @@ export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () =>
 // Docked bar (Uber/Careem pattern): compact, label under icon, a lime pill marks the current tab.
 // Custom so tab order follows the in-app language (OS RTL flipping is off).
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { row } = useCopy();
+  const { row, language } = useCopy();
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
@@ -513,7 +513,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
+        <Text key={language} style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;

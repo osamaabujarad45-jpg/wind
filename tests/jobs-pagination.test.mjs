@@ -108,13 +108,28 @@ try {
   const kept = made[2];
   await call(`/jobs/${kept}/accept`, { token: driver.token, body: {} });
   db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 25 * hour, kept);
+  // The pickup time wins over the booking time: booked 30 h ago for later, or for a slot just missed, still stays.
+  db.prepare('UPDATE orders SET created_at = ? WHERE id = ?').run(Date.now() - 30 * hour, scheduled.id);
+  const slotJustMissed = await call('/orders', { token: capped.token, body: { ...capInput, quotedPrice: capPrice, scheduledFor: Date.now() + 2 * 86_400_000 } });
+  db.prepare('UPDATE orders SET scheduled_for = ?, created_at = ? WHERE id = ?').run(Date.now() - hour, Date.now() - 30 * hour, slotJustMissed.id);
+  // A released order ages from its return to the board: booked 30 h ago, released by a driver just now, it stays;
+  // one released 25 h ago and never claimed since expires.
+  const justReleased = made[4];
+  await call(`/jobs/${justReleased}/accept`, { token: driver.token, body: {} });
+  await call(`/orders/${justReleased}/release`, { token: driver.token, body: {} });
+  db.prepare('UPDATE orders SET created_at = ?, assigned_at = ? WHERE id = ?').run(Date.now() - 30 * hour, Date.now() - 29 * hour, justReleased);
+  const releasedLongAgo = (await book()).id;
+  db.prepare('UPDATE orders SET created_at = ?, assigned_at = ?, updated_at = ? WHERE id = ?').run(Date.now() - 30 * hour, Date.now() - 29 * hour, Date.now() - 25 * hour, releasedLongAgo);
   const { expireStaleDemand } = await import('../server/main.ts');
-  assert.equal(await expireStaleDemand(), 2, 'exactly the stale order and the long-missed scheduled slot expired');
+  assert.equal(await expireStaleDemand(), 3, 'exactly the stale order, the long-missed scheduled slot and the long-released order expired');
   assert.equal((await call(`/orders/${stale}`, { token: capped.token })).status, 'cancelled');
   assert.equal((await call(`/orders/${missed.id}`, { token: capped.token })).status, 'cancelled', 'a scheduled slot missed by a day leaves the board');
+  assert.equal((await call(`/orders/${releasedLongAgo}`, { token: capped.token })).status, 'cancelled', 'released a day ago and unclaimed since: it leaves');
   assert.equal((await call(`/orders/${recent}`, { token: capped.token })).status, 'searching', 'demand younger than 24 h stays');
   assert.equal((await call(`/orders/${kept}`, { token: capped.token })).status, 'assigned', 'assigned custody is never auto-expired');
-  assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).status, 'searching', 'not-yet-due scheduled work is never auto-expired');
+  assert.equal((await call(`/orders/${scheduled.id}`, { token: capped.token })).status, 'searching', 'future scheduled work booked long ago is never auto-expired');
+  assert.equal((await call(`/orders/${slotJustMissed.id}`, { token: capped.token })).status, 'searching', 'a slot missed by an hour ages from the slot, not the booking');
+  assert.equal((await call(`/orders/${justReleased}`, { token: capped.token })).status, 'searching', 'a driver release returns the order to the board without expiring it');
   const again = await book(); // the expired demand freed a slot
   await call(`/orders/${again.id}/cancel`, { token: capped.token, body: {} });
 
