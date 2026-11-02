@@ -36,7 +36,7 @@ export default function RouteMap(props: RouteMapProps) {
   const reportFailure = useRef(props.onFail);
   useEffect(() => { reportFailure.current = props.onFail; });
   useEffect(() => { if (failed) reportFailure.current?.(); }, [failed]);
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps

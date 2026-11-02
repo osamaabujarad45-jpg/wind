@@ -54,7 +54,7 @@ export default function RouteMap(props: RouteMapProps) {
   const [attempt, setAttempt] = useState(0);
   const [moved, setMoved] = useState(false);
   const movedRef = useRef(false);
-  const terminal = useRef(false);
+  const terminal = useRef(false);
   const points = routeFramePoints({ pickup, dropoff, driver, focus: props.focus, road: props.road, approach: props.approach });
   const roadKey = JSON.stringify([props.road, props.approach, props.stale]);
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
