@@ -51,7 +51,9 @@ export default function TrackScreen() {
     updatedAt: etaData.fixUpdatedAt,
     ageSeconds: candidate ? Math.floor(Math.max(0, fixAge + candidate.updatedAt - etaData.fixUpdatedAt) / 1000) : undefined,
   }, now)?.ageSeconds ?? Infinity) <= 30;
-  const eta = etaFresh && (!etaData?.eta || deadlineSeconds(etaData.eta.validity.expiresAt, etaData.eta, now) > 0) ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
+  // The approach line is part of the same calculation: both disappear when it expires, not only when the fix is old.
+  const etaCurrent = etaFresh && (!etaData?.eta || deadlineSeconds(etaData.eta.validity.expiresAt, etaData.eta, now) > 0);
+  const eta = etaCurrent ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
 
   // A failed poll must not leave revoked tracking or stale GPS visible — but it must not blank the page either:
   // the last answer stays with a note that the updates are paused.
@@ -72,7 +74,7 @@ export default function TrackScreen() {
       {/* Anonymous tracking draws the free baseline only: a Google-keyed build still makes zero paid calls here (T15). */}
       <RouteMap forceBaseline pickup={from} dropoff={to} focus={toPickup ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={location ? 300 : undefined}
-        stale={!!freshness?.stale} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
+        stale={!!freshness?.stale} approach={location && etaCurrent && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
