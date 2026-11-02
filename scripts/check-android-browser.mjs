@@ -61,6 +61,8 @@ try {
   await page.getByRole('radio', { name: c.signUp, exact: true }).click();
   for (const [label, value] of [[c.name, 'QA Android'], [c.email, 'android@example.test'], [c.phone, '0599000781'], [c.password, 'Android_Local_2026']])
     await page.getByLabel(label, { exact: true }).fill(value);
+  // Dismiss the soft keyboard first: while it is open the layout shifts and the tap lands on a field instead.
+  await page.evaluate(() => document.activeElement?.blur());
   await page.getByRole('checkbox', { name: c.consent }).click();
   await page.getByRole('button', { name: c.createAccount, exact: true }).click();
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));
