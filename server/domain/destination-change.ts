@@ -148,12 +148,13 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       const now = Date.now();
       let fareChange;
       if (desired === 'accepted') {
-        const before = storedFareAmounts(r); // a decline never reads (possibly malformed legacy) fare amounts
         await db.run(`UPDATE orders SET dropoff_city = ?, dropoff_lat = ?, dropoff_lng = ?, dropoff_note = ?, price = ?, discount = ?,
           commission = ?, recommended_price = ?, route_km = ?, updated_at = ? WHERE id = ?`,
         p.dropoff_city, p.dropoff_lat, p.dropoff_lng, p.dropoff_note, p.price, p.discount, p.commission, p.price, p.route_km, now, id);
         const updated = await db.one('SELECT * FROM orders WHERE id=?', id);
-        fareChange = acceptedFareChange(p.id, now, before, storedFareAmounts(updated!));
+        // r is the row before the update. A malformed legacy fare (discount above price) gets no typed fare record,
+        // but the accept still applies; a decline never reads fare amounts at all.
+        try { fareChange = acceptedFareChange(p.id, now, storedFareAmounts(r), storedFareAmounts(updated!)); } catch { fareChange = undefined; }
         if (fareChange && await durableProtocolAvailable(db)) await db.one("SELECT append_domain_event(?, 'fare.changed', ?::jsonb) AS id", id, JSON.stringify(fareChange));
       }
       await db.run('UPDATE destination_changes SET state = ?, decided_at = ? WHERE id = ? AND state = ?', desired, now, p.id, 'pending');

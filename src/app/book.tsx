@@ -49,6 +49,8 @@ function BookForm() {
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
   const gpsAt = useRef(0);
+  const pickupNow = useRef({ city: pickupCity, chosen: pickupChosen }); // read when a slow GPS fix lands, not at the tap
+  useEffect(() => { pickupNow.current = { city: pickupCity, chosen: pickupChosen }; }, [pickupCity, pickupChosen]);
   const pinRequest = useRef<AbortController | null>(null);
   useEffect(() => () => pinRequest.current?.abort(), []);
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
@@ -170,7 +172,8 @@ function BookForm() {
         : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
       if (request.signal.aborted) return;
-      if (result.city !== pickupCity) setPickupNote(''); // another city's landmark would mislead the driver, as on the pin sheet
+      // Another chosen city's landmark would mislead the driver (as on the pin sheet); one typed before any city is kept.
+      if (pickupNow.current.chosen && result.city !== pickupNow.current.city) setPickupNote('');
       setPickupCity(result.city); setPickupChosen(true);
       gpsAt.current = Date.now();
       setPickupPoint(result.point); setGpsPoint(result.point);

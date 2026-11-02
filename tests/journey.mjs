@@ -71,15 +71,15 @@ try {
   assert.equal(await fares(f.customer.token),2);
   assert.equal(await fares(who.driver.token),1,'a driver sees fare changes from their own assignment only');
   // A decline never reads fare amounts, so a malformed legacy row (discount above price) cannot make it a 500.
-  const priced=await f.db.one('SELECT price,discount FROM orders WHERE id=?',order.id);
   await f.db.run('UPDATE orders SET discount=price+1 WHERE id=?',order.id); // malformed before the proposal, as legacy rows are
   const second=await f.call(`/orders/${order.id}/destination/quote`,{token:f.customer.token,body:{city:'nablus',note:'Synthetic declined destination'}});
   await f.call(`/orders/${order.id}/destination/propose`,{token:f.customer.token,body:{id:second.id}});
   await f.call(`/orders/${order.id}/destination/decision`,{token:who.driver.token,body:{id:second.id,decision:'decline'}});
-  await f.db.run('UPDATE orders SET discount=? WHERE id=?',priced.discount,order.id);
-  // A later accept that left the fare unchanged carries no fareChange and must not hide the last real one.
-  await f.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'DESTINATION_ACCEPTED',?,?)",
-    who.driver.user.id,order.id,JSON.stringify({proposalId:randomUUID(),oldPrice:priced.price,newPrice:priced.price}),Date.now());
+  // Accepting on that row still applies; it just has no typed fare record, so it cannot hide the last real one.
+  const third=await f.call(`/orders/${order.id}/destination/quote`,{token:f.customer.token,body:{city:'jenin',note:'Synthetic legacy-row destination'}});
+  await f.call(`/orders/${order.id}/destination/propose`,{token:f.customer.token,body:{id:third.id}});
+  await f.call(`/orders/${order.id}/destination/decision`,{token:who.driver.token,body:{id:third.id,decision:'accept'}});
+  assert.equal((await f.db.one('SELECT dropoff_city FROM orders WHERE id=?',order.id)).dropoff_city,'jenin');
   assert.equal((await get(f.customer.token)).journey.lastFareChange?.changeId,proposal.id,'the newest fare-changing accept is shown');
   await f.db.run(readFileSync(new URL('../server/db/postgres-boarding-metadata.sql',import.meta.url),'utf8'));
   assert.equal((await get(f.customer.token)).journey.boarding.pinRevision,rotated.pinRevision);

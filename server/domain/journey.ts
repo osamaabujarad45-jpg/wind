@@ -59,7 +59,8 @@ export async function journeyOrder(db: Persistence, lifecycle: RideLifecycle, or
   // Job-board viewers and former assignments are not entitled to private fare history.
   if (viewer.role === 'admin' || viewer.id === order.customerId || viewer.id === order.driverId) {
     // The newest accept that changed the fare: a later accept at the same price carries no fareChange.
-    for (const audit of await db.all("SELECT detail FROM security_events WHERE order_id=? AND action='DESTINATION_ACCEPTED' ORDER BY id DESC", order.id)) {
+    // ponytail: newest 50 accepts; an order with more fare-neutral accepts than that shows none.
+    for (const audit of await db.all("SELECT detail FROM security_events WHERE order_id=? AND action='DESTINATION_ACCEPTED' ORDER BY id DESC LIMIT 50", order.id)) {
       let detail: Row | undefined;
       try { detail = typeof audit.detail === 'string' ? JSON.parse(audit.detail) : audit.detail; } catch { continue; } // Historical audit detail is not a typed fare record.
       if (!detail || !validFareChange(detail.fareChange)) continue;
