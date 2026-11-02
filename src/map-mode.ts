@@ -5,6 +5,9 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { webGet, webSet } from './web-storage';
+import { effectiveRuntime, subscribeRuntime } from './runtime-config';
+import { retryMapProviders, subscribeMapFailures } from './map-failures';
 
 export type MapMode = 'baseline' | 'google';
 
@@ -14,28 +17,39 @@ let cached: MapMode | undefined;
 const listeners = new Set<(mode: MapMode) => void>();
 
 const load = (): Promise<string | null> => Platform.OS === 'web'
-  ? Promise.resolve(globalThis.localStorage?.getItem(KEY) ?? null)
+  ? Promise.resolve(webGet(() => globalThis.localStorage, KEY))
   : SecureStore.getItemAsync(KEY).catch(() => null);
 const save = (mode: MapMode) => {
-  if (Platform.OS === 'web') globalThis.localStorage?.setItem(KEY, mode);
+  if (Platform.OS === 'web') webSet(() => globalThis.localStorage, KEY, mode);
   else SecureStore.setItemAsync(KEY, mode).catch(() => undefined); // the session keeps the choice even if it cannot persist
 };
 
 export async function storeMapMode(mode: MapMode) {
   cached = mode;
+  retryMapProviders();
   save(mode);
   for (const listener of listeners) listener(mode);
 }
 
+/** The live mode outside React (event callbacks): the same value useMapMode renders with. */
+export const currentMapMode = (): MapMode => cached ?? effectiveRuntime().mapProviders.initialMapProvider;
+
 /** [current mode, setter]; 'baseline' until a stored choice says otherwise. */
 export function useMapMode(): [MapMode, (mode: MapMode) => void] {
-  const [mode, setMode] = useState<MapMode>(cached ?? 'baseline');
+  const [mode, setMode] = useState<MapMode>(cached ?? effectiveRuntime().mapProviders.initialMapProvider);
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const invalidate = () => rerender(value => value + 1);
+    const config = subscribeRuntime(invalidate), failures = subscribeMapFailures(invalidate);
+    return () => { config(); failures(); };
+  }, []);
   useEffect(() => {
     listeners.add(setMode);
     load().then(value => {
-      if (modes.includes(value as MapMode)) { cached = value as MapMode; setMode(value as MapMode); }
+      if (cached === undefined && modes.includes(value as MapMode)) cached = value as MapMode;
+      if (cached !== undefined) setMode(cached);
     }).catch(() => undefined); // unreadable storage leaves the safe baseline
     return () => { listeners.delete(setMode); };
   }, []);
-  return [mode, storeMapMode];
+  return [cached ?? effectiveRuntime().mapProviders.initialMapProvider ?? mode, storeMapMode];
 }

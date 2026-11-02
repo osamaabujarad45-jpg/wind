@@ -20,6 +20,8 @@ import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
+import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
+import { FreightScopeForm } from '../freight-details';
 import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
@@ -34,6 +36,8 @@ function BookForm() {
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
   const [service, setService] = useState<Service>(params.service === 'ride' || params.service === 'freight' ? params.service : 'parcel');
+  const [freight, setFreight] = useState(emptyFreightDraft);
+  const [loadingHours, setLoadingHours] = useState(2);
   // a ride meets its passenger and drops them off: its place words differ from a parcel's
   const word = (k: 'pickupNote' | 'dropoffNote' | 'pickupOnMap' | 'dropoffOnMap') => service === 'ride' ? c[`${k}_ride` as const] : c[k];
   const [pickupCity, setPickupCity] = useState<CityId>(isCity(params.from) ? params.from : 'ramallah');
@@ -80,15 +84,25 @@ function BookForm() {
   const [slot, setSlot] = useState<number | null>(null);
   // T40: the ~227 Intl formattings behind scheduleSlots belong to the half-hour bucket, not to every keystroke.
   // The bucket is derived in an effect; the render keeps the last list until the next half-hour begins.
-  const [slotBucket, setSlotBucket] = useState(() => Math.floor(Date.now() / (30 * 60_000)));
+  const [slotBucket, setSlotBucket] = useState(() => ({ bucket: Math.floor(Date.now() / (30 * 60_000)), at: Date.now() }));
   useEffect(() => {
-    const timer = setInterval(() => setSlotBucket(Math.floor(Date.now() / (30 * 60_000))), 60_000);
+    const timer = setInterval(() => {
+      const at = Date.now(), bucket = Math.floor(at / (30 * 60_000));
+      setSlotBucket(previous => previous.bucket === bucket ? previous : { bucket, at });
+    }, 60_000);
     return () => clearInterval(timer);
   }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- slotBucket is the recompute trigger; slots read the real clock
   const slots = useMemo(() => scheduleSlots(), [slotBucket]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
   const scheduledFor = when === 'later' ? chosen : null;
+  const wantsScope = service === 'freight' && me?.capabilities?.declaredScope === true;
+  // An immediate load's window starts when its quote does: every re-quote (expiry, price change, retry) restarts it,
+  // so the declared start is at most one quote lifetime old, not a half-hour bucket.
+  const [quotedAt, setQuotedAt] = useState(() => Date.now());
+  const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, scheduledFor ?? Math.max(slotBucket.at, quotedAt), loadingHours) : undefined),
+    [pending?.payload.declaredScope, wantsScope, freight, scheduledFor, slotBucket.at, quotedAt, loadingHours]);
+  const scopeInvalid = wantsScope && declaredScope === null;
   const sending = useRef(false);
   const savedKey = pendingKey(me!.user.id);
   const releasable = pendingReleasable(outcome);
@@ -165,13 +179,13 @@ function BookForm() {
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
 
-  // Read-only reconciliation: the customer's own order list decides whether the stored command became an order.
+  // Read-only reconciliation uses the exact command receipt, never mutable order details.
   const checkPending = useCallback(async (command: PendingBooking) => {
     if (reading.current || settled.current) return;
     reading.current = true;
     setResolving(true);
     try {
-      const answer = pendingOutcome(command, await api<Order[]>('/orders'));
+      const answer = pendingOutcome(await api<{ orderId: number | null }>(`/orders/commands/${encodeURIComponent(command.requestId)}`), command);
       const held = latest.current;
       // Only apply an answer about the attempt this screen still holds: a late reply must not act for another account.
       if (!alive.current || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
@@ -194,7 +208,7 @@ function BookForm() {
 
   useEffect(() => {
     let mounted = true;
-    storage.get(savedKey).then(async saved => {
+    storage.get(savedKey, true).then(async saved => {
       let existing: PendingBooking | null = null;
       if (saved !== null) {
         try { existing = readBooking(saved); }
@@ -208,6 +222,10 @@ function BookForm() {
         setPickupChosen(true); setDropoffChosen(true);
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
+        if (p.declaredScope) {
+          setFreight(freightDraftFromScope(p.declaredScope));
+          setLoadingHours((p.declaredScope.loadingBefore - p.declaredScope.loadingAfter) / 3_600_000);
+        }
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
         if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
         void checkPending(existing);
@@ -249,20 +267,21 @@ function BookForm() {
   const plus = me?.plan === 'plus';
   // Smart recommended price from the server (SPEC-driver-offers.md); without it (offline), the fixed tariff as before.
   const [priceTick, setPriceTick] = useState(0);
+  const requote = () => { setQuotedAt(Date.now()); setPriceTick(n => n + 1); };
   // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
-  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, priceTick]);
+  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null } | null>(null);
   useEffect(() => {
-    if (!isCustomer || pending || !routeChosen) return; // a pending booking keeps the price it was sent with
+    if (!isCustomer || pending || !routeChosen || scopeInvalid) return; // a pending booking keeps its complete terms
     let live = true;
     const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity,
-      ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(scheduledFor !== null && { scheduledFor }) })
+      ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(declaredScope && { declaredScope }), ...(scheduledFor !== null && { scheduledFor }) })
       .then(quote => quote, () => null).then(quote => { if (live) setQuoted({ key: priceKey, quote }); }), 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor]);
-  const quoting = isCustomer && !pending && routeChosen && quoted?.key !== priceKey; // the Request button waits for it
+  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeInvalid, declaredScope]);
+  const quoting = isCustomer && !pending && routeChosen && !scopeInvalid && quoted?.key !== priceKey; // the Request button waits for it
   const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
-  const smart = quoted?.quote ?? null;
+  const smart = quoted?.key === priceKey ? quoted.quote : null;
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
   const reasons = smart && [fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${smart.minutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
@@ -293,6 +312,7 @@ function BookForm() {
 
   async function submit() {
     if (!ready || sending.current || (!available && !pending)) return;
+    if (!pending && scopeInvalid) { setError(c.freightScopeInvalid); return; }
     if (!pending && !routeChosen) { setPicker(pickupChosen ? 'dropoff' : 'pickup'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
       haptic.error(); setSlot(null); setError(c.err_invalid_schedule); return;
@@ -322,6 +342,7 @@ function BookForm() {
       const command = pending ? { ...pending, attemptedAt: Date.now() }
         : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
           contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
+          ...(declaredScope && { declaredScope }),
           ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
           ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
       setOutcome(null); // a new attempt invalidates the answer that arrived before it
@@ -343,12 +364,16 @@ function BookForm() {
       else {
         setError(err(e));
         // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
-        if (e.status && e.status < 500 && ![401, 408, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
+        // 426 is an outdated app, not a refusal of this booking: keep it to replay after the update.
+        // An expired command may still have committed from an earlier, slower attempt: settle it by its receipt, never by clearing.
+        if (errorCode(e) === 'booking_command_expired' && latest.current) void checkPending(latest.current);
+        else if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
           try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
           catch { setError(c.bookingStorageError); }
         }
       }
-      if (errorCode(e) === 'price_changed') { await refresh(); setPriceTick(n => n + 1); } // new tariff or road state: customer confirms again
+      if (errorCode(e) === 'price_changed') { await refresh(); requote(); } // new tariff or road state: customer confirms again
+      if (['quote_expired', 'quote_consumed'].includes(errorCode(e) ?? '')) requote();
       if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
         setPromo(null);
         api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
@@ -371,16 +396,16 @@ function BookForm() {
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
-  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
+  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
     : !available && !pending ? c.serviceUnavailable : null;
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen scrollRef={scrollRef} footer={pending ? undefined : <>
-      <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed ? money(pay) : undefined}
-        onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || (!available && !pending)} />
+      <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
+        onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
       {requestReason && <Reason>{requestReason}</Reason>}
-      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={() => setPriceTick(n => n + 1)} />}
+      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
     </>}>
       <Header title={c[service]} back />
       {pending && <Card tone="clay">
@@ -500,11 +525,17 @@ function BookForm() {
         {service === 'freight' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.loadingHelp}</Txt>
           <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} />
+          {wantsScope && !pending && <FreightScopeForm draft={freight} onChange={setFreight} disabled={locked} />}
         </>}
       </Card>
 
       <Card>
         <Txt variant="label" style={{ marginBottom: 6 }}>{c.whenTitle}</Txt>
+        {wantsScope && !pending && <View style={{ gap: 8, marginBottom: 10 }}>
+          <Txt variant="label">{c.freightWindowHours}</Txt>
+          <Stepper label={c.freightWindowHours} value={loadingHours} min={1} max={8} onChange={setLoadingHours} disabled={locked} />
+          <Txt variant="caption">{fill(c.freightWindow, { from: time(scheduledFor ?? slotBucket.at), to: time((scheduledFor ?? slotBucket.at) + loadingHours * 3_600_000) })}</Txt>
+        </View>}
         <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
           onChange={setWhen} disabled={locked} />
         {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>

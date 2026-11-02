@@ -95,8 +95,11 @@ export class RideLifecycle {
     const attempts = await this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', orderId);
     const failures = Number(attempts?.failures ?? 0);
     const arrivedAt = row.arrived_at == null ? null : Number(row.arrived_at);
+    // The driver enters the code supplied by the passenger; returning it to the
+    // driver would let the driver satisfy the boarding challenge alone.
     const canSeeCode = !!row.boarding_code && Number(row.assignment_epoch) === Number(order.assignment_epoch)
-      && (viewer.id === Number(order.customer_id) || (viewer.id === Number(order.driver_id) && Number(row.driver_id) === viewer.id));
+      && viewer.role === 'customer' && viewer.id === Number(order.customer_id)
+      && ['assigned', 'at_pickup'].includes(String(order.status));
     return { arrivedAt, graceUntil: arrivedAt == null ? null : arrivedAt + RIDE_GRACE_MS,
       arrivalSource: row.arrival_source ?? null, boardingRequired: !!Number(row.boarding_required),
       boardingLocked: failures >= eligibilityDefaults.newBoardingChallengeAttempts,

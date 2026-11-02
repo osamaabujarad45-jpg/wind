@@ -4,12 +4,10 @@
 // native Google renderer draws instead. Any failure shows the diagram.
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { WebView } from 'react-native-webview';
 import { API_URL } from './api';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
+import { MapProviderBoundary } from './map-provider-boundary';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, useCopy } from './ui';
 
@@ -67,14 +65,10 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
   const { pickup: a, dropoff: b } = props;
-  const [mode] = useMapMode();
-  // T06/T10/T15: the renderer must be one this binary actually contains — the capability is baked at build
-  // time (extra.googleMaps), so a kill switch or mode change can never select an absent renderer. A forced
-  // baseline (public tracking) draws the MapLibre page even in a Google-keyed build.
   const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
-  return <MapLibreRoute key={key} {...props} />;
+  return <MapProviderBoundary platform="android" route={props} render={attempt => attempt.renderer === 'google'
+    ? <GoogleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />
+    : <MapLibreRoute key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />} />;
 }
 
 function MapLibreRoute(props: RouteMapProps) {
@@ -95,16 +89,17 @@ function LiveMap(props: RouteMapProps) {
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}><Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} /></View>
   </View>;
-  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => setFailed(true)}
+  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }}
     label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode) === 'google')
-    return <GooglePinMap center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
-  return <MapLibrePin center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
+export function PinMap(props: PinMapProps) {
+  return <MapProviderBoundary platform="android" pin={props} render={attempt => {
+    const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+      onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+    return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
+  }} />;
 }
 
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {

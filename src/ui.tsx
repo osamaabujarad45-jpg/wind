@@ -105,7 +105,8 @@ export const logoHoleStyle = (s: number): ViewStyle => {
 };
 
 export function Logo({ size: s = 36 }: { size?: number }) {
-  return <View accessibilityRole="image" accessibilityLabel="Wind" style={[styles.logo, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
+  const { c } = useCopy(); // the name is read in the reader's language: ويند in Arabic
+  return <View accessibilityRole="image" accessibilityLabel={c.brand} style={[styles.logo, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
     {logoMark.bars.map((bar, i) => <View key={i} style={logoBarStyle(s, bar)} />)}
     <View style={logoPinStyle(s)} />
     <View style={logoHoleStyle(s)} />
@@ -472,11 +473,13 @@ export function Empty({ icon, title, body, action }: { icon: IconName; title: st
   </Appear>;
 }
 
-export function Stat({ label, value, tone = 'card', index = 0 }: { label: string; value: string; tone?: 'card' | 'olive' | 'clay' | 'muted'; index?: number }) {
+// One figure with its name; `detail` is an optional plain count beneath it (never a "label · count" string).
+export function Stat({ label, value, tone = 'card', index = 0, detail }: { label: string; value: string; tone?: 'card' | 'olive' | 'clay' | 'muted'; index?: number; detail?: string }) {
   return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140 }}>
     <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12 }}>
       <Txt variant="caption" numberOfLines={1}>{label}</Txt>
       <Txt variant="h2" style={{ marginTop: 2 }}>{value}</Txt>
+      {!!detail && <Txt variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>{detail}</Txt>}
     </Card>
   </Appear>;
 }

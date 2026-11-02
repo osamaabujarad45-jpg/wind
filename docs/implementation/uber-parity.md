@@ -1,5 +1,7 @@
 # Uber-parity gap research (Muse Wonder 1.0, max)
 
+> **Historical planning snapshot, superseded for current implementation status.** The “absent” entries below predate later work on dispatch, boarding, payments, native push and operations. Preserve them as the original work-package rationale; use [the 1 November source-based adoption analysis](../../reports/uber-adoption-analysis-2026-11-01.md), its [43-requirement mapping](../../reports/uber-adoption-backend-analysis-2026-11-01.md), and the current source/activation gates for present capability claims. Implemented, deployed, enabled and field-verified are separate states.
+
 Read-only research. "Uber-level" here means the handoff's own target: server-owned
 dispatch with expiring offers and DB-enforced ownership, immutable minor-unit
 quotes, consented presence with fresh road-time ranking, durable outbox + native

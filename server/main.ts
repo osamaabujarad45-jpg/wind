@@ -33,6 +33,9 @@ import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
+import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -46,6 +49,8 @@ import {
   canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
+import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
+import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
 import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
 
@@ -60,6 +65,14 @@ const registrationOpen = selfService || (!production && process.env.WIND_IDENTIT
 // Entra External ID stays dark until the tenant is configured; password auth is untouched while it is off.
 // A partial or mistyped Entra config must never crash-loop the whole API.
 const entra = (() => { try { return entraConfig(); } catch (error) { console.error('Entra disabled:', error instanceof Error ? error.message : error); return null; } })();
+
+// Zro / MoonMath provider config placeholder
+const ZRO_PROVIDER_NAME = process.env.ZRO_PROVIDER_NAME ?? process.env.ZRO_PROVIDER ?? '';
+const ZRO_API_KEY = process.env.ZRO_API_KEY ?? process.env.ZRO_KEY ?? '';
+if (ZRO_PROVIDER_NAME && ZRO_API_KEY) {
+  // Small runtime notice so local runs show the provider is available. Real wiring belongs in a provider module.
+  console.log(`ZRO provider configured: ${ZRO_PROVIDER_NAME}`);
+}
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
   if (!process.env.SUPPORT_CONTACT?.trim()) throw new Error('Production requires a real SUPPORT_CONTACT');
@@ -269,7 +282,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
   // T33: the pending destination card follows the capability, not the dialect.
-  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence)
+  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && destinationEligible(r) && await destinationAvailable(persistence)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -553,8 +566,13 @@ const postCashJournal = async (entryId: number) => {
 registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
+// OpenCode / T3 provider service (runs zro CLI and records jobs)
+const opencodeService = createOpencode(persistence, fail);
+registerOpencodeRoutes(route, opencodeService);
 const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
+registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
+registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
 const nativePush = new NativePush(persistence, fail);
 registerNativePushRoutes(route, nativePush);
 const realtime = new Realtime(persistence, fail);
@@ -650,7 +668,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -718,7 +736,10 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
     fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
   }
-  (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose));
+  // A reset runs outside the request transaction while hashing. Two requests
+  // may read the same code; only the request that atomically consumes it wins.
+  if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
+    r.id, purpose, row.code_hash, Date.now(), CODE_TRIES)).changes) fail(400, 'code_expired');
 }
 
 route('POST', '/api/me/email/code', async ({ user }) => {
@@ -1444,7 +1465,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   need(user, 'customer');
   needActive(user);
   if (body.promoCode != null) (await limit(identityKey('promo', user.id), 20, 60 * 60_000)); // no unlimited code guessing through booking
-  const { requestId, ...input } = body;
+  const { requestId, commandExpiresAt, ...input } = body;
   // Routing is async, so the recommendation is computed before the write transaction (SPEC-driver-offers.md).
   const smart = async () => input.pricing === 'smart' ? await recommend(user, input) : undefined;
   // Quote-bound clients cannot supply an authoritative total; legacy quotedPrice remains supported.
@@ -1467,6 +1488,11 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     try { const order = (await createOrder(user, input, recommended)); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   }
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
+  // A command can commit only until its own deadline, so a missing receipt after it is a real absence.
+  // Replays of a committed command still return their order; only a new commit is refused.
+  if (commandExpiresAt !== undefined && (!Number.isSafeInteger(commandExpiresAt) || (commandExpiresAt as number) > Date.now() + BOOKING_COMMAND_TTL_MS + 60_000)) // a minute of device clock skew
+    fail(400, 'invalid_command_deadline');
+  const expired = () => commandExpiresAt !== undefined && Date.now() > (commandExpiresAt as number);
   const hash = payloadHash(input);
   const replay = async () => {
     const existing = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
@@ -1475,12 +1501,14 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   };
   const done = (await replay()); // a retried command returns its order even if today's price moved
   if (done) return done;
+  if (expired()) fail(409, 'booking_command_expired');
   const recommended = input.quoteId ? undefined : await smart();
   user = (await authorize());
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     const raced = (await replay()); // the same command may have committed while routing was awaited
     if (raced) { (await persistence.exec('ROLLBACK')); return raced; }
+    if (expired()) fail(409, 'booking_command_expired');
     const order = (await createOrder(user, input, recommended));
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
     (await persistence.exec('COMMIT'));
@@ -1492,6 +1520,8 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     throw error;
   }
 });
+
+registerBookingReceiptRoutes(route, { need, fail, uuid, one });
 
 // A partner key stays on the two API servers; never ship it in a mobile bundle.
 function partner(req: IncomingMessage) {
@@ -1610,9 +1640,17 @@ async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
   const scopes=await measuredScopes(persistence,orders.map(order=>order.id));
   return orders.map(order=>({...order,measuredScope:scopes[order.id]??null}));
 }
+async function recoveryMetadata(id: number) {
+  const row = await one('SELECT * FROM orders WHERE id=?', id) ?? fail(404, 'not_found');
+  const version = persistence.backend === 'postgres' ? Number(row.version ?? 0)
+    : Number((await one('SELECT COUNT(*) AS n FROM order_actions WHERE order_id=?', id))?.n ?? 0) + 1;
+  return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
+}
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
   const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user);
-  return query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  if (query.get('recoveryProtocol') !== '1') return result;
+  return { ...result, recovery: await recoveryMetadata(order.id) };
 });
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
 route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
@@ -2238,7 +2276,20 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
       if (saved.error) failure = new HttpError(saved.http_status, saved.error);
       else result = (await getOrder(id, user)); // acknowledge the original action with the current authoritative state
     } else {
-      try { result = (await apply(user, id, input)); }
+      try {
+        if (input.recoveryProtocol !== undefined) {
+          if (input.recoveryProtocol !== 1 || !Number.isSafeInteger(input.attemptCreatedAt) || !Number.isSafeInteger(input.attemptExpiresAt)
+            || input.attemptExpiresAt <= input.attemptCreatedAt || input.attemptExpiresAt - input.attemptCreatedAt > 60 * 60_000
+            || input.attemptCreatedAt > Date.now() + 5_000) fail(400, 'invalid_recovery_command');
+          const current = await one(`SELECT * FROM orders WHERE id=?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id) ?? fail(404, 'not_found');
+          const metadata = await recoveryMetadata(id);
+          if (Date.now() >= input.attemptExpiresAt) fail(409, 'command_expired');
+          if (input.expectedAssignedAt !== (current.assigned_at ?? null)
+            || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
+            || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
+        }
+        result = (await apply(user, id, input));
+      }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
         user.id, requestId, hash, id, failure?.status ?? 200, failure?.message ?? null));
@@ -2246,7 +2297,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   if (failure) { await flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
-  return result;
+  return input.recoveryProtocol === 1 && result ? { ...result, recovery: await recoveryMetadata(id) } : result;
 }
 
 async function activeGpsAuthority(user: User, req: IncomingMessage) {
@@ -3048,7 +3099,7 @@ const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // Bearer [REDACTED], no cookies: open CORS is safe
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Wind-Client');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -3061,6 +3112,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     await persistence.scope(async () => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (draining) fail(503, 'unavailable');
+    if (url.pathname.startsWith('/api/') && clientUpdateRequired(req.headers['x-wind-client'])) fail(426, 'client_update_required');
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
     if (page) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page); return; }
     if (req.method === 'GET' && serveWeb(url.pathname, req, res)) return;
@@ -3155,6 +3207,9 @@ let presenceSweepTimer: ReturnType<typeof setInterval> | undefined;
 let presenceSweepJob: Promise<void> = Promise.resolve();
 let presenceSweepRunning = false;
 server.on('listening', () => {
+  const minimumBuild = process.env.WIND_MIN_CLIENT_BUILD;
+  if (minimumBuild && !(Number.isSafeInteger(Number(minimumBuild)) && Number(minimumBuild) > 0))
+    console.warn('WIND_MIN_CLIENT_BUILD is not a positive build number, so the forced-upgrade gate is off');
   if (production) void persistence.scope(async () => { const users = Number((await one('SELECT COUNT(*) n FROM users'))?.n ?? 0); if (!users) console.error('Wind API: production database has no users yet. If this is not a first boot, check that the persistent volume is mounted at DB_PATH.'); }).catch(() => undefined);
   const sweep = () => {
     if(presenceSweepRunning || draining)return;

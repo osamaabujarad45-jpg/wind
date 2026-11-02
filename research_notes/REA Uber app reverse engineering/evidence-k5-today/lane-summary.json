@@ -1,0 +1,15 @@
+{
+ "members_file": "dex-class-members.txt",
+ "classes": 288727,
+ "member_cap": 80,
+ "lanes": {
+  "map-stack": 1746,
+  "map-native-bridge": 60,
+  "screens": 132,
+  "ribs": 19364,
+  "persistence": 188,
+  "network": 571,
+  "design-system": 1472,
+  "features": 125670
+ }
+}

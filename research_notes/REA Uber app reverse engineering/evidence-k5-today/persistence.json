@@ -1,0 +1,3158 @@
+{
+ "class_total": 188,
+ "member_cap": 80,
+ "classes": {
+  "androidx.datastore.core.DataStore": {
+   "methods": [
+    "a",
+    "getData"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "androidx.lifecycle.ViewModelStore": {
+   "methods": [
+    "<init>",
+    "a"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "androidx.sqlite.db.SupportSQLiteDatabase": {
+   "methods": [
+    "R2",
+    "X2",
+    "Y",
+    "a3",
+    "g2",
+    "m2",
+    "p3",
+    "r3",
+    "y1"
+   ],
+   "fields": [],
+   "methods_total": 9,
+   "fields_total": 0
+  },
+  "androidx.work.impl.WorkDatabase": {
+   "methods": [
+    "<init>",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.DependencyDao": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.PreferenceDao": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.SystemIdInfoDao": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.WorkNameDao": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.WorkProgressDao": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.WorkSpecDao": {
+   "methods": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "fields": [],
+   "methods_total": 30,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.WorkTagDao": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.google.android.datatransport.runtime.scheduling.persistence.EventStore": {
+   "methods": [
+    "G0",
+    "L",
+    "T0",
+    "V2",
+    "X1",
+    "Z1",
+    "f3",
+    "n1",
+    "q1"
+   ],
+   "fields": [],
+   "methods_total": 9,
+   "fields_total": 0
+  },
+  "com.google.android.datatransport.runtime.scheduling.persistence.ClientHealthMetricsStore": {
+   "methods": [
+    "a",
+    "e",
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.google.android.datatransport.runtime.scheduling.persistence.SQLiteEventStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "G0",
+    "L",
+    "T0",
+    "V2",
+    "X1",
+    "Z1",
+    "a",
+    "b",
+    "close",
+    "e",
+    "f",
+    "f3",
+    "g",
+    "j",
+    "k",
+    "n",
+    "n1",
+    "o",
+    "q",
+    "q1"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 22,
+   "fields_total": 6
+  },
+  "com.google.firebase.crashlytics.internal.metadata.FileLogStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "androidx.work.impl.model.RawWorkInfoDao": {
+   "methods": [],
+   "fields": [],
+   "methods_total": 0,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.go.feedback.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.go.models.rtapi.marketplacedriver.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "firstName",
+    "id",
+    "lastName",
+    "mobile",
+    "pictureUrl",
+    "rating",
+    "thirdPartyIdentities",
+    "title",
+    "totalCompletedTripsCount",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 16,
+   "fields_total": 12
+  },
+  "com.uber.model.core.generated.performance.dynamite.views.feedbackcollection.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.rds.prism.presentation.PrismEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>"
+   ],
+   "fields": [
+    "Companion"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.uber.model.core.generated.rider.models.order.transport.provider.TransportProviderIntercomPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "<init>",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "ADAPTER",
+    "Companion",
+    "preferenceText",
+    "showCall",
+    "showChat",
+    "unknownItems"
+   ],
+   "methods_total": 11,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.ue.types.eater_client_views.MapEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "address",
+    "latitude",
+    "longitude"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.ue.types.pastorder.OrderStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "citySlug",
+    "closedEtaMessage",
+    "contact",
+    "heroImage",
+    "heroImageUrl",
+    "isOrderable",
+    "location",
+    "originalRestaurantName",
+    "parentChainUUID",
+    "pickupInstructions",
+    "slug",
+    "supportedDiningModes",
+    "territoryUUID",
+    "title",
+    "uuid"
+   ],
+   "methods_total": 21,
+   "fields_total": 16
+  },
+  "com.uber.order_selection.preferences.core.api.GetAllPreferences": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.order_selection.auto_opt_in.PreferenceAutoOptInStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.permission_notifications.storage.PermissionNotificationOnTripSimpleStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.places_ui.models.ViewComponentStore": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i"
+   ],
+   "fields": [
+    "formIdentifier",
+    "labelText",
+    "pinRefinedLocation",
+    "viewComponentMap"
+   ],
+   "methods_total": 10,
+   "fields_total": 4
+  },
+  "com.uber.reporter.model.internal.GroupEntity": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "groupUuid",
+    "messageType",
+    "sealedTimeMs"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.reporter.model.internal.RegionEntity": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "countryCode"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.postdropoff.walking.datastore.PostDropoffSimpleStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.prelude.kv_store.HubItemImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.presentation.apps.shared.endpoints.unifiedlocation.addpositionstolocationstore.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "clearEntityType",
+    "clearEntityUuid",
+    "dynamicMethod",
+    "getDefaultInstance",
+    "getEntityType",
+    "getEntityTypeValue",
+    "getEntityUuid",
+    "hasEntityUuid",
+    "mergeEntityUuid",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setEntityType",
+    "setEntityTypeValue",
+    "setEntityUuid"
+   ],
+   "fields": [
+    "DEFAULT_INSTANCE",
+    "ENTITY_TYPE_FIELD_NUMBER",
+    "ENTITY_UUID_FIELD_NUMBER",
+    "PARSER",
+    "bitField0_",
+    "entityType_",
+    "entityUuid_"
+   ],
+   "methods_total": 32,
+   "fields_total": 7
+  },
+  "com.uber.presentation.apps.shared.endpoints.unifiedlocation.addpositionstolocationstore.LocationSharingEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "clearEntityType",
+    "clearJobId",
+    "dynamicMethod",
+    "getDefaultInstance",
+    "getEntityType",
+    "getEntityTypeValue",
+    "getJobId",
+    "hasJobId",
+    "mergeJobId",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setEntityType",
+    "setEntityTypeValue",
+    "setJobId"
+   ],
+   "fields": [
+    "DEFAULT_INSTANCE",
+    "ENTITY_TYPE_FIELD_NUMBER",
+    "JOB_ID_FIELD_NUMBER",
+    "PARSER",
+    "bitField0_",
+    "entityType_",
+    "jobId_"
+   ],
+   "methods_total": 32,
+   "fields_total": 7
+  },
+  "com.uber.reporter.sdk.disk.sqlite.SqliteUberMessageStore": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [
+    "a",
+    "b"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.ringcomponent.carousel_state.RingTripStateStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.nv_utils.keyvaluettlstore.KeyValueTTLStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.safetyagents.model.SafetyAgentsStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [
+    "Companion",
+    "KEY_ASSISTANCE_STATE",
+    "KEY_ASSISTANCE_TYPE",
+    "KEY_LAST_TRIP_UUID",
+    "KEY_TRIP_END_TIME",
+    "KEY_TRIP_UUID",
+    "STORE_UUID",
+    "TAG",
+    "simpleStore"
+   ],
+   "methods_total": 7,
+   "fields_total": 9
+  },
+  "com.uber.travel.itinerary_store.ItineraryInfoStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "methods_total": 7,
+   "fields_total": 5
+  },
+  "com.uber.u4b.microsmbproduct.OriginatingEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "clearEntityType",
+    "clearEntityUuid",
+    "dynamicMethod",
+    "getDefaultInstance",
+    "getEntityType",
+    "getEntityTypeValue",
+    "getEntityUuid",
+    "hasEntityUuid",
+    "mergeEntityUuid",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setEntityType",
+    "setEntityTypeValue",
+    "setEntityUuid"
+   ],
+   "fields": [
+    "DEFAULT_INSTANCE",
+    "ENTITY_TYPE_FIELD_NUMBER",
+    "ENTITY_UUID_FIELD_NUMBER",
+    "PARSER",
+    "bitField0_",
+    "entityType_",
+    "entityUuid_"
+   ],
+   "methods_total": 30,
+   "fields_total": 7
+  },
+  "com.uber.uber_air.ftux.UberAirFtuxStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.uflurry.v2.protos.model.KeyValue": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$000",
+    "access$100",
+    "access$200",
+    "access$300",
+    "access$400",
+    "access$500",
+    "access$600",
+    "clearKey",
+    "clearValue",
+    "dynamicMethod",
+    "getDefaultInstance",
+    "getKey",
+    "getKeyBytes",
+    "getValue",
+    "hasValue",
+    "mergeValue",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setKey",
+    "setKeyBytes",
+    "setValue"
+   ],
+   "fields": [
+    "DEFAULT_INSTANCE",
+    "KEY_FIELD_NUMBER",
+    "PARSER",
+    "VALUE_FIELD_NUMBER",
+    "bitField0_",
+    "key_",
+    "value_"
+   ],
+   "methods_total": 36,
+   "fields_total": 7
+  },
+  "com.uber.uflurry.v2.protos.model.mapper.json.KeyValue": {
+   "methods": [
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "key",
+    "value"
+   ],
+   "methods_total": 4,
+   "fields_total": 2
+  },
+  "com.uber.verticals_consistency.api.WidgetStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.analytics.core.meta.AutoValue_AnalyticsEntity": {
+   "methods": [
+    "<init>",
+    "entity",
+    "equals",
+    "hashCode",
+    "identifier",
+    "toString"
+   ],
+   "fields": [
+    "entity",
+    "identifier"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.ubercab.android.map.collision.source.indexedquadtree.SparseIndexedQuadTreeStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "addIndexedSource",
+    "clear",
+    "contains",
+    "hasIndexableGeometry",
+    "intersects",
+    "matchesAny",
+    "query",
+    "queryByScanningSources",
+    "queryIndexedRect",
+    "remove",
+    "removeIndexedSource",
+    "shouldScanSources",
+    "toIndexedSource",
+    "upsert"
+   ],
+   "fields": [
+    "Companion",
+    "nodesByIndex",
+    "sourcesByCollisionId"
+   ],
+   "methods_total": 16,
+   "fields_total": 3
+  },
+  "com.ubercab.bugreporter.helper.IsLastUserAdminStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.hub_navigation.grid.vertical.nav_item.store.NavItemTooltipImpressionStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.lazy_main.data.NavGridDataStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.learning_data_store.unskippable.LearningHubTopicStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.messagingshared.tripcache.warmlaunchid.store.WarmLaunchIdStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.optional.root.main.ride.trip.trip_details.driver_reassurance.snackbar.DriverIntercomMessageSnackbarStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.optional.root.main.ride.trip.worker.notificationpermissionmodal.TripNotificationPermissionModalDataStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app_onboarding.core.entry.onboard.USLQueryParamsStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.premium.preferences.PremiumPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "methods_total": 7,
+   "fields_total": 8
+  },
+  "com.uber.ads.foundation.config.ConfigStore": {
+   "methods": [
+    "a",
+    "current",
+    "shutdown"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.ads.foundation.processor.dedup.DedupStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.app.session.cookie.core.SessionCookieStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.core.data.UComponentDataStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "I",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "onStop"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 11,
+   "fields_total": 11
+  },
+  "com.uber.dispatchetm.store.ETMStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.ftux.core.store.HelixFTUXImpressionStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p"
+   ],
+   "fields": [],
+   "methods_total": 16,
+   "fields_total": 0
+  },
+  "com.uber.helios.graphql_debugger.store.GQLRequestRecordStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.homescreencontainer.core.cache.HomeScreenDataStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.identity.oauth.id_token.store.IdTokenStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.keyvaluestore.core.KeyValueStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r"
+   ],
+   "fields": [],
+   "methods_total": 18,
+   "fields_total": 0
+  },
+  "com.uber.keyvaluestore.core.SimpleKeyValueStore": {
+   "methods": [
+    "<clinit>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [
+    "B0"
+   ],
+   "methods_total": 7,
+   "fields_total": 1
+  },
+  "com.uber.ml.core.michelangelo.MichelangeloSimpleStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.go.consumer.presentation.mainmenupresentation.preferencesmenu.RidePreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "serverDrivenFeature"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.new_user_tour.restart.store.NewUserTourRestartStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.new_user_tour.simple_mode.store.SimpleModeRestartStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.new_user_tour.store.NewUserLearningStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.new_user_tour_churned_users.store.ChurnedUserLearningStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.ooa.ltn.OoaLiveTripNotificationWorkerStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.parameters.observability.NetworkRequestMetadataStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.presidio.realtime.core.DataStore": {
+   "methods": [
+    "a",
+    "getData"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.presidio.realtime.core.data.ClearableDataStore": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.richobjectreferences.core.entitystore.EntityStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.riderunifiedheader.header.tooltip.UnifiedLocationTooltipImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.ringcomponent.data.RingComponentSimpleStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "read"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c"
+   ],
+   "methods_total": 4,
+   "fields_total": 3
+  },
+  "com.uber.safetystateframework.statevar.SSFStateVarStore": {
+   "methods": [
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.servicesmenu.sdf.ServicesScreenDataStore": {
+   "methods": [
+    "a",
+    "read"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.settings.ride_preferences.data.RidePreferencesDataStore": {
+   "methods": [
+    "a",
+    "read"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.simplestore.SimpleStore": {
+   "methods": [
+    "X",
+    "clear",
+    "contains",
+    "d",
+    "h",
+    "putString",
+    "remove"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.simplestore.presidio.RxSimpleStore": {
+   "methods": [
+    "C",
+    "F",
+    "H",
+    "S",
+    "T",
+    "X",
+    "clear",
+    "h",
+    "i",
+    "l",
+    "m",
+    "r",
+    "remove",
+    "s"
+   ],
+   "fields": [],
+   "methods_total": 14,
+   "fields_total": 0
+  },
+  "com.uber.simplestore.primitive.PrimitiveSimpleStore": {
+   "methods": [
+    "C",
+    "F",
+    "H",
+    "S",
+    "i",
+    "l",
+    "m",
+    "r",
+    "s"
+   ],
+   "fields": [],
+   "methods_total": 9,
+   "fields_total": 0
+  },
+  "com.uber.simplestore.proto.SimpleProtoStore": {
+   "methods": [
+    "F1",
+    "p0"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.simplestorektx.CoroutineSimpleStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p"
+   ],
+   "fields": [],
+   "methods_total": 16,
+   "fields_total": 0
+  },
+  "com.uber.tiered_upgrade.persistence.TieredUpgradeKVStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.topbarcontainer.data.TopBarDataCoroutineStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c"
+   ],
+   "methods_total": 3,
+   "fields_total": 3
+  },
+  "com.uber.trip_moments.store.TripMomentsStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.user_identifier.UserIdentifierStore": {
+   "methods": [
+    "a",
+    "b",
+    "get",
+    "getType",
+    "peek"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.guest_trip_linking.store.GuestTripLinkingConsentDeniedStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.models.eats_common.PaymentPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "limitAmount",
+    "thirdPartyLoyaltyPoints"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "com.uber.safety_hotpocket_v2.models.HPV2MessageStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b"
+   ],
+   "fields": [
+    "Companion",
+    "MESSAGE_DELIMITER",
+    "MESSAGE_UUID",
+    "STORE_UUID",
+    "TAG",
+    "simpleStore"
+   ],
+   "methods_total": 4,
+   "fields_total": 6
+  },
+  "com.ubercab.routeline_animations.models.RoutelineEntity": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.safetytoolkitbasev2.model.SafetyToolkitStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o"
+   ],
+   "fields": [
+    "Companion",
+    "PASSIVE_FEATURE_DATA",
+    "SAFETY_MODE_DATA",
+    "SAFETY_TOOLKIT_CONFIGURATION_DATA",
+    "STORE_UUID",
+    "TAG",
+    "gson",
+    "sfAnalytics",
+    "simpleStore"
+   ],
+   "methods_total": 17,
+   "fields_total": 9
+  },
+  "com.ubercab.userinitiatedappexit.UserInitiatedAppExitStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "io.opentelemetry.proto.common.v1.KeyValue": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$000",
+    "access$100",
+    "access$200",
+    "access$300",
+    "access$400",
+    "access$500",
+    "access$600",
+    "clearKey",
+    "clearValue",
+    "dynamicMethod",
+    "getDefaultInstance",
+    "getKey",
+    "getKeyBytes",
+    "getValue",
+    "hasValue",
+    "mergeValue",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setKey",
+    "setKeyBytes",
+    "setValue"
+   ],
+   "fields": [
+    "DEFAULT_INSTANCE",
+    "KEY_FIELD_NUMBER",
+    "PARSER",
+    "VALUE_FIELD_NUMBER",
+    "bitField0_",
+    "key_",
+    "value_"
+   ],
+   "methods_total": 36,
+   "fields_total": 7
+  },
+  "okhttp3.internal.publicsuffix.PublicSuffixDatabase": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+   ],
+   "methods_total": 5,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.edge.models.eatscart.RootCartEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "item",
+    "type"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.edge.models.emobility.rider_presentation.types_v2.EMobilityEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "imageURL",
+    "label"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.models.idvAppleWalletStep.VerifyWithWalletDataIntentToStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>"
+   ],
+   "fields": [
+    "Companion"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.blox_common.components.BloxComponentFavoriteStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "favoriteState",
+    "storeUUID"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.eaterfeedstore.EaterFeedStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "toString",
+    "u",
+    "v",
+    "w",
+    "x"
+   ],
+   "fields": [
+    "Companion",
+    "categories",
+    "closedEtaMessage",
+    "eaterFields",
+    "enabledFulfillmentTypes",
+    "etaRange",
+    "fareInfo",
+    "heroImage",
+    "heroImageUrl",
+    "isOrderable",
+    "location",
+    "notOrderableMessage",
+    "orderForLaterInfo",
+    "priceBucket",
+    "publicContact",
+    "ratingBadge",
+    "rawRatingStats",
+    "regionId",
+    "slug",
+    "storeAd",
+    "storePromotion",
+    "surgeBadge",
+    "surgeInfo",
+    "title",
+    "uuid"
+   ],
+   "methods_total": 30,
+   "fields_total": 25
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.catalog.catalog_section.BundleStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "imageUrl",
+    "pillType",
+    "slug",
+    "storeUuid",
+    "title",
+    "titleV2"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.feeditem_presentation.ThirdPartyEntity": {
+   "methods": [
+    "$values",
+    "<clinit>",
+    "<init>",
+    "valueOf",
+    "values"
+   ],
+   "fields": [
+    "$ENTRIES",
+    "$VALUES",
+    "CORNERSHOP",
+    "UNKNOWN"
+   ],
+   "methods_total": 5,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.CartEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "shoppingCart"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.CustomerEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "customerIdentifier",
+    "customerInfos",
+    "participantDetails"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.FareEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "fare"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.OrderEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "cart",
+    "customer",
+    "fareEntity",
+    "fulfillmentDetails",
+    "metadata",
+    "orderIdentifiers",
+    "orderPreferences",
+    "orderScenarioMetadata",
+    "orderState",
+    "payments",
+    "promotions",
+    "providerData"
+   ],
+   "methods_total": 18,
+   "fields_total": 13
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.OrderPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "giftInfo",
+    "isSingleUseItemsIncluded",
+    "repeatSchedule",
+    "spendingLimit",
+    "storeInstructions",
+    "upfrontTipOption"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.order.entity.PaymentEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "extraPaymentProfiles",
+    "paymentProfileUUID",
+    "paymentTokenType",
+    "storeUUIDToCart",
+    "useCredits"
+   ],
+   "methods_total": 11,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.edge.services.externalrewards.screens.ProgramDetailsManageRewardPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "programDetails",
+    "savePreferencesButton",
+    "subtitle",
+    "title"
+   ],
+   "methods_total": 10,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.edge.services.externalrewards.screens.ProgramDetailsOpenManageRewardPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "manageRewardPreferencesDialog"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.externalrewards.screens.ProgramDetailsSaveRewardPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "syntheticFieldDoNotUse"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.locations.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "ADAPTER",
+    "Companion",
+    "device",
+    "entityType",
+    "unknownItems",
+    "uuid"
+   ],
+   "methods_total": 9,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.rtapi.models.capabilities.IntercomPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "callPreference",
+    "chatPreference",
+    "preferenceText"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.rtapi.models.eatscart.RootCartEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "item",
+    "type"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.rtapi.models.feeditem.SDUIStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "action",
+    "chainUuid",
+    "dataBindings",
+    "sduiItem",
+    "storeUuid",
+    "tracking",
+    "webItem"
+   ],
+   "methods_total": 13,
+   "fields_total": 8
+  },
+  "com.uber.model.core.generated.rtapi.models.riderpreferences.RiderPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "assistWithPersonalItems",
+    "autoAssignmentUponPriceMatchPreference",
+    "autoRematchDriver",
+    "climate",
+    "conversation",
+    "escortedOption",
+    "helpWithDoor",
+    "luggageAssist",
+    "music",
+    "temperature",
+    "uberCarePreferences",
+    "walking"
+   ],
+   "methods_total": 21,
+   "fields_total": 13
+  },
+  "com.uber.model.core.generated.rtapi.models.riderpreferences.UberCarePreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "assistWithPersonalItems",
+    "escortedOption",
+    "helpWithDoor"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.rtapi.models.safety_identity.AppleWalletIdDataIntentToStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "mayStore",
+    "mayStoreXXDays",
+    "type",
+    "willNotStore"
+   ],
+   "methods_total": 11,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.AdditionalPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "preferencesForNonIabVendors"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.PublisherConsentNativePreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "customPurposeConsents",
+    "customPurposeLegitimateInterests",
+    "purposeConsents",
+    "purposeLegitimateInterests"
+   ],
+   "methods_total": 10,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.PublisherConsentPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "customPurposeConsents",
+    "customPurposeLegitimateInterests",
+    "purposeConsents",
+    "purposeLegitimateInterests"
+   ],
+   "methods_total": 10,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.UserConsentNativePreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "featureConsents",
+    "purposeConsents",
+    "purposeLegitimateInterests",
+    "specialFeatureOptins",
+    "vendorConsents",
+    "vendorLegitimateInterests"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.UserConsentPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "featureConsents",
+    "purposeConsents",
+    "purposeLegitimateInterests",
+    "specialFeatureOptins",
+    "vendorConsents",
+    "vendorLegitimateInterests"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.rtapi.services.feedback.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacedriver.StarpowerPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "arrivalTimeMultiplier",
+    "declineAllowance",
+    "expectedArrivalTime"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacerider.IntercomPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "$$delegate_0",
+    "ADAPTER",
+    "Companion",
+    "callPreference",
+    "chatPreference",
+    "preferenceText",
+    "unknownItems"
+   ],
+   "methods_total": 10,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacerider.TripEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "color",
+    "initials",
+    "pictureUrl",
+    "title",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.rtapi.services.scheduledrides.ReservationJobPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "avPreferenceInfo",
+    "pickupOptionInfo",
+    "productSwtichPreferenceInfo"
+   ],
+   "methods_total": 11,
+   "fields_total": 4
+  },
+  "com.ubercab.healthline.app_exit_info.store.AppExitStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.hub.optional.HubStore": {
+   "methods": [
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.learning_data_store.LearningImpressionStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "clear"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.accelerators.core.ShortcutsDataStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.core.authentication.SessionPreferences": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.pricing.core.model.CachedFareEstimateStore": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+   ],
+   "fields": [
+    "CACHE_GET_RESPONSE_SUCCESS",
+    "NULL_BACKEND_CACHE_SETTING_TTL",
+    "cachedFareEstimateMap",
+    "clock",
+    "destinationThresholdMeters",
+    "fareEstimateInFlightCache",
+    "faresParameterXpHelper",
+    "geoHashKeyGenerator",
+    "locationUtilsWrapper",
+    "pickupThresholdMeters",
+    "presidioAnalytics"
+   ],
+   "methods_total": 8,
+   "fields_total": 11
+  },
+  "com.ubercab.presidio.security.botdefense_challenge.BotdefenseChallengeTokenStore": {
+   "methods": [
+    "a",
+    "n"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.security.core.DataSigningCredentialStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l"
+   ],
+   "fields": [],
+   "methods_total": 12,
+   "fields_total": 0
+  },
+  "com.ubercab.rating.on_trip.SaveFeedbackDataStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "androidx.webkit.ProfileStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.apollographql.cache.normalized.sql.internal.record.SqlRecordDatabase": {
+   "methods": [],
+   "fields": [],
+   "methods_total": 0,
+   "fields_total": 0
+  },
+  "com.google.android.gms.common.server.FavaDiagnosticsEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "writeToParcel"
+   ],
+   "fields": [
+    "CREATOR",
+    "a",
+    "b",
+    "c"
+   ],
+   "methods_total": 3,
+   "fields_total": 4
+  },
+  "com.google.android.gms.fido.fido2.api.common.PublicKeyCredentialRpEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString",
+    "writeToParcel"
+   ],
+   "fields": [
+    "CREATOR",
+    "a",
+    "b",
+    "c"
+   ],
+   "methods_total": 6,
+   "fields_total": 4
+  },
+  "com.google.android.gms.fido.fido2.api.common.PublicKeyCredentialUserEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString",
+    "writeToParcel"
+   ],
+   "fields": [
+    "CREATOR",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "methods_total": 6,
+   "fields_total": 5
+  },
+  "com.uber.communications.chat.storage.ChatPlaygroundSimpleStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.autonomousvehicle.confirmationscreen.AvConfirmationAccessPointStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.accessibility.language.detection.LanguageDetectedStore": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [
+    "a",
+    "b"
+   ],
+   "methods_total": 1,
+   "fields_total": 2
+  },
+  "com.uber.assisted_referrals.store.AssistedReferralsInMemoryStore": {
+   "methods": [
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.autonomousvehicle.geofence.AvServiceAreaGeofenceStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.autonomousvehicle.trip.state.cache.AvTripStateCacheStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.av_survey.model.SurveyEntity": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "$stable",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 6,
+   "fields_total": 3
+  },
+  "com.uber.cityplanning.search.datarepo.CitySearchStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.cityplanning.search.datarepo.CitySearchCoroutineStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "methods_total": 6,
+   "fields_total": 4
+  },
+  "com.uber.cmpsdk.models.CMPConsentNativePublisherPreferences": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "consents",
+    "customPurposeConsents",
+    "customPurposeLegitimateInterests",
+    "legitimateInterests",
+    "restrictions"
+   ],
+   "methods_total": 9,
+   "fields_total": 5
+  },
+  "com.uber.commute.ridepass.RidePassEnrollmentStateStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.crypto.storage.KeysetStore": {
+   "methods": [
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.facts.FactSurfaceStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.commute.commutemanager.passmanager.store.PassFtuxImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.concurrency_common.core.store.ConcurrencyFTUXImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.connect.store.ConnectSingleStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.core.smart_trip_message.cache.SmartTripContextualMessageStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.feature.intercity.IntercityStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "methods_total": 6,
+   "fields_total": 5
+  },
+  "com.uber.gdpr_v2.store.GDPRV2ImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.home.lite.ui.impression.PersonalizedDeviceCardImpressionStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.identity.invite.core.IdentityInviteParamsStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.identity.invite.core.InviteRedemptionDataStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.identity.passkeys.restorecredentials.RestoreCredentialsInfoStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.ml.vision.logging.DataLoggingStore": {
+   "methods": [
+    "a",
+    "b",
+    "close"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.identitymenusdf.store.IdentityMenuStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.messaginggoogleads.shared.adimpression.GoogleAdLoadedStore": {
+   "methods": [
+    "a",
+    "b",
+    "clear"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.messaginggoogleads.shared.loadedadstore.LoadedGoogleAdStore": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.messaginggoogleads.shared.warmlaunchid.GoogleAdsWarmLaunchIdStore": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.mobilestudio.MobileStudioStore": {
+   "methods": [
+    "getString",
+    "i",
+    "j",
+    "k",
+    "putBoolean",
+    "putString"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.profileselection.intent_payment_selector.ftux.IntentSelectPaymentFtuxStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.safety.audiorecording.activation.AudioRecordingConsentStore": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.safety.audiorecording.activation.AudioRecordingScheduleStore": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.amd.amdexperience.SurveyEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "type",
+    "uuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.prism_components.PrismEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "component",
+    "legacyComponent",
+    "sdFeature",
+    "type",
+    "unknown"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.edge.services.prism_components.SearchableEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "entity",
+    "searchText",
+    "value"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.edge.services.shifts.Preferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "home",
+    "homeNodalPoint",
+    "work",
+    "workArrival",
+    "workDeparture"
+   ],
+   "methods_total": 11,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.edge.services.u4b.FindMyOrgResponseEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "benefits",
+    "employeeCount",
+    "isAdminApprovalRequired",
+    "isRecommendedOrg",
+    "logo",
+    "organizationName",
+    "organizationUUID",
+    "policies"
+   ],
+   "methods_total": 14,
+   "fields_total": 9
+  },
+  "com.uber.model.core.generated.edge.services.uploadLocation.Entity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "entityType",
+    "entityUUID"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.uploadLocation.LocationSharingEntity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "entityType",
+    "jobUUID"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.finprod.ubercash.AccountPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoReload"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.finprod.ubercash.AutoReloadPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoReloadAmount",
+    "autoReloadThreshold",
+    "isEnabled"
+   ],
+   "methods_total": 9,
+   "fields_total": 4
+  },
+  "com.uber.model.core.generated.rtapi.services.support.OutboundChannelPreferences": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "outboundChannelPreferences",
+    "title"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.safety_ride_check.storage.SimpleStoreRideCheckAnomalyStore": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  }
+ }
+}

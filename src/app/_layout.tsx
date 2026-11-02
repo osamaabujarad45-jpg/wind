@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -7,7 +7,13 @@ import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
-import { Button, Empty, palette, useCopy } from '../ui';
+import { SUPPORT_URL } from '../api';
+import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
+import { Button, Card, Empty, fill, palette, Txt, useCopy } from '../ui';
+import { useFormat } from '../parts';
+import { city, orderCode } from '../model';
+import { statusText } from '../copy';
+import type { OfflineSummary } from '../offline-summary';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -53,12 +59,34 @@ function IntroOverlay() {
   </Animated.View>;
 }
 
+// Read-only: the orders this account last saw, so an offline launch is not a dead end. Nothing here acts until
+// the server answers again.
+function OfflineOrders({ summary }: { summary: OfflineSummary }) {
+  const { c, language, rtl } = useCopy();
+  const { time } = useFormat();
+  return <Card tone="muted" style={{ marginTop: 16 }}>
+    <Txt variant="caption">{fill(c.offlineSaved, { t: time(summary.savedAt) })}</Txt>
+    {summary.orders.map(order => <View key={order.id} style={{ marginTop: 10 }}>
+      <Txt variant="title">{city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}</Txt>
+      <Txt variant="caption">{orderCode(order.id)}, {statusText(c, order, summary.role === 'driver')}</Txt>
+    </View>)}
+  </Card>;
+}
+
 function Routes() {
-  const { ready, offline, me, onboarded, refresh } = useSession();
+  const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
+  const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);
+  // The server refused this build (426): nothing else works, so nothing else is shown.
+  if (mustUpdate) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
+    <Empty icon="cloud-download-outline" title={c.updateRequired} body={c.updateRequiredDesc} action={Platform.OS === 'web'
+      ? <Button title={c.updateRequiredWeb} onPress={() => window.location.reload()} />
+      : SUPPORT_URL ? <Button title={c.support} icon="chatbubble-outline" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
+  </View>;
   if (!ready) return null;
   if (offline) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
     <Empty icon="cloud-offline-outline" title={c.offline} body={c.offlineDesc} action={<Button title={c.retry} onPress={refresh} />} />
+    {!!offlineSummary?.orders.length && <OfflineOrders summary={offlineSummary} />}
   </View>;
   const role = me?.user.role;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.

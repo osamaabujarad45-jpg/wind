@@ -113,6 +113,10 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-sessions-repairs.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(27,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 28'))) {
+      await database.run(readFileSync(new URL('./postgres-freight-crew.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(28,?)', Date.now());
+    }
   });
 }
 

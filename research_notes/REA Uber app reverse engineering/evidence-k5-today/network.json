@@ -1,0 +1,5745 @@
+{
+ "class_total": 571,
+ "member_cap": 80,
+ "classes": {
+  "coil.intercept.Interceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.apollographql.apollo.network.http.HttpInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.apollographql.apollo.interceptor.ApolloInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.dynamite.QuerySurfaceBuilderApi": {
+   "methods": [
+    "build"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.go.botdefenseruleenginehttp.BotdefenseRuleEngineHttpApi": {
+   "methods": [
+    "bdToken"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.identity.trust.silentnetworkauthentication.SilentNetworkAuthenticationApi": {
+   "methods": [
+    "initiateSilentAuth",
+    "submitSilentAuthToken"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.identity.uberdevices.UberdevicesApi": {
+   "methods": [
+    "upsertDevice"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.money.payment_methods_experience.paymentmethodpresentation.PaymentMethodPresentationApi": {
+   "methods": [
+    "getPaymentFlowStep"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.rating_kt.blocking_rating.BlockingRatingFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.riders.favorites.RiderFavoriteDriversApi": {
+   "methods": [
+    "deleteFavoriteDriver",
+    "getFavoriteDrivers"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.streamgate.api.StreamgateApi": {
+   "methods": [
+    "ackV2"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.u4b.enigma.ExpenseCodesApi": {
+   "methods": [
+    "getExpenseCodesMetadataForUser",
+    "searchExpenseCodesForUser",
+    "validateExpenseCodes"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.consumer.mainmenupresentation.MainMenuPresentationGrpcApi": {
+   "methods": [
+    "GetVerificationUseCase"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.eventmapping.protos.SceneMappingGrpcApi": {
+   "methods": [
+    "CreateReport"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.customer.arch.orguserinvite.OrgUserInviteAPIGrpcApi": {
+   "methods": [
+    "ExchangePINForMetadata"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.customer.arch.userinvite.UserInviteAPIGrpcApi": {
+   "methods": [
+    "GetUserInvite"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.customer.dome.DomeApiGrpcApi": {
+   "methods": [
+    "GetVerificationUseCase"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.deviceintelligence.DeviceIntelligenceGrpcApi": {
+   "methods": [
+    "Initialize3PDeviceContext",
+    "SubmitUserAgeSignals"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.trust.biometricsverificationengine.BiometricsVerificationEngineGrpcApi": {
+   "methods": [
+    "VerifySelfie"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.imagery.spatialimagery.SpatialImageryGrpcApi": {
+   "methods": [
+    "GetSliMetadata"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.mapsexperiencepresentation.SavedPlacesGrpcApi": {
+   "methods": [
+    "DeleteSavedPlace",
+    "GetSavedPlaces",
+    "UpsertSavedPlace"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.mapsudl.protos.MapsUDLGrpcApi": {
+   "methods": [
+    "GetAddressForm",
+    "UpsertAddressForm"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.wasp.v1.protos.WaypointAdsServiceGrpcApi": {
+   "methods": [
+    "ConfirmAdConversion",
+    "GetAdDetails"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.marketplace.hailables.product.uber_enabled_street_hail.UberEnabledStreetHailGrpcApi": {
+   "methods": [
+    "RegisterStreetHailIntent",
+    "ResolveStreetHailCode"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.mobile.release.metroconsole.MetroConsoleGrpcApi": {
+   "methods": [
+    "AddBetaTester",
+    "GetBetaTesterStatusForApp"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.money.inpersonpaymentpresentation.InPersonPaymentPresentationGrpcApi": {
+   "methods": [
+    "SpenderAcknowledgeHandshake"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.money.payment_methods_experience.paymentmethodpresentation.PaymentMethodPresentationGrpcApi": {
+   "methods": [
+    "VerifyNFCData"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.presentation.apps.shared.endpoints.unifiedlocation.addpositionstolocationstore.UnifiedLocationGrpcApi": {
+   "methods": [
+    "AddPositionsToLocationStore"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.safety.family.presentation.autoredeem.AutoRedeemGrpcApi": {
+   "methods": [
+    "AcknowledgeAutoRedeem"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.safety.presentation.rider.guests.GuestsGrpcApi": {
+   "methods": [
+    "GetGuests",
+    "SwitchRider"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.u4b.u4borguserexperiencesproduct.orguser.OrgUserProductServiceGrpcApi": {
+   "methods": [
+    "GetPinMetadata"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.u4f.gloria.trustedadult.TrustedAdultServiceGrpcApi": {
+   "methods": [
+    "CreateTrustedAdult",
+    "DeleteTrustedAdult",
+    "GetTrustedAdults"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.uflurry.v2.protos.UflurryV2GrpcApi": {
+   "methods": [
+    "PublishMessages"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.connect.orderselection.ConnectOrderSelectionApi": {
+   "methods": [
+    "b",
+    "j",
+    "x"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.connect.saver.ConnectSaverApi": {
+   "methods": [
+    "s"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.network.probe.service.RetrofitProbeService": {
+   "methods": [
+    "probe"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.payment.provider.webview.PaymentProviderWebViewApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.paymentaction.PaymentActionApi": {
+   "methods": [
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.paymentflowstepsdf.PaymentFlowStepSDFApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.paymentsdf.PaymentSDFApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.localization.optional.cdn.LocalizationCdnApi": {
+   "methods": [
+    "download"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.grpc.UnifiedLocationShadowGrpcApi": {
+   "methods": [
+    "addPositionsToLocationStore"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.hcvridercancel.HCVRiderCancelApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.presidioweb.payload.core.PresidioWebviewCorePayloadServiceApi": {
+   "methods": [
+    "messageFromWeb",
+    "messageToWeb",
+    "presidioWebAnalyticsEventRequest",
+    "presidioWebNavigationTabActionTriggered",
+    "presidioWebNavigationTabs",
+    "presidioWebviewChild",
+    "presidioWebviewDismiss",
+    "presidioWebviewHandshake",
+    "presidioWebviewLocationUpdateRequestV2",
+    "presidioWebviewLocationUpdateV2",
+    "presidioWebviewNavBar",
+    "presidioWebviewNetworkTrace",
+    "presidioWebviewSplashScreen",
+    "redirectToSystemWebview",
+    "requestClientIntegrityToken"
+   ],
+   "fields": [],
+   "methods_total": 15,
+   "fields_total": 0
+  },
+  "com.uber.presidio.payment.feature.paymentbar.api.PaymentSelectionPaymentBarApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.webcache.interceptor.HtmlPageInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.webcache.interceptor.WebRequestInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.rider_wayfinding.service.WayfindingEntryService": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.rider_wayfinding.service.WayfindingService": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.connect.intercity.fare.ConnectLoggiFareApi": {
+   "methods": [
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.connect.request.ConnectRequestApi": {
+   "methods": [
+    "o",
+    "p4",
+    "q4",
+    "r4",
+    "s4"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.destinationrefinement.DestinationRefinementFeatureApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.intercity_confirmation_screen.IntercityConfirmationApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.intercity_where_to.IntercityWhereToApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.growth.tulip.incentivespresentationservice.PresentationServiceGrpcApi": {
+   "methods": [
+    "GetBanners"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.identity.uberdevices.UberdevicesGrpcApi": {
+   "methods": [
+    "UpsertUserDevice"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.order_selection.core.OrderSelectionApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.riderrequestitinerarystep.core.RiderRequestItineraryStepFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.ringcomponent.optional.interactivecontent.RingInteractiveContentFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.ring_video_player.ui.RingVideoPlayerApi": {
+   "methods": [
+    "L5",
+    "V7",
+    "getView",
+    "jb",
+    "l1",
+    "l6",
+    "setAudioEnabled",
+    "setAudioLevel",
+    "setListener",
+    "yd"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.ringcomponent.RingComponentFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.templateducomponentstack.TemplatedComponentStackApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.u4b_profile_recommendation.ProfileRecommendationAttributesApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.plus_one.core.PlusOneFeatureApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.familycontentscreen.FamilyContentScreenFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.mapssdk.routing.route_service.RouteService": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.savedplaces_data.SavedPlacesService": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.scaledoffers.ScaledOffersApi": {
+   "methods": [
+    "Y0",
+    "h",
+    "k",
+    "l"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.scaledoffers.data.ScaledOffersService": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.screen_recorder.service.ScreenRecorderForegroundService": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "onBind",
+    "onCreate",
+    "onDestroy",
+    "onStartCommand"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p"
+   ],
+   "methods_total": 16,
+   "fields_total": 16
+  },
+  "com.uber.seniorselfidentification.data.SeniorSelfIdentificationService": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.serverdrivenfeatures.ServerDrivenFeatureApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.servicesmenu.ServicesMenuFeatureApi": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.transit_ticket.ticket_service.providers.MasabiTicketService": {
+   "methods": [],
+   "fields": [],
+   "methods_total": 0,
+   "fields_total": 0
+  },
+  "com.uber.transit_ticket.ticket_service_authenticator.TicketServiceAuthenticator": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.uberfamily.FamilyFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.themeswitcher.ThemeSwitcherFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.walkingmap.feature_api.WalkingMapFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.waypointads.WaypointAdsFeatureApi": {
+   "methods": [
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.UberMapView$GesturePointInterceptor": {
+   "methods": [
+    "interceptPointX",
+    "interceptPointY"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.UberMapView$DefaultGesturePointInterceptor": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "interceptPointX",
+    "interceptPointY"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.android.map.UberMapView$FocalPointCenterGesturePointInterceptor": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "interceptPointX",
+    "interceptPointY"
+   ],
+   "fields": [
+    "this$0"
+   ],
+   "methods_total": 4,
+   "fields_total": 1
+  },
+  "com.ubercab.car_rentals.dfm.CarRentalsDFMApi": {
+   "methods": [
+    "j",
+    "n"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.chat_widget.chat_note.ChatNoteSaveActionHandlerApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.chat_widget.image_attachments.PhotoAttachmentUtilApi": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.emobility.rider.network.EMobiRiderNetworkApi": {
+   "methods": [
+    "A",
+    "B",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "z"
+   ],
+   "fields": [],
+   "methods_total": 27,
+   "fields_total": 0
+  },
+  "com.ubercab.emobility.task.core.EMobiTaskNetworkApi": {
+   "methods": [
+    "y"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.cxmerchandisingcarousel.core.MerchandisingCarouselFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.helix.venues.homescreen.service.HomeScreenWayfindingEntryPointService": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.planning.core.PlanningFeatureApi": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.av_survey.AvSurveyApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.avatarpillcontainer.core.AvatarPillContainerFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.connect.batch.ConnectBatchApi": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.core.smarttrip.SmartTripApi": {
+   "methods": [
+    "N0",
+    "Y0",
+    "k6",
+    "l6"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.gifting.redemption.GiftRedemptionV2Api": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.hubpool.HubPoolFeatureApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.maptype_selection.MapTypeSelectionFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.paymentnudge.PaymentNudgeApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.postdropoff.PostDropoffApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.pretrip.ui.PreTripFeatureApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.riderfamily.HelixFamilyFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.riderquest.RiderQuestFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.safetyshield.SafetyShieldV2Api": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.settings.ride_preferences.RiderPreferenceSettingsApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.streetviewfullscreen.StreetViewFullScreenFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.venues_xshare.trip.VenuesShareRidesTripApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.chat.ChatPublicApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.core.root.textsearchv2.TextSearchV2FeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.optional.notification.trip.NotificationBackgroundConnectionService": {
+   "methods": [
+    "<init>",
+    "onBind"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.audiovisualdevicecues.narration.NarrationService": {
+   "methods": [
+    "<init>",
+    "a",
+    "onBind",
+    "onCreate",
+    "onDestroy",
+    "onStartCommand"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 6,
+   "fields_total": 6
+  },
+  "com.ubercab.presidio.savedplaces.SavedPlacesFeatureApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.voip.v2.service.VoipKeepAliveService": {
+   "methods": [
+    "<init>",
+    "onBind",
+    "onStartCommand"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.adyen.threeds2.ThreeDS2Service": {
+   "methods": [
+    "<clinit>",
+    "cleanup",
+    "createTransaction",
+    "getSDKVersion",
+    "getWarnings",
+    "initialize"
+   ],
+   "fields": [
+    "INSTANCE"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.uber.model.core.generated.mirror.MirrorServiceGrpcApi": {
+   "methods": [
+    "Mirror"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.receipt.ReceiptApi": {
+   "methods": [
+    "sendRiderTripReceipt"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.u4b.u4bpresentation.profile.ProfileServiceApi": {
+   "methods": [
+    "selfServeRemoveProfile"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.payment.thirdparty.paypalclient.PaypalCoreApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.payment.thirdparty.venmoclient.VenmoCoreApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.profilesemployeelinkingpin.LinkingPinInputApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.payment.zaakpay.operation.nativeauth.ZaakpayNativeAuthApi": {
+   "methods": [
+    "makePostRequest"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.pushnotifier.core.PushTrackingService": {
+   "methods": [
+    "track"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.ramen.grpcstack.validator.shadow.modelgen.MirrorServiceGrpcShadowApi": {
+   "methods": [
+    "mirror"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.ramen.grpcstack.validator.shadow.modelgen.MobileIntegrationTestShadowApi": {
+   "methods": [
+    "mirrorData"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.realtime.core.client.RidersApi": {
+   "methods": [
+    "postClientStatus",
+    "postStatus"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.push.SuspendingPushService": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.ads.foundation.adapters.services.AdsGatewayDeferrableApi": {
+   "methods": [
+    "trackEvent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.ads.reporter.network.AdReporterApi": {
+   "methods": [
+    "sendTrackEventRequest"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.communication_utils.audio.CommsAudioApi": {
+   "methods": [
+    "g",
+    "l",
+    "o",
+    "q",
+    "r",
+    "s",
+    "v",
+    "w"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.componentfeature.core.ComponentFeatureApi": {
+   "methods": [
+    "P3",
+    "Q3",
+    "R3",
+    "S3",
+    "c3",
+    "y3"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.connect.ConnectApi": {
+   "methods": [
+    "A9",
+    "B9",
+    "C9",
+    "D9",
+    "F9",
+    "G9",
+    "d9",
+    "t8",
+    "u9",
+    "v9",
+    "w9",
+    "x9",
+    "y9",
+    "z9"
+   ],
+   "fields": [],
+   "methods_total": 14,
+   "fields_total": 0
+  },
+  "com.uber.connect.intercity.label.ConnectPackageLabelApi": {
+   "methods": [
+    "j"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.feature.base.DynamicFeatureApi": {
+   "methods": [],
+   "fields": [],
+   "methods_total": 0,
+   "fields_total": 0
+  },
+  "com.uber.dynamicfeature.canary.bridge.DfmCanaryApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.dynamicfeature.mobilestudio.bridge.DfmMobileStudioApi": {
+   "methods": [
+    "x"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.fiat.core.FiatFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.identity.api.uauth.Authenticator": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.mapssdk.geofences.geofence_service.GeofenceService": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.mapssdk.places.airports.AirportService": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.mapssdk.places.place_service.PlaceService": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.marketing_attribution_v2.singular.SingularApi": {
+   "methods": [
+    "shareAppSession",
+    "shareAppSession"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.messagingcomponent.MessagingComponentApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.messagingcomponent.MessagingComponentFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.messaginggoogleads.api.MessagingGoogleAdsApi": {
+   "methods": [
+    "f",
+    "l",
+    "p",
+    "v"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.ml.vision.barcodescan.mlkit.MLKitBarcodeScannerApi": {
+   "methods": [
+    "b",
+    "u"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.annotation.GrpcApi": {
+   "methods": [
+    "path"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consumer.riderpreferences.RiderPreferencesApi": {
+   "methods": [
+    "getRiderPreferences",
+    "updateRiderPreferences"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cxhomescreen.CxHomeScreenApi": {
+   "methods": [
+    "getActiveHomeScreenLayout",
+    "getHomeScreenLayout"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.michelangelomobile.MichelangeloMobileApi": {
+   "methods": [
+    "getSignedModelUrl"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.request_blockers.GetRequestBlockersApi": {
+   "methods": [
+    "blockerCallback",
+    "getBatchBlockers",
+    "getBlockers"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.sessionlaunch.SessionLaunchApi": {
+   "methods": [
+    "handleSessionLaunch"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.devices.DevicesApi": {
+   "methods": [
+    "decideMobileSecurityRisk",
+    "getAttestationInstructions",
+    "getExemptToken",
+    "upsertAttestations",
+    "upsertDeviceData"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.identity.IdentityApi": {
+   "methods": [
+    "addSsoid",
+    "getAppsNotInDeviceSessionGroup",
+    "getUserIdToken",
+    "groupDeviceSessions",
+    "invalidateToken",
+    "revokeAuthSession",
+    "ssoExchangeToken",
+    "token"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.userconsents.UserConsentsApi": {
+   "methods": [
+    "getCompliance",
+    "getComplianceAndCopyForFeatures",
+    "syncComplianceAndCopyForFeatures",
+    "updateCompliance",
+    "updateComplianceWithTask"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.marketplace.experimentation.parameterservingpresentation.ParameterServingPresentationGrpcApi": {
+   "methods": [
+    "GetMobileParameters",
+    "GetMobileParametersUnauthenticated"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.platforms.adtech.conversionvaluemanagement.ConversionValueManagementGrpcApi": {
+   "methods": [
+    "FetchCountryFromIP"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.motionstash.networking.MotionStashBackendApi": {
+   "methods": [
+    "postMotionPayloadV2"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.presidio.web.auth.api.Authenticator": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.realtime.streaming.dynamicfeature.RealtimeStreamingFeatureApi": {
+   "methods": [
+    "<clinit>",
+    "z"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.uber.reporter.experimental.ReporterApi": {
+   "methods": [
+    "upload"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.requestblockers.core.RequestBlockersApi": {
+   "methods": [
+    "Y0",
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.requestblockers.core.data.RequestBlockersService": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.uberfamily.redeem.core.FamilyOrganizerRedeemInviteApi": {
+   "methods": [
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.uberfamily.redeem.core.FamilyRedeemInviteApi": {
+   "methods": [
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.riderfamilylivestreaming.FamilyLiveStreamingApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.security.ISecurityApi": {
+   "methods": [
+    "c",
+    "d",
+    "i",
+    "j"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.spender_cash_handshake.SpenderCashHandshakeApi": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.styleguide.api.StyleGuideApi": {
+   "methods": [
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.unifiedaddressselector.api.UnifiedAddressSelectorApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.voip.vendor.api.VoipApi": {
+   "methods": [
+    "<clinit>",
+    "q"
+   ],
+   "fields": [
+    "b"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.uber.webcache.WebCacheFeatureApi": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.ubercab.analytics.core.meta.AnalyticsMetaInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.transithub.container.feature.TransitHubContainerFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.video_call.api.VideoCallApi": {
+   "methods": [
+    "m"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "io.github.inflationx.calligraphy3.CalligraphyInterceptor": {
+   "methods": [
+    "<init>",
+    "intercept"
+   ],
+   "fields": [
+    "calligraphy"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "io.grpc.ClientInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "leakcanary.HeapAnalysisInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.models.mobile.databindings.PinnerServiceApi": {
+   "methods": [
+    "pin"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.models.money.paymentsdf.PaymentsPinnerServiceApi": {
+   "methods": [
+    "pin"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.ads_foundation.AdsFoundationDummyServiceApi": {
+   "methods": [
+    "configModelgen",
+    "modelgenEndpoint"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.adsgateway.AdsGatewayProxyApi": {
+   "methods": [
+    "trackEvent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.amdexperience.AmdExperienceApi": {
+   "methods": [
+    "deprovisionVehicleDevice",
+    "editAvPickupLocation",
+    "editDestinationWaypointsLocations",
+    "getAvConfirmationScreen",
+    "getAvInfoView",
+    "getAvScreen",
+    "getAvTripLocationRefinementView",
+    "getAvUserPreferenceView",
+    "getPassengerStatus",
+    "getReserveOptInView",
+    "getRideInfo",
+    "getSurvey",
+    "getSurveyTypes",
+    "getTabletContent",
+    "getTabletTripUpdates",
+    "getUserPreference",
+    "getVehicleConfiguration",
+    "performUserAction",
+    "performVehicleAction",
+    "provisionVehicleDevice",
+    "setUserPreference",
+    "uploadVehicleActionResult"
+   ],
+   "fields": [],
+   "methods_total": 22,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.assistiveonboarding.AssistiveOnboardingApi": {
+   "methods": [
+    "triggerEvent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.authService.AuthServiceApi": {
+   "methods": [
+    "issueWebAuthCookies"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.bibliotek.BibliotekApi": {
+   "methods": [
+    "createDocument"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.blackswanMitigator.BlackswanMitigatorApi": {
+   "methods": [
+    "postActionExecutionLog"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.bliss_chat.BlissChatApi": {
+   "methods": [
+    "getChatInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.bliss_policy_engine.BlissPolicyEngineApi": {
+   "methods": [
+    "getSessionInteractionsForPlayback"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.bliss_video.BlissVideoApi": {
+   "methods": [
+    "getVideoBanner",
+    "getVideoCall",
+    "joinVideoCall",
+    "queueVideoCall"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.businesshub.BusinessHubApi": {
+   "methods": [
+    "getBusinessHubSduiContent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.co_presentation.thrift.COPresentationApi": {
+   "methods": [
+    "getBanners",
+    "getHelpScreen",
+    "getServerDrivenBanners"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cobranded_card_webview_bridge.CreditCardWebviewPayloadServiceApi": {
+   "methods": [
+    "close",
+    "openDeeplink"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.communications.pushnotifications.PushNotificationsApi": {
+   "methods": [
+    "createDeviceToken",
+    "deleteDeviceToken"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.commutehub.CommuteHubPresentationServiceApi": {
+   "methods": [
+    "addRoute",
+    "getCommuteHubExplore",
+    "getCommuteHubFtux",
+    "getCommuteHubScreen",
+    "updateRoute"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.commutepresentation.CommutePresentationServiceApi": {
+   "methods": [
+    "createCommute",
+    "deleteCommute",
+    "getCommutePreference",
+    "getCommuteScreenDetails",
+    "getPredictedCommuteTime",
+    "updateCommute",
+    "updatePreferenceAction"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.concord.ConcordApi": {
+   "methods": [
+    "userAuthorizeClient"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.connect.deliverydetails.DeliveryDetailsApi": {
+   "methods": [
+    "getDeliveryDetails"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.connect.deliverytrackinginfo.DeliveryTrackingInfoApi": {
+   "methods": [
+    "getDeliveryTrackingInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consent.ConsentServiceApi": {
+   "methods": [
+    "getConsentScreens",
+    "setConsent"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consentscontent.ConsentsContentApi": {
+   "methods": [
+    "getConsentsContent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consumer.presentation.eatsidentitymenufeature.EatsIdentityMenuPresentationApi": {
+   "methods": [
+    "getEatsIdentityMenuFeature"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consumer.presentation.riderpreferenceview.RiderPreferenceViewPresentationApi": {
+   "methods": [
+    "getRiderPreferenceView"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consumer.presentation.ridesidentitymenufeature.RidesIdentityMenuPresentationApi": {
+   "methods": [
+    "getRidesIdentityMenuFeature"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.consumer.presentation.ridespromobannerfeature.RidesPromoBannerPresentationApi": {
+   "methods": [
+    "getRidesPromoBannerFeature"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.content_discovery.HelpNodesApi": {
+   "methods": [
+    "discover",
+    "voiceSearch"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.conversionValueManagement.ConversionValueManagementApi": {
+   "methods": [
+    "isDataSharingAllowed"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cos.CreativeOptimizationApi": {
+   "methods": [
+    "getIdfaVariant"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.customerobsession.triage_experiment.TriageExperimentApi": {
+   "methods": [
+    "getTriageEntryPoints"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cxaccelerators.CxAcceleratorsApi": {
+   "methods": [
+    "getAcceleratorsV2"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cxinsights.CxInsightsApi": {
+   "methods": [
+    "getCityInsights",
+    "getCitySearch"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.cxpresentation.CxPresentationApi": {
+   "methods": [
+    "discardEatsDraftOrders",
+    "getActivity",
+    "getUComponents"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.daff.DaffAPIApi": {
+   "methods": [
+    "initSession"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.decide_verify_identity_risk.RiskApi": {
+   "methods": [
+    "decideVerifyIdentityRisk"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.dispatchconfig.DispatchConfigApi": {
+   "methods": [
+    "getScripts"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.driver.presentation.driverapp.reservation.ReservationApi": {
+   "methods": [
+    "getDeliveryReservationConfirmationScreen",
+    "getReservations",
+    "getReserveConfirmationScreen",
+    "getReserveStrikeWarningScreen"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.driverretention.schedulefirsttrip.ScheduleFirstTripApi": {
+   "methods": [
+    "getSchedule",
+    "getScheduleState",
+    "setSchedule"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.dynamite.DynamiteApi": {
+   "methods": [
+    "getTipOptions"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.earnerArrears.EarnerArrearsApi": {
+   "methods": [
+    "cancelPayment",
+    "getCollectionOrders",
+    "getEarnerArrearsInformation"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.earnerPaymentsHub.EarnerPaymentsHubApi": {
+   "methods": [
+    "getEarnerPaymentsHub"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.earner_trip_flow.EarnerTripWebMessageBridgeApi": {
+   "methods": [
+    "sendMessageToNative",
+    "sendMessageToWeb"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eater_message.EaterMessagingApi": {
+   "methods": [
+    "getEmbeddedUrl",
+    "getScreenMessages",
+    "handleUserAction"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.EatsEdgeApi": {
+   "methods": [
+    "addItemsToDraftOrder",
+    "addItemsToOrder",
+    "addMemberToDraftOrder",
+    "checkoutOrdersByDraftOrders",
+    "clearDeliveryLocationDetails",
+    "confirmCartUpdates",
+    "confirmSwitchToPickup",
+    "createBundleGroup",
+    "createDraftOrder",
+    "discardBundleGroup",
+    "discardDraftOrders",
+    "estimateSwitchToPickup",
+    "getActiveEaterOrderReceipt",
+    "getActiveEaterOrdersMobileView",
+    "getActiveOrderTipOptions",
+    "getCartsViewForEaterUuid",
+    "getCheckoutMobilePresentation",
+    "getDraftOrderByUuid",
+    "getDraftOrdersByEaterUuid",
+    "getJoinGroupOrderMeta",
+    "getMealVoucherOnboardingFlow",
+    "getOrderEntities",
+    "getOrderEntityByUuid",
+    "getPastOrderHelp",
+    "getPromotion",
+    "initiateEatsCall",
+    "lockCartInDraftOrder",
+    "logSessionActivity",
+    "removeItemFromDraftOrder",
+    "removeItemsFromDraftOrder",
+    "removeMemberFromDraftOrder",
+    "removeMembersFromDraftOrder",
+    "replaceItemsInDraftOrder",
+    "submitActiveOrderTip",
+    "unlockCartInDraftOrder",
+    "updateBundleGroup",
+    "updateDraftOrder",
+    "updateItemInDraftOrder",
+    "updateItemsInOrder"
+   ],
+   "fields": [],
+   "methods_total": 39,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.getfeedbyid.GetFeedByIDApi": {
+   "methods": [
+    "getFeedById"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.getmarketplace.GetMarketplaceApi": {
+   "methods": [
+    "getMarketplace"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.search.SearchApi": {
+   "methods": [
+    "search"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.subscription.SubscriptionApi": {
+   "methods": [
+    "getSubscriptionConfirmationModal"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.updaterenewstatus.UpdateRenewStatusWithPushApi": {
+   "methods": [
+    "updateRenewStatusWithPush"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.shared.venue.EatsVenueApi": {
+   "methods": [
+    "getVenue"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.feed.getmapfeed.MapFeedApi": {
+   "methods": [
+    "getMapFeed"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.eaterattributes.EatsAttributesApi": {
+   "methods": [
+    "getUserQuestProgress"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.rider.geteaterbootstrapcontext.GetEaterBootstrapContextApi": {
+   "methods": [
+    "getEaterBootstrapContext"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.custommessagemodels.EatsWebFeedCustomMessageModelsApi": {
+   "methods": [
+    "serializeCustomMessageModels"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.eatswebfeed.messagebridge.EatsWebFeedMessageBridgeApi": {
+   "methods": [
+    "sendEventFromWeb",
+    "sendEventToWeb"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.employeelinking.EmployeeLinkingApi": {
+   "methods": [
+    "getJoinAccountSduiContent",
+    "getPostLinkingSduiContent"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.exampleDynamicFormService.ExampleDynamicFormServiceApi": {
+   "methods": [
+    "getDynamicForm"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.externalrewardsprograms.ExternalRewardsProgramsApi": {
+   "methods": [
+    "createLink",
+    "deleteLink",
+    "getAccountLinkingScreens",
+    "getCelebrationScreens",
+    "getProgramDetailsScreens",
+    "getPrograms",
+    "updateEarningProgramPreference"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.familyBanners.BannersApi": {
+   "methods": [
+    "getPromoBanners"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.familyContent.GloriaApi": {
+   "methods": [
+    "getContent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.familyMemberDetails.FamilyMemberDetailsApi": {
+   "methods": [
+    "getFamilyMemberDetails",
+    "saveFamilyMemberDetailsPreference"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.fares.FaresApi": {
+   "methods": [
+    "getFareBreakdown",
+    "meteredFareEstimate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.feedback.FeedbackServiceApi": {
+   "methods": [
+    "submit"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.finprod.earnerDebit.EarnerDebitApi": {
+   "methods": [
+    "getAddressRecommendations",
+    "getEntryPointRouting",
+    "getIdentity",
+    "getNextOnboardingPage",
+    "getOnboardingReadiness",
+    "joinWaitlist",
+    "selectAddressRecommendation",
+    "updateAutoDisbursementPreference"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.finprod.financialservicespresentation.FinancialServicesPresentationApi": {
+   "methods": [
+    "getAutoDisbursementToggleScreen",
+    "getEarnerDebitBackupBalanceScreen",
+    "getEarnerDebitRewardsScreen"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.finprodrewardseligibility.ClientRewardsApi": {
+   "methods": [
+    "getEligibleRewardsPopup"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.finprodrewardseligibility.EligibilityServiceApi": {
+   "methods": [
+    "enrollProgram"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.finprodrewardseligibility.PaymentOffersApi": {
+   "methods": [
+    "getAllOffers",
+    "getOffer"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.fireball.EmobilityRiderTriggersPresentationApi": {
+   "methods": [
+    "riderEnterEmobilityMode"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.gifting.GiftingApi": {
+   "methods": [
+    "getCheckoutPage",
+    "getCustomizeGiftPage",
+    "getDealCalculation",
+    "getGiftCardHub",
+    "getGiftCardPurchaseStatus",
+    "getGiftCards",
+    "getGiftDetails",
+    "getGiftPersonalization",
+    "getGiftSharePage",
+    "getGiftShopOnboardingPage",
+    "getGiftUpdatePage",
+    "getLandingPageV3",
+    "getMembershipBenefits",
+    "getMyGifts",
+    "getRedemptionPage",
+    "getUberCashConversionPage",
+    "purchaseGiftCard",
+    "redeem",
+    "sendGiftEmail",
+    "submitGiftInfo",
+    "updateGift"
+   ],
+   "fields": [],
+   "methods_total": 21,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.gifting_webview_bridge.GiftingWebviewPayloadServiceApi": {
+   "methods": [
+    "handleActionRouting",
+    "hydrateGiftingPreview"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.groupridepresentation.GroupRideServiceApi": {
+   "methods": [
+    "cancel",
+    "guestWaitingRoom",
+    "home",
+    "hostWaitingRoom",
+    "initGroup",
+    "initGroupRideV2",
+    "invite",
+    "leave",
+    "removeWaypoint",
+    "save",
+    "setFaresplit",
+    "setGuestWaypoint",
+    "submitWaypoint",
+    "toggleLock",
+    "updateWaypoint"
+   ],
+   "fields": [],
+   "methods_total": 15,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.growth.earner_onboarding.bonjour.webview_bridge.BonjourWebviewBridgeServiceApi": {
+   "methods": [
+    "dequeueSnackbar",
+    "enqueueSnackbar",
+    "launchNativeBottomSheet",
+    "snackbarButtonAction",
+    "snackbarDismissed"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.hcv.HcvV2Api": {
+   "methods": [
+    "getData",
+    "getHcvHomeData",
+    "getIdentityHubContent",
+    "getRouteDetails",
+    "getRoutes",
+    "getSupplyInfo",
+    "hcvLiveDeparturesTracker",
+    "riderEnterHcvMode"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.help_webview_bridge.HelpWebviewBridgePayloadServiceApi": {
+   "methods": [
+    "chatNotificationSuppression",
+    "chatRendered",
+    "helpAction"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.homecurrencypresentation.HomeCurrencyPresentationViewApi": {
+   "methods": [
+    "getPayselToggle",
+    "storeUniqueIdentifier",
+    "updateHomeCurrency"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.homecurrencypricing.HomeCurrencyPricingApi": {
+   "methods": [
+    "getHcpManagementScreen",
+    "setPreferredPaymentCurrency"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.hubpoolproduct.HubPoolProductPresentationServiceApi": {
+   "methods": [
+    "getHubPoolFtux"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.hubuserinteraction.HubUserInteractionApi": {
+   "methods": [
+    "logUserHubItemInteraction"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.identityVerification.IdentityVerificationApi": {
+   "methods": [
+    "getMobileVerificationStatus",
+    "loadMobilePresentation",
+    "submitMobileStepData"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.inPersonPayment.InPersonPaymentApi": {
+   "methods": [
+    "generateQrCode",
+    "getSpenderHandshakeScreen"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.insurance.v1.InsuranceWebApi": {
+   "methods": [
+    "getEnrollment",
+    "getProgramUpsellDetails",
+    "startEnrollment"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.intercityPresentation.IntercityPresentationApi": {
+   "methods": [
+    "getIntercityLandingScreen",
+    "getIntercityNavaHome",
+    "getIntercityWhereToInfo"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.invoicer.mobile.MobileInvoiceServiceApi": {
+   "methods": [
+    "queryInvoicesByBusinessReference",
+    "queryInvoicesByEntity",
+    "requestInvoicesByBusinessReference"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.issuancepresentation.IssuancePresentationApi": {
+   "methods": [
+    "joinWaitlist"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.issuancepresentationview.IssuancePresentationViewApi": {
+   "methods": [
+    "getMobileStatusPage",
+    "getMobileWebViewPage"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.learningv2.LearningV2Api": {
+   "methods": [
+    "evaluateAssessment",
+    "fetchContentSubmission",
+    "fetchLearningCenter",
+    "fetchMobileAlerts",
+    "fetchQuiz",
+    "fetchTopic",
+    "getFeaturePresentation",
+    "submitContent",
+    "submitSurvey"
+   ],
+   "fields": [],
+   "methods_total": 9,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.listonboardingflows.ListOnboardingFlowsApi": {
+   "methods": [
+    "listOnboardingFlowsForCollection"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.location_resolver.thrift.LocationResolverApi": {
+   "methods": [
+    "getSemanticLocation"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.mapsusagereporting.MapsUsageReportingApi": {
+   "methods": [
+    "reportProvenance"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.matchingMarketStatus.MatchingMarketStatusApi": {
+   "methods": [
+    "evaluateMarketStatus",
+    "registerMarketStatusUserAction"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.membership.MembershipEdgeApi": {
+   "methods": [
+    "acceptIncentive",
+    "cancelMembership",
+    "claimOffer",
+    "evaluateOfferEligibility",
+    "getCheckoutModal",
+    "getMembershipHub",
+    "getMembershipHubByProgram",
+    "getMembershipModal",
+    "getSurvey",
+    "pauseMembership",
+    "resumeMembership",
+    "submitSurvey",
+    "updateMembershipMetadata",
+    "updateSharedMembership"
+   ],
+   "fields": [],
+   "methods_total": 14,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.messagetrafficcontrol.MessageTrafficControlApi": {
+   "methods": [
+    "getUnsubscriptions",
+    "setUnsubscriptions"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.microsmb.messagebridge.MicroSMBMessageBridgeApi": {
+   "methods": [
+    "sendMicroSmbEventFromWeb",
+    "sendMicroSmbEventToWeb"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.mobileorchestrator.ComplianceMobileOrchestratorApi": {
+   "methods": [
+    "fetchKycVerificationStatusV2",
+    "hydrate",
+    "submitAndGetNextStep",
+    "submitAndGetNextStepV2",
+    "updateUserToNextKycLevel"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.checkout.CheckoutApi": {
+   "methods": [
+    "getAsyncCheckoutStatus",
+    "getPreCheckoutActions"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.common.paymentswebbridge.PaymentsWebBridgeDummyServiceApi": {
+   "methods": [
+    "dummyEndpoint"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.earner_payments_webview_bridge.EarnerPaymentsWebviewBridgeServiceApi": {
+   "methods": [
+    "close"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.ordercheckout.OrderCheckoutApi": {
+   "methods": [
+    "exposeActionModels"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.ordercheckoutdemo.CheckoutTestApi": {
+   "methods": [
+    "placeOrder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.payment_methods_experience.upi_intent_bridge.UPIIntentBridgeDummyServiceApi": {
+   "methods": [
+    "launchDeeplink",
+    "selectApp"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.money.uberpay.thrift.UberPayUXApi": {
+   "methods": [
+    "getAuthorizationAction"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.mtcpresentation.MtcPresentationApi": {
+   "methods": [
+    "getPreferences",
+    "setPreferences"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nearbyvehicles.NearbyVehiclesApi": {
+   "methods": [
+    "batchGetNearbyVehiclesResponse"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.app_config_service.AppConfigApi": {
+   "methods": [
+    "getConfiguration"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.booking_service.BookingApi": {
+   "methods": [
+    "cancelBooking",
+    "cancelBookingCost",
+    "createAssetQuote",
+    "createMicromobilityBooking",
+    "getBookingDetails",
+    "getBookingsV2",
+    "lockVehicle",
+    "reserveAndUnlock",
+    "updateAssetQuote"
+   ],
+   "fields": [],
+   "methods_total": 9,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.map_search_service_v2.MapSearchV2Api": {
+   "methods": [
+    "getStationDetails",
+    "searchEmobilityAssets",
+    "searchZones"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.orders_service.OrdersApi": {
+   "methods": [
+    "getOrder",
+    "getOrderHistory"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.promotion_service.PromotionApi": {
+   "methods": [
+    "applyPromotionCode"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.steps_service.StepsApi": {
+   "methods": [
+    "getSteps",
+    "submitSteps"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nemo.emobility.rider_presentation.task_service.TaskApi": {
+   "methods": [
+    "reportTaskOutcome"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.nextagentpresentation.NextAgentPresentationApi": {
+   "methods": [
+    "getUberAgentFeature",
+    "getUberAgentFeatureSmartTrip"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.ondemanddisbursement.OnDemandDisbursementApi": {
+   "methods": [
+    "getEarnerCashoutData",
+    "makeEarnerOnDemandDisbursement"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.orders.OrdersApi": {
+   "methods": [
+    "createRiderAppOrder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.orderselection.OrderSelectionApi": {
+   "methods": [
+    "getOrderSelection",
+    "getShoppingOrders"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.overthetop.OTTEdgeApi": {
+   "methods": [
+    "getActiveCourierAccount",
+    "getCourierPaymentDetails",
+    "setCppFallbackPaymentMethod",
+    "updateTokensVerificationState"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.packagereturn.ReturnsApi": {
+   "methods": [
+    "pudoTextSearch"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.payment.Payment2FAApi": {
+   "methods": [
+    "finalize2fa",
+    "initialize2fa",
+    "update2fa"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.payment.arrears.ArrearsApi": {
+   "methods": [
+    "getConsolidatedArrearsV2",
+    "getSpenderArrearsPaywallPresentation",
+    "getUserArrears"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.payment_selection_presentation.PaymentSelectionPresentationApi": {
+   "methods": [
+    "getPaymentBar",
+    "getPaymentOptionsForAnyUseCase",
+    "getPaymentSwitcher",
+    "paymentOptionChanged"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentonboardingmenu.PaymentOnboardingMenuApi": {
+   "methods": [
+    "getPaymentOnboardingMenu"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentprofilesautoinjection.PaymentProfilesAutoInjectionApi": {
+   "methods": [
+    "injectPaymentProfiles"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_bankcard.BankCardApi": {
+   "methods": [
+    "getBinMetadataByPrefix"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_earnerpaymentsmanagement.EarnerPaymentsManagementApi": {
+   "methods": [
+    "getEarnerPaymentsManagement"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_payment_method_lifecycle.PaymentMethodLifecycleWorkflowApi": {
+   "methods": [
+    "performStep"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_paymentsettings.PaymentSettingsApi": {
+   "methods": [
+    "listOnboardingFlows",
+    "listOnboardingFlowsByUseCase"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_paypay.PayPayApi": {
+   "methods": [
+    "getUserAuthorizationUrl"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paywall.PaywallApi": {
+   "methods": [
+    "getPaywallIsApplicable"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.phone_support.PhoneSupportApi": {
+   "methods": [
+    "cancelCallBackContact",
+    "createCallbackContact",
+    "getHelpHomePhoneSupportContext",
+    "getHelpPhoneCallBackCancellationReasons"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.pickupsdropoffs.PickupsDropoffsApi": {
+   "methods": [
+    "getWayfindingInstructionsVersion"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.preferredcurrency.PreferredCurrencyApi": {
+   "methods": [
+    "getPaySelTile",
+    "getPcpProfileSelectionPage",
+    "getPreferredCurrencyDialogView",
+    "getRequestBlockerDialogView"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rt.colosseum.ColosseumApi": {
+   "methods": [
+    "getVenue"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.http.UnifiedLocationShadowApi": {
+   "methods": [
+    "uploadPositions"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.paymentsonboarding_earnerfirstpayoutexperience.EarnerFirstPayoutExperienceApi": {
+   "methods": [
+    "getEarnerFirstPayoutExperience"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.atg.AtgApi": {
+   "methods": [
+    "getRedispatchInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.auditlogv3.AuditLogV3Api": {
+   "methods": [
+    "postUserAuditLog"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.bookings.BookingsApi": {
+   "methods": [
+    "getBookingsV2"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.buffet.BusinessApi": {
+   "methods": [
+    "createOptInEmployee",
+    "getEmployees",
+    "getLinkingIncentive",
+    "getLinkingPinMetadata",
+    "resolveFlaggedTrip"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp.CMPApi": {
+   "methods": [
+    "getUserEncodedStringsAndPreferences"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.cmp_preferences.CMPPreferencesApi": {
+   "methods": [
+    "updatePreferences"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.communications.CommunicationsApi": {
+   "methods": [
+    "anonymousNumber",
+    "getVoipToken"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.earnings.TripsApi": {
+   "methods": [
+    "getTrip"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.eats.EatsApi": {
+   "methods": [
+    "ackOrderFulfillmentIssues",
+    "createCart",
+    "eaterAppLaunch",
+    "getAddressEntryForm",
+    "getChainStore",
+    "getDeliveryPinRefinementContext",
+    "getDeliveryTimeConfirmationInfo",
+    "getEaterItems",
+    "getEaterPromotionsV2",
+    "getEaterStoreV2",
+    "getFeedItemsUpdate",
+    "getMarketingFeed",
+    "getPendingRatingsV2",
+    "getSavedDeliveryLocations",
+    "getSurveysFromGeosurvey",
+    "getValidationsForLocation",
+    "getValueHubFeed",
+    "orderEstimateV2",
+    "pushEaterOrders",
+    "pushEaterOrdersV2",
+    "pushMenuActions",
+    "reportOrderNotReceived",
+    "reportOrderReceived",
+    "resumeOrder",
+    "submitEaterSurvey",
+    "submitGeosurvey",
+    "submitRatings"
+   ],
+   "fields": [],
+   "methods_total": 27,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.eatstutorial.EatsTutorialApi": {
+   "methods": [
+    "applyOysterPromotion"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.engagement_rider.EngagementRiderApi": {
+   "methods": [
+    "eligibleForPremiumSupport"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.family.FamilyApi": {
+   "methods": [
+    "addFamilyMembers",
+    "createFamilyGroup",
+    "createFamilyPolicy",
+    "declineFamilyInvite",
+    "decryptFamilyUuid",
+    "deleteFamilyGroup",
+    "deleteFamilyMember",
+    "deleteFamilyPolicy",
+    "getAllMembersByUserUuid",
+    "getFamilyGroup",
+    "getFamilyPolicies",
+    "inviteFamilyMembers",
+    "inviteFamilyOrganizer",
+    "redeemFamilyInvite",
+    "submitPartnerConsent",
+    "updateFamilyGroup",
+    "updateFamilyPolicy"
+   ],
+   "fields": [],
+   "methods_total": 17,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.febreze.FebrezeApi": {
+   "methods": [
+    "getLocalizationFile"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.feedback.FeedbackApi": {
+   "methods": [
+    "getDetailedCompliments",
+    "getPersonalTransportFeedbackDetail",
+    "saveFeedback",
+    "setBlacklistedValue",
+    "submitFeedbackV2",
+    "updateDetailedComplimentsSeen"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.helium.HeliumApi": {
+   "methods": [
+    "getRidersPreTripMap"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.help.ContactsApi": {
+   "methods": [
+    "closeEatsChatContact",
+    "getContactV2",
+    "getUserContacts",
+    "getUserUnreadMessageCount",
+    "submitContactCsat",
+    "submitContactCsatFeedbackV2",
+    "updateContactV2"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.learning.LearningApi": {
+   "methods": [
+    "fetchDriverGuides",
+    "logContentImpression"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.location.LocationApi": {
+   "methods": [
+    "deleteLabeledLocationV3",
+    "getAllLabeledLocationsV3",
+    "getCategories",
+    "getLabeledLocationV3",
+    "locationDetailsV2",
+    "postLabeledLocationV3",
+    "reverseGeocode",
+    "reverseGeocodeV4"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacedriver.MarketplaceDriverApi": {
+   "methods": [
+    "acceptOffers",
+    "ackOffers",
+    "appLaunch",
+    "availableV2",
+    "batchCompleteProviderWaypointTasks",
+    "beginTrip",
+    "beginTripsV2",
+    "cancelTaskSources",
+    "capabilitiesV2",
+    "completeMovementJob",
+    "completeOffTripDestination",
+    "completeStops",
+    "completeTaskSources",
+    "confirmPinIsVerified",
+    "deactivateTimeSlot",
+    "driverCancelTripsV2",
+    "driverRateTripsV2",
+    "earnerVerificationCard",
+    "endTripsV2",
+    "expireOffers",
+    "failWaypoint",
+    "fetchOnlineBlockers",
+    "finalizeOffers",
+    "generatePickupVerificationPin",
+    "getTripIssues",
+    "getUpfrontOffer",
+    "getVehicles",
+    "goOfflineV2",
+    "goOnline",
+    "goOnlineV2",
+    "pinAcceptV2",
+    "rejectOffers",
+    "setOffTripDestination",
+    "setWaypointDestination",
+    "startWaiting",
+    "updateWaypointOrder",
+    "waybillV2"
+   ],
+   "fields": [],
+   "methods_total": 37,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacerider.MarketplaceRiderApi": {
+   "methods": [
+    "acceptOffer",
+    "ackOffer",
+    "addExpenseInfo",
+    "appLaunch",
+    "clientStatus",
+    "createDraftOrder",
+    "editPickupLocation",
+    "expireOffer",
+    "fareSplitAccept",
+    "fareSplitDecline",
+    "fareSplitInvite",
+    "fareSplitUninvite",
+    "getRider",
+    "mapChange",
+    "notifyDriverSpotlight",
+    "pickup",
+    "pickupV2",
+    "rejectOffer",
+    "resolveLocation",
+    "riderRedispatchNewDriver",
+    "riderSetInfo",
+    "riderSetInteractionTypes",
+    "riderSetParticipant",
+    "ridercancel",
+    "selectPaymentOptions",
+    "selectPaymentProfileV2",
+    "selectRiderProfile",
+    "selectVoucher",
+    "status",
+    "uploadLocations"
+   ],
+   "fields": [],
+   "methods_total": 30,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.marketplacerider.TermsOfService": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "$$delegate_0",
+    "ADAPTER",
+    "Companion",
+    "accepted",
+    "unknownItems",
+    "version"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "com.uber.model.core.generated.rtapi.services.multipass.PlusApi": {
+   "methods": [
+    "executeMembershipTransaction",
+    "getSubsManageView",
+    "postFeedbackLog",
+    "postPurchasePassOffer",
+    "refund",
+    "transitionMembership",
+    "updateRenewStatus"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.notifier.NotifierApi": {
+   "methods": [
+    "createDeviceToken"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.onboarding.OnboardingApi": {
+   "methods": [
+    "documentUpload",
+    "getDriverOnboardingStatus",
+    "getRiderToDriverCampaign"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.paymentcollection.PaymentCollectionApi": {
+   "methods": [
+    "createCollectionOrder",
+    "createCollectionOrderByJobUuid",
+    "markCollectionOrderAsPaid",
+    "payCollectionOrder"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.payments.PaymentApi": {
+   "methods": [
+    "collectBill",
+    "createTip",
+    "createTipOrder",
+    "getAuthUrl",
+    "getSpenderArrearsPayments",
+    "getUnpaidBills",
+    "getUserConsentModal",
+    "paymentProfileBackingInstruments",
+    "paymentProfileBalance",
+    "paymentProfileCreate",
+    "paymentProfileDelete",
+    "paymentProfileDeposit",
+    "paymentProfileFinalize",
+    "paymentProfileNetworkTokenize",
+    "paymentProfileSendValidationCode",
+    "paymentProfileUpdate",
+    "paymentProfileValidateWithCode",
+    "paymentProfiles",
+    "perform2faAuthorization",
+    "setDefaultPaymentProfile"
+   ],
+   "fields": [],
+   "methods_total": 20,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.polaris.PolarisApi": {
+   "methods": [
+    "deleteContacts",
+    "getPrivacy",
+    "requestNominees",
+    "saveContacts",
+    "savePrivacy"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.pool.RiderPoolApi": {
+   "methods": [
+    "getCancellationInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.pricing.PricingApi": {
+   "methods": [
+    "fareEstimate",
+    "getMidTripFareEstimate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.promotions.PromotionsApi": {
+   "methods": [
+    "applyPromotionCodeToClientOnMobile"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.push.PushFireflyApi": {
+   "methods": [
+    "pushDriverFirefly"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.ridereducationcontent.RiderEducationApi": {
+   "methods": [
+    "getRiderEducationById"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.riderproductconfigurations.RiderProductConfigurationsApi": {
+   "methods": [
+    "getRidersProductConfiguration"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.routing.RoutingApi": {
+   "methods": [
+    "fetchRouteline",
+    "predictBulk"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safety.PinVerificationApi": {
+   "methods": [
+    "getPinVerificationRequirement",
+    "updatePinVerificationRequirement"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safety.ShareApi": {
+   "methods": [
+    "createSafetyContacts",
+    "deleteSafetyContact",
+    "fetch",
+    "getSafetyContacts",
+    "shareMyTrip",
+    "shareTrip",
+    "updateSafetyContacts"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safetydriver.DriverEmergencyApi": {
+   "methods": [
+    "emergencyEndTrips"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safetydriver.DriverShareApi": {
+   "methods": [
+    "getShareSessionStatus",
+    "startShare",
+    "stopShare"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safetydriver.DriverVerificationApi": {
+   "methods": [
+    "rtidImpressionEvent",
+    "verifyIdentityV3"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.safetyuser.UserIdentityApi": {
+   "methods": [
+    "needVerification",
+    "requestVerification"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.groceryconsent.NearbyStoresServiceApi": {
+   "methods": [
+    "nearByStores"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "okhttp3.Interceptor": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "android.support.customtabs.ICustomTabsService": {
+   "methods": [
+    "<clinit>",
+    "D6",
+    "H0",
+    "I0",
+    "Q6",
+    "g2",
+    "m1",
+    "p5",
+    "u1",
+    "y2"
+   ],
+   "fields": [
+    "b0"
+   ],
+   "methods_total": 10,
+   "fields_total": 1
+  },
+  "android.support.customtabs.IPostMessageService": {
+   "methods": [
+    "<clinit>"
+   ],
+   "fields": [
+    "c0"
+   ],
+   "methods_total": 1,
+   "fields_total": 1
+  },
+  "com.ubercab.presidio.security.signing_service.SigningService": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "kotlin.coroutines.ContinuationInterceptor": {
+   "methods": [
+    "B0",
+    "j0"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.commute.CommuteFeatureApi": {
+   "methods": [
+    "a",
+    "b",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.core.app.CoreService": {
+   "methods": [
+    "<init>"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.core.oauth_token_manager.ReAuthenticator": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.core.oauth_token_manager.network.OAuthNetworkAuthenticator": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.network.fileUploader.FileUploadApi": {
+   "methods": [
+    "uploadChunks"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.network.ramen.RamenChannel$RamenChannelApi": {
+   "methods": [
+    "ackEventStream"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.network.ramengrpc.RamenMsgFeatureLoggerHelperApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.networkmodule.logging.core.GrpcPerformanceLoggerInterceptor": {
+   "methods": [
+    "<init>",
+    "c",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o"
+   ],
+   "fields": [
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "com.ubercab.performance.monitor.interceptor.MetricInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.performance.tracer.interceptor.SpanInterceptor": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.mode.api.core.ModeInterceptor": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.optional.root.main.mode.interceptor.ActiveTripModeInterceptor": {
+   "methods": [
+    "<init>",
+    "b"
+   ],
+   "fields": [
+    "a",
+    "b"
+   ],
+   "methods_total": 2,
+   "fields_total": 2
+  },
+  "com.ubercab.presidio.app.optional.root.main.mode.interceptor.HomeModeInterceptor": {
+   "methods": [
+    "<init>",
+    "a",
+    "b"
+   ],
+   "fields": [
+    "a",
+    "b"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.ubercab.presidio.app.optional.root.main.mode.interceptor.RequestModeInterceptor": {
+   "methods": [
+    "<init>",
+    "a",
+    "b"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "methods_total": 3,
+   "fields_total": 4
+  },
+  "com.ubercab.presidio.app.optional.root.main.mode.interceptor.ftux.FtuxInterceptor": {
+   "methods": [
+    "<init>",
+    "a",
+    "b"
+   ],
+   "fields": [
+    "a",
+    "b"
+   ],
+   "methods_total": 3,
+   "fields_total": 2
+  },
+  "com.ubercab.presidio.favoritesv2.FavoritesFeatureApi": {
+   "methods": [
+    "V6",
+    "W6",
+    "X6",
+    "Y6",
+    "Z6",
+    "a7",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.realtime.core.client.RiderOrdersService": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.security.core.KeyAttestationApi": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.security.core.SecurityApi": {
+   "methods": [
+    "<clinit>",
+    "a",
+    "b",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 7,
+   "fields_total": 1
+  },
+  "com.ubercab.push.UberFirebaseMessagingService": {
+   "methods": [
+    "<init>",
+    "d",
+    "e"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.voip.v2.VoipMediaPlayerApi": {
+   "methods": [
+    "b",
+    "j",
+    "m"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.voip.v2.notification.VoipNotificationApi": {
+   "methods": [
+    "d",
+    "e",
+    "h",
+    "u"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.ubercab.voip.v2.VoipCallControllerApi": {
+   "methods": [
+    "D2",
+    "E0",
+    "F4",
+    "H1",
+    "M2",
+    "M9",
+    "N8",
+    "V3",
+    "W2",
+    "l3",
+    "l7",
+    "n3",
+    "stop",
+    "t3",
+    "u3",
+    "v9",
+    "z1"
+   ],
+   "fields": [],
+   "methods_total": 17,
+   "fields_total": 0
+  },
+  "com.ubercab.voip.v2.api.VoipCitrusParamsApi": {
+   "methods": [
+    "a",
+    "c"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "okhttp3.Authenticator": {
+   "methods": [
+    "<clinit>",
+    "a"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "io.github.inflationx.viewpump.Interceptor": {
+   "methods": [
+    "intercept"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "atd.bb.ThreeDS2Service": {
+   "methods": [
+    "getSDKTransactionID"
+   ],
+   "fields": [
+    "AuthenticationRequestParameters",
+    "getDeviceData"
+   ],
+   "methods_total": 1,
+   "fields_total": 2
+  },
+  "com.datami.smi.SmiIntentService": {
+   "methods": [
+    "$",
+    "<clinit>",
+    "<init>",
+    "exclusionDomainListToString",
+    "getDomain",
+    "getIconId",
+    "getSdkKey",
+    "getUserId",
+    "getUserMessaging",
+    "init",
+    "isDeploymentChanged",
+    "onHandleIntent",
+    "onStartCommand",
+    "resetGDPreferencData",
+    "resetUramPreferenceData",
+    "sendReAuthEventIntent",
+    "sendResetEventIntent"
+   ],
+   "fields": [
+    "$",
+    "$$",
+    "TAG"
+   ],
+   "methods_total": 17,
+   "fields_total": 3
+  },
+  "com.iab.omid.library.uber.adsession.JavaScriptSessionService": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$000",
+    "access$100",
+    "access$200",
+    "access$300",
+    "access$400",
+    "access$500",
+    "access$600",
+    "access$700",
+    "addFriendlyObstruction",
+    "addWebViewListener",
+    "create",
+    "createAdSessionConfiguration",
+    "createAdSessionContext",
+    "finishSession",
+    "getAdView",
+    "removeAllFriendlyObstructions",
+    "removeFriendlyObstruction",
+    "removeWebViewListener",
+    "setAdView",
+    "startSession",
+    "tearDown"
+   ],
+   "fields": [
+    "JS_MESSAGE_DATA_AD_SESSION_ID",
+    "JS_MESSAGE_KEY_DATA",
+    "JS_MESSAGE_KEY_METHOD",
+    "JS_MESSAGE_LISTENER_JS_SESSION_SERVICE",
+    "JS_MESSAGE_METHOD_FINISH_SESSION",
+    "JS_MESSAGE_METHOD_START_SESSION",
+    "adSessions",
+    "friendlyObstructions",
+    "isHtmlAdView",
+    "partner",
+    "weakAdView",
+    "webView",
+    "webViewUtil"
+   ],
+   "methods_total": 23,
+   "fields_total": 13
+  },
+  "com.masabi.justride.sdk.platform.geolocation.PlatformGeolocationService": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.activityhome.ActivityHomeFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.activityhome.ActivityHomeModeFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.app_ramen_polling.core.RamenPollApi": {
+   "methods": [
+    "getMessagesFromQueue"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.audio_manager.cached_tone_playable.download.ContentDownloadApi": {
+   "methods": [
+    "download"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.autonomousvehicle.AutonomousVehicleApi": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w"
+   ],
+   "fields": [],
+   "methods_total": 23,
+   "fields_total": 0
+  },
+  "com.uber.booking_agent.speech.openai.BookingAgentOpenAIService": {
+   "methods": [
+    "getSDP"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.communicationpreferences.CommunicationPreferencesApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.location.refinement.map.LocationRefinementMapFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.locationrefinementsheet.LocationRefinementSheetFeatureApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.locationrefinementsheetheader.LocationRefinementSheetHeaderFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.locationrefinementsheetselectionsection.LocationRefinementSheetSelectionSectionFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.riderFoundations.fliprBridge.FliprBridgePayloadServiceApi": {
+   "methods": [
+    "getFliprValues"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.riderFoundations.sceneBridgeService.SceneBridgeServiceApi": {
+   "methods": [
+    "presidioUiStateChanged",
+    "presidioWebAppStateChanged"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.seniorselfidentification.SeniorSelfIdentificationFeatureApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.avatarpill.core.AvatarWithBadgeAndMessageFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.avatarview.core.ComponentAvatarFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.badgeview.core.BadgeViewFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.bottomsheet.core.BottomSheetFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.componentbutton.core.ComponentButtonFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.componentfullscreen.core.FullScreenWithHeaderAndFooterFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.componentgrid.core.ComponentGridFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.componentillustration.core.ComponentIllustrationFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.componentlabel.core.ComponentLabelFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.componenttag.core.ComponentTagFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.connect.paymentselector.ConnectPaymentSelectorApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.connect.rating.ConnectDeliveryConfirmationApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.connect.state.ConnectRequestStatesApi": {
+   "methods": [
+    "B",
+    "D",
+    "G",
+    "H",
+    "I",
+    "J",
+    "O",
+    "P",
+    "m",
+    "u",
+    "z"
+   ],
+   "fields": [],
+   "methods_total": 11,
+   "fields_total": 0
+  },
+  "com.uber.connect.shipmentdetails.dfm.ShipmentDetailsDFMApi": {
+   "methods": [
+    "i",
+    "k",
+    "s",
+    "y"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.consumer_verification.service.ConsumerVerificationService": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.datacontainer.core.DataContainerFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.dividerview.core.ComponentDividerViewFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.eatsweb.bottomsheet.bridge.FeedBottomSheetInterceptor": {
+   "methods": [],
+   "fields": [],
+   "methods_total": 0,
+   "fields_total": 0
+  },
+  "com.uber.farelabel.FareLabelFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.gridcarditem.core.ComponentGridCardItemFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.list.core.ComponentListFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.listcarditem.core.ComponentListCardItemFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.listitem.core.ComponentListItemFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.ratingview.core.ComponentUserRatingFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.stack.core.ComponentStackFeatureApi": {
+   "methods": [
+    "builder"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.airports.AirportService": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.dynamicridercancelsurvey.DynamicRiderCancelSurveyApi": {
+   "methods": [
+    "Y0"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.hyperion.interceptor.EnvelopeInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.identity.api.uauth.webauthn.WebAuthnKeyAuthenticator": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.identity.api.uauth.webauthn.restorecredentials.RestoreCredentialsAuthenticator": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.identity.uam.api.social.UAMSocialAuthenticator": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.update_brightness.UpdateBrightnessBridgePayloadServiceApi": {
+   "methods": [
+    "updateBrightness"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.uslWebBridge.USLWebBridgePayloadServiceApi": {
+   "methods": [
+    "identityVerificationCompleted",
+    "identityVerificationStart",
+    "logSpan",
+    "requestClientIntegrityToken",
+    "requestDeviceData",
+    "requestDigitalCredential",
+    "requestMobileState",
+    "requestPasskeyLogin"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.presidio_webview.core.api.PresidioWebInterceptor": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.optional.root.main.ride.request.multiple_destination.feature.MultipleDestinationApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.rider_pickup_step.PickupStepFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.cmpsdk.CmpApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.identitymenusdf.core.IdentityMenuFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.inbox.InboxFeatureApi": {
+   "methods": [
+    "a",
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.menumode.MenuModeFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.mobilestudio.session_replay.network.SessionReplaySetupGrpcApi": {
+   "methods": [
+    "getSessionReplaySetup"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.presentation.AccessPointsGrpcApi": {
+   "methods": [
+    "GetAccessPointsForPlace",
+    "GetAccessPointsForUserLocation"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.presentation.EPUDOSearchGrpcApi": {
+   "methods": [
+    "GetEPUDOsForGeometry"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.presentation.GELGrpcApi": {
+   "methods": [
+    "GetDetails",
+    "ReverseGeocode"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.presentation.GeofenceGrpcApi": {
+   "methods": [
+    "GetGeofenceWithGeometryById",
+    "GetGeofencesWithGeometryByBoundingBox"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.maps.presentation.SearchGrpcApi": {
+   "methods": [
+    "POISearch",
+    "Search"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.uber.u4b.u4bpresentation.impressioncapper.ImpressionCapperServiceGrpcApi": {
+   "methods": [
+    "UpdateUserImpressionCount"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.pretrip.ui.info.PreTripInfoFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.session_record.network.SessionRecorderGrpcApi": {
+   "methods": [
+    "reportScene",
+    "upload"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.togglepreferencelandingpage.TogglePreferenceLandingPageFeatureApi": {
+   "methods": [
+    "a"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.uberfamily.selectpayment.FamilyMemberSelectPaymentApi": {
+   "methods": [
+    "b"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "org.tensorflow.lite.InterpreterApi": {
+   "methods": [
+    "D2",
+    "Y1",
+    "w3"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.apphealth.thrift.wisdomautocapture.WisdomAutocaptureApi": {
+   "methods": [
+    "getAutocaptureRules"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.bugreporting.BugReportingApi": {
+   "methods": [
+    "confirmAttachments",
+    "getCategories",
+    "getParametersByJiraId",
+    "getReportsByUser",
+    "submitBugReport"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.locations.LocationsApi": {
+   "methods": [
+    "uploadDriverDeviceLocationsV1"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.pcpWebViewBridge.PreferredCurrencyBridgeServiceApi": {
+   "methods": [
+    "webMessaging"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.pricing.SurgeApi": {
+   "methods": [
+    "batch"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.privacypresentation.PrivacyPresentationApi": {
+   "methods": [
+    "getConsentsToDisplayV3",
+    "updateConsentV2"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.promotionsedge.PromotionsEdgeApi": {
+   "methods": [
+    "activatePromotionFromFeedCard",
+    "getClientPromotionsMobileDisplayV2",
+    "getInviterGiveGetDescriptionV2",
+    "getOfferConfirmation"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.proto.integrationTest.MobileIntegrationTestApi": {
+   "methods": [
+    "mirrorData"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.pudopresentationhelix.PudoPresentationHelixApi": {
+   "methods": [
+    "mapsSearch",
+    "textSearch",
+    "wayfindingInstructions"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.receipts.ReceiptsApi": {
+   "methods": [
+    "dismissReceiptFeedback",
+    "getActiveOrderReceipt",
+    "getReceipt",
+    "getReceiptByWorkflowUuid",
+    "sendReceiptEmail",
+    "sendReceiptEmailByWorkflowUuid",
+    "submitReceiptFeedback"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.reservations.ReservationsApi": {
+   "methods": [
+    "getLandingScreen",
+    "getReservationPreferences"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.platform.uberagent.UberAgentApi": {
+   "methods": [
+    "processQuery"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.platform.uberbookingagent.UberBookingAgentApi": {
+   "methods": [
+    "processBooking",
+    "startBookingAgentSession"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.rfktlo.deviceintegrity.DeviceIntegrityApi": {
+   "methods": [
+    "verifyDeviceIntegrity"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.saveScreenContext.SaveScreenContextApi": {
+   "methods": [
+    "saveScreenContext"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.survey.SurveyApi": {
+   "methods": [
+    "getSurveyData"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.tripexperiencepresentation.componentimpression.ComponentImpressionServiceApi": {
+   "methods": [
+    "registerComponentImpression"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.tripexperiencepresentation.preArrivalBuzz.PreArrivalBuzzApi": {
+   "methods": [
+    "savePreArrivalBuzzPreference"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.presentation.v1.consumermessaging.ConsumerMessagingPresentationApi": {
+   "methods": [
+    "claimOffer",
+    "getMessagingComponents"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.product.intercity.FareBreakdownApi": {
+   "methods": [
+    "getFareBreakdown"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.product.intercity.IntercityConfirmationScreenApi": {
+   "methods": [
+    "getIntercityConfirmationScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.product.intercity.IntercityTripInfoApi": {
+   "methods": [
+    "getIntercityTripInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.product.outofappcapabilities.OutOfAppNotificationsApi": {
+   "methods": [
+    "getPayload",
+    "registerCapability"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.product.postrequestagent.PostRequestAgentApi": {
+   "methods": [
+    "processTurn"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.quest.QuestsApi": {
+   "methods": [
+    "getQuestLandingPage"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.riderFoundations.baseCounterWebBridge.BaseCounterWebBridgeServiceApi": {
+   "methods": [
+    "baseCounterWeb"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.riderreferral.RiderReferralApi": {
+   "methods": [
+    "checkInviteeOfferEligibility",
+    "createRiderReferralEnrollment",
+    "getRiderAssistedReferralConsent",
+    "getRiderReferralIdentityHubContent",
+    "getRiderReferralInfo"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rider.sharedRides.SharedRidesApi": {
+   "methods": [
+    "getFtuxExperiences",
+    "getSharedRidesDynamicInfo",
+    "getSharedRidesProductEligibility",
+    "groupRidesTrip"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rideradsevents.RiderAdsEventsApi": {
+   "methods": [
+    "processRiderAdsEvent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rideritemdeliverylaunch.RiderItemDeliveryLaunchApi": {
+   "methods": [
+    "riderItemDeliveryLaunchGet3pLanding",
+    "riderItemDeliveryLaunchGetConfiguration",
+    "riderItemDeliveryLaunchGetHomeComponents"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rideroffer.OfferApi": {
+   "methods": [
+    "getriderOffers"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.riderpretrip.PreTripApi": {
+   "methods": [
+    "getRiderPretripInfo",
+    "riderPreTripScreenClose",
+    "riderPreTripScreenOpen"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.riderwaypoint.WaypointApi": {
+   "methods": [
+    "completeReadyForPickupWaypointTask",
+    "completeWaypointTask",
+    "failWaypointTask"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.risk_challenges.RiskChallengesApi": {
+   "methods": [
+    "checkChallengeConditions",
+    "initiateChallenge",
+    "verifyChallenge"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.risk_webview_bridge.RiskWebviewServiceApi": {
+   "methods": [
+    "launchRiskWebChallenge",
+    "riskActionStatus",
+    "riskSerialisedIntegration",
+    "riskWebChallengeStatus"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.riskpresentation.RiskPresentationApi": {
+   "methods": [
+    "collectRiskNudgeEvent",
+    "getCardSelectionView",
+    "getRecoveryHubView",
+    "getRiskNudgeView",
+    "getRiskPresentationView"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rosetta2.Rosetta2Api": {
+   "methods": [
+    "translate"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.rosettadynamic.MobileDeviceApi": {
+   "methods": [
+    "getLocalizationUpdates"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.routeplanner.RoutePlannerApi": {
+   "methods": [
+    "createRoutePlan",
+    "deleteRoutePlan",
+    "getNavigationForRoutePlan",
+    "getNavigationRoutePreview",
+    "injectRouteId",
+    "updateActivity"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.canvas.CanvasApi": {
+   "methods": [
+    "getSfPushPayloadTypesRider",
+    "registerImpression"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.contacts.ContactsApi": {
+   "methods": [
+    "createContact",
+    "deleteContact",
+    "getContacts",
+    "updateContact"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.emergencyrider.EmergencyRiderApi": {
+   "methods": [
+    "isLocationInEmergencyArea"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.family.livestream.FamilyLiveStreamBridgePayloadServiceApi": {
+   "methods": [
+    "muteStream",
+    "streamingStatus"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.family.presentation.FamilyPresentationApi": {
+   "methods": [
+    "getPathway"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.gendersettings.GenderSettingsApi": {
+   "methods": [
+    "getGender",
+    "getGenderIdentityScreen",
+    "updateGender"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.motosafetysettings.MotoSafetySettingsApi": {
+   "methods": [
+    "getMotoSafetySettings",
+    "updateMotoSafetySettings"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.rider.safedrivingfeedback.SafeDrivingFeedbackServiceApi": {
+   "methods": [
+    "getDrivingSafetyFeedbackScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.rider.womenpreference.WomenPreferenceApi": {
+   "methods": [
+    "getWomenPreferenceScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.accessibility.AccessibilitySettingsApi": {
+   "methods": [
+    "getAccessibilitySettings",
+    "getPickupAssistantScreen",
+    "updateAccessibilitySettings",
+    "updatePickupAssistantInfo"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.canvas.CanvasApi": {
+   "methods": [
+    "getRiderSafetyHub",
+    "getRiderToolkitData",
+    "getSafetyCanvasListView",
+    "getSafetyHotpocketData",
+    "getSafetyHubData",
+    "getSfcCourseData",
+    "isEligibleForNewRiderSafetyHub",
+    "updateSafetyPreferences"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.canvastoolbar.CanvasToolbarApi": {
+   "methods": [
+    "getSafetyToolbarData"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.canvastoolkit.CanvasToolkitApi": {
+   "methods": [
+    "getSafetyModeToolkitData",
+    "getSafetyToolkitData",
+    "getSafetyToolkitPassiveFeatureData"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.safetyverification.SafetyVerificationApi": {
+   "methods": [
+    "getSafetyVerification"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.presentation.shared.serviceAnimals.ServiceAnimalsApi": {
+   "methods": [
+    "getSaRiderPreferenceViewModels",
+    "getSaStatus",
+    "updateSaStatus"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.safemode.SafeModeApi": {
+   "methods": [
+    "activateSafeModeFeatures",
+    "getSafeModeSettingsView",
+    "updateSafeModeSettings"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.safetystateframework.SafetyStateFrameworkApi": {
+   "methods": [
+    "getConditionals",
+    "getScopedConditionals",
+    "publishState"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.ueducate.UeducateApi": {
+   "methods": [
+    "getCourseViewData",
+    "getUserChecklistData",
+    "getUserChecklistStatus",
+    "updateUserChecklistStatus",
+    "userCourseAcknowledged"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.usos.UsosApi": {
+   "methods": [
+    "createEmergencyV2",
+    "getEmergencyTranslations"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safety.womenpreferenceonboarding.WomenPreferenceOnboardingApi": {
+   "methods": [
+    "getWomenPreferencesValuePropScreen",
+    "updateOnboardingStatus"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safetyhelmetverification.HelmetVerificationDriverApi": {
+   "methods": [
+    "helmetVerificationStatus",
+    "verifyHelmet"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safetymaskverificationrider.MaskVerificationRiderApi": {
+   "methods": [
+    "verifyMask"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safetymediaplatform.internal.SafetyMediaPlatformInternalServiceApi": {
+   "methods": [
+    "closeLiveStreamSession",
+    "createBlissContact",
+    "createEnrollment",
+    "createLiveStreamSession",
+    "getEnrollments",
+    "getInAppRecordingSettingsForUser",
+    "getInAppRecordingSettingsV2ForUser",
+    "getLiveStreamSession",
+    "getPrivacyFilteredTripVideo",
+    "getPublicKey",
+    "getRecordMyRideDataOrders",
+    "getReportFlowCategories",
+    "isAudioRecordingEnabledForUser",
+    "isAudioRecordingExperimentEnabled",
+    "saveDeviceFeatures",
+    "saveTripRecordingSessionData",
+    "setAudioRecordingEnabledForUser",
+    "setInAppRecordingSettingsForUser",
+    "setInAppRecordingSettingsV2ForUser",
+    "signMediaFingerprint",
+    "updateEnrollment",
+    "updateLiveStreamReadiness",
+    "validatePublicKey",
+    "verifyMandatoryRecordingCompliance"
+   ],
+   "fields": [],
+   "methods_total": 24,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.safetyridecheck.SafetyRideCheckApi": {
+   "methods": [
+    "getRideCheckMetadata",
+    "postFeedback",
+    "trigger"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.scaledoffers.v1.scaledoffers.ScaledOffersApi": {
+   "methods": [
+    "getScaledOffers",
+    "scaledOfferAction"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.serverdrivenpreviewerservice.ServerDrivenPreviewerServiceApi": {
+   "methods": [
+    "getAllFolders",
+    "getAllSduiDemos",
+    "getAnalyticsEventMapping",
+    "getMobileStudioFile",
+    "getSduiDemoPayload",
+    "searchItemsByPrefix"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.shifts.ShiftsApi": {
+   "methods": [
+    "acknowledgeSafeDrop",
+    "createBookings",
+    "getBookings",
+    "getGuardHomeScreenContent",
+    "getProfile",
+    "updateProfile"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.silkscreen.SilkScreenApi": {
+   "methods": [
+    "confirmLogin",
+    "submitForm"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.socialprofiles.SocialProfilesEdgeApi": {
+   "methods": [
+    "getSocialProfileV3"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.spender_wallet_web_view_bridge.SpenderWalletBridgeServiceApi": {
+   "methods": [
+    "webMessaging"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.subscriptions.SubscriptionsEdgeApi": {
+   "methods": [
+    "activateFundedOffer",
+    "getEndMembershipScreen",
+    "getMembershipManagementMenu",
+    "getMembershipPartnerOfferInfo",
+    "getOfferSelectionScreen",
+    "getUserMembershipStatus"
+   ],
+   "fields": [],
+   "methods_total": 6,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.topUpBridge.TopUpBridgeServiceApi": {
+   "methods": [
+    "webMessaging"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.tour.TourServiceApi": {
+   "methods": [
+    "getUserTravelItinerariesWithLinks"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.trafficIncidentService.TrafficIncidentServiceApi": {
+   "methods": [
+    "getIncidentReports",
+    "incidentFeedback",
+    "ugcIncidentReport"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.transparent_fare_breakdown.TransparentFareBreakdownServiceApi": {
+   "methods": [
+    "getTransparentFareBreakdown"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.travel.holdingdispatch.sdui.HoldingDispatchSduiDummyServiceApi": {
+   "methods": [
+    "response"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.travel.rapu.sdui.RapuSduiDummyServiceApi": {
+   "methods": [
+    "response"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.tripcontext.TripContextRegionResolverApi": {
+   "methods": [
+    "getRegionId"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.tripcontext_store.thrift.TripContextStoreApi": {
+   "methods": [
+    "handleMobileInferenceUpdate",
+    "handleMobileRiderInferenceUpdate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.tripinfo.TripInfoApi": {
+   "methods": [
+    "getTripInfo"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.EmployeeServiceApi": {
+   "methods": [
+    "resendInvites"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.PresentationApi": {
+   "methods": [
+    "confirmEmployeeByProfile",
+    "createOptInEmployeesViaFindMyOrg",
+    "deleteEmployees",
+    "findMyOrgGetOptInOptions",
+    "findMyOrgGetPendingEmployees",
+    "findMyOrgSendVerifyEmail",
+    "isUserEligibleForAdminIngress",
+    "linkEmployeesViaFindMyOrg",
+    "linkUserToConcur",
+    "redeemEmployeeInviteV2"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.ProfileProviderApi": {
+   "methods": [
+    "removeDelegateeFromProfileV2"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.ProfilesApi": {
+   "methods": [
+    "addDelegateeToProfile",
+    "createProfile",
+    "deleteProfile",
+    "getProfiles",
+    "getSelectedProfile",
+    "patchProfile",
+    "removeDelegateeFromProfile",
+    "requestVerification",
+    "selectProfile",
+    "validateProfileIsDelegatable"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.delegatemanagement.DelegateManagementServiceApi": {
+   "methods": [
+    "deleteDelegation",
+    "toggleDelegateeReceipts"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4b.u4bpresentation.health.BenefitSelectionServiceApi": {
+   "methods": [
+    "getBenefitSelection"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4bpresentation.benefits.BenefitsServiceApi": {
+   "methods": [
+    "getBenefitCelebrationScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.u4bpresentation.findmyorg.FindMyOrgServiceApi": {
+   "methods": [
+    "getVerificationScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.uberBankHydratorService.UberBankHydratorServiceApi": {
+   "methods": [
+    "hydrateStatement",
+    "hydrateStatementsList"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.ubercashrewards.UberCashRewardsApi": {
+   "methods": [
+    "enrollProgram",
+    "getAmexRewardsPopup",
+    "getPartnerRewardEnrollmentStatus",
+    "getPartnerRewards",
+    "getPartnerRewardsDetailsPage",
+    "getRewardsPopup",
+    "getTransactionDetails",
+    "getTransactionHistory",
+    "getUberBalances",
+    "getUberCashHub",
+    "getUberCashHubDetailsPage",
+    "getUberMoneyHub"
+   ],
+   "fields": [],
+   "methods_total": 12,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.ubercashv2.UberCashV2Api": {
+   "methods": [
+    "createFinancialAccount",
+    "getAccountLimitsPage",
+    "getAddFundsPage",
+    "getAwardCelebrationDetails",
+    "getFinancialAccountsInfo",
+    "getInformationPage",
+    "getNotificationSettingsPage",
+    "getPointsConversionOptions",
+    "getStatement",
+    "listStatements",
+    "purchase",
+    "updateNotificationSettings"
+   ],
+   "fields": [],
+   "methods_total": 12,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.uberpaymentsauthbridge.UberPaymentsAuthBridgeDummyServiceApi": {
+   "methods": [
+    "simulateAuthFromWeb",
+    "simulateAuthToWeb",
+    "simulateRequestRedirectUrl"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.ucardsprovisioning.UCardsProvisioningApi": {
+   "methods": [
+    "getAccountDetails",
+    "getEncryptedCardDetails"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.unest.UNestApi": {
+   "methods": [
+    "ack",
+    "nack"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.uploadLocation.UnifiedLocationApi": {
+   "methods": [
+    "uploadPositions"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.usercloudid.UserCloudIDServiceApi": {
+   "methods": [
+    "generateUserCloudId"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.vehicle.sustech.sustainabilitydata.EmissionsPresentationRiderApi": {
+   "methods": [
+    "getEmissionSavingsTile"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.venuesHomeScreen.VenuesHomeScreenApi": {
+   "methods": [
+    "getVenuesHomeScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.venuesInsights.VenueInsightsApi": {
+   "methods": [
+    "getVenueInsightsSduiContent"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.venuesUpcomingFlightsList.UpcomingFlightsListApi": {
+   "methods": [
+    "getFlightInfo",
+    "getUpcomingFlightSchedule",
+    "queryUpcomingFlightsList"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.verticalpresentation.VerticalPresentationApi": {
+   "methods": [
+    "getVerticalsLandingScreen"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.voucher.VouchersApi": {
+   "methods": [
+    "cancelCampaign",
+    "getInAppVoucherData"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.vouchers.VouchersApi": {
+   "methods": [
+    "getVoucherSduiFeature"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.walletgateway.WalletGatewayProxyApi": {
+   "methods": [
+    "getAccountDetails",
+    "getAccountFeed",
+    "getTransactionDetails",
+    "getWalletHome",
+    "getWalletSduiFeature"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.edge.services.webauthn.WebAuthnAPIApi": {
+   "methods": [
+    "getAuthOptions",
+    "getRegistrationOptions",
+    "registerPublicKeyCredential"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.scheduledrides.ScheduledRidesApi": {
+   "methods": [
+    "batchCreateScheduledTrips",
+    "cancelScheduledTrip",
+    "createScheduledTrip",
+    "extendCheckIn",
+    "feasibilityV2",
+    "getAirlinesByAirport",
+    "getRapuPickupAccessPoint",
+    "getReservationCancellationInfo",
+    "getReservationSettings",
+    "getReviewReservation",
+    "getScheduledTrip",
+    "getScheduledTrips",
+    "getSeeTerms",
+    "getUpsells",
+    "getValueProps",
+    "planReservation",
+    "predictReservationTime",
+    "queryFlightsList",
+    "sendCommunicationNotification",
+    "updateReservation"
+   ],
+   "fields": [],
+   "methods_total": 20,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.silkscreen.SilkScreenApi": {
+   "methods": [
+    "prepareField",
+    "submitForm"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.socialprofiles.SocialProfilesApi": {
+   "methods": [
+    "getSocialProfileHeader",
+    "getSocialProfileSection",
+    "getSocialProfileSnippet",
+    "getSocialProfileV2",
+    "getSocialProfilesCards",
+    "getSocialProfilesQuestionV4",
+    "getSocialProfilesReportOptions",
+    "submitSocialProfilesReport",
+    "updateAndGetSocialProfilesAnswer",
+    "updateSocialProfilesCoverPhoto"
+   ],
+   "fields": [],
+   "methods_total": 10,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.support.SupportApi": {
+   "methods": [
+    "cancelAppointment",
+    "checkInAppointment",
+    "createDirectDialPhoneContext",
+    "endChat",
+    "getAppointment",
+    "getBookedAppointments",
+    "getCallNodeOptions",
+    "getCallPreferenceOptions",
+    "getEmbeddedCsatSurvey",
+    "getLatestFeedbackV2",
+    "getPredictiveEntries",
+    "getScheduleAppointmentPreview",
+    "getSiteDetails",
+    "getSiteDetailsSummary",
+    "getSites",
+    "getSupportNodes",
+    "getTrip",
+    "getTripHistory",
+    "getTripReceipt",
+    "initiateChat",
+    "scheduleAppointment",
+    "submitEmbeddedCsatSurvey",
+    "transitionWorkflowStateV2",
+    "uploadTicketImageV2"
+   ],
+   "fields": [],
+   "methods_total": 24,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.transit.TransitApi": {
+   "methods": [
+    "getAllowedPaymentProfiles",
+    "getLineStopArrivals",
+    "getLineStopHeadsignArrivals",
+    "getNearbyLineStops",
+    "getNearbyStops",
+    "getPartnerAuthToken",
+    "getServiceAlert",
+    "getStopDetails",
+    "getTicketProducts",
+    "getTicketStations",
+    "getTransitPassWalletInfo",
+    "getTripPlan",
+    "purchaseTickets",
+    "refreshStopDetails",
+    "updateSavedTransitObjects"
+   ],
+   "fields": [],
+   "methods_total": 15,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.trips.TripsApi": {
+   "methods": [
+    "endWalkingExperience",
+    "riderRedispatchSdu"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.ump.UmpApi": {
+   "methods": [
+    "createThreadByRefId",
+    "getMessages",
+    "getPayload",
+    "performAction",
+    "postMessage",
+    "sendMessageStatus",
+    "sendThreadActivity",
+    "updateMessage"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.upload.FileUploadApi": {
+   "methods": [
+    "negotiate"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.userconsents.GatewayApiApi": {
+   "methods": [
+    "updateCgUser"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.users.UsersApi": {
+   "methods": [
+    "addPassword",
+    "tagUserPublic",
+    "updatePopulousUserInfo"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.users_identity.UsersApi": {
+   "methods": [
+    "getSecuritySettings",
+    "getUserInfo",
+    "requestUserInfoVerification",
+    "updateUserIdentity",
+    "verifyPassword"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.wallet.WalletApi": {
+   "methods": [
+    "getWalletView",
+    "getWalletViewV2",
+    "updateWalletConfigV2",
+    "updateWalletConfigV3"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.uber.model.core.generated.rtapi.services.webauth.WebAuthApi": {
+   "methods": [
+    "archSigninToken"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.core.performance.configuration.PerformanceService": {
+   "methods": [
+    "get"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  }
+ }
+}

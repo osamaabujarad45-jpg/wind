@@ -84,7 +84,8 @@ assert.match(copy.en.presence_bg_not_on, /Job sharing works while Wind is open/)
 // Driver screen wiring: the presence card replaces the false strip, starts only from its own presses, background is its own tap.
 const screen = readFileSync(new URL('../src/app/driver/index.tsx', import.meta.url), 'utf8');
 assert.ok(!/c\.online\b|c\.onlineNote|Pulse/.test(screen), 'the false ready strip and its pulse are gone');
-assert.ok(/<DriverPresenceCard/.test(screen) && /requestsOn=\{false\b/.test(screen), 'presence card mounted with requests off');
+assert.ok(/<DriverPresenceCard/.test(screen) && /requestsOn=\{work.presenceState === 'online' && matching.data\?\.eligibleForMatching === true\}/.test(screen),
+  'requests require an online state and explicit server eligibility; unknown capability stays off');
 assert.ok(!/useEffect/.test(screen), 'the driver screen runs nothing on mount');
 const enableLines = screen.split('\n').filter(line => line.includes('enablePresence()'));
 assert.equal(enableLines.length, 1, 'enablePresence is called from one place');

@@ -101,6 +101,29 @@ assert.ok(compiled.resources.some(resource => resource.type === 'Microsoft.Autho
   && String(resource.properties.roleDefinitionId).includes('7f951dda-4ed3-4680-a7ca-43fe172d538d')), 'The runtime identity can pull the reviewed image');
 assert.ok(compiled.resources.some(resource => resource.type === 'Microsoft.Authorization/roleAssignments'
   && String(resource.properties.roleDefinitionId).includes('4633458b-17de-408a-b874-0445c86b69e6')), 'The runtime identity can read the database secret');
+// An AcrPull grant alone cannot authenticate an image pull. All three workloads
+// must explicitly choose the registry and the same assigned runtime identity.
+for (const name of ['api', 'worker']) {
+  const module = deployment(name);
+  assert.match(module.properties.parameters.registryServer.value, /loginServer/, `${name} binds the actual registry hostname`);
+  const workload = module.properties.template.resources.find(resource => resource.type === 'Microsoft.App/containerApps');
+  assert.match(JSON.stringify(workload.properties.configuration), /registryServer/);
+  assert.match(JSON.stringify(workload.properties.configuration), /identityId/);
+  assert.ok(module.dependsOn.some(dependency => dependency.includes('7f951dda-4ed3-4680-a7ca-43fe172d538d')), `${name} waits for AcrPull`);
+  assert.ok(module.dependsOn.some(dependency => dependency.includes('4633458b-17de-408a-b874-0445c86b69e6')), `${name} waits for secret access`);
+}
+const osrmWorkload = compiled.resources.find(resource => resource.type === 'Microsoft.App/containerApps');
+assert.equal(osrmWorkload.identity.type, 'UserAssigned', 'OSRM has the identity used for private image authentication');
+assert.equal(osrmWorkload.properties.configuration.registries.length, 1);
+assert.match(osrmWorkload.properties.configuration.registries[0].server, /loginServer/);
+// Bicep wraps interpolated object keys in ARM format('{0}', resourceId(...));
+// normalize that identity operation before comparing the assigned/pull IDs.
+const assignedOsrmIdentities = Object.keys(osrmWorkload.identity.userAssignedIdentities)
+  .map(value => value.replace(/^\[format\('\{0\}', (.*)\)\]$/, '[$1]'));
+assert.ok(assignedOsrmIdentities.includes(osrmWorkload.properties.configuration.registries[0].identity));
+assert.notEqual(osrmWorkload.properties.configuration.registries[0].identity, api.identityId.value,
+  'OSRM image pulls do not inherit the API/worker identity and its database-secret privileges');
+assert.ok(osrmWorkload.dependsOn.some(dependency => dependency.includes('7f951dda-4ed3-4680-a7ca-43fe172d538d')), 'OSRM waits for AcrPull');
 
 // Exercise configuration gates without connecting to a database.
 const { runtimePersistence } = await import('../server/db/runtime.ts');

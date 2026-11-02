@@ -45,12 +45,12 @@ try {
   assert.equal(accepted.ride.boardingRequired, true);
   assert.equal(accepted.ride.arrivedAt, null);
   assert.equal(accepted.ride.graceUntil, null, 'the grace clock has not started before arrival');
-  assert.match(accepted.ride.boardingCode, /^\d{4}$/, 'the assigned driver sees the boarding code');
-  const code = accepted.ride.boardingCode;
+  assert.equal(accepted.ride.boardingCode, undefined, 'the assigned driver must obtain the code from the passenger');
   const customerView = await f.call(`/orders/${booked.id}`, { token: f.customer.token });
-  assert.equal(customerView.ride.boardingCode, code, 'the customer holds the same boarding code');
+  const code = customerView.ride.boardingCode;
+  assert.match(code, /^\d{4}$/, 'only the customer holds the boarding code');
   const adminView = await f.call(`/orders/${booked.id}`, { token: f.admin.token });
-  assert.equal(adminView.ride.boardingCode, undefined, 'the code is serialized only to customer and matched driver');
+  assert.equal(adminView.ride.boardingCode, undefined, 'the code is serialized only to the customer');
   const foreign = await f.account();
   await f.call(`/orders/${booked.id}`, { token: foreign.token, expect: 404 });
 
@@ -75,6 +75,8 @@ try {
   assert.equal(await f.db.one('SELECT failures FROM proof_attempts WHERE order_id=?', booked.id), undefined, 'boarding attempts never touch the parcel proof counter');
   const started = await advance(f, who.driver.token, booked.id, 'at_pickup', { boardingCode: code });
   assert.equal(started.status, 'in_transit', 'the correct code after four misses still starts the ride');
+  assert.equal((await f.call(`/orders/${booked.id}`, { token: f.customer.token })).ride.boardingCode, undefined,
+    'the customer no longer receives the PIN once boarding is complete');
 
   const completionRequest = { requestId: randomUUID(), expectedStatus: 'in_transit' };
   const completed = await f.call(`/orders/${booked.id}/advance`, { token: who.driver.token, body: completionRequest });

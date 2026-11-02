@@ -24,7 +24,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-email-'));
 Object.assign(process.env, { DB_PATH: join(dir, 'test.db'), WIND_IDENTITY_MODE: 'self-service', WIND_ENABLED_SERVICES: 'parcel',
   WIND_EMAIL_FROM: 'no-reply@wind.example', CLOUDFLARE_ACCOUNT_ID: 'acct123', CLOUDFLARE_EMAIL_TOKEN: 'cf-email-token',
   CLOUDFLARE_API_BASE: `http://127.0.0.1:${cloudflare.address().port}/client/v4` });
-const { server, shutdown, promote } = await import('../server/main.ts');
+const { server, shutdown, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 const password = 'Correct-Horse-12';
@@ -117,7 +117,28 @@ try {
   assert.equal((await call('/auth/reset', { body: { identifier: '0599709999', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password', 'checked before any lookup');
   for (let i = 0; i < 5; i++) await call('/auth/login', { body: { identifier: '0599700001', password: 'not-it-at-all' }, expect: 401 });
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 429 }); // a forgetful owner hit the limit
-  assert.deepEqual(await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' } }), { ok: true });
+  // Force both real HTTP requests to read the same valid code before either
+  // claims it. Exactly one may change the password, on either database adapter.
+  const originalOne = persistence.one;
+  let reads = 0, release;
+  const bothRead = new Promise(resolve => { release = resolve; });
+  persistence.one = async function(sql, ...params) {
+    const row = await originalOne.call(this, sql, ...params);
+    if (sql.startsWith('SELECT * FROM email_codes WHERE') && params[1] === 'reset') {
+      if (++reads === 2) release();
+      await bothRead;
+    }
+    return row;
+  };
+  let resets;
+  try {
+    resets = await Promise.all([1, 2].map(() => fetch(`http://127.0.0.1:${server.address().port}/api/auth/reset`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: '0599700001', code: reset.code, password: 'New-Password-123' }),
+    })));
+  } finally { persistence.one = originalOne; }
+  assert.equal(reads, 2);
+  assert.deepEqual(resets.map(response => response.status).sort(), [200, 400], 'one email reset code has one winner');
   await call('/me', { token: customer.token, expect: 401 }); // every old session ended
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 401 });
   const signedIn = await call('/auth/login', { body: { identifier: 'user1@mail.example', password: 'New-Password-123' } });

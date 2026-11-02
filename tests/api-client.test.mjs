@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ApiError, apiSessionRevision, configureApi, invalidateApiSessionActions, noteServerDate, request, serverOffset } from '../src/api-client.ts';
+import { ApiError, apiSessionRevision, CLIENT_BUILD, clientUpdateRequired, configureApi, invalidateApiSessionActions, noteServerDate, request, serverOffset, subscribeClientUpdate } from '../src/api-client.ts';
 
 const originalFetch = globalThis.fetch, originalTimer = globalThis.setTimeout;
 let finish, oldExpired = 0, currentExpired = 0;
@@ -49,7 +49,22 @@ try {
   globalThis.setTimeout = (fn, delay) => originalTimer(fn, delay === 20_000 ? 1 : delay);
   globalThis.fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   await assert.rejects(request('https://test.invalid/api/orders', { requestId: 'same-on-retry' }), /network/);
-  console.log('API session race and timeout checks passed');
+  globalThis.setTimeout = originalTimer;
+
+  // Forced upgrade: every request names its build; a 426 refusal flips the app-wide update screen once.
+  let notified = 0;
+  const unsubscribe = subscribeClientUpdate(() => notified++);
+  globalThis.fetch = (_url, init) => {
+    assert.equal(init.headers['X-Wind-Client'], String(CLIENT_BUILD));
+    return new Response(JSON.stringify({ error: 'client_update_required' }), { status: 426 });
+  };
+  assert.equal(clientUpdateRequired(), false);
+  await assert.rejects(request('https://test.invalid/api/me'), e => e.status === 426 && e.message === 'client_update_required');
+  await assert.rejects(request('https://test.invalid/api/orders'), /client_update_required/);
+  assert.equal(clientUpdateRequired(), true);
+  assert.equal(notified, 1);
+  unsubscribe();
+  console.log('API session race, timeout and forced-upgrade checks passed');
 } finally {
   globalThis.fetch = originalFetch;
   globalThis.setTimeout = originalTimer;

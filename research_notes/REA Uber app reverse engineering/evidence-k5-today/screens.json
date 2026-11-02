@@ -1,0 +1,3022 @@
+{
+ "class_total": 132,
+ "member_cap": 80,
+ "classes": {
+  "androidx.core.app.ComponentActivity": {
+   "methods": [
+    "<init>",
+    "dispatchKeyEvent",
+    "dispatchKeyShortcutEvent",
+    "getExtraData",
+    "getExtraDataMap$annotations",
+    "getLifecycle",
+    "getLifecycleRegistry$annotations",
+    "onCreate",
+    "onSaveInstanceState",
+    "putExtraData",
+    "shouldDumpInternalState",
+    "shouldSkipDump",
+    "superDispatchKeyEvent"
+   ],
+   "fields": [
+    "extraDataMap",
+    "lifecycleRegistry"
+   ],
+   "methods_total": 13,
+   "fields_total": 2
+  },
+  "androidx.activity.ComponentActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "A",
+    "B",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "_init_$lambda$1",
+    "_init_$lambda$2",
+    "_init_$lambda$3",
+    "_init_$lambda$4",
+    "access$ensureViewModelStore",
+    "addContentView",
+    "addMenuProvider",
+    "addMenuProvider",
+    "addMenuProvider",
+    "addObserverForBackInvoker",
+    "addObserverForBackInvoker$lambda$0",
+    "addOnConfigurationChangedListener",
+    "addOnContextAvailableListener",
+    "addOnMultiWindowModeChangedListener",
+    "addOnNewIntentListener",
+    "addOnPictureInPictureModeChangedListener",
+    "addOnPictureInPictureUiStateChangedListener",
+    "addOnTrimMemoryListener",
+    "addOnUserLeaveHintListener",
+    "createFullyDrawnExecutor",
+    "defaultViewModelProviderFactory_delegate$lambda$0",
+    "ensureViewModelStore",
+    "enterPictureInPictureMode",
+    "fullyDrawnReporter_delegate$lambda$0",
+    "fullyDrawnReporter_delegate$lambda$0$0",
+    "getActivityResultRegistry",
+    "getDefaultViewModelCreationExtras",
+    "getDefaultViewModelProviderFactory",
+    "getFullyDrawnReporter",
+    "getLastCustomNonConfigurationInstance",
+    "getLifecycle",
+    "getNavigationEventDispatcher",
+    "getOnBackPressedDispatcher",
+    "getOnBackPressedInput",
+    "getSavedStateRegistry",
+    "getSavedStateRegistryController$annotations",
+    "getViewModelStore",
+    "initializeViewTreeOwners",
+    "invalidateMenu",
+    "menuHostHelper$lambda$0",
+    "onActivityResult",
+    "onBackPressed",
+    "onBackPressedDispatcher_delegate$lambda$0",
+    "onBackPressedDispatcher_delegate$lambda$0$0",
+    "onBackPressedDispatcher_delegate$lambda$0$1$0",
+    "onBackPressedInput_delegate$lambda$0",
+    "onConfigurationChanged",
+    "onCreate",
+    "onCreatePanelMenu",
+    "onMenuItemSelected",
+    "onMultiWindowModeChanged",
+    "onMultiWindowModeChanged",
+    "onNewIntent",
+    "onPanelClosed",
+    "onPictureInPictureModeChanged",
+    "onPictureInPictureModeChanged",
+    "onPictureInPictureUiStateChanged",
+    "onPreparePanel",
+    "onRequestPermissionsResult",
+    "onRetainCustomNonConfigurationInstance",
+    "onRetainNonConfigurationInstance",
+    "onSaveInstanceState",
+    "onTrimMemory",
+    "onUserLeaveHint",
+    "peekAvailableContext",
+    "registerForActivityResult",
+    "registerForActivityResult"
+   ],
+   "fields": [
+    "ACTIVITY_RESULT_TAG",
+    "Companion",
+    "_viewModelStore",
+    "activityResultRegistry",
+    "contentLayoutId",
+    "contextAwareHelper",
+    "defaultViewModelProviderFactory$delegate",
+    "dispatchingOnMultiWindowModeChanged",
+    "dispatchingOnPictureInPictureModeChanged",
+    "fullyDrawnReporter$delegate",
+    "hasPictureInPictureSystemFeature",
+    "menuHostHelper",
+    "nextLocalRequestCode",
+    "onBackPressedDispatcher$delegate",
+    "onBackPressedInput$delegate",
+    "onConfigurationChangedListeners",
+    "onMultiWindowModeChangedListeners",
+    "onNewIntentListeners",
+    "onPictureInPictureModeChangedListeners",
+    "onPictureInPictureUiStateChangedListeners",
+    "onTrimMemoryListeners",
+    "onUserLeaveHintListeners",
+    "reportFullyDrawnExecutor",
+    "savedStateRegistryController"
+   ],
+   "methods_total": 101,
+   "fields_total": 24
+  },
+  "androidx.fragment.app.FragmentActivity": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "M",
+    "N",
+    "O",
+    "P",
+    "dispatchFragmentsOnCreateView",
+    "dump",
+    "getSupportFragmentManager",
+    "getSupportLoaderManager",
+    "init",
+    "lambda$init$0",
+    "lambda$init$1",
+    "lambda$init$2",
+    "lambda$init$3",
+    "markFragmentsCreated",
+    "markState",
+    "onActivityResult",
+    "onAttachFragment",
+    "onCreate",
+    "onCreateView",
+    "onCreateView",
+    "onDestroy",
+    "onMenuItemSelected",
+    "onPause",
+    "onPostResume",
+    "onRequestPermissionsResult",
+    "onResume",
+    "onResumeFragments",
+    "onStart",
+    "onStateNotSaved",
+    "onStop",
+    "setEnterSharedElementCallback",
+    "setExitSharedElementCallback",
+    "startActivityFromFragment",
+    "startActivityFromFragment",
+    "startIntentSenderFromFragment",
+    "supportFinishAfterTransition",
+    "supportInvalidateOptionsMenu",
+    "supportPostponeEnterTransition",
+    "supportStartPostponedEnterTransition",
+    "validateRequestPermissionsRequestCode"
+   ],
+   "fields": [
+    "LIFECYCLE_TAG",
+    "mCreated",
+    "mFragmentLifecycleRegistry",
+    "mFragments",
+    "mResumed",
+    "mStopped"
+   ],
+   "methods_total": 42,
+   "fields_total": 6
+  },
+  "androidx.appcompat.app.AppCompatActivity": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "addContentView",
+    "attachBaseContext",
+    "closeOptionsMenu",
+    "dispatchKeyEvent",
+    "findViewById",
+    "getDelegate",
+    "getDrawerToggleDelegate",
+    "getMenuInflater",
+    "getResources",
+    "getSupportActionBar",
+    "getSupportParentActivityIntent",
+    "initDelegate",
+    "invalidateOptionsMenu",
+    "onConfigurationChanged",
+    "onContentChanged",
+    "onCreateSupportNavigateUpTaskStack",
+    "onDestroy",
+    "onKeyDown",
+    "onLocalesChanged",
+    "onMenuItemSelected",
+    "onMenuOpened",
+    "onNightModeChanged",
+    "onPanelClosed",
+    "onPostCreate",
+    "onPostResume",
+    "onPrepareSupportNavigateUpTaskStack",
+    "onStart",
+    "onStop",
+    "onSupportActionModeFinished",
+    "onSupportActionModeStarted",
+    "onSupportContentChanged",
+    "onSupportNavigateUp",
+    "onTitleChanged",
+    "onWindowStartingSupportActionMode",
+    "openOptionsMenu",
+    "performMenuItemShortcut",
+    "setContentView",
+    "setContentView",
+    "setContentView",
+    "setSupportActionBar",
+    "setSupportProgress",
+    "setSupportProgressBarIndeterminate",
+    "setSupportProgressBarIndeterminateVisibility",
+    "setSupportProgressBarVisibility",
+    "setTheme",
+    "startSupportActionMode",
+    "supportInvalidateOptionsMenu",
+    "supportNavigateUpTo",
+    "supportRequestWindowFeature",
+    "supportShouldUpRecreateTask"
+   ],
+   "fields": [
+    "DELEGATE_TAG",
+    "mDelegate",
+    "mResources"
+   ],
+   "methods_total": 52,
+   "fields_total": 3
+  },
+  "androidx.fragment.app.Fragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "callStartTransitionListener",
+    "createFragmentContainer",
+    "d",
+    "dump",
+    "ensureAnimationInfo",
+    "equals",
+    "findFragmentByWho",
+    "generateActivityResultKey",
+    "getActivity",
+    "getAllowEnterTransitionOverlap",
+    "getAllowReturnTransitionOverlap",
+    "getAnimatingAway",
+    "getArguments",
+    "getChildFragmentManager",
+    "getContext",
+    "getDefaultViewModelCreationExtras",
+    "getDefaultViewModelProviderFactory",
+    "getEnterAnim",
+    "getEnterTransition",
+    "getEnterTransitionCallback",
+    "getExitAnim",
+    "getExitTransition",
+    "getExitTransitionCallback",
+    "getFocusedView",
+    "getFragmentManager",
+    "getHost",
+    "getId",
+    "getLayoutInflater",
+    "getLayoutInflater",
+    "getLifecycle",
+    "getLoaderManager",
+    "getMinimumMaxLifecycleState",
+    "getNextTransition",
+    "getParentFragment",
+    "getParentFragmentManager",
+    "getPopDirection",
+    "getPopEnterAnim",
+    "getPopExitAnim",
+    "getPostOnViewCreatedAlpha",
+    "getReenterTransition",
+    "getResources",
+    "getRetainInstance",
+    "getReturnTransition",
+    "getSavedStateRegistry",
+    "getSharedElementEnterTransition",
+    "getSharedElementReturnTransition",
+    "getSharedElementSourceNames",
+    "getSharedElementTargetNames",
+    "getString",
+    "getString",
+    "getTag",
+    "getTargetFragment",
+    "getTargetFragment",
+    "getTargetRequestCode",
+    "getText",
+    "getUserVisibleHint",
+    "getView",
+    "getViewLifecycleOwner",
+    "getViewLifecycleOwnerLiveData",
+    "getViewModelStore",
+    "hasOptionsMenu",
+    "hashCode",
+    "initLifecycle",
+    "initState",
+    "instantiate",
+    "instantiate",
+    "isAdded",
+    "isDetached",
+    "isHidden",
+    "isInBackStack",
+    "isInLayout",
+    "isMenuVisible",
+    "isPostponed",
+    "isRemoving",
+    "isResumed",
+    "isStateSaved"
+   ],
+   "fields": [
+    "ACTIVITY_CREATED",
+    "ATTACHED",
+    "AWAITING_ENTER_EFFECTS",
+    "AWAITING_EXIT_EFFECTS",
+    "CREATED",
+    "INITIALIZING",
+    "RESUMED",
+    "STARTED",
+    "USE_DEFAULT_TRANSITION",
+    "VIEW_CREATED",
+    "mAdded",
+    "mAnimationInfo",
+    "mArguments",
+    "mBackStackNesting",
+    "mBeingSaved",
+    "mCalled",
+    "mChildFragmentManager",
+    "mContainer",
+    "mContainerId",
+    "mContentLayoutId",
+    "mDefaultFactory",
+    "mDeferStart",
+    "mDetached",
+    "mFragmentId",
+    "mFragmentManager",
+    "mFromLayout",
+    "mHasMenu",
+    "mHidden",
+    "mHiddenChanged",
+    "mHost",
+    "mInDynamicContainer",
+    "mInLayout",
+    "mIsCreated",
+    "mIsPrimaryNavigationFragment",
+    "mLayoutInflater",
+    "mLifecycleRegistry",
+    "mMaxState",
+    "mMenuVisible",
+    "mNextLocalRequestCode",
+    "mOnPreAttachedListeners",
+    "mParentFragment",
+    "mPerformedCreateView",
+    "mPostponedDurationRunnable",
+    "mPostponedHandler",
+    "mPreviousWho",
+    "mRemoving",
+    "mRestored",
+    "mRetainInstance",
+    "mRetainInstanceChangedWhileDetached",
+    "mSavedFragmentState",
+    "mSavedStateAttachListener",
+    "mSavedStateRegistryController",
+    "mSavedUserVisibleHint",
+    "mSavedViewRegistryState",
+    "mSavedViewState",
+    "mState",
+    "mTag",
+    "mTarget",
+    "mTargetRequestCode",
+    "mTargetWho",
+    "mTransitioning",
+    "mUserVisibleHint",
+    "mView",
+    "mViewLifecycleOwner",
+    "mViewLifecycleOwnerLiveData",
+    "mWho"
+   ],
+   "methods_total": 193,
+   "fields_total": 66
+  },
+  "com.uber.model.core.generated.ue.types.eater_client_views.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoDisplayTimeoutInMs",
+    "body",
+    "buttonText",
+    "deeplink",
+    "endBody",
+    "heroImgUrl",
+    "heroPresentationStyle",
+    "impressionConfig",
+    "includeDividers",
+    "key",
+    "numRequiredAcks",
+    "paragraphs",
+    "primaryActionType",
+    "richTextSubtitle",
+    "richTextTitle",
+    "secondaryActionType",
+    "secondaryButtonText",
+    "secondaryDeeplink",
+    "title",
+    "url"
+   ],
+   "methods_total": 26,
+   "fields_total": 21
+  },
+  "com.uber.model.core.generated.ue.types.eater_message.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "bottom_sheet_v1",
+    "standardBottomSheet",
+    "type"
+   ],
+   "methods_total": 10,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.ue.types.eater_message.OpenAddToFavoritesBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "merchantUuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.ue.types.eater_message.PresentOrderTrackingBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "bottomSheetKey"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.ue.types.eater_message.StandardBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoDisplayTimeoutInMs",
+    "heroImageURL",
+    "heroPresentationStyle",
+    "primaryCTA",
+    "richTextTitle",
+    "secondaryCTA",
+    "standardBottomSheetParagraphs",
+    "subtitle",
+    "title",
+    "titleLeadingIcon",
+    "titleTextColor",
+    "trackingID",
+    "uuid"
+   ],
+   "methods_total": 19,
+   "fields_total": 14
+  },
+  "com.uber.model.core.generated.ue.types.feeditem_bottomsheet_presentation.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "bottomSheetParagraphs",
+    "primaryCTA",
+    "secondaryCTA",
+    "title",
+    "trackingCode",
+    "uuid"
+   ],
+   "methods_total": 12,
+   "fields_total": 7
+  },
+  "com.uber.model.core.generated.ue.types.feeditem_bottomsheet_presentation.BottomSheetActionDismissBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "syntheticFieldDoNotUse"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.muber.fallback.MuberEmbeddedActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onCreate"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 3,
+   "fields_total": 3
+  },
+  "com.uber.payment.provider.common.custom_tab_switcher.CustomTabSwitchListenerActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.payment.provider.common.custom_tab_switcher.CustomTabSwitchManagerActivity": {
+   "methods": [
+    "<init>",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onResume",
+    "requestScope"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 6,
+   "fields_total": 6
+  },
+  "com.uber.rider.product.outofcapabilities.universalpayload.RiderOrderIOSLiveActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$000",
+    "access$100",
+    "access$200",
+    "access$300",
+    "access$400",
+    "access$500",
+    "access$600",
+    "access$700",
+    "access$800",
+    "access$900",
+    "clearCompact",
+    "clearExpanded",
+    "clearSmall",
+    "dynamicMethod",
+    "getCompact",
+    "getDefaultInstance",
+    "getExpanded",
+    "getSmall",
+    "hasCompact",
+    "hasExpanded",
+    "hasSmall",
+    "mergeCompact",
+    "mergeExpanded",
+    "mergeSmall",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setCompact",
+    "setExpanded",
+    "setSmall"
+   ],
+   "fields": [
+    "COMPACT_FIELD_NUMBER",
+    "DEFAULT_INSTANCE",
+    "EXPANDED_FIELD_NUMBER",
+    "PARSER",
+    "SMALL_FIELD_NUMBER",
+    "bitField0_",
+    "compact_",
+    "expanded_",
+    "small_"
+   ],
+   "methods_total": 44,
+   "fields_total": 9
+  },
+  "com.uber.rider.product.outofcapabilities.universalpayload.RiderTripIOSLiveActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "access$000",
+    "access$100",
+    "access$200",
+    "access$300",
+    "access$400",
+    "access$500",
+    "access$600",
+    "access$700",
+    "access$800",
+    "access$900",
+    "clearCompact",
+    "clearExpanded",
+    "clearSmall",
+    "dynamicMethod",
+    "getCompact",
+    "getDefaultInstance",
+    "getExpanded",
+    "getSmall",
+    "hasCompact",
+    "hasExpanded",
+    "hasSmall",
+    "mergeCompact",
+    "mergeExpanded",
+    "mergeSmall",
+    "newBuilder",
+    "newBuilder",
+    "parseDelimitedFrom",
+    "parseDelimitedFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parseFrom",
+    "parser",
+    "setCompact",
+    "setExpanded",
+    "setSmall"
+   ],
+   "fields": [
+    "COMPACT_FIELD_NUMBER",
+    "DEFAULT_INSTANCE",
+    "EXPANDED_FIELD_NUMBER",
+    "PARSER",
+    "SMALL_FIELD_NUMBER",
+    "bitField0_",
+    "compact_",
+    "expanded_",
+    "small_"
+   ],
+   "methods_total": 44,
+   "fields_total": 9
+  },
+  "com.uber.standard_analytics.models.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "INSTANCE"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.model.core.generated.rtapi.services.ump.ThreadActivity": {
+   "methods": [
+    "$values",
+    "<clinit>",
+    "<init>",
+    "valueOf",
+    "values"
+   ],
+   "fields": [
+    "$ENTRIES",
+    "$VALUES",
+    "TURN_REJECTED",
+    "TYPING",
+    "UNKNOWN"
+   ],
+   "methods_total": 5,
+   "fields_total": 5
+  },
+  "com.ubercab.bug_reporter.ui.activity.BugReporterActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "onCreate",
+    "onUserInteraction"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 6,
+   "fields_total": 3
+  },
+  "com.ubercab.external_web_view.core.WebViewActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "onCreate"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.ubercab.healthline.alternate.launch.core.AlternateLaunchWebActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+   ],
+   "methods_total": 2,
+   "fields_total": 7
+  },
+  "com.ubercab.healthline.core.actions.AlertAction$AlertActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.ubercab.healthline.core.actions.ShowWebViewAction$WebViewActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.ubercab.help.feature.workflow.component.HelpWorkflowComponent$StartActivity": {
+   "methods": [
+    "h"
+   ],
+   "fields": [],
+   "methods_total": 1,
+   "fields_total": 0
+  },
+  "com.ubercab.mobilestudio.logviewer.ui.FilterBottomSheet": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "<init>",
+    "onFinishInflate"
+   ],
+   "fields": [
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P"
+   ],
+   "methods_total": 4,
+   "fields_total": 7
+  },
+  "com.ubercab.presidio.audiovisualdevicecues.googleglasses.ProjectedNarrationActivity": {
+   "methods": [
+    "<init>",
+    "dispatchGenericMotionEvent",
+    "onCreate",
+    "onStart",
+    "onStop"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.ubercab.presidio.payment.uberpay.operation.authorization.UberPayWebAuthorizationActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "onActivityResult",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onResume",
+    "requestScope"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 12,
+   "fields_total": 6
+  },
+  "com.ubercab.presidio.upgrade.employee.optional.EmployeeUpgradeActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onCreate"
+   ],
+   "fields": [
+    "i"
+   ],
+   "methods_total": 3,
+   "fields_total": 1
+  },
+  "com.ubercab.presidio.upgrade.force.optional.ForceUpgradeActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onActivityResult",
+    "onCreate"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 4,
+   "fields_total": 3
+  },
+  "com.uber.rib.core.CoreAppCompatActivity": {
+   "methods": [
+    "<init>",
+    "onActivityResult",
+    "onCreate",
+    "onDestroy",
+    "onRequestPermissionsResult"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.rib.core.RibActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "Q",
+    "R",
+    "ht",
+    "m0",
+    "onActivityResult",
+    "onCreate",
+    "onDestroy",
+    "onLowMemory",
+    "onNewIntent",
+    "onPause",
+    "onPictureInPictureModeChanged",
+    "onResume",
+    "onSaveInstanceState",
+    "onStart",
+    "onStop",
+    "onTrimMemory",
+    "onUserLeaveHint",
+    "onWindowFocusChanged",
+    "r",
+    "requestScope",
+    "wk"
+   ],
+   "fields": [
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h"
+   ],
+   "methods_total": 23,
+   "fields_total": 7
+  },
+  "com.ubercab.ui.bottomsheet.AnchoredBottomSheet": {
+   "methods": [
+    "anchorPoints",
+    "currentAnchorPoint",
+    "getAnchorPoints",
+    "goToAnchorPointState",
+    "goToAnchorPointState",
+    "isBeingDragged",
+    "offset",
+    "setAnchorPoints"
+   ],
+   "fields": [],
+   "methods_total": 8,
+   "fields_total": 0
+  },
+  "com.ubercab.ui.core.widget.BottomSheet": {
+   "methods": [
+    "<init>",
+    "<init>",
+    "<init>",
+    "Rd",
+    "Sd",
+    "Td",
+    "Ud",
+    "Vd",
+    "addView",
+    "computeScroll",
+    "onAttachedToWindow",
+    "onInterceptTouchEvent",
+    "onNestedFling",
+    "onNestedPreScroll",
+    "onNestedScroll",
+    "onStartNestedScroll",
+    "onStopNestedScroll",
+    "onTouchEvent",
+    "onVisibilityChanged",
+    "removeAllViews",
+    "setDraggable",
+    "setInitialFullscreenAllowed",
+    "setOmittingKeyline",
+    "setPersistent"
+   ],
+   "fields": [
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "M0",
+    "N",
+    "O",
+    "P",
+    "P0",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W"
+   ],
+   "methods_total": 24,
+   "fields_total": 22
+  },
+  "com.ubercab.video_call.base.VideoCallActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onWindowFocusChanged"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n"
+   ],
+   "methods_total": 6,
+   "fields_total": 6
+  },
+  "com.ubercab.voip.v2.call.screen.activity.VoipV2CallActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onCreate"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 3,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.eater_message.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "_toString$delegate",
+    "bottom_sheet_v1",
+    "standardBottomSheet",
+    "type"
+   ],
+   "methods_total": 10,
+   "fields_total": 5
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.eater_message.OpenAddToFavoritesBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "merchantUuid"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.eater_message.PresentOrderTrackingBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "bottomSheetKey"
+   ],
+   "methods_total": 7,
+   "fields_total": 2
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.eater.models.eater_message.StandardBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoDisplayTimeoutInMs",
+    "heroImageURL",
+    "heroPresentationStyle",
+    "primaryCTA",
+    "richTextTitle",
+    "secondaryCTA",
+    "standardBottomSheetParagraphs",
+    "title",
+    "titleTextColor",
+    "trackingID",
+    "uuid"
+   ],
+   "methods_total": 17,
+   "fields_total": 12
+  },
+  "com.uber.model.core.generated.edge.services.eats.presentation.models.eaterclientviews.BottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "autoDisplayTimeoutInMs",
+    "body",
+    "buttonText",
+    "deeplink",
+    "endBody",
+    "heroImgUrl",
+    "heroPresentationStyle",
+    "impressionConfig",
+    "includeDividers",
+    "key",
+    "numRequiredAcks",
+    "paragraphs",
+    "primaryActionType",
+    "richTextSubtitle",
+    "richTextTitle",
+    "secondaryActionType",
+    "secondaryButtonText",
+    "title",
+    "url"
+   ],
+   "methods_total": 25,
+   "fields_total": 20
+  },
+  "com.uber.model.core.generated.edge.services.hcv.HCVBottomSheet": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "cards",
+    "header"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "com.uber.model.core.generated.rtapi.services.polaris.PolarisFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "Companion",
+    "text",
+    "type"
+   ],
+   "methods_total": 8,
+   "fields_total": 3
+  },
+  "androidx.car.app.CarAppPermissionActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.ubercab.presidio.core.PresidioActivity": {
+   "methods": [
+    "<init>",
+    "S",
+    "attachBaseContext"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.ubercab.presidio.app.core.root.RootActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "attachBaseContext",
+    "onActivityResult",
+    "onBackPressed",
+    "onCreate",
+    "onDestroy",
+    "onLowMemory",
+    "onNewIntent",
+    "onPictureInPictureModeChanged",
+    "onSaveInstanceState",
+    "onStop",
+    "onTrimMemory",
+    "onWindowFocusChanged",
+    "r"
+   ],
+   "fields": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "methods_total": 21,
+   "fields_total": 30
+  },
+  "androidx.compose.ui.tooling.PreviewActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "androidx.credentials.playservices.controllers.identityauth.HiddenActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "handleCredentialFlow",
+    "onActivityResult",
+    "onCreate",
+    "onSaveInstanceState",
+    "restoreState",
+    "setupFailure",
+    "setupIntentSenderFailureByType",
+    "setupPendingIntentFailureByType"
+   ],
+   "fields": [
+    "Companion",
+    "DEFAULT_VALUE",
+    "KEY_AWAITING_RESULT",
+    "TAG",
+    "mWaitingForActivityResult",
+    "resultReceiver"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "androidx.credentials.playservices.controllers.identitycredentials.IdentityCredentialApiHiddenActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "onActivityResult",
+    "onCreate",
+    "onSaveInstanceState",
+    "restoreState"
+   ],
+   "fields": [
+    "Companion",
+    "KEY_AWAITING_RESULT",
+    "mWaitingForActivityResult",
+    "resultReceiver"
+   ],
+   "methods_total": 6,
+   "fields_total": 4
+  },
+  "atd.bb.ChallengeActivity": {
+   "methods": [
+    "getDeviceData"
+   ],
+   "fields": [
+    "getDeviceData",
+    "getSDKTransactionID"
+   ],
+   "methods_total": 1,
+   "fields_total": 2
+  },
+  "com.adyen.threeds2.internal.ui.activity.ChallengeActivity": {
+   "methods": [
+    "$$g",
+    "<clinit>",
+    "<init>",
+    "AuthenticationRequestParameters",
+    "AuthenticationRequestParameters",
+    "AuthenticationRequestParameters",
+    "a",
+    "attachBaseContext",
+    "b",
+    "c",
+    "d",
+    "getDeviceData",
+    "getDeviceData",
+    "getDeviceData",
+    "getDeviceData",
+    "getSDKAppID",
+    "getSDKAppID",
+    "getSDKAppID",
+    "getSDKAppID",
+    "getSDKAppID",
+    "getSDKAppID",
+    "getSDKEphemeralPublicKey",
+    "getSDKReferenceNumber",
+    "getSDKReferenceNumber",
+    "getSDKReferenceNumber",
+    "getSDKReferenceNumber",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "getSDKTransactionID",
+    "init$0",
+    "init$1",
+    "init$2",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onPause",
+    "onRestoreInstanceState",
+    "onResume",
+    "onSaveInstanceState",
+    "onStart",
+    "onStop"
+   ],
+   "fields": [
+    "$$a",
+    "$$b",
+    "$$c",
+    "$$d",
+    "$$e",
+    "$$f",
+    "$10",
+    "$11",
+    "AuthenticationRequestParameters",
+    "BuildConfig",
+    "ChallengeResult",
+    "ChallengeResultCancelled",
+    "ChallengeResultCompleted",
+    "ChallengeResultError",
+    "ChallengeResultKt",
+    "ChallengeResultTimeout",
+    "ChallengeStatusHandler",
+    "ChallengeStatusReceiver",
+    "CompletionEvent",
+    "completed",
+    "getAdditionalDetails",
+    "getDeviceData",
+    "getMessageVersion",
+    "getSDKAppID",
+    "getSDKEphemeralPublicKey",
+    "getSDKReferenceNumber",
+    "getSDKTransactionID",
+    "getTransactionStatus",
+    "onCompletion",
+    "runtimeError",
+    "timedout"
+   ],
+   "methods_total": 47,
+   "fields_total": 31
+  },
+  "com.google.android.gms.auth.api.signin.internal.SignInHubActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "dispatchPopulateAccessibilityEvent",
+    "onActivityResult",
+    "onCreate",
+    "onDestroy",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 7,
+   "fields_total": 6
+  },
+  "com.google.android.gms.common.api.GoogleApiActivity": {
+   "methods": [
+    "<init>",
+    "a",
+    "onActivityResult",
+    "onCancel",
+    "onCreate",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.google.android.gms.common.api.internal.LifecycleFragment": {
+   "methods": [
+    "a",
+    "b",
+    "c",
+    "startActivityForResult"
+   ],
+   "fields": [],
+   "methods_total": 4,
+   "fields_total": 0
+  },
+  "com.google.android.gms.location.DetectedActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "equals",
+    "hashCode",
+    "toString",
+    "writeToParcel"
+   ],
+   "fields": [
+    "CREATOR",
+    "a",
+    "b"
+   ],
+   "methods_total": 6,
+   "fields_total": 3
+  },
+  "com.google.android.play.agesignals.AgeSharingConsentWrapperActivity": {
+   "methods": [
+    "<init>",
+    "onActivityResult",
+    "onCreate",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 4,
+   "fields_total": 1
+  },
+  "com.google.android.play.core.common.PlayCoreDialogWrapperActivity": {
+   "methods": [
+    "<init>",
+    "onActivityResult",
+    "onCreate",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 4,
+   "fields_total": 1
+  },
+  "com.uber.payment.thirdparty.paypalclient.connect.PaypalConnectActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onResume",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j"
+   ],
+   "methods_total": 11,
+   "fields_total": 10
+  },
+  "com.uber.payment.thirdparty.venmoclient.connect.VenmoConnectActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "onCreate",
+    "onNewIntent",
+    "onResume",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+   ],
+   "methods_total": 6,
+   "fields_total": 5
+  },
+  "com.masabi.justride.sdk.ui.base.activities.BaseActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "onOptionsItemSelected"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.masabi.justride.sdk.ui.base.activities.BaseContainerActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "onCreate",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.masabi.justride.sdk.ui.features.ticket.TicketActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "onCreate"
+   ],
+   "fields": [],
+   "methods_total": 5,
+   "fields_total": 0
+  },
+  "com.masabi.justride.sdk.ui.features.ticket_info.TicketInfoActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "onBackPressed",
+    "onCreate"
+   ],
+   "fields": [
+    "b"
+   ],
+   "methods_total": 6,
+   "fields_total": 1
+  },
+  "com.masabi.justride.sdk.ui.features.universalticket.UniversalTicketActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "finish",
+    "onCreate",
+    "onDestroy",
+    "onStart"
+   ],
+   "fields": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "com.uber.accountsecurity.activity.AccountSecurityActivity": {
+   "methods": [
+    "<init>",
+    "R",
+    "onCreate",
+    "onSaveInstanceState"
+   ],
+   "fields": [
+    "i",
+    "j",
+    "k"
+   ],
+   "methods_total": 4,
+   "fields_total": 3
+  },
+  "com.uber.auto_trigger_elements.deeplink.AutoBugReporterActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [],
+   "methods_total": 2,
+   "fields_total": 0
+  },
+  "com.uber.dragon_crawl_receiver.DragonCrawlActivity": {
+   "methods": [
+    "<init>",
+    "onCreate"
+   ],
+   "fields": [
+    "a"
+   ],
+   "methods_total": 2,
+   "fields_total": 1
+  },
+  "com.uber.helix.trip_common.core.TripBottomSheet": {
+   "methods": [
+    "b0",
+    "currentState",
+    "ib",
+    "setStateCollapsed",
+    "setStateMiddle",
+    "setStatePartiallyExpanded",
+    "state"
+   ],
+   "fields": [],
+   "methods_total": 7,
+   "fields_total": 0
+  },
+  "com.uber.graphql.models.fragment.CommuteActionSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.CommuteActionSectionFragmentImpl_ResponseAdapter$CommuteActionSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteBannerSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action",
+    "analyticsMeta",
+    "banner"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.graphql.models.fragment.CommuteBannerSectionFragmentImpl_ResponseAdapter$CommuteBannerSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteHubLocationFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "address",
+    "cityID",
+    "coordinate",
+    "placeID",
+    "provider"
+   ],
+   "methods_total": 9,
+   "fields_total": 5
+  },
+  "com.uber.graphql.models.fragment.CommuteHubLocationFragmentImpl_ResponseAdapter$CommuteHubLocationFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteMessageCardSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action",
+    "messageCard"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteMessageCardSectionFragmentImpl_ResponseAdapter$CommuteMessageCardSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteNavigationHeaderFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "actions",
+    "title"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteNavigationHeaderFragmentImpl_ResponseAdapter$CommuteNavigationHeaderFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommutePassTrackingActionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "execution",
+    "presentation"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommutePassTrackingActionFragmentImpl_ResponseAdapter$CommutePassTrackingActionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteProgramCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "cardPresentation",
+    "id"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.graphql.models.fragment.CommuteProgramCardFragmentImpl_ResponseAdapter$CommuteProgramCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRecommendationSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "presentation"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.CommuteRecommendationSectionFragmentImpl_ResponseAdapter$CommuteRecommendationSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRidePassV3ActionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "ftux",
+    "passVariant",
+    "preferredTimeRange"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.graphql.models.fragment.CommuteRidePassV3ActionFragmentImpl_ResponseAdapter$CommuteRidePassV3ActionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteDetailFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "data",
+    "presentation"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteDetailFragmentImpl_ResponseAdapter$CommuteRouteDetailFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteDetailedViewFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "alerts",
+    "heading",
+    "passes"
+   ],
+   "methods_total": 7,
+   "fields_total": 3
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteDetailedViewFragmentImpl_ResponseAdapter$CommuteRouteDetailedViewFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "presentation"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteSectionFragmentImpl_ResponseAdapter$CommuteRouteSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteTileActionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "execution",
+    "presentation"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteRouteTileActionFragmentImpl_ResponseAdapter$CommuteRouteTileActionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.CommuteTextSectionFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "content"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.CommuteTextSectionFragmentImpl_ResponseAdapter$CommuteTextSectionFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.MembershipProgramCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "cardPresentation",
+    "destination",
+    "membershipAnalytics",
+    "membershipCardId"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.graphql.models.fragment.MembershipProgramCardFragmentImpl_ResponseAdapter$MembershipProgramCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.MyUberInboxBadgeFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "inboxAccountMenuBadge"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.MyUberInboxBadgeFragmentImpl_ResponseAdapter$MyUberInboxBadgeFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.MyUberProfileFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "completedDeliveryOrdersCount",
+    "completedMobilityOrdersCount",
+    "createdAt",
+    "email",
+    "emissionsSavings",
+    "firstName",
+    "id",
+    "info",
+    "isUberOneMember",
+    "pictureURL",
+    "rating",
+    "spenderIdentityVerification"
+   ],
+   "methods_total": 17,
+   "fields_total": 13
+  },
+  "com.uber.graphql.models.fragment.MyUberProfileFragmentImpl_ResponseAdapter$MyUberProfileFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.MyUberReferralFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "referral"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.MyUberReferralFragmentImpl_ResponseAdapter$MyUberReferralFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.MyUberVoucherAccessFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "inAppVoucherAccess"
+   ],
+   "methods_total": 5,
+   "fields_total": 1
+  },
+  "com.uber.graphql.models.fragment.MyUberVoucherAccessFragmentImpl_ResponseAdapter$MyUberVoucherAccessFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselBillboardCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action",
+    "analytics",
+    "backgroundColor",
+    "button",
+    "image",
+    "subtitle",
+    "title"
+   ],
+   "methods_total": 11,
+   "fields_total": 7
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselBillboardCardFragmentImpl_ResponseAdapter$RiderComponentCarouselBillboardCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "analytics",
+    "cards",
+    "configuration",
+    "header",
+    "id"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselFragmentImpl_ResponseAdapter$RiderComponentCarouselFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselHeroCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action",
+    "analytics",
+    "image",
+    "imageOverlayTags",
+    "subtitle",
+    "tertiary",
+    "title"
+   ],
+   "methods_total": 11,
+   "fields_total": 7
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselHeroCardFragmentImpl_ResponseAdapter$RiderComponentCarouselHeroCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselListCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "action",
+    "analytics",
+    "leadingImage",
+    "leadingVisual",
+    "subtitle",
+    "tertiary",
+    "title"
+   ],
+   "methods_total": 11,
+   "fields_total": 7
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCarouselListCardFragmentImpl_ResponseAdapter$RiderComponentCarouselListCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCurrentLocationFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "action",
+    "analytics",
+    "headerBackgroundColor",
+    "id",
+    "image",
+    "insights",
+    "subtitle",
+    "title"
+   ],
+   "methods_total": 13,
+   "fields_total": 9
+  },
+  "com.uber.graphql.models.fragment.RiderComponentCurrentLocationFragmentImpl_ResponseAdapter$RiderComponentCurrentLocationFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentNavigationTilesFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "analytics",
+    "header",
+    "id",
+    "layout",
+    "tiles"
+   ],
+   "methods_total": 10,
+   "fields_total": 6
+  },
+  "com.uber.graphql.models.fragment.RiderComponentNavigationTilesFragmentImpl_ResponseAdapter$RiderComponentNavigationTilesFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentSectionHeaderFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "leadingImage",
+    "subtitle",
+    "title",
+    "trailingButton"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.graphql.models.fragment.RiderComponentSectionHeaderFragmentImpl_ResponseAdapter$RiderComponentSectionHeaderFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderComponentShortcutsFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "header",
+    "id",
+    "items"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.graphql.models.fragment.RiderComponentShortcutsFragmentImpl_ResponseAdapter$RiderComponentShortcutsFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderHomeComponentFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "analytics",
+    "id",
+    "onRiderHomeComponentCarousel",
+    "onRiderHomeComponentCurrentLocation",
+    "onRiderHomeComponentList",
+    "onRiderHomeComponentNavigationTiles",
+    "onRiderHomeComponentNearbyMap",
+    "onRiderHomeComponentShortcuts",
+    "onRiderHomeComponentVenueContainer"
+   ],
+   "methods_total": 14,
+   "fields_total": 10
+  },
+  "com.uber.graphql.models.fragment.RiderHomeComponentFragmentImpl_ResponseAdapter$RiderHomeComponentFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.RiderUserFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "completedMobilityOrdersCount",
+    "email",
+    "firstName",
+    "hasConfirmedEmail",
+    "hasPassword",
+    "id",
+    "isAdmin",
+    "isPreArrivalBuzzEnabled",
+    "isTeen",
+    "lastName",
+    "lastSelectedPaymentProfileUUID",
+    "mobileCountryIso2",
+    "mobileDigits",
+    "pictureURL",
+    "rating"
+   ],
+   "methods_total": 20,
+   "fields_total": 16
+  },
+  "com.uber.graphql.models.fragment.RiderUserFragmentImpl_ResponseAdapter$RiderUserFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.SimpleModePhoneRowFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "equals",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "__typename",
+    "header",
+    "id",
+    "items"
+   ],
+   "methods_total": 8,
+   "fields_total": 4
+  },
+  "com.uber.graphql.models.fragment.SimpleModePhoneRowFragmentImpl_ResponseAdapter$SimpleModePhoneRowFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.graphql.models.fragment.TravelProgramCardFragment": {
+   "methods": [
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "equals",
+    "f",
+    "g",
+    "h",
+    "hashCode",
+    "toString"
+   ],
+   "fields": [
+    "cardId",
+    "description",
+    "destination",
+    "passLayout",
+    "statusLabel",
+    "subtitle",
+    "title",
+    "travelPasses"
+   ],
+   "methods_total": 12,
+   "fields_total": 8
+  },
+  "com.uber.graphql.models.fragment.TravelProgramCardFragmentImpl_ResponseAdapter$TravelProgramCardFragment": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "fields": [
+    "INSTANCE",
+    "RESPONSE_NAMES"
+   ],
+   "methods_total": 6,
+   "fields_total": 2
+  },
+  "com.uber.identity.api.uauth.internal.helper.AppLinkActivity": {
+   "methods": [
+    "<init>",
+    "Q",
+    "onCreate"
+   ],
+   "fields": [],
+   "methods_total": 3,
+   "fields_total": 0
+  },
+  "com.uber.identity.api.uauth.internal.helper.USLActivity": {
+   "methods": [
+    "<clinit>",
+    "<init>",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "a",
+    "a0",
+    "b",
+    "b0",
+    "c0",
+    "d",
+    "d0",
+    "dispatchTouchEvent",
+    "e0",
+    "f",
+    "f0",
+    "g",
+    "g0",
+    "h0",
+    "k",
+    "m",
+    "n",
+    "onActivityResult",
+    "onBackPressed",
+    "onCompleted",
+    "onCreate",
+    "onDestroy",
+    "onNewIntent",
+    "onResume",
+    "onSaveInstanceState",
+    "t"
+   ],
+   "fields": [
+    "A",
+    "B",
+    "C",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "methods_total": 37,
+   "fields_total": 21
+  }
+ }
+}

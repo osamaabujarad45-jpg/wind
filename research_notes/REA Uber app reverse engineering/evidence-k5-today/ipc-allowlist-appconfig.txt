@@ -1,0 +1,299 @@
+method: Lcom/uber/identity/ipcutils/model/AppConfig;.<clinit>
+0000: new-instance v0, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+0002: sget-object v3, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.RIDER:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43ef
+0004: new-instance v4, Lvl2/a; // type@5a03
+0006: invoke-direct {v4}, Ljava/lang/Object;.<init>:()V // method@b381
+0009: new-instance v1, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+000b: sget-object v6, Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;.PRODUCTION:Lcom/uber/identity/ipcutils/model/AppPackage$PackageType; // field@387a
+000d: const-string v2, "com.ubercab" // string@9d97
+000f: invoke-direct {v1, v2, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0012: new-instance v2, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0014: sget-object v7, Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;.INTERNAL:Lcom/uber/identity/ipcutils/model/AppPackage$PackageType; // field@3878
+0016: const-string v5, "com.ubercab.rider.internal" // string@9dad
+0018: invoke-direct {v2, v5, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+001b: new-instance v5, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+001d: sget-object v8, Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;.NIGHTLY:Lcom/uber/identity/ipcutils/model/AppPackage$PackageType; // field@3879
+001f: const-string v9, "com.ubercab.nightly" // string@9daa
+0021: invoke-direct {v5, v9, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0024: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0026: sget-object v10, Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;.DEBUG:Lcom/uber/identity/ipcutils/model/AppPackage$PackageType; // field@3877
+0028: const-string v11, "com.ubercab.presidio.development" // string@9dab
+002a: invoke-direct {v9, v11, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+002d: filled-new-array {v1, v2, v5, v9}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+0030: move-result-object v1
+0031: invoke-static {v1}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+0034: move-result-object v5
+0035: const-string v1, "Rider" // string@8550
+0037: const/4 v2, #int 0 // #0
+0038: invoke-direct/range {v0, v1, v2, v3, v4, v5}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+003b: sput-object v0, Lcom/uber/identity/ipcutils/model/AppConfig;.Rider:Lcom/uber/identity/ipcutils/model/AppConfig; // field@386b
+003d: new-instance v1, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+003f: sget-object v14, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.EATS:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43e7
+0041: new-instance v15, Lvl2/d; // type@5a06
+0043: invoke-direct {v15}, Ljava/lang/Object;.<init>:()V // method@b381
+0046: new-instance v2, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0048: const-string v3, "com.ubercab.eats" // string@9d9d
+004a: invoke-direct {v2, v3, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+004d: new-instance v3, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+004f: const-string v4, "com.ubercab.eats.internal" // string@9da0
+0051: invoke-direct {v3, v4, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0054: new-instance v4, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0056: const-string v5, "com.ubercab.eats.nightly" // string@9da1
+0058: invoke-direct {v4, v5, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+005b: new-instance v5, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+005d: const-string v9, "com.ubercab.eats.debug" // string@9d9e
+005f: invoke-direct {v5, v9, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0062: filled-new-array {v2, v3, v4, v5}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+0065: move-result-object v2
+0066: invoke-static {v2}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+0069: move-result-object v16
+006a: const-string v12, "Eats" // string@0fb9
+006c: const/4 v13, #int 1 // #1
+006d: move-object v11, v1
+006e: invoke-direct/range {v11, v12, v13, v14, v15, v16}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+0071: sput-object v1, Lcom/uber/identity/ipcutils/model/AppConfig;.Eats:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3863
+0073: new-instance v2, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+0075: sget-object v18, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.DRIVER:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43e6
+0077: new-instance v3, Legc/sm; // type@341a
+0079: const/4 v4, #int 1 // #1
+007a: invoke-direct {v3, v4}, Legc/sm;.<init>:(I)V // method@95d3
+007d: new-instance v5, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+007f: const-string v9, "com.ubercab.driver" // string@9d98
+0081: invoke-direct {v5, v9, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0084: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0086: const-string v11, "com.ubercab.driver.internal" // string@9d9b
+0088: invoke-direct {v9, v11, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+008b: new-instance v11, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+008d: const-string v12, "com.ubercab.driver.nightly" // string@9d9c
+008f: invoke-direct {v11, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0092: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0094: const-string v13, "com.ubercab.driver.debug" // string@9d99
+0096: invoke-direct {v12, v13, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0099: filled-new-array {v5, v9, v11, v12}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+009c: move-result-object v5
+009d: invoke-static {v5}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+00a0: move-result-object v20
+00a1: const-string v16, "Driver" // string@0f27
+00a3: const/16 v17, #int 2 // #2
+00a5: move-object v15, v2
+00a6: move-object/from16 v19, v3
+00a8: invoke-direct/range {v15, v16, v17, v18, v19, v20}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+00ab: sput-object v2, Lcom/uber/identity/ipcutils/model/AppConfig;.Driver:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3862
+00ad: new-instance v3, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+00af: new-instance v15, Legc/tm; // type@341c
+00b1: invoke-direct {v15, v4}, Legc/tm;.<init>:(I)V // method@95d5
+00b4: new-instance v4, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00b6: const-string v5, "com.postmates.android" // string@97ed
+00b8: invoke-direct {v4, v5, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00bb: new-instance v5, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00bd: const-string v9, "com.postmates.android.beta" // string@97ee
+00bf: invoke-direct {v5, v9, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00c2: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00c4: const-string v11, "com.postmates.android.nightly" // string@97f0
+00c6: invoke-direct {v9, v11, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00c9: new-instance v11, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00cb: const-string v12, "com.postmates.android.debug" // string@97ef
+00cd: invoke-direct {v11, v12, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00d0: filled-new-array {v4, v5, v9, v11}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+00d3: move-result-object v4
+00d4: invoke-static {v4}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+00d7: move-result-object v16
+00d8: const-string v12, "Postmates" // string@83c6
+00da: const/4 v13, #int 3 // #3
+00db: move-object v11, v3
+00dc: invoke-direct/range {v11, v12, v13, v14, v15, v16}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+00df: sput-object v3, Lcom/uber/identity/ipcutils/model/AppConfig;.Postmates:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3869
+00e1: new-instance v4, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+00e3: sget-object v14, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.FLEET:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43e9
+00e5: new-instance v15, Lvl2/e; // type@5a07
+00e7: invoke-direct {v15}, Ljava/lang/Object;.<init>:()V // method@b381
+00ea: new-instance v5, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00ec: const-string v9, "com.ubercab.fleet" // string@9da2
+00ee: invoke-direct {v5, v9, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00f1: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00f3: const-string v11, "com.ubercab.fleet.internal" // string@9da4
+00f5: invoke-direct {v9, v11, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00f8: new-instance v11, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+00fa: const-string v12, "com.ubercab.fleet.nightly" // string@9da5
+00fc: invoke-direct {v11, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+00ff: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0101: const-string v13, "com.ubercab.fleet.development" // string@9da3
+0103: invoke-direct {v12, v13, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0106: filled-new-array {v5, v9, v11, v12}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+0109: move-result-object v5
+010a: invoke-static {v5}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+010d: move-result-object v16
+010e: const-string v12, "Fleet" // string@119b
+0110: const/4 v13, #int 4 // #4
+0111: move-object v11, v4
+0112: invoke-direct/range {v11, v12, v13, v14, v15, v16}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+0115: sput-object v4, Lcom/uber/identity/ipcutils/model/AppConfig;.Fleet:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3865
+0117: new-instance v5, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+0119: sget-object v14, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.FREIGHT:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43ea
+011b: new-instance v15, Lvl2/f; // type@5a08
+011d: invoke-direct {v15}, Ljava/lang/Object;.<init>:()V // method@b381
+0120: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0122: const-string v11, "com.ubercab.freight" // string@9da6
+0124: invoke-direct {v9, v11, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0127: new-instance v11, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0129: const-string v12, "com.ubercab.freight.internal" // string@9da8
+012b: invoke-direct {v11, v12, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+012e: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0130: const-string v13, "com.ubercab.freight.nightly" // string@9da9
+0132: invoke-direct {v12, v13, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0135: new-instance v13, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0137: move-object/from16 v17, v0
+0139: const-string v0, "com.ubercab.freight.development" // string@9da7
+013b: invoke-direct {v13, v0, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+013e: filled-new-array {v9, v11, v12, v13}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+0141: move-result-object v0
+0142: invoke-static {v0}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+0145: move-result-object v16
+0146: const-string v12, "Freight" // string@1206
+0148: const/4 v13, #int 5 // #5
+0149: move-object v11, v5
+014a: invoke-direct/range {v11, v12, v13, v14, v15, v16}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+014d: sput-object v5, Lcom/uber/identity/ipcutils/model/AppConfig;.Freight:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3866
+014f: new-instance v11, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+0151: sget-object v14, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.UBERLITE:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43f0
+0153: new-instance v15, Lvl2/g; // type@5a09
+0155: const/4 v0, #int 0 // #0
+0156: invoke-direct {v15, v0}, Lvl2/g;.<init>:(I)V // method@ec7b
+0159: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+015b: const-string v12, "com.ubercab.uberlite" // string@9dae
+015d: invoke-direct {v9, v12, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0160: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0162: const-string v13, "com.ubercab.uberlite.internal" // string@9db0
+0164: invoke-direct {v12, v13, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0167: new-instance v13, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0169: const-string v0, "com.ubercab.uberlite.nightly" // string@9db1
+016b: invoke-direct {v13, v0, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+016e: new-instance v0, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0170: move-object/from16 v19, v1
+0172: const-string v1, "com.ubercab.uberlite.development" // string@9daf
+0174: invoke-direct {v0, v1, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0177: filled-new-array {v9, v12, v13, v0}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+017a: move-result-object v0
+017b: invoke-static {v0}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+017e: move-result-object v16
+017f: const-string v12, "UberLite" // string@89f2
+0181: const/4 v13, #int 6 // #6
+0182: invoke-direct/range {v11, v12, v13, v14, v15, v16}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+0185: sput-object v11, Lcom/uber/identity/ipcutils/model/AppConfig;.UberLite:Lcom/uber/identity/ipcutils/model/AppConfig; // field@386c
+0187: new-instance v20, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+0189: sget-object v23, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.EATSORDERS:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43e8
+018b: new-instance v24, Lvl2/h; // type@5a0a
+018d: invoke-direct/range {v24}, Ljava/lang/Object;.<init>:()V // method@b381
+0190: new-instance v0, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0192: const-string v1, "com.uber.restaurants" // string@9d8e
+0194: invoke-direct {v0, v1, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0197: new-instance v1, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0199: const-string v9, "com.uber.restaurants.beta" // string@9d8f
+019b: invoke-direct {v1, v9, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+019e: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01a0: const-string v12, "com.uber.restaurants.nightly" // string@9d91
+01a2: invoke-direct {v9, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01a5: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01a7: const-string v13, "com.uber.restaurants.development" // string@9d90
+01a9: invoke-direct {v12, v13, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01ac: filled-new-array {v0, v1, v9, v12}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+01af: move-result-object v0
+01b0: invoke-static {v0}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+01b3: move-result-object v25
+01b4: const-string v21, "EatsOrders" // string@0fbf
+01b6: const/16 v22, #int 7 // #7
+01b8: invoke-direct/range {v20, v21, v22, v23, v24, v25}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+01bb: sput-object v20, Lcom/uber/identity/ipcutils/model/AppConfig;.EatsOrders:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3864
+01bd: new-instance v21, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+01bf: sget-object v24, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.RESTAURANT_MANAGER:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43ee
+01c1: new-instance v25, Lvl2/i; // type@5a0b
+01c3: invoke-direct/range {v25}, Ljava/lang/Object;.<init>:()V // method@b381
+01c6: new-instance v0, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01c8: const-string v1, "com.uber.restaurantmanager" // string@9d8a
+01ca: invoke-direct {v0, v1, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01cd: new-instance v1, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01cf: const-string v9, "com.uber.restaurantmanager.internal" // string@9d8c
+01d1: invoke-direct {v1, v9, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01d4: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01d6: const-string v12, "com.uber.restaurantmanager.nightly" // string@9d8d
+01d8: invoke-direct {v9, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01db: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01dd: const-string v13, "com.uber.restaurantmanager.development" // string@9d8b
+01df: invoke-direct {v12, v13, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+01e2: filled-new-array {v0, v1, v9, v12}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+01e5: move-result-object v0
+01e6: invoke-static {v0}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+01e9: move-result-object v26
+01ea: const-string v22, "RestaurantManager" // string@8516
+01ec: const/16 v23, #int 8 // #8
+01ee: invoke-direct/range {v21, v22, v23, v24, v25, v26}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+01f1: sput-object v21, Lcom/uber/identity/ipcutils/model/AppConfig;.RestaurantManager:Lcom/uber/identity/ipcutils/model/AppConfig; // field@386a
+01f3: new-instance v22, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+01f5: sget-object v25, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.PASSENGER:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43ed
+01f7: new-instance v26, Lvl2/b; // type@5a04
+01f9: invoke-direct/range {v26}, Ljava/lang/Object;.<init>:()V // method@b381
+01fc: new-instance v0, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+01fe: const-string v1, "com.uber.passenger" // string@9d7a
+0200: invoke-direct {v0, v1, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0203: new-instance v1, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0205: const-string v9, "com.uber.passenger.internal" // string@9d7c
+0207: invoke-direct {v1, v9, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+020a: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+020c: const-string v12, "com.uber.passenger.nightly" // string@9d7d
+020e: invoke-direct {v9, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0211: new-instance v12, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0213: const-string v13, "com.uber.passenger.development" // string@9d7b
+0215: invoke-direct {v12, v13, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0218: filled-new-array {v0, v1, v9, v12}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+021b: move-result-object v0
+021c: invoke-static {v0}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+021f: move-result-object v27
+0220: const-string v23, "Passenger" // string@837b
+0222: const/16 v24, #int 9 // #9
+0224: invoke-direct/range {v22, v23, v24, v25, v26, v27}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+0227: sput-object v22, Lcom/uber/identity/ipcutils/model/AppConfig;.Passenger:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3868
+0229: new-instance v23, Lcom/uber/identity/ipcutils/model/AppConfig; // type@1eb3
+022b: sget-object v26, Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a;.IN_CAR_TABLET:Lcom/ubercab/presidio/info/core/PresidioBuildConfig$a; // field@43eb
+022d: new-instance v0, Lvl2/c; // type@5a05
+022f: const/4 v1, #int 0 // #0
+0230: invoke-direct {v0, v1}, Lvl2/c;.<init>:(I)V // method@ec76
+0233: new-instance v9, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0235: const-string v12, "com.uber.incartablet" // string@9d71
+0237: invoke-direct {v9, v12, v6}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+023a: new-instance v6, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+023c: const-string v12, "com.uber.incartablet.internal" // string@9d73
+023e: invoke-direct {v6, v12, v7}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0241: new-instance v7, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+0243: const-string v12, "com.uber.incartablet.nightly" // string@9d74
+0245: invoke-direct {v7, v12, v8}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+0248: new-instance v8, Lcom/uber/identity/ipcutils/model/AppPackage; // type@1eb6
+024a: const-string v12, "com.uber.incartablet.development" // string@9d72
+024c: invoke-direct {v8, v12, v10}, Lcom/uber/identity/ipcutils/model/AppPackage;.<init>:(Ljava/lang/String;Lcom/uber/identity/ipcutils/model/AppPackage$PackageType;)V // method@68cb
+024f: filled-new-array {v9, v6, v7, v8}, [Lcom/uber/identity/ipcutils/model/AppPackage; // type@63ab
+0252: move-result-object v6
+0253: invoke-static {v6}, Looc/u;.T:([Ljava/lang/Object;)Ljava/util/Set; // method@ce32
+0256: move-result-object v28
+0257: const-string v24, "InCarTablet" // string@18e9
+0259: const/16 v25, #int 10 // #a
+025b: move-object/from16 v27, v0
+025d: invoke-direct/range {v23, v24, v25, v26, v27, v28}, Lcom/uber/identity/ipcutils/model/AppConfig;.<init>:(Ljava/lang/String;ILcom/ubercab/presidio/info/core/PresidioBuildConfig$a;Lkotlin/jvm/functions/Function0;Ljava/util/Set;)V // method@68b8
+0260: sput-object v23, Lcom/uber/identity/ipcutils/model/AppConfig;.InCarTablet:Lcom/uber/identity/ipcutils/model/AppConfig; // field@3867
+0262: move-object v6, v11
+0263: move-object/from16 v0, v17
+0265: move-object/from16 v7, v20
+0267: move-object/from16 v8, v21
+0269: move-object/from16 v9, v22
+026b: move-object/from16 v10, v23
+026d: move v11, v1
+026e: move-object/from16 v1, v19
+0270: filled-new-array/range {v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10}, [Lcom/uber/identity/ipcutils/model/AppConfig; // type@63a9
+0273: move-result-object v0
+0274: sput-object v0, Lcom/uber/identity/ipcutils/model/AppConfig;.$VALUES:[Lcom/uber/identity/ipcutils/model/AppConfig; // field@3860
+0276: new-instance v1, Lwoc/b; // type@5c56
+0278: invoke-direct {v1, v0}, Lwoc/b;.<init>:([Ljava/lang/Enum;)V // method@f0d3
+027b: sput-object v1, Lcom/uber/identity/ipcutils/model/AppConfig;.$ENTRIES:Lkotlin/enums/EnumEntries; // field@385f
+027d: new-instance v0, Lcom/uber/identity/ipcutils/model/AppConfig$Companion; // type@1eb2
+027f: invoke-direct {v0, v11}, Lcom/uber/identity/ipcutils/model/AppConfig$Companion;.<init>:(I)V // method@68b3
+0282: sput-object v0, Lcom/uber/identity/ipcutils/model/AppConfig;.Companion:Lcom/uber/identity/ipcutils/model/AppConfig$Companion; // field@3861
+0284: return-void
+[instructions shown: 297]
