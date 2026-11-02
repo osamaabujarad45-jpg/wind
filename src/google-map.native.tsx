@@ -69,7 +69,9 @@ export default function RouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapLoaded={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
+    onMapLoaded={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}
+    // A pinch the native recogniser claims before React sees the touch still reports a gesture-driven region change.
+    onRegionChangeStart={(_, details) => { if (details?.isGesture) setMoved(true); }}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />

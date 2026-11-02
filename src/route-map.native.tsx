@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 import { bearing, glider, routeFramePoints } from './map-math';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
+import { MapProviderBoundary } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -17,14 +17,7 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
-  return <MapProviderBoundary platform="ios" route={props} render={RouteAdapter} />;
-}
-function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
-  const props = route!;
-  const { pickup: a, dropoff: b } = props;
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
-  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
-    : <AppleRouteMap key={key} {...props} onFail={attempt.onFail} />;
+  return <MapProviderBoundary platform="ios" route={props} google={GoogleRouteMap} baseline={AppleRouteMap} />;
 }
 
 function AppleRouteMap(props: RouteMapProps) {
@@ -142,13 +135,7 @@ const styles = StyleSheet.create({
 });
 
 export function PinMap(props: PinMapProps) {
-  return <MapProviderBoundary platform="ios" pin={props} render={PinAdapter} />;
-}
-function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
-  const props = pin!;
-  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
-    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
-  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <ApplePin key={attempt.key} {...guarded} />;
+  return <MapProviderBoundary platform="ios" pin={props} google={GooglePinMap} baseline={ApplePin} />;
 }
 
 function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {

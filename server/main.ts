@@ -3074,8 +3074,11 @@ async function orderProtocol(user: User, id: number, query: URLSearchParams) {
     const after = Number(query.get('after') ?? 0);
     if (!Number.isSafeInteger(after) || after < 0) fail(400, 'invalid_cursor');
     const events = await all('SELECT * FROM domain_events WHERE order_id=? AND sequence>? ORDER BY sequence LIMIT 100', id, after);
+    // Fare history is negotiated, and a driver sees only their own assignment's changes (as journey.lastFareChange).
+    const fareVisible = (event: Row) => query.get('journeyProtocol') === '1' && (user.role === 'admin' || user.id === order.customer_id
+      || Number(event.payload?.assignmentEpoch) === Number(order.assignment_epoch));
     const snapshot = { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
-      events: events.filter(event => query.get('journeyProtocol') === '1' || event.type !== 'fare.changed').map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
+      events: events.filter(event => event.type !== 'fare.changed' || fareVisible(event)).map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
     if (query.get('journeyProtocol') !== '1') return snapshot;
     const measured = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([snapshot]))[0] : snapshot;
     return journeyOrder(persistence, rideLifecycle, { ...measured, ...(query.get('recoveryProtocol') === '1' ? { recovery: await recoveryMetadata(id) } : {}) }, user);
@@ -3205,19 +3208,25 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       if (failure) throw failure;
     } else payload = await invoke();
     if (url.searchParams.get('journeyProtocol') === '1' && user && /^\/api\/(orders|jobs|admin\/orders)(?:\/|$)/.test(url.pathname)) {
+      const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
       const decorate = async (value: unknown) => {
         if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
         if ('protocol' in value && 'journey' in value) return value; // already projected in the cursor's snapshot
-        const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
         const authorized = await getOrder(Number((value as Order).id), viewer);
         const recovery = 'recovery' in value ? { recovery: await recoveryMetadata(authorized.id) } : {};
         return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, ...recovery }, viewer);
       };
+      // A card accepted or released between the page read and this snapshot drops out of the list instead of
+      // failing the whole page; a single order still answers 404. ponytail: one re-read per card (pages are small),
+      // batch the boarding/fare reads if large pages appear.
+      const decorateAll = async (values: unknown[]) => (await Promise.all(values.map(value => decorate(value)
+        .catch(error => { if (error instanceof HttpError && error.status === 404) return undefined; throw error; }))))
+        .filter(value => value !== undefined);
       payload = await persistence.transaction(async () => {
         if (persistence.backend === 'postgres') await run('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-        if (Array.isArray(payload)) return Promise.all(payload.map(decorate));
+        if (Array.isArray(payload)) return decorateAll(payload);
         if (payload && typeof payload === 'object' && 'jobs' in payload && Array.isArray((payload as Row).jobs))
-          return { ...payload, jobs: await Promise.all((payload as Row).jobs.map(decorate)) };
+          return { ...payload, jobs: await decorateAll((payload as Row).jobs) };
         return decorate(payload);
       }, { commandId: randomUUID() });
     }

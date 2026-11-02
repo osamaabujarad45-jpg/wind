@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.web';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import { bearing, ease, farJump, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn } from './map-math';
-import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
+import { MapProviderBoundary } from './map-provider-boundary';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -149,14 +149,7 @@ const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
-  return <MapProviderBoundary platform="web" route={props} render={RouteAdapter} />;
-}
-function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
-  const props = route!;
-  const { pickup: a, dropoff: b } = props;
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
-  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
-    : <LiveMap key={key} {...props} onFail={attempt.onFail} />;
+  return <MapProviderBoundary platform="web" route={props} google={GoogleRouteMap} baseline={LiveMap} />;
 }
 
 function LiveMap(props: RouteMapProps) {
@@ -329,13 +322,7 @@ function LiveMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap(props: PinMapProps) {
-  return <MapProviderBoundary platform="web" pin={props} render={PinAdapter} />;
-}
-function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
-  const props = pin!;
-  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
-    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
-  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
+  return <MapProviderBoundary platform="web" pin={props} google={GooglePinMap} baseline={MapLibrePin} />;
 }
 
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {

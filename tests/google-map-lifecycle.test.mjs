@@ -162,19 +162,24 @@ console.log('Google web lifecycle: tile deadline/retry, detached DOM cleanup, la
 {
   const failures = require('../src/map-failures.ts');
   failures.retryMapProviders();
-  const h = harness('map-provider-boundary.tsx'); let ready = 0;
-  h.render(h.exports.MapProviderBoundary, { platform:'web', pin:{center:first,onChange(){},onReady(){ready++;},onFail(){}}, render:()=>null });
-  const primary=h.tree.props.attempt; assert.equal(primary.renderer,'google');
+  const h = harness('map-provider-boundary.tsx'); let ready = 0, pinFailed = 0;
+  let moved = 0;
+  h.render(h.exports.MapProviderBoundary, { platform:'web', pin:{center:first,onChange(){moved++;},onReady(){ready++;},onFail(){pinFailed++;}}, google:'Google', baseline:'Baseline' });
+  const primary=h.tree.props; assert.equal(h.tree.type,'Google');
   primary.onFail(); h.render();
-  const fallback=h.tree.props.attempt; assert.equal(fallback.renderer,'maplibre');
+  const fallback=h.tree.props; assert.equal(h.tree.type,'Baseline');
+  primary.onChange(first); assert.equal(moved,0,'a retired attempt cannot move the pin');
+  fallback.onChange(first); assert.equal(moved,1);
+  assert.equal(pinFailed,0,'a failure with a fallback left does not flash the pin as unavailable');
   primary.onReady(); assert.equal(ready,0,'failed provider cannot enable a fallback pin');
   fallback.onReady(); assert.equal(ready,1);
   fallback.onFail(); h.render();
+  assert.equal(pinFailed,1,'only the exhausted policy fails the pin');
   const press=retry(h.tree); assert.equal(typeof press,'function','exhaustion shows explicit Retry');
   press(); h.render();
-  assert.equal(h.tree.props.attempt.renderer,'google');
+  assert.equal(h.tree.type,'Google');
   primary.onFail(); h.render();
-  assert.equal(h.tree.props.attempt.renderer,'google','old attempt cannot poison the retry');
-  const latest=h.tree.props.attempt; h.unmount(); latest.onFail();
+  assert.equal(h.tree.type,'Google','old attempt cannot poison the retry');
+  const latest=h.tree.props; h.unmount(); latest.onFail();
   failures.retryMapProviders();
 }

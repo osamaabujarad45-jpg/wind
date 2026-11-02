@@ -94,6 +94,20 @@ try {
   await page.waitForLoadState('networkidle');
   await page.screenshot({ path: join(output, 'a53-android-map.png') });
   checks.push('Android map HTML renders Arabic tiles and live marker on physical GPU');
+  // A real two-finger pinch on the touchscreen path stops the follow camera and offers Recenter (no drag involved).
+  assert.equal(await page.locator('#recenter').isVisible(), false, 'the follow camera starts engaged');
+  const touch = await page.context().newCDPSession(page);
+  const box = await page.locator('#map').boundingBox();
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const fingers = spread => [{ x: cx - spread, y: cy, id: 1 }, { x: cx + spread, y: cy, id: 2 }];
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(20) });
+  for (let spread = 30; spread <= 110; spread += 20) {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(spread) });
+    await page.waitForTimeout(30);
+  }
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.locator('#recenter').waitFor({ state: 'visible', timeout: 5000 });
+  checks.push('pinch on the physical touchscreen stops follow and shows Recenter');
   assert.deepEqual(errors, []);
   assert.deepEqual(mapFailures, []);
   console.log(checks.map(check => `PASS ${check}`).join('\n'));

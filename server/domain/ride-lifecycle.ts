@@ -74,7 +74,7 @@ export class RideLifecycle {
   }
 
   private async noteIssued(id: number, now: number) {
-    if (await this.metadataAvailable()) await this.db.run('UPDATE ride_lifecycle SET pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1 WHERE order_id=?', now, id);
+    if (await this.metadataAvailable()) await this.db.run('UPDATE ride_lifecycle SET pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1,previous_boarding_code=NULL WHERE order_id=?', now, id);
   }
   async boardingInfo(id: number, viewer: { id: number; role: string }, order: Row): Promise<Journey['boarding']> {
     if (!(await this.metadataAvailable())) return undefined;
@@ -225,7 +225,7 @@ export class RideLifecycle {
         || !Number.isSafeInteger(body.expectedPinRevision) || body.expectedPinRevision !== Number(row.pin_revision)) this.fail(409, 'boarding_challenge_changed');
       let code = newBoardingCode();
       while (code === row.boarding_code) code = newBoardingCode();
-      await this.db.run('UPDATE ride_lifecycle SET boarding_code=?,pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1,updated_at=? WHERE order_id=?', code, Date.now(), Date.now(), orderId);
+      await this.db.run('UPDATE ride_lifecycle SET previous_boarding_code=boarding_code,boarding_code=?,pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1,updated_at=? WHERE order_id=?', code, Date.now(), Date.now(), orderId);
     }
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, orderId, Number(order!.assignment_epoch));
@@ -254,6 +254,8 @@ export class RideLifecycle {
     if (failures >= eligibilityDefaults.newBoardingChallengeAttempts) this.fail(409, 'boarding_locked');
     const supplied = typeof boardingCode === 'string' ? boardingCode.trim()
       : Number.isSafeInteger(boardingCode) ? String(boardingCode) : '';
+    // A client without revisions (legacy builds) still holding the code a rotation replaced is stale, not guessing.
+    if (pinRevision === undefined && row.previous_boarding_code && supplied === row.previous_boarding_code) this.fail(409, 'boarding_challenge_changed');
     if (!row.boarding_code || supplied !== row.boarding_code) {
       const now = Date.now(), nextFailures = failures + 1;
       await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,?)

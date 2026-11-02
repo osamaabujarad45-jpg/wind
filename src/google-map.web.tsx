@@ -77,13 +77,14 @@ export default function RouteMap(props: RouteMapProps) {
       });
       const s = state.current;
       s.map = map; s.maps = maps; s.ls = []; s.closed = [];
-      s.ls.push(map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); }));
-      // Tiles drawn, not map constructed, is the readiness signal: a revoked key or exhausted quota never
-      // draws tiles, and the deadline below turns that into the labelled fallback.
+      // Any user gesture (drag, wheel zoom, pinch) stops the camera following until Recenter.
       const stopFollow = () => { s.moved = movedRef.current = true; setMoved(true); };
+      s.ls.push(map.addListener('dragstart', stopFollow));
       el.addEventListener('wheel', stopFollow, { passive: true });
       el.addEventListener('touchstart', stopFollow, { passive: true });
       s.ls.push({ remove: () => { el.removeEventListener('wheel', stopFollow); el.removeEventListener('touchstart', stopFollow); } });
+      // Tiles drawn, not map constructed, is the readiness signal: a revoked key or exhausted quota never
+      // draws tiles, and the deadline below turns that into the labelled fallback.
       const tiles = map.addListener('tilesloaded', () => { if (disposed || terminal.current) return; tiles.remove(); setReady(true); });
       s.ls.push(tiles);
       map.fitBounds(toBounds(maps, fitBounds(latest.current.points)));

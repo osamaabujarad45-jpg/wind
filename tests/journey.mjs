@@ -42,6 +42,8 @@ try {
   assert.notEqual(rotated.pin,challenge.pin); assert.equal(rotated.pinRevision,challenge.pinRevision+1);
   await advance(challenge.pin,challenge.pinRevision,409);
   assert.equal((await f.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?',order.id)).failures,0,'old challenge cannot spend new attempts');
+  await f.call(`/orders/${order.id}/advance`,{token:who.driver.token,expect:409,body:{requestId:randomUUID(),expectedStatus:'at_pickup',code:challenge.pin}});
+  assert.equal((await f.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?',order.id)).failures,0,'a legacy client without revisions cannot spend new attempts with the replaced code');
   const started=await advance(rotated.pin,rotated.pinRevision);
   assert.equal(started.status,'in_transit'); assert.equal(started.journey.boarding.isVerified,true);
   assert.equal(started.journey.boarding.pin,undefined); assert.equal(started.journey.waiting.state,'ended');
@@ -64,6 +66,10 @@ try {
   const newFeed=await f.call(`/orders/${order.id}?protocol=1&journeyProtocol=1`,{token:f.customer.token});
   assert.equal(newFeed.protocol.events.filter(e=>e.type==='fare.changed').length,1);
   assert.equal(oldFeed.protocol.nextCursor,newFeed.protocol.nextCursor,'filtered events still advance the installed cursor');
+  await f.db.one("SELECT append_domain_event(?, 'fare.changed', ?::jsonb) AS id",order.id,JSON.stringify({...events[0].payload,assignmentEpoch:Number(events[0].payload.assignmentEpoch)-1}));
+  const fares=async token=>(await f.call(`/orders/${order.id}?protocol=1&journeyProtocol=1`,{token})).protocol.events.filter(e=>e.type==='fare.changed').length;
+  assert.equal(await fares(f.customer.token),2);
+  assert.equal(await fares(who.driver.token),1,'a driver sees fare changes from their own assignment only');
   await f.db.run(readFileSync(new URL('../server/db/postgres-boarding-metadata.sql',import.meta.url),'utf8'));
   assert.equal((await get(f.customer.token)).journey.boarding.pinRevision,rotated.pinRevision);
   await f.db.run('DELETE FROM schema_migrations WHERE version=29');
