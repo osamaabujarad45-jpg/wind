@@ -23,7 +23,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm }: { t
       <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{hint ?? c.pinHint}</Txt>
       <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-        <PinMap center={start} onChange={p => { dragged.current = true; setPoint(p); }} onReady={() => { setReady(true); setFailed(false); }} onFail={() => { setReady(false); setFailed(true); }} onReset={() => setReady(false)} height={Math.min(360, Math.max(150, height * 0.45))} />
+        <PinMap center={point} onChange={p => { dragged.current = true; setPoint(p); }} onLoading={() => { setReady(false); setFailed(false); }} onReady={() => { setReady(true); setFailed(false); }} onFail={() => { setReady(false); setFailed(true); }} height={Math.min(360, Math.max(150, height * 0.45))} />
       </View>
       {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c.pinUnavailable}</Txt>
         : <Button title={c.confirmPin} icon="checkmark" disabled={!ready} reason={c.pin_wait} onPress={() => { if (ready) onConfirm(point); }} />}

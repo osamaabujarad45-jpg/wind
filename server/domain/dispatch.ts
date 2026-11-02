@@ -262,7 +262,7 @@ export class Dispatch {
   async acceptOffer<T>(input: { driverId: number; orderId: number; offerId: unknown; leaseNonce: unknown; capacityProtocol?: unknown; expectedRequirementsRevision?: unknown }, assign: () => Promise<T>): Promise<T> {
     await this.requireAvailable();
     if (typeof input.offerId !== 'string' || !uuidPattern.test(input.offerId) || typeof input.leaseNonce !== 'string' || !input.leaseNonce) this.fail(400, 'invalid_input');
-    const offerId = input.offerId, now = Date.now();
+    const offerId = input.offerId;
     const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', input.orderId) ?? this.fail(404, 'not_found');
     await this.db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `dispatch:${input.orderId}`);
     const driver = await this.db.one('SELECT * FROM users WHERE id=? FOR UPDATE', input.driverId);
@@ -278,12 +278,12 @@ export class Dispatch {
     if (offer!.state === 'expired') this.fail(409, 'offer_expired');
     if (offer!.state !== 'open') this.fail(409, 'dispatch_offer_closed');
     if (leaseNonceHash(input.leaseNonce as string) !== offer!.nonce_hash) this.fail(409, 'invalid_lease_nonce');
-    if (Number(offer!.expires_at) <= now) this.fail(409, 'offer_expired');
+    if (Number(offer!.expires_at) <= Date.now()) this.fail(409, 'offer_expired');
     const round = await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid FOR UPDATE', offer!.round_id);
     if (!round || round.state !== 'open') this.fail(409, 'dispatch_offer_closed');
     if (order!.service !== 'ride' || order!.status !== 'searching') this.fail(409, 'already_taken');
     if (Number(order!.version) !== Number(offer!.order_revision) || Number(order!.assignment_epoch) !== Number(offer!.assignment_epoch)) this.fail(409, 'dispatch_order_changed');
-    if (!presence || presence.id !== offer!.presence_session_id || presence.state !== 'online' || Number(presence.lease_until) <= now) this.fail(409, 'presence_session_changed');
+    if (!presence || presence.id !== offer!.presence_session_id || presence.state !== 'online' || Number(presence.lease_until) <= Date.now()) this.fail(409, 'presence_session_changed');
     const d = await this.db.one('SELECT * FROM driver_eligibility WHERE driver_id=?', input.driverId);
     const v = d && await this.db.one('SELECT * FROM vehicles WHERE id=?', d.vehicle_id);
     const policy = await this.db.one('SELECT * FROM eligibility_policy WHERE id=1');
@@ -301,6 +301,9 @@ export class Dispatch {
         WHERE dv.vehicle_id=? AND o.status IN ${activeStatuses} LIMIT 1`, offer!.vehicle_id)) this.fail(409, 'shared_vehicle_busy');
     if (await this.db.one('SELECT 1 FROM order_releases WHERE order_id=? AND driver_id=?', input.orderId, input.driverId)) this.fail(404, 'not_found');
     await this.eligibility.guard(input.driverId, input.orderId, 'accept', input.capacityProtocol, undefined, input.expectedRequirementsRevision);
+    // Lock/eligibility waits consume the lease; arrival before expiry gives no right to commit late.
+    if (Date.now() >= Math.min(Number(offer!.expires_at), Number(round!.deadline_at))) this.fail(409, 'offer_expired');
+    if (Number(presence.lease_until) <= Date.now()) this.fail(409, 'presence_session_changed');
     const result = await assign();
     const acceptedAt = Date.now();
     await this.db.run("UPDATE dispatch_offers SET state='accepted',responded_at=? WHERE id=?::uuid", acceptedAt, offerId);

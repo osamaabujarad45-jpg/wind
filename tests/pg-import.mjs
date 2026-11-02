@@ -156,10 +156,13 @@ try {
       assert.equal(response.status,path==='/subscriptions'?404:200,`${path}: ${await response.clone().text()}`);
       responses.push(compareResponse(await response.json()));
     }
-    if(path==='/me'){
+    if (path === '/me') {
       // Declared freight scope is a PostgreSQL capability (migration 15); parity covers imported data, not backend features.
-      assert.equal(responses[0].capabilities.declaredScope,undefined);
-      for(const pg of responses.slice(1)){assert.equal(pg.capabilities.declaredScope,true);delete pg.capabilities.declaredScope;}
+      assert.equal(responses[0].capabilities.declaredScope, undefined, 'legacy SQLite does not advertise the PG scope extension');
+      for (const response of responses.slice(1)) {
+        assert.equal(response.capabilities.declaredScope, true, 'imported PG schema advertises its verified additive scope support');
+        delete response.capabilities.declaredScope;
+      }
     }
     assert.deepEqual(responses[1],responses[0],`${path}: imported role serialization`);
     assert.deepEqual(responses[2],responses[0],`${path}: restored role serialization`);

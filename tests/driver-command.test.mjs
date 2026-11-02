@@ -26,6 +26,8 @@ valid = true; io.receipt = async () => ({ ...receipt('applied'), requestId: 'ano
 await assert.rejects(resumeDriverCommand(io, 9, order), /invalid_response/);
 assert.equal(driverCommandBody(command).requestId, command.requestId);
 assert.equal(driverCommandBody(command).expectedAssignmentEpoch, 2);
+const boardingCommand = newDriverCommand(9, { ...order, journey: { boarding: { pinRevision: 3 } } }, 'advance', {code:'1234'}, 1000, 60_000);
+assert.equal(driverCommandBody(boardingCommand).expectedPinRevision,3,'protected proof intent binds to the reviewed challenge');
 assert.throws(() => readDriverCommand({ ...command, payload: { code: 'not-a-pin' } }));
 assert.throws(() => readDriverCommand({ ...command, expiresAt: command.createdAt }));
 console.log('Driver command process replacement, exact replay, proof-once receipts, assignment fences and session invalidation passed');

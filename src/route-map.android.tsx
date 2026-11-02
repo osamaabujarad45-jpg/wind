@@ -7,7 +7,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { API_URL } from './api';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { MapProviderBoundary } from './map-provider-boundary';
+import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, useCopy } from './ui';
 
@@ -25,13 +25,16 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
   const view = useRef<WebView>(null);
   const [state, setState] = useState<'loading' | 'drawing' | 'ready'>('loading');
   const failed = useRef(onFail);
-  const fail = () => failed.current();
+  const terminal = useRef(false);
+  useEffect(() => { failed.current = onFail; });
+  useEffect(() => { terminal.current = false; return () => { terminal.current = true; }; }, []);
+  const fail = () => { if (!terminal.current) { terminal.current = true; failed.current(); } };
   // The fragment stays on the device (never sent in the request); the page reads it once.
   const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors }))}`);
   useEffect(() => {
     // Parsing the style alone does not prove that map tiles can be drawn.
     if (state === 'ready') return;
-    const timer = setTimeout(() => failed.current(), 25_000); // after the page's own 20 s deadline, like web
+    const timer = setTimeout(() => { if (!terminal.current) { terminal.current = true; failed.current(); } }, 25_000); // after the page's own 20 s deadline, like web
     return () => clearTimeout(timer);
   }, [state, config.mode]);
   const json = update ? JSON.stringify(update) : '';
@@ -51,6 +54,7 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
       // Android kills a background WebView's renderer to free memory; the view then stays blank.
       onError={fail} onHttpError={fail} onRenderProcessGone={fail}
       onMessage={e => {
+        if (terminal.current) return;
         let m: Message;
         try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
         if (m.type === 'ready') { setState('ready'); onReady?.(); }
@@ -64,11 +68,14 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
+  return <MapProviderBoundary platform="android" route={props} render={RouteAdapter} />;
+}
+function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
+  const props = route!;
   const { pickup: a, dropoff: b } = props;
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  return <MapProviderBoundary platform="android" route={props} render={attempt => attempt.renderer === 'google'
-    ? <GoogleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />
-    : <MapLibreRoute key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />} />;
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
+  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
+    : <MapLibreRoute key={key} {...props} onFail={attempt.onFail} />;
 }
 
 function MapLibreRoute(props: RouteMapProps) {
@@ -95,11 +102,13 @@ function LiveMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap(props: PinMapProps) {
-  return <MapProviderBoundary platform="android" pin={props} render={attempt => {
-    const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
-      onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
-    return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
-  }} />;
+  return <MapProviderBoundary platform="android" pin={props} render={PinAdapter} />;
+}
+function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
+  const props = pin!;
+  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
 }
 
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {

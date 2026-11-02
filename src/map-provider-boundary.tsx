@@ -8,38 +8,39 @@ import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-prev
 import { palette, useCopy } from './ui';
 
 /** One owner for provider attempts. Adapters never retry or revive a failed policy attempt. */
+export type MapAttempt = { key: string; renderer: MapRenderer; onFail: () => void; onReady: () => void; current: () => boolean };
 export function MapProviderBoundary({ platform, route, pin, render }: {
   platform: string; route?: RouteMapProps; pin?: PinMapProps;
-  render: (attempt: { key: string; renderer: MapRenderer; onFail: () => void; onReady: () => void; current: () => boolean }) => ReactNode;
+  render: (props: { attempt: MapAttempt; route?: RouteMapProps; pin?: PinMapProps }) => ReactNode;
 }) {
   const [mode] = useMapMode();
   const baked = Constants.expoConfig?.extra?.googleMaps;
   const forceBaseline = route?.forceBaseline ?? pin?.forceBaseline;
   const choice = effectiveMapProvider(platform, baked, mode, forceBaseline);
   const attemptKey = `${choice.key}:${choice.generation}:${choice.renderer}`;
+  const mounted = useRef(false);
   const callbacks = useRef(pin);
   useEffect(() => { callbacks.current = pin; });
-  // A replacement attempt starts unready: the pin cannot be confirmed until this renderer reports its own
-  // readiness. The first attempt starts unready anyway, and a reset is not a failure (no error text).
-  const shown = useRef<string | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // Every attempt starts unready (loading is not a failure: no error text); only an exhausted policy fails the pin.
   useEffect(() => {
-    if (shown.current !== null && shown.current !== attemptKey) callbacks.current?.onReset?.();
-    shown.current = attemptKey;
-  }, [attemptKey]);
-  // Called from adapter events only, never during render. A retired attempt no longer matches the live
-  // policy, and recordMapFailure ignores its generation too.
+    if (choice.renderer) callbacks.current?.onLoading?.();
+    else callbacks.current?.onFail?.();
+  }, [attemptKey, choice.renderer]);
+  // Called from adapter events only, never during render: reads the live mode so a retired attempt cannot match.
   const current = () => {
     const next = effectiveMapProvider(platform, baked, currentMapMode(), forceBaseline);
-    return next.key === choice.key && next.generation === choice.generation && next.renderer === choice.renderer;
+    return mounted.current && next.key === choice.key && next.generation === choice.generation && next.renderer === choice.renderer;
   };
   const fail = () => {
     if (!current() || !choice.renderer) return;
-    pin?.onFail?.();
+    callbacks.current?.onFail?.();
     recordMapFailure(choice.key, choice.renderer, choice.generation);
   };
   const { c } = useCopy();
-  if (choice.renderer) return render({ key: attemptKey, renderer: choice.renderer, onFail: fail,
-    onReady: () => { if (current()) pin?.onReady?.(); }, current });
+  const Adapter = render;
+  if (choice.renderer) return <Adapter route={route} pin={pin} attempt={{ key: attemptKey, renderer: choice.renderer, onFail: fail,
+    onReady: () => { if (current()) callbacks.current?.onReady?.(); }, current }} />;
   return <View style={{ height: route?.height ?? pin?.height ?? 220, justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
     {route && <RoutePreview {...route} />}
     <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}

@@ -316,7 +316,7 @@ try {
       if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 28, 'PG readiness must report the current migration set through freight crew guards'); ex.response.schema = 3; }
+      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 29, 'PG readiness must report boarding metadata migration without changing installed payloads'); ex.response.schema = 3; }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;
         delete ex.response.quoteExpiresAt;

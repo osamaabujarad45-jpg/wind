@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { routeFramePoints } from './map-math';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { Car } from './route-map.native';
@@ -17,10 +18,9 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012;
 
 export default function RouteMap(props: RouteMapProps) {
-  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
+  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
   const { c } = useCopy();
-  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
-  const points = driver ? [driver, ...stops] : stops;
+  const points = routeFramePoints(props);
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
   const region = {
     latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
@@ -36,7 +36,7 @@ export default function RouteMap(props: RouteMapProps) {
   const reportFailure = useRef(props.onFail);
   useEffect(() => { reportFailure.current = props.onFail; });
   useEffect(() => { if (failed) reportFailure.current?.(); }, [failed]);
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -48,7 +48,7 @@ export default function RouteMap(props: RouteMapProps) {
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
     return () => sub.remove();
   }, [failed]);
   // Tiles loaded, not map initialized, are the readiness signal: Google can initialize and still never
@@ -62,15 +62,14 @@ export default function RouteMap(props: RouteMapProps) {
   if (failed) return <View style={{ height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapLoaded={() => setReady(true)} onPanDrag={() => setMoved(true)}
-    onRegionChangeComplete={r => { if (driver && Math.abs(r.latitude - driver.latitude) + Math.abs(r.longitude - driver.longitude) > 0.004) setMoved(true); }}>
+    onMapLoaded={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -102,7 +101,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
     return () => clearTimeout(timer);
   }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
-    <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+    <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>
     </Pressable>
   </View>;

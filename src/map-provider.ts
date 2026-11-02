@@ -102,10 +102,10 @@ export function canShowOnRenderer(provider: string, renderer: MapRenderer | null
 
 /** What a kept route/ETA belongs to: order, driver, stop and provider — any change must drop the cached state. */
 export const approachKey = (
-  order: { id?: number | string; driverId?: number | null },
+  order: { id?: number | string; driverId?: number | null; status?: string; assignedAt?: number | null; recovery?: { assignmentEpoch: number | null } },
   target: { latitude: number; longitude: number } | undefined,
   provider: string,
-) => `${order.id ?? ''}:${order.driverId ?? ''}:${target ? `${target.latitude},${target.longitude}` : ''}:${provider}`;
+) => `${order.id ?? ''}:${order.driverId ?? ''}:${order.status ?? ''}:${order.assignedAt ?? ''}:${order.recovery?.assignmentEpoch ?? ''}:${target ? `${target.latitude},${target.longitude}` : ''}:${provider}`;
 
 /**
  * The one Google call a booking screen makes (T13): a display route for the current pin pair, billed only

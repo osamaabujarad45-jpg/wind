@@ -127,6 +127,7 @@ export function normalizeEmail(input: unknown): string | null {
 export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
 
 export type Order = {
+  journey?: import('./journey-contracts.ts').Journey;
   recovery?: { schemaVersion: 1; version: number | null; assignmentEpoch: number | null };
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
@@ -163,7 +164,7 @@ export type DriverStats = { rating: number | null; priceRating: number | null; t
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
 export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
-  standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
+  eta?: import('./journey-contracts.ts').JourneyEta; standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;

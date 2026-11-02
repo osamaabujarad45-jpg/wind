@@ -1,6 +1,12 @@
 import type { Order } from './model';
 
 const ar = {
+  rideBoardingRotate: 'تغيير رمز الركوب وفتح التحقق',
+  rideBoardingRotateHint: 'تحقق من الراكب والسائق أولاً. سيُلغى الرمز السابق ويُصدر رمز جديد للراكب، مع تسجيل السبب.',
+  destinationAcceptedFare: 'الأجرة بعد تغيير الوجهة',
+  destinationDiscounts: 'الخصم: {old} ← {next}',
+  err_boarding_challenge_changed: 'تغيّر رمز الركوب. حدّث الطلب واطلب الرمز الحالي من الراكب.',
+  err_boarding_rotation_unavailable: 'تغيير رمز الركوب غير متاح حالياً.',
   err_dispatch_offer_closed: 'انتهى عرض الرحلة. حدّث الطلبات للحصول على الحالة الحالية.',
   err_dispatch_order_changed: 'تغيّر طلب الرحلة. حدّثه وراجع التفاصيل قبل القبول.',
   err_invalid_lease_nonce: 'انتهت صلاحية هذا العرض. حدّث الطلبات.',
@@ -1018,6 +1024,12 @@ export type CopyKey = keyof typeof ar;
 export type Copy = Record<CopyKey, string>;
 
 const en: Copy = {
+  rideBoardingRotate: 'Change PIN and unlock verification',
+  rideBoardingRotateHint: 'Verify the passenger and driver first. This invalidates the old PIN and issues a new one to the passenger, with the reason recorded.',
+  destinationAcceptedFare: 'Fare after destination change',
+  destinationDiscounts: 'Discount: {old} → {next}',
+  err_boarding_challenge_changed: 'The boarding PIN changed. Refresh and ask the passenger for the current PIN.',
+  err_boarding_rotation_unavailable: 'Changing the boarding PIN is currently unavailable.',
   err_dispatch_offer_closed: 'The ride offer has closed. Refresh jobs for the current status.',
   err_dispatch_order_changed: 'The ride request changed. Refresh and review it before accepting.',
   err_invalid_lease_nonce: 'This offer is no longer valid. Refresh jobs.',

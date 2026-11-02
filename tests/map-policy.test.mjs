@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { configureRuntime, resetRuntime } from '../src/runtime-config.ts';
-import { effectiveMapProvider, canShowOnRenderer } from '../src/map-provider.ts';
+import { effectiveMapProvider, canShowOnRenderer, selectRenderer } from '../src/map-provider.ts';
 import { recordMapFailure, retryMapProviders } from '../src/map-failures.ts';
 import { clientConfiguration } from '../server/domain/runtime-readiness.ts';
 resetRuntime(); retryMapProviders();
@@ -12,7 +12,12 @@ recordMapFailure(selected.key, 'google'); selected = effectiveMapProvider('andro
 assert.equal(selected.renderer, 'maplibre'); assert.equal(selected.didFallback, true);
 assert.equal(canShowOnRenderer('google', selected.renderer), false, 'provider fallback never licenses old geometry');
 recordMapFailure(selected.key, 'maplibre'); assert.equal(effectiveMapProvider('android', { android:true }).renderer, null, 'exhaustion is terminal');
+assert.equal(selectRenderer('android', {android:true}),null,'actual consumers preserve terminal exhaustion');
+const previousGeneration=selected.generation;
 retryMapProviders(selected.key); assert.equal(effectiveMapProvider('android', { android:true }).renderer, 'google');
+recordMapFailure(selected.key, 'google', previousGeneration);
+assert.equal(effectiveMapProvider('android', {android:true}).renderer,'google','late callback cannot poison explicit retry');
+assert.equal(canShowOnRenderer('osrm',null),false);
 selected = effectiveMapProvider('android', { android:true }, 'google', true); assert.equal(selected.renderer, 'maplibre');
 recordMapFailure(selected.key, 'maplibre'); assert.equal(effectiveMapProvider('android', { android:true }, 'google', true).renderer, null, 'public maps never fall back to paid provider');
 resetRuntime(); retryMapProviders();
