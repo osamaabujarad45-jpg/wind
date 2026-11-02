@@ -1,0 +1,188 @@
+{
+  "date": "2026-11-02",
+  "head_before_preservation_commit": "13850b9",
+  "note": "Hashes identify artifacts; they are not proof that a claim is true. All paths are relative to the Fastship repo root. These hashes were taken from the working copy on 2026-11-02. Git stores these files with LF while the working copy has LF/CRLF mixed, so a later checkout may rewrite line endings and change the bytes; re-hash from the commit (`git show <rev>:<path>`) when exact identity matters.",
+  "preservation_legend": {
+    "committed-local": "in git in this repository; nothing pushed",
+    "disk-only": "exists on this machine only and can be lost"
+  },
+  "files": [
+    {
+      "path": "docs/HANDOFF-2026-11-02-OPUS-5.5-START-HERE.md",
+      "group": "session-2026-11-02",
+      "note": "entry point, reconciled scope + this session study",
+      "preservation": "committed-local",
+      "sha256": "552f2c31fd9f2ecb9d4716c137710caa32a387206300792992314fd61ca9a457",
+      "bytes": 16780
+    },
+    {
+      "path": "docs/MASTER-2026-11-02-fastship-implementation-blueprint.md",
+      "group": "session-2026-11-02",
+      "note": "phased backlog (the single deliverable)",
+      "preservation": "committed-local",
+      "sha256": "6b4607c5ffdf59626e0f3c872916dcb0320001dad4c0dbdffb309c6e84358ec3",
+      "bytes": 34575
+    },
+    {
+      "path": "docs/REVIEW-2026-11-02-uber-full-stack-gap-analysis.md",
+      "group": "session-2026-11-02",
+      "note": "bug repro, accessibility, dead contracts, ETA",
+      "preservation": "committed-local",
+      "sha256": "2a3be14f7276bce044d684db6dcc6bdc306d1dfe3da0761f8ec9db3935c6e6cb",
+      "bytes": 25557
+    },
+    {
+      "path": "docs/REVIEW-2026-11-02-map-ux-vs-uber.md",
+      "group": "session-2026-11-02",
+      "note": "map UX comparison",
+      "preservation": "committed-local",
+      "sha256": "621f0f5845e8233fa136243e0340241766d6efb3bb22b8077a6aa9444210791c",
+      "bytes": 29986
+    },
+    {
+      "path": "docs/KNOWLEDGE-2026-11-02-uber-rea-opus-implementation-handoff.md",
+      "group": "session-2026-11-02",
+      "note": "verified handoff + NEW-1..3",
+      "preservation": "committed-local",
+      "sha256": "9e5dbf9be182e2db2ddf80d4e8f273073e0bb856c99ca89783bb2f54551d535c",
+      "bytes": 18785
+    },
+    {
+      "path": "docs/KNOWLEDGE-2026-11-02-uber-rider-api-backend-contract-study.md",
+      "group": "session-2026-11-02",
+      "note": "API/backend contracts, pass 2",
+      "preservation": "committed-local",
+      "sha256": "e3950dd96d1d96bea201dc861f47b07522884cdf7c1dc2ac7f404eb56fb00e1a",
+      "bytes": 32922
+    },
+    {
+      "path": "docs/KNOWLEDGE-2026-11-02-uber-rider-map-capability-inventory.md",
+      "group": "session-2026-11-02",
+      "note": "map capability inventory",
+      "preservation": "committed-local",
+      "sha256": "44eaad0c925be47ac28aefc16c033e239f815f2a72774fdcf956eee28e170b97",
+      "bytes": 65270
+    },
+    {
+      "path": "docs/KNOWLEDGE-2026-11-02-uber-rider-ui-layer-architecture-study.md",
+      "group": "session-2026-11-02",
+      "note": "UI layer architecture",
+      "preservation": "committed-local",
+      "sha256": "cfabcc66514ac06aee0dac5aa5f485ea423738ecb76850ac3bdbf6e20e1cfeda",
+      "bytes": 32209
+    },
+    {
+      "path": "docs/BUILD-SPEC-2026-11-02-fastship-map-uber-patterns.md",
+      "group": "session-2026-11-02",
+      "note": "map pattern build spec",
+      "preservation": "committed-local",
+      "sha256": "72ee24fa11ef878e287281d9d913339f7a7fd25018b0bb08a9da4e7f6e69fec1",
+      "bytes": 21404
+    },
+    {
+      "path": "docs/SPEC-2026-11-02-fastship-per-screen-build-specs.md",
+      "group": "session-2026-11-02",
+      "note": "six per-screen build specs",
+      "preservation": "committed-local",
+      "sha256": "6d6733605176c8b272904bcc763631c1cd7ea80f74826d27bcb64cdd8a989086",
+      "bytes": 33087
+    },
+    {
+      "path": "docs/competitive-architecture-uber-tokens.md",
+      "group": "session-2026-11-02",
+      "note": "design-token numeric spec",
+      "preservation": "committed-local",
+      "sha256": "016bf8626d6c81abe084362a50c1c7420612b678f1602b9bbf83190407427e1a",
+      "bytes": 40582
+    },
+    {
+      "path": "docs/rea-work/DECOMPILE-ACCESS.md",
+      "group": "session-2026-11-02",
+      "note": "how the decompile was produced / how to look things up",
+      "preservation": "committed-local",
+      "sha256": "b796e7e4c28126413a447478ef5629460df3e9f8898c49c9d0103ac7546fcd6a",
+      "bytes": 3414
+    },
+    {
+      "path": "docs/rea-work/LEDGER.md",
+      "group": "session-2026-11-02",
+      "note": "verification log + every correction",
+      "preservation": "committed-local",
+      "sha256": "733c527bc8f5da55366f643875c023934b8790f4f02e97b5119224aef7a31ebd",
+      "bytes": 20395
+    },
+    {
+      "path": "docs/rea-work/skills/rea-uber-gap-analysis/SKILL.md",
+      "group": "session-2026-11-02",
+      "note": "reusable REA skill",
+      "preservation": "committed-local",
+      "sha256": "266815776b8ee834c8518e2b6d0e70ddb0cee4deb0929245abbe499bd3edaff9",
+      "bytes": 5866
+    },
+    {
+      "path": "src/design-tokens.ts",
+      "group": "session-2026-11-02",
+      "note": "UNAPPROVED draft token layer; imported by nothing",
+      "preservation": "committed-local",
+      "sha256": "552813953fd23c96b6381d0862f22602e4bedfc379b05f4f754bdba840c76e49",
+      "bytes": 14237
+    },
+    {
+      "path": "docs/HANDOFF-2026-11-01-UBER-APP-KNOWLEDGE-FOR-OPUS-5.5.md",
+      "group": "prior-session",
+      "note": "prior-session research",
+      "preservation": "committed-local",
+      "sha256": "5d7ab2db83a4552bdbcee12a39f59519918400b06bdf09e28ce7eb06c5ebb4b7",
+      "bytes": 23597
+    },
+    {
+      "path": "docs/HANDOFF-2026-11-01-maps-gps-and-uber-code-for-opus.md",
+      "group": "prior-session",
+      "note": "prior-session research",
+      "preservation": "committed-local",
+      "sha256": "0a7c531c07552b46bd6121ef1b9be5119a8917a871c63daed91abd9560185291",
+      "bytes": 30834
+    },
+    {
+      "path": "docs/STUDY-2026-11-01-app-maps-gps-tracking.md",
+      "group": "prior-session",
+      "note": "prior-session research",
+      "preservation": "committed-local",
+      "sha256": "ff5adb7f2c51eb25400dae64fd8ead63abaafaff16ec84adf46fc489efe6095d",
+      "bytes": 41831
+    }
+  ],
+  "environment_roots": [
+    {
+      "kind": "decompile",
+      "path": "C:\\Users\\osama\\AppData\\Local\\Temp\\opencode\\uber\\rea-full",
+      "exists": true,
+      "files": 183507,
+      "bytes": 781931606,
+      "preservation": "disk-only",
+      "why": "proprietary Uber code, ~1 GB, temp only \u2014 never commit"
+    },
+    {
+      "kind": "apk",
+      "path": "C:\\Users\\osama\\AppData\\Local\\Temp\\opencode\\uber\\apk",
+      "exists": true,
+      "files": 10,
+      "bytes": 244509487,
+      "preservation": "disk-only",
+      "why": "proprietary Uber binary, temp only \u2014 never commit"
+    },
+    {
+      "kind": "screenshots",
+      "path": "C:\\Users\\osama\\OneDrive\\Documents\\ChatGPT\\Fastship\\.screens\\states-out",
+      "exists": true,
+      "files": 92,
+      "bytes": 13611786,
+      "preservation": "disk-only",
+      "why": "excluded by .gitignore:52 (.screens/)"
+    }
+  ],
+  "not_committed_on_purpose": [
+    "unrelated dirty implementation work in the working tree (169 entries)",
+    "docs/CURRENT-WORK.md, docs/SYSTEM.md, docs/implementation/**, docs/KNOWLEDGE-2026-10-31-*, docs/KNOWLEDGE-2026-11-01-* \u2014 modified at 17:17 by another process; not attributed to this session"
+  ]
+}

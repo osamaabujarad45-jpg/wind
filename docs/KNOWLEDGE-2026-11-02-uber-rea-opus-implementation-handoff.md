@@ -150,11 +150,11 @@ google-routing `:34`); `api()` + `useApi` polling + `useLiveFix` long-poll with
 
 | Pattern (from Uber) | Verdict | Fastship anchor / why |
 |---|---|---|
-| String error-code union with `synthetic.unknown` fallback | **ADOPT** | `errorCode` is imported/re-exported in `src/api.ts:5,9`; terminal codes are string comparisons `:157`. **Correction:** a full union is *partially present client-side only*; add a server-side `ApiError` base with code + unknown fallback. |
-| Client-generated request UUID on every mutating call (`x-uber-call-uuid`) | **ADOPT** | Cheap idempotency for `POST /api/orders`, `/api/jobs`, `/api/location` retries on cellular. One header + unique index. |
+| String error-code union with `synthetic.unknown` fallback | **ADOPT** | Fastship's client errors are **unrestricted strings today** (`src/api-client.ts:6-9`); `errorCode` is imported/re-exported in `src/api.ts:5,9` and terminal codes are string comparisons `:157`. There is **no** code union yet — this is **new work**: introduce a server-side `ApiError` base with a closed string-code set + an unknown fallback, and narrow the client to match. |
+| Client-generated request UUID on every mutating call (`x-uber-call-uuid`) | **ADOPT (extend, don't duplicate)** | Fastship **already has idempotency on order creation** — `requestId` is generated/preserved and recorded results are replayed (`src/booking.ts:33`, `server/main.ts:1490,1992`). **Verify that first;** then extend the same client-generated-request-id pattern to the remaining mutating calls that lack it (e.g. `/api/jobs/:id/accept`, `/api/location`). One header + unique index. |
 | Live-stream envelope: `oneof {msgs, control, heartbeat}` + `lastseen_seq_id` + per-message ack | **ADOPT (shape only, over long-poll)** | `useLiveFix` already does `?since=` (`:127`); extend the answer to `{msgs[], heartbeat, control}` instead of a bare fix; cursor lives in `server/domain/realtime.ts`. Skip gRPC; keep fetch. |
 | PushModel = `(model class, "topic_string")` singleton | **ADOPT (as TS record)** | One `const topics = { driver_fix, dispatch_status }` map in `server/domain/realtime.ts`. No codegen. |
-| Server-pushed TTL quote cache (`FareCacheSettings`: validUntil + cell-bucket keys) | **ADOPT** | Applies to `/api/price` + `server/domain/quotes.ts`: return `validUntil` and key quotes by pickup/dropoff cell so the app stops re-quoting on remount. Aligns with the "billable endpoints load once" intent in `src/api.ts`. **Highest-leverage single idea.** |
+| Server-pushed TTL quote cache (`FareCacheSettings`: validUntil + cell-bucket keys) | **ADOPT (with identity guard)** | Applies to `/api/price` + `server/domain/quotes.ts`: return `validUntil` and cache quotes so the app stops re-quoting on remount. **Cache key must preserve customer + itinerary identity** (customer id, pickup+dropoff coordinates, parcel/ride options) — **not** pickup/dropoff cell alone — or a valid-looking cache hit can fail booking validation (`server/main.ts:1287`, `server/domain/quotes.ts:36`). Aligns with the "billable endpoints load once" intent in `src/api.ts`. **Highest-leverage single idea.** |
 | Required-field Builder checks + tolerate unknown fields | **ADOPT** | Trust-boundary validation is partially implemented **[C]** (`google-routing.ts:249-253,262-266`); extend and ignore unknown JSON keys on ingest. |
 | In-path versioning, old versions left live | **ADOPT when needed** | Keep `/api/price`, add `/api/v2/price` only at a breaking change. Don't pre-version. |
 | `offer/accept\|ack\|expire\|reject` verb set for dispatch | **ADOPT (as endpoints)** | Map to `server/domain/dispatch.ts`: explicit offer lifecycle beats implicit state flips. |
@@ -174,7 +174,7 @@ existing behavior.
 | Uber pattern | Verdict | How (RN/Expo), calibrated |
 |---|---|---|
 | 8 dp linear spacing scale | **ADOPT** | Add `spacing = (n)=>n*8` to `src/ui.tsx` alongside existing `size`; migrate ad-hoc dp gradually. Don't break current `size.gutter`/`size.radius`. |
-| Semantic theme attrs (backgroundPrimary/contentPrimary/iconColor/divider) | **ADOPT** | Extend existing `palette` with role-keyed tokens + a `dark` variant; stop hardcoding colours. |
+| Semantic theme attrs (backgroundPrimary/contentPrimary/iconColor/divider) | **ADOPT (single theme)** | Extend existing `palette` with role-keyed tokens; stop hardcoding colours. **Do NOT add a dark variant** — the canonical brief explicitly scopes out day/night theming (`REVIEW-2026-11-02-uber-full-stack-gap-analysis.md:156`). One well-formed light theme. |
 | Button matrix (3 variants × 3 sizes × 3 shapes) | **ADOPT (compressed)** | One `<Button variant size shape>`; do not replicate every Uber leaf style. |
 | ~80 text styles | **COMPRESS to ~12** | Display/Title/Label/Body × 2 sizes × 2 weights. |
 | `analyticsId` per interactive node | **ADOPT (the discipline)** | A small HOC/hook tagging interactive surfaces. |
@@ -182,9 +182,9 @@ existing behavior.
 | Map + bottom-sheet + collapsing header | **ADOPT** | `react-native-maps` full-bleed + sheet overlay; animated header on scroll. |
 | 4-slot marker; pins composed from pieces | **ADOPT the slot model; SKIP the piece assembly** | `<MapMarker leadingIcon title subtitle trailingIcon>`; one SVG `<Pin color label>`. |
 | SDUI list-row (~20 slots) | **ADOPT the idea, drastically reduce** | `<Row leadingImage title subtitle trailing Action>` (~6 slots). |
-| Receipt = WebView in collapsing header | **ADOPT for receipts only** | `react-native-webview` inside `ScrollView` + animated header. |
+| Receipt = WebView in collapsing header | **SKIP for Fastship** | Fastship's receipt (`receipt/[id].tsx`) is already a short **native** card — keep it. The WebView pattern suits Uber's long server-rendered receipts; Fastship's are short and native is cheaper. Revisit only if a long receipts *list* is ever added. |
 | StateList animators; XML transitions; RIB framework; drawer shell; lite/full split | **SKIP** | RN/Reanimated equivalents exist; a courier app doesn't need the drawer or the RIB ceremony. |
-| `fade+push_up` 400 ms enter animation; Material 3 easing | **ADOPT** | One Reanimated `enterFromBottom` preset; `Easing.bezier(0.2,0,0,1)`. |
+| `fade+push_up` enter animation (slide-up + fade); Material-standard easing curves | **ADOPT (pattern only, own values)** | Adopt the *pattern* — a slide-up+fade enter for sheet content/toasts, and standard ease-out curves — but **choose Fastship's own duration/easing values**; do not copy Uber's exact 400 ms / specific beziers (those are parameter values). One Reanimated `enterFromBottom` preset with Fastship-tuned timing. |
 
 ---
 
