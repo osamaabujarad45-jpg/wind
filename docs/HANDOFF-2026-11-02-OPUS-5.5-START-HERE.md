@@ -21,6 +21,8 @@ Cross-checks corrected several earlier statements before this handoff was writte
 
 Detailed study material is retained in the committed `docs/` records and the local tag. It is background for a narrow question after the source and this brief have been checked; it is not an implementation checklist.
 
+**When you need the depth**, open [`KNOWLEDGE-MAP-2026-11-02-deep-study-and-agent-review.md`](KNOWLEDGE-MAP-2026-11-02-deep-study-and-agent-review.md). It maps every deep finding (confirmed-defect table with source anchors, map/token/screen/API numbers, Palestinian-market fit) and reviews what each research worker delivered and how much to trust it. Read it after this brief and before touching a new area.
+
 ## Non-negotiable behavior
 
 Keep these behaviors intact in every batch:
