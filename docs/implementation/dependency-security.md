@@ -16,6 +16,10 @@ GHSA-gcqx-w48m-w2h4 (deepmerge `mergeObject()` prototype poisoning of returned o
 
 The 29 Oct 2026 `npm audit --audit-level=high` run still lists this advisory (and seven low-severity items below the gate) because npm matches the retained 4.3.1 version metadata of the `file:` dependency; as with Forge, npm does not audit vendored contents. Treat the audit line as "patched locally, awaiting an upstream or SDK-57-line release", not as an open runtime defect. Replace the vendor override with a maintainer-published fixed release when one exists inside a supported SDK, after rerunning `npm run test:dependency-security`, `npx expo install --check` and `npx expo-doctor`.
 
+## Carried decode-uri-component 0.5.1 (31 October 2026)
+
+GHSA-qr28-fpjm-wq7f / CVE-2026-118664 (published 29 Oct 2026, high: the fallback decoder ran one full-string replacement per distinct percent-encoded run, so a ~224 KB malformed input blocked the event loop for seconds) reached the vendored 0.5.0 copy, whose `split/join` loop had the same quadratic shape. It is reachable at runtime through Expo Router's `query-string`. `vendor/decode-uri-component/index.cjs` now carries upstream 0.5.1 (`fad01d6`, single-pass `replace`) with only the CommonJS export changed; `tests/url-decoder.test.mjs` adds the upstream cases and the advisory input under a 3 s process deadline (old copy ~7 s, fixed ~0.15 s on the dev PC). GitHub has since rated GHSA-gcqx-w48m-w2h4 (deepmerge) low, so `npm audit --audit-level=high` exits 0 with seven low items.
+
 ## Checks
 
 - `npm run test:dependency-security` — five checks passed (29 Oct 2026 local fallback): deepmerge poisoning vectors rejected on Node and browser bundles, deepmerge compatibility preserved, the Forge forged-signature vector rejected, a legitimate Node RSA/SHA-256 signature accepted while a changed message fails, and Zod rejects an oversized bounded array before visiting elements. The parent added and independently ran the legitimate-signature compatibility check.

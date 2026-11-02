@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { OoredooCommunication,phoneConfig } from '../server/domain/phone-provider.ts';
 import { startApiProcess } from './support/api-process.mjs';
 import { apiCaller } from './support/api.mjs';
-const env={NODE_ENV:'test',WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:'wp03_phone_provider',WIND_DATABASE_URL:'postgresql://fastship_test@127.0.0.1:55473/fastship_test',
+const env={NODE_ENV:'test',WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:'wp03_phone_provider',WIND_DATABASE_URL:process.env.WIND_TEST_DATABASE_URL??'postgresql://fastship_test@127.0.0.1:55473/fastship_test',
   WIND_PHONE_ENABLED:'1',WIND_PHONE_PROVIDER:'ooredoo_communication',WIND_PHONE_HMAC_KEY:Buffer.alloc(32,17).toString('base64'),WIND_OOREDOO_CLIENT_ID:'SYNTHETIC_CLIENT',WIND_OOREDOO_CLIENT_SECRET:'SYNTHETIC_SECRET',
   WIND_OOREDOO_SENDER:'Synthetic',WIND_OOREDOO_COUNTRY_CODE:'TEST',WIND_PHONE_APPROVED_PREFIXES:'+97056,+97059,+97256,+97259',WIND_PHONE_PROVIDER_EVIDENCE:'synthetic:case',
   WIND_PHONE_DAILY_MESSAGE_LIMIT:'100',WIND_PHONE_DAILY_BUDGET_MINOR:'1000',WIND_PHONE_SMS_MAX_COST_MINOR:'10'};

@@ -161,7 +161,8 @@ try {
   const epochAfter = Number((await k.db.one('SELECT assignment_epoch FROM orders WHERE id=?', order.id)).assignment_epoch);
   assert.ok(epochAfter > epochBefore, 'reassignment advances the assignment epoch');
   assert.equal((await advance(k, first.driver.token, order.id, 'assigned', {}, 404)).error, 'not_found', 'the previous driver cannot move the reassigned ride');
-  await k.db.run('UPDATE driver_latest_locations SET good_at=?,effective_at=? WHERE driver_id=?', Date.now(), Date.now(), second.driver.user.id);
+  // 10 s old, not Date.now(): arrive rejects future fixes (a Windows clock step made an exactly-now fix "future" on k5); the window is 120 s.
+  await k.db.run('UPDATE driver_latest_locations SET good_at=?,effective_at=? WHERE driver_id=?', Date.now() - 10_000, Date.now() - 10_000, second.driver.user.id);
   await k.call(`/orders/${order.id}/arrive`, { token: second.driver.token, body: {} });
   await advance(k, second.driver.token, order.id, 'assigned');
   const code = (await k.call(`/orders/${order.id}`, { token: k.customer.token })).ride.boardingCode;

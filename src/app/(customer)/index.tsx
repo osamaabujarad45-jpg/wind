@@ -42,11 +42,11 @@ export default function Home() {
     <View style={[styles.search, { flexDirection: row }]}>
       <Press accessibilityLabel={c.whereTo} containerStyle={{ flex: 1 }} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
         <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-        <Text numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
+        <Text key={language} numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
       </Press>
       <Press accessibilityLabel={c.later} onPress={() => book({ service: 'parcel', when: 'later' })} style={[styles.now, { flexDirection: row }]}>
         <Ionicons name="calendar-outline" size={15} color={palette.ink} />
-        <Text style={styles.nowText}>{c.later}</Text>
+        <Text key={language} style={styles.nowText}>{c.later}</Text>
       </Press>
     </View>
 

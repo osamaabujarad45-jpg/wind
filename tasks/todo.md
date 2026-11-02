@@ -121,8 +121,8 @@ Implementation children:
 
 **Acceptance criteria:**
 - [ ] Old GPS is never presented as current.
-- [ ] GPS refresh preserves typed landmark.
-- [ ] Denied permission still allows manual pinning.
+- [x] GPS refresh preserves typed landmark. (A53 native, 30 Oct: typed landmark kept after "Use my current location" set the pickup)
+- [x] Denied permission still allows manual pinning. (A53 native, 30 Oct: denied prompt → "Location unavailable" copy → Pickup on map works; evidence.md 30 Oct)
 
 **Verification:** `npm run test -- --filter=customer-location`. Execute each semicolon-separated command separately; common checks above also apply.
 
@@ -658,7 +658,7 @@ Implementation children:
 
 **Manual / failure-case check:** Use many synthetic searching orders and test all pages remain reachable.
 
-**Evidence:** Complete 29 Oct, local fallback. `server/main.ts`: `WIND_SEARCHING_LIMIT` (default 5, env-tunable) caps a customer's **unscheduled** searching orders inside the write transaction — every booking path enters `createOrder` under `BEGIN IMMEDIATE` (SQLite) or `persistence.atomic` (PostgreSQL), and PostgreSQL additionally takes `pg_advisory_xact_lock` per customer so concurrent creates cannot slip past the count under READ COMMITTED (a real 9-concurrent-create race in `pg-jobs-pagination.mjs` yields exactly 5 created and 4 `409 too_many_searching`); refusals carry a new `err_too_many_searching` copy pair (ar+en). `expireStaleDemand` (exported, hourly timer next to the scheduled-release sweep, own `stale_demand_expiry` transaction) system-cancels searching orders older than `WIND_SEARCH_EXPIRY_MS` (default 24 h, floored at 1 h) with a CAS predicate — assigned custody and not-yet-due scheduled orders are never touched, and the sender gets the existing `cancelled` push. Pagination untouched. Suites: jobs-pagination (cap, cancel-frees-a-slot, scheduled exclusion, expiry CAS vs assigned/scheduled) 0; schedule 0; `test:persistence --filter=pg-jobs-pagination` 0; lint 0; typecheck 0. Job-push throttling (5/10 min) already existed and is preserved.
+**Evidence:** Complete 29 Oct, local fallback. `server/main.ts`: `WIND_SEARCHING_LIMIT` (default 5, env-tunable) caps a customer's **unscheduled** searching orders inside the write transaction — every booking path enters `createOrder` under `BEGIN IMMEDIATE` (SQLite) or `persistence.atomic` (PostgreSQL), and PostgreSQL additionally takes `pg_advisory_xact_lock` per customer so concurrent creates cannot slip past the count under READ COMMITTED (a real 9-concurrent-create race in `pg-jobs-pagination.mjs` yields exactly 5 created and 4 `409 too_many_searching`); refusals carry a new `err_too_many_searching` copy pair (ar+en). `expireStaleDemand` (exported, one-minute timer next to the scheduled-release sweep, at most 50 per run, own `stale_demand_expiry` transaction) system-cancels searching orders older than `WIND_SEARCH_EXPIRY_MS` (default 24 h, floored at 1 h) with a CAS predicate — assigned custody and not-yet-due scheduled orders are never touched, and the sender gets the existing `cancelled` push. Pagination untouched. Suites: jobs-pagination (cap, cancel-frees-a-slot, scheduled exclusion, expiry CAS vs assigned/scheduled) 0; schedule 0; `test:persistence --filter=pg-jobs-pagination` 0; lint 0; typecheck 0. Job-push throttling (5/10 min) already existed and is preserved.
 
 ### Checkpoint C07 — after T21
 

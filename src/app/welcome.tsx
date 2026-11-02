@@ -72,12 +72,12 @@ function ServicesArt() {
 }
 
 function PriceArt({ label }: { label: string }) {
-  const { c, row } = useCopy();
+  const { c, row, language } = useCopy(); // keyed Text below: Android re-measures after an in-app language switch
   return <View style={{ alignItems: 'center', gap: 18 }}>
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
     <View style={[styles.saveBadge, { flexDirection: row }]}>
       <Ionicons name="pricetag" size={16} color={palette.onFill} />
-      <Text style={styles.saveText}>{label}</Text>
+      <Text key={language} style={styles.saveText}>{label}</Text>
     </View>
     <Txt variant="caption">{c.cash}</Txt>
   </View>;
