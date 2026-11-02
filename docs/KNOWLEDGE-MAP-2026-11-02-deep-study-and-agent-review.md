@@ -128,9 +128,10 @@ Source: `KNOWLEDGE-…api-backend-contract-study.md`. This is the highest-signal
 - Idempotent order-create (`order_commands` + `offerId`/`leaseNonce`), quote TTL
   (`server/domain/quotes.ts`), offer lifecycle, and server correlation IDs
   (`server/main.ts:3089,3161,3200`) **already exist**. Extend, never rebuild.
-- Error codes: ~123 open codes; only `OfferFailure` and `GoogleRoutesErrorCode` are typed. Add
-  a shared closed `ApiErrorCode` tuple — do not replace the `HttpError`/`fail()` base
-  (`server/main.ts:191`).
+- Error codes: **~200 distinct open string codes** (`fail(\d+, 'code')` grep → 196 distinct;
+  an independent recount with a broader pattern → 203; treat as a method-dependent floor).
+  Only `OfferFailure` and `GoogleRoutesErrorCode` are typed. Add a shared closed
+  `ApiErrorCode` tuple — do not replace the `HttpError`/`fail()` base (`server/main.ts:191`).
 - Driver fix carries `heading` but no `speed` (`src/model.ts:146`) — add `speed` for motion
   hints.
 

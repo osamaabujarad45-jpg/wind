@@ -46,9 +46,13 @@
 ## 1. Route table **[O]**
 
 ### 1.0 Census
-- 1,046 unique `@retrofit2.http.*("literal")`: **POST 935 (89%)**, GET 89, PUT 13,
-  DELETE 8, PATCH 1. 1,033 start with `/rt/`. Largest `/rt/` families: eats 77,
-  unused 68, payment 65, riders 55, drivers 44, safety 38, users 28, trips 27.
+- Pass 2 counted **1,046** unique `@retrofit2.http.*("literal")` (a broad grep that also
+  catches gRPC-adjacent literals); an independent recount with a stricter `"/rt/..."`-only
+  grep returned **1,030**. Both are method-dependent **floors** — runtime-assembled routes
+  are invisible to static analysis. Of the broad pass-2 set: **POST 935 (89%)**, GET 89,
+  PUT 13, DELETE 8, PATCH 1. Largest `/rt/` families: eats 77, unused 68, payment 65,
+  riders 55, drivers 44, safety 38, users 28, trips 27. **Quote counts with the grep
+  method, never as a single absolute number.**
 - Path-version segments: `v2` 101, `v1` 58, `v3` 34, `v4` 2 (~19% of literals).
 - Bodies: 944 generated `@Body` params, **822 untyped `Map<String,Object>`** (87%);
   only the hot core flows have models.
@@ -242,11 +246,14 @@ tags 3 and 5 reserved **[I]**.
    along **server-supplied timestamped paths** between polls.
 
 ### 2.5 Error union and code discriminator
-- **743** classes extend `w46\AbstractC128229d.java` (`UNKNOWN_CODE =
-  "synthetic.unknown"`, `isUnauthorized` flag, `isUnknown()`). **One class per
-  endpoint**, e.g. `RT\marketplacerider\AcceptOfferErrors.java`: a `code` string
-  plus nullable typed slots `badRequest`, `unauthenticated`, `unauthorized`,
-  `notFound`, `rateLimited` (exactly one set).
+- **Hundreds of classes** extend the shared error base (`w46\AbstractC128229d.java`,
+  `UNKNOWN_CODE = "synthetic.unknown"`, `isUnauthorized` flag, `isUnknown()`). Pass 2
+  counted **743** with one base-class grep; an independent recount (`extends w46`)
+  returned **839** files. Treat the exact number as a method-dependent **floor** — the
+  durable fact is "hundreds of per-endpoint `*Errors` classes," e.g.
+  `RT\marketplacerider\AcceptOfferErrors.java`: a `code` string plus nullable typed
+  slots `badRequest`, `unauthenticated`, `unauthorized`, `notFound`, `rateLimited`
+  (exactly one set).
 - Slot types `G\rtapi\models\exception\*`: `BadRequest{code, data: Map<String,String>,
   message}`, `NotFound`, `RateLimited{code, message}` (no retry-after),
   `Unauthenticated{code, errorCode, message}`, `Unauthorized`, plus

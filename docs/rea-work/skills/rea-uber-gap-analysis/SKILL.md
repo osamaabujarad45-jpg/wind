@@ -38,7 +38,10 @@ Use T3 `delegate_task`. Assign by strength, fail over on rate limits, and keep t
 Each agent: route the target first, work summary-first (grep/glob, don't read everything), cite file paths, mark observation/inference/unknown, end with an **adopt-vs-skip** table calibrated to our app's scale. Skip reference-scale machinery we don't need.
 
 ### 4. Verify the knowledge (the "100% sure" loop)
-- Independent verifier re-checks every load-bearing claim against our code and the decompiled source; **record its corrections** — they are the most valuable output.
+- **Keep a claims ledger.** One table: every load-bearing claim → its anchor (file:line or decompile path) → the check you ran → VERIFIED / WRONG / PARTIAL → evidence. Split it into: (a) our-code claims (grep), (b) tests (run), (c) reference-app claims (grep the decompile). A claim is PENDING until its check is cited.
+- **Reproduce, don't trust.** Independent verifier re-checks every claim against our code and the decompiled source; **record its corrections** — they are the most valuable output. In this session the verifier caught: a wrong error-code count (claimed ~123, real 196), a wrong theme-parentage, a wrong grabber size, and an over-claimed idempotency. These corrections are why the loop exists.
+- **Counts are method-dependent floors.** Route censuses and class counts change with the grep. Always record the method and report a floor ("~1,030–1,046 depending on grep"), never a single absolute number. Static analysis can't see runtime-assembled routes.
+- **Billing/data-loss claims need server-side proof.** "This refetches" is provable client-side; "this costs money / loses data" needs the server reroute/billing path. Mark the unproven half UNVERIFIED.
 - Run our test suites (on the designated test host, e.g. K5, over SSH) to confirm bugs reproduce and gates hold.
 - Multi-agent cross-check for completeness: does the knowledge cover every stack layer the user named (code, UI, API, backend, design, map)?
 
