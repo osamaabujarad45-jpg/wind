@@ -18,8 +18,10 @@ export type RouteMapProps = {
   closed?: Point[] | null;
   /** Anonymous and public surfaces draw the free baseline only: no paid route, no Google tiles (T15). */
   forceBaseline?: boolean;
+  /** Internal adapter failure signal; the shared provider boundary owns fallback and retry. */
+  onFail?: () => void;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number };
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not

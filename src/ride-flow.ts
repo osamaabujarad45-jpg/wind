@@ -1,8 +1,10 @@
 import type { Order } from './model.ts';
 import { serverOffset } from './api-client.ts';
+import { deadlineSeconds } from './api-clock.ts';
+import type { Journey } from './journey-contracts.ts';
 
 /** Deadlines are server timestamps; a phone clock change must not expire a valid offer. */
-export const secondsUntil = (deadline: number, now: number) => Math.max(0, Math.ceil((deadline - now - serverOffset()) / 1000));
+export const secondsUntil = (deadline: number, now: number, journey?: Journey) => deadlineSeconds(deadline, journey, now);
 
 /** Match the server's measured-over-declared precedence and bind the reviewed revision. */
 export function capacityCommand(order: Pick<Order, 'measuredScope' | 'declaredScope'>) {
@@ -20,9 +22,9 @@ export function rideStep(order: Pick<Order, 'service' | 'status' | 'ride'>) {
 }
 
 /** An expired/missing lease cannot silently become a legacy accept command. */
-export function dispatchAcceptance(order: Pick<Order, 'dispatch'>, now: number) {
+export function dispatchAcceptance(order: Pick<Order, 'dispatch' | 'journey'>, now: number) {
   if (!order.dispatch) return {};
   const offer = order.dispatch.myOffer;
-  if (order.dispatch.state !== 'open' || !offer?.leaseNonce || offer.expiresAt <= now + serverOffset()) return null;
+  if (order.dispatch.state !== 'open' || !offer?.leaseNonce || (order.journey ? deadlineSeconds(offer.expiresAt, order.journey, now) <= 0 : offer.expiresAt <= now + serverOffset())) return null;
   return { offerId: offer.offerId, leaseNonce: offer.leaseNonce };
 }

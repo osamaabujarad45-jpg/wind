@@ -1,3 +1,4 @@
+import { deadlineMilliseconds } from '../api-clock';
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -277,8 +278,21 @@ function BookForm() {
   const quoting = isCustomer && !pending && routeChosen && !scopeInvalid && quoted?.key !== priceKey; // the Request button waits for it
   const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
   const smart = quoted?.key === priceKey ? quoted.quote : null;
+  const [, expireQuoteEta] = useState(0);
+  useEffect(() => {
+    const eta = smart?.eta;
+    if (!eta) return;
+    const remaining = deadlineMilliseconds(eta.validity.expiresAt, eta);
+    if (!remaining) return;
+    const timer = setTimeout(() => expireQuoteEta(value => value + 1), remaining + 1);
+    return () => clearTimeout(timer);
+  }, [smart?.eta]);
+  const quoteMinutes = !smart ? null : smart.eta
+    ? deadlineMilliseconds(smart.eta.validity.expiresAt, smart.eta) > 0 ? `${Math.ceil(smart.eta.minSeconds / 60)}–${Math.ceil(smart.eta.maxSeconds / 60)}` : null
+    : smart.minutes;
+
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
-  const reasons = smart && [fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${smart.minutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
+  const reasons = smart && [quoteMinutes !== null && fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${quoteMinutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
     .filter(Boolean).join(' · ');
   const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));

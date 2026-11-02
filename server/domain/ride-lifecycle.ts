@@ -1,10 +1,11 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
+import type { Journey } from '../../src/journey-contracts.ts';
 import { eligibilityDefaults } from './eligibility.ts';
 
 type Fail = (status: number, message: string) => never;
 type Actor = { id: number; role: string; status: string };
-type Context = { user: Actor; body: Row; params: string[] };
+type Context = { user: Actor; body: Row; params: string[]; query?: URLSearchParams };
 type Register = (method: string, path: string, handler: (ctx: Context) => Promise<unknown>, isPublic?: boolean) => unknown;
 
 /** Arrival must be within walking distance of the pickup pin. Stored fixes carry
@@ -41,6 +42,9 @@ export class RideLifecycle {
   private fail: Fail;
   onBoardingLocked?: (orderId: number) => Promise<void>;
   constructor(db: Persistence, fail: Fail) { this.db = db; this.fail = fail; }
+  async metadataAvailable() {
+    return await this.available() && !!await this.db.one('SELECT version FROM schema_migrations WHERE version=29');
+  }
   enabled() { return boardingEnabled(); }
   async available() { return rideLifecycleAvailable(this.db); }
   private async requireAvailable() { if (!(await this.available())) this.fail(409, 'ride_lifecycle_unavailable'); }
@@ -58,12 +62,36 @@ export class RideLifecycle {
     const required = source === 'dispatch' || this.enabled();
     if (!required) return;
     const now = Date.now(), epoch = Number(order.assignment_epoch);
+    const previous = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId);
+    if (previous && Number(previous.assignment_epoch) === epoch && Number(previous.driver_id) === driverId) return;
     await this.db.run(`INSERT INTO ride_lifecycle(order_id,driver_id,assignment_epoch,boarding_code,boarding_required,created_at,updated_at)
       VALUES(?,?,?,?,1,?,?) ON CONFLICT(order_id) DO UPDATE SET driver_id=excluded.driver_id,assignment_epoch=excluded.assignment_epoch,
       arrived_at=NULL,arrival_source=NULL,arrival_actor_id=NULL,boarding_code=excluded.boarding_code,boarding_required=1,updated_at=excluded.updated_at`,
       orderId, driverId, epoch, newBoardingCode(), now, now);
+    await this.noteIssued(orderId, now);
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, orderId, epoch);
+  }
+
+  private async noteIssued(id: number, now: number) {
+    if (await this.metadataAvailable()) await this.db.run('UPDATE ride_lifecycle SET pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1 WHERE order_id=?', now, id);
+  }
+  async boardingInfo(id: number, viewer: { id: number; role: string }, order: Row): Promise<Journey['boarding']> {
+    if (!(await this.metadataAvailable())) return undefined;
+    const row = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=?', id);
+    if (!row || Number(row.assignment_epoch) !== Number(order.assignment_epoch) || Number(row.driver_id) !== Number(order.driver_id)) return undefined;
+    const failures = Number((await this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', id))?.failures ?? 0);
+    const required = !!Number(row.boarding_required), locked = failures >= eligibilityDefaults.newBoardingChallengeAttempts;
+    const preBoarding = ['assigned','at_pickup'].includes(String(order.status));
+    const shouldShow = viewer.role === 'customer' && viewer.id === Number(order.customer_id) && preBoarding && required && !locked && row.pin_verified_at == null && !!row.boarding_code;
+    return { policy: required ? 'all_trips' : 'not_required', reason: 'provider_setting', required, locked, shouldShow,
+      isVerified: row.pin_verified_at != null ? true : row.pin_issued_at == null ? null : false,
+      pinIssuedAt: row.pin_issued_at == null ? null : Number(row.pin_issued_at), pinRevision: Number(row.pin_revision),
+      ...(shouldShow ? { pin: String(row.boarding_code) } : {}) };
+  }
+  async markVerified(order: Row, next: string) {
+    if (order.service !== 'ride' || next !== 'in_transit' || !(await this.metadataAvailable())) return;
+    await this.db.run('UPDATE ride_lifecycle SET pin_verified_at=? WHERE order_id=? AND assignment_epoch=? AND boarding_required=1', Date.now(), order.id, order.assignment_epoch);
   }
 
   /** A released assignment leaves no arrival, code or attempts for the next driver. */
@@ -85,7 +113,8 @@ export class RideLifecycle {
       order.id, driverId, epoch, required ? newBoardingCode() : null, required ? 1 : 0, now, now);
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, order.id, epoch);
-    return row!;
+    await this.noteIssued(Number(order.id), now);
+    return (await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=?', order.id))!;
   }
 
   async summary(orderId: number, viewer: { id: number; role: string }, order: Row) {
@@ -179,22 +208,34 @@ export class RideLifecycle {
     return { ok: true, orderId, ride: await this.summary(orderId, admin, order) };
   }
 
-  async resetBoarding(admin: Actor, orderId: number, body: Row) {
+  async resetBoarding(admin: Actor, orderId: number, body: Row, negotiated = false) {
     if (admin.role !== 'admin') this.fail(403, 'forbidden');
     await this.requireAvailable();
-    this.fields(body, ['reason']);
+    this.fields(body, ['reason', 'rotate', 'expectedAssignmentEpoch', 'expectedPinRevision']);
     const reason = this.reason(body);
     const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');
     if (order!.service !== 'ride' || !(await this.db.one('SELECT order_id FROM ride_lifecycle WHERE order_id=?', orderId))) this.fail(409, 'boarding_not_required');
+    if (body.rotate !== undefined && body.rotate !== true) this.fail(400, 'invalid_input');
+    if (body.rotate === true) {
+      if (!negotiated || !(await this.metadataAvailable())) this.fail(409, 'boarding_rotation_unavailable');
+      const row = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId);
+      if (!row || !['assigned','at_pickup'].includes(String(order.status)) || !order.driver_id || row.pin_verified_at != null
+        || Number(row.assignment_epoch) !== Number(order.assignment_epoch) || Number(row.driver_id) !== Number(order.driver_id)
+        || !Number.isSafeInteger(body.expectedAssignmentEpoch) || body.expectedAssignmentEpoch !== Number(order.assignment_epoch)
+        || !Number.isSafeInteger(body.expectedPinRevision) || body.expectedPinRevision !== Number(row.pin_revision)) this.fail(409, 'boarding_challenge_changed');
+      let code = newBoardingCode();
+      while (code === row.boarding_code) code = newBoardingCode();
+      await this.db.run('UPDATE ride_lifecycle SET boarding_code=?,pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1,updated_at=? WHERE order_id=?', code, Date.now(), Date.now(), orderId);
+    }
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, orderId, Number(order!.assignment_epoch));
     await this.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'BOARDING_RESET',?,?)",
-      admin.id, orderId, JSON.stringify({ reason }), Date.now());
+      admin.id, orderId, JSON.stringify({ reason, ...(body.rotate === true ? { rotated: true, previousRevision: body.expectedPinRevision, assignmentEpoch: body.expectedAssignmentEpoch } : {}) }), Date.now());
     return { ok: true, orderId };
   }
 
   /** Advance guard for cohort rides; legacy orders have no row and pass through. */
-  async guardAdvance(order: Row, driverId: number, next: string, boardingCode: unknown) {
+  async guardAdvance(order: Row, driverId: number, next: string, boardingCode: unknown, pinRevision?: unknown) {
     if (order.service !== 'ride' || !(await this.available())) return;
     const row = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', order.id);
     if (!row) return;
@@ -207,6 +248,7 @@ export class RideLifecycle {
     if (!current) this.fail(409, 'assignment_changed');
     if (row.arrived_at == null) this.fail(409, 'arrival_required');
     if (next !== 'in_transit' || !Number(row.boarding_required)) return;
+    if (pinRevision !== undefined && (!(await this.metadataAvailable()) || !Number.isSafeInteger(pinRevision) || pinRevision !== Number(row.pin_revision))) this.fail(409, 'boarding_challenge_changed');
     const attempts = await this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=? FOR UPDATE', order.id);
     const failures = Number(attempts?.failures ?? 0);
     if (failures >= eligibilityDefaults.newBoardingChallengeAttempts) this.fail(409, 'boarding_locked');
@@ -229,6 +271,6 @@ export class RideLifecycle {
 export function registerRideLifecycleRoutes(route: Register, service: RideLifecycle) {
   route('POST', '/api/orders/:id/arrive', ctx => service.arrive(ctx.user, Number(ctx.params[0]), ctx.body));
   route('POST', '/api/admin/orders/:id/arrival/override', ctx => service.overrideArrival(ctx.user, Number(ctx.params[0]), ctx.body));
-  route('POST', '/api/admin/orders/:id/boarding-reset', ctx => service.resetBoarding(ctx.user, Number(ctx.params[0]), ctx.body));
+  route('POST', '/api/admin/orders/:id/boarding-reset', ctx => service.resetBoarding(ctx.user, Number(ctx.params[0]), ctx.body, ctx.query?.get('journeyProtocol') === '1'));
 }
 

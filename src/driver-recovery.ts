@@ -23,8 +23,16 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
     if (!valid()) throw new ApiError('session_changed', 401);
     if (!saved && !action) return { state: 'empty' as const };
     if (!saved) {
+      // A definite refusal advances recovery metadata without changing status.
+      // Bind a new intent to a fresh snapshot, never the screen's last poll.
+      const fresh = await api<Order>(`/orders/${order.id}?recoveryProtocol=1&capacityProtocol=1&journeyProtocol=1`);
+      if (!valid()) throw new ApiError('session_changed', 401);
+      if (!fresh.recovery || fresh.driverId !== actorId || fresh.status !== order.status || fresh.assignedAt !== order.assignedAt
+        || fresh.recovery.assignmentEpoch !== order.recovery.assignmentEpoch) throw new ApiError('order_changed', 409);
+      if (payload.code && order.journey?.boarding?.pinRevision !== fresh.journey?.boarding?.pinRevision) throw new ApiError('boarding_challenge_changed', 409);
       const now = Date.now() + serverOffset();
-      saved = newDriverCommand(actorId, order, action!, payload, now, effectiveRuntime(now).values.commandMaxAgeMs);
+      saved = newDriverCommand(actorId, fresh, action!, payload, now, effectiveRuntime(now).values.commandMaxAgeMs);
+      order = fresh;
       await recoveryStorage.write('command', saved, effectiveRuntime(now).values.commandMaxAgeMs);
     }
     const result = await resumeDriverCommand({ read: async () => saved, write: command => recoveryStorage.write('command', command, effectiveRuntime().values.commandMaxAgeMs), valid,

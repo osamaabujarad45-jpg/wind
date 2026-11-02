@@ -7,6 +7,7 @@ import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-cl
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
 import { recoveryStorage } from './recovery-storage';
 import type { OfflineSummary } from './offline-summary';
+import { retryMapProviders } from './map-failures';
 import { configureRuntime, resetRuntime } from './runtime-config';
 import { clientDiagnostics } from './client-diagnostics';
 import { startDiagnosticDelivery } from './diagnostic-client';
@@ -46,15 +47,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [onboarded, setOnboarded] = useState(false);
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
-  const startedAt = useRef(Date.now()), announced = useRef(false);
+  const startedAt = useRef<number | null>(null), announced = useRef(false);
+  useEffect(() => { startedAt.current ??= Date.now(); }, []);
   useEffect(() => {
-    if (ready && !announced.current) { announced.current = true; clientDiagnostics.record('session_ready', { durationMs: Math.min(120_000, Math.max(0, Date.now() - startedAt.current)) }); }
+    if (ready && !announced.current && startedAt.current !== null) { announced.current = true; clientDiagnostics.record('session_ready', { durationMs: Math.min(120_000, Math.max(0, Date.now() - startedAt.current)) }); }
   }, [ready]);
 
   const forget = useCallback(async () => {
     const endedCredential = apiSessionCredential();
     invalidateApiSessionActions();
-    configureRecoveryActor(null); resetRuntime(); setOfflineSummary(null);
+    configureRecoveryActor(null); resetRuntime(); retryMapProviders(); setOfflineSummary(null);
     clientDiagnostics.clear();
     await recoveryStorage.clear().catch(() => {});
     void stopPresence().catch(() => {}); // invalidate local presence before clearing the account
@@ -122,7 +124,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS !== 'web') return;
     const changed = (event: StorageEvent) => {
       if (event.key !== 'token' || event.newValue === apiSessionCredential()) return;
-      invalidateApiSessionActions(); configureRecoveryActor(null); resetRuntime(); clientDiagnostics.clear();
+      invalidateApiSessionActions(); configureRecoveryActor(null); resetRuntime(); retryMapProviders(); clientDiagnostics.clear();
       setMe(null); setOffline(false); setOfflineSummary(null);
       void stopBackgroundLocation().catch(() => {}); void stopPresence().catch(() => {});
       configureApi(event.newValue, forget);
@@ -167,7 +169,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     finishOnboarding: () => { setOnboarded(true); storage.set('onboarded', '1'); },
     setLanguage: next => { setLanguageState(next); storage.set('language', next); },
     signIn: async ({ token, ...data }) => {
-      await recoveryStorage.clear().catch(() => {}); resetRuntime(); setOfflineSummary(null);
+      await recoveryStorage.clear().catch(() => {}); resetRuntime(); retryMapProviders(); setOfflineSummary(null);
       clientDiagnostics.clear();
       void registerNativePush(language);
       configureApi(token, forget);

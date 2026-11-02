@@ -50,8 +50,12 @@ export default function RouteMap(props: RouteMapProps) {
   const [attempt, setAttempt] = useState(0);
   const [moved, setMoved] = useState(false);
   const movedRef = useRef(false);
+  const terminal = useRef(false);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const points = routeFramePoints({ pickup, dropoff, driver, focus: props.focus, road: props.road, approach: props.approach });
-  const roadKey = JSON.stringify([props.road, props.approach]);
+  const roadKey = JSON.stringify([props.road, props.approach, props.stale]);
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   const driverKey = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${props.focus}` : '';
   const latest = useRef({ points, drawLines, drawClosed, drawDriver });
@@ -59,8 +63,9 @@ export default function RouteMap(props: RouteMapProps) {
 
   useEffect(() => {
     let disposed = false;
+    terminal.current = false;
     loadGoogle().then(maps => {
-      if (disposed || !host.current) return;
+      if (disposed || terminal.current || !host.current) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (host.current as unknown as HTMLElement).appendChild(el);
@@ -74,7 +79,11 @@ export default function RouteMap(props: RouteMapProps) {
       s.ls.push(map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); }));
       // Tiles drawn, not map constructed, is the readiness signal: a revoked key or exhausted quota never
       // draws tiles, and the deadline below turns that into the labelled fallback.
-      const tiles = map.addListener('tilesloaded', () => { tiles.remove(); setReady(true); });
+      const stopFollow = () => { s.moved = movedRef.current = true; setMoved(true); };
+      el.addEventListener('wheel', stopFollow, { passive: true });
+      el.addEventListener('touchstart', stopFollow, { passive: true });
+      s.ls.push({ remove: () => { el.removeEventListener('wheel', stopFollow); el.removeEventListener('touchstart', stopFollow); } });
+      const tiles = map.addListener('tilesloaded', () => { if (disposed || terminal.current) return; tiles.remove(); setReady(true); });
       s.ls.push(tiles);
       map.fitBounds(toBounds(maps, fitBounds(latest.current.points)));
       s.road = new maps.Polyline({ map, path: [], strokeColor: palette.forest, strokeOpacity: 0.85, strokeWeight: 4 });
@@ -86,7 +95,7 @@ export default function RouteMap(props: RouteMapProps) {
       for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay]] as const)
         new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
       latest.current.drawLines(); latest.current.drawClosed(); latest.current.drawDriver();
-    }).catch(() => { if (!disposed) setFailed(true); });
+    }).catch(() => { if (!disposed) { terminal.current = true; setFailed(true); } });
     return () => {
       disposed = true;
       const s = state.current;
@@ -101,7 +110,7 @@ export default function RouteMap(props: RouteMapProps) {
 
   useEffect(() => {
     if (ready || failed) return;
-    const timer = setTimeout(() => setFailed(true), 25_000);
+    const timer = setTimeout(() => { terminal.current = true; setFailed(true); }, 25_000);
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
 
@@ -111,16 +120,18 @@ export default function RouteMap(props: RouteMapProps) {
     if (!s.map || moved) return;
     if (driver) {
       s.map.setZoom(FOLLOW_ZOOM);
-      s.map.panTo({ lat: driver.latitude, lng: driver.longitude });
+      const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (still) s.map.setCenter({ lat: driver.latitude, lng: driver.longitude });
+      else s.map.panTo({ lat: driver.latitude, lng: driver.longitude });
     } else s.map.fitBounds(toBounds(s.maps, fitBounds(points)));
-  }, [driverKey, moved]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driverKey, roadKey, moved, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function drawLines() {
     const s = state.current;
     if (!s.maps) return;
     s.road.setPath((props.road ?? []).map(([longitude, latitude]) => ({ lat: latitude, lng: longitude })));
     const shown = s.shown;
-    s.approach.setPath(!props.approach ? [] : [[shown?.longitude ?? null, shown?.latitude ?? null], ...props.approach]
+    s.approach.setPath(!driver || props.stale || !props.approach ? [] : [[shown?.longitude ?? null, shown?.latitude ?? null], ...props.approach]
       .filter((p): p is [number, number] => p[0] != null).map(([longitude, latitude]) => ({ lat: latitude, lng: longitude })));
   }
 
@@ -156,7 +167,8 @@ export default function RouteMap(props: RouteMapProps) {
       const lng = origin.longitude + (target.longitude - origin.longitude) * k;
       s.shown = { latitude: lat, longitude: lng };
       s.driver.setPosition({ lat, lng });
-      s.driver.setVisible(!props.stale);
+      s.driver.setVisible(true);
+      s.driver.setOpacity(props.stale ? 0.45 : 1);
       if (heading != null) {
         s.rotation = s.rotation == null ? heading : s.rotation + shortestTurn(s.rotation, heading) * (still ? 1 : Math.min(1, 16 / 500));
         s.driver.setIcon(symbol(ARROW, palette.blue, { rotation: s.rotation }));
@@ -165,7 +177,7 @@ export default function RouteMap(props: RouteMapProps) {
       s.halo.setRadius(driver.accuracy ?? 0);
       s.halo.set('fillOpacity', props.stale ? 0.05 : 0.12);
       if (props.stale) s.approach.setPath([]); // no road left to follow behind a stale fix
-      else drawLines(); // keep the approach starting under the drawn car
+      else latest.current.drawLines(); // keep the approach starting under the drawn car
       if (k < 1) s.frame = requestAnimationFrame(step);
       else s.frame = undefined;
     };
@@ -179,8 +191,7 @@ export default function RouteMap(props: RouteMapProps) {
   function recenter() {
     const s = state.current;
     setMoved(false); movedRef.current = false; s.moved = false;
-    if (driver) { s.map.setZoom(FOLLOW_ZOOM); s.map.panTo({ lat: driver.latitude, lng: driver.longitude }); }
-    else s.map.fitBounds(toBounds(s.maps, fitBounds(points)));
+    // The moved-state effect performs exactly one camera operation.
   }
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"

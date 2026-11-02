@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { apiSessionRevision, errorCode, request } from './api-client';
@@ -21,7 +21,9 @@ export const SUPPORT_URL = supportNumber ? `https://wa.me/${supportNumber}`
 
 export const api = async <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> => {
   const revision = apiSessionRevision();
-  const data = await request<T>(`${API_URL}/api${path}`, body, method, signal);
+  const optIn = /^\/(?:orders|jobs|offers|route|price|admin\/orders)(?:[/?]|$)/.test(path);
+  const requestPath = optIn && !/[?&]journeyProtocol=/.test(path) ? `${path}${path.includes('?') ? '&' : '?'}journeyProtocol=1` : path;
+  const data = await request<T>(`${API_URL}/api${requestPath}`, body, method, signal);
   if (revision === apiSessionRevision() && /^\/orders(?:\/\d+)?(?:\?|$)/.test(path)) {
     if (Array.isArray(data)) void cacheOrderSummaries(data.map(readOrder));
     else if (data && typeof data === 'object' && 'service' in data && 'id' in data) void cacheOrderSummaries([readOrder(data)]);

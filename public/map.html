@@ -84,7 +84,8 @@ const labelField = language => language === 'ar'
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
 // End of helpers.
 
-const fail = () => send({ type: 'failed' });
+let failed = false;
+const fail = () => { if (!failed) { failed = true; send({ type: 'failed' }); } };
 let timer = setTimeout(fail, 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
@@ -101,10 +102,10 @@ const map = new ml.Map({
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
-map.on('webglcontextlost', () => send({ type: 'failed' })); // a lost GPU context never draws again; the app retries
+map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
 const announceReady = () => {
-  if (!mapLoaded || !baseTileLoaded || announcedReady) return;
+  if (failed || !mapLoaded || !baseTileLoaded || announcedReady) return;
   announcedReady = true;
   clearTimeout(timer);
   document.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
@@ -117,9 +118,9 @@ map.on('sourcedata', e => {
 });
 map.once('load', () => { mapLoaded = true; announceReady(); });
 
-const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
+const state = { driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
-window.wind = update => { Object.assign(state, update); if (ready) draw(); fade(); };
+window.wind = update => { if (failed) return; Object.assign(state, update); if (ready) draw(); fade(); };
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
 const fade = () => {

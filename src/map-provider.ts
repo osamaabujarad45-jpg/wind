@@ -5,7 +5,7 @@
 // and anything unknown fails closed: pins stay, no line, never an unlabelled guess.
 
 import { effectiveRuntime } from './runtime-config.ts';
-import { failedRenderers } from './map-failures.ts';
+import { failedRenderers, mapGeneration } from './map-failures.ts';
 export type MapRenderer = 'maplibre' | 'apple' | 'google';
 export type RouteProvider = 'osrm' | 'google';
 
@@ -63,18 +63,18 @@ export function resolveMapProvider(platform: string, baked?: BakedRenderers | nu
  * client ships, never to a renderer that may be absent — a kill switch cannot enable a renderer the binary
  * does not contain.
  */
-export function selectRenderer(platform: string, baked?: BakedRenderers | null, preference?: string): MapRenderer {
+export function selectRenderer(platform: string, baked?: BakedRenderers | null, preference?: string): MapRenderer | null {
   const resolved = effectiveMapProvider(platform, baked, preference);
   if (resolved.error === 'map_provider_unknown') console.warn(resolved.error);
-  return resolved.renderer ?? baselineRenderer(platform);
+  return resolved.renderer;
 }
 
 /** A single session choice is shared by route requests and map presentation. Public maps stay baseline-only. */
 export function effectiveMapProvider(platform: string, baked?: BakedRenderers | null, preference?: string, forceBaseline = false) {
   const configuration = effectiveRuntime();
-  const key = `${platform.slice(0,30)}:${preference ?? 'configured'}:${configuration.revision}:${forceBaseline ? 'public' : 'private'}`;
+  const key = `${platform.slice(0,30)}:${preference ?? 'configured'}:${configuration.revision}:${forceBaseline ? 'public' : 'private'}:${baked?.[platform as keyof BakedRenderers] === true}`;
   const policy = forceBaseline ? { initialMapProvider: 'baseline', fallbackMapProviders: [], missingProviderDefault: 'baseline' } : configuration.mapProviders;
-  return { key, ...resolveMapProvider(platform, baked, { configuration: policy, preference: forceBaseline ? 'baseline' : preference, failed: failedRenderers(key) }) };
+  return { key, generation: mapGeneration(key), ...resolveMapProvider(platform, baked, { configuration: policy, preference: forceBaseline ? 'baseline' : preference, failed: failedRenderers(key) }) };
 }
 
 /**
@@ -94,17 +94,18 @@ export function routeProvider(value: unknown): string {
  * May this provider's geometry be drawn on this renderer? Baseline OSRM renders everywhere; Google
  * content only on a Google renderer; unknown provenance nowhere.
  */
-export function canShowOnRenderer(provider: string, renderer: MapRenderer): boolean {
+export function canShowOnRenderer(provider: string, renderer: MapRenderer | null): boolean {
+  if (!renderer) return false;
   if (provider === 'google') return renderer === 'google';
   return provider === 'osrm';
 }
 
 /** What a kept route/ETA belongs to: order, driver, stop and provider — any change must drop the cached state. */
 export const approachKey = (
-  order: { id?: number | string; driverId?: number | null },
+  order: { id?: number | string; driverId?: number | null; status?: string; assignedAt?: number | null; recovery?: { assignmentEpoch: number | null } },
   target: { latitude: number; longitude: number } | undefined,
   provider: string,
-) => `${order.id ?? ''}:${order.driverId ?? ''}:${target ? `${target.latitude},${target.longitude}` : ''}:${provider}`;
+) => `${order.id ?? ''}:${order.driverId ?? ''}:${order.status ?? ''}:${order.assignedAt ?? ''}:${order.recovery?.assignmentEpoch ?? ''}:${target ? `${target.latitude},${target.longitude}` : ''}:${provider}`;
 
 /**
  * The one Google call a booking screen makes (T13): a display route for the current pin pair, billed only

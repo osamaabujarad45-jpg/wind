@@ -1,11 +1,12 @@
 import { validateApiResponse } from './wire-contracts.ts';
 import { clientDiagnostics } from './client-diagnostics.ts';
-import { noteServerDate, serverOffset } from './api-clock.ts';
+import { noteResponseClock, noteServerDate, serverOffset } from './api-clock.ts';
 export { noteServerDate, serverOffset } from './api-clock.ts';
 
 export class ApiError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number) { super(message); this.status = status; }
+  readonly offerFailure?: import('./journey-contracts.ts').OfferFailure;
+  constructor(message: string, status?: number, failure?: import('./journey-contracts.ts').OfferFailure) { super(message); this.status = status; this.offerFailure = failure; }
 }
 
 let token: string | null = null;
@@ -24,7 +25,7 @@ export function configureApi(nextToken: string | null, unauthorized: () => void)
 
 export async function request<T>(url: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> {
   const requestToken = token, requestRevision = sessionRevision, unauthorized = onUnauthorized;
-  const startedAt = Date.now();
+  const startedAt = Date.now(), startedMonotonic = performance.now();
   let responseStatus: number | undefined, succeeded = false;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -49,9 +50,16 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
     if (requestToken !== token || requestRevision !== sessionRevision) throw new ApiError('session_changed', 401);
     noteServerDate(res.headers.get('date'), receivedAt, Math.max(0, receivedAt - startedAt));
     if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();
-    if (!res.ok) throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status);
+    if (!res.ok) {
+      const failure = data?.offerFailure;
+      const valid = failure?.schemaVersion === 1 && ['accept','decline'].includes(failure.verb)
+        && failure.code === data?.error && ['invalid','authentication','unavailable','conflict','transient'].includes(failure.category)
+        && ['review','sign_in','stop','refresh','reconcile'].includes(failure.recovery);
+      throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined);
+    }
     try { validateApiResponse(url, data, method ?? (body ? 'POST' : 'GET'), receivedAt + serverOffset()); }
     catch { throw new ApiError('invalid_response', 502); }
+    noteResponseClock(data, Math.max(0, performance.now() - startedMonotonic));
     succeeded = true;
     return data as T;
   } finally {

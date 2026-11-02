@@ -1,6 +1,7 @@
 import { isCity, services, type Order, type PriceQuote } from './model.ts';
 import { readRuntimeConfiguration } from './runtime-config.ts';
 import type { DriverReceipt } from './driver-command.ts';
+import type { Journey, JourneyEta } from './journey-contracts.ts';
 type RecordValue = Record<string, any>;
 const object = (value: unknown): value is RecordValue => !!value && typeof value === 'object' && !Array.isArray(value);
 const integer = (n: unknown, min = 0): n is number => Number.isSafeInteger(n) && (n as number) >= min;
@@ -9,6 +10,34 @@ const nullableTime = (n: unknown) => n === null || integer(n);
 const uuid = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 const statuses = ['searching','assigned','at_pickup','in_transit','completed','cancelled','on_hold','returning','returned'];
 const requireContract = (condition: unknown) => { if (!condition) throw new Error('invalid_response'); };
+
+export function readEta(value: unknown): JourneyEta {
+  requireContract(object(value)); const e = value as RecordValue;
+  requireContract(e.schemaVersion === 1 && integer(e.minSeconds) && integer(e.maxSeconds) && e.maxSeconds >= e.minSeconds
+    && (e.rawSeconds === null || integer(e.rawSeconds) && e.rawSeconds >= e.minSeconds && e.rawSeconds <= e.maxSeconds)
+    && ['unknown','low','medium','high'].includes(e.accuracy) && ['heuristic','quote_band','straight_line'].includes(e.basis)
+    && integer(e.serverTime) && object(e.validity) && integer(e.validity.issuedAt) && integer(e.validity.expiresAt)
+    && e.validity.expiresAt > e.validity.issuedAt && integer(e.validity.expiresInSeconds));
+  return e as JourneyEta;
+}
+export function readJourney(value: unknown): Journey {
+  requireContract(object(value)); const j = value as RecordValue;
+  requireContract(j.schemaVersion === 1 && integer(j.serverTime));
+  if (j.offer !== undefined) { const o = j.offer; requireContract(object(o) && uuid(o.offerId) && integer(o.issuedAt)
+    && integer(o.expiresAt) && o.expiresAt > o.issuedAt && finite(o.acceptWindowSeconds) && o.acceptWindowSeconds === (o.expiresAt - o.issuedAt) / 1000);
+    if (o.eta !== undefined) readEta(o.eta); }
+  if (j.boarding !== undefined) { const b = j.boarding; requireContract(object(b) && ['all_trips','not_required','unknown'].includes(b.policy)
+    && b.reason === 'provider_setting' && ['required','locked','shouldShow'].every(k => typeof b[k] === 'boolean')
+    && (b.isVerified === null || typeof b.isVerified === 'boolean') && nullableTime(b.pinIssuedAt) && integer(b.pinRevision)
+    && (b.shouldShow ? b.required && !b.locked && b.isVerified !== true && typeof b.pin === 'string' && /^\d{4}$/.test(b.pin) : b.pin === undefined)); }
+  if (j.waiting !== undefined) requireContract(object(j.waiting) && nullableTime(j.waiting.waitingEndsAt)
+    && ['not_arrived','waiting','elapsed','ended'].includes(j.waiting.state));
+  if (j.lastFareChange !== undefined) { const f = j.lastFareChange;
+    requireContract(object(f) && f.schemaVersion === 1 && uuid(f.changeId) && integer(f.occurredAt) && f.currency === 'ILS' && f.reason === 'destination_changed'
+      && [f.before,f.after].every(a => object(a) && integer(a.grossMinor) && integer(a.discountMinor) && integer(a.dueMinor)
+        && a.discountMinor <= a.grossMinor && a.dueMinor === a.grossMinor - a.discountMinor)); }
+  return j as Journey;
+}
 
 export function readDriverReceipt(value: unknown): DriverReceipt {
   requireContract(object(value)); const r = value as RecordValue;
@@ -36,6 +65,7 @@ export function readOrder(value: unknown): Order {
   if (o.ride != null) requireContract(object(o.ride) && nullableTime(o.ride.arrivedAt) && nullableTime(o.ride.graceUntil)
     && typeof o.ride.boardingRequired === 'boolean' && typeof o.ride.boardingLocked === 'boolean'
     && (o.ride.boardingCode === undefined || typeof o.ride.boardingCode === 'string' && /^\d{4}$/.test(o.ride.boardingCode)));
+  if (o.journey !== undefined) readJourney(o.journey);
   if (o.protocol !== undefined) {
     const p = o.protocol;
     requireContract(object(p) && integer(p.version,1) && integer(p.assignmentEpoch) && integer(p.nextCursor) && integer(p.serverTime)
@@ -55,12 +85,14 @@ export function readPriceQuote(value: unknown): PriceQuote {
   requireContract(finite(q.price) && finite(q.km) && finite(q.minutes) && finite(q.delayMinutes) && typeof q.estimated === 'boolean');
   if (q.quoteId !== undefined) requireContract(uuid(q.quoteId) && integer(q.quoteExpiresAt) && q.currency === 'ILS' && integer(q.priceMinor) && integer(q.commissionMinor));
   for (const key of ['slow','closed','avoids']) requireContract(Array.isArray(q[key]) && q[key].every((item: unknown) => typeof item === 'string'));
+  if (q.eta !== undefined) readEta(q.eta);
   return q as PriceQuote;
 }
 
 /** Validate the high-value interfaces we use; unknown additive fields remain compatible. */
 export function validateApiResponse(url: string, value: unknown, method: string, now: number) {
   const path = new URL(url).pathname;
+  if (/\/api\/(?:route(?:\/google)?|track\/[^/]+\/eta)$/.test(path) && object(value) && value.eta !== undefined) readEta(value.eta);
   if (/\/api\/orders\/\d+\/actions\//.test(path)) { readDriverReceipt(value); return; }
   if (/\/api\/orders\/commands\//.test(path)) { requireContract(object(value) && (value.orderId === null || integer(value.orderId,1))); return; }
   if (path.endsWith('/api/runtime/configuration')) { readRuntimeConfiguration(value, now); return; }
@@ -78,7 +110,10 @@ export function validateApiResponse(url: string, value: unknown, method: string,
       && Array.isArray((value as RecordValue).capabilities.enabledServices) && (value as RecordValue).capabilities.enabledServices.every((s: unknown) => services.includes(s as 'parcel')));
     return;
   }
-  if (method === 'GET' && /\/api\/orders(?:\/\d+)?$/.test(path)) {
+  if (method === 'GET' && path.endsWith('/api/jobs')) {
+    if (Array.isArray(value)) value.forEach(readOrder);
+    else { requireContract(object(value) && value.version === 1 && Array.isArray(value.jobs)); (value as RecordValue).jobs.forEach(readOrder); }
+  } else if (method === 'GET' && /\/api\/orders(?:\/\d+)?$/.test(path)) {
     if (Array.isArray(value)) value.forEach(readOrder); else readOrder(value);
   } else if (/\/api\/(?:orders|jobs)(?:\/|$)/.test(path) && object(value) && value.id !== undefined && value.service !== undefined) readOrder(value);
 }

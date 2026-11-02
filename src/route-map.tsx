@@ -3,13 +3,11 @@
 // A Google-keyed build (extra.googleMaps.web) that the user opted into draws with google-map.web.tsx instead.
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.web';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import { bearing, ease, farJump, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn } from './map-math';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
+import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
@@ -63,16 +61,16 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
   useEffect(() => { first.current = { points, onReady, padding, picker }; });
   useEffect(() => {
     let disposed = false, created: MlMap | undefined, container: HTMLElement | undefined, observer: ResizeObserver | undefined;
-    let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
+    let mapLoaded = false, baseTileLoaded = false, announcedReady = false, terminalFailure = false;
     const run = `${language}:${attempt}`;
     const patch = (value: { map?: MlMap; failed?: boolean; loaded?: boolean }) => {
       if (!disposed) setResult(previous => ({ ...(previous?.run === run && previous), run, ...value }));
     };
-    const fail = () => patch({ failed: true });
+    const fail = () => { if (disposed || terminalFailure) return; terminalFailure = true; patch({ failed: true }); };
     // A parsed style is not yet a usable map: workers/tiles may still fail. Leave the host mounted so a slow load can recover.
     const timer = setTimeout(fail, 25_000);
     loadMap().then(ml => {
-      if (disposed || !host.current) return;
+      if (disposed || terminalFailure || !host.current) return;
       // Our own node: MapLibre's `.maplibregl-map { position: relative }` would collapse a React Native Web view.
       container = document.createElement('div');
       container.style.cssText = 'position:absolute;inset:0';
@@ -85,7 +83,7 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
       });
       created.touchZoomRotate.disableRotation();
       const announceReady = () => {
-        if (disposed || !mapLoaded || !baseTileLoaded || announcedReady) return;
+        if (disposed || terminalFailure || !mapLoaded || !baseTileLoaded || announcedReady) return;
         announcedReady = true;
         clearTimeout(timer);
         patch({ failed: false, loaded: true });
@@ -151,15 +149,14 @@ const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
+  return <MapProviderBoundary platform="web" route={props} render={RouteAdapter} />;
+}
+function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
+  const props = route!;
   const { pickup: a, dropoff: b } = props;
-  const [mode] = useMapMode();
-  // T06/T12/T15: the renderer must be one this bundle actually contains — the capability is baked at build
-  // time, so a mode change or kill switch can never select an absent renderer. A forced baseline (public
-  // tracking) draws MapLibre even for a Google-keyed build.
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
-  return <LiveMap key={key} {...props} />;
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
+  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
+    : <LiveMap key={key} {...props} onFail={attempt.onFail} />;
 }
 
 function LiveMap(props: RouteMapProps) {
@@ -170,6 +167,8 @@ function LiveMap(props: RouteMapProps) {
     at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean; moved?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
   const padding = Math.round(Math.min(56, height / 5)); // markers clear of the edges without zooming a short map out
   const { map, failed, loaded, retry } = useMap(host, points, language, { padding }, (m, ml) => {
     // A retried or relabelled map is new: markers of the old one went with it, and its camera follows the route again.
@@ -191,6 +190,7 @@ function LiveMap(props: RouteMapProps) {
 
   // Road lines arrive after the map (and the driver leg changes as the car moves).
   const { road, approach } = props;
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const lineKey = JSON.stringify([road, approach]); // every point: a reroute can keep its length and ends
   useEffect(() => {
     if (!map) return;
@@ -300,7 +300,8 @@ function LiveMap(props: RouteMapProps) {
 
   function recenter() {
     setMoved(false);
-    if (driver) map?.easeTo({ center: [driver.longitude, driver.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: 600 });
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (driver) map?.easeTo({ center: [driver.longitude, driver.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still ? 0 : 600 });
     else map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
   }
 
@@ -326,10 +327,15 @@ function LiveMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
 export function PinMap(props: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('web', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
-  return <MapLibrePin {...props} />;
+  return <MapProviderBoundary platform="web" pin={props} render={PinAdapter} />;
 }
+function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
+  const props = pin!;
+  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
+}
+
 function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);

@@ -13,6 +13,7 @@ import { PhoneIdentity, registerPhoneRoutes } from './domain/phone-identity.ts';
 import { Eligibility, measuredCapability, measuredScopes, registerEligibilityRoutes } from './domain/eligibility.ts';
 import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
+import { etaProjection, journeyOrder, offerFailure } from './domain/journey.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
@@ -1637,6 +1638,7 @@ async function recoveryMetadata(id: number) {
 }
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
   const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user);
+  if ('journey' in order) return order;
   const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
   if (query.get('recoveryProtocol') !== '1') return result;
   return { ...result, recovery: await recoveryMetadata(order.id) };
@@ -2143,7 +2145,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
   (await safetyFree(r.id));
   const now = Date.now();
-  await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code);
+  await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
   if (next === 'completed' || next === 'returned') {
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
@@ -2161,6 +2163,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
     else (await rewardReferral(r.id, now));
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
+  await rideLifecycle.markVerified(r, next);
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
 }
@@ -2263,7 +2266,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   if (failure) { await flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
-  return result;
+  return input.recoveryProtocol === 1 && result ? { ...result, recovery: await recoveryMetadata(id) } : result;
 }
 
 async function activeGpsAuthority(user: User, req: IncomingMessage) {
@@ -2464,9 +2467,9 @@ let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 
 const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
 registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
   reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm' };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
-const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
+const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number; calculatedAt?: number }>(); // least recently used evicted
 let roadCachePoints = 0;
 const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-geometry routes would be ~500 MB
 // Calibrated on Route 60 (2026-10-05): at 150 m a road 234 m away counted as clear yet may be the same junction; 250 m
@@ -2520,9 +2523,12 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
   const { closed, slow } = checkpoints;
   const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `c${c.id}@${at(c.point)}`).join(',')}|${slow.map(c => `s${c.id}@${at(c.point)}`).join(',')}`;
   let found = roadCache.get(key);
+  if (found?.calculatedAt !== undefined && Date.now() >= found.calculatedAt + 30_000) {
+    roadCachePoints -= found.points; roadCache.delete(key); found = undefined;
+  }
   if (found) { roadCache.delete(key); roadCache.set(key, found); } // recently used stays: the trip line outlives driver churn
   else {
-    const promise = (async () => {
+    const promise: Promise<RoadRoute> = (async () => {
       const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
       if (!routes.length) throw new HttpError(404, 'no_route');
       const crossed = (r: OsrmRoute) => closed.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
@@ -2549,16 +2555,16 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         chosen = bestRoute(options, delay) ?? fastest;
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
-      return { km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
+      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
-    })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    })().catch(error => { if (roadCache.get(key)?.promise === promise) roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
     found = { promise, points: 0 };
     roadCache.set(key, found);
     const entry = found;
     found.promise.then(route => { // the geometry is only known once OSRM answered: count it, then trim the cache
       if (roadCache.get(key) !== entry) return; // evicted while it was pending: it counts for nothing
-      entry.points = route.line.length;
+      entry.points = route.line.length; entry.calculatedAt = route.calculatedAt;
       roadCachePoints += route.line.length;
       for (const [old, cached] of roadCache) {
         if (roadCachePoints <= ROAD_CACHE_POINTS) break;
@@ -2578,7 +2584,8 @@ route('GET', '/api/route', async ({ user, query }) => {
   (await limit(identityKey('route', user.id), 120, 10 * 60_000));
   const heading = query.get('heading') == null ? null : Number(query.get('heading'));
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
-  return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
+  const { calculatedAt, ...result } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  return query.get('journeyProtocol') === '1' ? { ...result, eta: etaProjection(result.minutes * 60, calculatedAt, calculatedAt + 30_000) } : result;
 });
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
@@ -2620,6 +2627,12 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const current = await trackView(token);
   if (current.row.pickup_city !== r.pickup_city || current.row.dropoff_city !== r.dropoff_city) return { minutes: null };
   if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
+  if (query.get('journeyProtocol') === '1') {
+    const now = Date.now(), fixExpiry = Number(r.loc_at) + 30_000;
+    const valid = current.row.loc_at === r.loc_at && !current.row.shared_run && now < fixExpiry && Number(r.loc_at) <= now;
+    const eta = valid && approach ? etaProjection(approach.minutes * 60, approach.calculatedAt, Math.min(approach.calculatedAt + 30_000, fixExpiry), now) : undefined;
+    return { minutes: eta ? approach!.minutes : null, ...(eta ? { eta, approach: approach!.line } : {}), delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
+  }
   return approach ? { minutes: approach.minutes, delayed, approach: approach.line, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at }
     : { minutes: null, delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
 }, true);
@@ -3022,8 +3035,11 @@ async function orderProtocol(user: User, id: number, query: URLSearchParams) {
     const after = Number(query.get('after') ?? 0);
     if (!Number.isSafeInteger(after) || after < 0) fail(400, 'invalid_cursor');
     const events = await all('SELECT * FROM domain_events WHERE order_id=? AND sequence>? ORDER BY sequence LIMIT 100', id, after);
-    return { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
-      events: events.map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
+    const snapshot = { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
+      events: events.filter(event => query.get('journeyProtocol') === '1' || event.type !== 'fare.changed').map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
+    if (query.get('journeyProtocol') !== '1') return snapshot;
+    const measured = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([snapshot]))[0] : snapshot;
+    return journeyOrder(persistence, rideLifecycle, { ...measured, ...(query.get('recoveryProtocol') === '1' ? { recovery: await recoveryMetadata(id) } : {}) }, user);
   }, { commandId: randomUUID() });
 }
 
@@ -3044,14 +3060,14 @@ async function readBody(req: IncomingMessage): Promise<Row> {
   catch { return fail(400, 'invalid_json'); }
 }
 
-async function authenticate(req: IncomingMessage): Promise<User | null> {
+async function authenticate(req: IncomingMessage, touch = true): Promise<User | null> {
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
   if (!token) return null;
   const now = Date.now();
   const r = (await one('SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?',
     sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
   if (!r || r.status === 'blocked' || !contactAllowed(r) || (production && !(selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at))) return null;
-  if (now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
+  if (touch && now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
     void run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', now, sha(token)).catch(() => {});
   return (await toUser(r));
 }
@@ -3148,12 +3164,38 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       });
       if (failure) throw failure;
     } else payload = await invoke();
+    if (url.searchParams.get('journeyProtocol') === '1' && user && /^\/api\/(orders|jobs|admin\/orders)(?:\/|$)/.test(url.pathname)) {
+      const decorate = async (value: unknown) => {
+        if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
+        if ('protocol' in value && 'journey' in value) return value; // already projected in the cursor's snapshot
+        const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
+        const authorized = await getOrder(Number((value as Order).id), viewer);
+        const recovery = 'recovery' in value ? { recovery: await recoveryMetadata(authorized.id) } : {};
+        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, ...recovery }, viewer);
+      };
+      payload = await persistence.transaction(async () => {
+        if (persistence.backend === 'postgres') await run('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        if (Array.isArray(payload)) return Promise.all(payload.map(decorate));
+        if (payload && typeof payload === 'object' && 'jobs' in payload && Array.isArray((payload as Row).jobs))
+          return { ...payload, jobs: await Promise.all((payload as Row).jobs.map(decorate)) };
+        return decorate(payload);
+      }, { commandId: randomUUID() });
+    }
+    if (url.searchParams.get('journeyProtocol') === '1' && url.pathname === '/api/price' && payload && typeof payload === 'object' && 'quoteId' in payload) {
+      const record = await one('SELECT * FROM quotes WHERE id=?::uuid', (payload as Row).quoteId);
+      if (record) payload = { ...payload, eta: etaProjection(null, Number(record.created_at), Number(record.expires_at), Date.now(), 'quote_band', [Number(record.eta_min_seconds), Number(record.eta_max_seconds)]) };
+    }
     });
     if (res.headersSent) return;
   } catch (error) {
 
     status = error instanceof HttpError ? error.status : databaseUnavailable(error) ? 503 : 500;
-    payload = { error: error instanceof HttpError ? error.message : 'server_error' };
+    const code = error instanceof HttpError ? error.message : 'server_error';
+    payload = { error: code };
+    const failedUrl = new URL(req.url ?? '/', 'http://localhost');
+    const verb = /^\/api\/jobs\/\d+\/accept$/.test(failedUrl.pathname) ? 'accept'
+      : /^\/api\/offers\/[a-f0-9-]+\/decline$/i.test(failedUrl.pathname) ? 'decline' : undefined;
+    if (verb && failedUrl.searchParams.get('journeyProtocol') === '1') payload = { error: code, offerFailure: offerFailure(verb, code, status) };
     if (status >= 500 && !(error instanceof HttpError && ['route_unavailable', 'email_unavailable'].includes(error.message)))
       logServerError('http_request_failed', error, { correlationId, httpStatus: status });
   }

@@ -6,11 +6,11 @@ import { boardingEnabled } from './ride-lifecycle.ts';
 import { dispatchEnabled } from './eligibility.ts';
 import { readDiagnostics } from '../../src/client-diagnostics.ts';
 
-const migrations = [3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,25,26,27,28];
+const migrations = [3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,25,26,27,28,29];
 export const capabilityMigrations = {
   durableCommands: 4, measuredEligibility: 8, activeGps: 10, lockedQuotes: 11,
   nativePush: 12, dispatch: 13, boarding: 14, declaredScope: 15,
-  ledger: 16, payments: 25, operations: 23, freightCrew: 28,
+  ledger: 16, payments: 25, operations: 23, freightCrew: 28, boardingMetadata: 29,
 } as const;
 export type RuntimeCapability = keyof typeof capabilityMigrations;
 type Register = (method: string, path: string, handler: (ctx: { user: User; body: Record<string, unknown> }) => Promise<unknown>) => unknown;
@@ -20,7 +20,7 @@ export function capabilityState(applied: readonly number[], env: NodeJS.ProcessE
   const has = new Set(applied);
   return Object.fromEntries(Object.entries(capabilityMigrations).map(([name, version]) => {
     const missing = migrations.filter(v => v <= version && !has.has(v));
-    const enabled = name === 'dispatch' ? dispatchEnabled(env) : name === 'boarding' ? boardingEnabled(env)
+    const enabled = name === 'dispatch' ? dispatchEnabled(env) : (name === 'boarding' || name === 'boardingMetadata') ? boardingEnabled(env)
       : name === 'activeGps' ? env.NODE_ENV === 'test' && env.WIND_TEST_ACTIVE_GPS === '1' : true;
     return [name, { schemaCompatible: postgres && missing.length === 0, enabled,
       state: !postgres || missing.length ? 'unavailable' : !enabled ? 'disabled' : 'configured',
