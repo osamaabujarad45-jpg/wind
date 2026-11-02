@@ -5,6 +5,8 @@ import { Linking, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApi, useLiveFix } from '../../api';
 import { locationState, newerFix, publicFixAgeMs, publicFixClock, retainedPublicFix } from '../../location-state';
+import { deadlineSeconds } from '../../api-clock';
+import type { JourneyEta } from '../../journey-contracts';
 import { etaRange, fromDriver } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
@@ -40,7 +42,7 @@ export default function TrackScreen() {
   // A reassignment invalidates the snapshot's driver: hide the old car and name
   // even while the refresh that brings the new driver is failing.
   const data = polled && { ...polled, ...(live.driverChanged ? { driver: null, driverLocation: null } : { driverLocation: shown }) };
-  const etaApi = useApi<{ minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null; fixUpdatedAt?: number }>(valid && shown && assignment && polled && !live.driverChanged ? `/track/${token}/eta?driver=${encodeURIComponent(assignment)}&status=${encodeURIComponent(polled.status)}` : null, 15_000);
+  const etaApi = useApi<{ eta?: JourneyEta; minutes: number | null; sharedRun?: boolean; delayed?: boolean; approach?: [number, number][]; road?: [number, number][] | null; fixUpdatedAt?: number }>(valid && shown && assignment && polled && !live.driverChanged ? `/track/${token}/eta?journeyProtocol=1&driver=${encodeURIComponent(assignment)}&status=${encodeURIComponent(polled.status)}` : null, 15_000);
   // useApi keeps the last answer when a refresh fails: show no estimate (or approach line) rather than an old one.
   // The estimate starts from the driver's position: past 30 s it describes a place the driver has left.
   useEffect(() => { const timer = setInterval(() => setNow({ wall: Date.now(), monotonic: performance.now() }), 10_000); return () => clearInterval(timer); }, []);
@@ -49,7 +51,9 @@ export default function TrackScreen() {
     updatedAt: etaData.fixUpdatedAt,
     ageSeconds: candidate ? Math.floor(Math.max(0, fixAge + candidate.updatedAt - etaData.fixUpdatedAt) / 1000) : undefined,
   }, now)?.ageSeconds ?? Infinity) <= 30;
-  const eta = etaFresh ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
+  // The approach line is part of the same calculation: both disappear when it expires, not only when the fix is old.
+  const etaCurrent = etaFresh && (!etaData?.eta || deadlineSeconds(etaData.eta.validity.expiresAt, etaData.eta, now) > 0);
+  const eta = etaCurrent ? etaData?.minutes : undefined, delayed = !!etaData?.delayed;
 
   // A failed poll must not leave revoked tracking or stale GPS visible — but it must not blank the page either:
   // the last answer stays with a note that the updates are paused.
@@ -70,7 +74,7 @@ export default function TrackScreen() {
       {/* Anonymous tracking draws the free baseline only: a Google-keyed build still makes zero paid calls here (T15). */}
       <RouteMap forceBaseline pickup={from} dropoff={to} focus={toPickup ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
         driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={location ? 300 : undefined}
-        stale={!!freshness?.stale} approach={location && etaFresh && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
+        stale={!!freshness?.stale} approach={location && etaCurrent && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
     </View>
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
@@ -79,7 +83,7 @@ export default function TrackScreen() {
       </Row>
       <RouteLine from={from[language]} to={to[language]} ride={data.service === 'ride'} />
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
-      {location && !freshness?.stale && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaRange(eta)} now={now} slow={delayed} toPickup={toPickup} /></View>}
+      {location && !freshness?.stale && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaData?.eta ? [Math.ceil(etaData.eta.minSeconds / 60), Math.ceil(etaData.eta.maxSeconds / 60)] : etaRange(eta)} now={now} slow={delayed} toPickup={toPickup} /></View>}
       {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
       {location && !freshness?.stale && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6 }}>{fill(freshness?.stale ? c.lastDriver : c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}

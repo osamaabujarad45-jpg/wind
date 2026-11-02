@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
-import { bearing, glider } from './map-math';
+import { bearing, glider, routeFramePoints } from './map-math';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
 import { MapProviderBoundary } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
@@ -17,18 +17,13 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
-  const { pickup: a, dropoff: b } = props;
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  return <MapProviderBoundary platform="ios" route={props} render={attempt => attempt.renderer === 'google'
-    ? <GoogleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />
-    : <AppleRouteMap key={`${key}:${attempt.key}`} {...props} onFail={attempt.onFail} />} />;
+  return <MapProviderBoundary platform="ios" route={props} google={GoogleRouteMap} baseline={AppleRouteMap} />;
 }
 
 function AppleRouteMap(props: RouteMapProps) {
-  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
+  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
   const { c } = useCopy();
-  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
-  const points = driver ? [driver, ...stops] : stops;
+  const points = routeFramePoints(props);
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
   const region = {
     latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
@@ -47,8 +42,7 @@ function AppleRouteMap(props: RouteMapProps) {
   useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
-  // ponytail: a pan stops the follow camera; a pinch does not, because iOS reports the *fitted* region and no
-  // zoom comparison can tell the app's own animation from the user's. The next fix zooms back, like before.
+  // A physical touch, including pinch, stops follow; programmatic animations never do.
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!driver || moved || failed) return;
@@ -58,7 +52,7 @@ function AppleRouteMap(props: RouteMapProps) {
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
     return () => sub.remove();
   }, [failed]);
   // A map that never becomes usable shows the diagram with a Retry, like web and Android (never a blank box).
@@ -70,15 +64,14 @@ function AppleRouteMap(props: RouteMapProps) {
   if (failed) return <View style={{ height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}
-    onRegionChangeComplete={r => { if (driver && Math.abs(r.latitude - driver.latitude) + Math.abs(r.longitude - driver.longitude) > 0.004) setMoved(true); }}>
+    onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -142,11 +135,7 @@ const styles = StyleSheet.create({
 });
 
 export function PinMap(props: PinMapProps) {
-  return <MapProviderBoundary platform="ios" pin={props} render={attempt => {
-    const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
-      onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
-    return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <ApplePin key={attempt.key} {...guarded} />;
-  }} />;
+  return <MapProviderBoundary platform="ios" pin={props} google={GooglePinMap} baseline={ApplePin} />;
 }
 
 function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
@@ -165,7 +154,7 @@ function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapPro
     return () => clearTimeout(timer);
   }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
-    <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+    <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>
     </Pressable>
   </View>;

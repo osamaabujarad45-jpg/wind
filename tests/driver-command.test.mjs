@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand } from '../src/driver-command.ts';
+import { advanceRequest, newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand } from '../src/driver-command.ts';
 const order = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
 const command = newDriverCommand(9, order, 'advance', { code: '1234' }, 1000, 60_000);
 let saved = structuredClone(command), sends = 0, valid = true;
@@ -26,6 +26,13 @@ valid = true; io.receipt = async () => ({ ...receipt('applied'), requestId: 'ano
 await assert.rejects(resumeDriverCommand(io, 9, order), /invalid_response/);
 assert.equal(driverCommandBody(command).requestId, command.requestId);
 assert.equal(driverCommandBody(command).expectedAssignmentEpoch, 2);
+const boardingCommand = newDriverCommand(9, { ...order, journey: { boarding: { pinRevision: 3 } } }, 'advance', {code:'1234'}, 1000, 60_000);
+assert.equal(driverCommandBody(boardingCommand).expectedPinRevision,3,'protected proof intent binds to the reviewed challenge');
 assert.throws(() => readDriverCommand({ ...command, payload: { code: 'not-a-pin' } }));
 assert.throws(() => readDriverCommand({ ...command, expiresAt: command.createdAt }));
-console.log('Driver command process replacement, exact replay, proof-once receipts, assignment fences and session invalidation passed');
+const proof = { expectedStatus: 'at_pickup', code: '1234', expectedPinRevision: 1 };
+const held = advanceRequest(null, 5, proof, () => 'first');
+assert.equal(advanceRequest(held, 5, { ...proof }, () => 'second'), held, 'a lost acknowledgement replays the same advance');
+assert.equal(advanceRequest(held, 5, { ...proof, expectedPinRevision: 2 }, () => 'second').body.requestId, 'second', 'a rotated PIN is a new advance');
+assert.equal(advanceRequest(held, 5, { ...proof, code: '5678' }, () => 'second').body.code, '5678', 'a retyped code is sent, not the held one');
+console.log('Driver command process replacement, exact replay, proof-once receipts, assignment fences, session invalidation and screen advance replay passed');

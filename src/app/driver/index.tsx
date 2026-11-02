@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { api, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
+import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
@@ -77,9 +77,20 @@ export default function Jobs() {
       haptic.success();
       router.push(`/order/${order.id}`);
     } catch (e) {
+      if (!current()) return;
+      const failure = e instanceof ApiError ? e.offerFailure : undefined;
+      if (failure?.recovery === 'reconcile' || e instanceof ApiError && !e.status) {
+        try {
+          const fresh = await api<Order>(`/orders/${order.id}?capacityProtocol=1&recoveryProtocol=1`);
+          if (!current()) return;
+          if (fresh.driverId === me?.user.id && ['assigned','at_pickup','in_transit'].includes(fresh.status)) {
+            work.update(fresh); router.push(`/order/${fresh.id}`); return;
+          }
+        } catch { /* Keep the existing refusal/unknown outcome; never resend acceptance automatically. */ }
+      }
       haptic.error();
       setActionError(err(e));
-      reload();
+      await Promise.all([reload(), work.reload()]);
     } finally { setBusy(null); }
   }
 
@@ -216,7 +227,7 @@ export default function Jobs() {
             <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             <FreightDetails order={order} />
             {order.dispatch?.myOffer && <Txt variant="label" style={{ marginTop: 8 }}>
-              {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now) })}
+              {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey) })}
             </Txt>}
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />

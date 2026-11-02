@@ -15,7 +15,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
   const slots = [], pending = [], timers = new Map(), maps = [], lines = [], hostRefs = new Set();
   let cursor = 0, serial = 0, component, props, tree, loadResolve;
   const loading = new Promise(resolve => { loadResolve = resolve; });
-  const element = () => ({ style: {}, children: [], appendChild(child) { child.parent = this; this.children.push(child); },
+  const element = () => ({ style: {}, children: [], addEventListener() {}, removeEventListener() {}, appendChild(child) { child.parent = this; this.children.push(child); },
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); } });
   const host = element();
   const react = {
@@ -42,6 +42,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     setMap(map) { this.map = map; }
     setPath(path) { this.path = path; }
     setVisible() {}
+    setOpacity() {}
     setCenter() {}
     setRadius() {}
     setPosition() {}
@@ -60,8 +61,11 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     './ui': { palette: {}, shadow: {}, useCopy: () => ({ c: { retry: 'Retry' } }) },
     './google-maps-loader': { loadGoogleMaps: () => loading }, './web-storage': storage,
     'expo-secure-store': {},
+    'expo-constants': { __esModule: true, default: { expoConfig: { extra: { googleMaps: { web: true } } } } },
+    './map-mode': { useMapMode: () => ['google', () => {}], currentMapMode: () => 'google' },
+    './map-provider': require('../src/map-provider.ts'),
     './runtime-config': { effectiveRuntime: () => ({ mapProviders: { initialMapProvider: 'baseline' } }), subscribeRuntime: () => () => {} },
-    './map-failures': { retryMapProviders() {}, subscribeMapFailures: () => () => {} },
+    './map-failures': require('../src/map-failures.ts'),
   };
   const context = { exports: {}, require: name => modules[name] ?? require(name), process: { env: {} },
     document: { createElement: element }, setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; },
@@ -154,3 +158,28 @@ const first = { latitude: 31.9, longitude: 35.2 }, latest = { latitude: 32.2, lo
   h.unmount();
 }
 console.log('Google web lifecycle: tile deadline/retry, detached DOM cleanup, latest center/geometry and denied map-mode storage passed');
+
+{
+  const failures = require('../src/map-failures.ts');
+  failures.retryMapProviders();
+  const h = harness('map-provider-boundary.tsx'); let ready = 0, pinFailed = 0;
+  let moved = 0;
+  h.render(h.exports.MapProviderBoundary, { platform:'web', pin:{center:first,onChange(){moved++;},onReady(){ready++;},onFail(){pinFailed++;}}, google:'Google', baseline:'Baseline' });
+  const primary=h.tree.props; assert.equal(h.tree.type,'Google');
+  primary.onFail(); h.render();
+  const fallback=h.tree.props; assert.equal(h.tree.type,'Baseline');
+  primary.onChange(first); assert.equal(moved,0,'a retired attempt cannot move the pin');
+  fallback.onChange(first); assert.equal(moved,1);
+  assert.equal(pinFailed,0,'a failure with a fallback left does not flash the pin as unavailable');
+  primary.onReady(); assert.equal(ready,0,'failed provider cannot enable a fallback pin');
+  fallback.onReady(); assert.equal(ready,1);
+  fallback.onFail(); h.render();
+  assert.equal(pinFailed,1,'only the exhausted policy fails the pin');
+  const press=retry(h.tree); assert.equal(typeof press,'function','exhaustion shows explicit Retry');
+  press(); h.render();
+  assert.equal(h.tree.type,'Google');
+  primary.onFail(); h.render();
+  assert.equal(h.tree.type,'Google','old attempt cannot poison the retry');
+  const latest=h.tree.props; h.unmount(); latest.onFail();
+  failures.retryMapProviders();
+}

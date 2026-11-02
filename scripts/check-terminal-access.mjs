@@ -53,13 +53,13 @@ try {
   await page.getByText('Test driver', { exact: true }).waitFor({ timeout: 30000 });
   // A temporary failure keeps the last snapshot, but a definitive access refusal must remove it.
   let attempts = 0;
-  await page.route(`**/api/orders/${order.id}`, route => {
+  await page.route(url => url.pathname === `/api/orders/${order.id}`, route => { // matches with ?journeyProtocol=1
     attempts++;
     return route.fulfill(attempts === 1 ? { status: 503, json: { error: 'server_error' } } : { status: 403, json: { error: 'forbidden' } });
   });
-  await page.waitForResponse(response => response.url().endsWith(`/api/orders/${order.id}`) && response.status() === 503, { timeout: 20000 });
+  await page.waitForResponse(response => new URL(response.url()).pathname === `/api/orders/${order.id}` && response.status() === 503, { timeout: 20000 });
   assert.equal(await page.getByText('Test driver', { exact: true }).count(), 1, 'Transient failures should retain the snapshot');
-  await page.waitForResponse(response => response.url().endsWith(`/api/orders/${order.id}`) && response.status() === 403, { timeout: 25000 });
+  await page.waitForResponse(response => new URL(response.url()).pathname === `/api/orders/${order.id}` && response.status() === 403, { timeout: 25000 });
   await page.getByText('You can’t do that.', { exact: true }).waitFor({ timeout: 5000 });
   assert.equal(await page.getByText('Test driver', { exact: true }).count(), 0, 'Revoked order data must disappear');
   assert.equal(await page.locator('.driver-marker').count(), 0, 'Revoked driver location must disappear');

@@ -1,3 +1,5 @@
+import { acceptedFareChange, storedFareAmounts } from './journey.ts';
+import { durableProtocolAvailable } from './events.ts';
 import { randomUUID } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import type { CityId, Order, Plan, Point, Role, Settings, User } from '../../src/model.ts';
@@ -144,15 +146,21 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       if (!destinationEligible(r) || r.driver_id !== user.id || p.original !== destinationOriginal(r)) fail(409, 'order_changed');
       await safetyFree(id);
       const now = Date.now();
+      let fareChange;
       if (desired === 'accepted') {
         await db.run(`UPDATE orders SET dropoff_city = ?, dropoff_lat = ?, dropoff_lng = ?, dropoff_note = ?, price = ?, discount = ?,
           commission = ?, recommended_price = ?, route_km = ?, updated_at = ? WHERE id = ?`,
         p.dropoff_city, p.dropoff_lat, p.dropoff_lng, p.dropoff_note, p.price, p.discount, p.commission, p.price, p.route_km, now, id);
+        const updated = await db.one('SELECT * FROM orders WHERE id=?', id);
+        // r is the row before the update. A malformed legacy fare (discount above price) gets no typed fare record,
+        // but the accept still applies; a decline never reads fare amounts at all.
+        try { fareChange = acceptedFareChange(p.id, now, storedFareAmounts(r), storedFareAmounts(updated!)); } catch { fareChange = undefined; }
+        if (fareChange && await durableProtocolAvailable(db)) await db.one("SELECT append_domain_event(?, 'fare.changed', ?::jsonb) AS id", id, JSON.stringify(fareChange));
       }
       await db.run('UPDATE destination_changes SET state = ?, decided_at = ? WHERE id = ? AND state = ?', desired, now, p.id, 'pending');
       await db.run('INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)',
         user.id, id, desired === 'accepted' ? 'DESTINATION_ACCEPTED' : 'DESTINATION_DECLINED',
-        JSON.stringify({ proposalId: p.id, oldPrice: r.price, newPrice: p.price, oldDiscount: r.discount ?? 0, newDiscount: p.discount ?? 0 }), now);
+        JSON.stringify({ proposalId: p.id, oldPrice: r.price, newPrice: p.price, oldDiscount: r.discount ?? 0, newDiscount: p.discount ?? 0, driverId: user.id, assignedAt: r.assigned_at, ...(fareChange ? { fareChange } : {}) }), now);
       await queuePush([r.customer_id], desired === 'accepted' ? 'destination_accepted' : 'destination_declined', id);
       return getOrder(id, user);
     });

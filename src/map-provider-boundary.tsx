@@ -1,45 +1,48 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentType } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
-import { effectiveMapProvider, type MapRenderer } from './map-provider';
+import { effectiveMapProvider } from './map-provider';
 import { recordMapFailure, retryMapProviders } from './map-failures';
 import { currentMapMode, useMapMode } from './map-mode';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, useCopy } from './ui';
 
-/** One owner for provider attempts. Adapters never retry or revive a failed policy attempt. */
-export function MapProviderBoundary({ platform, route, pin, render }: {
+/** One owner for provider attempts: each attempt mounts the Google or the platform's baseline map fresh, and
+ * renderers never retry or revive a failed policy attempt. Pass route or pin; google/baseline draw that kind. */
+export function MapProviderBoundary({ platform, route, pin, google: Google, baseline: Baseline }: {
   platform: string; route?: RouteMapProps; pin?: PinMapProps;
-  render: (attempt: { key: string; renderer: MapRenderer; onFail: () => void; onReady: () => void; current: () => boolean }) => ReactNode;
+  google: ComponentType<RouteMapProps> | ComponentType<PinMapProps>; baseline: ComponentType<RouteMapProps> | ComponentType<PinMapProps>;
 }) {
   const [mode] = useMapMode();
   const baked = Constants.expoConfig?.extra?.googleMaps;
   const forceBaseline = route?.forceBaseline ?? pin?.forceBaseline;
   const choice = effectiveMapProvider(platform, baked, mode, forceBaseline);
   const attemptKey = `${choice.key}:${choice.generation}:${choice.renderer}`;
+  const mounted = useRef(true); // child effects run before this component's own, so start mounted
   const callbacks = useRef(pin);
   useEffect(() => { callbacks.current = pin; });
-  // A replacement attempt starts unready: the pin cannot be confirmed until this renderer reports its own
-  // readiness. The first attempt starts unready anyway, and a reset is not a failure (no error text).
-  const shown = useRef<string | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // Every attempt starts unready (loading is not a failure: no error text); only an exhausted policy fails the pin.
   useEffect(() => {
-    if (shown.current !== null && shown.current !== attemptKey) callbacks.current?.onReset?.();
-    shown.current = attemptKey;
-  }, [attemptKey]);
-  // Called from adapter events only, never during render. A retired attempt no longer matches the live
-  // policy, and recordMapFailure ignores its generation too.
+    if (choice.renderer) callbacks.current?.onLoading?.();
+    else callbacks.current?.onFail?.();
+  }, [attemptKey, choice.renderer]);
+  // Called from renderer events only, never during render: reads the live mode so a retired attempt cannot match.
   const current = () => {
     const next = effectiveMapProvider(platform, baked, currentMapMode(), forceBaseline);
-    return next.key === choice.key && next.generation === choice.generation && next.renderer === choice.renderer;
+    return mounted.current && next.key === choice.key && next.generation === choice.generation && next.renderer === choice.renderer;
   };
-  const fail = () => {
-    if (!current() || !choice.renderer) return;
-    pin?.onFail?.();
-    recordMapFailure(choice.key, choice.renderer, choice.generation);
-  };
+  // The recorded failure re-renders into the next attempt; the effect above fails the pin only once none is left.
+  const fail = () => { if (current() && choice.renderer) recordMapFailure(choice.key, choice.renderer, choice.generation); };
   const { c } = useCopy();
-  if (choice.renderer) return render({ key: attemptKey, renderer: choice.renderer, onFail: fail,
-    onReady: () => { if (current()) pin?.onReady?.(); }, current });
+  if (choice.renderer) {
+    const Map = (choice.renderer === 'google' ? Google : Baseline) as ComponentType<RouteMapProps & PinMapProps>;
+    if (route) return <Map key={`${route.pickup.latitude},${route.pickup.longitude},${route.dropoff.latitude},${route.dropoff.longitude}:${attemptKey}`}
+      {...route as RouteMapProps & PinMapProps} onFail={fail} />;
+    if (pin) return <Map key={attemptKey} {...pin as RouteMapProps & PinMapProps} onFail={fail}
+      onReady={() => { if (current()) callbacks.current?.onReady?.(); }}
+      onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
+  }
   return <View style={{ height: route?.height ?? pin?.height ?? 220, justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
     {route && <RoutePreview {...route} />}
     <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}

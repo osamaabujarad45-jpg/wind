@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readdirSync } from 'node:fs';
 
 const suites = [
+  "journey-contracts.test.mjs",
   "runtime-config.test.mjs",
   "driver-command.test.mjs",
   "protected-recovery.test.mjs",

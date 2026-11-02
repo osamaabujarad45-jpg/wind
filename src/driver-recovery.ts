@@ -30,6 +30,7 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       if (!valid()) throw new ApiError('session_changed', 401);
       if (!fresh.recovery || fresh.driverId !== actorId || fresh.status !== order.status || fresh.assignedAt !== order.assignedAt
         || fresh.recovery.assignmentEpoch !== order.recovery.assignmentEpoch) throw new ApiError('order_changed', 409);
+      if (payload.code && order.journey?.boarding?.pinRevision !== fresh.journey?.boarding?.pinRevision) throw new ApiError('boarding_challenge_changed', 409);
       const now = Date.now() + serverOffset();
       saved = newDriverCommand(actorId, fresh, action!, payload, now, effectiveRuntime(now).values.commandMaxAgeMs);
       order = fresh;

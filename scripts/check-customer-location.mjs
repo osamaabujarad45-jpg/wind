@@ -50,18 +50,16 @@ try {
   assert.equal(await page.getByRole('button', { name: c.savePlace, exact: true }).count(), 0,
     'landmarks entered before city selection cannot be saved under fallback cities');
   await page.getByRole('button', { name: /^Request/ }).click();
-  await page.getByRole('radio', { name: 'Tulkarm', exact: true }).waitFor();
-  assert.equal(await page.getByRole('radio', { name: 'Ramallah', exact: true }).getAttribute('aria-checked'), 'false', 'an unchosen city is not prechecked in the picker');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0, 'request with unchosen cities opens the picker instead of booking');
+  // The city list became a place search (31 Oct): Request with no route opens it for the missing side instead of booking.
+  // ponytail: choosing a place needs the live search, so "save after an explicit choice" is left to the scenarios suite.
+  await page.getByRole('textbox', { name: c.searchLabel, exact: true }).waitFor();
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0, 'request with unchosen cities opens the place search instead of booking');
   await page.screenshot({ path: '.expo/location-review/choose-cities.png', fullPage: true });
-  await page.getByRole('radio', { name: 'Ramallah', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: c.savePlace, exact: true }).count(), 1,
-    'saving becomes available for the side whose city was explicitly chosen');
 
   await page.goto(base + '/book?from=ramallah&to=nablus');
   await page.getByText(c.destinationEstimated, { exact: true }).waitFor();
   // If the quote is road-routed, the fallback warning must disappear as well.
-  await page.route('**/api/price', async route => {
+  await page.route(/\/api\/price(?:\?|$)/, async route => { // the client appends ?journeyProtocol=1
     const response = await route.fetch();
     const quote = await response.json();
     await route.fulfill({ response, json: { ...quote, estimated: false } });
@@ -88,7 +86,7 @@ try {
   assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS browser: no default route, saved-place city gate, route required before booking, Tulkarm GPS pickup, old landmark cleared, accuracy shown, collection stopped, provider failure, zero orders, no page errors');
+  console.log('PASS browser: no default route, saved-place city gate, route required before booking (place search opens), Tulkarm GPS pickup, old landmark cleared, accuracy shown, collection stopped, provider failure, zero orders, no page errors');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

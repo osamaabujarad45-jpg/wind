@@ -15,6 +15,7 @@ import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
 import { kmLabel } from '../../map-math';
+import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
 import { effectiveRuntime } from '../../runtime-config';
@@ -64,9 +65,13 @@ export default function OrderScreen() {
   const focusRevision = useRef(0);
   useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
   const [actionError, setActionError] = useState('');
-  const [code, setCode] = useState('');
+  const proofContext = `${id}:${me?.user.id}:${polled?.driverId}:${polled?.assignedAt}:${polled?.recovery?.assignmentEpoch}:${polled?.journey?.boarding?.pinRevision}:${polled?.ride?.boardingLocked}:${polled?.status}`;
+  const [proofInput, setProofInput] = useState({ context: proofContext, value: '' });
+  if (proofInput.context !== proofContext) setProofInput({ context: proofContext, value: '' });
+  const code = proofInput.context === proofContext ? proofInput.value : '';
+  const setCode = (value: string) => setProofInput({ context: proofContext, value });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
-  const advanceAttempt = useRef<{ orderId: number; body: { requestId: string; expectedStatus: string; code: string } } | null>(null);
+  const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
   const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
   const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
@@ -112,6 +117,10 @@ export default function OrderScreen() {
   const arrivalKm = mine && rideAction === 'arrive' ? arrivalDistanceKm(order.pickupPoint, order.driverLocation, now) : null;
   const arrivalFar = arrivalKm !== null && arrivalKm * 1000 > RIDE_ARRIVAL_RADIUS_METERS;
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
+  const boarding = order.journey?.boarding;
+  const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
+  const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
+  const fareChange = order.journey?.lastFareChange;
   const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
@@ -124,7 +133,7 @@ export default function OrderScreen() {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? (code ? { code } : {}) : { reason: problem.reason, note: problem.note.trim() },
+          key === 'advance' ? (needsCode && code ? { code } : {}) : { reason: problem.reason, note: problem.note.trim() },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
@@ -150,9 +159,9 @@ export default function OrderScreen() {
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
-        if (advanceAttempt.current?.orderId !== order.id || advanceAttempt.current.body.expectedStatus !== order.status)
-          advanceAttempt.current = { orderId: order.id, body: { requestId: newRequestId(), expectedStatus: order.status, code } };
-        body = advanceAttempt.current.body;
+        const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
+          { expectedStatus: order.status, code: needsCode ? code : '', ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+        body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
         if (problemAttempt.current?.orderId !== order.id || problemAttempt.current.status !== order.status)
@@ -161,6 +170,7 @@ export default function OrderScreen() {
       }
       if (key.startsWith('offer')) body = { ...body, ...capacityCommand(order) };
       const next = await api<Order | { ok: true }>(path, body);
+      if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
       if (key === 'advance') { advanceAttempt.current = null; setAdvanceLocked(null); }
       if (key === 'problem') problemAttempt.current = null;
       haptic.success();
@@ -174,6 +184,10 @@ export default function OrderScreen() {
       after?.();
     } catch (e) {
       if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+      if (key === 'accept' && e instanceof ApiError && (e.offerFailure?.recovery === 'reconcile' || !e.status)) {
+        await Promise.all([reload(), work.reload()]);
+        if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+      }
       // A rejected proof is a recorded decision and advances the recovery revision.
       // Keep actions busy until the next attempt can bind to a fresh authorized snapshot.
       if (mine && order.recovery && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) {
@@ -424,19 +438,27 @@ export default function OrderScreen() {
 
 
 
+    {fareChange && (isCustomer || mine) && <Card>
+      <Txt variant="title">{c.destinationAcceptedFare}</Txt>
+      <Txt>{fill(c.destinationReview, { old: money(fareChange.before.dueMinor / 100), next: money(fareChange.after.dueMinor / 100) })}</Txt>
+      <Txt variant="caption">{fill(c.destinationGross, { old: money(fareChange.before.grossMinor / 100), next: money(fareChange.after.grossMinor / 100) })}</Txt>
+      <Txt variant="caption">{fill(c.destinationDiscounts, { old: money(fareChange.before.discountMinor / 100), next: money(fareChange.after.discountMinor / 100) })}</Txt>
+      <Txt variant="caption">{c.destinationCash}</Txt>
+    </Card>}
+
     {isAdmin && order.ride && ['assigned', 'at_pickup'].includes(order.status)
       && (order.ride.arrivedAt == null || order.ride.boardingLocked) && <Card tone="clay">
-      <Txt variant="title">{order.ride.arrivedAt == null ? c.rideArrivalOverride : c.rideBoardingReset}</Txt>
-      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{order.ride.arrivedAt == null ? c.rideArrivalOverrideHint : c.rideBoardingResetHint}</Txt>
+      <Txt variant="title">{order.ride.arrivedAt == null ? c.rideArrivalOverride : boarding ? c.rideBoardingRotate : c.rideBoardingReset}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{order.ride.arrivedAt == null ? c.rideArrivalOverrideHint : boarding ? c.rideBoardingRotateHint : c.rideBoardingResetHint}</Txt>
       <Field label={c.proofResetReason} value={resetReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setProofReset({ id, reason, done: false })} />
       {([
         ...(order.ride.arrivedAt == null ? [{ key: 'ride-arrival', title: c.rideArrivalOverride, endpoint: 'arrival/override' }] : []),
-        ...(order.ride.boardingLocked ? [{ key: 'ride-reset', title: c.rideBoardingReset, endpoint: 'boarding-reset' }] : []),
+        ...(order.ride.boardingLocked ? [{ key: 'ride-reset', title: boarding ? c.rideBoardingRotate : c.rideBoardingReset, endpoint: 'boarding-reset' }] : []),
       ]).map(action => <Button key={action.key} title={action.title} variant="outline" loading={busy === action.key}
         disabled={!!busy || resetReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
         onPress={() => confirm(c.rideRecoveryConfirm, () => act(action.key, `/admin/orders/${order.id}/${action.endpoint}`,
-          { reason: resetReason.trim() }, () => setProofReset({ id, reason: '', done: true })), action.title, c.no)} />)}
+          { reason: resetReason.trim(), ...(action.key === 'ride-reset' && boarding ? { rotate: true, expectedAssignmentEpoch: order.recovery?.assignmentEpoch, expectedPinRevision: boarding.pinRevision } : {}) }, () => setProofReset({ id, reason: '', done: true })), action.title, c.no)} />)}
     </Card>}
 
     {isAdmin && order.status === 'on_hold' && <Card tone="clay">
@@ -485,13 +507,14 @@ export default function OrderScreen() {
         reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
-      {isCustomer && order.ride?.boardingCode && ['assigned', 'at_pickup'].includes(order.status) && <Card tone="olive">
+      {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
+      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Card tone="olive">
         <Txt variant="title">{c.rideBoardingCode}</Txt>
-        <Txt variant="h2" selectable>{order.ride.boardingCode}</Txt>
+        <Txt variant="h2" selectable>{boardingPin}</Txt>
         <Txt variant="caption">{c.rideBoardingHint}</Txt>
       </Card>}
-      {(isCustomer || mine) && order.ride?.graceUntil != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
-        {secondsUntil(order.ride.graceUntil, now) > 0 ? fill(c.rideGrace, { n: secondsUntil(order.ride.graceUntil, now) }) : c.rideGraceEnded}
+      {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
+        {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
       </Txt>}
       {mine && activeStatuses.includes(order.status) && <>
         {needsCode &&

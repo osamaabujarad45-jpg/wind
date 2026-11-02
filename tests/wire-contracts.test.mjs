@@ -22,5 +22,9 @@ try {
   await assert.rejects(request('https://fixture.invalid/api/orders/1'), e => e instanceof ApiError && e.status === 502 && e.message === 'invalid_response');
   globalThis.fetch = async () => new Response(JSON.stringify(order));
   assert.equal((await request('https://fixture.invalid/api/orders/1')).id, 1);
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: 'offer_expired', offerFailure: {
+    schemaVersion: 1, verb: 'accept', code: 'offer_expired', category: 'conflict', recovery: 'refresh' } }), {status:409});
+  await assert.rejects(request('https://fixture.invalid/api/jobs/1/accept?journeyProtocol=1', {}),
+    e=>e instanceof ApiError && e.status===409 && e.offerFailure.recovery==='refresh');
 } finally { globalThis.fetch = oldFetch; configureApi(null, () => {}); }
 console.log('Wire enum, amount, lease, proof, schema-version and actual fetch-boundary validation passed');

@@ -133,6 +133,13 @@ try {
   assert.equal(cheaper.commission, 6);
   await post(discounted.id, 'propose', customer.token, { id: cheaper.id });
   discounted = await post(discounted.id, 'decision', driver.token, { id: cheaper.id, decision: 'accept' });
+  const fare = (await call(`/orders/${discounted.id}?journeyProtocol=1`, { token: customer.token })).journey.lastFareChange;
+  assert.equal(fare.changeId, cheaper.id);
+  assert.deepEqual(fare.after, { grossMinor: 2000, discountMinor: 1900, dueMinor: 100 });
+  assert.equal((await call(`/orders/${discounted.id}?journeyProtocol=1`, { token: driver.token })).journey.lastFareChange.changeId, cheaper.id);
+  assert.equal('journey' in await call(share.path), false, 'public share never exposes fare history');
+  await post(discounted.id, 'decision', driver.token, { id: cheaper.id, decision: 'accept' });
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='DESTINATION_ACCEPTED'").get(discounted.id).n, 1);
   assert.equal((await call(share.path)).dropoffCity, 'hebron');
   assert.equal((await call(`${share.path}/eta`)).minutes, null); // no fresh fix, so no minutes: never the old route
   for (const status of ['assigned', 'at_pickup', 'in_transit']) {

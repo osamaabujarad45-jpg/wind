@@ -109,7 +109,7 @@ try {
   assert.ok((await f.call(`/orders/${ride.id}?recoveryProtocol=1`, { token: who.driver.token })).recovery, 'the durable command path is the one under test');
   const actionsBefore = await actions();
   let dropped = 0;
-  const advanceUrl = `**/api/orders/${ride.id}/advance`;
+  const advanceUrl = new RegExp(`/api/orders/${ride.id}/advance(?:[?]|$)`); // the client appends ?journeyProtocol=1
   await page.route(advanceUrl, async route => { await route.fetch(); dropped++; await route.abort('connectionreset'); });
   await click(c.advance_assigned);
   await until(() => dropped === 1, 'advance applied on the server with its reply dropped');

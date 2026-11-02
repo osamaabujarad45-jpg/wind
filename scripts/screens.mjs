@@ -363,7 +363,9 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   let releaseRecovery, recoveryRequested;
   const recoveryGate = new Promise(resolve => { releaseRecovery = resolve; });
   const recoveryRequest = new Promise(resolve => { recoveryRequested = resolve; });
-  await page.route('**/api/orders', async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
+  // The client appends ?journeyProtocol=1 to order reads, so match the path with or without a query.
+  const ordersList = /\/api\/orders(?:\?|$)/;
+  await page.route(ordersList, async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
   const beforeResume = publications;
   await page.evaluate(visibility, false);
   await Promise.race([recoveryRequest, new Promise((_, reject) => setTimeout(() => reject(new Error('Foreground recovery did not request orders')), 5000))]);
@@ -371,7 +373,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, beforeResume); // the retained assignment cannot restart GPS before recovery finishes
   releaseRecovery();
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.unroute('**/api/orders');
+  await page.unroute(ordersList);
 
   // Returning from Settings must re-read permission; retained grants cannot start GPS while that read is pending or failed.
   async function permissionResume(state, mode = 'ready') {
@@ -382,7 +384,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       check.state = state; check.mode = mode;
       return check.reads;
     }, { state, mode });
-    const recovered = page.waitForResponse(response => response.url().endsWith('/api/orders') && response.ok());
+    const recovered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.ok());
     await page.evaluate(visibility, false);
     await recovered;
     await page.waitForFunction(reads => window.permissionCheck.reads > reads, reads, { timeout: 3000 });
@@ -489,7 +491,7 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
   for (const language of ['ar', 'en']) {
     // The quote request is held for 9 s, so the footer shows the calculating reason and a disabled Request.
     await stateShot(calculating, language, layla.token, {
-      setup: page => page.route('**/api/price', async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
+      setup: page => page.route(/\/api\/price(?:\?|$)/, async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
     });
     await stateShot(offerRange, language, fresh.token, {
       run: async page => {
