@@ -80,6 +80,13 @@ export function useRoad(order: Order | undefined) {
   const candidate = driver && renderer ? showable(shownApproach(fetched, !!approach.error, kept, stop)) : undefined;
   const fixFresh = !!driver && publicFixAgeMs(driver, now, fixClock.key === fixKey ? fixClock.clock : undefined, monotonic) < 30_000;
   const eta = candidate && fixFresh && (!candidate.eta || deadlineSeconds(candidate.eta.validity.expiresAt, candidate.eta, now) > 0) ? candidate : undefined;
+  // The server keeps a free calculation for 30 s and its ETA expires with it, but the poll runs every 25 s, so a
+  // stationary driver's cache hit would leave the ETA hidden until the next poll. Refetch once when the shown
+  // calculation lapses; a billable Google approach only ever refetches after significant movement.
+  const lapsed = renderer !== 'google' && fixFresh && candidate?.eta && deadlineSeconds(candidate.eta.validity.expiresAt, candidate.eta, now) <= 0
+    ? candidate.eta.validity.issuedAt : undefined;
+  const reloadApproach = approach.reload;
+  useEffect(() => { if (lapsed !== undefined) void reloadApproach(); }, [lapsed, reloadApproach]);
   // Closed checkpoints the shown routes steer around, or still cross (SPEC-checkpoint-routing.md).
   const shown = [route, driver ? eta : undefined];
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];

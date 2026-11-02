@@ -41,6 +41,14 @@ export const driverCommandBody = (c: DriverCommand) => ({ ...c.payload, requestI
   ...(c.expectedVersion !== undefined ? { expectedVersion: c.expectedVersion } : {}),
   ...(c.expectedPinRevision !== undefined ? { expectedPinRevision: c.expectedPinRevision } : {}),
   ...(c.expectedAssignmentEpoch !== undefined ? { expectedAssignmentEpoch: c.expectedAssignmentEpoch } : {}) });
+export type AdvanceRequest = { requestId: string; expectedStatus: string; code: string; expectedPinRevision?: number };
+/** Screen-held advance (no saved recovery): a lost acknowledgement replays the same request; a new status, code
+ * or rotated PIN is a new one, so a retry never pairs an old code with the new revision. */
+export function advanceRequest(cached: { orderId: number; body: AdvanceRequest } | null, orderId: number,
+  proof: Omit<AdvanceRequest, 'requestId'>, newId: () => string) {
+  return cached?.orderId === orderId && cached.body.expectedStatus === proof.expectedStatus && cached.body.code === proof.code
+    && cached.body.expectedPinRevision === proof.expectedPinRevision ? cached : { orderId, body: { requestId: newId(), ...proof } };
+}
 export const commandMatches = (c: DriverCommand, actorId: number, order: Order) => c.actorId === actorId && c.orderId === order.id && order.driverId === actorId
   && c.expectedStatus === order.status && c.expectedAssignedAt === (order.assignedAt ?? null)
   && (c.expectedVersion === undefined || c.expectedVersion === order.recovery?.version)

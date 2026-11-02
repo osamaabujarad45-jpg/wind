@@ -15,6 +15,7 @@ import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
 import { kmLabel } from '../../map-math';
+import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
 import { effectiveRuntime } from '../../runtime-config';
@@ -70,7 +71,7 @@ export default function OrderScreen() {
   const code = proofInput.context === proofContext ? proofInput.value : '';
   const setCode = (value: string) => setProofInput({ context: proofContext, value });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
-  const advanceAttempt = useRef<{ orderId: number; body: { requestId: string; expectedStatus: string; code: string } } | null>(null);
+  const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
   const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
   const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
@@ -158,9 +159,9 @@ export default function OrderScreen() {
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
-        if (advanceAttempt.current?.orderId !== order.id || advanceAttempt.current.body.expectedStatus !== order.status)
-          advanceAttempt.current = { orderId: order.id, body: { requestId: newRequestId(), expectedStatus: order.status, code: needsCode ? code : '' } };
-        body = { ...advanceAttempt.current.body, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) };
+        const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
+          { expectedStatus: order.status, code: needsCode ? code : '', ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+        body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
         if (problemAttempt.current?.orderId !== order.id || problemAttempt.current.status !== order.status)

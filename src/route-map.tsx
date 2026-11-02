@@ -145,6 +145,8 @@ const halo = (meters: number, lat: number) => {
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
+/** Read live at each animation: the user can change the setting while the map is open. */
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const FOLLOW_ZOOM = 15, FOLLOW_OFFSET: [number, number] = [0, -60];
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
@@ -231,7 +233,7 @@ function LiveMap(props: RouteMapProps) {
     const turnFrom = state.rotation ?? rotation;
     if (accuracy != null) map.setPaintProperty('accuracy', 'circle-radius', halo(accuracy, target.latitude) as ExpressionSpecification);
     else source?.setData({ type: 'FeatureCollection', features: [] });
-    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     const snap = !!from && farJump(from, target);
     const start = performance.now(), origin = snap ? target : from ?? target;
     const span = snap ? 0 : glideMs(state.at === undefined ? 0 : start - state.at);
@@ -285,7 +287,7 @@ function LiveMap(props: RouteMapProps) {
   const frameKey = JSON.stringify(points);
   useEffect(() => {
     if (!map || moved || driver) return;
-    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     const refit = (duration: number) => map.fitBounds(fitBounds(points), { padding, maxZoom: 16, duration });
     const resized = () => refit(0);
     refit(still ? 0 : 800);
@@ -295,7 +297,7 @@ function LiveMap(props: RouteMapProps) {
 
   function recenter() {
     setMoved(false);
-    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     if (driver) map?.easeTo({ center: [driver.longitude, driver.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still ? 0 : 600 });
     else map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
   }

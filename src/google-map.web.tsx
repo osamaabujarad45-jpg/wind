@@ -38,6 +38,8 @@ const ARROW = 'M 0 -12 L 8 10 L 0 4 L -8 10 Z';
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_ZOOM = 15;
 
+/** Read live at each animation: the user can change the setting while the map is open. */
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 export default function RouteMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c } = useCopy();
@@ -122,7 +124,7 @@ export default function RouteMap(props: RouteMapProps) {
     if (!s.map || moved) return;
     if (driver) {
       s.map.setZoom(FOLLOW_ZOOM);
-      const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const still = reducedMotion();
       if (still) s.map.setCenter({ lat: driver.latitude, lng: driver.longitude });
       else s.map.panTo({ lat: driver.latitude, lng: driver.longitude });
     } else s.map.fitBounds(toBounds(s.maps, fitBounds(points)));
@@ -162,7 +164,7 @@ export default function RouteMap(props: RouteMapProps) {
     const origin = snap ? target : from;
     const span = snap ? 0 : glideMs(s.at === undefined ? 0 : performance.now() - s.at);
     s.at = performance.now();
-    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     const step = (t: number) => {
       const k = still ? 1 : Math.min(1, Math.max(0, span ? (t - s.at!) / span : 1));
       const lat = origin.latitude + (target.latitude - origin.latitude) * k;

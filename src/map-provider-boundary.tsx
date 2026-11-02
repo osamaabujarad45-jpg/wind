@@ -18,7 +18,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
   const forceBaseline = route?.forceBaseline ?? pin?.forceBaseline;
   const choice = effectiveMapProvider(platform, baked, mode, forceBaseline);
   const attemptKey = `${choice.key}:${choice.generation}:${choice.renderer}`;
-  const mounted = useRef(false);
+  const mounted = useRef(true); // child effects run before this component's own, so start mounted
   const callbacks = useRef(pin);
   useEffect(() => { callbacks.current = pin; });
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
