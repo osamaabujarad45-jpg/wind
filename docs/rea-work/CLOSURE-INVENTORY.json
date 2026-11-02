@@ -3,6 +3,7 @@
   "head_before_preservation_commit": "13850b9",
   "study_commit": "0ead4d143318cf54a6bd9604bb675557049cc217",
   "study_tag": "fastship-study-2026-11-02",
+  "claude_handoff_commit": "d365a8d5eb0f852e1bcd8d65a80764cf0a6c23c4",
   "note": "Hashes identify artifacts; they are not proof that a claim is true. All paths are relative to the Fastship repo root. These hashes were taken from the working copy on 2026-11-02. Git stores these files with LF while the working copy has LF/CRLF mixed, so a later checkout may rewrite line endings and change the bytes; re-hash from the commit (`git show <rev>:<path>`) when exact identity matters.",
   "preservation_legend": {
     "committed-local": "in git in this repository; nothing pushed",
@@ -12,10 +13,11 @@
     {
       "path": "docs/HANDOFF-2026-11-02-OPUS-5.5-START-HERE.md",
       "group": "session-2026-11-02",
-      "note": "entry point, reconciled scope + this session study",
+      "note": "Claude-facing Fastship implementation entry point; prior study record remains at study_commit",
       "preservation": "committed-local",
-      "sha256": "552f2c31fd9f2ecb9d4716c137710caa32a387206300792992314fd61ca9a457",
-      "bytes": 16780
+      "sha256": "7c86ae2ca9fea9f5e49371746ef4819eeb3d13aff173520ed3719e69f1010df4",
+      "git_blob": "79c12d33e0bd88e4837b120a875db36d8fd7b241",
+      "bytes": 6018
     },
     {
       "path": "docs/MASTER-2026-11-02-fastship-implementation-blueprint.md",
