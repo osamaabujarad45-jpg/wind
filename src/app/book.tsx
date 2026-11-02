@@ -170,6 +170,7 @@ function BookForm() {
         : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
       if (request.signal.aborted) return;
+      if (result.city !== pickupCity) setPickupNote(''); // another city's landmark would mislead the driver, as on the pin sheet
       setPickupCity(result.city); setPickupChosen(true);
       gpsAt.current = Date.now();
       setPickupPoint(result.point); setGpsPoint(result.point);
