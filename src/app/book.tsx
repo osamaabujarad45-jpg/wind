@@ -152,7 +152,9 @@ function BookForm() {
   const adoptFix = (fix: { city: CityId; point: Point; accuracy: number }) => {
     setPickupCity(fix.city); setPickupChosen(true); setPickupPoint(fix.point); setGpsPoint(fix.point);
     setPickupNote(note => pickupNow.current.chosen && fix.city !== pickupNow.current.city ? '' : note);
-    void describe(fix.point).then(label => { if (label.name) setPickupNote(note => note || label.name); }).catch(() => undefined);
+    // The driver always gets words with the pin: the street or place if we know it, else the town.
+    const town = city(fix.city)[language];
+    void describe(fix.point).then(label => setPickupNote(note => note || label.name || town)).catch(() => setPickupNote(note => note || town));
   };
   async function locate() {
     locationRequest.current?.abort();

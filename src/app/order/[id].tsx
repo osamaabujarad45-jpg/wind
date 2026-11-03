@@ -320,10 +320,6 @@ export default function OrderScreen() {
     </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
-        <Row gap={8} style={{ marginBottom: 10 }}>
-          <Pulse color={serviceMeta[order.service].color} size={8} />
-          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-        </Row>
         <View style={[styles.progress, { flexDirection: row }]} accessibilityRole="progressbar" accessibilityLabel={c.tripProgress}
           accessibilityValue={{ min: 0, max: steps.length, now: step + 1 }}>
           {steps.map((s, i) => <View key={s} style={[styles.segment, i <= step && { backgroundColor: palette.olive }]} />)}
