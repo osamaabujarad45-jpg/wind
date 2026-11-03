@@ -68,9 +68,10 @@ try {
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));
   checks.push('customer signup on physical Android Chrome');
   await page.goto(base + '/book?from=ramallah&to=nablus');
-  await page.getByRole('button', { name: c.pickupOnMap, exact: true }).click();
-  await page.getByRole('button', { name: c.confirmPin, exact: true }).click();
-  await page.locator('.maplibregl-marker').first().waitFor();
+  await page.getByRole('button', { name: new RegExp(`^${c.pickup}: `) }).click();
+  await page.getByRole('button', { name: c.setOnMap, exact: true }).click();
+  await page.getByRole('button', { name: c.confirmPickupSpot, exact: true }).click();
+  await page.frameLocator('iframe[title="map"]').last().locator('.maplibregl-marker').first().waitFor();
   await page.screenshot({ path: join(output, 'a53-booking-map.png') });
   checks.push('physical GPU renders web map and exact pickup picker');
   for (const [label, value] of [[c.pickupNote, 'Phone test pickup'], [c.dropoffNote, 'Phone test destination'], [c.parcelDetail, 'Documents']])

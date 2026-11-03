@@ -22,12 +22,14 @@ export function pickupLocation(signal: AbortSignal, canRequest = true) {
   }), signal, canRequest ? 60_000 : 20_000); // Leave time to read the system prompt; every attempt still expires.
 }
 
-// The last fix opens the next map where the customer probably is, while a fresh one comes in. Never used as a pickup.
+// The last fix opens the next map where the customer probably is, while a fresh one comes in (10 s and more indoors).
 const HERE_KEY = 'lastHere';
-export const rememberHere = (point: Point) => storage.set(HERE_KEY, JSON.stringify({ latitude: point.latitude, longitude: point.longitude })).catch(() => undefined);
-export async function rememberedHere(): Promise<Point | null> {
+export const rememberHere = (point: Point) => storage.set(HERE_KEY, JSON.stringify({ latitude: point.latitude, longitude: point.longitude, at: Date.now() })).catch(() => undefined);
+export async function rememberedHere(): Promise<(Point & { at: number }) | null> {
   try {
     const value = JSON.parse(await storage.get(HERE_KEY) ?? 'null');
-    return Number.isFinite(value?.latitude) && Number.isFinite(value?.longitude) ? { latitude: value.latitude, longitude: value.longitude } : null;
+    return Number.isFinite(value?.latitude) && Number.isFinite(value?.longitude) ? { latitude: value.latitude, longitude: value.longitude, at: Number(value.at) || 0 } : null;
   } catch { return null; }
 }
+/** How old a remembered position may be and still stand in as the pickup until the fresh fix replaces it. */
+export const HERE_PICKUP_MS = 120_000;

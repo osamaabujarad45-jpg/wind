@@ -81,8 +81,8 @@ try {
 
   // ---- search a real Tulkarm place as you type
   await page.getByRole('button', { name: c.whereTo, exact: true }).first().click();
-  await page.getByPlaceholder(c.whereTo).fill(language === 'ar' ? 'خضوري' : 'Palestine Technical');
-  const result = page.getByRole('button', { name: language === 'ar' ? /خضوري/ : /Palestine Technical/ }).first();
+  await page.getByPlaceholder(c.whereTo).fill(language === 'ar' ? 'خضوري' : 'kadoorie');
+  const result = page.getByRole('button', { name: language === 'ar' ? /جامعة.*خضوري/ : /university.*kadoorie/i }).first();
   await timed('first suggestion after typing', 3000, () => result.waitFor());
   await shot(page, '2-search');
   ok('typing finds a real Tulkarm place at once');
@@ -111,6 +111,13 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForTimeout(1500);
   await shot(page, '4-pin');
+  // The pin's tip is exactly the point that gets booked, whatever the panel over the map measures.
+  const inPin = page.frames().find(f => f.url().includes('/map.html'));
+  const tip = await inPin.evaluate(() => {
+    const pin = document.getElementById('pin').getBoundingClientRect(), center = window.windMap.getCenter(), at = window.windMap.project(center);
+    return { tipX: pin.left + pin.width / 2, tipY: pin.top + pin.height * 42 / 44, x: at.x, y: at.y };
+  });
+  assert.ok(Math.abs(tip.tipX - tip.x) < 2 && Math.abs(tip.tipY - tip.y) < 2, `the pin points at the map centre: ${JSON.stringify(tip)}`);
   await page.getByRole('button', { name: c.confirmPickupSpot, exact: true }).click();
   await timed('back on the trip after the pin', 8000, () => page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().waitFor());
   ok('dragging the pin names the spot and returns to the trip without a reload');

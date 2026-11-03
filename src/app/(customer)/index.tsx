@@ -52,7 +52,7 @@ export default function Home() {
   // Opening the map reuses consent already given; only the customer's own tap on Locate may raise the system prompt.
   useEffect(() => {
     const request = new AbortController();
-    void rememberedHere().then(point => { if (point && !request.signal.aborted) setHere(known => known ?? point); });
+    void rememberedHere().then(known => { if (known && !request.signal.aborted) setHere(current => current ?? { latitude: known.latitude, longitude: known.longitude }); });
     pickupLocation(request.signal, false).then(fix => {
       if (!request.signal.aborted) { setHere({ ...fix.point, accuracy: fix.accuracy }); void rememberHere(fix.point); }
     }).catch(() => undefined);

@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
-import { pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
+import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
 import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
@@ -175,11 +175,23 @@ function BookForm() {
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
   // Opening the screen reuses consent already given, silently; only the customer's own tap may raise the system prompt.
-  const firstFix = useRef(adoptFix);
-  useEffect(() => { firstFix.current = adoptFix; });
+  const quietFix = (fix: { city: CityId; point: Point; accuracy: number }) => {
+    setPickupNote('');
+    adoptFix(fix);
+    if (step === 'search' && dropoffChosen) { setField('dropoff'); setStep('trip'); } // they were asked for a pickup and now have one
+  };
+  const firstFix = useRef(quietFix);
+  useEffect(() => { firstFix.current = quietFix; });
   useEffect(() => {
     const request = new AbortController();
-    void rememberedHere().then(point => { if (point && !request.signal.aborted) setHere(known => known ?? point); });
+    void rememberedHere().then(known => {
+      if (!known || request.signal.aborted) return;
+      const point = { latitude: known.latitude, longitude: known.longitude };
+      setHere(current => current ?? point);
+      // A position from a minute ago beats asking where they are; the fresh fix below replaces it.
+      const served = servedCity(point);
+      if (served && !pickupTouched.current && Date.now() - known.at <= HERE_PICKUP_MS) firstFix.current({ city: served, point, accuracy: 0 });
+    });
     pickupLocation(request.signal, false).then(fix => {
       if (request.signal.aborted) return;
       setHere({ ...fix.point, accuracy: fix.accuracy }); void rememberHere(fix.point);

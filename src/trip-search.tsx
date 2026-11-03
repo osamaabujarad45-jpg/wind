@@ -109,7 +109,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       {!!term && !shown && <View style={styles.wait}><ActivityIndicator color={palette.olive} /></View>}
       {!!term && !!shown && !shown.failed && !shown.hits.length && !saved.length && <Txt variant="caption" center style={{ marginVertical: 12 }}>{c.searchMapNone}</Txt>}
       {shown?.failed && <Txt variant="caption" center style={{ marginVertical: 12 }}>{c.searchOffline}</Txt>}
-      {wide?.hits?.map((hit, i) => <Row key={`w${i}:${hit.latitude},${hit.longitude}`} icon="location-outline" title={hit.name} detail={hit.detail} onPress={() => pickHit(hit)} />)}
+      {wide?.hits?.filter(hit => !shown?.hits.some(known => known.name === hit.name || Math.abs(known.latitude - hit.latitude) + Math.abs(known.longitude - hit.longitude) < 0.002)).map((hit, i) => <Row key={`w${i}:${hit.latitude},${hit.longitude}`} icon="location-outline" title={hit.name} detail={hit.detail} onPress={() => pickHit(hit)} />)}
       <ErrorText>{wide?.failed}</ErrorText>
       {term.length >= 3 && !!shown && !shown.failed && shown.hits.length < 4 && (!wide || !!wide.failed) &&
         <View style={{ marginTop: 10 }}><Button title={c.searchMap.replace('{q}', () => term)} icon="map-outline" variant="outline" onPress={searchWider} /></View>}

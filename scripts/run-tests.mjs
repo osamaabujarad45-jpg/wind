@@ -81,6 +81,7 @@ const suites = [
   "customer-location.test.mjs",
   "place-search.test.mjs",
   "place-index.test.mjs",
+  "nav-steps.test.mjs",
   "google-routing.test.mjs",
   "google-map-lifecycle.test.mjs",
   "url-decoder.test.mjs",

@@ -129,6 +129,7 @@ const firstPoints = free() ? [state.center] : [state.pickup, state.dropoff, ...(
 if (!firstPoints.every(validPoint)) { clearTimeout(timer); fail(); throw new Error('bad points'); }
 const padding = config.padding ?? 0;
 const fitPadding = () => ({ top: state.insets.top + padding, bottom: state.insets.bottom + padding, left: padding, right: padding });
+const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: 0 });
 const insetCss = () => {
   document.documentElement.style.setProperty('--inset-top', `${state.insets.top}px`);
   document.documentElement.style.setProperty('--inset-bottom', `${state.insets.bottom}px`);
@@ -144,6 +145,7 @@ const map = new ml.Map({
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
+window.windMap = map; // the browser gates read the real camera
 map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
 const announceReady = () => {
@@ -172,6 +174,8 @@ window.wind = update => {
   if (update.insets) { state.insets = { top: 0, bottom: 0, ...update.insets }; insetCss(); }
   if (ready) {
     applyMode();
+    // The pin and the camera's centre must agree on where the visible middle is, or the pin points at the wrong place.
+    if (refit_ && free()) map.setPadding(freePadding());
     if (free() && update.center) centerPin(update.center, update.zoom);
     else if (refit_ && !free()) { framed = ''; }
     draw(refit_);
@@ -289,7 +293,7 @@ function applyMode() {
     for (const id of ['road', 'road-casing-source', 'approach']) map.getSource(id)?.setData(empty);
     drawnLines = ''; drawnClosed = ''; framed = '';
     recenter.style.display = 'none';
-    map.setPadding({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: 0 });
+    map.setPadding(freePadding());
     if (state.center) map.jumpTo({ center: [state.center.longitude, state.center.latitude], ...(was === 'route' ? { zoom: config.zoom ?? 16 } : {}) });
   } else {
     map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });

@@ -37,7 +37,7 @@ assert.equal(offline.offline, true);
 const pin = { latitude: 31.9038, longitude: 35.2034 };
 assert.deepEqual(placeAt(pin, 'Gate'), { city: 'ramallah', note: 'Gate', point: pin });
 assert.equal(placeAt({ latitude: 31.9038, longitude: 35.0734 }).city, 'ramallah'); // 12 km out, inside 20
-assert.deepEqual(placeAt({ latitude: 31.40, longitude: 34.40 }), { error: 'outside' });
+assert.deepEqual(placeAt({ latitude: 30.5, longitude: 34.4 }), { error: 'outside' });
 assert.deepEqual(placeAt({ latitude: NaN, longitude: NaN }), { error: 'outside' });
 
 // Choosing a hit proposes it: the accepted place and its pin are untouched.

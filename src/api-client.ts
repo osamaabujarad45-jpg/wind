@@ -42,13 +42,18 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
   if (signal?.aborted) abandon();
   try {
     let res: Response;
-    try {
-      res = await fetch(url, {
-        method: method ?? (body ? 'POST' : 'GET'), signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', 'X-Wind-Client': String(CLIENT_BUILD), ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
-        body: body && JSON.stringify(body),
-      });
-    } catch { throw new ApiError(signal?.aborted ? 'aborted' : 'network'); }
+    const send = () => fetch(url, {
+      method: method ?? (body ? 'POST' : 'GET'), signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'X-Wind-Client': String(CLIENT_BUILD), ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
+      body: body && JSON.stringify(body),
+    });
+    try { res = await send(); }
+    catch {
+      // Mobile data drops single requests all the time. A read is safe to repeat once, inside the same 20 s budget.
+      if (signal?.aborted || controller.signal.aborted || body || (method && method !== 'GET')) throw new ApiError(signal?.aborted ? 'aborted' : 'network');
+      await new Promise(resolve => setTimeout(resolve, 800));
+      try { res = await send(); } catch { throw new ApiError(signal?.aborted ? 'aborted' : 'network'); }
+    }
     const receivedAt = Date.now();
     responseStatus = res.status;
     let data;

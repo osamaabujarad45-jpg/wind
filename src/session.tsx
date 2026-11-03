@@ -43,6 +43,7 @@ const phoneTest = phoneTestConfig(Constants.expoConfig?.extra?.phoneTest, API_UR
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [offline, setOffline] = useState(false);
+  const accountLoaded = useRef(false);
   const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [onboarded, setOnboarded] = useState(false);
@@ -63,6 +64,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await stopBackgroundLocation().catch(() => {});
     void dropLocalPush(); // an ended session must not leave this browser alerting
     configureApi(null, () => {});
+    accountLoaded.current = false;
     setMe(null);
     setOffline(false);
     if (await storage.get('token') === endedCredential) await storage.set('token', null);
@@ -92,10 +94,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void api<unknown>('/runtime/configuration').then(config => {
         if (configRevision === apiSessionRevision()) configureRuntime(config, Date.now() + serverOffset());
       }).catch(() => {});
+      accountLoaded.current = true;
     } catch (error) {
-      if (phoneTest || errorCode(error) === 'network') setOffline(true);
+      // A failed refresh under a working screen is a blip the screen's own polling rides out: only a launch that could
+      // not reach the account has nothing to show. That screen keeps trying by itself, below.
+      if (!accountLoaded.current && (phoneTest || errorCode(error) === 'network')) setOffline(true);
     }
   }, [forget]);
+  useEffect(() => {
+    if (!offline) return;
+    const timer = setInterval(() => { void refresh(); }, 6_000);
+    return () => clearInterval(timer);
+  }, [offline, refresh]);
 
   useEffect(() => {
     (async () => {
