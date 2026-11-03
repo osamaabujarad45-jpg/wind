@@ -11,7 +11,7 @@ import { MapSheet } from '../../map-sheet';
 import { activeStatuses, city, defaultSettings, services, type Order, type Point, type Service } from '../../model';
 import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-location';
 import { SceneMap } from '../../scene-map';
-import { OrderRow, ServiceIcon, VerifyEmailNudge } from '../../parts';
+import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
 
@@ -71,7 +71,7 @@ export default function Home() {
           onPress={() => book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
           <View style={styles.clock}><Ionicons name="time-outline" size={17} color={palette.secondary} /></View>
           <View style={{ flex: 1 }}>
-            <Txt variant="title" numberOfLines={1}>{city(o.pickupCity)[language]} {rtl ? '←' : '→'} {city(o.dropoffCity)[language]}</Txt>
+            <Txt variant="title" numberOfLines={1}>{tripTitle(o, language, rtl)}</Txt>
             <Txt variant="caption" numberOfLines={1}>{c[o.service]} · {o.pickupNote}</Txt>
           </View>
           <Ionicons name="refresh" size={17} color={palette.olive} />

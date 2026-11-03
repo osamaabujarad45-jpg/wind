@@ -237,6 +237,11 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   h.render(undefined, { ...props, update: { center: first, insets: { bottom: 130 } } });
   message({ type: 'center', ...moved });
   assert.deepEqual(plain(changed.at(-1)), moved, 'another field changing never re-arms the guard over a gesture');
+  // Back to the trip and into the pin again at the spot just reported: the page must still be told, or it returns to an older
+  // centre, the guard refuses what it then reports, and Confirm waits forever.
+  h.render(undefined, { ...props, update: { mode: 'route', center: moved } });
+  h.render(undefined, { ...props, update: { mode: 'pin', center: moved } });
+  assert.ok(h.host.injected.at(-1).includes(JSON.stringify(moved)), 'entering a mode carries the centre even when it matches the last report');
   h.unmount();
 }
 for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {

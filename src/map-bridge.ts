@@ -14,6 +14,7 @@ export function useMapBridge(update: object | undefined, inject: (json: string) 
   const reported = useRef<Point | null>(null);
   const expectedCenter = useRef<Point | null>(null);
   const armed = useRef(''), sent = useRef(''), centerSent = useRef(''); // the last centre that set the guard / the last update that crossed / the last centre that crossed
+  const modeSent = useRef<string | undefined>(undefined);
   const [state, setState] = useState<'loading' | 'drawing' | 'ready'>('loading');
   const failed = useRef(events.onFail);
   const terminal = useRef(false);
@@ -32,7 +33,7 @@ export function useMapBridge(update: object | undefined, inject: (json: string) 
   useEffect(() => {
     // The page can take updates as soon as its style is parsed; the tiles may still be loading.
     if (!json) return;
-    const { center, ...rest } = JSON.parse(json) as { center?: Point };
+    const { center, ...rest } = JSON.parse(json) as { center?: Point; mode?: string };
     // Only a new centre re-arms the guard: another field changing, or drawing→ready, must not undo a gesture that already took over.
     const centerKey = center ? JSON.stringify(center) : '';
     if (center && armed.current !== centerKey) {
@@ -42,8 +43,11 @@ export function useMapBridge(update: object | undefined, inject: (json: string) 
     if (state === 'loading' || sent.current === json) return;
     sent.current = json;
     // A gesture report is already on screen, and a centre already sent must not pull the camera back when another field
-    // changes: only a centre that is new, and not the one the map just reported, crosses as a camera command.
-    const echo = !center || centerSent.current === centerKey || (reported.current?.latitude === center.latitude && reported.current.longitude === center.longitude);
+    // changes: only a centre that is new, and not the one the map just reported, crosses as a camera command. Entering a
+    // mode always carries it: the page goes back to the last centre it was told, which may be older than the camera.
+    const entered = rest.mode !== modeSent.current;
+    modeSent.current = rest.mode;
+    const echo = !center || (!entered && (centerSent.current === centerKey || (reported.current?.latitude === center.latitude && reported.current.longitude === center.longitude)));
     if (center) centerSent.current = centerKey;
     if (echo && !Object.keys(rest).length) return;
     send.current(echo ? JSON.stringify(rest) : json);

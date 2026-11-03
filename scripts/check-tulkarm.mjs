@@ -120,7 +120,16 @@ try {
   assert.ok(Math.abs(tip.tipX - tip.x) < 2 && Math.abs(tip.tipY - tip.y) < 2, `the pin points at the map centre: ${JSON.stringify(tip)}`);
   await page.getByRole('button', { name: c.confirmPickupSpot, exact: true }).click();
   await timed('back on the trip after the pin', 8000, () => page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().waitFor());
-  ok('dragging the pin names the spot and returns to the trip without a reload');
+  // The same pin again: it opens where it was left and can still be confirmed.
+  await page.getByRole('button', { name: new RegExp(c.pickup_ride) }).first().click();
+  await page.getByRole('button', { name: c.setOnMap, exact: true }).click();
+  const again = page.getByRole('button', { name: c.confirmPickupSpot, exact: true });
+  await again.waitFor();
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('[role="button"]')].find(e => e.getAttribute('aria-label')?.length && !e.getAttribute('aria-disabled')); return !!b; });
+  await timed('pin ready the second time', 6000, async () => { while (!(await again.isEnabled())) await page.waitForTimeout(100); });
+  await again.click();
+  await page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().waitFor();
+  ok('dragging the pin names the spot and returns to the trip without a reload, and works again');
 
   // ---- a sideways phone keeps the map, the route card and Request on screen, with the trip framed in the map's free part
   await page.setViewportSize({ width: 844, height: 390 });
