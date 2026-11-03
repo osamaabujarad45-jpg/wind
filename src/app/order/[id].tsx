@@ -90,7 +90,7 @@ export default function OrderScreen() {
   const [peek, setPeek] = useState(0);
   const [topBar, setTopBar] = useState(0);
   const navigating = !!order && me?.user.role === 'driver' && order.driverId === me.user.id;
-  const { road, approach, eta, km, avoids, through, closed, steps: navSteps } = useRoad(order, navigating);
+  const { road, approach, eta, km, avoids, through, closed, steps: navSteps } = useRoad(order, navigating ? language : null);
   useEffect(() => { if (pushed.driverChanged) void reload(); }, [pushed.driverChanged, reload]);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];

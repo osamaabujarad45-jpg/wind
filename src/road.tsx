@@ -29,7 +29,8 @@ function useForeground() {
  * Road line pickup→dropoff and the live driver's ETA to the next stop (SPEC-routing-eta.md).
  * All null when routing is unavailable; the map then shows pins without a line.
  */
-export function useRoad(order: Order | undefined, withSteps = false) {
+export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | null) {
+  const withSteps = !!stepsLanguage;
   const from = order && (order.pickupPoint ?? city(order.pickupCity));
   const to = order && (order.dropoffPoint ?? city(order.dropoffCity));
   const active = !!order && activeStatuses.includes(order.status);
@@ -67,7 +68,7 @@ export function useRoad(order: Order | undefined, withSteps = false) {
   const approachUrl = !renderer || !driver || !target ? null
     : renderer === 'google'
       ? foreground && stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null
-      : `${roadPath(driver, target, 3, driver.heading)}${withSteps ? '&steps=1' : ''}`;
+      : `${roadPath(driver, target, 3, driver.heading)}${withSteps ? `&steps=1&lang=${stepsLanguage}` : ''}`;
   const approach = useApi<RoadRoute>(approachUrl, renderer === 'google' ? undefined : 25_000, { refetchOnFocus: renderer !== 'google' });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);

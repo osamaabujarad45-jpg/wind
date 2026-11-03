@@ -1,7 +1,7 @@
 // The place index: instant, per-keystroke, Palestine-wide. Runs against the real data file, so a rebuild that loses a
 // town shows up here.
 import assert from 'node:assert/strict';
-import { foldPlace, pinLabel, suggestPlaces } from '../server/domain/place-index.ts';
+import { foldPlace, pinLabel, streetName, suggestPlaces } from '../server/domain/place-index.ts';
 
 const tulkarm = { latitude: 32.3116, longitude: 35.0279 }, ramallah = { latitude: 31.9038, longitude: 35.2034 };
 assert.equal(foldPlace('أَريحا'), 'اريحا', 'hamza and vowel signs fold');
@@ -33,6 +33,11 @@ assert.ok(`${pin.name} ${pin.detail}`.includes('طولكرم'), `the label ends 
 const english = pinLabel(tulkarm, 'en');
 assert.ok(`${english.name} ${english.detail}`.includes('Tulkarm') || /[؀-ۿ]/.test(english.name), 'English label');
 assert.deepEqual(pinLabel({ latitude: 29.5, longitude: 34.9 }, 'ar'), { name: '', detail: '' }, 'outside the service area there is nothing to say');
+assert.equal(streetName('As-Sikkeh', 'ar'), streetName('As-Sikkeh', 'ar'));
+assert.equal(streetName('No Such Street 123', 'ar'), 'No Such Street 123', 'an unknown street keeps the router\'s name');
+const named = suggestPlaces('شارع السكة', 'ar', tulkarm)[0]?.name;
+assert.ok(named, 'a Tulkarm street is in the index');
+assert.equal(streetName(named, 'ar'), named);
 const started = performance.now();
 for (let i = 0; i < 20; i++) suggestPlaces('مستشفى الزكاة', 'ar', tulkarm);
 assert.ok((performance.now() - started) / 20 < 60, 'fast enough for every keystroke');

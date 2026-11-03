@@ -33,7 +33,7 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
-import { areaName, registerPlaceIndexRoutes } from './domain/place-index.ts';
+import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
@@ -2641,7 +2641,8 @@ route('GET', '/api/route', async ({ user, query }) => {
   const heading = query.get('heading') == null ? null : Number(query.get('heading'));
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
   const { calculatedAt, steps, ...line } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
-  const result = query.get('steps') === '1' ? { ...line, steps } : line;
+  const lang = query.get('lang') === 'en' ? 'en' : 'ar';
+  const result = query.get('steps') === '1' ? { ...line, steps: steps.map(step => step.name ? { ...step, name: streetName(step.name, lang) } : step) } : line;
   return query.get('journeyProtocol') === '1' ? { ...result, eta: etaProjection(result.minutes * 60, calculatedAt, calculatedAt + 30_000) } : result;
 });
 

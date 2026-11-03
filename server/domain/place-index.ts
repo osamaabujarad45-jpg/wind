@@ -136,6 +136,14 @@ export function pinLabel(point: Point, lang: Lang): PinLabel {
   return { name, detail: areaLine(point, lang, name) };
 }
 
+/** A street name from the router, in the app's language when OSM has both: the driver's banner speaks one language. */
+let streetNames: Map<string, Row> | null = null;
+export function streetName(name: string, lang: Lang) {
+  streetNames ??= new Map(index().rows.filter(row => row.kind === 'street').flatMap(row => [[row.ar, row], [row.en, row]] as [string, Row][]).filter(([key]) => key));
+  const row = streetNames.get(name);
+  return row ? label(row, lang) : name;
+}
+
 /** The neighbourhood or village around a point, and nothing more exact: what a driver may know before taking a job. */
 export function areaName(point: Point, lang: Lang) {
   const area = closest(nearby(index().areas, point, 3), point);
