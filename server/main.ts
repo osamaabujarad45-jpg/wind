@@ -876,14 +876,21 @@ async function places(user: User) {
   const saved = (await all("SELECT id, label, city, note FROM saved_places WHERE user_id = ? ORDER BY CASE label WHEN 'home' THEN 0 WHEN 'work' THEN 1 ELSE 2 END, id", user.id));
   const seen = new Set(saved.map(p => `${p.city}
 ${p.note}`));
-  const recent: { city: string; note: string }[] = [];
-  for (const o of (await all('SELECT pickup_city, pickup_note, dropoff_city, dropoff_note FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 30', user.id)))
-    for (const [city, note] of [[o.pickup_city, o.pickup_note], [o.dropoff_city, o.dropoff_note]]) {
+  const recent: { city: string; note: string; point?: Point }[] = [];
+  const pinned = new Map<string, Point>(); // where this customer's own orders put a landmark: re-booking it needs no second pin
+  for (const o of (await all('SELECT pickup_city, pickup_note, pickup_lat, pickup_lng, dropoff_city, dropoff_note, dropoff_lat, dropoff_lng FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 30', user.id)))
+    for (const [city, note, latitude, longitude] of [[o.pickup_city, o.pickup_note, o.pickup_lat, o.pickup_lng], [o.dropoff_city, o.dropoff_note, o.dropoff_lat, o.dropoff_lng]]) {
       const key = `${city}
 ${note}`;
-      if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note }); }
+      if (latitude != null && !pinned.has(key)) pinned.set(key, { latitude, longitude });
+      if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note, ...(latitude != null && { point: { latitude, longitude } }) }); }
     }
-  return { saved, recent };
+  const located = saved.map((p: Row) => {
+    const point = pinned.get(`${p.city}
+${p.note}`);
+    return point ? { ...p, point } : p;
+  });
+  return { saved: located, recent };
 }
 route('GET', '/api/me/places', async ({ user }) => { need(user, 'customer'); return (await places(user)); });
 route('POST', '/api/me/places', async ({ user, body }) => {

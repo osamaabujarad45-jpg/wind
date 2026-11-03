@@ -33,7 +33,6 @@ assert.ok(`${pin.name} ${pin.detail}`.includes('طولكرم'), `the label ends 
 const english = pinLabel(tulkarm, 'en');
 assert.ok(`${english.name} ${english.detail}`.includes('Tulkarm') || /[؀-ۿ]/.test(english.name), 'English label');
 assert.deepEqual(pinLabel({ latitude: 29.5, longitude: 34.9 }, 'ar'), { name: '', detail: '' }, 'outside the service area there is nothing to say');
-assert.equal(streetName('As-Sikkeh', 'ar'), streetName('As-Sikkeh', 'ar'));
 assert.equal(streetName('No Such Street 123', 'ar'), 'No Such Street 123', 'an unknown street keeps the router\'s name');
 const named = suggestPlaces('شارع السكة', 'ar', tulkarm)[0]?.name;
 assert.ok(named, 'a Tulkarm street is in the index');

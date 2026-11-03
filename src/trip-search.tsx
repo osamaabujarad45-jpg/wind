@@ -99,11 +99,11 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       <Row icon="pin-outline" title={c.setOnMap} onPress={() => { haptic.tap(); onMap(field); }} />
       {!term && <>
         {places.saved.map(p => <Row key={`s${p.id}`} icon={p.label === 'home' ? 'home-outline' : p.label === 'work' ? 'briefcase-outline' : 'star-outline'} title={placeName(p.label, p.note)}
-          detail={p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`} onPress={() => pick({ city: p.city, point: null, note: p.note })} onForget={() => onForget(p.id)} />)}
-        {places.recent.map((p, i) => <Row key={`r${i}`} icon="time-outline" title={p.note} detail={city(p.city)[language]} onPress={() => pick({ city: p.city, point: null, note: p.note })} />)}
+          detail={p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} onForget={() => onForget(p.id)} />)}
+        {places.recent.map((p, i) => <Row key={`r${i}`} icon="time-outline" title={p.note} detail={city(p.city)[language]} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} />)}
         {!places.saved.length && !places.recent.length && cities.map(item => <Row key={item.id} icon="business-outline" title={item[language]} onPress={() => pick({ city: item.id, point: null, note: '' })} />)}
       </>}
-      {saved.map(p => <Row key={p.key} icon="star-outline" title={p.note} detail={city(p.city)[language]} onPress={() => pick({ city: p.city, point: null, note: p.note })} />)}
+      {saved.map(p => <Row key={p.key} icon="star-outline" title={p.note} detail={city(p.city)[language]} onPress={() => pick({ city: p.city, point: p.saved?.point ?? null, note: p.note })} />)}
       {shown?.hits.map((hit, i) => <Row key={`${i}:${hit.latitude},${hit.longitude}`} icon={kindIcons[hit.kind ?? 'poi'] ?? 'location-outline'} title={hit.name} detail={hit.detail} onPress={() => pickHit(hit)} />)}
       {offlineTowns.map(p => <Row key={p.key} icon="business-outline" title={city(p.city)[language]} onPress={() => pick({ city: p.city, point: null, note: '' })} />)}
       {!!term && !shown && <View style={styles.wait}><ActivityIndicator color={palette.olive} /></View>}
