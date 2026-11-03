@@ -1973,6 +1973,10 @@ const pilotCheckpoints: [name: string, cities: CityId[], latitude: number, longi
   ['حاجز عطارة · Atara', ['ramallah', 'bireh'], 31.9828, 35.2006],
   ["حاجز جبع · Jaba'", ['ramallah', 'bireh', 'jericho'], 31.8539, 35.2564],
   ['حاجز قلنديا · Qalandia', ['ramallah', 'bireh'], 31.8623, 35.2275],
+  ['حاجز عنبتا - عيناف · Anabta-Einav', ['tulkarm', 'nablus'], 32.2904, 35.1357],
+  ['حاجز شوفة · Shufa', ['tulkarm'], 32.2803, 35.0668],
+  ['حاجز أفني حيفتس · Avnei Hefetz', ['tulkarm'], 32.2812, 35.0757],
+  ['حاجز الطيبة · Taybeh', ['tulkarm'], 32.2890, 35.0152],
 ];
 export async function seedCheckpoints() {
   const admin = (await one("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1")) ?? fail(409, 'promote an admin first');
