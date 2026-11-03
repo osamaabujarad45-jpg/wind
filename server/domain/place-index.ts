@@ -111,7 +111,8 @@ export function suggestPlaces(query: string, lang: Lang, near: Point | null, lim
   const seen = new Set<string>(), hits: SuggestHit[] = [];
   for (const { row, point } of scored) {
     if (!servedCity(point)) continue;
-    const name = label(row, lang), key = `${name}:${point.latitude.toFixed(2)}:${point.longitude.toFixed(2)}`;
+    // A town mapped twice (a node and an outline) is one result; two shops of one chain in two places are two.
+    const name = label(row, lang), key = row.kind === 'town' ? `town:${name}` : `${name}:${point.latitude.toFixed(2)}:${point.longitude.toFixed(2)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     hits.push({ name, detail: areaLine(point, lang, name), latitude: point.latitude, longitude: point.longitude, kind: row.kind });

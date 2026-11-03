@@ -54,7 +54,7 @@ function classify(tags) {
   if (tags.tourism || tags.historic) return { rank: 3, kind: 'poi' };
   if (tags.office || tags.leisure || tags.craft) return { rank: 3, kind: 'poi' };
   if (tags.building && tags.building !== 'yes' && tags.building !== 'house') return { rank: 3, kind: 'poi' };
-  if (tags.landuse === 'industrial' || tags.landuse === 'commercial') return { rank: 3, kind: 'area' };
+  if (tags.landuse === 'industrial' || tags.landuse === 'commercial') return { rank: 3, kind: 'poi' }; // named sites, not neighbourhoods
   return null;
 }
 

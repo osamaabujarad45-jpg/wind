@@ -1,5 +1,7 @@
 # SPEC: android-map (Wind)
 
+> **Update, November 2026.** `public/map.html` is now the one map page on every platform: a WebView on Android and iOS, a same-origin iframe on the web (`src/map-page*.tsx`, shared bridge `src/map-bridge.ts`). Screens use `SceneMap` (`src/scene-map.tsx`), which switches between a plain map, a centre pin and a drawn trip without reloading, under the sheet in `src/map-sheet.tsx`. Google and Apple renderers stay behind `MapProviderBoundary` for keyed builds. Gate: `scripts/check-tulkarm.mjs`.
+
 Status: approved by lead (Claude, 2026-10-05). Lifecycle: spec → plan → build → test → review → ship.
 
 ## Problem
