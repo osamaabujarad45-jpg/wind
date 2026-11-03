@@ -24,7 +24,9 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   const { height: screen } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [headerHeight, setHeaderHeight] = useState(0), [footerHeight, setFooterHeight] = useState(0);
-  const peek = GRIP + headerHeight + footerHeight;
+  // The footer carries the bottom inset itself; a sheet without one must still clear the system navigation bar.
+  const padBottom = safeBottom ? insets.bottom : 0;
+  const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
   const expanded = Math.max(peek, Math.round(screen * expandedRatio));
   const travel = expanded - peek;
   const [y] = useState(() => new Animated.Value(0)); // 0 is fully open
@@ -57,7 +59,6 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
     },
     onPanResponderTerminate: () => settleRef.current(latest.current.open),
   }));
-  const padBottom = safeBottom ? insets.bottom : 0;
   return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding" enabled={open}>
     <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }}>
       <Animated.View style={[styles.sheet, { height: expanded, transform: [{ translateY: y }] }]}>

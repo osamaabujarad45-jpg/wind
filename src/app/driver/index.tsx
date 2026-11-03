@@ -1,11 +1,12 @@
 // Driver jobs, Uber Driver pattern: a presence card (never ready until the server confirms), then offer cards that lead with what the driver
 // earns, the route spine, what the job carries, and one accept button.
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
-import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
+import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
+import { pickupLocation } from '../../pickup-location';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
@@ -26,7 +27,15 @@ export default function Jobs() {
   const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
   const cursors = pages.scope === pageScope ? pages.cursors : [];
   const cursor = cursors.at(-1);
-  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
+  // Only with consent already given, and only to say how far each pickup is: nothing here reports the driver's position.
+  const [here, setHere] = useState<Point | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const request = new AbortController();
+    pickupLocation(request.signal, false).then(fix => { if (!request.signal.aborted) setHere(fix.point); }).catch(() => undefined);
+    return () => request.abort();
+  }, [active]);
+  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1&lang=${language}${here ? `&near=${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
   const badCursor = !!page?.nextCursor && (!/^\d{1,16}:\d{1,16}$/.test(page.nextCursor) || page.nextCursor === cursor);
@@ -207,7 +216,7 @@ export default function Jobs() {
               <ServiceIcon service={order.service} size={38} />
               <View style={{ flex: 1 }}>
                 <Txt variant="title">{c[order.service]}</Txt>
-                <Txt variant="caption">{/* same rule as OrderRow: only shared, the exception, is marked */}{order.shared ? `${c.shared} · ` : ''}{order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
+                <Txt variant="caption">{/* same rule as OrderRow: only shared, the exception, is marked */}{order.shared ? `${c.shared} · ` : ''}{order.pickupCity === order.dropoffCity && order.routeKm == null ? c.sameCity : `${km} ${c.km}`}{order.pickupKm != null ? ` · ${fill(c.pickupFromYou, { km: order.pickupKm })}` : ''}</Txt>
                 {order.customerStats && <Txt variant="caption">{order.customerStats.trips ? [order.customerStats.rating != null && fill(c.customerStars, { r: order.customerStats.rating }),
                   fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(' · ') : c.newCustomer}</Txt>}
               </View>
@@ -224,7 +233,7 @@ export default function Jobs() {
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
             </Row>}
-            <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
+            <RouteLine from={order.pickupArea || city(order.pickupCity)[language]} to={order.dropoffArea || city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             <FreightDetails order={order} />
             {order.dispatch?.myOffer && <Txt variant="label" style={{ marginTop: 8 }}>
               {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey) })}

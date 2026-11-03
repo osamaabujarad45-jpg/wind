@@ -135,6 +135,13 @@ export function pinLabel(point: Point, lang: Lang): PinLabel {
   return { name, detail: areaLine(point, lang, name) };
 }
 
+/** The neighbourhood or village around a point, and nothing more exact: what a driver may know before taking a job. */
+export function areaName(point: Point, lang: Lang) {
+  const area = closest(nearby(index().areas, point, 3), point);
+  const served = servedCity(point);
+  return area && area.km < 2.5 ? label(area.item, lang) : served ? city(served)[lang] : '';
+}
+
 export function registerPlaceIndexRoutes(route: Register, guards: Guards): void {
   const point = (text: string | null) => {
     const [latitude, longitude] = (text ?? '').split(',').map(Number);

@@ -153,6 +153,7 @@ export type Order = {
   // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).
   recommendedPrice?: number | null; priceRating?: number | null;
   routeKm?: number | null; // road km the recommended price used
+  pickupArea?: string; dropoffArea?: string; pickupKm?: number | null; // job cards: the neighbourhoods, and how far the pickup is from the driver
   myOffer?: { price: number; createdAt: number } | null; // the viewing driver's pending offer
   offers?: Offer[]; // the customer's open offers, cheapest first
   customerRating?: number | null; // stars the driver gave the customer (driver and admin only)

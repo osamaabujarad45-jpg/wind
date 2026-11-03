@@ -33,7 +33,7 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
-import { registerPlaceIndexRoutes } from './domain/place-index.ts';
+import { areaName, registerPlaceIndexRoutes } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
@@ -2019,7 +2019,18 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
   const visible = rows.slice(0, pageSize);
   const cards = await jobCardData(visible, user.id);
-  const jobs = await Promise.all(visible.map(r => toOrder(r, user, cards)));
+  const lang = query.get('lang') === 'en' ? 'en' : 'ar';
+  // In one town the city names say nothing. A driver deciding sees the neighbourhoods and how far the pickup is;
+  // the exact pins, notes and contacts still wait until the job is taken.
+  // The device says where it is for this answer only (an idle driver's position is not stored).
+  const [nearLat, nearLng] = (query.get('near') ?? '').split(',').map(Number);
+  const here = finite(nearLat, 90) && finite(nearLng, 180) ? { latitude: nearLat, longitude: nearLng } : null;
+  const jobs = await Promise.all(visible.map(async r => {
+    const job = await toOrder(r, user, cards);
+    const pickup = r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null, dropoff = r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null;
+    return { ...job, pickupArea: pickup ? areaName(pickup, lang) : '', dropoffArea: dropoff ? areaName(dropoff, lang) : '',
+      pickupKm: here && pickup ? Math.round(crowKm(here, pickup) * 10) / 10 : null };
+  }));
   const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
   if (!paging) return result;
   const last = visible.at(-1);
