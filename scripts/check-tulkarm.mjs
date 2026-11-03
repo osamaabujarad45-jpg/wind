@@ -122,6 +122,17 @@ try {
   await timed('back on the trip after the pin', 8000, () => page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().waitFor());
   ok('dragging the pin names the spot and returns to the trip without a reload');
 
+  // ---- a sideways phone keeps the map, the route card and Request on screen, with the trip framed in the map's free part
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(2200);
+  await shot(page, '4b-landscape');
+  const inFrame = page.frames().find(f => f.url().includes('/map.html'));
+  const stops = await inFrame.evaluate(() => [...document.querySelectorAll('.stop')].map(e => { const r = e.getBoundingClientRect(); return [r.x, r.y]; }));
+  assert.ok(stops.length === 2 && stops.every(([x, y]) => x > 0 && x < 844 - 340 && y > 0 && y < 390), `the stops sit beside the sheet: ${JSON.stringify(stops)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(800);
+  ok('a sideways phone keeps the whole trip on screen');
+
   // ---- request
   await page.waitForTimeout(1200);
   await page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().click();
@@ -138,7 +149,7 @@ try {
   await driverPage.goto(`${base}/driver`);
   await mapFrame(driverPage).locator('canvas.maplibregl-canvas').waitFor({ timeout: 20_000 });
   await driverPage.getByText(c.earnLabel, { exact: true }).first().waitFor({ timeout: 20_000 });
-  assert.equal(await mapFrame(driverPage).locator('.user-dot').count(), 0, 'offline, the driver's GPS stays off');
+  assert.equal(await mapFrame(driverPage).locator('.user-dot').count(), 0, 'offline, GPS stays off');
   await driverPage.waitForTimeout(1500);
   await shot(driverPage, '5b-driver-offers');
   ok('driver home is on the map with the offers on its sheet, and GPS stays off until they go online');

@@ -88,7 +88,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
-  side: { left: undefined, right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
+  side: { left: 'auto', right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,
   gripArea: { height: GRIP, alignItems: 'center', justifyContent: 'center' },
   grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#C9C8BE' },

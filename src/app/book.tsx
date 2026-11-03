@@ -500,7 +500,7 @@ function BookForm() {
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
-      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek }} padding={40}
+      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && { right: SIDE_SHEET }) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
       label={routeChosen ? `${c.routeDiagram}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}

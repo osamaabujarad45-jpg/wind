@@ -19,15 +19,15 @@
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-worker.mjs">
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <style>
-  :root { --inset-top: 0px; --inset-bottom: 0px; }
+  :root { --inset-top: 0px; --inset-bottom: 0px; --inset-right: 0px; }
   html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #EEEFEC; }
   /* The pin's point sits at the centre of the map area the app's chrome leaves visible. */
-  #pin { position: absolute; left: 50%; top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
+  #pin { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
     margin: -42px 0 0 -22px; pointer-events: none; transition: transform .16s ease-out; }
   #pin[hidden], #pin-base[hidden] { display: none; }
   #pin svg { width: 100%; height: 100%; }
   #pin.lift { transform: translateY(-12px); }
-  #pin-base { position: absolute; left: 50%; top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
+  #pin-base { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
     border-radius: 50%; background: rgba(0,0,0,.35); pointer-events: none; }
   #recenter { position: absolute; bottom: calc(var(--inset-bottom) + 34px); right: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
@@ -130,11 +130,12 @@ if (!firstPoints.every(validPoint)) { clearTimeout(timer); fail(); throw new Err
 const padding = config.padding ?? 0;
 // Stop labels hang over their markers and stand 150 px wide: keep room so they are not cut at the screen's edge.
 const fitPadding = () => { const side = state.labels ? Math.max(padding, 80) : padding, above = state.labels ? 34 : 0;
-  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side, right: side }; };
-const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: 0 });
+  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side, right: side + (state.insets.right ?? 0) }; };
+const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: state.insets.right ?? 0 });
 const insetCss = () => {
   document.documentElement.style.setProperty('--inset-top', `${state.insets.top}px`);
   document.documentElement.style.setProperty('--inset-bottom', `${state.insets.bottom}px`);
+  document.documentElement.style.setProperty('--inset-right', `${state.insets.right ?? 0}px`);
 };
 insetCss();
 const map = new ml.Map({
@@ -349,7 +350,7 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   draw(); drawUser(); fade();
 });
 
-const followOffset = () => [0, (state.insets.top - state.insets.bottom) / 2 - 40];
+const followOffset = () => [-(state.insets.right ?? 0) / 2, (state.insets.top - state.insets.bottom) / 2 - 40];
 let drawnLines = '', drawnDriver = '', drawnClosed = '', framed = '', closedMarkers = [];
 // Live: driver, next stop and the road to it. Otherwise both pins and the whole road route (it can bend outside them).
 const framePoints = () => routeFramePoints(state);
