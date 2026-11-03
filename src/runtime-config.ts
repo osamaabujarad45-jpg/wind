@@ -42,6 +42,8 @@ const listeners = new Set<() => void>();
 export function subscribeRuntime(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function configureRuntime(input: unknown, now = Date.now()) { current = readRuntimeConfiguration(input, now); for (const listener of listeners) listener(); return current; }
 export function resetRuntime() { current = null; for (const listener of listeners) listener(); }
+/** The one "map is usable" deadline; a renderer that waits on another deadline adds its own margin on top. */
+export const mapReadyMs = () => effectiveRuntime().values.mapReadyTimeoutMs;
 export function effectiveRuntime(now = Date.now() + serverOffset()) {
   if (current && current.expiresAt > now && current.issuedAt <= now + 5_000) return current;
   return { schemaVersion: 1 as const, revision: 'defaults', issuedAt: now, expiresAt: now,

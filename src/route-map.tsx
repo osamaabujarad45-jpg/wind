@@ -10,6 +10,7 @@ import { bearing, ease, farJump, fitBounds, glideMs, labelField, metersPerPixelA
 import { MapProviderBoundary } from './map-provider-boundary';
 import type { Point } from './model';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
+import { mapReadyMs } from './runtime-config';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
@@ -68,7 +69,7 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
     };
     const fail = () => { if (disposed || terminalFailure) return; terminalFailure = true; patch({ failed: true }); };
     // A parsed style is not yet a usable map: workers/tiles may still fail. Leave the host mounted so a slow load can recover.
-    const timer = setTimeout(fail, 25_000);
+    const timer = setTimeout(fail, mapReadyMs() + 5_000);
     loadMap().then(ml => {
       if (disposed || terminalFailure || !host.current) return;
       // Our own node: MapLibre's `.maplibregl-map { position: relative }` would collapse a React Native Web view.
@@ -156,7 +157,7 @@ export default function RouteMap(props: RouteMapProps) {
 
 function LiveMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
-  const { c, language } = useCopy();
+  const { c, language, rtl } = useCopy();
   const host = useRef<View>(null);
   const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
     at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean; moved?: boolean }>({});
@@ -228,6 +229,7 @@ function LiveMap(props: RouteMapProps) {
       state.driver?.remove();
       state.driver = new state.ml!.Marker({ element: driverIcon(rotation !== null), rotationAlignment: 'map' })
         .setLngLat([(from ?? target).longitude, (from ?? target).latitude]).addTo(map);
+      if (state.stale) state.driver.getElement().style.opacity = '0.45'; // a rebuilt element must stay faded while the fix is old
       state.arrow = rotation !== null; state.rotation = undefined;
     }
     const turnFrom = state.rotation ?? rotation;
@@ -302,21 +304,22 @@ function LiveMap(props: RouteMapProps) {
     else map?.fitBounds(fitBounds(points), { padding, maxZoom: 16 });
   }
 
-  return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
-    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+  // Only the map surface is the labelled image: a labelled container would hide Retry and Recenter from screen readers.
+  return <View style={{ height, width: '100%' }}>
     {/* The diagram shows while the real map loads: never a blank box. It is decoration there: no words,
         no announcement, no gestures. Once the map is up it covers the placeholder. */}
     {!loaded && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />
     </View>}
-    <View ref={host} style={StyleSheet.absoluteFill} />
+    <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
+      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
       <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}><Text>{c.retry}</Text></Pressable>
     </View>}
     {map && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
-      style={[styles.recenter, shadow]}>
+      style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
       <Ionicons name="locate" size={20} color={palette.blue} />
     </Pressable>}
   </View>;
@@ -327,14 +330,17 @@ export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="web" pin={props} google={GooglePinMap} baseline={MapLibrePin} />;
 }
 
-function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function MapLibrePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);
-  const callbacks = useRef({ onChange, onFail, onReady });
-  useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
+  const callbacks = useRef({ onChange, onGesture, onFail, onReady });
+  useEffect(() => { callbacks.current = { onChange, onGesture, onFail, onReady }; });
   const { map, failed, loaded, retry } = useMap(host, [center], language, { padding: 0, picker: true }, m => {
     m.jumpTo({ center: [center.longitude, center.latitude], zoom: 16 });
+    m.on('dragstart', () => callbacks.current.onGesture?.());
+    m.on('zoomstart', e => { if (e.originalEvent) callbacks.current.onGesture?.(); });
     m.on('moveend', () => { const p = m.getCenter(); callbacks.current.onChange({ latitude: p.lat, longitude: p.lng }); });
+    const p = m.getCenter(); callbacks.current.onChange({ latitude: p.lat, longitude: p.lng });
   });
   useEffect(() => { if (failed) callbacks.current.onFail?.(); }, [failed]);
   useEffect(() => { if (loaded && !failed) callbacks.current.onReady?.(); }, [loaded, failed]);
@@ -357,7 +363,7 @@ function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMap
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
   placeholder: { justifyContent: 'center' },
   failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },

@@ -18,6 +18,8 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
   const element = () => ({ style: {}, children: [], addEventListener() {}, removeEventListener() {}, appendChild(child) { child.parent = this; this.children.push(child); },
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); } });
   const host = element();
+  host.injected = []; host.injectJavaScript = value => host.injected.push(value);
+  host.regions = []; host.animateToRegion = value => host.regions.push(value);
   const react = {
     useRef(value) { const i = cursor++; return slots[i] ??= { current: value }; },
     useState(value) { const i = cursor++; if (!slots[i]) slots[i] = { value: typeof value === 'function' ? value() : value };
@@ -54,26 +56,35 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     LatLngBounds: class { constructor() { this.points = []; } extend(point) { this.points.push(point); } },
     event: { clearInstanceListeners(map) { map.cleared = true; map.listeners.forEach(listener => listener.remove()); } },
   };
-  const modules = { react, 'react-native': { View: 'View', Text: 'Text', Pressable: 'Pressable',
+  const modules = { react, 'react-native': { View: 'View', Text: 'Text', Pressable: 'Pressable', Modal: 'Modal', ScrollView: 'ScrollView', useWindowDimensions: () => ({ height: 844 }),
     Platform: { OS: 'web' }, StyleSheet: { create: value => value, absoluteFill: {} } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, './map-math': math, './route-preview': { __esModule: true, default: 'RoutePreview' },
-    './ui': { palette: {}, shadow: {}, useCopy: () => ({ c: { retry: 'Retry' } }) },
+    './ui': { Button: 'Button', Txt: 'Txt', palette: {}, shadow: {}, useCopy: () => ({ c: { retry: 'Retry', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
+    './route-map': { PinMap: 'PinMap' }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    './customer-location': require('../src/customer-location.ts'),
+    'react-native-webview': { WebView: 'WebView' }, './api': { API_URL: 'https://api.example.test' },
+    './google-map.native': { __esModule: true, default: 'GoogleRouteMap', PinMap: 'GooglePinMap' },
+    './map-provider-boundary': { MapProviderBoundary: 'MapProviderBoundary' },
+    'react-native-maps': { __esModule: true, default: 'MapView' }, './motion': { useReducedMotion: () => false },
+    './route-map.native': { Car: 'Car' },
     './google-maps-loader': { loadGoogleMaps: () => loading }, './web-storage': storage,
     'expo-secure-store': {},
     'expo-constants': { __esModule: true, default: { expoConfig: { extra: { googleMaps: { web: true } } } } },
     './map-mode': { useMapMode: () => ['google', () => {}], currentMapMode: () => 'google' },
     './map-provider': require('../src/map-provider.ts'),
-    './runtime-config': { effectiveRuntime: () => ({ mapProviders: { initialMapProvider: 'baseline' } }), subscribeRuntime: () => () => {} },
+    './runtime-config': { mapReadyMs: () => 20_000, effectiveRuntime: () => ({ values: { mapReadyTimeoutMs: 20_000 }, mapProviders: { initialMapProvider: 'baseline' } }), subscribeRuntime: () => () => {} },
     './map-failures': require('../src/map-failures.ts'),
   };
-  const context = { exports: {}, require: name => modules[name] ?? require(name), process: { env: {} },
+  const context = { exports: {}, require: name => modules[name] ?? require(name), process: { env: {} }, AbortController, Error,
     document: { createElement: element }, setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), requestAnimationFrame: () => ++serial, cancelAnimationFrame() {}, performance };
   if (deniedStorage) Object.defineProperty(context, 'localStorage', { get() { throw new Error('Storage denied'); } });
   const source = ts.transpileModule(readFileSync(new URL('../src/' + file, import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  runInNewContext(source, context, { filename: file });
+  const internal = file === 'route-map.android.tsx' ? '\nexports.TestPin = MapLibrePin; exports.TestMapPage = MapPage;'
+    : file === 'route-map.native.tsx' ? '\nexports.TestPin = ApplePin;' : '';
+  runInNewContext(source + internal, context, { filename: file });
   function attach(node) { if (!node || typeof node !== 'object') return;
     if (node.props?.ref) { node.props.ref.current = host; hostRefs.add(node.props.ref); }
     const children = node.props?.children; for (const child of Array.isArray(children) ? children : [children]) attach(child); }
@@ -90,6 +101,180 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
       for (const slot of slots) slot?.cleanup?.(); },
   };
 }
+const first = { latitude: 31.9, longitude: 35.2 }, latest = { latitude: 32.2, longitude: 35.3 };
+function find(node, type, title) {
+  if (!node || typeof node !== 'object') return;
+  if (node.type === type && (!title || node.props.title === title)) return node.props;
+  for (const child of [node.props?.children].flat()) { const found = find(child, type, title); if (found) return found; }
+}
+
+// Pickup sheets must acquire a real fix, then wait for the visible camera to agree before confirming.
+{
+  const h = harness('pin-sheet.tsx'); let resolveFix, signal, confirmed;
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: next => { signal = next; return new Promise(resolve => { resolveFix = resolve; }); }, onConfirm: point => { confirmed = point; } });
+  find(h.tree, 'PinMap').onReady(); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true);
+  resolveFix(latest); await flush(); h.render();
+  assert.deepEqual(plain(find(h.tree, 'PinMap').center), latest);
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true, 'GPS completion alone is not camera completion');
+  find(h.tree, 'PinMap').onChange(first); h.render();
+  assert.deepEqual(plain(find(h.tree, 'PinMap').center), latest, 'old initial camera event cannot overwrite GPS');
+  find(h.tree, 'PinMap').onChange(latest); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false);
+  find(h.tree, 'Button', 'Confirm pin').onPress();
+  assert.deepEqual(plain(confirmed), latest);
+  h.unmount(); assert.equal(signal.aborted, true);
+}
+{
+  const h = harness('pin-sheet.tsx'); let resolveFix, signal;
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: next => { signal = next; return new Promise(resolve => { resolveFix = resolve; }); }, onConfirm() {} });
+  const pin = find(h.tree, 'PinMap'); pin.onReady(); pin.onGesture(); pin.onChange({ latitude: 31.91, longitude: 35.21 }); h.render();
+  assert.equal(signal.aborted, true, 'a user gesture cancels collection immediately');
+  resolveFix(latest); await flush(); h.render();
+  assert.deepEqual(plain(find(h.tree, 'PinMap').center), { latitude: 31.91, longitude: 35.21 }, 'late GPS cannot overwrite the manual pin');
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false);
+  h.unmount();
+}
+{
+  const h = harness('pin-sheet.tsx'); let starts = 0;
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: async () => { if (++starts === 1) throw new Error('unavailable'); return latest; }, onConfirm() {} });
+  find(h.tree, 'PinMap').onReady(); await flush(); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true, 'a failed fix never silently confirms the fallback city');
+  assert.ok(JSON.stringify(h.tree).includes('Choose manually'));
+  find(h.tree, 'Button', 'Use location').onPress(); await flush(); h.render();
+  find(h.tree, 'PinMap').onChange(latest); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false, 'retry recovers');
+  h.unmount();
+}
+{
+  const h = harness('pin-sheet.tsx'); let starts = 0;
+  h.render(h.exports.default, { start: latest, onLocate: async () => { starts++; return first; }, onConfirm() {} });
+  find(h.tree, 'PinMap').onReady(); h.render();
+  assert.equal(starts, 0, 'an existing manual or saved pin does not start GPS');
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false);
+  h.unmount();
+}
+{
+  const h = harness('pin-sheet.tsx'); let resolveFix, signal;
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: next => { signal = next; return new Promise(resolve => { resolveFix = resolve; }); }, onConfirm() {} });
+  h.unmount(); resolveFix(latest); await flush();
+  assert.equal(signal.aborted, true, 'closing cancels a pending native/browser fix');
+}
+{
+  const h = harness('pin-sheet.tsx');
+  h.render(h.exports.default, { start: latest, onLocate: async () => { throw new Error('unavailable'); }, onConfirm() {} });
+  find(h.tree, 'PinMap').onReady(); h.render();
+  find(h.tree, 'Button', 'Use location').onPress(); await flush(); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false, 'a failed retry keeps the visible saved or manual pin confirmable');
+  h.unmount();
+}
+console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close cancellation, failure/retry and saved-pin preservation passed');
+{
+  const h = harness('pin-sheet.tsx'); const requests = [];
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: async (_signal, canRequest) => {
+    requests.push(canRequest); throw new Error('prompt');
+  }, onConfirm() {} });
+  await flush(); h.render();
+  assert.deepEqual(requests, [false], 'automatic opening only checks existing permission');
+  find(h.tree, 'Button', 'Use location').onPress(); await flush(); h.render();
+  assert.deepEqual(requests, [false, true], 'system permission is requested only by the location button');
+  h.unmount();
+}
+{
+  const h = harness('route-map.android.tsx'); const changed = [];
+  const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onCenter: point => changed.push(point) };
+  h.render(h.exports.TestMapPage, props);
+  h.render(undefined, { ...props, update: { center: latest } });
+  const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
+  message({ type: 'drawing' });
+  message({ type: 'center', ...first });
+  assert.equal(changed.length, 0, 'initial city camera cannot overwrite GPS arriving before style load');
+  h.render();
+  assert.ok(h.host.injected.at(-1).includes(JSON.stringify(latest)));
+  message({ type: 'center', ...latest });
+  assert.deepEqual(plain(changed), [latest]);
+  h.unmount();
+}
+{
+  const h = harness('route-map.android.tsx'); let gestures = 0;
+  const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onGesture() { gestures++; } };
+  h.render(h.exports.TestMapPage, props);
+  const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
+  message({ type: 'drawing' }); h.render();
+  h.render(undefined, { ...props, update: { center: latest } });
+  assert.ok(h.host.injected.at(-1).includes(JSON.stringify(latest)), 'a late GPS fix crosses the Android bridge');
+  const count = h.host.injected.length;
+  message({ type: 'gesture' }); assert.equal(gestures, 1);
+  message({ type: 'center', ...first });
+  h.render(undefined, { ...props, update: { center: first } });
+  assert.equal(h.host.injected.length, count, 'a reported gesture center is never echoed as a camera command');
+  h.unmount();
+}
+{
+  const h = harness('route-map.android.tsx'); const changed = [];
+  const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onGesture() {}, onCenter: point => changed.push(point) };
+  h.render(h.exports.TestMapPage, props);
+  const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
+  message({ type: 'drawing' }); h.render();
+  const count = h.host.injected.length;
+  message({ type: 'gesture' });
+  message({ type: 'ready' }); h.render();
+  assert.equal(h.host.injected.length, count, 'readiness alone never re-sends the old camera over a drag');
+  const dragged = { latitude: 31.91, longitude: 35.21 };
+  message({ type: 'center', ...dragged });
+  assert.deepEqual(plain(changed), [dragged], 'a drag that outlives tile loading still reports its centre');
+  h.unmount();
+}
+for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
+  const h = harness(file); const changed = [];
+  const props = { center: first, onChange: point => changed.push(point) };
+  h.render(file === 'google-map.native.tsx' ? h.exports.PinMap : h.exports.TestPin, props);
+  const initial = find(h.tree, 'MapView'); (initial.onMapLoaded ?? initial.onMapReady)(); h.render();
+  h.render(undefined, { ...props, center: latest });
+  assert.deepEqual(plain(h.host.regions.at(-1)), { ...latest, latitudeDelta: 0.01, longitudeDelta: 0.01 }, file + ' camera follows a changed center');
+  find(h.tree, 'MapView').onRegionChangeComplete(first);
+  assert.equal(changed.length, 0, 'old native region completion cannot replace the target');
+  find(h.tree, 'MapView').onRegionChangeComplete(latest);
+  assert.deepEqual(plain(changed.at(-1)), latest);
+  const count = h.host.regions.length;
+  h.render(undefined, { ...props, center: latest });
+  assert.equal(h.host.regions.length, count, 'native camera completion does not cause feedback');
+  const manual = { latitude: 31.95, longitude: 35.25 };
+  h.render(undefined, { ...props, center: first });
+  find(h.tree, 'MapView').onPanDrag();
+  find(h.tree, 'MapView').onRegionChangeComplete(manual);
+  assert.deepEqual(plain(changed.at(-1)), manual, file + ' drag during a pending camera move reports the dragged centre');
+  if (file === 'google-map.native.tsx') { // Google: a pinch reaches React only as a gesture-driven camera start
+    let gestures = 0; const pinched = { latitude: 31.97, longitude: 35.27 };
+    h.render(undefined, { ...props, center: latest, onGesture: () => gestures++ });
+    find(h.tree, 'MapView').onRegionChangeStart(pinched, { isGesture: false });
+    assert.equal(gestures, 0, 'a programmatic camera start is not a gesture');
+    find(h.tree, 'MapView').onRegionChangeStart(pinched, { isGesture: true });
+    find(h.tree, 'MapView').onRegionChangeComplete(pinched);
+    assert.equal(gestures, 1, 'a Google pinch counts as a gesture');
+    assert.deepEqual(plain(changed.at(-1)), pinched, 'a Google pinch during a pending GPS camera reports the pinched centre');
+  }
+  if (file === 'route-map.native.tsx') { // Apple: a pinch reaches React only as a touch
+    let gestures = 0; const pinched = { latitude: 31.97, longitude: 35.27 };
+    h.render(undefined, { ...props, center: latest, onGesture: () => gestures++ });
+    find(h.tree, 'MapView').onTouchStart();
+    find(h.tree, 'MapView').onRegionChangeComplete(pinched);
+    assert.equal(gestures, 1, 'an Apple pinch counts as a gesture');
+    assert.deepEqual(plain(changed.at(-1)), pinched, 'an Apple pinch during a pending GPS camera reports the pinched centre');
+  }
+  h.unmount();
+}
+{
+  const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  const source = page.slice(page.indexOf('function centerPin('), page.indexOf('// Faded while the fix is old'));
+  let current = { lat: first.latitude, lng: first.longitude }, jumps = 0;
+  const context = { map: { getCenter: () => current, jumpTo({ center }) { jumps++; current = { lng: center[0], lat: center[1] }; } } };
+  runInNewContext(source + ';globalThis.centerPin = centerPin;', context);
+  context.centerPin(latest); context.centerPin(latest);
+  assert.equal(jumps, 1, 'Android pin page applies a new center exactly once');
+  context.centerPin({ latitude: NaN, longitude: 200 }); assert.equal(jumps, 1, 'invalid bridge center cannot move the map');
+}
+console.log('Native pin cameras: Android bridge updates without echo, Apple/Google late centers and old-event guards passed');
 function retry(node) {
   if (!node || typeof node !== 'object') return;
   if (node.type === 'Pressable') return node.props.onPress;
@@ -97,7 +282,6 @@ function retry(node) {
   for (const child of Array.isArray(children) ? children : [children]) { const found = retry(child); if (found) return found; }
 }
 
-const first = { latitude: 31.9, longitude: 35.2 }, latest = { latitude: 32.2, longitude: 35.3 };
 {
   const h = harness();
   h.render(h.exports.PinMap, { center: first, onChange() {} });

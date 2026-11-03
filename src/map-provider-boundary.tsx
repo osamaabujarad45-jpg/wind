@@ -41,6 +41,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
       {...route as RouteMapProps & PinMapProps} onFail={fail} />;
     if (pin) return <Map key={attemptKey} {...pin as RouteMapProps & PinMapProps} onFail={fail}
       onReady={() => { if (current()) callbacks.current?.onReady?.(); }}
+      onGesture={() => { if (current()) callbacks.current?.onGesture?.(); }}
       onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
   }
   return <View style={{ height: route?.height ?? pin?.height ?? 220, justifyContent: 'center', backgroundColor: '#E6ECE3' }}>

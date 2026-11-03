@@ -7,6 +7,7 @@ import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
 import { MapProviderBoundary } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
+import { mapReadyMs } from './runtime-config';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
@@ -22,7 +23,7 @@ export default function RouteMap(props: RouteMapProps) {
 
 function AppleRouteMap(props: RouteMapProps) {
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const points = routeFramePoints(props);
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
   const region = {
@@ -58,7 +59,7 @@ function AppleRouteMap(props: RouteMapProps) {
   // A map that never becomes usable shows the diagram with a Retry, like web and Android (never a blank box).
   useEffect(() => {
     if (ready || failed) return;
-    const timer = setTimeout(() => setFailed(true), 20_000);
+    const timer = setTimeout(() => setFailed(true), mapReadyMs());
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
   if (failed) return <View style={{ height, width: '100%' }}>
@@ -83,7 +84,7 @@ function AppleRouteMap(props: RouteMapProps) {
   </MapView>
   {/* The recenter button only clears the gesture: the follow effect then animates the camera (one animation, not two). */}
   {moved && <Pressable onPress={() => setMoved(false)}
-    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
+    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
     <Ionicons name="locate" size={20} color={palette.blue} />
   </Pressable>}
   </View>;
@@ -129,7 +130,7 @@ export function Car({ driver, title, approach, still, stale }: { driver: NonNull
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
@@ -138,11 +139,19 @@ export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="ios" pin={props} google={GooglePinMap} baseline={ApplePin} />;
 }
 
-function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const view = useRef<MapView>(null);
+  const reported = useRef(center);
+  const pendingCenter = useRef<PinMapProps['center'] | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!ready || (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude)) return;
+    pendingCenter.current = center;
+    view.current?.animateToRegion({ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 0);
+  }, [center.latitude, center.longitude, ready, attempt]); // eslint-disable-line react-hooks/exhaustive-deps -- the coordinates are the change, not the object identity
   // The callbacks are inline arrows: they change every render, so they are kept in a ref and the timer
   // below depends on the map's state only, not on their identity.
   const callbacks = useRef({ onFail, onReady });
@@ -150,7 +159,7 @@ function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapPro
   // The sheet offers no pin to confirm until the map says it is ready; a map that never loads says so.
   useEffect(() => {
     if (ready) { callbacks.current.onReady?.(); return; }
-    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, 20_000);
+    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, mapReadyMs());
     return () => clearTimeout(timer);
   }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
@@ -159,8 +168,14 @@ function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapPro
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
-      pitchEnabled={false} rotateEnabled={false} onMapReady={() => setReady(true)} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+      pitchEnabled={false} rotateEnabled={false} // Apple reports no isGesture and its pan recogniser misses pinch: any touch takes over from a pending GPS camera.
+      onTouchStart={() => { pendingCenter.current = null; onGesture?.(); }} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapReady={() => setReady(true)}
+      onRegionChangeComplete={r => {
+        const target = pendingCenter.current;
+        if (target && Math.abs(target.latitude - r.latitude) + Math.abs(target.longitude - r.longitude) > 0.000001) return;
+        pendingCenter.current = null; reported.current = { latitude: r.latitude, longitude: r.longitude }; onChange(reported.current);
+      }} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>

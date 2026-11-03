@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { configureRuntime, effectiveRuntime, resetRuntime, runtimeValues } from '../src/runtime-config.ts';
+import { configureRuntime, effectiveRuntime, mapReadyMs, resetRuntime, runtimeValues } from '../src/runtime-config.ts';
 import { readFileSync } from 'node:fs';
 import { CLIENT_BUILD } from '../src/api-client.ts';
 import { capabilityState, clientConfiguration, clientUpdateRequired } from '../server/domain/runtime-readiness.ts';
@@ -31,4 +31,11 @@ assert.equal(clientUpdateRequired('10014', { WIND_MIN_CLIENT_BUILD: '10014' }), 
 for (const [sent, min] of [['junk', '10014'], ['1', 'junk'], ['1', '-5']]) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: min }), false);
 for (const sent of ['', '0']) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'an empty or zero build is gated');
 assert.equal(clientUpdateRequired('10012, 10014', { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'a repeated header cannot slip past with a later value');
+// Every map renderer reads its ready deadline from the setting, and the WebView page gets it through its config fragment.
+resetRuntime(); assert.equal(mapReadyMs(), 20_000);
+configureRuntime({ ...clientConfiguration({}, Date.now()), values: { ...clientConfiguration({}, Date.now()).values, mapReadyTimeoutMs: 9_000 } });
+assert.equal(mapReadyMs(), 9_000, 'a configured map deadline reaches the renderers'); resetRuntime();
+for (const file of ['route-map.tsx', 'route-map.native.tsx', 'route-map.android.tsx', 'google-map.native.tsx', 'google-map.web.tsx'])
+  assert.doesNotMatch(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), /setTimeout\([^;]*2[05]_000\)/, `${file} reads mapReadyMs instead of a literal deadline`);
+assert.match(readFileSync(new URL('../public/map.html', import.meta.url), 'utf8'), /setTimeout\(fail, Number\.isSafeInteger\(config\.readyMs\) \? config\.readyMs : 20000\)/);
 console.log('Runtime configuration bounds, expiry, authority separation, capability migration gaps and client build gate passed');

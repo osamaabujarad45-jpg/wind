@@ -9,7 +9,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
-import { browserPickupWatch, cachedPickup, findPickup, withPickupPermission } from '../customer-location';
+import { browserPickupWatch, findPickup, pickupErrorKey, pickupPermission, withPickupPermission } from '../customer-location';
 import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { type PlaceCandidate } from '../place-search';
 import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
@@ -48,11 +48,8 @@ function BookForm() {
   const routeChosen = pickupChosen && dropoffChosen;
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
-  const gpsAt = useRef(0);
   const pickupNow = useRef({ city: pickupCity, chosen: pickupChosen }); // read when a slow GPS fix lands, not at the tap
   useEffect(() => { pickupNow.current = { city: pickupCity, chosen: pickupChosen }; }, [pickupCity, pickupChosen]);
-  const pinRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => pinRequest.current?.abort(), []);
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
   const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
@@ -69,6 +66,7 @@ function BookForm() {
   const [error, setError] = useState('');
   const [locationError, setLocationError] = useState('');
   const locationRequest = useRef<AbortController | null>(null);
+  const sheetFix = useRef<{ point: Point; accuracy: number } | null>(null); // the pin sheet's last GPS fix
   useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [outcome, setOutcome] = useState<PendingOutcome | null>(null); // the last read-only answer; null = not checked
@@ -152,11 +150,20 @@ function BookForm() {
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
-  // Denied for good: the system will not ask again, so the only way back is Settings.
-  async function askLocation() {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted && !permission.canAskAgain) void Linking.openSettings().catch(() => {});
-    return permission;
+  function pickupLocation(signal: AbortSignal, canRequest = true) {
+    return findPickup(Platform.OS === 'web' ? async (receive, fail, lifetime) => {
+      if (!canRequest) {
+        const permission = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => null);
+        if (lifetime.aborted) throw new Error('cancelled');
+        if (permission?.state !== 'granted') throw new Error(permission?.state === 'denied' ? 'permission' : 'prompt');
+      }
+      return browserPickupWatch(navigator.geolocation)(receive, fail, lifetime);
+    } : withPickupPermission(lifetime => pickupPermission(Location.getForegroundPermissionsAsync,
+      Location.requestForegroundPermissionsAsync, canRequest, lifetime), async (receive, fail, lifetime) => {
+      if (!await Location.hasServicesEnabledAsync()) throw new Error('disabled');
+      if (lifetime.aborted) throw new Error('cancelled');
+      return Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail);
+    }), signal, canRequest ? 60_000 : 20_000); // Leave time to read the system prompt; every attempt still expires.
   }
 
   async function locate() {
@@ -168,19 +175,15 @@ function BookForm() {
     try {
       // Permission setup shares the timeout: dismissing/backgrounding a native
       // prompt must not leave the booking form locked indefinitely.
-      const result = await findPickup(Platform.OS === 'web' ? browserPickupWatch(navigator.geolocation)
-        : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
+      const result = await pickupLocation(request.signal);
       if (request.signal.aborted) return;
       // Another chosen city's landmark would mislead the driver (as on the pin sheet); one typed before any city is kept.
       if (pickupNow.current.chosen && result.city !== pickupNow.current.city) setPickupNote('');
       setPickupCity(result.city); setPickupChosen(true);
-      gpsAt.current = Date.now();
       setPickupPoint(result.point); setGpsPoint(result.point);
       setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
     } catch (e) {
-      if (!request.signal.aborted) setLocationError(e instanceof Error && e.message === 'outside' ? c.pinOutsideArea
-        : e instanceof Error && e.message === 'inaccurate' ? c.locationInaccurate : c.locationManual);
+      if (!request.signal.aborted) setLocationError(c[pickupErrorKey(e)]);
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
 
@@ -487,19 +490,8 @@ function BookForm() {
           {(['pickup', 'dropoff'] as const).map(which => {
             const set = which === 'pickup' ? pickupPoint : dropoffPoint;
             const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
-            const openPin = async (w: 'pickup' | 'dropoff') => {
+            const openPin = (w: 'pickup' | 'dropoff') => {
               haptic.tap(); setLocationError('');
-              pinRequest.current?.abort();
-              const request = new AbortController(); pinRequest.current = request;
-              if (w === 'pickup' && !pickupPoint && Platform.OS !== 'web') {
-                if (Date.now() - gpsAt.current > 30_000) {
-                  setGpsPoint(null);
-                  const point = await cachedPickup(() => Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 100 }), request.signal);
-                  if (request.signal.aborted) return;
-                  if (point) setGpsPoint(point); // Revalidate cached hints on every opening; only live fixes set gpsAt.
-                }
-              }
-              if (request.signal.aborted) return;
               setPinFor(w);
             };
             return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { void openPin(which); }}>
@@ -510,7 +502,10 @@ function BookForm() {
             </Press>;
           })}
         </Row>}
-        {!!locationError && <Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt>}
+        <Txt variant="caption" style={{ marginTop: 8 }}>{c.locationPurpose}</Txt>
+        {!!locationError && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt></View>}
+        {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
+          <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
       </Card>
 
       {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
@@ -626,19 +621,25 @@ function BookForm() {
     </Screen>
 
     {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
-      start={(pinFor === 'pickup' ? (pickupPoint ?? gpsPoint) : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
-      onClose={() => setPinFor(null)} onConfirm={point => {
+      start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
+      autoLocate={pinFor === 'pickup' && !pickupPoint}
+      onLocate={pinFor === 'pickup' ? async (signal, canRequest) => { const fix = await pickupLocation(signal, canRequest); sheetFix.current = fix; return fix.point; } : undefined}
+      onClose={() => { sheetFix.current = null; setPinFor(null); }} onConfirm={point => {
         const near = servedCity(point);
         if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
         haptic.success();
+        // The sheet's own GPS fix, still under the pin, counts as located like the form's button.
+        const fix = pinFor === 'pickup' ? sheetFix.current : null; sheetFix.current = null;
+        const gps = !!fix && Math.abs(fix.point.latitude - point.latitude) + Math.abs(fix.point.longitude - point.longitude) <= 0.000001;
         if (pinFor === 'pickup') {
           if (near !== pickupCity) setPickupNote('');
-          setPickupCity(near); setPickupPoint(point); setPickupChosen(true);
+          setPickupCity(near); setPickupPoint(point); setPickupChosen(true); if (gps) setGpsPoint(point);
         } else {
           if (near !== dropoffCity) setDropoffNote('');
           setDropoffCity(near); setDropoffPoint(point); setDropoffChosen(true);
         }
         if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));
+        else if (gps) setLocationError(fill(c.locationAccuracy, { city: city(near)[language], m: Math.ceil(fix.accuracy) }));
         setPinFor(null);
       }} />}
 

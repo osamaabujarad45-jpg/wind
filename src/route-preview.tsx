@@ -21,7 +21,7 @@ export type RouteMapProps = {
   /** Internal adapter failure signal; the shared provider boundary owns fallback and retry. */
   onFail?: () => void;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number;
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onGesture?: () => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number;
   /** Public surfaces draw the baseline renderer only. */
   forceBaseline?: boolean };
 
