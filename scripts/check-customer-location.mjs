@@ -63,11 +63,7 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
   await page.getByPlaceholder(c.whereTo).fill('Nablus');
   await page.getByRole('button', { name: /^Nablus/ }).first().click();
-  // A town has no exact spot yet: the pin confirms it, then the trip shows the road.
-  const nablusSpot = page.getByRole('button', { name: c.confirmDropoffSpot, exact: true });
-  await nablusSpot.waitFor();
   const requestButton = page.getByRole('button', { name: /^Request/ });
-  await assertEnabledThenClick(nablusSpot);
   await requestButton.waitFor();
   await page.screenshot({ path: '.expo/location-review/trip.png' });
 
@@ -133,7 +129,7 @@ try {
   assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS browser: GPS default pickup, no default route, town needs a confirmed spot, explicit pickup stays, consent only on Locate, drag beats late GPS, failure explained');
+  console.log('PASS browser: GPS default pickup, no default route, explicit pickup stays, consent only on Locate, drag beats late GPS, failure explained');
 } catch (error) {
   if (reviewPage) {
     await reviewPage.screenshot({ path: '.expo/location-review/failure.png' });

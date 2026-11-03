@@ -117,7 +117,7 @@ const readyTimeout = Number.isSafeInteger(config.readyMs) ? config.readyMs : 200
 let timer = setTimeout(fail, readyTimeout); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
-catch (e) { clearTimeout(timer); fail(); throw e; }
+catch { clearTimeout(timer); fail(); await new Promise(() => {}); } // the app shows its fallback and Retry; nothing more this page can do
 ml.setRTLTextPlugin('/vendor/mapbox-gl-rtl-text.js', true).catch(() => undefined);
 
 // `browse` is a plain map (the home screen); `pin` has the fixed centre pin; `route` draws the trip.

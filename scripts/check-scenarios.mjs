@@ -117,6 +117,7 @@ const state = id => db.prepare('SELECT * FROM orders WHERE id=?').get(id);
 async function atStatus(id, status) { return until(() => state(id), o => o?.status === status, `Order ${id} did not reach ${status}`); }
 async function booking(page, { service = 'parcel', lostResponse = false, scheduled = false } = {}) {
   await page.goto(`${base}/book?service=${service}&from=ramallah&to=nablus`);
+  await button(page, c.sheetExpand).click();
   await field(page, service === 'ride' ? c.pickupNote_ride : c.pickupNote).fill('QA pickup: shop entrance');
   await field(page, c.dropoffNote).fill('QA dropoff: office reception');
   await field(page, c[`${service}Detail`]).fill(service === 'parcel' ? 'Sealed documents' : service === 'freight' ? 'One boxed appliance' : 'Meet at the entrance');
@@ -570,11 +571,13 @@ try {
   await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.features?.length === 0);
   await androidMap.evaluate(() => window.wind({ stale: false }));
   await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.geometry?.type === 'LineString');
+  // Recenter brings a driver's follow camera back to the car, street-level and a little below the middle.
+  await androidMap.evaluate(() => window.wind({ follow: true }));
   await androidMap.evaluate(() => { window.testMap.fire('dragstart'); window.testMap.jumpTo({ center: [35.3, 32.0] }); });
   await androidMap.locator('#recenter').click();
   await androidMap.waitForFunction(() => {
     const p = window.testMap.project([35.2044, 31.9145]);
-    return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 60)) < 20;
+    return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 40)) < 20;
   });
   await new Promise(resolve => setTimeout(resolve, 1300));
   await androidMap.evaluate(() => window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } }));
