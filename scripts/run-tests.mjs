@@ -80,6 +80,7 @@ const suites = [
   "background-permission.test.mjs",
   "customer-location.test.mjs",
   "place-search.test.mjs",
+  "place-index.test.mjs",
   "google-routing.test.mjs",
   "google-map-lifecycle.test.mjs",
   "url-decoder.test.mjs",

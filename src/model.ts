@@ -11,6 +11,12 @@ export const cities = [
   { id: 'qalqilya', ar: 'قلقيلية', en: 'Qalqilya', latitude: 32.1960, longitude: 34.9810 },
   { id: 'jericho', ar: 'أريحا', en: 'Jericho', latitude: 31.8667, longitude: 35.4500 },
   { id: 'salfit', ar: 'سلفيت', en: 'Salfit', latitude: 32.0837, longitude: 35.1808 },
+  { id: 'tubas', ar: 'طوباس', en: 'Tubas', latitude: 32.3209, longitude: 35.3693 },
+  { id: 'jerusalem', ar: 'القدس', en: 'Jerusalem', latitude: 31.7892, longitude: 35.2377 },
+  { id: 'gaza', ar: 'غزة', en: 'Gaza', latitude: 31.5017, longitude: 34.4668 },
+  { id: 'deir_albalah', ar: 'دير البلح', en: 'Deir al-Balah', latitude: 31.4183, longitude: 34.3503 },
+  { id: 'khan_younis', ar: 'خان يونس', en: 'Khan Younis', latitude: 31.3462, longitude: 34.3063 },
+  { id: 'rafah', ar: 'رفح', en: 'Rafah', latitude: 31.2968, longitude: 34.2435 },
 ] as const;
 
 export type CityId = typeof cities[number]['id'];
