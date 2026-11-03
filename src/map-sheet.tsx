@@ -1,7 +1,7 @@
 // The sheet over a full-screen map: a summary and its action stay on screen, drag up (or tap the grip) for everything else.
 // Height comes from what the summary needs, so large text and a pending-booking card grow it instead of clipping it.
 import { useEffect, useRef, useState } from 'react';
-import { Animated, KeyboardAvoidingView, PanResponder, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, KeyboardAvoidingView, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from './motion';
 import { palette, useCopy } from './ui';
@@ -15,7 +15,7 @@ export function useSideSheet() {
   return width > height && height < 520;
 }
 
-export function MapSheet({ header, footer, children, open, onOpenChange, onPeek, safeBottom = true, scrollRef, expandedRatio = 0.86 }: {
+export function MapSheet({ header, footer, children, open, onOpenChange, onPeek, safeBottom = true, scrollRef, expandedRatio = 0.86, onRefresh }: {
   header: React.ReactNode; footer?: React.ReactNode; children?: React.ReactNode;
   open: boolean; onOpenChange: (open: boolean) => void;
   /** The closed height: the map keeps its camera and pin clear of it. */
@@ -24,6 +24,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   safeBottom?: boolean;
   scrollRef?: React.RefObject<ScrollView | null>;
   expandedRatio?: number;
+  onRefresh?: () => Promise<unknown>;
 }) {
   const { c } = useCopy();
   const still = useReducedMotion();
@@ -48,6 +49,8 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   };
   const settleRef = useRef(settle);
   useEffect(() => { settleRef.current = settle; });
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = onRefresh && (async () => { setRefreshing(true); try { await onRefresh(); } finally { setRefreshing(false); } });
   const measured = headerHeight > 0;
   useEffect(() => { if (measured) settleRef.current(open, false); }, [measured, travel]); // eslint-disable-line react-hooks/exhaustive-deps -- a remeasure repositions; it never animates
   useEffect(() => { if (measured) settleRef.current(open); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- only a change of state animates
@@ -76,6 +79,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
         </View>
         <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: footerHeight + 16 }} keyboardShouldPersistTaps="handled"
+          refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}
           showsVerticalScrollIndicator={false} accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}>
           {children}
         </ScrollView>

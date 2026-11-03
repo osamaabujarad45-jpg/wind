@@ -167,7 +167,7 @@ export default function Jobs() {
         <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
       </View>
     </SafeAreaView>
-    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78}
+    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
       header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>

@@ -113,7 +113,7 @@ export default function Home() {
     {!!locationNote && <View style={[styles.note, shadow, { bottom: peek + 66 }]} accessibilityLiveRegion="polite">
       <Txt variant="caption">{locationNote}</Txt>
     </View>}
-    <MapSheet open={open} onOpenChange={setOpen} onPeek={setPeek} safeBottom={false}
+    <MapSheet open={open} onOpenChange={setOpen} onPeek={setPeek} safeBottom={false} onRefresh={reload}
       header={<View style={{ paddingBottom: 12 }}>
         {/* The one entry point: destination first, with "Later" a real control rather than a label drawn like a button. */}
         <View style={[styles.search, { flexDirection: row }]}>

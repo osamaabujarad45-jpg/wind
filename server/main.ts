@@ -2036,7 +2036,7 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     const job = await toOrder(r, user, cards);
     const pickup = r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null, dropoff = r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null;
     return { ...job, pickupArea: pickup ? areaName(pickup, lang) : '', dropoffArea: dropoff ? areaName(dropoff, lang) : '',
-      pickupKm: here && pickup ? Math.round(crowKm(here, pickup) * 10) / 10 : null };
+      pickupKm: here && pickup ? Math.max(1, Math.round(crowKm(here, pickup))) : null }; // whole km: three queries from three spots must not reveal the pin
   }));
   const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
   if (!paging) return result;

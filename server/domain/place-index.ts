@@ -161,6 +161,7 @@ export function registerPlaceIndexRoutes(route: Register, guards: Guards): void 
   route('GET', '/api/places/suggest', async ({ user, query }) => {
     const q = (query.get('q') ?? '').trim();
     if (!q || q.length > 100) return guards.fail(400, 'invalid_input');
+    if (foldPlace(q).length < 2) return { hits: [] }; // one letter matches nearly everything and helps nobody
     await guards.limit(guards.limitKey(user.id), 600, 10 * 60_000);
     return { hits: suggestPlaces(q, language(query), point(query.get('near'))) };
   });

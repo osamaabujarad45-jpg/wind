@@ -597,7 +597,7 @@ export default function OrderScreen() {
         {!finding && !activeStatuses.includes(order.status) ? <Badge label={c[order.status]} status={order.status} /> : null}
       </View>}
     </SafeAreaView>
-    <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek}
+    <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={serviceMeta[order.service].color} size={64}>

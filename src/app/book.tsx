@@ -167,11 +167,10 @@ function BookForm() {
       // prompt must not leave the booking form locked indefinitely.
       const result = await pickupLocation(request.signal);
       if (request.signal.aborted) return;
-      pickupTouched.current = true;
       setHere({ ...result.point, accuracy: result.accuracy }); void rememberHere(result.point);
-      setPickupNote(''); adoptFix(result);
-      if (step === 'pin') { setPinCenter(result.point); }
-      else if (step === 'search') { setField('dropoff'); if (dropoffChosen) setStep('trip'); }
+      if (step === 'pin') setPinCenter(result.point); // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
+      if (step !== 'pin' || pinFor === 'pickup') { pickupTouched.current = true; setPickupNote(''); adoptFix(result); }
+      if (step === 'search') { setField('dropoff'); if (dropoffChosen) setStep('trip'); }
     } catch (e) {
       if (!request.signal.aborted) setLocationError(c[pickupErrorKey(e)]);
     } finally { if (!request.signal.aborted) setLocating(false); }
@@ -504,7 +503,7 @@ function BookForm() {
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
       label={routeChosen ? `${c.routeDiagram}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
-      onMoving={() => setPinMoving(true)} onGesture={() => { setPinMoving(true); setLocationError(''); }}
+      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
 
@@ -576,7 +575,12 @@ function BookForm() {
             {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on ? '' : '≈ '}${money(value)}`}</Txt>}
           </Press>;
         })}
-        {copiedFrom !== null && !pending && <Txt variant="caption">{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
+        {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>
+          <Row gap={8} style={{ minHeight: 40 }}>
+            <Ionicons name="calendar-outline" size={16} color={palette.olive} />
+            <Txt variant="label" style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(scheduledFor) })}</Txt>
+          </Row>
+        </Press>}
       </View>}
       footer={pending ? undefined : <>
         <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
