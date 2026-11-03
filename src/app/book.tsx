@@ -593,6 +593,8 @@ function BookForm() {
 
 
       <Card>
+        {/* What it is comes first: it is the one thing a map cannot fill in. */}
+        <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         <Field label={word('pickupNote')} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
         {isCustomer && pickupChosen && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={word('dropoffNote')} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
@@ -602,7 +604,6 @@ function BookForm() {
             keyboardType="phone-pad" error={invalid.recipientPhone} disabled={locked} maxLength={20} />
           <Field label={c.recipientName} icon="person-outline" value={recipientName} onChangeText={setRecipientName} disabled={locked} maxLength={60} />
         </>}
-        <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         {service === 'ride'
           ? <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="label">{c.passengers}</Txt>
