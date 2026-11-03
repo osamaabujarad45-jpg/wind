@@ -333,6 +333,10 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
   const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
   assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
+  // Android: the page labels its own map, so the WebView is not wrapped in an accessible group that would hide Recenter.
+  const androidMap = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8'), mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  assert.ok(!androidMap.includes('accessible={!!label}') && androidMap.includes('label: `${c.routeDiagram}'), 'Android route label travels in the page update');
+  assert.ok(mapPage.includes("mapEl.setAttribute('aria-label', update.label)") && mapPage.indexOf('id="recenter"') > mapPage.indexOf('<div id="map"></div>'), 'map.html labels the map; Recenter is outside it');
   // Apple reports no isGesture: a touch (pinch included) must stop the route camera following, like every other renderer.
   assert.ok(readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8').includes('onTouchStart={() => setMoved(true)}'), 'an Apple pinch stops follow');
   // The stale effect does not re-run when the arrow appears, so the rebuilt driver element must be faded where it is created.

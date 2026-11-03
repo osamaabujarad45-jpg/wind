@@ -120,6 +120,8 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
     <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
       initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
       pitchEnabled={false} rotateEnabled={false} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapLoaded={() => setReady(true)}
+      // A pinch never reaches onPanDrag: any user-driven camera start takes over from a pending GPS move.
+      onRegionChangeStart={(_, details) => { if (details?.isGesture) { pendingCenter.current = null; onGesture?.(); } }}
       onRegionChangeComplete={r => {
         const target = pendingCenter.current;
         if (target && Math.abs(target.latitude - r.latitude) + Math.abs(target.longitude - r.longitude) > 0.000001) return;

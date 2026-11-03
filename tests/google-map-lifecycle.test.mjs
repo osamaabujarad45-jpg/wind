@@ -244,6 +244,16 @@ for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
   find(h.tree, 'MapView').onPanDrag();
   find(h.tree, 'MapView').onRegionChangeComplete(manual);
   assert.deepEqual(plain(changed.at(-1)), manual, file + ' drag during a pending camera move reports the dragged centre');
+  if (file === 'google-map.native.tsx') { // Google: a pinch reaches React only as a gesture-driven camera start
+    let gestures = 0; const pinched = { latitude: 31.97, longitude: 35.27 };
+    h.render(undefined, { ...props, center: latest, onGesture: () => gestures++ });
+    find(h.tree, 'MapView').onRegionChangeStart(pinched, { isGesture: false });
+    assert.equal(gestures, 0, 'a programmatic camera start is not a gesture');
+    find(h.tree, 'MapView').onRegionChangeStart(pinched, { isGesture: true });
+    find(h.tree, 'MapView').onRegionChangeComplete(pinched);
+    assert.equal(gestures, 1, 'a Google pinch counts as a gesture');
+    assert.deepEqual(plain(changed.at(-1)), pinched, 'a Google pinch during a pending GPS camera reports the pinched centre');
+  }
   if (file === 'route-map.native.tsx') { // Apple: a pinch reaches React only as a touch
     let gestures = 0; const pinched = { latitude: 31.97, longitude: 35.27 };
     h.render(undefined, { ...props, center: latest, onGesture: () => gestures++ });

@@ -21,8 +21,8 @@ const colors = { forest: palette.forest, olive: palette.olive, clay: palette.cla
 type Message = { type: 'ready' | 'failed' | 'drawing' | 'gesture' } | { type: 'center'; latitude: number; longitude: number };
 
 /** WebView on public/map.html; calls onFail if the page fails or never says it is ready (offline, blocked, server without the page). */
-function MapPage({ config, height, update, onCenter, onGesture, onFail, onReady, label }: {
-  config: { mode?: string } & Record<string, unknown>; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onGesture?: () => void; onFail: () => void; onReady?: () => void; label?: string;
+function MapPage({ config, height, update, onCenter, onGesture, onFail, onReady }: {
+  config: { mode?: string } & Record<string, unknown>; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onGesture?: () => void; onFail: () => void; onReady?: () => void;
 }) {
   const view = useRef<WebView>(null);
   const reported = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -61,7 +61,8 @@ function MapPage({ config, height, update, onCenter, onGesture, onFail, onReady,
     if (center && reported.current?.latitude === center.latitude && reported.current.longitude === center.longitude) return;
     view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`);
   }, [state, json]);
-  return <View style={{ height, width: '100%' }} accessible={!!label} accessibilityRole={label ? 'image' : undefined} accessibilityLabel={label}>
+  // Not an accessible group: that would hide the page's own Recenter button. The page labels its map itself.
+  return <View style={{ height, width: '100%' }}>
     <WebView ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: '#E6ECE3' }} originWhitelist={['*']}
       setSupportMultipleWindows={false} overScrollMode="never"
       // Only our map page loads here; map credits and any other link open in the browser.
@@ -104,13 +105,13 @@ function LiveMap(props: RouteMapProps) {
   const config = { mode: 'route', language, pickup, dropoff, driver: driver ?? null, recenter: c.recenter,
     padding: Math.round(Math.min(56, height / 5)) }; // markers clear of the edges without zooming a short map out
   const update = { driver: driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null,
-    road: props.road ?? null, approach: props.approach ?? null, closed: props.closed ?? [], focus: props.focus, stale: !!props.stale };
+    road: props.road ?? null, approach: props.approach ?? null, closed: props.closed ?? [], focus: props.focus, stale: !!props.stale,
+    label: `${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}` };
   if (failed) return <View>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}><Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} /></View>
   </View>;
-  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }}
-    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
+  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }} />;
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
