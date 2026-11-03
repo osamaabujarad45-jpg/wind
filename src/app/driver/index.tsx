@@ -6,14 +6,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
+import { MapSheet } from '../../map-sheet';
 import { pickupLocation } from '../../pickup-location';
+import { SceneMap } from '../../scene-map';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
+import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 
@@ -29,6 +32,10 @@ export default function Jobs() {
   const cursor = cursors.at(-1);
   // Only with consent already given, and only to say how far each pickup is: nothing here reports the driver's position.
   const [here, setHere] = useState<Point | null>(null);
+  const [peek, setPeek] = useState(0);
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null); // until the driver chooses, the sheet opens when there are offers
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   useEffect(() => {
     if (!active) return;
     const request = new AbortController();
@@ -158,10 +165,17 @@ export default function Jobs() {
       action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
   </Screen>;
 
-  return <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
-    <Header title={c.jobs} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
-    <VerifyEmailNudge />
-
+  return <View style={{ flex: 1, backgroundColor: palette.paper }}>
+    {/* A driver's work starts on the map, where they are; going online and the offers sit on the sheet over it. */}
+    {focused && <SceneMap fill mode="browse" center={here ?? cities[0]} zoom={here ? 15 : 9} user={here} insets={{ top: 60, bottom: peek }} label={c.jobs} />}
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
+      <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between' }} pointerEvents="box-none">
+        <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
+        <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
+      </View>
+    </SafeAreaView>
+    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false}
+      header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
       <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
@@ -185,6 +199,12 @@ export default function Jobs() {
         onOpenSettings={() => { void Linking.openSettings(); }} />
     </View>
 
+    {/* gap keeps the shortcut from reading as the first offer's header */}
+    {carrying.length === 1 && <View style={{ marginBottom: 14 }}><Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} /></View>}
+    {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
+      </View>}>
+    <VerifyEmailNudge />
+
     {/* Optional and separately tapped: never requested automatically. */}
     <View style={{ marginTop: 12 }}>
       <BackgroundLocationAction onRequest={() => work.requestBackgroundTracking()} />
@@ -195,9 +215,6 @@ export default function Jobs() {
       value={me?.user.heading?.city ?? 'any'} disabled={headingBusy} onChange={key => { void head(key); }} />
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
-    {/* gap keeps the shortcut from reading as the first offer's header */}
-    {carrying.length === 1 && <View style={{ marginBottom: 14 }}><Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} /></View>}
-    {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
 
     {!jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
@@ -276,10 +293,13 @@ export default function Jobs() {
     {page?.nextCursor && !badCursor && <Button title={c.jobsNextPage} variant="soft" onPress={() => {
       setPages({ scope: pageScope, cursors: [...cursors, page.nextCursor!] });
     }} />}
-  </Screen>;
+    </MapSheet>
+  </View>;
 }
 
 const styles = StyleSheet.create({
+  top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
+  title: { backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 14, justifyContent: 'center', minHeight: 44 },
   location: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
   note: { alignItems: 'flex-start', marginTop: 10, backgroundColor: palette.muted, borderRadius: 10, padding: 8 },
 });

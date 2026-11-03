@@ -33,7 +33,7 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
   .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: var(--inset-bottom); }
   .stop { position: relative; }
-  .stop-label { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: 180px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  .stop-label { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: 150px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
     background: #fff; color: #12342A; font: 600 12px/18px system-ui, sans-serif; padding: 3px 10px; border-radius: 13px; box-shadow: 0 1px 6px rgba(0,0,0,.22); pointer-events: none; }
   .stop-label[hidden] { display: none; }
   .stop-label span { overflow: hidden; text-overflow: ellipsis; }
@@ -128,7 +128,9 @@ const free = () => state.mode !== 'route';
 const firstPoints = free() ? [state.center] : [state.pickup, state.dropoff, ...(state.driver ? [state.driver] : [])];
 if (!firstPoints.every(validPoint)) { clearTimeout(timer); fail(); throw new Error('bad points'); }
 const padding = config.padding ?? 0;
-const fitPadding = () => ({ top: state.insets.top + padding, bottom: state.insets.bottom + padding, left: padding, right: padding });
+// Stop labels hang over their markers and stand 150 px wide: keep room so they are not cut at the screen's edge.
+const fitPadding = () => { const side = state.labels ? Math.max(padding, 80) : padding, above = state.labels ? 34 : 0;
+  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side, right: side }; };
 const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: 0 });
 const insetCss = () => {
   document.documentElement.style.setProperty('--inset-top', `${state.insets.top}px`);

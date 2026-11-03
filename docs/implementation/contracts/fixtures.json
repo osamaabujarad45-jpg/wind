@@ -3465,6 +3465,30 @@
           {
             "id": "salfit",
             "ar": "<ar>"
+          },
+          {
+            "ar": "<ar>",
+            "id": "tubas"
+          },
+          {
+            "ar": "<ar>",
+            "id": "jerusalem"
+          },
+          {
+            "ar": "<ar>",
+            "id": "gaza"
+          },
+          {
+            "ar": "<ar>",
+            "id": "deir_albalah"
+          },
+          {
+            "ar": "<ar>",
+            "id": "khan_younis"
+          },
+          {
+            "ar": "<ar>",
+            "id": "rafah"
           }
         ],
         "enabledServices": [
