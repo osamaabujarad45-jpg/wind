@@ -94,7 +94,7 @@ const labelField = language => language === 'ar'
 
 let failed = false;
 const fail = () => { if (!failed) { failed = true; send({ type: 'failed' }); } };
-let timer = setTimeout(fail, 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
+let timer = setTimeout(fail, Number.isSafeInteger(config.readyMs) ? config.readyMs : 20000); // the app's mapReadyTimeoutMs; map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
 catch (e) { clearTimeout(timer); fail(); throw e; }
@@ -128,7 +128,22 @@ map.once('load', () => { mapLoaded = true; announceReady(); });
 
 const state = { driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
-window.wind = update => { if (failed) return; Object.assign(state, update); if (ready) draw(); fade(); };
+window.wind = update => {
+  if (failed) return;
+  Object.assign(state, update);
+  if (ready) {
+    if (pin && update.center) centerPin(update.center);
+    else draw();
+  }
+  fade();
+};
+function centerPin(point) {
+  if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)
+    || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180) return;
+  const current = map.getCenter();
+  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001)
+    map.jumpTo({ center: [point.longitude, point.latitude] });
+}
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
 const fade = () => {
@@ -169,6 +184,7 @@ const empty = { type: 'FeatureCollection', features: [] };
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
 const recenter = document.getElementById('recenter');
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
+if (config.language === 'ar') { recenter.style.right = 'auto'; recenter.style.left = '10px'; } // mirrored like the app's useCopy().rtl
 recenter.style.color = C.blue;
 document.querySelector('#pin path').setAttribute('fill', C.clay);
 
@@ -182,7 +198,11 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   if (pin) {
     document.getElementById('pin').hidden = false;
     map.jumpTo({ center: [config.center.longitude, config.center.latitude], zoom: 16 });
+    if (state.center) centerPin(state.center);
+    map.on('dragstart', () => send({ type: 'gesture' }));
+    map.on('zoomstart', e => { if (e.originalEvent) send({ type: 'gesture' }); });
     map.on('moveend', () => { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); });
+    const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng });
   } else {
     new ml.Marker({ element: dot(C.olive) }).setLngLat([config.pickup.longitude, config.pickup.latitude]).addTo(map);
     new ml.Marker({ element: dot(C.clay, true) }).setLngLat([config.dropoff.longitude, config.dropoff.latitude]).addTo(map);

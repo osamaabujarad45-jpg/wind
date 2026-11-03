@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { farJump, fitBounds, glideMs, routeFramePoints } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
+import { mapReadyMs } from './runtime-config';
 import { palette, shadow, useCopy } from './ui';
 import { loadGoogleMaps } from './google-maps-loader';
 
@@ -42,7 +43,7 @@ const FOLLOW_ZOOM = 15;
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 export default function RouteMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const host = useRef<View>(null);
   const state = useRef<{ map?: GMap; maps?: any; ls: Listener[]; road?: any; approach?: any; closed: any[];
     driver?: any; halo?: any; shown?: { latitude: number; longitude: number }; at?: number; rotation?: number; frame?: number; moved?: boolean }>(
@@ -114,7 +115,7 @@ export default function RouteMap(props: RouteMapProps) {
 
   useEffect(() => {
     if (ready || failed) return;
-    const timer = setTimeout(() => { terminal.current = true; setFailed(true); }, 25_000);
+    const timer = setTimeout(() => { terminal.current = true; setFailed(true); }, mapReadyMs() + 5_000);
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
 
@@ -198,13 +199,14 @@ export default function RouteMap(props: RouteMapProps) {
     // The moved-state effect performs exactly one camera operation.
   }
 
-  return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
-    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+  // Only the map surface is the labelled image: a labelled container would hide Retry and Recenter from screen readers.
+  return <View style={{ height, width: '100%' }}>
     {!ready && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />
     </View>}
-    <View ref={host} style={StyleSheet.absoluteFill} />
+    <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
+      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
@@ -212,7 +214,7 @@ export default function RouteMap(props: RouteMapProps) {
       </Pressable>
     </View>}
     {ready && !failed && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
-      style={[styles.recenter, shadow]}>
+      style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
       <Ionicons name="locate" size={20} color={palette.blue} />
     </Pressable>}
     {/* Google renders its own attribution and logo; nothing of theirs is redrawn or hidden here. */}
@@ -220,11 +222,11 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
   const host = useRef<View>(null);
-  const callbacks = useRef({ onChange, onFail, onReady });
-  useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
+  const callbacks = useRef({ onChange, onGesture, onFail, onReady });
+  useEffect(() => { callbacks.current = { onChange, onGesture, onFail, onReady }; });
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -241,12 +243,15 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
       broken = true;
       setFailed(true); callbacks.current.onFail?.();
     };
-    const timer = setTimeout(fail, 25_000);
+    const timer = setTimeout(fail, mapReadyMs() + 5_000);
     loadGoogle().then(maps => {
       if (disposed || !hostElement) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (hostElement as unknown as HTMLElement).appendChild(el);
+      const gesture = () => { if (!disposed && !broken) callbacks.current.onGesture?.(); };
+      el.addEventListener('pointerdown', gesture);
+      el.addEventListener('wheel', gesture, { passive: true });
       const map = new maps.Map(el, {
         center: { lat: centerRef.current.latitude, lng: centerRef.current.longitude }, zoom: 16, gestureHandling: 'greedy',
         mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false,
@@ -255,9 +260,11 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
         if (disposed || broken) return;
         const p = map.getCenter();
         callbacks.current.onChange({ latitude: p.lat(), longitude: p.lng() });
-      }), map.addListener('tilesloaded', () => { if (!disposed && !broken) { clearTimeout(timer); setReady(true); } })];
+      }), map.addListener('dragstart', () => { if (!disposed && !broken) callbacks.current.onGesture?.(); }),
+      map.addListener('tilesloaded', () => { if (!disposed && !broken) { clearTimeout(timer); setReady(true); } })];
       mapRef.current = map;
-      cleanup = () => { listeners.forEach(l => l.remove()); maps.event.clearInstanceListeners(map); el.remove(); mapRef.current = null; };
+      cleanup = () => { listeners.forEach(l => l.remove()); maps.event.clearInstanceListeners(map);
+        el.removeEventListener('pointerdown', gesture); el.removeEventListener('wheel', gesture); el.remove(); mapRef.current = null; };
     }).catch(fail);
     return () => { disposed = true; clearTimeout(timer); cleanup?.(); };
   }, [attempt]);
@@ -305,7 +312,7 @@ const shortestTurn = (a: number, b: number) => ((b - a) % 360 + 540) % 360 - 180
 const styles = StyleSheet.create({
   placeholder: { justifyContent: 'center' },
   failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
   retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },
 });

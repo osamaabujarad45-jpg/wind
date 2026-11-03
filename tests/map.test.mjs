@@ -333,6 +333,11 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // deployment that configured the restricted browser key — a baseline deployment stays byte-identical.
   const webEntry = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
   assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
+  // Apple reports no isGesture: a touch (pinch included) must stop the route camera following, like every other renderer.
+  assert.ok(readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8').includes('onTouchStart={() => setMoved(true)}'), 'an Apple pinch stops follow');
+  // The stale effect does not re-run when the arrow appears, so the rebuilt driver element must be faded where it is created.
+  assert.match(webEntry, /state\.driver = new state\.ml!\.Marker\([^\n]*\r?\n[^\n]*\.addTo\(map\);\r?\n\s*if \(state\.stale\) state\.driver\.getElement\(\)\.style\.opacity = '0\.45'/,
+    'a driver marker rebuilt while the fix is stale keeps its faded opacity');
   const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
   const googleLoader = readFileSync(new URL('../src/google-maps-loader.ts', import.meta.url), 'utf8');
   assert.ok(googleLoader.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');

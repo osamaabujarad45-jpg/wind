@@ -489,6 +489,8 @@ try {
   pass('late location permission cannot accept a job after a driver account switch');
 
   stage = 'map picker and recovery';
+  // Playwright's fixed location keeps its original timestamp until explicitly refreshed.
+  await customerPage.context().setGeolocation({ latitude: 31.9038, longitude: 35.2034, accuracy: 15 });
   await customerPage.goto(base + '/book?from=ramallah&to=nablus');
   await button(customerPage, c.pickupOnMap).click();
   const confirmPin = button(customerPage, c.confirmPin);
