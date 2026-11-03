@@ -122,6 +122,7 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
     ? 'no-cache' : 'public, max-age=604800, immutable';
   // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
+  if (file === resolve(webRoot, 'map.html')) res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // the web app shows this page in an iframe; a 304 must say so too
   const since = req.headers['if-modified-since'];
   if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
     res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
@@ -2504,8 +2505,9 @@ let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 
 const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
 registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
   reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number };
-type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
+type NavStep = { type: string; modifier?: string; name?: string; exit?: number; latitude: number; longitude: number };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number; steps: NavStep[] };
+type OsrmRoute = { distance: number; duration: number; line: [number, number][]; steps: NavStep[] };
 const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number; calculatedAt?: number }>(); // least recently used evicted
 let roadCachePoints = 0;
 const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-geometry routes would be ~500 MB
@@ -2516,7 +2518,7 @@ const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking check
 
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
   try {
-    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
+    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson&steps=true${extra}`,
       { signal: AbortSignal.timeout(routingTimeout) });
     if (!res.ok) fail(503, 'route_unavailable');
     const j: any = await res.json();
@@ -2532,7 +2534,13 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
     if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
     routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
     return j.routes
-      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),
+        // Turn-by-turn for the driver's banner; only /api/route?steps=1 sends them.
+        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any) => Array.isArray(leg?.steps) ? leg.steps : []).flatMap((step: any) => {
+          const [longitude, latitude] = Array.isArray(step?.maneuver?.location) ? step.maneuver.location : [];
+          return finite(latitude, 90) && finite(longitude, 180) ? [{ type: String(step.maneuver.type ?? ''), latitude, longitude,
+            ...(step.maneuver.modifier && { modifier: String(step.maneuver.modifier) }), ...(step.name && { name: String(step.name).slice(0, 80) }), ...(Number.isInteger(step.maneuver.exit) && { exit: step.maneuver.exit }) }] : [];
+        }) }));
   } catch (error) {
     routingHealth = { healthy: false, checkedAt: Date.now(), reason: 'route_unavailable' };
     throw error;
@@ -2592,7 +2600,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         chosen = bestRoute(options, delay) ?? fastest;
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
-      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
+      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line, steps: chosen.steps,
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { if (roadCache.get(key)?.promise === promise) roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
@@ -2621,7 +2629,8 @@ route('GET', '/api/route', async ({ user, query }) => {
   (await limit(identityKey('route', user.id), 120, 10 * 60_000));
   const heading = query.get('heading') == null ? null : Number(query.get('heading'));
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
-  const { calculatedAt, ...result } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  const { calculatedAt, steps, ...line } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  const result = query.get('steps') === '1' ? { ...line, steps } : line;
   return query.get('journeyProtocol') === '1' ? { ...result, eta: etaProjection(result.minutes * 60, calculatedAt, calculatedAt + 30_000) } : result;
 });
 

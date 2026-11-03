@@ -3,6 +3,9 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
 import { palette, useCopy } from './ui';
 
+/** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
+export type MapInsets = { top?: number; bottom?: number };
+export type UserDot = Point & { accuracy?: number | null };
 export type RouteMapProps = {
   pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;
   driver?: (Point & { heading?: number | null; accuracy?: number | null }) | null; driverTitle?: string;
@@ -18,10 +21,19 @@ export type RouteMapProps = {
   closed?: Point[] | null;
   /** Anonymous and public surfaces draw the free baseline only: no paid route, no Google tiles (T15). */
   forceBaseline?: boolean;
+  /** Fill the parent instead of a fixed height, with the app's chrome over it. */
+  fill?: boolean; insets?: MapInsets; padding?: number;
+  /** The camera stays on the car at street level (the driver) instead of framing the car with the next stop. */
+  follow?: boolean;
+  /** The customer's own position, as a blue dot. */
+  user?: UserDot | null;
+  /** Minutes on the next stop's label, and names over the stops. */
+  eta?: string | null; stopLabels?: { pickup?: string; dropoff?: string } | null;
   /** Internal adapter failure signal; the shared provider boundary owns fallback and retry. */
   onFail?: () => void;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onGesture?: () => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number;
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onGesture?: () => void; onMoving?: () => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number;
+  fill?: boolean; insets?: MapInsets; user?: UserDot | null;
   /** Public surfaces draw the baseline renderer only. */
   forceBaseline?: boolean };
 
