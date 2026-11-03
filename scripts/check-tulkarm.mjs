@@ -136,11 +136,12 @@ try {
   const driverAt = { latitude: 32.3189, longitude: 35.0205 };
   const driverPage = await open(driverSession.token, driverAt);
   await driverPage.goto(`${base}/driver`);
-  await mapFrame(driverPage).locator('.user-dot').waitFor({ timeout: 20_000 });
-  await driverPage.getByText(language === 'ar' ? /منك/ : /from you/).first().waitFor({ timeout: 20_000 });
+  await mapFrame(driverPage).locator('canvas.maplibregl-canvas').waitFor({ timeout: 20_000 });
+  await driverPage.getByText(c.earnLabel, { exact: true }).first().waitFor({ timeout: 20_000 });
+  assert.equal(await mapFrame(driverPage).locator('.user-dot').count(), 0, 'offline, the driver's GPS stays off');
   await driverPage.waitForTimeout(1500);
   await shot(driverPage, '5b-driver-offers');
-  ok('driver home is on the map, and an offer names the distance to pickup');
+  ok('driver home is on the map with the offers on its sheet, and GPS stays off until they go online');
   await driverPage.goto(`${base}/order/${orderId}`);
   await driverPage.getByRole('button', { name: c.accept, exact: true }).click();
   await driverPage.waitForFunction(() => true);

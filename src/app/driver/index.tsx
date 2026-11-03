@@ -1,14 +1,13 @@
 // Driver jobs, Uber Driver pattern: a presence card (never ready until the server confirms), then offer cards that lead with what the driver
 // earns, the route spine, what the job carries, and one accept button.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
 import { MapSheet } from '../../map-sheet';
-import { pickupLocation } from '../../pickup-location';
-import { SceneMap } from '../../scene-map';
+import { DriverMap } from '../../driver-map';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
@@ -30,18 +29,12 @@ export default function Jobs() {
   const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
   const cursors = pages.scope === pageScope ? pages.cursors : [];
   const cursor = cursors.at(-1);
-  // Only with consent already given, and only to say how far each pickup is: nothing here reports the driver's position.
+  // Set only while the driver is online or on a job (DriverMap): how far each pickup is, for this answer only.
   const [here, setHere] = useState<Point | null>(null);
   const [peek, setPeek] = useState(0);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null); // until the driver chooses, the sheet opens when there are offers
   const [focused, setFocused] = useState(true);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
-  useEffect(() => {
-    if (!active) return;
-    const request = new AbortController();
-    pickupLocation(request.signal, false).then(fix => { if (!request.signal.aborted) setHere(fix.point); }).catch(() => undefined);
-    return () => request.abort();
-  }, [active]);
   const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1&lang=${language}${here ? `&near=${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
@@ -167,7 +160,7 @@ export default function Jobs() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* A driver's work starts on the map, where they are; going online and the offers sit on the sheet over it. */}
-    {focused && <SceneMap fill mode="browse" center={here ?? cities[0]} zoom={here ? 15 : 9} user={here} insets={{ top: 60, bottom: peek }} label={c.jobs} />}
+    {focused && <DriverMap active={work.presenceState === 'online' || assigned} bottom={peek} label={c.jobs} onHere={setHere} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
       <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between' }} pointerEvents="box-none">
         <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
