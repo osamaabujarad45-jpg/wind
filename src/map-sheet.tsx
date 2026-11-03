@@ -8,6 +8,12 @@ import { palette, useCopy } from './ui';
 
 const GRIP = 22;
 const nativeDriver = Platform.OS !== 'web';
+/** A sideways phone has no height to spare: the sheet stands beside the map instead of over it. */
+export const SIDE_SHEET = 340;
+export function useSideSheet() {
+  const { width, height } = useWindowDimensions();
+  return width > height && height < 520;
+}
 
 export function MapSheet({ header, footer, children, open, onOpenChange, onPeek, safeBottom = true, scrollRef, expandedRatio = 0.86 }: {
   header: React.ReactNode; footer?: React.ReactNode; children?: React.ReactNode;
@@ -22,12 +28,13 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   const { c } = useCopy();
   const still = useReducedMotion();
   const { height: screen } = useWindowDimensions();
+  const side = useSideSheet();
   const insets = useSafeAreaInsets();
   const [headerHeight, setHeaderHeight] = useState(0), [footerHeight, setFooterHeight] = useState(0);
   // The footer carries the bottom inset itself; a sheet without one must still clear the system navigation bar.
   const padBottom = safeBottom ? insets.bottom : 0;
   const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
-  const expanded = Math.max(peek, Math.round(screen * expandedRatio));
+  const expanded = side ? screen : Math.max(peek, Math.round(screen * expandedRatio));
   const travel = expanded - peek;
   const [y] = useState(() => new Animated.Value(0)); // 0 is fully open
   const latest = useRef({ travel, open, onOpenChange, still });
@@ -46,7 +53,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   useEffect(() => { if (measured) settleRef.current(open); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- only a change of state animates
   const onPeekRef = useRef(onPeek);
   useEffect(() => { onPeekRef.current = onPeek; });
-  useEffect(() => { if (measured) onPeekRef.current?.(peek); }, [measured, peek]);
+  useEffect(() => { if (measured) onPeekRef.current?.(side ? 0 : peek); }, [measured, peek, side]);
   // eslint-disable-next-line react-hooks/refs -- the handlers read the refs only when a gesture arrives, never during render
   const [pan] = useState(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
@@ -61,7 +68,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   }));
   return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding" enabled={open}>
     <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }}>
-      <Animated.View style={[styles.sheet, { height: expanded, transform: [{ translateY: y }] }]}>
+      <Animated.View style={[styles.sheet, side && styles.side, { height: expanded, transform: [{ translateY: y }] }]}>
         <View {...pan.panHandlers} style={styles.handleArea}>
           <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} style={styles.gripArea}>
             <View style={styles.grip} />
@@ -73,7 +80,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
           {children}
         </ScrollView>
       </Animated.View>
-      {footer && <View style={[styles.footer, { paddingBottom: 10 + padBottom }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
+      {footer && <View style={[styles.footer, side && styles.side, { paddingBottom: 10 + padBottom }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
     </View>
   </KeyboardAvoidingView>;
 }
@@ -81,6 +88,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
+  side: { left: undefined, right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,
   gripArea: { height: GRIP, alignItems: 'center', justifyContent: 'center' },
   grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#C9C8BE' },

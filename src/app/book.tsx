@@ -12,7 +12,7 @@ import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '..
 import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
-import { MapSheet } from '../map-sheet';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
 import { RouteLine, ServiceIcon, SlotPicker, useFormat } from '../parts';
 import { SceneMap } from '../scene-map';
 import { TripSearch, type TripField, type TripPlace } from '../trip-search';
@@ -496,6 +496,7 @@ function BookForm() {
   };
   const edit_ = (which: TripField) => { if (locked) return; haptic.tap(); setField(which); setStep('search'); };
   const camera = step === 'pin' ? pinCenter ?? previewFrom : here ?? previewFrom;
+  const side = useSideSheet();
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
@@ -507,7 +508,7 @@ function BookForm() {
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
 
-    {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
+    {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topCard, shadow, { flexDirection: row }]}>
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
         <View style={{ flex: 1 }}>

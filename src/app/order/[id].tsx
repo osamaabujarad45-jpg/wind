@@ -20,7 +20,7 @@ import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
 import { effectiveRuntime } from '../../runtime-config';
-import { MapSheet } from '../../map-sheet';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { maneuverDistance, maneuverIcon, maneuverText, nextManeuver } from '../../nav-steps';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
@@ -87,6 +87,7 @@ export default function OrderScreen() {
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const side = useSideSheet();
   const [peek, setPeek] = useState(0);
   const [topBar, setTopBar] = useState(0);
   const navigating = !!order && me?.user.role === 'driver' && order.driverId === me.user.id;
@@ -579,7 +580,7 @@ export default function OrderScreen() {
       driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
       insets={{ top: topBar, bottom: peek }} padding={44} follow={mine} eta={eta && location && !location.stale ? fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` }) : null}
       stopLabels={{ pickup: order.pickupNote || from[language], dropoff: order.dropoffNote || to[language] }} />
-    <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       {maneuver ? <View accessibilityLiveRegion="polite" style={[styles.nav, { flexDirection: row }]}>
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
         <Ionicons name={maneuverIcon(maneuver.step)} size={34} color={palette.lime} />
