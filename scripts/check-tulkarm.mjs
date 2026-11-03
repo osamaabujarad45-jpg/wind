@@ -132,9 +132,15 @@ try {
   await shot(page, '5-searching');
   ok(`one tap requests the ride (order ${orderId}) and the map stays on screen`);
 
-  // ---- a driver takes it
+  // ---- a driver opens the app on the map and takes it from the offers
   const driverAt = { latitude: 32.3189, longitude: 35.0205 };
   const driverPage = await open(driverSession.token, driverAt);
+  await driverPage.goto(`${base}/driver`);
+  await mapFrame(driverPage).locator('.user-dot').waitFor({ timeout: 20_000 });
+  await driverPage.getByText(language === 'ar' ? /منك/ : /from you/).first().waitFor({ timeout: 20_000 });
+  await driverPage.waitForTimeout(1500);
+  await shot(driverPage, '5b-driver-offers');
+  ok('driver home is on the map, and an offer names the distance to pickup');
   await driverPage.goto(`${base}/order/${orderId}`);
   await driverPage.getByRole('button', { name: c.accept, exact: true }).click();
   await driverPage.waitForFunction(() => true);
@@ -162,6 +168,22 @@ try {
   await shot(page, '8-customer-moving');
   clearInterval(gps);
   ok('fixes keep moving the car');
+
+  // ---- a parcel: what it is cannot be guessed, so Request opens the sheet at the field that is missing
+  await page.goto(`${base}/book?service=parcel`);
+  await page.getByPlaceholder(c.whereTo).fill(language === 'ar' ? 'مستشفى' : 'hospital');
+  await page.getByRole('button', { name: language === 'ar' ? /مستشفى/ : /hospital/i }).first().click();
+  const send = page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first();
+  await send.waitFor();
+  await page.waitForTimeout(1200);
+  await send.click();
+  await page.getByText(c.fixMarked, { exact: true }).first().waitFor();
+  await page.waitForTimeout(600);
+  await shot(page, '9-parcel-details');
+  await page.getByLabel(c.parcelDetail, { exact: true }).fill(language === 'ar' ? 'أوراق' : 'Documents');
+  await page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().click();
+  await page.waitForURL(/\/order\/\d+$/, { timeout: 20_000 });
+  ok('a parcel asks only for what it is missing, then books');
 
   assert.deepEqual(failures, [], 'no unhandled browser errors');
   console.log(`\nTulkarm journey passed (${passed.length} checks). Screenshots: ${out}`);

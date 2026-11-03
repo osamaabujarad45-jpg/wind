@@ -162,7 +162,8 @@ try {
   stage = 'phone recovery capability retry';
   const phoneRetry = await newPage();
   let capabilityAttempts = 0;
-  await phoneRetry.route('**/api/phone/capabilities', route => ++capabilityAttempts === 1
+  // Two failures: the client repeats a failed read once by itself before anything reaches the screen.
+  await phoneRetry.route('**/api/phone/capabilities', route => ++capabilityAttempts <= 2
     ? route.abort() : route.fulfill({ json: { available: true, enabled: true } }));
   await phoneRetry.goto(base + '/auth');
   await phoneRetry.getByText(c.phone_status_failed, { exact: true }).waitFor();

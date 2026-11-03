@@ -174,7 +174,7 @@ export default function Jobs() {
         <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
       </View>
     </SafeAreaView>
-    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false}
+    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78}
       header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
@@ -204,11 +204,6 @@ export default function Jobs() {
     {carrying.length > 1 && <View style={{ marginBottom: 14 }}><Button title={fill(c.carryingParcels, { n: carrying.length })} variant="soft" icon="cube-outline" onPress={() => router.push('/driver/trips')} /></View>}
       </View>}>
     <VerifyEmailNudge />
-
-    {/* Optional and separately tapped: never requested automatically. */}
-    <View style={{ marginTop: 12 }}>
-      <BackgroundLocationAction onRequest={() => work.requestBackgroundTracking()} />
-    </View>
 
     <Txt variant="label" style={{ marginTop: 4 }}>{c.headingTo}</Txt>
     <FilterChips items={[{ key: 'any' as const, label: c.headingAny }, ...cities.map(x => ({ key: x.id, label: x[language] }))]}
@@ -293,6 +288,11 @@ export default function Jobs() {
     {page?.nextCursor && !badCursor && <Button title={c.jobsNextPage} variant="soft" onPress={() => {
       setPages({ scope: pageScope, cursors: [...cursors, page.nextCursor!] });
     }} />}
+    {/* Optional and separately tapped: never requested automatically. */}
+    <View style={{ marginTop: 12 }}>
+      <BackgroundLocationAction onRequest={() => work.requestBackgroundTracking()} />
+    </View>
+
     </MapSheet>
   </View>;
 }
