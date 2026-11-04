@@ -2897,7 +2897,7 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     completed: orders.completed, activeSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'active' AND ends_at > ?", Date.now()))!.n,
     statuses: Object.fromEntries((await all('SELECT status, COUNT(*) n FROM orders GROUP BY status')).map(r => [r.status, r.n])),
     services: Object.fromEntries((await all(`SELECT service, COUNT(*) n FROM orders WHERE status IN (${finishedSql}) GROUP BY service`)).map(r => [r.service, r.n])),
-    users: Object.fromEntries((await all('SELECT role, COUNT(*) n FROM users GROUP BY role')).map(r => [r.role, r.n])),
+    users: Object.fromEntries((await all("SELECT role, COUNT(*) n FROM users WHERE phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%' GROUP BY role")).map(r => [r.role, r.n])),
     pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
