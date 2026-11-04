@@ -70,5 +70,22 @@ try {
   assert.ok(state.calls.at(-1).includes('q=managed'), 'a stale reload refreshes what the screen shows now');
   assert.equal(state.sets.filter(set => set?.path).at(-1)?.path, '/admin/users?q=managed', 'the current search must show a result, not spin forever');
   cleanup();
+  // Backgrounding nulls a Google approach's path (src/road.tsx); returning to the same URL is not a new route.
+  const approach = '/route/google?from=one&to=four';
+  cleanup = render(approach, { refetchOnFocus: false });
+  await flush();
+  const billed = state.calls.length;
+  cleanup();
+  cleanup = render(null, { refetchOnFocus: false });
+  await flush();
+  cleanup();
+  cleanup = render(approach, { refetchOnFocus: false });
+  await flush();
+  assert.equal(state.calls.length, billed, 'a background bounce must not bill the same approach again');
+  cleanup();
+  cleanup = render('/route/google?from=one&to=five', { refetchOnFocus: false });
+  await flush();
+  assert.equal(state.calls.length, billed + 1, 'a new approach after a bounce still loads');
+  cleanup();
   console.log('API focus: billable routes load only on path changes; ordinary endpoints refresh on foreground');
 } finally { hooks.deregister(); delete globalThis.__apiFocusTest; }

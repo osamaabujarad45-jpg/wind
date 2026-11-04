@@ -73,8 +73,9 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
   }, [path]);
   useFocusEffect(useCallback(() => {
     generation.current++;
-    const firstForPath = loaded.current !== path;
-    loaded.current = path;
+    // A null path (a backgrounded Google approach) is not a new path: coming back to the same URL must not bill again.
+    const firstForPath = path !== null && loaded.current !== path;
+    if (path !== null) loaded.current = path;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false, pending = false, foreground = true, failures = 0;
     const clear = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
