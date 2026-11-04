@@ -158,7 +158,7 @@ export default function Jobs() {
     setActionError('');
     pickupLocation(request.signal)
       .then(() => { if (!request.signal.aborted) setLocateOn(true); })
-      .catch(e => { if (!request.signal.aborted) { setActionError(c[pickupErrorKey(e)]); setManualOpen(true); } }) // the message is on the sheet
+      .catch(e => { if (!request.signal.aborted) setActionError(c[pickupErrorKey(e)]); })
       .finally(() => { if (locateRequest.current === request) locateRequest.current = null; });
   }
 
@@ -188,7 +188,8 @@ export default function Jobs() {
         </View>
       </View>
     </SafeAreaView>
-    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
+    {/* Closed only when there is nothing to read: offers, a later page with its way back, or a failure all live on the sheet. */}
+    <MapSheet open={manualOpen ?? (!!jobs?.length || cursors.length > 0 || pagingUnavailable || !!error || !!work.error || !!actionError)} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
       header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>

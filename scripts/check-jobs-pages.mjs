@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
+import { copy } from '../src/copy.ts';
 
 const base = 'http://127.0.0.1:4198';
 const dir = mkdtempSync(join(tmpdir(), 'wind-jobs-ui-'));
@@ -74,7 +75,7 @@ try {
     await route.fulfill({ response: legacy });
   });
   await page.getByRole('button', { name: 'Show next jobs', exact: true }).click();
-  await page.getByText('More jobs may be available. The server needs an update to show them.', { exact: true }).waitFor({ timeout: 15000 });
+  await page.getByText(copy.en.jobsPagingUnavailable, { exact: true }).waitFor({ timeout: 15000 });
   assert.equal(await page.getByText('₪ 17', { exact: true }).count(), 0, 'rollback must not relabel page one as a later page');
   await page.unroute(isJobs);
   await page.getByRole('button', { name: 'Previous jobs', exact: true }).click();
@@ -86,7 +87,7 @@ try {
     await route.fulfill({ response: legacy });
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByText('More jobs may be available. The server needs an update to show them.', { exact: true }).waitFor({ timeout: 15000 });
+  await page.getByText(copy.en.jobsPagingUnavailable, { exact: true }).waitFor({ timeout: 15000 });
   assert.equal(await page.getByRole('button', { name: 'Show next jobs', exact: true }).count(), 0, 'old API must not offer a silent repeated page');
   assert.deepEqual(errors, [], 'no unhandled browser errors');
   console.log('Driver UI navigates three pages and reports an old API without repeating a page');

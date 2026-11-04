@@ -118,8 +118,9 @@ try {
   assert.equal(promoOrder.discount, 5);
   await button(customerPage, c.cancelOrder).click();
   await state(promoId, 'cancelled');
-  await customerPage.goto(base + '/book?pick=to');
-  await button(customerPage, `${c.place_home}, Ramallah, Readiness pickup shop`).click();
+  await customerPage.goto(base + '/book?service=parcel&from=ramallah&pick=to'); // with a pickup, the saved place completes the trip
+  await button(customerPage, `${c.place_home}, Ramallah · Readiness pickup shop`).click(); // the search row: name, then city and landmark
+  await button(customerPage, c.confirmDropoffSpot).click(); // a saved place with no pin is confirmed on the map first
   assert.equal(await field(customerPage, c.dropoffNote).inputValue(), 'Readiness pickup shop');
   pass('save a Home landmark, reuse it in city picker, apply promo and preserve server fare/discount');
 
