@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 
 // Exercise the real hook's focus/AppState callbacks without a renderer or device.
-const state = { refs: [], cursor: 0, calls: [], listener: null, focus: null };
+const state = { refs: [], cursor: 0, calls: [], sets: [], hook: null, listener: null, focus: null };
 globalThis.__apiFocusTest = state;
 const modules = {
   react: `const s=globalThis.__apiFocusTest;
     export const useRef=value=>s.refs[s.cursor++]??=( {current:value} );
-    export const useState=value=>[typeof value==='function'?value():value,()=>{}];
+    export const useState=value=>[typeof value==='function'?value():value,next=>{s.sets.push(next);}];
     export const useEffect=fn=>fn(); export const useCallback=fn=>fn;`,
   'react-native': `const s=globalThis.__apiFocusTest;export const Platform={OS:'web'};
     export const AppState={addEventListener:(_event,fn)=>{s.listener=fn;return {remove:()=>{s.listener=null;}};}};`,
@@ -37,7 +37,7 @@ const hooks = registerHooks({
 const flush = () => new Promise(resolve => setImmediate(resolve));
 try {
   const { useApi } = await import('../src/api.ts');
-  const render = (path, options) => { state.cursor = 0; useApi(path, undefined, options); return state.focus(); };
+  const render = (path, options) => { state.cursor = 0; state.hook = useApi(path, undefined, options); return state.focus(); };
   let cleanup = render('/route/google?from=one&to=two', { refetchOnFocus: false });
   await flush();
   assert.equal(state.calls.length, 1, 'a newly shown pin pair loads once');
@@ -58,6 +58,17 @@ try {
   await flush();
   state.listener('background'); state.listener('active'); await flush();
   assert.equal(state.calls.length, 4, 'ordinary endpoints still refresh when the app returns');
+  cleanup();
+  // An admin saves, then searches before the save's reload runs: that reload comes from the old search's render.
+  cleanup = render('/admin/users?q=spare');
+  await flush();
+  const staleReload = state.hook.reload;
+  cleanup();
+  cleanup = render('/admin/users?q=managed');
+  await staleReload();
+  await flush();
+  assert.ok(state.calls.at(-1).includes('q=managed'), 'a stale reload refreshes what the screen shows now');
+  assert.equal(state.sets.filter(set => set?.path).at(-1)?.path, '/admin/users?q=managed', 'the current search must show a result, not spin forever');
   cleanup();
   console.log('API focus: billable routes load only on path changes; ordinary endpoints refresh on foreground');
 } finally { hooks.deregister(); delete globalThis.__apiFocusTest; }

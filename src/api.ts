@@ -48,7 +48,10 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
   useEffect(() => { latestPath.current = path; }, [path]);
   const inFlight = useRef<number | null>(null);
   const load = useCallback(async (force = false) => {
-    if (!path) return undefined;
+    // An action awaits the reload of the render it started in. If the screen has moved on (a new search), reloading the
+    // old path would discard the new path's answer and leave a spinner with nothing to end it: refresh what is shown now.
+    const target = force ? latestPath.current : path;
+    if (!target) return undefined;
     if (inFlight.current === generation.current) {
       if (!force) return undefined;
       generation.current++; // a manual refresh must not wait for an older snapshot
@@ -56,15 +59,15 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
     const current = generation.current;
     inFlight.current = current;
     try {
-      const next = await api<T>(path);
-      if (current === generation.current && latestPath.current === path) { setResult({ path, value: next }); setError(undefined); }
+      const next = await api<T>(target);
+      if (current === generation.current && latestPath.current === target) { setResult({ path: target, value: next }); setError(undefined); }
       return undefined;
     } catch (e) {
       const code = errorCode(e);
-      if (current !== generation.current || latestPath.current !== path) return undefined;
+      if (current !== generation.current || latestPath.current !== target) return undefined;
       // Keep the last snapshot for transient failures, but never display data after access is revoked.
-      if (terminal(code)) setResult(previous => previous?.path === path ? undefined : previous);
-      setError({ path, value: code });
+      if (terminal(code)) setResult(previous => previous?.path === target ? undefined : previous);
+      setError({ path: target, value: code });
       return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }
   }, [path]);
