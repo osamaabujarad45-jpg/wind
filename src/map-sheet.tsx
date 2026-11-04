@@ -77,6 +77,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
             <View style={styles.grip} />
           </Pressable>
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
+          {!footer && <View style={{ height: padBottom }} />}{/* the closed sheet's content stays below the system navigation bar */}
         </View>
         <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: footerHeight + 16 }} keyboardShouldPersistTaps="handled"
           refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}
