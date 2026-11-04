@@ -2564,7 +2564,9 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
     return j.routes
       .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),
         // Turn-by-turn for the driver's banner; only /api/route?steps=1 sends them.
-        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any) => Array.isArray(leg?.steps) ? leg.steps : []).flatMap((step: any) => {
+        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any, index: number, legs: any[]) => (Array.isArray(leg?.steps) ? leg.steps : [])
+          // A via point (a detour around a closed checkpoint) is not a stop: OSRM ends and starts a leg there, the driver only passes through.
+          .filter((step: any) => !(step?.maneuver?.type === 'arrive' && index < legs.length - 1) && !(step?.maneuver?.type === 'depart' && index > 0))).flatMap((step: any) => {
           const [longitude, latitude] = Array.isArray(step?.maneuver?.location) ? step.maneuver.location : [];
           return finite(latitude, 90) && finite(longitude, 180) ? [{ type: String(step.maneuver.type ?? ''), latitude, longitude,
             ...(step.maneuver.modifier && { modifier: String(step.maneuver.modifier) }), ...(step.name && { name: String(step.name).slice(0, 80) }), ...(Number.isInteger(step.maneuver.exit) && { exit: step.maneuver.exit }) }] : [];

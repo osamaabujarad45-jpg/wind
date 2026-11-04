@@ -216,7 +216,7 @@ export default function OrderScreen() {
   const finding = order.status === 'searching' && !later;
 
   const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
-  const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine) : null;
+  const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
   const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 

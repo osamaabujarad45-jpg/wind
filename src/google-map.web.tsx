@@ -206,7 +206,7 @@ export default function RouteMap(props: RouteMapProps) {
       <RoutePreview {...props} plain />
     </View>}
     <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
-      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
+      accessibilityLabel={`${c.routeOnMap}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>

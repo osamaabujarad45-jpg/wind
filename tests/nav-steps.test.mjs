@@ -35,6 +35,20 @@ assert.ok(Math.abs(start.metres - 188) < 5, 'and its distance along the road');
 assert.equal(nextManeuver(round, at(32.3112, 35.0500), roundLine).step, round[2], 'halfway round, the next turn');
 assert.ok(Math.abs(nextManeuver(round, at(32.3110, 35.0490), roundLine).metres - 94) < 5, 'on the last road, the road distance left');
 
+// A road driven out and back: the heading picks the pass, and the arrival never sits before the U-turn it follows.
+const back = [
+  { type: 'depart', latitude: 32.31, longitude: 35.0000 },
+  { type: 'turn', modifier: 'uturn', latitude: 32.31, longitude: 35.0020 },
+  { type: 'arrive', latitude: 32.31, longitude: 35.0005 },
+];
+const backLine = back.map(step => [step.longitude, step.latitude]);
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine, 90).step, back[1], 'going out, the U-turn is next');
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine).step, back[1], 'with no heading, the first pass');
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine, -1).step, back[1], 'an invalid heading counts as none');
+const returning = nextManeuver(back, at(32.31, 35.0006), backLine, 270);
+assert.equal(returning.step, back[2], 'coming back, the arrival is next');
+assert.ok(Math.abs(returning.metres - 9) < 3, 'with the road distance left on the way back');
+
 const ar = copy.ar, en = copy.en;
 assert.equal(maneuverText(steps[1], en), 'Turn left onto شارع السكة');
 assert.equal(maneuverText(steps[1], ar), 'انعطف يساراً إلى شارع السكة');

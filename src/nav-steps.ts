@@ -13,30 +13,33 @@ const PASSED_METRES = 15;
 /**
  * The maneuver still ahead of `at`, measured along the road: a pickup 100 m away across a field can be three turns away.
  * The line and the steps come from one calculation, so every maneuver sits on the line, in order.
- * ponytail: on a road driven out and back the first pass wins until the next route, at most 250 m later (src/road.tsx).
+ * ponytail: on a road driven out and back with no heading (a stopped car), the first pass wins until the car moves or the route refreshes.
  */
-export function nextManeuver(steps: readonly NavStep[], at: Point, line: readonly [number, number][]): { step: NavStep; metres: number } | null {
+export function nextManeuver(steps: readonly NavStep[], at: Point, line: readonly [number, number][], heading?: number | null): { step: NavStep; metres: number } | null {
   if (steps.length < 2 || line.length < 2) return null;
   const kx = 111_320 * Math.cos(at.latitude * Math.PI / 180), ky = 110_540;
   const walked = [0];
   for (let i = 1; i < line.length; i++) walked[i] = walked[i - 1] + Math.hypot((line[i][0] - line[i - 1][0]) * kx, (line[i][1] - line[i - 1][1]) * ky);
-  // The point of the line nearest `p`, from segment `from` on. The 1 m tolerance keeps the earliest pass.
-  const locate = (p: Point, from: number) => {
+  // The point of the line nearest `p`, at or after `floor` metres. The 1 m tolerance keeps the earliest pass; a pass against `facing` costs 1 km.
+  const locate = (p: Point, from: number, floor: number, facing?: number | null) => {
     let best = Infinity, segment = from, metres = walked[from - 1];
     for (let i = from; i < line.length; i++) {
       const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
       const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
       const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
-      const off = Math.hypot(ax + t * dx, ay + t * dy);
-      if (off < best - 1) { best = off; segment = i; metres = walked[i - 1] + t * Math.hypot(dx, dy); }
+      const along = walked[i - 1] + t * Math.hypot(dx, dy);
+      if (along < floor - 1) continue;
+      const turned = facing == null ? 0 : Math.abs(((Math.atan2(dx, dy) * 180 / Math.PI - facing) % 360 + 540) % 360 - 180);
+      const off = Math.hypot(ax + t * dx, ay + t * dy) + (turned > 90 ? 1000 : 0);
+      if (off < best - 1) { best = off; segment = i; metres = along; }
     }
     return { segment, metres };
   };
-  const here = locate(at, 1).metres;
-  let from = 1;
+  const here = locate(at, 1, 0, heading != null && heading >= 0 && heading < 360 ? heading : null).metres;
+  let from = 1, floor = 0;
   for (let i = 1; i < steps.length; i++) {
-    const place = locate(steps[i], from);
-    from = place.segment;
+    const place = locate(steps[i], from, floor);
+    from = place.segment; floor = place.metres;
     if (i === steps.length - 1 || place.metres - here > PASSED_METRES) return { step: steps[i], metres: Math.max(0, Math.round(place.metres - here)) };
   }
   return null;

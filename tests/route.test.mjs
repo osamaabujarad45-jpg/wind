@@ -15,6 +15,10 @@ const osrm = createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), pts = decodeURIComponent(url.pathname.split('/').pop()).split(';').map(p => p.split(',').map(Number));
   const [a, b] = [pts[0], pts.at(-1)], route = (coordinates, duration = 3300) => ({ distance: 61234, duration, geometry: { type: 'LineString', coordinates } });
   if (mode === 'down') return res.destroy();
+  if (mode === 'legs') return res.end(JSON.stringify({ code: 'Ok', routes: [{ ...route([a, b]), legs: [ // as real OSRM answers through a via point
+    { steps: [{ maneuver: { type: 'depart', location: a } }, { maneuver: { type: 'arrive', location: [35.23, 32] } }] },
+    { steps: [{ maneuver: { type: 'depart', location: [35.23, 32] } }, { name: 'Main', maneuver: { type: 'turn', modifier: 'left', location: [35.24, 32.1] } }, { maneuver: { type: 'arrive', location: b } }] },
+  ] }] }));
   if (mode === 'none') return res.end(JSON.stringify({ code: 'NoRoute', routes: [] }));
   if (mode === 'bad-distance') return res.end(JSON.stringify({ code: 'Ok', routes: [{ ...route([a, b]), distance: 'unknown' }] }));
   if (mode === 'bad-line') return res.end(JSON.stringify({ code: 'Ok', routes: [route([a, [null, 91], b])] }));
@@ -86,6 +90,11 @@ try {
   await call('/route?from=31.90383,35.20344&to=32.2211,35.2544', { token: customer.token });
   assert.equal(calls, 1, 'a fix a few metres away reuses the cached route');
   assert.match(lastUrl, /overview=full&geometries=geojson&steps=true&alternatives=3$/, 'full geometry (simplified lines cut corners) and alternatives');
+  // A via point is passed through: the driver's banner must not say "arrive" there.
+  mode = 'legs';
+  const viaSteps = (await call('/route?from=31.71,35.21&to=32.21,35.25&steps=1', { token: customer.token })).steps;
+  assert.deepEqual(viaSteps.map(step => step.type), ['depart', 'turn', 'arrive'], 'one depart, one arrive, across legs');
+  mode = 'ok'; calls--;
   // A driver heading becomes an OSRM bearing hint (rounded to 15 degrees) and its own cache entry.
   await call('/route?from=31.90381,35.20341&to=32.2211,35.2544&heading=93', { token: customer.token });
   assert.equal(calls, 2); assert.match(lastUrl, /&alternatives=3&bearings=90,60;$/);

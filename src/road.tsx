@@ -57,17 +57,18 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   // while foregrounded; the URL is built from the last billed fix, so a stationary poll, a background timer or
   // a refocus never even changes it. The free OSRM approach keeps its ~110 m grid and refresh-on-focus.
   const stopKey = order && target ? approachKey(order, target, renderer ?? 'unavailable') : '';
-  const [billed, setBilled] = useState<{ key: string; fix: (Point & { heading?: number | null }) | null; metres: number }>({ key: '', fix: null, metres: 0 });
+  const [billed, setBilled] = useState<{ key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number }>({ key: '', fix: null, metres: 0, at: 0 });
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
-  if (stopKey !== billed.key) setBilled({ key: stopKey, fix, metres: 0 });
-  else if (fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0 });
+  if (stopKey !== billed.key) setBilled({ key: stopKey, fix, metres: 0, at: now });
+  else if (fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0, at: now });
   else if (driver && billed.fix && (driver.latitude !== billed.fix.latitude || driver.longitude !== billed.fix.longitude)) {
     const metres = Math.hypot((driver.longitude - billed.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
       (driver.latitude - billed.fix.latitude) * 110_540);
-    // Navigating, leaving the line also asks for a new one. Never for Google, and 50 m first, so GPS drift off the road cannot refetch.
-    const left = withSteps && renderer !== 'google' && metres >= 50 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
-    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) setBilled({ key: stopKey, fix, metres });
+    // Navigating, leaving the line also asks for a new one: never for Google, after 50 m so GPS drift cannot refetch, and at most
+    // every 30 s so an unmapped track cannot spend the route budget (120 per 10 minutes, blocked calls included).
+    const left = withSteps && renderer !== 'google' && metres >= 50 && now - billed.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
+    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) setBilled({ key: stopKey, fix, metres, at: now });
   }
   const approachUrl = !renderer || !driver || !target ? null
     : renderer === 'google'
