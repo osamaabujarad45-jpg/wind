@@ -122,7 +122,7 @@ try {
   await button(customerPage, `${c.place_home}, Ramallah · Readiness pickup shop`).click(); // the search row: name, then city and landmark
   await button(customerPage, c.confirmDropoffSpot).click(); // a saved place with no pin is confirmed on the map first
   assert.equal(await field(customerPage, c.dropoffNote).inputValue(), 'Readiness pickup shop');
-  pass('save a Home landmark, reuse it in city picker, apply promo and preserve server fare/discount');
+  pass('save a Home landmark, reuse it from search, apply promo and preserve server fare/discount');
 
   stage = 'road reports';
   await adminPage.goto(base + '/roads');
