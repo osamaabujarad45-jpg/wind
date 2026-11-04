@@ -91,7 +91,7 @@ export default function OrderScreen() {
   const [peek, setPeek] = useState(0);
   const [topBar, setTopBar] = useState(0);
   const navigating = !!order && me?.user.role === 'driver' && order.driverId === me.user.id;
-  const { road, approach, eta, km, avoids, through, closed, steps: navSteps } = useRoad(order, navigating ? language : null);
+  const { road, approach, eta, km, avoids, through, closed, steps: navSteps, navLine } = useRoad(order, navigating ? language : null);
   useEffect(() => { if (pushed.driverChanged) void reload(); }, [pushed.driverChanged, reload]);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
@@ -216,7 +216,7 @@ export default function OrderScreen() {
   const finding = order.status === 'searching' && !later;
 
   const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
-  const maneuver = navigating && navSteps && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation) : null;
+  const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
   const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 

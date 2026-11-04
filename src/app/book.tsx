@@ -502,7 +502,7 @@ function BookForm() {
       insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && { right: SIDE_SHEET }) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
-      label={routeChosen ? `${c.routeDiagram}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
+      label={routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
       onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />

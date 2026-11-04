@@ -511,6 +511,12 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
 const eligibility = new Eligibility(persistence, fail);
 registerEligibilityRoutes(route, eligibility);
 const presence = new Presence(persistence, eligibility, fail, production && selfService);
+// Going online needs the PostgreSQL presence tables (migration 9). Without them, as on SQLite in production today, the jobs board
+// is the whole driver flow, so the app must not offer a button that can only fail. Tests keep the card unless they ask for production's behaviour.
+const presenceOffered = async () => process.env.WIND_DRIVER_PRESENCE !== 'off' && (persistence.backend === 'postgres'
+  ? persistence.memo('presenceOffered', async () => !!(await persistence.one("SELECT to_regclass('schema_migrations') AS migrations"))?.migrations
+    && !!await persistence.one('SELECT version FROM schema_migrations WHERE version=9'))
+  : !production);
 registerPresenceRoutes(route, presence);
 const dispatch = new Dispatch(persistence, eligibility, fail, async (from, to) => {
   if (process.env.OSRM_URL?.trim()) {
@@ -671,7 +677,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -2558,7 +2564,9 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
     return j.routes
       .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),
         // Turn-by-turn for the driver's banner; only /api/route?steps=1 sends them.
-        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any) => Array.isArray(leg?.steps) ? leg.steps : []).flatMap((step: any) => {
+        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any, index: number, legs: any[]) => (Array.isArray(leg?.steps) ? leg.steps : [])
+          // A via point (a detour around a closed checkpoint) is not a stop: OSRM ends and starts a leg there, the driver only passes through.
+          .filter((step: any) => !(step?.maneuver?.type === 'arrive' && index < legs.length - 1) && !(step?.maneuver?.type === 'depart' && index > 0))).flatMap((step: any) => {
           const [longitude, latitude] = Array.isArray(step?.maneuver?.location) ? step.maneuver.location : [];
           return finite(latitude, 90) && finite(longitude, 180) ? [{ type: String(step.maneuver.type ?? ''), latitude, longitude,
             ...(step.maneuver.modifier && { modifier: String(step.maneuver.modifier) }), ...(step.name && { name: String(step.name).slice(0, 80) }), ...(Number.isInteger(step.maneuver.exit) && { exit: step.maneuver.exit }) }] : [];

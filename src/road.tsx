@@ -9,7 +9,7 @@ import { useApi } from './api';
 import { approachKey, canShowOnRenderer, googleApproachPath, routeProvider, selectRenderer, SIGNIFICANT_MOVEMENT_METRES } from './map-provider';
 import { useMapMode } from './map-mode';
 import { publicFixAgeMs, publicFixClock } from './location-state';
-import { etaRange, fromDriver, roadPath, shownApproach } from './map-math';
+import { etaRange, fromDriver, nearLine, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
@@ -57,18 +57,25 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   // while foregrounded; the URL is built from the last billed fix, so a stationary poll, a background timer or
   // a refocus never even changes it. The free OSRM approach keeps its ~110 m grid and refresh-on-focus.
   const stopKey = order && target ? approachKey(order, target, renderer ?? 'unavailable') : '';
-  const [billed, setBilled] = useState<{ key: string; fix: Point | null; metres: number }>({ key: '', fix: null, metres: 0 });
-  if (stopKey !== billed.key) setBilled({ key: stopKey, fix: driver ? { latitude: driver.latitude, longitude: driver.longitude } : null, metres: 0 });
-  else if (driver && !billed.fix) setBilled({ key: stopKey, fix: { latitude: driver.latitude, longitude: driver.longitude }, metres: 0 });
+  const [billed, setBilled] = useState<{ key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number }>({ key: '', fix: null, metres: 0, at: 0 });
+  const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
+  const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
+  if (stopKey !== billed.key) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
+  else if (fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
   else if (driver && billed.fix && (driver.latitude !== billed.fix.latitude || driver.longitude !== billed.fix.longitude)) {
     const metres = Math.hypot((driver.longitude - billed.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
       (driver.latitude - billed.fix.latitude) * 110_540);
-    if (metres >= SIGNIFICANT_MOVEMENT_METRES) setBilled({ key: stopKey, fix: { latitude: driver.latitude, longitude: driver.longitude }, metres });
+    // Navigating, leaving the line also asks for a new one: never for Google, after 50 m so GPS drift cannot refetch, and at most
+    // every 30 s so an unmapped track cannot spend the route budget (120 per 10 minutes, blocked calls included).
+    const left = withSteps && renderer !== 'google' && metres >= 50 && monotonic - billed.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
+    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) setBilled({ key: stopKey, fix, metres, at: monotonic });
   }
   const approachUrl = !renderer || !driver || !target ? null
     : renderer === 'google'
       ? foreground && stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null
-      : `${roadPath(driver, target, 3, driver.heading)}${withSteps ? `&steps=1&lang=${stepsLanguage}` : ''}`;
+      // The driver's turns need a line from where they are, not from a 110 m grid cell, which can be the next street.
+      : withSteps ? billed.fix && `${roadPath(billed.fix, target, 5, billed.fix.heading)}&steps=1&lang=${stepsLanguage}`
+      : roadPath(driver, target, 3, driver.heading);
   const approach = useApi<RoadRoute>(approachUrl, renderer === 'google' ? undefined : 25_000, { refetchOnFocus: renderer !== 'google' });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);
@@ -77,7 +84,6 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   // driver is no longer heading.
   const provider = renderer === 'google' ? 'google' : renderer ?? 'unavailable';
   const stop = order ? approachKey(order, target, provider) : '';
-  const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   if (fetched && (fetched !== kept?.route || kept.stop !== stop)) setKept({ stop, route: fetched });
   const candidate = driver && renderer ? showable(shownApproach(fetched, !!approach.error, kept, stop)) : undefined;
   const fixFresh = !!driver && publicFixAgeMs(driver, now, fixClock.key === fixKey ? fixClock.clock : undefined, monotonic) < 30_000;
@@ -94,7 +100,7 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];
   const avoids = [...new Set(shown.flatMap(r => r?.avoids ?? []))].filter(n => !through.includes(n));
   const closed = shown.flatMap(r => r?.closed ?? []).filter((p, i, all) => all.findIndex(q => q.latitude === p.latitude && q.longitude === p.longitude) === i);
-  return { steps: withSteps ? eta?.steps : undefined, road: route?.line ?? null, approach: eta?.line && driver ? fromDriver(eta.line, driver) : null, eta: eta ? eta.eta ? [Math.ceil(eta.eta.minSeconds / 60), Math.ceil(eta.eta.maxSeconds / 60)] as [number,number] : etaRange(eta.minutes) : null, km: eta?.km ?? null, avoids, through, closed };
+  return { steps: withSteps ? eta?.steps : undefined, navLine: withSteps ? eta?.line : undefined, road: route?.line ?? null, approach: eta?.line && driver ? fromDriver(eta.line, driver) : null, eta: eta ? eta.eta ? [Math.ceil(eta.eta.minSeconds / 60), Math.ceil(eta.eta.maxSeconds / 60)] as [number,number] : etaRange(eta.minutes) : null, km: eta?.km ?? null, avoids, through, closed };
 }
 
 /** One line per outcome under a route map: the route goes around closed checkpoints, or cannot. */

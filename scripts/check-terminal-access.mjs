@@ -88,7 +88,7 @@ try {
     return pauseUpdates || path.endsWith('/live') ? route.abort() : route.continue();
   });
   await publicPage.goto(base + shared.path, { waitUntil: 'domcontentloaded' });
-  const marker = publicPage.locator('.driver-marker');
+  const marker = publicPage.frameLocator('iframe[title="map"]').locator('.driver-marker');
   await marker.waitFor({ timeout: 30000 });
   pauseUpdates = true; // keep the previously received fix, as happens during a network outage
   // Even a clock moved backwards while offline cannot extend the marker's lifetime.

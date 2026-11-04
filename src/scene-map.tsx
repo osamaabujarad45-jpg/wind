@@ -60,7 +60,7 @@ export function BaselineRoute(props: RouteMapProps) {
   const { pickup, dropoff, driver } = props;
   return <SceneMap mode="route" pickup={pickup} dropoff={dropoff} driver={driver} road={props.road} approach={props.approach} closed={props.closed} focus={props.focus}
     stale={props.stale} follow={props.follow} height={props.height} fill={props.fill} insets={props.insets} user={props.user} eta={props.eta} labels={props.stopLabels} padding={props.padding}
-    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} onFail={props.onFail}
+    label={`${c.routeOnMap}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} onFail={props.onFail}
     fallback={<RoutePreview {...props} />} />;
 }
 

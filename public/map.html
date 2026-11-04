@@ -212,7 +212,7 @@ const fade = () => {
 function stopMarker(color, square) {
   const el = document.createElement('div');
   el.className = 'stop';
-  el.style.cssText = 'width:18px;height:18px';
+  el.style.cssText = 'width:18px;height:18px;z-index:2'; // over the car, which is larger: both still read when it reaches the stop
   el.innerHTML = `<div style="width:18px;height:18px;box-sizing:border-box;border-radius:${square ? 4 : 9}px;background:${square ? color : '#fff'};border:${square ? 3 : 5}px solid ${square ? '#fff' : color};box-shadow:0 1px 4px rgba(0,0,0,.35)"></div><div class="stop-label" hidden></div>`;
   return el;
 }

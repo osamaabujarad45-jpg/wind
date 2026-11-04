@@ -9,15 +9,45 @@ const steps = [
   { type: 'roundabout', modifier: 'right', exit: 2, latitude: 32.3120, longitude: 35.0240 },
   { type: 'arrive', latitude: 32.3150, longitude: 35.0240 },
 ];
+const line = steps.map(step => [step.longitude, step.latitude]);
 const at = (latitude, longitude) => ({ latitude, longitude });
 
-assert.equal(nextManeuver([], at(32.31, 35.02)), null, 'no list, no banner');
-assert.equal(nextManeuver(steps.slice(0, 1), at(32.31, 35.02)), null, 'a depart alone says nothing');
-assert.equal(nextManeuver(steps, at(32.3105, 35.0200)).step.type, 'turn', 'at the start, the first turn is next');
-assert.ok(Math.abs(nextManeuver(steps, at(32.3105, 35.0200)).metres - 166) < 5, 'distance to it in metres');
-assert.equal(nextManeuver(steps, at(32.31201, 35.0200)).step.type, 'roundabout', 'on the turn, the following maneuver is next');
-assert.equal(nextManeuver(steps, at(32.3120, 35.0215)).step.type, 'roundabout', 'past the turn but not at the roundabout');
-assert.equal(nextManeuver(steps, at(32.3130, 35.0240)).step.type, 'arrive', 'past the roundabout');
+assert.equal(nextManeuver([], at(32.31, 35.02), line), null, 'no list, no banner');
+assert.equal(nextManeuver(steps.slice(0, 1), at(32.31, 35.02), line), null, 'a depart alone says nothing');
+assert.equal(nextManeuver(steps, at(32.3105, 35.0200), line).step.type, 'turn', 'at the start, the first turn is next');
+assert.ok(Math.abs(nextManeuver(steps, at(32.3105, 35.0200), line).metres - 166) < 5, 'distance to it in metres');
+assert.equal(nextManeuver(steps, at(32.31201, 35.0200), line).step.type, 'roundabout', 'on the turn, the following maneuver is next');
+assert.equal(nextManeuver(steps, at(32.3120, 35.0215), line).step.type, 'roundabout', 'past the turn but not at the roundabout');
+assert.equal(nextManeuver(steps, at(32.3130, 35.0240), line).step.type, 'arrive', 'past the roundabout');
+assert.equal(nextManeuver(steps, at(32.3150, 35.0240), line).metres, 0, 'at the end, the arrival at no distance');
+
+// From the phone in Tulkarm: the stop is 166 m away across a field, the road goes round. The nearer stop must not read as next.
+const round = [
+  { type: 'depart', latitude: 32.3125, longitude: 35.0480 },
+  { type: 'turn', modifier: 'left', latitude: 32.3125, longitude: 35.0500 },
+  { type: 'turn', modifier: 'right', latitude: 32.3110, longitude: 35.0500 },
+  { type: 'arrive', latitude: 32.3110, longitude: 35.0480 },
+];
+const roundLine = round.map(step => [step.longitude, step.latitude]);
+const start = nextManeuver(round, at(32.3125, 35.0480), roundLine);
+assert.equal(start.step, round[1], 'the first turn, though the arrival is nearer in a straight line');
+assert.ok(Math.abs(start.metres - 188) < 5, 'and its distance along the road');
+assert.equal(nextManeuver(round, at(32.3112, 35.0500), roundLine).step, round[2], 'halfway round, the next turn');
+assert.ok(Math.abs(nextManeuver(round, at(32.3110, 35.0490), roundLine).metres - 94) < 5, 'on the last road, the road distance left');
+
+// A road driven out and back: the heading picks the pass, and the arrival never sits before the U-turn it follows.
+const back = [
+  { type: 'depart', latitude: 32.31, longitude: 35.0000 },
+  { type: 'turn', modifier: 'uturn', latitude: 32.31, longitude: 35.0020 },
+  { type: 'arrive', latitude: 32.31, longitude: 35.0005 },
+];
+const backLine = back.map(step => [step.longitude, step.latitude]);
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine, 90).step, back[1], 'going out, the U-turn is next');
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine).step, back[1], 'with no heading, the first pass');
+assert.equal(nextManeuver(back, at(32.31, 35.0001), backLine, -1).step, back[1], 'an invalid heading counts as none');
+const returning = nextManeuver(back, at(32.31, 35.0006), backLine, 270);
+assert.equal(returning.step, back[2], 'coming back, the arrival is next');
+assert.ok(Math.abs(returning.metres - 9) < 3, 'with the road distance left on the way back');
 
 const ar = copy.ar, en = copy.en;
 assert.equal(maneuverText(steps[1], en), 'Turn left onto شارع السكة');

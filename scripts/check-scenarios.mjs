@@ -321,6 +321,7 @@ try {
   await driverPage.waitForURL(new RegExp(`/order/${returnId}$`));
   await advance(driverPage, returnId, 'assigned', 'at_pickup');
   await advance(driverPage, returnId, 'at_pickup', 'in_transit');
+  await button(driverPage, c.sheetExpand).click(); // the problem form is on the open sheet, as for a real driver
   await field(driverPage, c.problemNote).fill('Recipient absent after contact attempts.');
   await button(driverPage, c.reportProblem).click();
   await atStatus(returnId, 'on_hold');

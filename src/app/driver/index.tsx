@@ -8,6 +8,8 @@ import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../ap
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
 import { MapSheet } from '../../map-sheet';
 import { DriverMap } from '../../driver-map';
+import { pickupLocation } from '../../pickup-location';
+import { pickupErrorKey } from '../../customer-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
@@ -32,9 +34,15 @@ export default function Jobs() {
   // Set only while the driver is online or on a job (DriverMap): how far each pickup is, for this answer only.
   const [here, setHere] = useState<Point | null>(null);
   const [peek, setPeek] = useState(0);
+  const presenceOn = me?.capabilities?.driverPresence !== false;
+  const [locateOn, setLocateOn] = useState(false); // their own tap: GPS for the dot and pickup distances, for this visit to the screen only
+  const locateRequest = useRef<AbortController | null>(null);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null); // until the driver chooses, the sheet opens when there are offers
   const [focused, setFocused] = useState(true);
-  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => { setFocused(false); locateRequest.current?.abort(); locateRequest.current = null; setLocateOn(false); };
+  }, []));
   const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1&lang=${language}${here ? `&near=${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
@@ -144,6 +152,16 @@ export default function Jobs() {
     catch (e) { haptic.error(); setActionError(err(e)); } finally { setHeadingBusy(false); }
   }
 
+  function locate() {
+    if (locateRequest.current) return;
+    const request = locateRequest.current = new AbortController();
+    setActionError('');
+    pickupLocation(request.signal)
+      .then(() => { if (!request.signal.aborted) setLocateOn(true); })
+      .catch(e => { if (!request.signal.aborted) { setActionError(c[pickupErrorKey(e)]); setManualOpen(true); } }) // their tap: show why, even on a sheet they closed
+      .finally(() => { if (locateRequest.current === request) locateRequest.current = null; });
+  }
+
   async function enableTracking() {
     try {
       if (permission?.canAskAgain === false && !permission.granted) await Linking.openSettings();
@@ -160,14 +178,18 @@ export default function Jobs() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* A driver's work starts on the map, where they are; going online and the offers sit on the sheet over it. */}
-    {focused && <DriverMap active={work.presenceState === 'online' || assigned} bottom={peek} label={c.jobs} onHere={setHere} />}
+    {focused && <DriverMap active={work.presenceState === 'online' || assigned || locateOn} bottom={peek} label={c.jobs} onHere={setHere} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
-      <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between' }} pointerEvents="box-none">
+      <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between', alignItems: 'flex-start' }} pointerEvents="box-none">
         <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
-        <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
+        <View style={{ gap: 8 }}>
+          <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
+          {!presenceOn && !assigned && !locateOn && <IconButton icon="locate" label={c.useLocation} onPress={locate} />}
+        </View>
       </View>
     </SafeAreaView>
-    <MapSheet open={manualOpen ?? !!jobs?.length} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
+    {/* Closed only when there is nothing to read: offers, a later page with its way back, or a failure all live on the sheet. */}
+    <MapSheet open={manualOpen ?? (!!jobs?.length || cursors.length > 0 || pagingUnavailable || !!error || !!work.error || !!actionError)} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
       header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
@@ -182,15 +204,17 @@ export default function Jobs() {
       {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayInk }}>{c.backgroundTrackingWarn}</Txt>}
     </Card>}
 
-    {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
-    <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
-      <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
-        requestsOn={work.presenceState === 'online' && matching.data?.eligibleForMatching === true}
-        pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
-        startDisabled={!work.known || assigned} startReason={!work.known ? c.presence_reason_status : assigned ? c.presence_reason_job : undefined}
-        onConsentAndEnable={() => { void work.enablePresence(); }} onDisable={() => { void work.disablePresence(); }}
-        onOpenSettings={() => { void Linking.openSettings(); }} />
-    </View>
+    {presenceOn ? <>
+      {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
+      <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
+        <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
+          requestsOn={work.presenceState === 'online' && matching.data?.eligibleForMatching === true}
+          pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
+          startDisabled={!work.known || assigned} startReason={!work.known ? c.presence_reason_status : assigned ? c.presence_reason_job : undefined}
+          onConsentAndEnable={() => { void work.enablePresence(); }} onDisable={() => { void work.disablePresence(); }}
+          onOpenSettings={() => { void Linking.openSettings(); }} />
+      </View>
+    </> : !assigned && jobs && <Txt variant="title">{jobs?.length ? fill(c.jobsAvailable, { n: jobs.length }) : c.jobsNone}</Txt>}
 
     {/* gap keeps the shortcut from reading as the first offer's header */}
     {carrying.length === 1 && <View style={{ marginBottom: 14 }}><Button title={c.activeOrder} variant="soft" icon="navigate-outline" onPress={() => router.push(`/order/${carrying[0]!.id}`)} /></View>}
