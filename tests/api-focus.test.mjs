@@ -174,6 +174,15 @@ try {
   await flush();
   assert.equal(answers(answered), 1, 'an older answer to the same route does not replace it');
   cleanup();
+  const reversed = '/route/google?from=one&to=fifteen';
+  requests = await twice(reversed);
+  requests.first.open();
+  await flush();
+  assert.equal(answers(reversed), 0, 'an older answer does not count while the newer request is on its way');
+  requests.second.open(); state.gate = null;
+  await flush();
+  assert.equal(answers(reversed), 1, 'the newer answer is the one kept');
+  cleanup();
   const retried = '/route/google?from=one&to=fourteen';
   requests = await twice(retried);
   const pendingCalls = state.calls.length;
