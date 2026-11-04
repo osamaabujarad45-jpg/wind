@@ -35,8 +35,9 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   // The footer carries the bottom inset itself; a sheet without one must still clear the system navigation bar.
   const padBottom = safeBottom ? insets.bottom : 0;
   const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
-  const expanded = side ? screen : Math.max(peek, Math.round(screen * expandedRatio));
-  const travel = expanded - peek;
+  const [room, setRoom] = useState(0); // the height above the keyboard, so an open sheet's top never leaves the screen
+  const expanded = Math.min(room || screen, side ? screen : Math.max(peek, Math.round(screen * expandedRatio)));
+  const travel = Math.max(0, expanded - peek);
   const [y] = useState(() => new Animated.Value(0)); // 0 is fully open
   const latest = useRef({ travel, open, onOpenChange, still });
   useEffect(() => { latest.current = { travel, open, onOpenChange, still }; });
@@ -69,8 +70,8 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
     },
     onPanResponderTerminate: () => settleRef.current(latest.current.open),
   }));
-  return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding" enabled={open}>
-    <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }}>
+  return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding">
+    <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }} onLayout={e => setRoom(Math.floor(e.nativeEvent.layout.height))}>
       <Animated.View style={[styles.sheet, side && styles.side, { height: expanded, transform: [{ translateY: y }] }]}>
         <View {...pan.panHandlers} style={styles.handleArea}>
           <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} style={styles.gripArea}>
