@@ -13,6 +13,7 @@ mkdirSync(dir, { recursive: true });
 process.env.DB_PATH = join(dir, 'sandbox.db');
 if (existsSync(join(dir, 'web', 'index.html'))) process.env.WEB_ROOT = join(dir, 'web');
 process.env.WIND_IDENTITY_MODE = 'self-service';
+process.env.WIND_DRIVER_PRESENCE = 'off'; // the phone tests the same driver flow production has on SQLite
 // Synthetic testing covers all services; production remains parcel-only.
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_CONTACT_VERIFICATION_REQUIRED = 'false';

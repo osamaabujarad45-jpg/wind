@@ -18,6 +18,7 @@ process.env.WEB_ROOT = web;
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-tulkarm-')), 'tulkarm.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+process.env.WIND_DRIVER_PRESENCE = 'off'; // like production: on SQLite the jobs board is the whole driver flow
 for (const key of ['WIND_DATABASE_URL', 'DATABASE_URL']) delete process.env[key];
 assert.ok(process.env.OSRM_URL, 'OSRM_URL is required: this gate checks real roads');
 
@@ -158,6 +159,7 @@ try {
   await driverPage.goto(`${base}/driver`);
   await mapFrame(driverPage).locator('canvas.maplibregl-canvas').waitFor({ timeout: 20_000 });
   await driverPage.getByText(c.earnLabel, { exact: true }).first().waitFor({ timeout: 20_000 });
+  assert.equal(await driverPage.getByRole('button', { name: c.presence_go_online, exact: true }).count(), 0, 'no Go online button that can only fail');
   assert.equal(await mapFrame(driverPage).locator('.user-dot').count(), 0, 'offline, GPS stays off');
   await driverPage.waitForTimeout(1500);
   await shot(driverPage, '5b-driver-offers');

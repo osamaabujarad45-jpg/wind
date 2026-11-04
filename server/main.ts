@@ -511,6 +511,9 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
 const eligibility = new Eligibility(persistence, fail);
 registerEligibilityRoutes(route, eligibility);
 const presence = new Presence(persistence, eligibility, fail, production && selfService);
+// Going online needs the PostgreSQL presence tables. On SQLite (production today) the jobs board is the whole driver flow,
+// so the app must not offer a button that can only fail. Tests keep the card unless they ask for production's behaviour.
+const presenceOffered = persistence.backend === 'postgres' || (!production && process.env.WIND_DRIVER_PRESENCE !== 'off');
 registerPresenceRoutes(route, presence);
 const dispatch = new Dispatch(persistence, eligibility, fail, async (from, to) => {
   if (process.env.OSRM_URL?.trim()) {
@@ -671,7 +674,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, ...(presenceOffered ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
