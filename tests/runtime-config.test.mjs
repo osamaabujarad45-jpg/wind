@@ -35,7 +35,7 @@ assert.equal(clientUpdateRequired('10012, 10014', { WIND_MIN_CLIENT_BUILD: '1001
 resetRuntime(); assert.equal(mapReadyMs(), 20_000);
 configureRuntime({ ...clientConfiguration({}, Date.now()), values: { ...clientConfiguration({}, Date.now()).values, mapReadyTimeoutMs: 9_000 } });
 assert.equal(mapReadyMs(), 9_000, 'a configured map deadline reaches the renderers'); resetRuntime();
-for (const file of ['route-map.tsx', 'route-map.native.tsx', 'route-map.android.tsx', 'google-map.native.tsx', 'google-map.web.tsx'])
+for (const file of ['map-bridge.ts', 'route-map.native.tsx', 'google-map.native.tsx', 'google-map.web.tsx'])
   assert.doesNotMatch(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), /setTimeout\([^;]*2[05]_000\)/, `${file} reads mapReadyMs instead of a literal deadline`);
-assert.match(readFileSync(new URL('../public/map.html', import.meta.url), 'utf8'), /setTimeout\(fail, Number\.isSafeInteger\(config\.readyMs\) \? config\.readyMs : 20000\)/);
+assert.match(readFileSync(new URL('../public/map.html', import.meta.url), 'utf8'), /const readyTimeout = Number\.isSafeInteger\(config\.readyMs\) \? config\.readyMs : 20000;/);
 console.log('Runtime configuration bounds, expiry, authority separation, capability migration gaps and client build gate passed');

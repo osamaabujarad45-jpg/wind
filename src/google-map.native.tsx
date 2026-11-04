@@ -60,7 +60,7 @@ export default function RouteMap(props: RouteMapProps) {
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
   // A provider failure unmounts the map: its overlays go with it, and no Google content lingers anywhere.
-  if (failed) return <View style={{ height, width: '100%' }}>
+  if (failed) return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
@@ -68,7 +68,7 @@ export default function RouteMap(props: RouteMapProps) {
       </Pressable>
     </View>
   </View>;
-  return <View style={{ height, width: '100%' }}>
+  return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
     onMapLoaded={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}
     // A pinch the native recogniser claims before React sees the touch still reports a gesture-driven region change.

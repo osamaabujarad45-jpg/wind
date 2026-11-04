@@ -11,6 +11,12 @@ export const cities = [
   { id: 'qalqilya', ar: 'قلقيلية', en: 'Qalqilya', latitude: 32.1960, longitude: 34.9810 },
   { id: 'jericho', ar: 'أريحا', en: 'Jericho', latitude: 31.8667, longitude: 35.4500 },
   { id: 'salfit', ar: 'سلفيت', en: 'Salfit', latitude: 32.0837, longitude: 35.1808 },
+  { id: 'tubas', ar: 'طوباس', en: 'Tubas', latitude: 32.3209, longitude: 35.3693 },
+  { id: 'jerusalem', ar: 'القدس', en: 'Jerusalem', latitude: 31.7892, longitude: 35.2377 },
+  { id: 'gaza', ar: 'غزة', en: 'Gaza', latitude: 31.5017, longitude: 34.4668 },
+  { id: 'deir_albalah', ar: 'دير البلح', en: 'Deir al-Balah', latitude: 31.4183, longitude: 34.3503 },
+  { id: 'khan_younis', ar: 'خان يونس', en: 'Khan Younis', latitude: 31.3462, longitude: 34.3063 },
+  { id: 'rafah', ar: 'رفح', en: 'Rafah', latitude: 31.2968, longitude: 34.2435 },
 ] as const;
 
 export type CityId = typeof cities[number]['id'];
@@ -27,8 +33,8 @@ export type Road = { id: number; name: string; cities: CityId[]; point: Point | 
 /** Checkpoints touching either city with a recent slow/closed report: booking warning and live ETA wording. */
 export const roadAlerts = (roads: Road[], ...on: CityId[]) =>
   roads.filter(r => (r.status === 'slow' || r.status === 'closed') && r.cities.some(c => on.includes(c)));
-export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string };
-export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string }[] };
+export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string; point?: Point };
+export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string; point?: Point }[] };
 export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
 // "other" leads: it is the preselected chip, and a chip rail's far end starts off-screen (Safety in order/[id].tsx)
 export const safetyKinds: SafetyKind[] = ['other', 'unsafe_driving', 'harassment', 'accident', 'threat'];
@@ -147,6 +153,7 @@ export type Order = {
   // Driver offers (SPEC-driver-offers.md): null for fixed-price orders (Souq, apps before 1.0.8).
   recommendedPrice?: number | null; priceRating?: number | null;
   routeKm?: number | null; // road km the recommended price used
+  pickupArea?: string; dropoffArea?: string; pickupKm?: number | null; // job cards: the neighbourhoods, and how far the pickup is from the driver
   myOffer?: { price: number; createdAt: number } | null; // the viewing driver's pending offer
   offers?: Offer[]; // the customer's open offers, cheapest first
   customerRating?: number | null; // stars the driver gave the customer (driver and admin only)

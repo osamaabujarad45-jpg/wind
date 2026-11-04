@@ -33,6 +33,7 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
+import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
@@ -121,6 +122,7 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
     ? 'no-cache' : 'public, max-age=604800, immutable';
   // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
+  if (file === resolve(webRoot, 'map.html')) res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // the web app shows this page in an iframe; a 304 must say so too
   const since = req.headers['if-modified-since'];
   if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
     res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
@@ -874,14 +876,21 @@ async function places(user: User) {
   const saved = (await all("SELECT id, label, city, note FROM saved_places WHERE user_id = ? ORDER BY CASE label WHEN 'home' THEN 0 WHEN 'work' THEN 1 ELSE 2 END, id", user.id));
   const seen = new Set(saved.map(p => `${p.city}
 ${p.note}`));
-  const recent: { city: string; note: string }[] = [];
-  for (const o of (await all('SELECT pickup_city, pickup_note, dropoff_city, dropoff_note FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 30', user.id)))
-    for (const [city, note] of [[o.pickup_city, o.pickup_note], [o.dropoff_city, o.dropoff_note]]) {
+  const recent: { city: string; note: string; point?: Point }[] = [];
+  const pinned = new Map<string, Point>(); // where this customer's own orders put a landmark: re-booking it needs no second pin
+  for (const o of (await all('SELECT pickup_city, pickup_note, pickup_lat, pickup_lng, dropoff_city, dropoff_note, dropoff_lat, dropoff_lng FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 30', user.id)))
+    for (const [city, note, latitude, longitude] of [[o.pickup_city, o.pickup_note, o.pickup_lat, o.pickup_lng], [o.dropoff_city, o.dropoff_note, o.dropoff_lat, o.dropoff_lng]]) {
       const key = `${city}
 ${note}`;
-      if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note }); }
+      if (latitude != null && !pinned.has(key)) pinned.set(key, { latitude, longitude });
+      if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note, ...(latitude != null && { point: { latitude, longitude } }) }); }
     }
-  return { saved, recent };
+  const located = saved.map((p: Row) => {
+    const point = pinned.get(`${p.city}
+${p.note}`);
+    return point ? { ...p, point } : p;
+  });
+  return { saved: located, recent };
 }
 route('GET', '/api/me/places', async ({ user }) => { need(user, 'customer'); return (await places(user)); });
 route('POST', '/api/me/places', async ({ user, body }) => {
@@ -1964,6 +1973,10 @@ const pilotCheckpoints: [name: string, cities: CityId[], latitude: number, longi
   ['حاجز عطارة · Atara', ['ramallah', 'bireh'], 31.9828, 35.2006],
   ["حاجز جبع · Jaba'", ['ramallah', 'bireh', 'jericho'], 31.8539, 35.2564],
   ['حاجز قلنديا · Qalandia', ['ramallah', 'bireh'], 31.8623, 35.2275],
+  ['حاجز عنبتا - عيناف · Anabta-Einav', ['tulkarm', 'nablus'], 32.2904, 35.1357],
+  ['حاجز شوفة · Shufa', ['tulkarm'], 32.2803, 35.0668],
+  ['حاجز أفني حيفتس · Avnei Hefetz', ['tulkarm'], 32.2812, 35.0757],
+  ['حاجز الطيبة · Taybeh', ['tulkarm'], 32.2890, 35.0152],
 ];
 export async function seedCheckpoints() {
   const admin = (await one("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1")) ?? fail(409, 'promote an admin first');
@@ -2017,7 +2030,18 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
   const visible = rows.slice(0, pageSize);
   const cards = await jobCardData(visible, user.id);
-  const jobs = await Promise.all(visible.map(r => toOrder(r, user, cards)));
+  const lang = query.get('lang') === 'en' ? 'en' : 'ar';
+  // In one town the city names say nothing. A driver deciding sees the neighbourhoods and how far the pickup is;
+  // the exact pins, notes and contacts still wait until the job is taken.
+  // The device says where it is for this answer only (an idle driver's position is not stored).
+  const [nearLat, nearLng] = (query.get('near') ?? '').split(',').map(Number);
+  const here = finite(nearLat, 90) && finite(nearLng, 180) ? { latitude: nearLat, longitude: nearLng } : null;
+  const jobs = await Promise.all(visible.map(async r => {
+    const job = await toOrder(r, user, cards);
+    const pickup = r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null, dropoff = r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null;
+    return { ...job, pickupArea: pickup ? areaName(pickup, lang) : '', dropoffArea: dropoff ? areaName(dropoff, lang) : '',
+      pickupKm: here && pickup ? Math.max(1, Math.round(crowKm(here, pickup))) : null }; // whole km: three queries from three spots must not reveal the pin
+  }));
   const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
   if (!paging) return result;
   const last = visible.at(-1);
@@ -2503,8 +2527,9 @@ let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 
 const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
 registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
   reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number };
-type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
+type NavStep = { type: string; modifier?: string; name?: string; exit?: number; latitude: number; longitude: number };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number; steps: NavStep[] };
+type OsrmRoute = { distance: number; duration: number; line: [number, number][]; steps: NavStep[] };
 const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number; calculatedAt?: number }>(); // least recently used evicted
 let roadCachePoints = 0;
 const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-geometry routes would be ~500 MB
@@ -2515,7 +2540,7 @@ const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking check
 
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
   try {
-    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson${extra}`,
+    const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson&steps=true${extra}`,
       { signal: AbortSignal.timeout(routingTimeout) });
     if (!res.ok) fail(503, 'route_unavailable');
     const j: any = await res.json();
@@ -2531,7 +2556,13 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
     if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
     routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
     return j.routes
-      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]) }));
+      .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),
+        // Turn-by-turn for the driver's banner; only /api/route?steps=1 sends them.
+        steps: (Array.isArray(r.legs) ? r.legs : []).flatMap((leg: any) => Array.isArray(leg?.steps) ? leg.steps : []).flatMap((step: any) => {
+          const [longitude, latitude] = Array.isArray(step?.maneuver?.location) ? step.maneuver.location : [];
+          return finite(latitude, 90) && finite(longitude, 180) ? [{ type: String(step.maneuver.type ?? ''), latitude, longitude,
+            ...(step.maneuver.modifier && { modifier: String(step.maneuver.modifier) }), ...(step.name && { name: String(step.name).slice(0, 80) }), ...(Number.isInteger(step.maneuver.exit) && { exit: step.maneuver.exit }) }] : [];
+        }) }));
   } catch (error) {
     routingHealth = { healthy: false, checkedAt: Date.now(), reason: 'route_unavailable' };
     throw error;
@@ -2591,7 +2622,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         chosen = bestRoute(options, delay) ?? fastest;
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
-      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
+      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line, steps: chosen.steps,
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
     })().catch(error => { if (roadCache.get(key)?.promise === promise) roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
@@ -2620,12 +2651,15 @@ route('GET', '/api/route', async ({ user, query }) => {
   (await limit(identityKey('route', user.id), 120, 10 * 60_000));
   const heading = query.get('heading') == null ? null : Number(query.get('heading'));
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
-  const { calculatedAt, ...result } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  const { calculatedAt, steps, ...line } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  const lang = query.get('lang') === 'en' ? 'en' : 'ar';
+  const result = query.get('steps') === '1' ? { ...line, steps: steps.map(step => step.name ? { ...step, name: streetName(step.name, lang) } : step) } : line;
   return query.get('journeyProtocol') === '1' ? { ...result, eta: etaProjection(result.minutes * 60, calculatedAt, calculatedAt + 30_000) } : result;
 });
 
 // Map search (real OpenStreetMap places, server/domain/place-search.ts).
 registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('place-search', id) }, process.env.GEOCODER_URL || undefined);
+registerPlaceIndexRoutes(route, { fail, limit, limitKey: id => identityKey('place-suggest', id) });
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
 // module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.

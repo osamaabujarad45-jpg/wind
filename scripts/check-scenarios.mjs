@@ -58,6 +58,12 @@ async function until(read, predicate, message) {
   }
   assert.fail(message);
 }
+const mapOf = page => page.frameLocator('iframe[title="map"]').last();
+// The pickup's spot, from the trip: its row opens search, Set on map opens the pin over the same map.
+async function openPickupPin(page) {
+  await page.getByRole('button', { name: new RegExp(`^${c.pickup}: `) }).click();
+  await button(page, c.setOnMap).click();
+}
 function pass(message) { checks.push(message); console.log(`PASS ${message}`); }
 async function newPage(language = 'en', viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', permissions: ['geolocation'],
@@ -111,6 +117,7 @@ const state = id => db.prepare('SELECT * FROM orders WHERE id=?').get(id);
 async function atStatus(id, status) { return until(() => state(id), o => o?.status === status, `Order ${id} did not reach ${status}`); }
 async function booking(page, { service = 'parcel', lostResponse = false, scheduled = false } = {}) {
   await page.goto(`${base}/book?service=${service}&from=ramallah&to=nablus`);
+  await button(page, c.sheetExpand).click();
   await field(page, service === 'ride' ? c.pickupNote_ride : c.pickupNote).fill('QA pickup: shop entrance');
   await field(page, c.dropoffNote).fill('QA dropoff: office reception');
   await field(page, c[`${service}Detail`]).fill(service === 'parcel' ? 'Sealed documents' : service === 'freight' ? 'One boxed appliance' : 'Meet at the entrance');
@@ -156,7 +163,8 @@ try {
   stage = 'phone recovery capability retry';
   const phoneRetry = await newPage();
   let capabilityAttempts = 0;
-  await phoneRetry.route('**/api/phone/capabilities', route => ++capabilityAttempts === 1
+  // Two failures: the client repeats a failed read once by itself before anything reaches the screen.
+  await phoneRetry.route('**/api/phone/capabilities', route => ++capabilityAttempts <= 2
     ? route.abort() : route.fulfill({ json: { available: true, enabled: true } }));
   await phoneRetry.goto(base + '/auth');
   await phoneRetry.getByText(c.phone_status_failed, { exact: true }).waitFor();
@@ -210,9 +218,9 @@ try {
   await atStatus(id, 'assigned');
   await until(() => call(`/orders/${id}`, { token: customerToken }), o => o.driverLocation?.latitude === 31.9045, 'Latest GPS fix was lost during the previous upload');
   await customerPage.getByText(c.assigned, { exact: true }).waitFor();
-  await customerPage.locator('.maplibregl-marker').nth(2).waitFor();
+  await mapOf(customerPage).locator('.maplibregl-marker').nth(2).waitFor();
   // The live marker follows the driver: a new fix moves the car on the customer's map, with no user gesture.
-  const liveMarker = customerPage.locator('.maplibregl-marker').nth(2);
+  const liveMarker = mapOf(customerPage).locator('.maplibregl-marker').nth(2);
   const markerSpot = () => liveMarker.evaluate(el => { const box = el.getBoundingClientRect(); return [box.x, box.y]; });
   const beforeMove = await markerSpot();
   const fixesBefore = await driverPage.evaluate(() => window.scenarioFixCount ?? 0);
@@ -223,12 +231,11 @@ try {
     'The server did not accept the next driver fix');
   await until(markerSpot, ([x, y]) => Math.hypot(x - beforeMove[0], y - beforeMove[1]) > 0.5,
     'The live marker did not follow the driver to its new position');
-  // The camera rides with the car (Uber keeps it in the middle of the screen) instead of drifting with every fix.
+  // The camera rides with the car, framing it with the next stop, so it never drifts out of the map.
   await new Promise(resolve => setTimeout(resolve, 2500));
   const [carX, carY] = await markerSpot();
-  const mapBox = await customerPage.locator('.maplibregl-map').first().boundingBox();
-  const offset = [carX - (mapBox.x + mapBox.width / 2), carY - (mapBox.y + mapBox.height / 2)];
-  assert.ok(Math.abs(offset[0]) < 140 && Math.abs(offset[1]) < 140, `The camera did not follow the car (offset ${offset.map(Math.round)})`);
+  const mapBox = await mapOf(customerPage).locator('.maplibregl-map').first().boundingBox();
+  assert.ok(carX > 0 && carX < mapBox.width && carY > 0 && carY < mapBox.height, `The camera lost the car (${Math.round(carX)},${Math.round(carY)})`);
   await customerPage.screenshot({ path: join(output, 'customer-live-map.png'), fullPage: true });
   await driverPage.screenshot({ path: join(output, 'driver-assigned.png'), fullPage: true });
   pass('driver accepts, real MapLibre renders pickup/dropoff/driver, GPS reaches customer');
@@ -245,7 +252,7 @@ try {
   const share = await (await shareResponse).json();
   const recipient = await newPage();
   await recipient.goto(base + share.path);
-  await recipient.locator('.maplibregl-marker').first().waitFor();
+  await mapOf(recipient).locator('.maplibregl-marker').first().waitFor();
   const publicText = await recipient.locator('body').innerText();
   assert.ok(!publicText.includes('0599000701') && !publicText.includes('QA pickup:') && !publicText.includes('0599000707'));
   await recipient.screenshot({ path: join(output, 'recipient-tracking.png'), fullPage: true });
@@ -291,10 +298,9 @@ try {
   stage = 'rebook and cancellation';
   await customerPage.goto(`${base}/order/${id}`);
   await button(customerPage, c.sendAnother).click();
-  await field(customerPage, c.pickupNote).waitFor();
-  assert.equal(await field(customerPage, c.pickupNote).inputValue(), 'QA pickup: shop entrance');
-  assert.equal(await field(customerPage, c.recipientPhone).inputValue(), '');
-  await customerPage.getByText(c.chooseCity, { exact: true }).waitFor();
+  // The pickup stays; search asks for the next destination, and nothing of the old recipient comes along.
+  await customerPage.getByPlaceholder('QA pickup: shop entrance').waitFor();
+  await customerPage.getByPlaceholder(c.whereTo).waitFor();
   const cancelId = await booking(customerPage);
   await button(customerPage, c.cancelOrder).click();
   await atStatus(cancelId, 'cancelled');
@@ -492,10 +498,10 @@ try {
   // Playwright's fixed location keeps its original timestamp until explicitly refreshed.
   await customerPage.context().setGeolocation({ latitude: 31.9038, longitude: 35.2034, accuracy: 15 });
   await customerPage.goto(base + '/book?from=ramallah&to=nablus');
-  await button(customerPage, c.pickupOnMap).click();
-  const confirmPin = button(customerPage, c.confirmPin);
+  await openPickupPin(customerPage);
+  const confirmPin = button(customerPage, c.confirmPickupSpot);
   await until(() => confirmPin.isEnabled(), Boolean, 'Pin map did not become ready');
-  const canvas = customerPage.locator('canvas.maplibregl-canvas').last();
+  const canvas = mapOf(customerPage).locator('canvas.maplibregl-canvas').last();
   const box = await canvas.boundingBox();
   await customerPage.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await customerPage.mouse.down();
@@ -506,12 +512,12 @@ try {
   const chosen = (await pinQuote).postDataJSON().pickupPoint;
   assert.ok(Math.abs(chosen.latitude - 31.9038) + Math.abs(chosen.longitude - 35.2034) > 0.0001,
     'Confirm immediately after dragging must save the moved pin, not the starting city centre');
-  await button(customerPage, c.pickupOnMap).waitFor();
+  await button(customerPage, new RegExp(`^${c.request}`)).waitFor();
   pass('map picker loads real tiles, pans and confirms an exact pickup');
 
   await customerPage.setViewportSize({ width: 600, height: 320 });
-  await button(customerPage, c.pickupOnMap).click();
-  const landscapeConfirm = button(customerPage, c.confirmPin);
+  await openPickupPin(customerPage);
+  const landscapeConfirm = button(customerPage, c.confirmPickupSpot);
   await until(() => landscapeConfirm.isEnabled(), Boolean, 'Landscape pin map did not become ready');
   await landscapeConfirm.scrollIntoViewIfNeeded();
   const landscapeBox = await landscapeConfirm.boundingBox();
@@ -523,12 +529,12 @@ try {
   stage = 'map download recovery';
   const recovery = await newPage();
   await login(recovery, '0599000701');
-  await recovery.route('**/vendor/maplibre-*/load.mjs', route => route.abort());
+  await recovery.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await recovery.goto(base + '/book?from=ramallah&to=nablus');
   await button(recovery, c.retry).click({ trial: true });
-  await recovery.unroute('**/vendor/maplibre-*/load.mjs');
+  await recovery.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
   await button(recovery, c.retry).click();
-  await recovery.locator('.maplibregl-marker').first().waitFor();
+  await mapOf(recovery).locator('.maplibregl-marker').first().waitFor();
   pass('failed map library download shows fallback and recovers with Retry');
 
   stage = 'Android map bridge';
@@ -565,11 +571,13 @@ try {
   await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.features?.length === 0);
   await androidMap.evaluate(() => window.wind({ stale: false }));
   await androidMap.waitForFunction(() => window.testMap.getSource('approach').serialize().data.geometry?.type === 'LineString');
+  // Recenter brings a driver's follow camera back to the car, street-level and a little below the middle.
+  await androidMap.evaluate(() => window.wind({ follow: true }));
   await androidMap.evaluate(() => { window.testMap.fire('dragstart'); window.testMap.jumpTo({ center: [35.3, 32.0] }); });
   await androidMap.locator('#recenter').click();
   await androidMap.waitForFunction(() => {
     const p = window.testMap.project([35.2044, 31.9145]);
-    return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 60)) < 20;
+    return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 40)) < 20;
   });
   await new Promise(resolve => setTimeout(resolve, 1300));
   await androidMap.evaluate(() => window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } }));
@@ -604,18 +612,17 @@ try {
   const webBadTiles = await newPage();
   await webBadTiles.addInitScript(() => {
     const later = window.setTimeout;
-    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 25_000 ? 5_000 : ms, ...args);
+    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 25_000 || ms === 20_000 ? 5_000 : ms, ...args);
   });
   await login(webBadTiles, '0599000701');
   await webBadTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
   await webBadTiles.goto(base + '/book?from=ramallah&to=nablus');
-  await button(webBadTiles, c.pickupOnMap).click();
+  await openPickupPin(webBadTiles);
   await webBadTiles.getByText(c.pinUnavailable, { exact: true }).waitFor();
-  assert.equal(await button(webBadTiles, c.confirmPin).count(), 0, 'A blank web map cannot confirm a pin');
+  assert.equal(await button(webBadTiles, c.confirmPickupSpot).count(), 0, 'A blank web map cannot confirm a pin');
   await webBadTiles.unroute('https://tiles.openfreemap.org/**');
   await webBadTiles.getByRole('button', { name: c.retry, exact: true }).last().click();
-  await until(() => button(webBadTiles, c.confirmPin).isEnabled(), Boolean, 'The web pin picker did not recover after tile service returned');
-  await button(webBadTiles, c.cancel).last().click();
+  await until(() => button(webBadTiles, c.confirmPickupSpot).isEnabled(), Boolean, 'The web pin picker did not recover after tile service returned');
   pass('web pin picker refuses blank tiles and recovers after Retry');
 
   stage = 'responsive role screens';

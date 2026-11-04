@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { deadlineSeconds } from './api-clock';
 import type { JourneyEta } from './journey-contracts';
+import type { NavStep } from './nav-steps';
 import { useApi } from './api';
 import { approachKey, canShowOnRenderer, googleApproachPath, routeProvider, selectRenderer, SIGNIFICANT_MOVEMENT_METRES } from './map-provider';
 import { useMapMode } from './map-mode';
@@ -12,7 +13,7 @@ import { etaRange, fromDriver, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
-export type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids?: string[]; through?: string[]; closed?: Point[]; provider?: string; eta?: JourneyEta };
+export type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids?: string[]; through?: string[]; closed?: Point[]; provider?: string; eta?: JourneyEta; steps?: NavStep[] };
 
 /** The app's foreground state: a billable reroute may only be triggered while the user is watching. */
 function useForeground() {
@@ -28,7 +29,8 @@ function useForeground() {
  * Road line pickup→dropoff and the live driver's ETA to the next stop (SPEC-routing-eta.md).
  * All null when routing is unavailable; the map then shows pins without a line.
  */
-export function useRoad(order: Order | undefined) {
+export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | null) {
+  const withSteps = !!stepsLanguage;
   const from = order && (order.pickupPoint ?? city(order.pickupCity));
   const to = order && (order.dropoffPoint ?? city(order.dropoffCity));
   const active = !!order && activeStatuses.includes(order.status);
@@ -66,7 +68,7 @@ export function useRoad(order: Order | undefined) {
   const approachUrl = !renderer || !driver || !target ? null
     : renderer === 'google'
       ? foreground && stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null
-      : roadPath(driver, target, 3, driver.heading);
+      : `${roadPath(driver, target, 3, driver.heading)}${withSteps ? `&steps=1&lang=${stepsLanguage}` : ''}`;
   const approach = useApi<RoadRoute>(approachUrl, renderer === 'google' ? undefined : 25_000, { refetchOnFocus: renderer !== 'google' });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);
@@ -92,7 +94,7 @@ export function useRoad(order: Order | undefined) {
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];
   const avoids = [...new Set(shown.flatMap(r => r?.avoids ?? []))].filter(n => !through.includes(n));
   const closed = shown.flatMap(r => r?.closed ?? []).filter((p, i, all) => all.findIndex(q => q.latitude === p.latitude && q.longitude === p.longitude) === i);
-  return { road: route?.line ?? null, approach: eta?.line && driver ? fromDriver(eta.line, driver) : null, eta: eta ? eta.eta ? [Math.ceil(eta.eta.minSeconds / 60), Math.ceil(eta.eta.maxSeconds / 60)] as [number,number] : etaRange(eta.minutes) : null, km: eta?.km ?? null, avoids, through, closed };
+  return { steps: withSteps ? eta?.steps : undefined, road: route?.line ?? null, approach: eta?.line && driver ? fromDriver(eta.line, driver) : null, eta: eta ? eta.eta ? [Math.ceil(eta.eta.minSeconds / 60), Math.ceil(eta.eta.maxSeconds / 60)] as [number,number] : etaRange(eta.minutes) : null, km: eta?.km ?? null, avoids, through, closed };
 }
 
 /** One line per outcome under a route map: the route goes around closed checkpoints, or cannot. */

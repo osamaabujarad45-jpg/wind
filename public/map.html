@@ -1,37 +1,55 @@
 <!doctype html>
-<!-- Android app map (SPEC-android-map.md): the APK has no Google Maps key, so src/route-map.android.tsx shows this page
-     in a WebView. Same MapLibre + OpenFreeMap setup as src/route-map.tsx (web); keep the two in step.
-     Input: JSON in the URL fragment (never sent to the server), then window.wind({driver, road, focus}) updates.
-     Output: ReactNativeWebView.postMessage of {type: 'ready' | 'failed'} and, in pin mode, {type: 'center', latitude, longitude}. -->
+<!-- The app's one map page: a WebView on Android (src/route-map.android.tsx, loaded from the API origin) and an iframe on the
+     web (src/route-map.tsx, same origin). MapLibre + OpenFreeMap vector tiles, OpenStreetMap data, no key.
+     Input: JSON in the URL fragment (never sent to the server), then window.wind({...}) updates.
+     Output: messages to the host (ReactNativeWebView or the parent window): {type: 'ready' | 'failed' | 'drawing' | 'gesture' | 'moving'}
+     and, in pin mode, {type: 'center', latitude, longitude}. -->
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' data:; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="data:,"><!-- the WebView never shows a favicon; without this it downloads the 14 kB /favicon.ico on cold opens -->
 <link rel="stylesheet" href="/vendor/maplibre-6.12.0/maplibre-gl.css">
 <!-- Fetch every MapLibre module this page uses at parse time: otherwise each waits for the previous to download and run,
-     one serial round trip per module on mobile data (loadMap in src/route-map.tsx also fetches them in parallel on web).
-     The worker later reads its copy from the HTTP cache (immutable vendor path). Preconnect the tile host for the same reason. -->
+     one serial round trip per module on mobile data. The worker later reads its copy from the HTTP cache (immutable vendor
+     path). Preconnect the tile host for the same reason. -->
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl.mjs">
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-shared.mjs">
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-worker.mjs">
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <style>
-  html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #E6ECE3; }
-  #pin[hidden] { display: none; }
+  :root { --inset-top: 0px; --inset-bottom: 0px; --inset-right: 0px; }
+  html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #EEEFEC; }
+  /* The pin's point sits at the centre of the map area the app's chrome leaves visible. */
+  #pin { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
+    margin: -42px 0 0 -22px; pointer-events: none; transition: transform .16s ease-out; }
+  #pin[hidden], #pin-base[hidden] { display: none; }
   #pin svg { width: 100%; height: 100%; }
-  #pin { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -42px 0 0 -22px; pointer-events: none; }
-  #recenter { position: absolute; bottom: 34px; right: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
+  #pin.lift { transform: translateY(-12px); }
+  #pin-base { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
+    border-radius: 50%; background: rgba(0,0,0,.35); pointer-events: none; }
+  #recenter { position: absolute; bottom: calc(var(--inset-bottom) + 34px); right: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
+  .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: var(--inset-bottom); }
+  .stop { position: relative; }
+  .stop-label { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: 150px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    background: #fff; color: #12342A; font: 600 12px/18px system-ui, sans-serif; padding: 3px 10px; border-radius: 13px; box-shadow: 0 1px 6px rgba(0,0,0,.22); pointer-events: none; }
+  .stop-label[hidden] { display: none; }
+  .stop-label span { overflow: hidden; text-overflow: ellipsis; }
+  .stop-label b { flex: none; background: #12342A; color: #fff; border-radius: 9px; padding: 0 7px; font-weight: 700; }
+  @media (prefers-reduced-motion: reduce) { #pin { transition: none; } }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="pin-base" hidden></div>
 <div id="pin" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#CB6845" stroke="#fff" stroke-width="1" d="M12 1.5c-4.1 0-7.5 3.2-7.5 7.3 0 5.5 7.5 13.7 7.5 13.7s7.5-8.2 7.5-13.7c0-4.1-3.4-7.3-7.5-7.3zm0 10a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg></div>
-<button id="recenter" type="button"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+<button id="recenter" type="button"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
 <script type="module">
-const send = message => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
+const host = window.ReactNativeWebView ?? (window.parent !== window ? { postMessage: json => window.parent.postMessage(json, location.origin) } : null);
+const send = message => host?.postMessage(JSON.stringify(message));
 let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
 // A missing/empty fragment used to throw on config.colors and leave a blank WebView; tell the app to fall back.
@@ -43,7 +61,8 @@ const incomingColors = config.colors && typeof config.colors === 'object' && !Ar
 const C = Object.fromEntries(Object.entries(defaultColors).map(([key, fallback]) => [key,
   typeof incomingColors[key] === 'string' && incomingColors[key].length === 7 && /^#[0-9a-f]{6}$/i.test(incomingColors[key]) ? incomingColors[key] : fallback]));
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
-const FOLLOW_ZOOM = 15, FOLLOW_OFFSET = [0, -60];
+const FOLLOW_ZOOM = 15;
+const validPoint = p => !!p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180;
 
 // Same helpers as src/map-math.ts (tests/map.test.mjs checks this copy against them).
 const rad = d => d * Math.PI / 180;
@@ -94,22 +113,43 @@ const labelField = language => language === 'ar'
 
 let failed = false;
 const fail = () => { if (!failed) { failed = true; send({ type: 'failed' }); } };
-let timer = setTimeout(fail, Number.isSafeInteger(config.readyMs) ? config.readyMs : 20000); // the app's mapReadyTimeoutMs; map never became usable: blocked or offline (tiles on slow mobile data take a while)
+const readyTimeout = Number.isSafeInteger(config.readyMs) ? config.readyMs : 20000; // the app's mapReadyTimeoutMs
+let timer = setTimeout(fail, readyTimeout); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
-catch (e) { clearTimeout(timer); fail(); throw e; }
+catch { clearTimeout(timer); fail(); await new Promise(() => {}); } // the app shows its fallback and Retry; nothing more this page can do
 ml.setRTLTextPlugin('/vendor/mapbox-gl-rtl-text.js', true).catch(() => undefined);
 
-const pin = config.mode === 'pin';
-const points = pin ? [config.center] : [config.pickup, config.dropoff, ...(config.driver ? [config.driver] : [])];
+// `browse` is a plain map (the home screen); `pin` has the fixed centre pin; `route` draws the trip.
+const state = { mode: config.mode ?? 'route', pickup: config.pickup ?? null, dropoff: config.dropoff ?? null, center: config.center ?? null,
+  driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined, user: config.user ?? null,
+  insets: { top: 0, bottom: 0, ...config.insets }, labels: null, eta: null };
+const pinning = () => state.mode === 'pin';
+const free = () => state.mode !== 'route';
+const firstPoints = free() ? [state.center] : [state.pickup, state.dropoff, ...(state.driver ? [state.driver] : [])];
+if (!firstPoints.every(validPoint)) { clearTimeout(timer); fail(); throw new Error('bad points'); }
 const padding = config.padding ?? 0;
+// Stop labels hang over their markers and stand 150 px wide: keep room so they are not cut at the screen's edge.
+const fitPadding = () => { const side = state.labels ? Math.max(padding, 80) : padding, above = state.labels ? 34 : 0;
+  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side, right: side + (state.insets.right ?? 0) }; };
+const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: state.insets.right ?? 0 });
+const insetCss = () => {
+  document.documentElement.style.setProperty('--inset-top', `${state.insets.top}px`);
+  document.documentElement.style.setProperty('--inset-bottom', `${state.insets.bottom}px`);
+  document.documentElement.style.setProperty('--inset-right', `${state.insets.right ?? 0}px`);
+};
+insetCss();
 const map = new ml.Map({
-  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty', bounds: fitBounds(points),
-  fitBoundsOptions: { padding, maxZoom: 15 }, attributionControl: { compact: true },
-  dragRotate: false, pitchWithRotate: false, maxZoom: 18,
+  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
+  ...(free() ? { center: [state.center.longitude, state.center.latitude], zoom: config.zoom ?? 16 } : { bounds: fitBounds(firstPoints), fitBoundsOptions: { padding: fitPadding(), maxZoom: 15 } }),
+  attributionControl: { compact: true },
+  dragRotate: false, pitchWithRotate: false, maxZoom: 18, minZoom: 7, renderWorldCopies: false,
+  pixelRatio: Math.min(window.devicePixelRatio || 1, 2), // a 2.8× phone draws twice the pixels for no visible gain on a map
+  fadeDuration: 150,
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
+window.windMap = map; // the browser gates read the real camera
 map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
 const announceReady = () => {
@@ -127,31 +167,40 @@ map.on('sourcedata', e => {
 map.once('load', () => { mapLoaded = true; announceReady(); });
 
 const mapEl = document.getElementById('map');
-const state = { driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined };
-let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
+const pinEl = document.getElementById('pin'), pinBase = document.getElementById('pin-base');
+let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0, userMarker, drawnMode = '';
 window.wind = update => {
   if (failed) return;
   // The map is one labelled image for screen readers; Recenter sits outside it and stays reachable.
   if (typeof update.label === 'string') { mapEl.setAttribute('role', 'img'); mapEl.setAttribute('aria-label', update.label); }
+  const refit_ = 'insets' in update && JSON.stringify(update.insets) !== JSON.stringify(state.insets);
   Object.assign(state, update);
+  if (update.insets) { state.insets = { top: 0, bottom: 0, ...update.insets }; insetCss(); }
   if (ready) {
-    if (pin && update.center) centerPin(update.center);
-    else draw();
+    applyMode();
+    // The pin and the camera's centre must agree on where the visible middle is, or the pin points at the wrong place.
+    if (refit_ && free()) map.setPadding(freePadding());
+    if (free() && update.center) centerPin(update.center, update.zoom);
+    else if (refit_ && !free()) { framed = ''; }
+    draw(refit_);
+    drawUser();
   }
   fade();
 };
-function centerPin(point) {
-  if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)
-    || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180) return;
+function centerPin(point, zoom) {
+  if (!validPoint(point)) return;
   const current = map.getCenter();
-  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001)
-    map.jumpTo({ center: [point.longitude, point.latitude] });
+  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001) {
+    const center = [point.longitude, point.latitude], camera = { center, ...(Number.isFinite(zoom) && { zoom }) };
+    if (still() || !announcedReady) map.jumpTo(camera);
+    else map.easeTo({ ...camera, duration: 350 });
+  }
 }
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
 const fade = () => {
   if (marker) marker.getElement().style.opacity = state.stale ? '0.45' : '';
-  if (!ready) return;
+  if (!ready || free()) return;
   if (map.getLayer('accuracy')) map.setPaintProperty('accuracy', 'circle-opacity', state.stale ? 0.05 : 0.12);
   const approach = map.getSource('approach');
   if (approach) {
@@ -160,12 +209,14 @@ const fade = () => {
   }
 };
 
-function dot(color, square) {
+function stopMarker(color, square) {
   const el = document.createElement('div');
-  el.style.cssText = `width:18px;height:18px;border-radius:${square ? 5 : 9}px;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)`;
+  el.className = 'stop';
+  el.style.cssText = 'width:18px;height:18px';
+  el.innerHTML = `<div style="width:18px;height:18px;box-sizing:border-box;border-radius:${square ? 4 : 9}px;background:${square ? color : '#fff'};border:${square ? 3 : 5}px solid ${square ? '#fff' : color};box-shadow:0 1px 4px rgba(0,0,0,.35)"></div><div class="stop-label" hidden></div>`;
   return el;
 }
-function noEntry() { // closed checkpoint, same sign as the web map
+function noEntry() { // closed checkpoint
   const el = document.createElement('div');
   el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="#C62828" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>';
   el.style.cssText = 'width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))';
@@ -174,9 +225,11 @@ function noEntry() { // closed checkpoint, same sign as the web map
 function driverIcon(withArrow) {
   const el = document.createElement('div');
   el.classList.add('driver-marker');
-  el.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="${C.blue}" stroke="#fff" stroke-width="3"/>${
-    withArrow ? '<path d="M19 9 L26 26 L19 22 L12 26 Z" fill="#fff"/>' : '<circle cx="19" cy="19" r="5" fill="#fff"/>'}</svg>`;
-  el.style.cssText = 'width:38px;height:38px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))';
+  // Seen from above and pointing up: the marker turns with the heading. Without one, a plain dot promises no direction.
+  el.innerHTML = withArrow
+    ? `<svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><rect x="12" y="4" width="16" height="32" rx="7" fill="${C.forest}" stroke="#fff" stroke-width="2"/><path d="M14.5 13.5c3-2 8-2 11 0l-1.2 5h-8.6z" fill="#BFE3EE"/><path d="M15.5 28.5c2.6 1.2 6.4 1.2 9 0l1-5.5c-3 1-8 1-11 0z" fill="#BFE3EE" opacity=".7"/></svg>`
+    : `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="14" fill="${C.forest}" stroke="#fff" stroke-width="3"/><circle cx="19" cy="19" r="5" fill="#fff"/></svg>`;
+  el.style.cssText = `width:${withArrow ? 40 : 38}px;height:${withArrow ? 40 : 38}px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))`;
   return el;
 }
 const halo = (meters, lat) => {
@@ -189,62 +242,131 @@ const recenter = document.getElementById('recenter');
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
 if (config.language === 'ar') { recenter.style.right = 'auto'; recenter.style.left = '10px'; } // mirrored like the app's useCopy().rtl
 recenter.style.color = C.blue;
-document.querySelector('#pin path').setAttribute('fill', C.clay);
+pinEl.querySelector('path').setAttribute('fill', C.clay);
+
+// A calm base map: pale ground, white streets, the main roads a soft yellow, landmarks kept because people navigate by them here.
+function restyle() {
+  const paint = (id, property, value) => { try { map.setPaintProperty(id, property, value); } catch { /* the style changed: leave its own colour */ } };
+  for (const layer of map.getStyle().layers) {
+    const { id, type } = layer;
+    if (type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
+      map.setLayoutProperty(id, 'text-field', labelField(config.language));
+    if (type === 'fill-extrusion' || id.includes('shield')) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
+    if (type === 'background') paint(id, 'background-color', '#F2F2EE');
+    else if (type === 'fill' && id.startsWith('building')) { paint(id, 'fill-color', '#E8E8E3'); paint(id, 'fill-outline-color', '#DEDED8'); }
+    else if (type === 'fill' && /residential|landuse_(school|hospital|cemetery)/.test(id)) paint(id, 'fill-color', '#EDEDE8');
+    else if (type === 'fill' && /park|wood|grass|landcover/.test(id)) paint(id, 'fill-color', '#DDEBD6');
+    else if (type === 'fill' && /water/.test(id)) paint(id, 'fill-color', '#BFDDEF');
+    else if (type === 'line' && /^(road|tunnel|bridge)_/.test(id)) {
+      const main = /motorway|trunk|primary/.test(id), casing = /casing/.test(id);
+      paint(id, 'line-color', casing ? (main ? '#E6D39B' : '#DCDCD6') : main ? '#FBE8AE' : '#FFFFFF');
+    } else if (type === 'symbol' && id.startsWith('poi')) { paint(id, 'text-color', '#6F747A'); paint(id, 'icon-opacity', 0.75); }
+    else if (type === 'symbol' && id.startsWith('highway-name')) paint(id, 'text-color', '#5B6066');
+  }
+}
+
+let startMarker, endMarker;
+const placeStop = (existing, point, color, square) => {
+  if (!validPoint(point)) { existing?.remove(); return undefined; }
+  const stop = existing ?? new ml.Marker({ element: stopMarker(color, square) }).setLngLat([point.longitude, point.latitude]).addTo(map);
+  stop.setLngLat([point.longitude, point.latitude]);
+  return stop;
+};
+function drawStops() {
+  startMarker = placeStop(startMarker, state.pickup, C.forest, false);
+  endMarker = placeStop(endMarker, state.dropoff, C.forest, true);
+  // The next stop carries the minutes; both carry their names when the app sends them.
+  const etaAt = state.driver && state.focus === 'pickup' ? startMarker : endMarker;
+  for (const [stop, text] of [[startMarker, state.labels?.pickup], [endMarker, state.labels?.dropoff]]) {
+    const el = stop?.getElement().querySelector('.stop-label');
+    if (!el) continue;
+    const eta = stop === etaAt ? state.eta : null;
+    el.hidden = !text && !eta;
+    el.replaceChildren(...(eta ? [Object.assign(document.createElement('b'), { textContent: eta })] : []), ...(text ? [Object.assign(document.createElement('span'), { textContent: text })] : []));
+  }
+}
+function applyMode() {
+  if (state.mode === drawnMode) return;
+  const was = drawnMode;
+  drawnMode = state.mode;
+  pinEl.hidden = pinBase.hidden = !pinning();
+  if (free()) {
+    // Trip layers stay but hold nothing; the camera returns to the place being pinned.
+    startMarker?.remove(); endMarker?.remove(); startMarker = endMarker = undefined;
+    closedMarkers.forEach(m => m.remove()); closedMarkers = [];
+    for (const id of ['road', 'road-casing-source', 'approach']) map.getSource(id)?.setData(empty);
+    drawnLines = ''; drawnClosed = ''; framed = '';
+    recenter.style.display = 'none';
+    map.setPadding(freePadding());
+    if (state.center) map.jumpTo({ center: [state.center.longitude, state.center.latitude], ...(was === 'route' ? { zoom: config.zoom ?? 16 } : {}) });
+  } else {
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+    moved = false;
+    drawStops();
+    refit(still() ? 0 : 500);
+  }
+}
 
 map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   ready = true;
   // The style is parsed; keep the deadline until the map's first load completes.
   send({ type: 'drawing' });
-  for (const layer of map.getStyle().layers)
-    if (layer.type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
-      map.setLayoutProperty(layer.id, 'text-field', labelField(config.language));
-  if (pin) {
-    document.getElementById('pin').hidden = false;
-    map.jumpTo({ center: [config.center.longitude, config.center.latitude], zoom: 16 });
-    if (state.center) centerPin(state.center);
-    map.on('dragstart', () => send({ type: 'gesture' }));
-    map.on('zoomstart', e => { if (e.originalEvent) send({ type: 'gesture' }); });
-    map.on('moveend', () => { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); });
-    const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng });
-  } else {
-    new ml.Marker({ element: dot(C.olive) }).setLngLat([config.pickup.longitude, config.pickup.latitude]).addTo(map);
-    new ml.Marker({ element: dot(C.clay, true) }).setLngLat([config.dropoff.longitude, config.dropoff.latitude]).addTo(map);
-    // Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line.
-    for (const [id, color] of [['road', C.forest], ['approach', C.blue]]) {
-      map.addSource(id, { type: 'geojson', data: empty });
-      map.addLayer({ id, type: 'line', source: id, layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': color, 'line-width': id === 'road' ? 4 : 5, 'line-opacity': id === 'road' ? 0.85 : 0.9 } });
-    }
-    map.addSource('accuracy', { type: 'geojson', data: empty });
-    map.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': C.blue, 'circle-opacity': 0.12,
-      'circle-stroke-color': C.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
-    const userMoved = () => { moved = true; recenter.style.display = 'flex'; };
-    map.on('dragstart', userMoved);
-    map.on('zoomstart', e => { if (e.originalEvent) userMoved(); });
-    recenter.onclick = () => {
-      moved = false; recenter.style.display = 'none';
-      const car = shown ?? state.driver;
-      if (car) map.easeTo({ center: [car.longitude, car.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: still() ? 0 : 800 });
-      else refit(still() ? 0 : 800);
-    };
-    // The WebView can lay out after the map is created (a 150 px booking preview framed nothing): frame again at real size.
-    addEventListener('resize', () => { if (!moved) refit(0); });
-    map.resize(); refit(0);
-    draw(); fade();
-  }
+  restyle();
+  // Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line.
+  map.addSource('road', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'road-casing', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 8 } });
+  map.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': C.forest, 'line-width': 4.5 } });
+  map.addSource('approach', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'approach-casing', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 9 } });
+  map.addLayer({ id: 'approach', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': C.blue, 'line-width': 5 } });
+  map.addSource('accuracy', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': C.blue, 'circle-opacity': 0.12,
+    'circle-stroke-color': C.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
+  map.addSource('user-accuracy', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'user-accuracy', type: 'circle', source: 'user-accuracy', paint: { 'circle-color': '#2F6FED', 'circle-opacity': 0.12,
+    'circle-stroke-color': '#2F6FED', 'circle-stroke-opacity': 0.25, 'circle-stroke-width': 1 } });
+  map.on('movestart', () => { if (pinning()) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
+  map.on('dragstart', () => { if (pinning()) send({ type: 'gesture' }); else userMoved(); });
+  map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) send({ type: 'gesture' }); else userMoved(); } });
+  map.on('moveend', () => {
+    if (!pinning()) return;
+    pinEl.classList.remove('lift');
+    const p = map.getCenter();
+    send({ type: 'center', latitude: p.lat, longitude: p.lng });
+  });
+  const userMoved = () => { if (state.mode === 'route') { moved = true; recenter.style.display = 'flex'; } };
+  recenter.onclick = () => {
+    moved = false; recenter.style.display = 'none';
+    const car = shown ?? state.driver;
+    drawnDriver = ''; // the next draw reframes
+    if (car && state.follow) map.easeTo({ center: [car.longitude, car.latitude], zoom: FOLLOW_ZOOM + 1, offset: followOffset(), duration: still() ? 0 : 800 });
+    else if (car) drawDriver();
+    else refit(still() ? 0 : 800);
+  };
+  // The WebView can lay out after the map is created (a 150 px booking preview framed nothing): frame again at real size.
+  addEventListener('resize', () => { if (state.mode === 'route' && !moved) refit(0); });
+  map.resize();
+  applyMode();
+  if (pinning()) { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); }
+  draw(); drawUser(); fade();
 });
 
+const followOffset = () => [-(state.insets.right ?? 0) / 2, (state.insets.top - state.insets.bottom) / 2 - 40];
 let drawnLines = '', drawnDriver = '', drawnClosed = '', framed = '', closedMarkers = [];
 // Live: driver, next stop and the road to it. Otherwise both pins and the whole road route (it can bend outside them).
-const framePoints = () => routeFramePoints({ ...state, pickup: config.pickup, dropoff: config.dropoff });
+const framePoints = () => routeFramePoints(state);
 function refit(duration) {
-  if (state.driver) return; // the car is on screen: the camera follows it, it does not frame the stops
-  const points = framePoints();
+  if (state.mode !== 'route' || state.driver) return; // the car is on screen: the camera follows it, it does not frame the stops
+  const points = framePoints().filter(validPoint);
+  if (!points.length) return;
   framed = JSON.stringify(points);
-  map.fitBounds(fitBounds(points), { padding, maxZoom: 16, ...(duration != null && { duration }) });
+  // A sheet taller than the map would make an impossible frame; keep at least a strip of map to fit into.
+  const box = fitPadding(), height = mapEl.clientHeight || 300, spare = height - box.top - box.bottom;
+  if (spare < 80) { const cut = (80 - spare) / 2; box.bottom = Math.max(0, box.bottom - cut * 2); }
+  map.fitBounds(fitBounds(points), { padding: box, maxZoom: 16, ...(duration != null && { duration }) });
 }
-function draw() {
-  if (pin) return;
+function draw(insetsChanged = false) {
+  if (free()) { drawDriver(); return; }
   const linesKey = JSON.stringify([state.road, state.approach]); // every point: a reroute can keep its length and ends
   if (linesKey !== drawnLines) {
     drawnLines = linesKey;
@@ -253,17 +375,36 @@ function draw() {
       map.getSource(id).setData(line ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } } : empty);
     }
   }
+  // With a car on the road, the trip ahead steps back so the live line reads first.
+  map.setPaintProperty('road', 'line-opacity', state.driver ? 0.3 : 1);
+  map.setPaintProperty('road-casing', 'line-opacity', state.driver ? 0.3 : 1);
   const closedKey = (state.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   if (closedKey !== drawnClosed) {
     drawnClosed = closedKey;
     closedMarkers.forEach(m => m.remove());
     closedMarkers = (state.closed ?? []).map(p => new ml.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
   }
+  drawStops();
   drawDriver();
-  if (!moved && JSON.stringify(framePoints()) !== framed) refit(still() ? 0 : 800);
+  if (!moved && (insetsChanged || JSON.stringify(framePoints()) !== framed)) refit(still() ? 0 : 800);
+}
+function drawUser() {
+  const user = validPoint(state.user) ? state.user : null;
+  const source = map.getSource('user-accuracy');
+  if (!user) { userMarker?.remove(); userMarker = undefined; source?.setData(empty); return; }
+  if (!userMarker) {
+    const el = document.createElement('div');
+    el.className = 'user-dot';
+    el.style.cssText = 'width:16px;height:16px;box-sizing:border-box;border-radius:8px;background:#2F6FED;border:3px solid #fff;box-shadow:0 0 0 1px rgba(47,111,237,.25),0 1px 4px rgba(0,0,0,.35)';
+    userMarker = new ml.Marker({ element: el });
+    userMarker.setLngLat([user.longitude, user.latitude]).addTo(map);
+  }
+  userMarker.setLngLat([user.longitude, user.latitude]);
+  source?.setData(user.accuracy != null ? { type: 'Feature', geometry: { type: 'Point', coordinates: [user.longitude, user.latitude] }, properties: {} } : empty);
+  if (user.accuracy != null) map.setPaintProperty('user-accuracy', 'circle-radius', halo(user.accuracy, user.latitude));
 }
 function drawDriver() {
-  const driver = state.driver;
+  const driver = !free() ? state.driver : null;
   const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${state.focus}` : '';
   if (key === drawnDriver) return;
   drawnDriver = key;
@@ -295,8 +436,14 @@ function drawDriver() {
   const start = performance.now(), instant = still();
   const span = snap ? 0 : glideMs(at === undefined ? 0 : start - at);
   at = start;
-  // The camera rides along with the car over the same span: the map never zooms or jumps between fixes.
-  if (!moved) map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM, offset: FOLLOW_OFFSET, duration: instant ? 0 : span });
+  // The camera rides along with the car over the same span. Someone waiting sees the car and the next stop together;
+  // a driver sees the street ahead (`follow`), and a car close to its stop never zooms in past street level.
+  if (!moved) {
+    const stop = state.focus === 'pickup' ? state.pickup : state.focus === 'dropoff' ? state.dropoff : null;
+    if (!state.follow && validPoint(stop)) {
+      map.fitBounds(fitBounds([target, stop]), { padding: { ...fitPadding(), top: state.insets.top + Math.max(padding, 70), bottom: state.insets.bottom + Math.max(padding, 40) }, maxZoom: FOLLOW_ZOOM + 1, duration: instant ? 0 : span, easing: t => t });
+    } else map.easeTo({ center: [target.longitude, target.latitude], zoom: FOLLOW_ZOOM + 1, offset: followOffset(), duration: instant ? 0 : span, easing: t => t });
+  }
   const step = t => {
     const k = instant ? 1 : (t - start) / span;
     const p = ease(origin, target, k);

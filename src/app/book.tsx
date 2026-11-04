@@ -1,29 +1,26 @@
 import { deadlineMilliseconds } from '../api-clock';
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, AppState, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
+import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
 import { api, ApiError, errorCode, storage, useApi } from '../api';
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
-import { browserPickupWatch, findPickup, pickupErrorKey, pickupPermission, withPickupPermission } from '../customer-location';
-import { city, CLOSED_MINUTES, distanceKm, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
-import { type PlaceCandidate } from '../place-search';
-import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
+import { pickupErrorKey } from '../customer-location';
+import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
+import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
-import { canShowOnRenderer, googlePreviewPath, routeProvider, selectRenderer } from '../map-provider';
-import { useMapMode } from '../map-mode';
-import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
-import PinSheet from '../pin-sheet';
-import RouteMap, { canPin } from '../route-map';
+import { canShowOnRenderer, routeProvider } from '../map-provider';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
+import { RouteLine, ServiceIcon, SlotPicker, useFormat } from '../parts';
+import { SceneMap } from '../scene-map';
+import { TripSearch, type TripField, type TripPlace } from '../trip-search';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
 import { FreightScopeForm } from '../freight-details';
-import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, palette, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const { me } = useSession();
@@ -51,9 +48,24 @@ function BookForm() {
   const pickupNow = useRef({ city: pickupCity, chosen: pickupChosen }); // read when a slow GPS fix lands, not at the tap
   useEffect(() => { pickupNow.current = { city: pickupCity, chosen: pickupChosen }; }, [pickupCity, pickupChosen]);
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
-  const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
+  // One map from search to request: `search` covers it, `pin` moves it under a fixed pin, `trip` draws the route.
+  const [step, setStep] = useState<'search' | 'pin' | 'trip'>(isCity(params.from) && isCity(params.to) ? 'trip' : 'search');
+  const [field, setField] = useState<TripField>('dropoff');
+  const [pinFor, setPinFor] = useState<TripField>('dropoff');
+  const [pinCenter, setPinCenter] = useState<Point | null>(null); // where the camera is sent; a drag moves pinPoint only
+  const [pinPoint, setPinPoint] = useState<Point | null>(null);
+  const [pinMoving, setPinMoving] = useState(false);
+  const [pinLabel, setPinLabel] = useState<{ name: string; detail: string } | null>(null);
+  const [pinNote, setPinNote] = useState(''); // a saved landmark keeps its words while its spot is confirmed
+  const [mapReady, setMapReady] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
+  const [here, setHere] = useState<(Point & { accuracy?: number | null }) | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetPeek, setSheetPeek] = useState(0);
+  const [topBar, setTopBar] = useState(0);
+  const [pinPanel, setPinPanel] = useState(0);
+  const pickupTouched = useRef(isCity(params.from) || !!params.again); // the customer chose: GPS must not move it
   const [locating, setLocating] = useState(false);
-  const [picker, setPicker] = useState<'pickup' | 'dropoff' | null>(params.pick === 'to' ? 'dropoff' : null);
   const [pickupNote, setPickupNote] = useState('');
   const [dropoffNote, setDropoffNote] = useState('');
   const [contact, setContact] = useState(me?.user.phone ?? '');
@@ -66,7 +78,6 @@ function BookForm() {
   const [error, setError] = useState('');
   const [locationError, setLocationError] = useState('');
   const locationRequest = useRef<AbortController | null>(null);
-  const sheetFix = useRef<{ point: Point; accuracy: number } | null>(null); // the pin sheet's last GPS fix
   useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
   const [outcome, setOutcome] = useState<PendingOutcome | null>(null); // the last read-only answer; null = not checked
@@ -128,44 +139,23 @@ function BookForm() {
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
   const alerts = roadAlerts(roads, pickupCity, dropoffCity);
-  // T13: the preview line follows the selected renderer. The OSRM preview is free and refreshes on focus;
-  // a Google display route is billed once per shown pin pair (never a rerender or refocus: refetchOnFocus
-  // is off, and a changed pin pair is the only re-request), falls back to the free OSRM line when Google is
-  // unavailable or exhausted, and is provenance-guarded like every other line. Money never reads it: fares,
-  // feasibility and the servedCity bound stay on the server's /price and /orders policy.
-  const [mapMode] = useMapMode();
-  const mapRenderer = selectRenderer(Platform.OS, Constants.expoConfig?.extra?.googleMaps, mapMode);
+  // The booking map is the baseline renderer, so its line is the free OSRM route; the provenance guard stays.
+  // Money never reads it: fares, feasibility and the servedCity bound stay on the server's /price and /orders policy.
   const previewFrom = pickupPoint ?? city(pickupCity), previewTo = dropoffPoint ?? city(dropoffCity);
-  const pinPair = routeChosen ? `${previewFrom.latitude},${previewFrom.longitude}|${previewTo.latitude},${previewTo.longitude}` : null;
-  // Which trigger the next Google preview may claim: the first shown pair bills as a preview, every different
-  // pair afterwards as a destination change (render-phase adjustment, the sanctioned React pattern).
-  const [previewTrigger, setPreviewTrigger] = useState<{ pair: string | null; changed: boolean }>({ pair: null, changed: false });
-  if (pinPair !== previewTrigger.pair) setPreviewTrigger({ pair: pinPair, changed: previewTrigger.pair != null && pinPair != null });
-  const osrmPreviewPath = routeChosen && pinPair ? roadPath(previewFrom, previewTo, 5) : null;
-  const googlePreview = useApi<RoadRoute>(routeChosen && mapRenderer === 'google' && pinPair ? googlePreviewPath(previewFrom, previewTo, previewTrigger.changed) : null, undefined, { refetchOnFocus: false });
-  const osrmPreview = useApi<RoadRoute>(mapRenderer === 'google' ? (pinPair && googlePreview.error ? osrmPreviewPath : null) : osrmPreviewPath);
-  // A line renders only when its provenance is allowed on this renderer (T06); pins stay either way.
-  const preview = [osrmPreview.data, googlePreview.data].find(line =>
-    !!line && canShowOnRenderer(routeProvider(line.provider), mapRenderer));
+  const osrmPreview = useApi<RoadRoute>(routeChosen ? roadPath(previewFrom, previewTo, 5) : null);
+  const preview = osrmPreview.data && canShowOnRenderer(routeProvider(osrmPreview.data.provider), 'maplibre') ? osrmPreview.data : undefined;
   const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string) => api<Places>('/me/places', { label, city: placeCity, note: note.trim() })
     .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
 
-  function pickupLocation(signal: AbortSignal, canRequest = true) {
-    return findPickup(Platform.OS === 'web' ? async (receive, fail, lifetime) => {
-      if (!canRequest) {
-        const permission = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => null);
-        if (lifetime.aborted) throw new Error('cancelled');
-        if (permission?.state !== 'granted') throw new Error(permission?.state === 'denied' ? 'permission' : 'prompt');
-      }
-      return browserPickupWatch(navigator.geolocation)(receive, fail, lifetime);
-    } : withPickupPermission(lifetime => pickupPermission(Location.getForegroundPermissionsAsync,
-      Location.requestForegroundPermissionsAsync, canRequest, lifetime), async (receive, fail, lifetime) => {
-      if (!await Location.hasServicesEnabledAsync()) throw new Error('disabled');
-      if (lifetime.aborted) throw new Error('cancelled');
-      return Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail);
-    }), signal, canRequest ? 60_000 : 20_000); // Leave time to read the system prompt; every attempt still expires.
-  }
-
+  const describe = (point: Point) => api<{ name: string; detail: string }>(`/places/reverse?at=${point.latitude.toFixed(6)},${point.longitude.toFixed(6)}&lang=${language}`);
+  // Where the customer is becomes the pickup until they choose another, like every ride app. A note they typed stays.
+  const adoptFix = (fix: { city: CityId; point: Point; accuracy: number }) => {
+    setPickupCity(fix.city); setPickupChosen(true); setPickupPoint(fix.point); setGpsPoint(fix.point);
+    setPickupNote(note => pickupNow.current.chosen && fix.city !== pickupNow.current.city ? '' : note);
+    // The driver always gets words with the pin: the street or place if we know it, else the town.
+    const town = city(fix.city)[language];
+    void describe(fix.point).then(label => setPickupNote(note => note || label.name || town)).catch(() => setPickupNote(note => note || town));
+  };
   async function locate() {
     locationRequest.current?.abort();
     const request = new AbortController();
@@ -177,15 +167,87 @@ function BookForm() {
       // prompt must not leave the booking form locked indefinitely.
       const result = await pickupLocation(request.signal);
       if (request.signal.aborted) return;
-      // Another chosen city's landmark would mislead the driver (as on the pin sheet); one typed before any city is kept.
-      if (pickupNow.current.chosen && result.city !== pickupNow.current.city) setPickupNote('');
-      setPickupCity(result.city); setPickupChosen(true);
-      setPickupPoint(result.point); setGpsPoint(result.point);
-      setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
+      setHere({ ...result.point, accuracy: result.accuracy }); void rememberHere(result.point);
+      if (step === 'pin') setPinCenter(result.point); // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
+      if (step !== 'pin' || pinFor === 'pickup') { pickupTouched.current = true; setPickupNote(''); adoptFix(result); }
+      if (step === 'search') { setField('dropoff'); if (dropoffChosen) setStep('trip'); }
     } catch (e) {
       if (!request.signal.aborted) setLocationError(c[pickupErrorKey(e)]);
     } finally { if (!request.signal.aborted) setLocating(false); }
   }
+  // Opening the screen reuses consent already given, silently; only the customer's own tap may raise the system prompt.
+  const quietFix = (fix: { city: CityId; point: Point; accuracy: number }) => {
+    setPickupNote('');
+    adoptFix(fix);
+    if (step === 'search' && dropoffChosen) { setField('dropoff'); setStep('trip'); } // they were asked for a pickup and now have one
+  };
+  const firstFix = useRef(quietFix);
+  useEffect(() => { firstFix.current = quietFix; });
+  useEffect(() => {
+    const request = new AbortController();
+    void rememberedHere().then(known => {
+      if (!known || request.signal.aborted) return;
+      const point = { latitude: known.latitude, longitude: known.longitude };
+      setHere(current => current ?? point);
+      // A position from a minute ago beats asking where they are; the fresh fix below replaces it.
+      const served = servedCity(point);
+      if (served && !pickupTouched.current && Date.now() - known.at <= HERE_PICKUP_MS) firstFix.current({ city: served, point, accuracy: 0 });
+    });
+    pickupLocation(request.signal, false).then(fix => {
+      if (request.signal.aborted) return;
+      setHere({ ...fix.point, accuracy: fix.accuracy }); void rememberHere(fix.point);
+      if (!pickupTouched.current) firstFix.current(fix);
+    }).catch(() => undefined);
+    return () => request.abort();
+  }, []);
+
+  const applyPlace = (which: TripField, place: TripPlace) => {
+    if (!place.point) { // a town or a saved landmark: confirm the spot on the map, keeping its words
+      setPinFor(which); setPinNote(place.note); setPinCenter(city(place.city)); setPinPoint(city(place.city)); setPinLabel(null); setStep('pin');
+      return;
+    }
+    if (which === 'pickup') {
+      pickupTouched.current = true; locationRequest.current?.abort(); setLocating(false);
+      setPickupCity(place.city); setPickupPoint(place.point); setPickupChosen(true); edit('pickupNote', setPickupNote)(place.note);
+      if (dropoffChosen) setStep('trip'); else { setField('dropoff'); setStep('search'); }
+    } else {
+      setDropoffCity(place.city); setDropoffPoint(place.point); setDropoffChosen(true); edit('dropoffNote', setDropoffNote)(place.note);
+      if (pickupChosen) setStep('trip'); else { setField('pickup'); setStep('search'); }
+    }
+  };
+  const openPin = (which: TripField) => {
+    const chosen = which === 'pickup' ? (pickupChosen ? pickupPoint : null) : (dropoffChosen ? dropoffPoint : null);
+    const start = chosen ?? here ?? (which === 'dropoff' && pickupChosen ? previewFrom : city(which === 'pickup' ? pickupCity : dropoffCity));
+    const at = { latitude: start.latitude, longitude: start.longitude };
+    setPinFor(which); setPinNote(''); setPinCenter(at); setPinPoint(at); setPinLabel(null); setLocationError(''); setStep('pin');
+  };
+  const pinServed = pinPoint ? servedCity(pinPoint) : null;
+  useEffect(() => {
+    if (step !== 'pin' || !pinPoint || pinMoving) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      describe(pinPoint).then(label => { if (live) setPinLabel(label); }).catch(() => { if (live) setPinLabel(null); });
+    }, 200);
+    return () => { live = false; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- describe only closes over the language, which re-renders this anyway
+  }, [step, pinPoint, pinMoving, language]);
+  function confirmPinSpot() {
+    if (!pinPoint || !pinServed || pinMoving) return;
+    haptic.success();
+    const note = pinNote || pinLabel?.name || city(pinServed)[language];
+    setPinNote('');
+    applyPlace(pinFor, { city: pinServed, point: pinPoint, note });
+  }
+  useEffect(() => {
+    const leave = () => {
+      if (step === 'pin') { setStep(routeChosen ? 'trip' : 'search'); return true; }
+      if (step === 'search' && routeChosen) { setStep('trip'); return true; }
+      if (step === 'trip' && sheetOpen) { setSheetOpen(false); return true; }
+      return false;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', leave);
+    return () => subscription.remove();
+  }, [step, routeChosen, sheetOpen]);
 
   // Read-only reconciliation uses the exact command receipt, never mutable order details.
   const checkPending = useCallback(async (command: PendingBooking) => {
@@ -227,7 +289,7 @@ function BookForm() {
         const p = existing.payload;
         latest.current = existing;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
-        setPickupChosen(true); setDropoffChosen(true);
+        setPickupChosen(true); setDropoffChosen(true); setStep('trip'); pickupTouched.current = true;
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
         setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
         if (p.declaredScope) {
@@ -253,7 +315,7 @@ function BookForm() {
           if (f.contact) setContact(f.contact);
           setRecipientName(f.recipientName); setRecipientPhone(f.recipientPhone);
           setSameFrom(false); setCopiedFrom(old.id);
-          setPickupChosen(true); setDropoffChosen(true);
+          setPickupChosen(true); setDropoffChosen(true); setStep('trip');
         }
         if (old) copied.current = `${params.again}:${params.keep}`;
       }
@@ -307,7 +369,6 @@ function BookForm() {
   const reasons = smart && [quoteMinutes !== null && fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${quoteMinutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
     .filter(Boolean).join(' · ');
-  const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));
   // A checked code holds for the fare it was checked against; the server re-checks it on booking.
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
     : promo && promo.price === price ? promo : null;
@@ -334,7 +395,7 @@ function BookForm() {
   async function submit() {
     if (!ready || sending.current || (!available && !pending)) return;
     if (!pending && scopeInvalid) { setError(c.freightScopeInvalid); return; }
-    if (!pending && !routeChosen) { setPicker(pickupChosen ? 'dropoff' : 'pickup'); return; }
+    if (!pending && !routeChosen) { setField(pickupChosen ? 'dropoff' : 'pickup'); setStep('search'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
       haptic.error(); setSlot(null); setError(c.err_invalid_schedule); return;
     }
@@ -349,6 +410,7 @@ function BookForm() {
       haptic.error();
       setInvalid(problems);
       setError(c.fixMarked);
+      setSheetOpen(true);
       // The details sit near the top; the contact field is right above the button.
       if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone) scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
@@ -421,93 +483,113 @@ function BookForm() {
     : !available && !pending ? c.serviceUnavailable : null;
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={pending ? undefined : <>
-      <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
-        onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
-      {requestReason && <Reason>{requestReason}</Reason>}
-      {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
-    </>}>
-      <Header title={c[service]} back />
-      {pending && <Card tone="clay">
-        <Txt variant="title">{c.bookingPending}</Txt>
-        <Txt variant="caption">{c.bookingRetryHint}</Txt>
-        <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
-        {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
-        <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
-          <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
-          <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
-          <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
-        </Row>
-        {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
-      </Card>}
-      {!available && !pending && <Card tone="clay">
-        <Txt variant="title">{c.serviceUnavailable}</Txt>
-        <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
-      </Card>}
-      {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
-      {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
+  const pickupTitle = !pickupChosen ? '' : located ? c.pickupHere : pickupNote.trim() || city(pickupCity)[language];
+  const dropoffTitle = !dropoffChosen ? '' : dropoffNote.trim() || city(dropoffCity)[language];
+  const estimate = (s: Service) => s === service ? (smart && !quoting ? smart.price : null)
+    : preview ? smartPrice(settings, { service: s, option: optionsFor(s)[0], km: preview.km, minutes: preview.minutes, delayMinutes: 0, at: slotBucket.at, plus }) : null;
+  const minutes = quoteMinutes ?? preview?.minutes ?? null;
+  const swapStops = () => { // the landmark belongs to its place, so it travels with it
+    haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
+    setPickupChosen(dropoffChosen); setDropoffChosen(pickupChosen); pickupTouched.current = true;
+    setPickupNote(dropoffNote); setDropoffNote(pickupNote); setInvalid({ ...invalid, pickupNote: invalid.dropoffNote, dropoffNote: invalid.pickupNote });
+  };
+  const edit_ = (which: TripField) => { if (locked) return; haptic.tap(); setField(which); setStep('search'); };
+  const camera = step === 'pin' ? pinCenter ?? previewFrom : here ?? previewFrom;
+  const side = useSideSheet();
+  return <View style={{ flex: 1, backgroundColor: palette.paper }}>
+    <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
+      pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
+      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && { right: SIDE_SHEET }) }} padding={40}
+      labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
+      eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
+      label={routeChosen ? `${c.routeDiagram}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
+      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { setPinMoving(true); setPinLabel(null); setLocationError(''); }}
+      onCenter={point => { setPinPoint(point); setPinMoving(false); }}
+      onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
 
-      {/* Service switcher: the route stays, only the details change. */}
-      <Row gap={8} style={{ marginBottom: 12 }}>
-        {services.filter(s => enabledServices.includes(s)).map(s => {
-          const on = s === service;
-          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={c[s]} onPress={() => switchService(s)}
-            style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
-            <Ionicons name={serviceMeta[s].icon} size={16} color={on ? palette.lime : palette.secondary} />
-            <Text key={language} numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
-          </Press>;
-        })}
-      </Row>
-
-      <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
-        {routeChosen && <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
-          <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
-            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} closed={preview?.closed} />
-          <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
-        </View>}
-        <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
-          <RouteLine from={pickupChosen ? city(pickupCity)[language] : c.chooseCity} to={dropoffChosen ? city(dropoffCity)[language] : c.chooseCity} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
-          <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
-            <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked}
-              onPress={() => { // the landmark belongs to its place, so it travels with it
-                haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
-                setPickupChosen(dropoffChosen); setDropoffChosen(pickupChosen);
-                setPickupNote(dropoffNote); setDropoffNote(pickupNote); setInvalid({ ...invalid, pickupNote: invalid.dropoffNote, dropoffNote: invalid.pickupNote });
-              }} />
-          </View>
+    {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
+      <View style={[styles.topCard, shadow, { flexDirection: row }]}>
+        <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
+        <View style={{ flex: 1 }}>
+          <RouteLine from={pickupTitle || c.whereFrom} to={dropoffTitle || c.whereTo} onFrom={locked ? undefined : () => edit_('pickup')} onTo={locked ? undefined : () => edit_('dropoff')} ride={service === 'ride'} />
         </View>
-        <Row gap={8} style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair, justifyContent: 'space-between' }}>
-          <Press accessibilityLabel={c.useLocation} onPress={locate} disabled={locating || locked}>
-            <Row gap={6} style={styles.chip}>
-              <Ionicons name={located ? 'checkmark-circle' : 'navigate'} size={14} color={palette.olive} />
-              <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
-            </Row>
-          </Press>
-          {routeChosen && <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `${preview ? preview.km : `≈ ${km}`} ${c.km}`}</Txt>}
-        </Row>
-        {canPin && <Row gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
-          {(['pickup', 'dropoff'] as const).map(which => {
-            const set = which === 'pickup' ? pickupPoint : dropoffPoint;
-            const label = word(which === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap');
-            const openPin = (w: 'pickup' | 'dropoff') => {
-              haptic.tap(); setLocationError('');
-              setPinFor(w);
-            };
-            return <Press key={which} accessibilityLabel={label} disabled={locked} onPress={() => { void openPin(which); }}>
-              <Row gap={6} style={styles.chip}>
-                <Ionicons name={set ? 'checkmark-circle' : 'pin-outline'} size={14} color={palette.olive} />
-                <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{label}</Txt>
-              </Row>
-            </Press>;
-          })}
-        </Row>}
-        <Txt variant="caption" style={{ marginTop: 8 }}>{c.locationPurpose}</Txt>
-        {!!locationError && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginTop: 8 }}>{locationError}</Txt></View>}
+        <IconButton icon="swap-vertical" label={c.swap} tone="muted" disabled={locked} onPress={swapStops} />
+      </View>
+    </SafeAreaView>}
+
+    {step === 'pin' && <>
+      <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.pinTop}>
+        <View style={{ flexDirection: row }}><IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} onPress={() => setStep(routeChosen ? 'trip' : 'search')} /></View>
+      </SafeAreaView>
+      <View style={[styles.locate, rtl ? { left: 16 } : { right: 16 }, { bottom: pinPanel + 14 }]}>
+        <IconButton icon={locating ? 'hourglass-outline' : 'locate'} label={c.useLocation} disabled={locating} onPress={() => { void locate(); }} />
+      </View>
+      <SafeAreaView edges={['bottom']} style={styles.pinPanel} onLayout={e => setPinPanel(Math.ceil(e.nativeEvent.layout.height))}>
+        <Txt variant="micro">{pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}</Txt>
+        <View accessibilityLiveRegion="polite" style={{ minHeight: 50, justifyContent: 'center', marginBottom: 8 }}>
+          {pinMoving ? <ActivityIndicator color={palette.olive} style={{ alignSelf: rtl ? 'flex-end' : 'flex-start' }} />
+            : !pinServed ? <Txt variant="title">{c.pinOutsideArea}</Txt>
+            : <>
+              <Txt variant="h2" numberOfLines={1}>{pinNote || pinLabel?.name || city(pinServed)[language]}</Txt>
+              {!!(pinLabel?.detail || pinNote) && <Txt variant="caption" numberOfLines={1}>{pinNote ? pinLabel?.name : pinLabel?.detail}</Txt>}
+            </>}
+        </View>
+        {!!locationError && <Txt variant="caption" style={{ marginBottom: 8 }}>{locationError}</Txt>}
         {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
           <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
-      </Card>
+        {mapFailed ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.pinUnavailable}</Txt>
+          : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={!mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
+      </SafeAreaView>
+    </>}
 
+    {step === 'trip' && <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setSheetPeek} scrollRef={scrollRef}
+      header={<View style={{ paddingBottom: 8 }}>
+        {pending && <Card tone="clay">
+          <Txt variant="title">{c.bookingPending}</Txt>
+          <Txt variant="caption">{c.bookingRetryHint}</Txt>
+          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
+          {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
+          <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
+            <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
+            <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
+            <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
+          </Row>
+          {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
+        </Card>}
+        {!available && !pending && <Card tone="clay">
+          <Txt variant="title">{c.serviceUnavailable}</Txt>
+          <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
+        </Card>}
+        {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
+        {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
+
+        {services.filter(s => enabledServices.includes(s)).map(s => {
+          const on = s === service, value = estimate(s);
+          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={value !== null ? `${c[s]}, ${money(value)}` : c[s]} onPress={() => switchService(s)}
+            style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
+            <ServiceIcon service={s} size={36} />
+            <View style={{ flex: 1 }}>
+              <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
+              {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${fill(c.minutesShort, { m: minutes })}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
+            </View>
+            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on ? '' : '≈ '}${money(value)}`}</Txt>}
+          </Press>;
+        })}
+        {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>
+          <Row gap={8} style={{ minHeight: 40 }}>
+            <Ionicons name="calendar-outline" size={16} color={palette.olive} />
+            <Txt variant="label" style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(scheduledFor) })}</Txt>
+          </Row>
+        </Press>}
+      </View>}
+      footer={pending ? undefined : <>
+        <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
+          onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
+        {requestReason && <Reason>{requestReason}</Reason>}
+        {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
+      </>}>
+      <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
+      {!!locationError && <Txt variant="caption" style={{ marginBottom: 8 }}>{locationError}</Txt>}
       {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
         {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
@@ -516,6 +598,8 @@ function BookForm() {
 
 
       <Card>
+        {/* What it is comes first: it is the one thing a map cannot fill in. */}
+        <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         <Field label={word('pickupNote')} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
         {isCustomer && pickupChosen && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={word('dropoffNote')} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />
@@ -525,7 +609,6 @@ function BookForm() {
             keyboardType="phone-pad" error={invalid.recipientPhone} disabled={locked} maxLength={20} />
           <Field label={c.recipientName} icon="person-outline" value={recipientName} onChangeText={setRecipientName} disabled={locked} maxLength={60} />
         </>}
-        <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
         {service === 'ride'
           ? <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="label">{c.passengers}</Txt>
@@ -618,53 +701,13 @@ function BookForm() {
           onSubmitEditing={submit} />
       </Card>
       <ErrorText>{error}</ErrorText>
-    </Screen>
+    </MapSheet>}
 
-    {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
-      start={(pinFor === 'pickup' ? pickupPoint : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
-      autoLocate={pinFor === 'pickup' && !pickupPoint}
-      onLocate={pinFor === 'pickup' ? async (signal, canRequest) => { const fix = await pickupLocation(signal, canRequest); sheetFix.current = fix; return fix.point; } : undefined}
-      onClose={() => { sheetFix.current = null; setPinFor(null); }} onConfirm={point => {
-        const near = servedCity(point);
-        if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }
-        haptic.success();
-        // The sheet's own GPS fix, still under the pin, counts as located like the form's button.
-        const fix = pinFor === 'pickup' ? sheetFix.current : null; sheetFix.current = null;
-        const gps = !!fix && Math.abs(fix.point.latitude - point.latitude) + Math.abs(fix.point.longitude - point.longitude) <= 0.000001;
-        if (pinFor === 'pickup') {
-          if (near !== pickupCity) setPickupNote('');
-          setPickupCity(near); setPickupPoint(point); setPickupChosen(true); if (gps) setGpsPoint(point);
-        } else {
-          if (near !== dropoffCity) setDropoffNote('');
-          setDropoffCity(near); setDropoffPoint(point); setDropoffChosen(true);
-        }
-        if (near !== (pinFor === 'pickup' ? pickupCity : dropoffCity)) setLocationError(fill(c.pinCityChanged, { city: city(near)[language] }));
-        else if (gps) setLocationError(fill(c.locationAccuracy, { city: city(near)[language], m: Math.ceil(fix.accuracy) }));
-        setPinFor(null);
-      }} />}
-
-    <CityPicker open={picker !== null && !locked} title={service === 'ride' ? (picker === 'pickup' ? c.pickup_ride : c.dropoff_ride) : picker === 'pickup' ? c.pickup : c.dropoff}
-      places={places} onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces)
-        .catch(e => { setPicker(null); setError(err(e)); }), c.forgetPlace, c.no)} // the sheet would hide the error
-      onPlace={(id, note) => {
-        haptic.tap();
-        // A saved-place tap is explicit but must not silently drop a confirmed pin in the same city.
-        if (picker === 'pickup') { setPickupCity(id); setPickupChosen(true); setPickupPoint(pickupCity === id ? pickupPoint : null); edit('pickupNote', setPickupNote)(note); }
-        else { setDropoffCity(id); setDropoffChosen(true); setDropoffPoint(dropoffCity === id ? dropoffPoint : null); edit('dropoffNote', setDropoffNote)(note); }
-        setPicker(null);
-      }}
-      onClose={() => setPicker(null)}
-      selectedPlace={picker === 'pickup' ? (pickupChosen ? { city: pickupCity, note: pickupNote, point: pickupPoint } : null) : (dropoffChosen ? { city: dropoffCity, note: dropoffNote, point: dropoffPoint } : null)}
-      outside={locationError === c.pinOutsideArea}
-      text={{ label: c.searchLabel, empty: c.searchEmpty, offline: c.searchOffline, pinKept: c.searchPinKept, pinCleared: c.searchPinCleared, apply: c.searchApply }}
-      near={picker === 'pickup' ? pickupPoint ?? city(pickupCity) : dropoffPoint ?? city(dropoffCity)}
-      onConfirm={place => {
-        haptic.tap();
-        if (picker === 'pickup') { if (place.city !== pickupCity) setPickupNote(''); setPickupCity(place.city); setPickupChosen(true); setPickupPoint(place.point); if (place.note) edit('pickupNote', setPickupNote)(place.note); }
-        else { if (place.city !== dropoffCity) setDropoffNote(''); setDropoffCity(place.city); setDropoffChosen(true); setDropoffPoint(place.point); if (place.note) edit('dropoffNote', setDropoffNote)(place.note); }
-        setPicker(null);
-      }} />
-  </KeyboardAvoidingView>;
+    {step === 'search' && <TripSearch field={field} onField={setField} pickupText={pickupTitle} dropoffText={dropoffTitle} near={pickupChosen ? previewFrom : here} places={places}
+      locating={locating} locationError={locationError} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
+      onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e))), c.forgetPlace, c.no)}
+      onClose={() => { if (routeChosen) setStep('trip'); else if (router.canGoBack()) router.back(); else router.replace('/'); }} />}
+  </View>;
 }
 
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
@@ -686,59 +729,16 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
   </View>;
 }
 
-// Bottom sheet with the customer's places and the T16 search panel (Arabic folding, pin-safe proposal).
-function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedPlace, outside, text, onConfirm, near }: { open: boolean; title: string; onClose: () => void;
-  places: Places; onPlace: (id: CityId, note: string) => void; onForget: (id: number) => void; selectedPlace: PlaceCandidate | null;
-  outside: boolean; text: PlaceSearchText; onConfirm: (place: PlaceCandidate) => void; near: Point }) {
-  const { c, language } = useCopy();
-  const [term, setTerm] = useState('');
-  const insets = useSafeAreaInsets();
-  // The keyboard never resizes a modal window: lift the sheet above it, leaving the sheet's own bottom inset behind the keyboard.
-  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setTerm('')}>
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={-insets.bottom}>
-      <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
-      <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
-        <View style={styles.grip} />
-        <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
-        <ScrollView keyboardShouldPersistTaps="handled">
-          {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
-            <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
-            {[...places.saved.map(p => ({ ...p, key: `s${p.id}` })), ...places.recent.map((p, i) => ({ ...p, key: `r${i}`, id: 0, label: 'recent' as const }))].map(p => {
-              const name = p.label === 'recent' || p.label === 'other' ? p.note : c[`place_${p.label}`];
-              return <Row key={p.key} gap={4} style={styles.sheetRow}>
-                <Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={name === p.note ? `${name}, ${city(p.city)[language]}` : `${name}, ${city(p.city)[language]}, ${p.note}`} onPress={() => onPlace(p.city, p.note)}>
-                  <Row gap={12} style={{ minHeight: 56 }}>
-                    <View style={styles.pin}><Ionicons name={p.label === 'recent' ? 'time-outline' : placeIcons[p.label]} size={15} color={palette.secondary} /></View>
-                    <View style={{ flex: 1 }}>
-                      <Txt variant="title" numberOfLines={1}>{name}</Txt>
-                      <Txt variant="micro" numberOfLines={1}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}</Txt>
-                    </View>
-                  </Row>
-                </Pressable>
-                {p.label !== 'recent' && <IconButton icon="trash-outline" tone="muted" label={`${c.forgetPlace}: ${name}`} onPress={() => onForget(p.id)} />}
-              </Row>;
-            })}
-          </>}
-          <PlaceSearch saved={places.saved} selected={selectedPlace} outside={outside} text={text} onConfirm={onConfirm} onQuery={setTerm} near={near} />
-        </ScrollView>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
-  </Modal>;
-}
-
 const styles = StyleSheet.create({
-  service: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, borderRadius: 22, backgroundColor: palette.card, borderWidth: 1, borderColor: palette.line, paddingHorizontal: 8 },
-  serviceOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-  serviceText: { fontSize: 12, fontWeight: '700', color: palette.secondary, flexShrink: 1 },
-  swap: { position: 'absolute', top: 20 },
+  service: { alignItems: 'center', gap: 12, minHeight: 58, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 6, borderWidth: 2, borderColor: 'transparent' },
+  serviceOn: { backgroundColor: palette.card, borderColor: palette.forest },
   chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 44 },
   promo: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
   cash: { width: 36, height: 36, borderRadius: 11, backgroundColor: palette.olivePale, alignItems: 'center', justifyContent: 'center' },
-  shade: { flex: 1, backgroundColor: '#0E1F1966' },
-  sheet: { backgroundColor: palette.paper, maxHeight: '78%', paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.line, marginBottom: 12 },
-  searchBox: { alignItems: 'center', gap: 8, minHeight: 44, borderRadius: 12, backgroundColor: palette.card, paddingHorizontal: 12, marginBottom: 6 },
-  searchInput: { flex: 1, minHeight: 44, fontSize: 15, color: palette.ink },
-  sheetRow: { minHeight: 56, borderBottomWidth: 1, borderBottomColor: palette.hair },
-  pin: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
+  topCard: { alignItems: 'center', gap: 8, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
+  pinTop: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
+  locate: { position: 'absolute' },
+  pinPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
 });

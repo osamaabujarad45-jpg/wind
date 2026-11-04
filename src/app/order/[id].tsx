@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from '../../motion';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
@@ -19,11 +20,13 @@ import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
 import { effectiveRuntime } from '../../runtime-config';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
+import { maneuverDistance, maneuverIcon, maneuverText, nextManeuver } from '../../nav-steps';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, Txt, useCopy,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -44,7 +47,7 @@ export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me } = useSession();
   const work = useDriverWork();
-  const { c, language, money, err, row } = useCopy();
+  const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
   const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
@@ -83,7 +86,12 @@ export default function OrderScreen() {
   const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
-  const { road, approach, eta, km, avoids, through, closed } = useRoad(order);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const side = useSideSheet();
+  const [peek, setPeek] = useState(0);
+  const [topBar, setTopBar] = useState(0);
+  const navigating = !!order && me?.user.role === 'driver' && order.driverId === me.user.id;
+  const { road, approach, eta, km, avoids, through, closed, steps: navSteps } = useRoad(order, navigating ? language : null);
   useEffect(() => { if (pushed.driverChanged) void reload(); }, [pushed.driverChanged, reload]);
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
@@ -207,11 +215,10 @@ export default function OrderScreen() {
   const later = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 ? order.scheduledFor : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
 
-  return <Screen onRefresh={reload}>
-    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+  const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
+  const maneuver = navigating && navSteps && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation) : null;
+  const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
-    {error && <ErrorText>{c.updatesPaused}</ErrorText>}
 
     {order.status === 'completed' && <Animated.View entering={reduced ? undefined : DONE}>
       <Card tone="olive" style={{ paddingVertical: 12 }}>
@@ -246,22 +253,6 @@ export default function OrderScreen() {
           </Row>
         </View>)}
     </Card>}
-    {finding && <Card style={{ alignItems: 'center', paddingVertical: 18 }}>
-      <Radar color={serviceMeta[order.service].color} size={110}>
-        <ServiceIcon service={order.service} size={48} />
-      </Radar>
-      <Txt variant="h2" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
-      <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.findingBody}</Txt>
-      {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
-        <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
-          onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
-      </View>}
-      {/* Uber keeps Cancel under the search animation: the bottom of the page is three screens away. */}
-      {isCustomer && <View style={{ marginTop: 14, alignSelf: 'stretch' }}>
-        <Button title={c.cancelOrder} variant="ghost" icon="close-circle-outline" loading={busy === 'cancel'}
-          onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />
-      </View>}
-    </Card>}
     {/* Driver offers (SPEC-driver-offers.md): cheapest first, with what the customer needs to choose a driver. */}
     <FreightDetails order={order} />
     {isCustomer && order.status === 'searching' && !order.dispatch && order.offers && <Card>
@@ -282,11 +273,12 @@ export default function OrderScreen() {
       </Row>)}
     </Card>}
 
-    <Appear index={1}>
-      <View style={styles.map}>
+    {!live && <Appear index={1}><View style={styles.map}>
         <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
           driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed}
           stale={!!location?.stale} height={live && order.driverLocation ? 300 : undefined} />
+      </View></Appear>}
+    {live && <>
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
           <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.clayInk : palette.blue} />
@@ -316,8 +308,7 @@ export default function OrderScreen() {
           </Row>
         </Press>}
         {live && <RouteCheckpoints avoids={avoids} through={through} />}
-      </View>
-    </Appear>
+    </>}
 
     {order.scheduledFor && (order.status === 'assigned' || order.status === 'at_pickup') && <Card tone="olive" style={{ paddingVertical: 10 }}>
       <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>
@@ -330,10 +321,6 @@ export default function OrderScreen() {
     </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
-        <Row gap={8} style={{ marginBottom: 10 }}>
-          <Pulse color={serviceMeta[order.service].color} size={8} />
-          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-        </Row>
         <View style={[styles.progress, { flexDirection: row }]} accessibilityRole="progressbar" accessibilityLabel={c.tripProgress}
           accessibilityValue={{ min: 0, max: steps.length, now: step + 1 }}>
           {steps.map((s, i) => <View key={s} style={[styles.segment, i <= step && { backgroundColor: palette.olive }]} />)}
@@ -361,7 +348,7 @@ export default function OrderScreen() {
 
     {(isCustomer || mine) && activeStatuses.includes(order.status) && <View style={{ marginBottom: 12 }}><Safety order={order} driver={mine} onChange={setData} /></View>}
 
-    {order.driverName && (isAdmin || ((isCustomer) && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) ? <Appear index={3}>
+    {order.driverName && (isAdmin || (isCustomer && !live && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) ? <Appear index={3}>
       <Card>
         <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
@@ -517,16 +504,6 @@ export default function OrderScreen() {
         {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
       </Txt>}
       {mine && activeStatuses.includes(order.status) && <>
-        {needsCode &&
-          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
-            disabled={!!busy || advanceLocked === order.status} />}
-        {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
-        {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
-        {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
-          : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
-          reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
-          onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`) : act('advance', `/orders/${order.id}/advance`, { code })} />}
         {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
           <FilterChips items={exceptionReasons.map(key => ({ key, label: atPickup ? c[`pickup_${key}`] : c[`reason_${key}`] }))} value={problem.reason}
@@ -536,12 +513,6 @@ export default function OrderScreen() {
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
               { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
-        <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
-          const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
-          openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)
-            .catch(() => setActionError(c.mapUnavailable));
-        }} />
-        {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
         {(order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
       </>}
@@ -602,6 +573,93 @@ export default function OrderScreen() {
           onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />}
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
     </View>
+  </>;
+  // Open work happens on the map: it fills the screen and the rest of the order sits on the sheet over it.
+  if (live) return <View style={{ flex: 1, backgroundColor: palette.paper }}>
+    <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
+      driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
+      insets={{ top: topBar, bottom: peek, ...(side && { right: SIDE_SHEET }) }} padding={44} follow={mine} eta={eta && location && !location.stale ? fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` }) : null}
+      stopLabels={{ pickup: order.pickupNote || from[language], dropoff: order.dropoffNote || to[language] }} />
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
+      {maneuver ? <View accessibilityLiveRegion="polite" style={[styles.nav, { flexDirection: row }]}>
+        <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
+        <Ionicons name={maneuverIcon(maneuver.step)} size={34} color={palette.lime} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="h2" style={{ color: palette.onFill }}>{maneuverDistance(maneuver.metres, c)}</Txt>
+          <Txt variant="caption" numberOfLines={2} style={{ color: palette.onFill }}>{maneuverText(maneuver.step, c)}</Txt>
+        </View>
+      </View> : <View style={[styles.topCard, shadow, { flexDirection: row }]}>
+        <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
+        <View style={{ flex: 1 }}>
+          <Txt variant="title" numberOfLines={1}>{orderCode(order.id)}</Txt>
+          <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>
+        </View>
+        {!finding && !activeStatuses.includes(order.status) ? <Badge label={c[order.status]} status={order.status} /> : null}
+      </View>}
+    </SafeAreaView>
+    <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
+      header={<View style={{ paddingBottom: 10 }}>
+    {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
+      <Radar color={serviceMeta[order.service].color} size={64}>
+        <ServiceIcon service={order.service} size={28} />
+      </Radar>
+      <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
+      <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.findingBody}</Txt>
+      {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
+        <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
+          onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
+      </View>}
+      {/* Uber keeps Cancel under the search animation: the bottom of the page is three screens away. */}
+      {isCustomer && <View style={{ marginTop: 14, alignSelf: 'stretch' }}>
+        <Button title={c.cancelOrder} variant="ghost" icon="close-circle-outline" loading={busy === 'cancel'}
+          onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />
+      </View>}
+    </View>}
+        {activeStatuses.includes(order.status) && <>
+          <Row gap={8} style={{ marginBottom: 4 }}>
+            <Pulse color={serviceMeta[order.service].color} size={8} />
+            <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
+            {eta && location && !location.stale && <Txt variant="title" style={{ color: palette.olive }}>{fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` })}</Txt>}
+          </Row>
+          {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
+            <Ionicons name="key-outline" size={16} color={palette.olive} />
+            <Txt variant="caption" style={{ flex: 1 }}>{c.rideBoardingCode}</Txt>
+            <Txt variant="h2" selectable>{boardingPin}</Txt>
+          </Row>}
+          {isCustomer && order.driverName && <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
+          sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
+          plate={order.driverPlate ?? undefined} />}
+          {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
+        </>}
+      </View>}
+      footer={mine && activeStatuses.includes(order.status) ? <View style={{ gap: 8 }}>
+        {needsCode &&
+          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
+            disabled={!!busy || advanceLocked === order.status} />}
+        {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
+        {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
+        {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
+          : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+          icon="arrow-forward-circle-outline" variant={arrivalFar ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
+          reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`) : act('advance', `/orders/${order.id}/advance`, { code })} />}
+        <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
+          const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
+          openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)
+            .catch(() => setActionError(c.mapUnavailable));
+        }} />
+        {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
+      </View> : undefined}>
+      {error && <ErrorText>{c.updatesPaused}</ErrorText>}
+      {body}
+    </MapSheet>
+  </View>;
+  return <Screen onRefresh={reload}>
+    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
+      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+    {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
+    {error && <ErrorText>{c.updatesPaused}</ErrorText>}
+    {body}
   </Screen>;
 }
 
@@ -784,6 +842,9 @@ function IconStar({ n, label, on, disabled, onPress }: { n: number; label: strin
 }
 
 const styles = StyleSheet.create({
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
+  topCard: { alignItems: 'center', gap: 10, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
+  nav: { alignItems: 'center', gap: 12, backgroundColor: palette.forest, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
   map: { borderRadius: 16, overflow: 'hidden', backgroundColor: palette.card, marginBottom: 12 },
   progress: { gap: 4 },
   segment: { flex: 1, height: 5, borderRadius: 3, backgroundColor: palette.muted },

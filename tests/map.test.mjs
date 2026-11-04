@@ -298,7 +298,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.match(serverRouting, /SIGNIFICANT_MOVEMENT_METRES = 250;/);
   assert.match(readFileSync(new URL('../src/map-provider.ts', import.meta.url), 'utf8'), /SIGNIFICANT_MOVEMENT_METRES = 250;/);
   const bookSource = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
-  assert.ok(bookSource.includes('refetchOnFocus: false'), 'a Google preview must not re-bill on remount or foreground bounce');
+  assert.ok(!bookSource.includes('googlePreviewPath'), 'the booking map is the baseline renderer: it never bills a Google preview');
   assert.ok(bookSource.includes('canShowOnRenderer'), 'the booking preview is provenance-guarded like every other line');
   // T14/T15: the road hook gates billable approach calls on foreground and movement, and the anonymous
   // tracking page forces the free baseline regardless of a Google-capable build.
@@ -335,13 +335,13 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
   // Android: the page labels its own map, so the WebView is not wrapped in an accessible group that would hide Recenter.
   const androidMap = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8'), mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
-  assert.ok(!androidMap.includes('accessible={!!label}') && androidMap.includes('label: `${c.routeDiagram}'), 'Android route label travels in the page update');
+  assert.ok(!androidMap.includes('accessible={!!label}') && readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8').includes('label={`${c.routeDiagram}'), 'the route label travels in the page update');
   assert.ok(mapPage.includes("mapEl.setAttribute('aria-label', update.label)") && mapPage.indexOf('id="recenter"') > mapPage.indexOf('<div id="map"></div>'), 'map.html labels the map; Recenter is outside it');
   // Apple reports no isGesture: a touch (pinch included) must stop the route camera following, like every other renderer.
   assert.ok(readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8').includes('onTouchStart={() => setMoved(true)}'), 'an Apple pinch stops follow');
-  // The stale effect does not re-run when the arrow appears, so the rebuilt driver element must be faded where it is created.
-  assert.match(webEntry, /state\.driver = new state\.ml!\.Marker\([^\n]*\r?\n[^\n]*\.addTo\(map\);\r?\n\s*if \(state\.stale\) state\.driver\.getElement\(\)\.style\.opacity = '0\.45'/,
-    'a driver marker rebuilt while the fix is stale keeps its faded opacity');
+  // Every update ends in fade(), so a driver marker rebuilt while the fix is stale keeps its faded opacity.
+  assert.match(mapPage.slice(mapPage.indexOf('window.wind = update'), mapPage.indexOf('function centerPin')), /\n  fade\(\);\r?\n\};/, 'each update refreshes the stale fade');
+  assert.ok(webEntry.includes('BaselineRoute') && !webEntry.includes('maplibre-gl'), 'the web app draws map.html, the same page as Android');
   const googleWeb = readFileSync(new URL('../src/google-map.web.tsx', import.meta.url), 'utf8');
   const googleLoader = readFileSync(new URL('../src/google-maps-loader.ts', import.meta.url), 'utf8');
   assert.ok(googleLoader.includes("getElementById('wind-google-maps')"), 'the Maps JS script is guarded against duplicate tags');
@@ -359,11 +359,6 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
 
   // The web map loads vendored copies of the installed library (versioned folder, immutable caching).
   const { version } = JSON.parse(readFileSync(new URL('../node_modules/maplibre-gl/package.json', import.meta.url), 'utf8'));
-  const route = readFileSync(new URL('../src/route-map.tsx', import.meta.url), 'utf8');
-  assert.ok(route.includes(`'/vendor/maplibre-${version}'`), `route-map.tsx must point at /vendor/maplibre-${version}`);
-  // Our loader lives beside the copy (route-map.tsx adds it as a module script: the web CSP allows no eval).
-  assert.match(readFileSync(new URL(`../public/vendor/maplibre-${version}/load.mjs`, import.meta.url), 'utf8'), /from '\.\/maplibre-gl\.mjs'/, 're-vendoring must keep load.mjs');
-  assert.ok(!route.includes('new Function') && route.includes('/load.mjs'), 'route-map.tsx must load MapLibre through load.mjs, not eval');
   for (const file of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'])
     assert.equal(readFileSync(new URL(`../public/vendor/maplibre-${version}/${file}`, import.meta.url), 'utf8'),
       readFileSync(new URL(`../node_modules/maplibre-gl/dist/${file}`, import.meta.url), 'utf8'), `re-vendor ${file} after upgrading maplibre-gl`);

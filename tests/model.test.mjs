@@ -33,7 +33,7 @@ assert.equal(servedCity({ latitude: 31.90, longitude: 35.19 }), 'ramallah');
 assert.equal(servedCity({ latitude: 0, longitude: 0 }), null);
 assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0734 }), 'ramallah'); // 12 km as the crow flies (16 by road)
 assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0234 }), 'ramallah'); // ~17 km: inside 20, outside the old 15
-assert.equal(servedCity({ latitude: 31.40, longitude: 34.40 }), null); // nearest is Hebron, but 70 km out
+assert.equal(servedCity({ latitude: 30.5, longitude: 34.4 }), null); // Sinai: nearest is Rafah, but 90 km out
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');
 assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5'), typedNumber('12')], [20, 0.5, 1.5, 12]);

@@ -156,6 +156,12 @@ export function MoreOrders({ more }: { more: ReturnType<typeof useOrders>['more'
   </View>;
 }
 
+/** The trip in a line. Inside one town its name says nothing, so the places do. */
+export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pickupNote' | 'dropoffNote'>, language: 'ar' | 'en', rtl: boolean) {
+  const here = order.pickupCity === order.dropoffCity && !!order.pickupNote && !!order.dropoffNote;
+  return `${here ? order.pickupNote : city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${here ? order.dropoffNote : city(order.dropoffCity)[language]}`;
+}
+
 export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
@@ -164,13 +170,13 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
-      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(order.dropoffCity)[language]}, ${money(order.price)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
+      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${tripTitle(order, language, rtl)}, ${money(order.price)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
             <Row style={{ justifyContent: 'space-between' }}>
               <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
-                {city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}
+                {tripTitle(order, language, rtl)}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
               <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>

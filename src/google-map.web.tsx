@@ -200,7 +200,7 @@ export default function RouteMap(props: RouteMapProps) {
   }
 
   // Only the map surface is the labelled image: a labelled container would hide Retry and Recenter from screen readers.
-  return <View style={{ height, width: '100%' }}>
+  return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     {!ready && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />

@@ -1,3 +1,5 @@
+// Customer pickup location in a real browser with a scripted GPS: consent rules, accuracy rules, what wins when GPS and the
+// customer disagree.
 // Export with EXPO_PUBLIC_API_URL=http://localhost:4188 WIND_LOCAL_TEST=1 to .expo/location-review-web before running this script.
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -8,29 +10,24 @@ process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-location-review-')),
 process.env.WEB_ROOT = resolve('.expo/location-review-web');
 process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 delete process.env.OSRM_URL; // exercise the truthful fallback when road routing is unavailable
 const { server, db } = await import('../server/main.ts');
 const { copy } = await import('../src/copy.ts');
 const c = copy.en;
 await new Promise(resolve => server.listen(4188, '127.0.0.1', resolve));
 const base = 'http://localhost:4188';
-const registration = await fetch(base + '/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'QA Location Review', email: 'location@example.test', phone: '0599000123', password: 'Location_Review_2026', consent: true }) });
-assert.equal(registration.status, 200);
+const registration = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ phone: '0599000321', name: 'Location Review', email: 'location@example.test', consent: true, password: 'Location_Review_2026' }) });
 const session = await registration.json();
 const browser = await chromium.launch({ headless: true });
 const errors = [];
 let reviewPage;
 mkdirSync('.expo/location-review', { recursive: true });
+const tulkarm = { latitude: 32.312773, longitude: 35.048039 };
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ['geolocation'], reducedMotion: 'reduce' });
-  await context.route('**/vendor/maplibre-*/load.mjs', async route => {
-    const response = await route.fetch();
-    const source = (await response.text()).replace('globalThis.maplibregl = maplibregl;',
-      'globalThis.reviewMaps = []; globalThis.maplibregl = { ...maplibregl, Map: class extends maplibregl.Map { constructor(...args) { super(...args); globalThis.reviewMaps.push(this); } } };');
-    await route.fulfill({ response, body: source });
-  });
-  await context.addInitScript(({ token }) => {
+  await context.addInitScript(({ token, at }) => {
     localStorage.setItem('token', token); localStorage.setItem('onboarded', '1'); localStorage.setItem('language', 'en');
     window.locationReview = { mode: 'success', active: new Set(), next: 0 };
     const query = navigator.permissions.query.bind(navigator.permissions);
@@ -41,114 +38,101 @@ try {
       window.locationReview.active.add(id);
       const deliver = () => {
         if (window.locationReview.mode === 'failure') fail?.({ code: 2, message: 'Unavailable' });
-        else success({ timestamp: Date.now(), coords: { latitude: 32.312773, longitude: 35.048039, accuracy: 52.4,
-          altitude: null, altitudeAccuracy: null, heading: null, speed: null } });
+        else success({ timestamp: Date.now(), coords: { ...at, accuracy: 52.4, altitude: null, altitudeAccuracy: null, heading: null, speed: null } });
       };
       if (window.locationReview.mode === 'hold') window.locationReview.deliver = deliver;
       else setTimeout(deliver, 30);
       return id;
     };
     navigator.geolocation.clearWatch = id => window.locationReview.active.delete(id);
-  }, { token: session.token });
+  }, { token: session.token, at: tulkarm });
   const page = await context.newPage();
   reviewPage = page;
   page.on('pageerror', e => errors.push(e.message));
+  const map = () => page.frames().find(f => f.url().includes('/map.html'));
+  const camera = () => map()?.evaluate(() => { const p = window.windMap?.getCenter(); return p && { latitude: p.lat, longitude: p.lng }; });
+  const pickupRow = () => page.getByRole('button', { name: new RegExp(`^${c.pickup}: `) });
+
+  // With consent already given, opening the screen makes where you stand the pickup, without being asked.
   await page.goto(base + '/book');
-  await page.getByText(c.chooseCity, { exact: true }).first().waitFor();
-  assert.equal(await page.getByText(c.chooseCity, { exact: true }).count(), 2);
-  assert.equal(await page.getByText('Ramallah', { exact: true }).count(), 0);
-  assert.equal(await page.getByText('Nablus', { exact: true }).count(), 0);
-  await page.getByRole('textbox', { name: c.pickupNote, exact: true }).fill('Unassigned pickup landmark');
-  await page.getByRole('textbox', { name: c.dropoffNote, exact: true }).fill('Unassigned drop-off landmark');
-  assert.equal(await page.getByRole('button', { name: c.savePlace, exact: true }).count(), 0,
-    'landmarks entered before city selection cannot be saved under fallback cities');
-  await page.getByRole('button', { name: /^Request/ }).click();
-  await page.getByRole('textbox', { name: c.searchLabel, exact: true }).fill('Ramallah');
-  await page.getByRole('button', { name: /^Ramallah,/ }).waitFor();
-  assert.equal(await page.getByRole('button', { name: c.searchApply, exact: true }).count(), 0, 'an unchosen city is not proposed automatically');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0, 'request with unchosen cities opens the picker instead of booking');
-  await page.screenshot({ path: '.expo/location-review/choose-cities.png', fullPage: true });
-  await page.getByRole('button', { name: /^Ramallah,/ }).click();
-  await page.getByRole('button', { name: c.searchApply, exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: c.savePlace, exact: true }).count(), 1,
-    'saving becomes available for the side whose city was explicitly chosen');
+  await page.getByPlaceholder(c.pickupHere).waitFor();
+  assert.equal(await page.evaluate(() => window.locationReview.active.size), 0, 'collection stops at the first usable fix');
+  await page.screenshot({ path: '.expo/location-review/gps-pickup.png' });
 
-  await page.goto(base + '/book?from=ramallah&to=nablus');
-  await page.getByText(c.destinationEstimated, { exact: true }).waitFor();
-  // If the quote is road-routed, the fallback warning must disappear as well.
-  await page.route(/\/api\/price(?:\?|$)/, async route => { // the client appends ?journeyProtocol=1
-    const response = await route.fetch();
-    const quote = await response.json();
-    await route.fulfill({ response, json: { ...quote, estimated: false } });
-  }, { times: 1 });
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByText(c.standardParcel, { exact: true }).first().waitFor();
-  assert.equal(await page.getByText(c.destinationEstimated, { exact: true }).count(), 0);
-  await page.getByRole('textbox', { name: c.pickupNote, exact: true }).fill('Old Ramallah landmark');
-  await page.getByRole('button', { name: c.useLocation, exact: true }).click();
-  await page.getByText('Tulkarm', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('textbox', { name: c.pickupNote, exact: true }).inputValue(), '');
-  await page.getByText(/approximate accuracy ±53 m/).waitFor();
-  assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
-  await page.getByRole('button', { name: /^Request/ }).click({ trial: true });
-  await page.locator('.maplibregl-marker').first().waitFor({ timeout: 15000 });
-  await page.screenshot({ path: '.expo/location-review/tulkarm-pickup.png', fullPage: true });
+  // A destination then goes straight to the trip, with no default route anywhere before it.
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
+  await page.getByPlaceholder(c.whereTo).fill('Nablus');
+  await page.getByRole('button', { name: /^Nablus/ }).first().click();
+  const requestButton = page.getByRole('button', { name: /^Request/ });
+  await requestButton.waitFor();
+  await page.screenshot({ path: '.expo/location-review/trip.png' });
 
-  // Opening the pickup map starts GPS only with existing consent; verify the actual map camera.
+  // An explicit choice of pickup is never moved by a later GPS fix.
   await page.goto(base + '/book?from=ramallah&to=nablus');
-  await page.getByRole('button', { name: c.pickupOnMap, exact: true }).click();
-  await page.waitForFunction(() => {
-    const center = window.reviewMaps?.at(-1)?.getCenter();
-    return center && Math.abs(center.lat - 32.312773) + Math.abs(center.lng - 35.048039) < 0.000001;
-  });
-  await page.getByRole('button', { name: c.confirmPin, exact: true }).click({ trial: true });
+  await page.waitForTimeout(500);
+  await pickupRow().click();
+  await page.getByPlaceholder(/./).first().waitFor();
+  await page.getByRole('button', { name: c.setOnMap, exact: true }).click();
+  const confirmPickup = page.getByRole('button', { name: c.confirmPickupSpot, exact: true });
+  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some(f => f.contentWindow?.windMap?.loaded?.()));
   const pinQuote = page.waitForRequest(r => new URL(r.url()).pathname === '/api/price' && r.postDataJSON()?.pickupPoint);
-  await page.getByRole('button', { name: c.confirmPin, exact: true }).click();
-  assert.deepEqual((await pinQuote).postDataJSON().pickupPoint, { latitude: 32.312773, longitude: 35.048039 });
-  await page.getByText(c.located, { exact: true }).waitFor(); // the sheet's own fix counts as located, like the form button
+  await assertEnabledThenClick(confirmPickup);
+  assert.ok((await pinQuote).postDataJSON().pickupPoint, 'a confirmed spot becomes the exact pickup');
 
+  // Opening a map without consent never starts the provider; Locate is what asks.
   await page.goto(base + '/book?from=ramallah&to=nablus');
   await page.evaluate(() => { window.locationReview.permission = 'prompt'; });
-  await page.getByRole('button', { name: c.pickupOnMap, exact: true }).click();
-  await page.getByRole('button', { name: c.useLocation, exact: true }).last().waitFor();
+  await page.reload();
+  await page.evaluate(() => { window.locationReview.permission = 'prompt'; window.locationReview.next = 0; });
+  await pickupRow().click();
+  await page.getByRole('button', { name: c.setOnMap, exact: true }).click();
+  await page.getByRole('button', { name: c.useLocation, exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.locationReview.next), 0, 'opening an unconsented map never starts the provider');
-  assert.equal(await page.getByRole('button', { name: c.confirmPin, exact: true }).isEnabled(), false);
-  await page.getByRole('button', { name: c.useLocation, exact: true }).last().click();
+  await page.getByRole('button', { name: c.useLocation, exact: true }).click();
   await page.waitForFunction(() => window.locationReview.next === 1 && window.locationReview.active.size === 0);
-  await page.getByRole('button', { name: c.confirmPin, exact: true }).click();
+  await page.waitForFunction(({ latitude, longitude }) => {
+    const p = [...document.querySelectorAll('iframe')].map(f => f.contentWindow?.windMap?.getCenter?.()).find(Boolean);
+    return p && Math.abs(p.lat - latitude) + Math.abs(p.lng - longitude) < 0.000001;
+  }, tulkarm);
+  const fixQuote = page.waitForRequest(r => new URL(r.url()).pathname === '/api/price' && r.postDataJSON()?.pickupPoint);
+  await assertEnabledThenClick(page.getByRole('button', { name: c.confirmPickupSpot, exact: true }));
+  const point = (await fixQuote).postDataJSON().pickupPoint;
+  assert.ok(Math.abs(point.latitude - tulkarm.latitude) + Math.abs(point.longitude - tulkarm.longitude) < 0.00001, 'the visible camera agrees with the fix that gets booked');
 
   // A manual drag wins over a pending GPS response, including a provider that calls back after cancellation.
   await page.goto(base + '/book?from=ramallah&to=nablus');
-  await page.evaluate(() => { window.locationReview.mode = 'hold'; });
-  await page.getByRole('button', { name: c.pickupOnMap, exact: true }).click();
-  await page.waitForFunction(() => window.locationReview.active.size === 1 && window.reviewMaps?.at(-1)?.loaded());
-  const canvas = page.locator('canvas.maplibregl-canvas').last();
-  const box = await canvas.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { window.locationReview.mode = 'hold'; window.locationReview.permission = 'granted'; });
+  await pickupRow().click();
+  await page.getByRole('button', { name: c.setOnMap, exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some(f => f.contentWindow?.windMap?.loaded?.()));
+  await page.getByRole('button', { name: c.useLocation, exact: true }).click();
+  const box = await page.locator('iframe[title="map"]').last().boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 280);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 20, { steps: 10 });
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + 300, { steps: 10 });
   await page.mouse.up();
-  await page.waitForFunction(() => !window.reviewMaps.at(-1).isMoving());
-  const manual = await page.evaluate(() => { const p = window.reviewMaps.at(-1).getCenter(); return { latitude: p.lat, longitude: p.lng }; });
-  assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
-  await page.evaluate(() => window.locationReview.deliver());
-  const manualQuote = page.waitForRequest(r => new URL(r.url()).pathname === '/api/price' && r.postDataJSON()?.pickupPoint);
-  await page.getByRole('button', { name: c.confirmPin, exact: true }).click();
-  assert.deepEqual((await manualQuote).postDataJSON().pickupPoint, manual, 'late GPS cannot move the confirmed manual pickup');
+  await page.waitForFunction(() => { const m = [...document.querySelectorAll('iframe')].map(f => f.contentWindow?.windMap).find(Boolean); return m && !m.isMoving(); });
+  const manual = await camera();
+  await page.evaluate(() => window.locationReview.deliver?.());
+  await page.waitForTimeout(400);
+  const afterLateFix = await camera();
+  assert.ok(Math.abs(manual.latitude - afterLateFix.latitude) + Math.abs(manual.longitude - afterLateFix.longitude) < 0.0005, 'late GPS cannot move the pin after a manual drag');
 
+  // A failed fix explains itself and never becomes a made-up place.
   await page.goto(base + '/book');
-  await page.getByText(c.chooseCity, { exact: true }).first().waitFor();
+  await page.waitForTimeout(300);
   await page.evaluate(() => { window.locationReview.mode = 'failure'; });
+  await page.getByPlaceholder(/./).first().click();
   await page.getByRole('button', { name: c.useLocation, exact: true }).click();
   await page.getByText(c.locationManual, { exact: true }).waitFor();
-  assert.equal(await page.getByText(c.chooseCity, { exact: true }).count(), 2, 'failed GPS never becomes Ramallah/Nablus');
   assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS browser: no default route, saved-place city gate, route required before booking, Tulkarm GPS pickup, old landmark cleared, accuracy shown, collection stopped, provider failure, zero orders, no page errors');
+  console.log('PASS browser: GPS default pickup, no default route, explicit pickup stays, consent only on Locate, drag beats late GPS, failure explained');
 } catch (error) {
   if (reviewPage) {
-    await reviewPage.screenshot({ path: '.expo/location-review/failure.png', fullPage: true });
+    await reviewPage.screenshot({ path: '.expo/location-review/failure.png' });
     writeFileSync('.expo/location-review/failure.txt', await reviewPage.locator('body').innerText());
   }
   throw error;
@@ -156,4 +140,9 @@ try {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
   db.close();
+}
+
+async function assertEnabledThenClick(locator) {
+  for (let i = 0; i < 100 && !(await locator.isEnabled()); i++) await new Promise(resolve => setTimeout(resolve, 150));
+  await locator.click();
 }

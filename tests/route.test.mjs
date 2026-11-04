@@ -85,7 +85,7 @@ try {
   assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true);
   await call('/route?from=31.90383,35.20344&to=32.2211,35.2544', { token: customer.token });
   assert.equal(calls, 1, 'a fix a few metres away reuses the cached route');
-  assert.match(lastUrl, /overview=full&geometries=geojson&alternatives=3$/, 'full geometry (simplified lines cut corners) and alternatives');
+  assert.match(lastUrl, /overview=full&geometries=geojson&steps=true&alternatives=3$/, 'full geometry (simplified lines cut corners) and alternatives');
   // A driver heading becomes an OSRM bearing hint (rounded to 15 degrees) and its own cache entry.
   await call('/route?from=31.90381,35.20341&to=32.2211,35.2544&heading=93', { token: customer.token });
   assert.equal(calls, 2); assert.match(lastUrl, /&alternatives=3&bearings=90,60;$/);

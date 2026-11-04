@@ -62,7 +62,7 @@ function AppleRouteMap(props: RouteMapProps) {
     const timer = setTimeout(() => setFailed(true), mapReadyMs());
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
-  if (failed) return <View style={{ height, width: '100%' }}>
+  if (failed) return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
@@ -70,7 +70,7 @@ function AppleRouteMap(props: RouteMapProps) {
       </Pressable>
     </View>
   </View>;
-  return <View style={{ height, width: '100%' }}>
+  return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
     onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}

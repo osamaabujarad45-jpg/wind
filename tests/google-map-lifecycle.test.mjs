@@ -80,10 +80,14 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     document: { createElement: element }, setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), requestAnimationFrame: () => ++serial, cancelAnimationFrame() {}, performance };
   if (deniedStorage) Object.defineProperty(context, 'localStorage', { get() { throw new Error('Storage denied'); } });
-  const source = ts.transpileModule(readFileSync(new URL('../src/' + file, import.meta.url), 'utf8'),
+  const compile = name => ts.transpileModule(readFileSync(new URL('../src/' + name, import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const internal = file === 'route-map.android.tsx' ? '\nexports.TestPin = MapLibrePin; exports.TestMapPage = MapPage;'
-    : file === 'route-map.native.tsx' ? '\nexports.TestPin = ApplePin;' : '';
+  // The WebView page runs on the real bridge, with this harness's hooks and clock.
+  const bridge = { exports: {} };
+  runInNewContext(compile('map-bridge.ts'), { ...context, exports: bridge.exports }, { filename: 'map-bridge.ts' });
+  modules['./map-bridge'] = bridge.exports;
+  const source = compile(file);
+  const internal = file === 'route-map.native.tsx' ? '\nexports.TestPin = ApplePin;' : '';
   runInNewContext(source + internal, context, { filename: file });
   function attach(node) { if (!node || typeof node !== 'object') return;
     if (node.props?.ref) { node.props.ref.current = host; hostRefs.add(node.props.ref); }
@@ -181,9 +185,9 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   h.unmount();
 }
 {
-  const h = harness('route-map.android.tsx'); const changed = [];
+  const h = harness('map-page.native.tsx'); const changed = [];
   const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onCenter: point => changed.push(point) };
-  h.render(h.exports.TestMapPage, props);
+  h.render(h.exports.MapPage, props);
   h.render(undefined, { ...props, update: { center: latest } });
   const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
   message({ type: 'drawing' });
@@ -196,9 +200,9 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   h.unmount();
 }
 {
-  const h = harness('route-map.android.tsx'); let gestures = 0;
+  const h = harness('map-page.native.tsx'); let gestures = 0;
   const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onGesture() { gestures++; } };
-  h.render(h.exports.TestMapPage, props);
+  h.render(h.exports.MapPage, props);
   const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
   message({ type: 'drawing' }); h.render();
   h.render(undefined, { ...props, update: { center: latest } });
@@ -211,9 +215,9 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   h.unmount();
 }
 {
-  const h = harness('route-map.android.tsx'); const changed = [];
+  const h = harness('map-page.native.tsx'); const changed = [];
   const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onGesture() {}, onCenter: point => changed.push(point) };
-  h.render(h.exports.TestMapPage, props);
+  h.render(h.exports.MapPage, props);
   const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
   message({ type: 'drawing' }); h.render();
   const count = h.host.injected.length;
@@ -223,6 +227,21 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   const dragged = { latitude: 31.91, longitude: 35.21 };
   message({ type: 'center', ...dragged });
   assert.deepEqual(plain(changed), [dragged], 'a drag that outlives tile loading still reports its centre');
+  // The sheet growing or a new GPS dot changes the update, not the camera: the centre already sent must not pull the map back.
+  const sent = h.host.injected.length;
+  h.render(undefined, { ...props, update: { center: first, insets: { bottom: 120 } } });
+  assert.equal(h.host.injected.length, sent + 1, 'the other fields still cross');
+  assert.ok(!h.host.injected.at(-1).includes('"center"') && h.host.injected.at(-1).includes('"insets"'), 'a centre already sent is not a camera command');
+  message({ type: 'gesture' });
+  const moved = { latitude: 31.92, longitude: 35.22 };
+  h.render(undefined, { ...props, update: { center: first, insets: { bottom: 130 } } });
+  message({ type: 'center', ...moved });
+  assert.deepEqual(plain(changed.at(-1)), moved, 'another field changing never re-arms the guard over a gesture');
+  // Back to the trip and into the pin again at the spot just reported: the page must still be told, or it returns to an older
+  // centre, the guard refuses what it then reports, and Confirm waits forever.
+  h.render(undefined, { ...props, update: { mode: 'route', center: moved } });
+  h.render(undefined, { ...props, update: { mode: 'pin', center: moved } });
+  assert.ok(h.host.injected.at(-1).includes(JSON.stringify(moved)), 'entering a mode carries the centre even when it matches the last report');
   h.unmount();
 }
 for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
@@ -268,7 +287,8 @@ for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   const source = page.slice(page.indexOf('function centerPin('), page.indexOf('// Faded while the fix is old'));
   let current = { lat: first.latitude, lng: first.longitude }, jumps = 0;
-  const context = { map: { getCenter: () => current, jumpTo({ center }) { jumps++; current = { lng: center[0], lat: center[1] }; } } };
+  const context = { announcedReady: false, still: () => false, validPoint: p => !!p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180,
+    map: { getCenter: () => current, jumpTo({ center }) { jumps++; current = { lng: center[0], lat: center[1] }; } } };
   runInNewContext(source + ';globalThis.centerPin = centerPin;', context);
   context.centerPin(latest); context.centerPin(latest);
   assert.equal(jumps, 1, 'Android pin page applies a new center exactly once');

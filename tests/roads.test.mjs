@@ -93,13 +93,13 @@ try {
   await call(`/roads/${a.id}/report`, { token: driver2.token, body: { status: 'open' }, expect: 404 });
 
   // Pilot checkpoints (Nablus, Ramallah, Jenin): added once with their mapped positions, never duplicated.
-  assert.equal(await seedCheckpoints(), 7);
+  assert.equal(await seedCheckpoints(), 11);
   assert.equal(await seedCheckpoints(), 0, 'a second run adds nothing');
   roads = await call('/roads', { token: driver2.token });
   const qalandia = roads.find(r => r.name.includes('Qalandia'));
   assert.deepEqual([qalandia.cities, qalandia.point], [['ramallah', 'bireh'], { latitude: 31.8623, longitude: 35.2275 }]);
   const pilot = roads.filter(r => r.name.includes(' · '));
-  assert.deepEqual([pilot.length, pilot.every(r => r.point && r.cities.length)], [7, true], 'every pilot checkpoint has a position and cities');
+  assert.deepEqual([pilot.length, pilot.every(r => r.point && r.cities.length)], [11, true], 'every pilot checkpoint has a position and cities');
 
   console.log('roads: ok');
 } finally {

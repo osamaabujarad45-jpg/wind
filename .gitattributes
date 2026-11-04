@@ -1,2 +1,3 @@
 public/vendor/** -text
 vendor/decode-uri-component/index.cjs -text
+*.sh text eol=lf

@@ -67,6 +67,7 @@ npm run lint
 npm test                            # model + full API flow against a temp database
 npm run test:scenarios               # build web, then real browser role journeys + map checks
 npm run test:location                # customer GPS edge cases; reuses that web export
+npm run test:tulkarm                 # whole customer and driver trip in Tulkarm; needs OSRM_URL and --web/--port of an export
 npm run test:readiness               # tariff, promos, places, roads, offers, safety, disputes, accounts
 npm run test:load                    # bounded local load test: throughput, throttles, live push, writer lock
 npx expo-doctor
