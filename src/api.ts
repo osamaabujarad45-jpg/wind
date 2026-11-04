@@ -60,17 +60,23 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
     inFlight.current = current;
     try {
       const next = await api<T>(target);
-      if (current === generation.current && latestPath.current === target) { setResult({ path: target, value: next }); setError(undefined); }
+      // A billable answer is already paid for. One landing during a background bounce (the path is null, or back) is kept,
+      // because coming back does not ask again. Any other answer only counts if nothing newer has started.
+      const paidFor = !refetchOnFocus && (latestPath.current === target || latestPath.current === null);
+      if (paidFor || (current === generation.current && latestPath.current === target)) { setResult({ path: target, value: next }); setError(undefined); }
       return undefined;
     } catch (e) {
       const code = errorCode(e);
-      if (current !== generation.current || latestPath.current !== target) return undefined;
+      if (current !== generation.current || latestPath.current !== target) {
+        if (loaded.current === target) loaded.current = null; // nothing was kept, so the next focus may ask again
+        return undefined;
+      }
       // Keep the last snapshot for transient failures, but never display data after access is revoked.
       if (terminal(code)) setResult(previous => previous?.path === target ? undefined : previous);
       setError({ path: target, value: code });
       return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }
-  }, [path]);
+  }, [path, refetchOnFocus]);
   useFocusEffect(useCallback(() => {
     generation.current++;
     // A null path (a backgrounded Google approach) is not a new path: coming back to the same URL must not bill again.

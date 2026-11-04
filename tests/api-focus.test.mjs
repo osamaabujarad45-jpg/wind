@@ -15,7 +15,7 @@ const modules = {
   'expo-secure-store': `export const getItemAsync=async()=>null; export const deleteItemAsync=async()=>{};
     export const setItemAsync=async()=>{};export const AFTER_FIRST_UNLOCK=0;`,
   'expo-router': `export const useFocusEffect=fn=>{globalThis.__apiFocusTest.focus=fn;};`,
-  './api-client': `const s=globalThis.__apiFocusTest;export const request=async url=>{s.calls.push(url);return {};};
+  './api-client': `const s=globalThis.__apiFocusTest;export const request=async url=>{s.calls.push(url);if(s.gate)await s.gate;return {};};
     export const errorCode=error=>error.message;export class ApiError extends Error{};
     export const apiSessionRevision=()=>0;export const configureApi=()=>{};export const invalidateApiSessionActions=()=>{};`,
   './web-storage': `export const webGet=()=>null;export const webSet=()=>{};`,
@@ -86,6 +86,50 @@ try {
   cleanup = render('/route/google?from=one&to=five', { refetchOnFocus: false });
   await flush();
   assert.equal(state.calls.length, billed + 1, 'a new approach after a bounce still loads');
+  cleanup();
+  // The same bounce with the paid answer still on its way: the answer must not be lost, and must not be paid for twice.
+  const hold = () => { let open, shut; state.gate = new Promise((resolve, reject) => { open = resolve; shut = reject; }); return { open, shut }; };
+  const options = { refetchOnFocus: false };
+  const answers = url => state.sets.filter(set => set?.path === url && typeof set.value !== 'string').length;
+  const bounce = async url => { cleanup(); cleanup = render(null, options); await flush(); if (url) { cleanup(); cleanup = render(url, options); await flush(); } };
+  const pending = async (url, landed) => {
+    const gate = hold();
+    cleanup = render(url, options);
+    await flush();
+    const paid = state.calls.length;
+    await bounce(landed === 'after return' ? url : null);
+    gate.open(); state.gate = null;
+    await flush();
+    if (landed !== 'after return') { cleanup(); cleanup = render(url, options); await flush(); }
+    assert.equal(state.calls.length, paid, `an answer landing ${landed} is not paid for twice`);
+    assert.equal(answers(url), 1, `an answer landing ${landed} is kept`);
+    cleanup();
+  };
+  await pending('/route/google?from=one&to=six', 'in the background');
+  await pending('/route/google?from=one&to=seven', 'after return');
+  const failing = '/route/google?from=one&to=eight';
+  const gate = hold();
+  cleanup = render(failing, options);
+  await flush();
+  const asked = state.calls.length;
+  await bounce(null);
+  gate.shut(new Error('network')); state.gate = null;
+  await flush();
+  cleanup(); cleanup = render(failing, options);
+  await flush();
+  assert.equal(state.calls.length, asked + 1, 'a request that failed in the background left nothing kept, so returning asks again');
+  assert.equal(answers(failing), 1, 'the second try is shown');
+  cleanup();
+  // A newer route must never be replaced by an older answer.
+  const older = hold();
+  cleanup = render('/route/google?from=one&to=nine', options);
+  await flush();
+  cleanup(); state.gate = null; cleanup = render('/route/google?from=one&to=ten', options);
+  await flush();
+  older.open();
+  await flush();
+  assert.equal(answers('/route/google?from=one&to=nine'), 0, 'an answer for a route no longer shown is dropped');
+  assert.equal(answers('/route/google?from=one&to=ten'), 1);
   cleanup();
   console.log('API focus: billable routes load only on path changes; ordinary endpoints refresh on foreground');
 } finally { hooks.deregister(); delete globalThis.__apiFocusTest; }
