@@ -35,9 +35,10 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   // The footer carries the bottom inset itself; a sheet without one must still clear the system navigation bar.
   const padBottom = safeBottom ? insets.bottom : 0;
   const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
-  const [room, setRoom] = useState(0); // the height above the keyboard, so an open sheet's top never leaves the screen
-  const expanded = Math.min(room || screen, side ? screen : Math.max(peek, Math.round(screen * expandedRatio)));
+  const [room, setRoom] = useState(0); // the height above the keyboard, so an open sheet's top stays below the status bar
+  const expanded = Math.min((room || screen) - insets.top, side ? screen : Math.max(peek, Math.round(screen * expandedRatio)));
   const travel = Math.max(0, expanded - peek);
+  const keyboardUp = room > 0 && room < screen - 150; // only footers read this, and no sheet with a footer sits inside tabs
   const [y] = useState(() => new Animated.Value(0)); // 0 is fully open
   const latest = useRef({ travel, open, onOpenChange, still });
   useEffect(() => { latest.current = { travel, open, onOpenChange, still }; });
@@ -80,13 +81,14 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
           {!footer && <View style={{ height: padBottom }} />}{/* the closed sheet's content stays below the system navigation bar */}
         </View>
-        <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: footerHeight + 16 }} keyboardShouldPersistTaps="handled"
+        {/* It ends at the footer, not under it, so a focused field scrolls clear of the footer too. */}
+        <ScrollView ref={scrollRef} style={{ flex: 1, marginBottom: footerHeight }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }} keyboardShouldPersistTaps="handled"
           refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}
           showsVerticalScrollIndicator={false} accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}>
           {children}
         </ScrollView>
       </Animated.View>
-      {footer && <View style={[styles.footer, side && styles.side, { paddingBottom: 10 + padBottom }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
+      {footer && <View style={[styles.footer, side && styles.side, { paddingBottom: 10 + (keyboardUp ? 0 : padBottom) }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
     </View>
   </KeyboardAvoidingView>;
 }
