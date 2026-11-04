@@ -19,6 +19,7 @@ const suites = [
   "driver-presence-runtime.test.mjs",
   "api-client.test.mjs",
   "api-focus.test.mjs",
+  "road-approach.test.mjs",
   "opencode.test.mjs",
   "google-maps-loader.test.mjs",
   "api.test.mjs",
