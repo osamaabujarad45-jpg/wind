@@ -21,10 +21,11 @@ try {
   const admin = await call('/auth/register', { body: { phone: '0599700201', name: 'Admin', password: 'secret1' } });
   await promote('0599700201');
   const customer = await call('/auth/register', { body: { phone: '0599700202', name: 'Customer', password: 'secret1' } });
-  for (const [phone, hidden] of [['0599700203', 'deleted-0'], ['0599700204', 'partner:test']]) {
-    await call('/auth/register', { body: { phone, name: 'Hidden', password: 'secret1' } });
-    db.prepare('UPDATE users SET phone = ? WHERE phone = ?').run(hidden, phone);
-  }
+  const gone = await call('/auth/register', { body: { phone: '0599700203', name: 'Gone', password: 'secret1' } });
+  await call('/me/delete', { token: gone.token, body: {} });
+  assert.equal(db.prepare('SELECT phone FROM users WHERE id = ?').get(gone.user.id).phone, `deleted-${gone.user.id}`);
+  await call('/auth/register', { body: { phone: '0599700204', name: 'Partner', password: 'secret1' } });
+  db.prepare("UPDATE users SET phone = 'partner:souq' WHERE phone = '0599700204'").run();
   const order = db.prepare(`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,detail,option,loading_help,price,commission,status,created_at,updated_at,completed_at)
     VALUES(?,'parcel',0,'ramallah','nablus','Shop','Home','0599700202','Box','small',0,20,?,'completed',?,?,?)`);
   const addOrder = (time, commission) => order.run(customer.user.id, commission, fixedNow, fixedNow, RealDate.parse(time));
