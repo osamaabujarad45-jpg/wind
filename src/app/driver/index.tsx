@@ -158,7 +158,7 @@ export default function Jobs() {
     setActionError('');
     pickupLocation(request.signal)
       .then(() => { if (!request.signal.aborted) setLocateOn(true); })
-      .catch(e => { if (!request.signal.aborted) setActionError(c[pickupErrorKey(e)]); })
+      .catch(e => { if (!request.signal.aborted) { setActionError(c[pickupErrorKey(e)]); setManualOpen(true); } }) // their tap: show why, even on a sheet they closed
       .finally(() => { if (locateRequest.current === request) locateRequest.current = null; });
   }
 
