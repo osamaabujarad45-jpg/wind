@@ -9,7 +9,6 @@ import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offe
 import { MapSheet } from '../../map-sheet';
 import { DriverMap } from '../../driver-map';
 import { pickupLocation } from '../../pickup-location';
-import { pickupErrorKey } from '../../customer-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
@@ -158,7 +157,7 @@ export default function Jobs() {
     setActionError('');
     pickupLocation(request.signal)
       .then(() => { if (!request.signal.aborted) setLocateOn(true); })
-      .catch(e => { if (!request.signal.aborted) { setActionError(c[pickupErrorKey(e)]); setManualOpen(true); } }) // their tap: show why, even on a sheet they closed
+      .catch(() => { if (!request.signal.aborted) { setActionError(c.driverLocateFailed); setManualOpen(true); } }) // their tap: show why, even on a sheet they closed
       .finally(() => { if (locateRequest.current === request) locateRequest.current = null; });
   }
 
