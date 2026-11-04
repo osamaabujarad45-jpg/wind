@@ -36,9 +36,11 @@ export const api = async <T>(path: string, body?: object, method?: 'GET' | 'POST
 // refusal that cannot fix itself (a revoked session, a deleted order): the screen shows the reason.
 // ponytail: polling; switch to websockets/SSE if request volume becomes a cost.
 export function useApi<T>(path: string | null, pollMs?: number, options?: { refetchOnFocus?: boolean }) {
-  // Billable endpoints (a Google display route) must load once per path and never again on a remount or an
-  // app-foreground bounce: rerenders and refocuses are not reasons to bill (T08's trigger policy). Free
-  // endpoints keep the default refresh-on-focus.
+  // Billable endpoints (a Google display route) must load once per path and never again on an app-foreground
+  // bounce: rerenders and refocuses are not reasons to bill (T08's trigger policy). Free endpoints keep the
+  // default refresh-on-focus.
+  // ponytail: one path per mount, so a remount or a renderer flip and back asks again (one call each). Add a per-URL
+  // cache of billed answers if Google goes live and those calls matter; production has no Google keys yet.
   const refetchOnFocus = options?.refetchOnFocus ?? true;
   const loaded = useRef<string | null>(null);
   const [data, setResult] = useState<{ path: string; value: T }>();
@@ -60,17 +62,23 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
     inFlight.current = current;
     try {
       const next = await api<T>(target);
-      if (current === generation.current && latestPath.current === target) { setResult({ path: target, value: next }); setError(undefined); }
+      // A billable answer is already paid for. The newest request's answer landing during a background bounce (the path is
+      // null, or back) is kept, because coming back does not ask again. Any other answer only counts if nothing newer started.
+      const paidFor = !refetchOnFocus && inFlight.current === current && (latestPath.current === target || latestPath.current === null);
+      if (paidFor || (current === generation.current && latestPath.current === target)) { setResult({ path: target, value: next }); setError(undefined); }
       return undefined;
     } catch (e) {
       const code = errorCode(e);
-      if (current !== generation.current || latestPath.current !== target) return undefined;
+      if (current !== generation.current || latestPath.current !== target) {
+        if (inFlight.current === current && loaded.current === target) loaded.current = null; // nothing was kept, so the next focus may ask again
+        return undefined;
+      }
       // Keep the last snapshot for transient failures, but never display data after access is revoked.
       if (terminal(code)) setResult(previous => previous?.path === target ? undefined : previous);
       setError({ path: target, value: code });
       return code;
     } finally { if (inFlight.current === current) inFlight.current = null; }
-  }, [path]);
+  }, [path, refetchOnFocus]);
   useFocusEffect(useCallback(() => {
     generation.current++;
     // A null path (a backgrounded Google approach) is not a new path: coming back to the same URL must not bill again.
