@@ -13,6 +13,8 @@ import { etaRange, fromDriver, nearLine, roadPath, shownApproach } from './map-m
 import { activeStatuses, city, type Order, type Point } from './model';
 import { fill, palette, Row, Txt, useCopy } from './ui';
 
+type Anchor = { key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number };
+
 export type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids?: string[]; through?: string[]; closed?: Point[]; provider?: string; eta?: JourneyEta; steps?: NavStep[] };
 
 /** The app's foreground state: a billable reroute may only be triggered while the user is watching. */
@@ -57,22 +59,27 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   // while foregrounded; the URL is built from the last billed fix, so a stationary poll, a background timer or
   // a refocus never even changes it. The free OSRM approach keeps its ~110 m grid and refresh-on-focus.
   const stopKey = order && target ? approachKey(order, target, renderer ?? 'unavailable') : '';
-  const [billed, setBilled] = useState<{ key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number }>({ key: '', fix: null, metres: 0, at: 0 });
+  const nowhere: Anchor = { key: '', fix: null, metres: 0, at: 0 };
+  const [billed, setBilled] = useState(nowhere);
+  // The free turn-by-turn route keeps its own anchor: leaving the line reroutes it, and that must never move what the paid URL is built from.
+  const [steered, setSteered] = useState(nowhere);
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
-  if (stopKey !== billed.key) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
-  else if (fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
-  else if (driver && billed.fix && (driver.latitude !== billed.fix.latitude || driver.longitude !== billed.fix.longitude)) {
-    const metres = Math.hypot((driver.longitude - billed.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
-      (driver.latitude - billed.fix.latitude) * 110_540);
-    // Navigating, leaving the line also asks for a new one: never for Google, after 50 m so GPS drift cannot refetch, and at most
-    // every 30 s so an unmapped track cannot spend the route budget (120 per 10 minutes, blocked calls included).
-    const left = withSteps && renderer !== 'google' && metres >= 50 && monotonic - billed.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
-    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) setBilled({ key: stopKey, fix, metres, at: monotonic });
-  }
+  const reanchor = (anchor: Anchor, set: (next: Anchor) => void, mayLeaveLine: boolean) => {
+    if (stopKey !== anchor.key || (fix && !anchor.fix)) { set({ key: stopKey, fix, metres: 0, at: monotonic }); return; }
+    if (!driver || !anchor.fix || (driver.latitude === anchor.fix.latitude && driver.longitude === anchor.fix.longitude)) return;
+    const metres = Math.hypot((driver.longitude - anchor.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
+      (driver.latitude - anchor.fix.latitude) * 110_540);
+    // Leaving the line asks for a new one after 50 m so GPS drift cannot refetch, and at most every 30 s so an unmapped track
+    // cannot spend the route budget (120 per 10 minutes, blocked calls included).
+    const left = mayLeaveLine && metres >= 50 && monotonic - anchor.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
+    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) set({ key: stopKey, fix, metres, at: monotonic });
+  };
+  reanchor(billed, setBilled, false);
+  reanchor(steered, setSteered, withSteps);
   const approachUrl = !renderer || !driver || !target ? null
     // The driver's turns need a line from where they are, not from a 110 m grid cell, which can be the next street.
-    : withSteps ? billed.fix && `${roadPath(billed.fix, target, 5, billed.fix.heading)}&steps=1&lang=${stepsLanguage}`
+    : withSteps ? steered.fix && `${roadPath(steered.fix, target, 5, steered.fix.heading)}&steps=1&lang=${stepsLanguage}`
     : roadPath(driver, target, 3, driver.heading);
   const approach = useApi<RoadRoute>(approachUrl, 25_000);
   // On a Google map a paid line overlays that free route. It is never polled or reloaded: when its ETA lapses or the call
@@ -90,7 +97,9 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const fixFresh = !!driver && publicFixAgeMs(driver, now, fixClock.key === fixKey ? fixClock.clock : undefined, monotonic) < 30_000;
   const unexpired = (r: RoadRoute | undefined) => r && fixFresh && (!r.eta || deadlineSeconds(r.eta.validity.expiresAt, r.eta, now) > 0) ? r : undefined;
   const free = unexpired(candidate);
-  const eta = (paidApproach.error ? undefined : unexpired(showable(paidApproach.data))) ?? free;
+  // A paid answer with no ETA has no expiry, so it can never read as current.
+  const paidRoute = paidApproach.error ? undefined : showable(paidApproach.data);
+  const eta = (paidRoute?.eta ? unexpired(paidRoute) : undefined) ?? free;
   // The server keeps a free calculation for 30 s and its ETA expires with it, but the poll runs every 25 s, so a
   // stationary driver's cache hit would leave the ETA hidden until the next poll. Refetch once when the shown
   // calculation lapses; a billable Google approach only ever refetches after significant movement.
@@ -98,8 +107,9 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
     ? candidate.eta.validity.issuedAt : undefined;
   const reloadApproach = approach.reload;
   useEffect(() => { if (lapsed !== undefined) void reloadApproach(); }, [lapsed, reloadApproach]);
-  // Closed checkpoints the shown routes steer around, or still cross (SPEC-checkpoint-routing.md).
-  const shown = [route, driver ? eta : undefined];
+  // Closed checkpoints the shown routes steer around, or still cross (SPEC-checkpoint-routing.md). The policy reads the free
+  // route: a paid answer carries none, so a notice must not vanish for the seconds a paid line is valid.
+  const shown = [route, driver ? free : undefined];
   const through = [...new Set(shown.flatMap(r => r?.through ?? []))];
   const avoids = [...new Set(shown.flatMap(r => r?.avoids ?? []))].filter(n => !through.includes(n));
   const closed = shown.flatMap(r => r?.closed ?? []).filter((p, i, all) => all.findIndex(q => q.latitude === p.latitude && q.longitude === p.longitude) === i);
