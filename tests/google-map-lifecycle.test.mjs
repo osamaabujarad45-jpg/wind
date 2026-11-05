@@ -434,6 +434,16 @@ function retry(node) {
   h.unmount();
 }
 console.log('Google web lifecycle: tile deadline/retry, detached DOM cleanup, latest center/geometry and denied map-mode storage passed');
+for (const times of [[10, 100, 600], [400, 600]]) {
+  const h = harness();
+  const props = { pickup: first, dropoff: latest, driver: { ...first, heading: 350 } };
+  h.render(h.exports.default, props); h.resolveSdk(); await flush(); h.frame(0);
+  const driver = h.overlays.find(overlay => overlay.options.icon?.path.includes('M 0 -12'));
+  h.render(undefined, { ...props, driver: { ...first, heading: 10 } });
+  for (const time of times) h.frame(time);
+  assert.equal(driver.icon.rotation, 10, 'heading reaches its target regardless of frame count');
+  h.unmount();
+}
 
 {
   const failures = require('../src/map-failures.ts');
