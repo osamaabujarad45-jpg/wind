@@ -60,9 +60,10 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const [billed, setBilled] = useState<{ key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number }>({ key: '', fix: null, metres: 0, at: 0 });
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
-  if (stopKey !== billed.key) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
-  else if (fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
-  else if (driver && billed.fix && (driver.latitude !== billed.fix.latitude || driver.longitude !== billed.fix.longitude)) {
+  const trackMovement = renderer !== 'google' || foreground;
+  if (stopKey !== billed.key) setBilled({ key: stopKey, fix: trackMovement ? fix : null, metres: 0, at: monotonic });
+  else if (trackMovement && fix && !billed.fix) setBilled({ key: stopKey, fix, metres: 0, at: monotonic });
+  else if (trackMovement && driver && billed.fix && (driver.latitude !== billed.fix.latitude || driver.longitude !== billed.fix.longitude)) {
     const metres = Math.hypot((driver.longitude - billed.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
       (driver.latitude - billed.fix.latitude) * 110_540);
     // Navigating, leaving the line also asks for a new one: never for Google, after 50 m so GPS drift cannot refetch, and at most
@@ -77,7 +78,7 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const approach = useApi<RoadRoute>(approachUrl, 25_000);
   // On a Google map a paid line overlays that free route. It is never polled or reloaded: when its ETA lapses or the call
   // fails, the free route carries the line and minutes, so a waiting driver costs nothing and never loses them.
-  const paidUrl = renderer === 'google' && driver && target && foreground && stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
+  const paidUrl = renderer === 'google' && driver && target && foreground && stopKey && billed.key === stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
   const paidApproach = useApi<RoadRoute>(paidUrl, undefined, { refetchOnFocus: false });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);
