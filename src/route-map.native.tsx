@@ -47,9 +47,16 @@ function AppleRouteMap(props: RouteMapProps) {
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!driver || moved || failed) return;
+    // Only the person driving rides with the car. Anyone else sees the car with where it is heading, as on web and Android.
+    const stop = props.focus === 'pickup' ? pickup : props.focus === 'dropoff' ? dropoff : undefined;
+    if (!props.follow && stop) {
+      view.current?.fitToCoordinates([driver, stop], { animated: !still,
+        edgePadding: { top: 72 + (props.insets?.top ?? 0), right: 72 + (props.insets?.right ?? 0), bottom: 72 + (props.insets?.bottom ?? 0), left: 72 } });
+      return;
+    }
     view.current?.animateToRegion({ latitude: driver.latitude, longitude: driver.longitude,
       latitudeDelta: FOLLOW_DELTA, longitudeDelta: FOLLOW_DELTA }, still ? 0 : 800);
-  }, [driver?.latitude, driver?.longitude, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driver?.latitude, driver?.longitude, props.follow, props.focus, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;

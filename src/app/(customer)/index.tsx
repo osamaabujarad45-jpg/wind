@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useApi } from '../../api';
 import { pickupErrorKey } from '../../customer-location';
-import { MapSheet } from '../../map-sheet';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { activeStatuses, city, defaultSettings, services, type Order, type Point, type Service } from '../../model';
 import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-location';
 import { SceneMap } from '../../scene-map';
@@ -36,6 +36,7 @@ export default function Home() {
   const [locationNote, setLocationNote] = useState('');
   const [open, setOpen] = useState(false);
   const [peek, setPeek] = useState(0);
+  const side = useSideSheet();
   // A map behind another screen holds a GPU context and its tiles for nothing: a low-end phone needs that memory.
   const [focused, setFocused] = useState(true);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
@@ -90,7 +91,7 @@ export default function Home() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* The map is the screen, the way a ride app opens: you, where you are. Everything else sits on the sheet over it. */}
-    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: 60, bottom: peek }} label={c.home} />}
+    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: 60, bottom: peek, ...(side && { right: SIDE_SHEET }) }} label={c.home} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
         <View style={[styles.hello, shadow, { flexDirection: row }]}>
@@ -103,7 +104,7 @@ export default function Home() {
         <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
       </View>
     </SafeAreaView>
-    {here ? <View style={[styles.locate, rtl ? { left: 12 } : { right: 12 }, { bottom: peek + 12 }]}>
+    {here ? <View style={[styles.locate, rtl ? { left: 12 } : { right: 12 + (side ? SIDE_SHEET : 0) }, { bottom: peek + 12 }]}>
       <IconButton icon={locating ? 'hourglass-outline' : 'locate'} label={c.useLocation} disabled={locating} onPress={() => { void locate(); }} />
     </View> : <Press accessibilityLabel={c.useLocation} disabled={locating} onPress={() => { void locate(); }}
       containerStyle={[styles.locate, { alignSelf: 'center', bottom: peek + 12 }]} style={[styles.askLocation, shadow, { flexDirection: row }]}>

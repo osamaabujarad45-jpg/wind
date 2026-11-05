@@ -278,7 +278,13 @@ try {
   await recipient.unroute(`**/api/track/${share.token}/eta?*`);
   pass('public ETA is cleared and refetched when the same driver changes trip stage');
   const order = await call(`/orders/${id}`, { token: customerToken });
+  // A lost reply holds the typed code so it can replay, and says why the field is locked; the server's answer then frees it.
+  const advancePath = apiRoute(`/api/orders/${id}/advance`);
+  await driverPage.route(advancePath, route => route.abort());
   await field(driverPage, c.codeFromCustomer).fill(order.handoverCode === '0000' ? '1111' : '0000');
+  await button(driverPage, c.advance_in_transit).click();
+  await driverPage.getByText(c.codeHeldForRetry).waitFor();
+  await driverPage.unroute(advancePath);
   await button(driverPage, c.advance_in_transit).click();
   await driverPage.getByText(c.err_wrong_code, { exact: true }).waitFor();
   assert.equal(state(id).status, 'in_transit');
@@ -641,6 +647,29 @@ try {
   await customerPage.goto(base + `/order/${id}`);
   await button(customerPage, copy.ar.viewReceipt).waitFor();
   await customerPage.screenshot({ path: join(output, 'arabic-completed.png'), fullPage: true });
+  stage = 'booking recovery';
+  // A saved booking that cannot be read fails closed, and can be asked again.
+  const unreadable = await newPage();
+  await login(unreadable, '0599000701');
+  await unreadable.addInitScript(() => {
+    const read = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (String(key).startsWith('booking.') && !window.bookingStorageBack) throw new Error('storage blocked');
+      return read.call(this, key);
+    };
+  });
+  await unreadable.goto(base + '/book');
+  await unreadable.getByText(c.bookingStorageError).waitFor();
+  await unreadable.evaluate(() => { window.bookingStorageBack = true; });
+  await button(unreadable, c.retry).click();
+  await unreadable.getByText(c.bookingStorageError).waitFor({ state: 'hidden' });
+  // Order again with the old order out of reach says so, rather than look like its route was copied.
+  const unreachable = await newPage();
+  await login(unreachable, '0599000701');
+  await unreachable.route(apiRoute('/api/orders/424242'), route => route.abort());
+  await unreachable.goto(base + '/book?again=424242');
+  await unreachable.getByText(c.orderAgainFailed).waitFor();
+  pass('booking storage retry and a failed order-again both say what happened');
   assert.deepEqual(errors, [], 'Unhandled browser errors');
   pass('driver earnings, admin mobile/tablet/desktop, Arabic order, zero unhandled browser errors');
 } catch (error) {
