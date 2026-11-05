@@ -23,6 +23,7 @@ const suites = [
   "opencode.test.mjs",
   "google-maps-loader.test.mjs",
   "api.test.mjs",
+  "privacy-location.test.mjs",
   "admin-settings.test.mjs",
   "admin-stats-daily.test.mjs",
   "client-address.test.mjs",
