@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AppState, Platform } from 'react-native';
 import { getLocales } from 'expo-localization';
 import Constants from 'expo-constants';
-import { api, API_URL, configureApi, errorCode, invalidateApiSessionActions, storage } from './api';
+import { api, API_URL, ApiError, configureApi, errorCode, invalidateApiSessionActions, storage } from './api';
 import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-client';
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
 import { recoveryStorage } from './recovery-storage';
@@ -96,9 +96,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {});
       accountLoaded.current = true;
     } catch (error) {
+      if (!phoneTest && revision !== apiSessionRevision()) return;
       // A failed refresh under a working screen is a blip the screen's own polling rides out: only a launch that could
       // not reach the account has nothing to show. That screen keeps trying by itself, below.
-      if (!accountLoaded.current && (phoneTest || errorCode(error) === 'network')) setOffline(true);
+      if (!accountLoaded.current && (phoneTest || errorCode(error) === 'network' || (error instanceof ApiError && (error.status ?? 0) >= 500))) setOffline(true);
     }
   }, [forget]);
   useEffect(() => {
@@ -112,7 +113,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // A restored native task is not authorized until this launch revalidates the account and active order.
       await stopBackgroundLocation().catch(() => {});
       await validatePresenceContextOnLaunch().catch(() => {});
-      const [token, saved, seen] = await Promise.all([storage.get('token'), storage.get('language'), storage.get('onboarded')]);
+      const [token, saved, seen] = await Promise.all([
+        storage.get('token').catch(() => null), storage.get('language').catch(() => null), storage.get('onboarded').catch(() => null),
+      ]);
       if (saved === 'ar' || saved === 'en') setLanguageState(saved);
       // Anyone who ever signed in on this device has seen the app; only a fresh install gets the welcome slides.
       setOnboarded(!!phoneTest || seen === '1' || !!token);
@@ -175,8 +178,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const value: Session = {
     ready, offline, offlineSummary, me, language, refresh, forget, onboarded,
-    finishOnboarding: () => { setOnboarded(true); storage.set('onboarded', '1'); },
-    setLanguage: next => { setLanguageState(next); storage.set('language', next); },
+    finishOnboarding: () => { setOnboarded(true); void storage.set('onboarded', '1').catch(() => {}); },
+    setLanguage: next => { setLanguageState(next); void storage.set('language', next).catch(() => {}); },
     signIn: async ({ token, ...data }) => {
       await recoveryStorage.clear().catch(() => {}); resetRuntime(); retryMapProviders(); setOfflineSummary(null);
       clientDiagnostics.clear();

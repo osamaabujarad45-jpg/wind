@@ -33,6 +33,7 @@ const suites = [
   "entra.test.mjs",
   "entra-result.test.mjs",
   "session-idle.test.mjs",
+  "session-recovery.test.mjs",
   "phone-acs.test.mjs",
   "entra-exchange.test.mjs",
   "vehicle-migration.test.mjs",
