@@ -13,7 +13,7 @@ import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palet
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number;
+  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean;
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
@@ -32,6 +32,10 @@ export default function Dashboard() {
     {pushSupported() && <ListGroup><PushRow /></ListGroup>}
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
+      {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="clay">
+        <Txt variant="title">{c.backupStaleTitle}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{c.backupStaleBody}</Txt>
+      </Card></View>}
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
