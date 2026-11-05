@@ -62,6 +62,24 @@ try{
   const gone=await register(9);const countedBefore=(await call('/admin/stats',{token:admin.token})).users.customer;
   await call('/me/delete',{token:gone.token,body:{password:'synthetic-secret'}});
   assert.equal((await call('/admin/stats',{token:admin.token})).users.customer,countedBefore-1,'PostgreSQL stops counting a deleted account');
+  for (const [number, change] of [[6, 'password'], [7, 'session']]) {
+    const target = await register(number);
+    const original = persistence.atomic;
+    let intercepted = false;
+    persistence.atomic = async function(actor, work) {
+      if (actor.id === target.user.id && !intercepted) {
+        intercepted = true;
+        if (change === 'password') await persistence.run('UPDATE users SET password=? WHERE id=?', 'changed', target.user.id);
+        else await persistence.run('DELETE FROM sessions WHERE user_id=?', target.user.id);
+      }
+      return original.call(this, actor, work);
+    };
+    try {
+      await call('/me/delete', { token: target.token, body: { password: 'synthetic-secret' }, expect: 401 });
+      assert.equal(intercepted, true);
+      assert.equal((await persistence.one('SELECT status FROM users WHERE id=?', target.user.id)).status, 'active', `${change} change prevents PostgreSQL deletion`);
+    } finally { persistence.atomic = original; }
+  }
   assert.equal(stats.daily.at(-1).commission,stats.commission,'PostgreSQL groups today’s completed order');
   assert.equal(stats.daily.at(-1).subscriptions,stats.subscriptions,'PostgreSQL groups today’s activated subscription');
   const credential=await persistence.one('SELECT password FROM users WHERE id=?',customer.user.id);

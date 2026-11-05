@@ -85,6 +85,8 @@ try {
   db.prepare('UPDATE entra_replay SET expires_at=? WHERE token_hash=?').run(Date.now() - 2_000,
     createHash('sha256').update(`delete-challenge:${linked.token}:${expired.nonce}`).digest('hex'));
   await call('/me/delete', { token: linked.token, body: { idToken: token({ oid: 'linked-user', nonce: expired.nonce, auth_time: Math.floor(Date.now() / 1000) }), nonce: expired.nonce }, expect: 401 });
+  const afterLogin = await call('/me/delete/challenge', { token: linked.token, body: {} });
+  await call('/me/delete', { token: linked.token, body: { idToken: token({ oid: 'linked-user', nonce: afterLogin.nonce, auth_time: Math.floor(Date.now() / 1000) - 10 }), nonce: afterLogin.nonce }, expect: 401 });
   const challenge = await call('/me/delete/challenge', { token: created.token, body: {} });
   const fresh = Math.floor(Date.now() / 1000);
   const proof = claims => ({ idToken: token({ nonce: challenge.nonce, auth_time: fresh, ...claims }), nonce: challenge.nonce });
