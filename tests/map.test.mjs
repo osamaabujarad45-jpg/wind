@@ -311,7 +311,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.ok(roadSource.includes('routeProvider'), 'useRoad must read provenance off the route data');
   assert.ok(roadSource.includes('approachKey'), 'useRoad must bind kept route state to order, driver, stop and provider');
   assert.ok(roadSource.includes('useApi<RoadRoute>(paidUrl, undefined, { refetchOnFocus: false })'), 'a Google approach is never polled and never re-bills on refocus');
-  assert.ok(roadSource.includes('googleApproachPath(billed.fix'), 'the approach URL is built from the last billed fix, so stationary fixes cannot refetch');
+  assert.ok(roadSource.includes('googleApproachPath(billed.fix'), 'the paid URL is built from the last billed fix, so stationary fixes cannot refetch');
   assert.ok(roadSource.includes('roadPath(steered.fix, target, 5'), 'a navigating driver gets a route from their own fix, not a 110 m grid cell, refreshed on movement');
   assert.ok(!readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8').includes('enabled={open}'), 'a closed sheet can hold a field, such as the handover code: the keyboard must lift it too');
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never

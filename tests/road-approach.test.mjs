@@ -54,7 +54,9 @@ function harness(mode) {
   const render = (order, language) => {
     for (let pass = 0; pass < 25; pass++) {
       cursor = 0; dirty = false;
+      const mark = world.seen.length;
       const result = module.exports.useRoad(order, language);
+      if (dirty) world.seen.length = mark; // React throws away a pass that set state, so nothing it asked for is requested
       const effects = pending.splice(0);
       if (!dirty) for (const effect of effects) effect();
       if (!dirty) return result;
@@ -192,20 +194,59 @@ try {
   {
     const { world, render, advance } = harness('google');
     let issued = world.now;
-    world.answer = path => path.includes('steps=1') ? free(600, issued, { steps: [{ distance: 100 }] }) : undefined;
+    const paidIssued = () => issued;
+    world.answer = path => path.includes('/route/google') ? paid(180, paidIssued()) : path.includes('steps=1') ? free(600, issued, { steps: [{ distance: 100 }] }) : undefined;
     const stepPaths = () => new Set(world.seen.map(item => item.path).filter(path => path.includes('steps=1')));
-    render(order(world), 'en');
+    let road = render(order(world), 'en');
     assert.equal(stepPaths().size, 1);
     assert.equal(paidPaths(world).length, 1, 'the stop buys its one preview');
+    assert.ok(shows(road, paidEnd), 'its line draws');
     const off = { latitude: 31.8495, longitude: 35.1508 }; // about 90 m away and off the line
     advance(10_000); issued = world.now;
     render(order(world, off), 'en');
     assert.equal(stepPaths().size, 1, 'not before 30 s, so an unmapped track cannot spend the budget');
     advance(21_000); issued = world.now;
-    render(order(world, off), 'en');
+    road = render(order(world, off), 'en');
     assert.equal(stepPaths().size, 2, 'then the free route follows the driver');
     assert.equal(paidPaths(world).length, 1, 'and the paid route is not touched');
-    assert.ok(!paidPaths(world)[0].includes('metres=9'), 'nor rebuilt from the small move');
+    assert.ok(!paidPaths(world).at(-1).includes('metres='), 'nor rebuilt from the small move');
+    assert.ok(shows(road, freeEnd), 'the line follows the free route the turn banner now reads, though the paid ETA is still valid');
+    assert.deepEqual(road.eta, minutes(600), 'and so do the minutes');
+    // A later significant move buys a new route, and it shows again.
+    const far = { latitude: 31.853, longitude: 35.1508 };
+    advance(1_000); issued = world.now;
+    road = render(order(world, far), 'en');
+    assert.equal(paidPaths(world).length, 2, 'a significant move buys one more');
+    assert.ok(shows(road, paidEnd), 'and that line draws');
+  }
+  // The baseline map reroutes a navigating driver who leaves the line, with nothing paid.
+  {
+    const { world, render, advance } = harness('baseline');
+    let issued = world.now;
+    world.answer = path => path.includes('steps=1') ? free(600, issued, { steps: [{ distance: 100 }] }) : undefined;
+    const stepPaths = () => new Set(world.seen.map(item => item.path).filter(path => path.includes('steps=1')));
+    render(order(world), 'en');
+    const off = { latitude: 31.8495, longitude: 35.1508 };
+    advance(31_000); issued = world.now;
+    render(order(world, off), 'en');
+    assert.equal(stepPaths().size, 2, 'the baseline keeps its reroute');
+    assert.equal(paidPaths(world).length, 0, 'and buys nothing');
+  }
+  // A new stop starts both anchors from the driver's current fix.
+  {
+    const { world, render } = harness('google');
+    const issued = world.now;
+    world.answer = path => path.includes('/route/google') ? paid(180, issued) : path.includes('steps=1') ? free(600, issued, { steps: [{ distance: 100 }] }) : undefined;
+    render(order(world), 'en');
+    assert.equal(paidPaths(world).length, 1);
+    const moved = { latitude: 31.8508, longitude: 35.1508 };
+    world.seen.length = 0;
+    render(order(world, moved, { dropoffPoint: { latitude: 32.3, longitude: 35.3 }, status: 'in_transit', pickedUpAt: 1 }), 'en');
+    const stepPath = world.seen.map(item => item.path).find(path => path.includes('steps=1'));
+    assert.match(stepPath, /31.8508/, 'the free steps route starts from where the driver is now');
+    assert.equal(new Set(paidPaths(world)).size, 1, 'the new stop buys one preview');
+    assert.match(paidPaths(world)[0], /31.8508/, 'from that same fix');
+    assert.match(paidPaths(world)[0], /trigger=preview&shown=1/);
   }
   // A navigating driver's turns come from the free route, which has them, even while a paid line shows.
   {

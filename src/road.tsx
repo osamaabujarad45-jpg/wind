@@ -97,8 +97,9 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const fixFresh = !!driver && publicFixAgeMs(driver, now, fixClock.key === fixKey ? fixClock.clock : undefined, monotonic) < 30_000;
   const unexpired = (r: RoadRoute | undefined) => r && fixFresh && (!r.eta || deadlineSeconds(r.eta.validity.expiresAt, r.eta, now) > 0) ? r : undefined;
   const free = unexpired(candidate);
-  // A paid answer with no ETA has no expiry, so it can never read as current.
-  const paidRoute = paidApproach.error ? undefined : showable(paidApproach.data);
+  // A paid answer with no ETA has no expiry, so it can never read as current. Nor can one from before the driver left the
+  // line: the turn banner already follows the new free route, and the line and minutes must agree with it.
+  const paidRoute = paidApproach.error || steered.at > billed.at ? undefined : showable(paidApproach.data);
   const eta = (paidRoute?.eta ? unexpired(paidRoute) : undefined) ?? free;
   // The server keeps a free calculation for 30 s and its ETA expires with it, but the poll runs every 25 s, so a
   // stationary driver's cache hit would leave the ETA hidden until the next poll. Refetch once when the shown
