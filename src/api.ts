@@ -25,7 +25,7 @@ export const api = async <T>(path: string, body?: object, method?: 'GET' | 'POST
   const requestPath = optIn && !/[?&]journeyProtocol=/.test(path) ? `${path}${path.includes('?') ? '&' : '?'}journeyProtocol=1` : path;
   const data = await request<T>(`${API_URL}/api${requestPath}`, body, method, signal);
   if (revision === apiSessionRevision() && /^\/orders(?:\/\d+)?(?:\?|$)/.test(path)) {
-    if (Array.isArray(data)) void cacheOrderSummaries(data.map(readOrder));
+    if (Array.isArray(data)) void cacheOrderSummaries(data.map(readOrder), !/[?&](?:before|status)=/.test(path));
     else if (data && typeof data === 'object' && 'service' in data && 'id' in data) void cacheOrderSummaries([readOrder(data)]);
   }
   return data;

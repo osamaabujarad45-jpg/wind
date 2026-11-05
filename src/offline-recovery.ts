@@ -14,7 +14,7 @@ export async function savedOfflineSummary() {
   const now = Date.now() + serverOffset();
   return readOfflineSummary(await recoveryStorage.read('summary'), now, effectiveRuntime(now).values.offlineMaxAgeMs);
 }
-export function cacheOrderSummaries(orders: Order[]) {
+export function cacheOrderSummaries(orders: Order[], replace = false) {
   const owner = actor, revision = apiSessionRevision();
   if (!owner || owner.status !== 'active' || owner.role === 'admin') return;
   const current = () => revision === apiSessionRevision() && actor?.id === owner.id && actor?.role === owner.role;
@@ -26,7 +26,7 @@ export function cacheOrderSummaries(orders: Order[]) {
     const newest = offlineSummary(owner.id, owner.role, orders, now);
     const changed = new Set(orders.map(order => order.id));
     // Orders missing from this fetch are kept only briefly: their status may have moved on without us.
-    const retained = previous?.actorId === owner.id && previous.role === owner.role && now - previous.savedAt <= 30 * 60_000
+    const retained = !replace && previous?.actorId === owner.id && previous.role === owner.role && now - previous.savedAt <= 30 * 60_000
       ? previous.orders.filter(order => !changed.has(order.id)) : [];
     newest.orders = [...newest.orders, ...retained].slice(0, 3);
     if (retained.length && previous) newest.savedAt = Math.min(newest.savedAt, previous.savedAt);
