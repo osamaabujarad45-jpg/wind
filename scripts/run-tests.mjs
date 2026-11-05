@@ -9,6 +9,7 @@ const suites = [
   "driver-command.test.mjs",
   "protected-recovery.test.mjs",
   "offline-snapshot.test.mjs",
+  "offline-view.test.mjs",
   "wire-contracts.test.mjs",
   "map-policy.test.mjs",
   "client-diagnostics.test.mjs",

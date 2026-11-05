@@ -8,7 +8,7 @@ import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery'
 import { recoveryStorage } from './recovery-storage';
 import type { OfflineSummary } from './offline-summary';
 import { retryMapProviders } from './map-failures';
-import { configureRuntime, resetRuntime } from './runtime-config';
+import { configureRuntime, effectiveRuntime, resetRuntime } from './runtime-config';
 import { clientDiagnostics } from './client-diagnostics';
 import { startDiagnosticDelivery } from './diagnostic-client';
 import { phoneTestConfig } from './phone-test';
@@ -48,6 +48,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [onboarded, setOnboarded] = useState(false);
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
+  useEffect(() => {
+    if (!offlineSummary) return;
+    const now = Date.now() + serverOffset();
+    const timer = setTimeout(() => setOfflineSummary(null), Math.max(0, offlineSummary.savedAt + effectiveRuntime(now).values.offlineMaxAgeMs - now));
+    return () => clearTimeout(timer);
+  }, [offlineSummary]);
   const startedAt = useRef<number | null>(null), announced = useRef(false);
   useEffect(() => { startedAt.current ??= Date.now(); }, []);
   useEffect(() => {
