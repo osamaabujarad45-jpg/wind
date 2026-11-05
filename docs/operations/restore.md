@@ -31,7 +31,7 @@ sudo docker stop wind-api
 sudo cp /srv/wind-data/wind.db /srv/wind-data/wind.db.before-restore   # keep what was there
 gunzip -c /srv/wind-data/backups/wind-<stamp>.db.gz | sudo tee /srv/wind-data/wind.db >/dev/null
 sudo rm -f /srv/wind-data/wind.db-wal /srv/wind-data/wind.db-shm       # a stale journal must not replay over the restored file
-sudo docker start wind-api                                             # refuses to start if the integrity check fails
+sudo docker start wind-api                                             # refuses to start if its quick check fails
 ```
 
 Then sign in as an admin and open a recent order. Off the VM, list the blob container with an account that can read it; the SAS on the VM can only write, so a compromised VM cannot read or delete old copies. `tests/backup.test.mjs` runs this path on a synthetic database.

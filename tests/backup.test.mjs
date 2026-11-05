@@ -33,6 +33,8 @@ const call = apiCaller(() => base, realFetch);
 
 try {
   await call("/auth/register", { body: { phone: "0599170001", name: "Admin", password: "secret1" } });
+  // With no admin yet nobody can hear it, so the day's alert is not spent.
+  assert.equal(await alertMissedBackup(), false, 'no admin, no alert');
   await promote('0599170001');
   const staff = await call('/auth/login', { body: { phone: '0599170001', password: 'secret1' } });
   await call('/push/native/register', { token: staff.token, body: { expoPushToken: 'ExponentPushToken[backup-admin-device]', deviceId: '4c7d1a7e-2f6b-4d1a-9a3e-6f0a1b2c3d4e', platform: 'android', lang: 'en' } });

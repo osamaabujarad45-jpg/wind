@@ -74,6 +74,7 @@ const fileGroup = compiled.resources.find(resource => resource.type === 'Microso
 assert.ok(fileZone && fileLink && fileGroup, 'File zone, link and zone group are present');
 assert.match(compiled.variables.checkedImage, /fail\('imageDigest is required/);
 assert.match(compiled.variables.checkedOsrmImage, /fail\('osrmImageDigest is required/);
+assert.match(compiled.variables.checkedPushSubject, /pushSubject is required/);
 assert.match(compiled.outputs.imageValidation.value, /checkedImage/);
 const paramFile = path.join(root, '.expo/implementation/wp16-enabled.bicepparam');
 writeFileSync(paramFile, `using '../../infra/main.bicep'\nparam prefix = 'fsstage'\nparam environment = 'staging'\nparam postgresAdministratorPassword = 'compile-only-not-a-secret'\nparam enableWorkloads = true\nparam imageDigest = 'example/api@sha256:1234'\nparam osrmImageDigest = 'example/osrm@sha256:1234'\n`);

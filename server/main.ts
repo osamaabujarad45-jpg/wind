@@ -1060,8 +1060,10 @@ const backupStale = (now = Date.now()) => {
 export async function alertMissedBackup(now = Date.now()) {
   if (!backupStale(now)) return false;
   const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
+    const admins = await adminIds();
+    if (!admins.length) return false; // an admin added later today still gets the day's alert
     try { await limit(identityKey('backup-alert', 'system'), 1, DAY); } catch { return false; }
-    await queuePush(await adminIds(), 'attention', 0, '/admin');
+    await queuePush(admins, 'attention', 0, '/admin');
     return true;
   });
   if (sent) await flushPush();
