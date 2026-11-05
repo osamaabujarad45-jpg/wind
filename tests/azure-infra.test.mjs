@@ -86,7 +86,7 @@ assert.ok(enabled.imageDigest.value && enabled.osrmImageDigest.value);
 assert.equal(deployment('api').condition, workloadCondition);
 assert.equal(deployment('worker').condition, workloadCondition);
 const apiEnv = Object.fromEntries(api.environmentVariables.value.map(entry => [entry.name, entry]));
-for (const name of ['SUPPORT_CONTACT', 'WIND_IDENTITY_MODE', 'OSRM_URL', 'DB_PATH']) {
+for (const name of ['SUPPORT_CONTACT', 'WIND_IDENTITY_MODE', 'OSRM_URL', 'DB_PATH', 'WIND_PUSH_SUBJECT']) {
   assert.ok(typeof apiEnv[name]?.value === 'string' && apiEnv[name].value.length > 0, `${name} must render non-empty`);
 }
 assert.ok(api.keyVaultSecrets.value.some(secret => secret.name === 'database-url' && secret.envName === 'WIND_DATABASE_URL' && secret.keyVaultUrl.includes('secrets/database-url')));

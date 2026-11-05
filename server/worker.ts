@@ -2,7 +2,7 @@ import { createPrivateKey, generateKeyPairSync, randomInt, randomUUID } from 'no
 import { setTimeout as delay } from 'node:timers/promises';
 import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
-import { encrypt, pushEndpoint, vapid } from './push.ts';
+import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
 import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
 import { pushSubject } from './push.ts';
@@ -18,11 +18,6 @@ type WorkerOptions = { leaseMs?: number; maxAttempts?: number; baseBackoffMs?: n
   expoTransport?: (token: Row, message: string, ttl: number) => Promise<void>;
   afterPublish?: (work: Work) => Promise<void> };
 /** Separate process; PostgreSQL leases, not API timers, own durable delivery. */
-export const isDeviceNotRegistered = (error: unknown) => {
-  const value = error as { code?: unknown; expoError?: unknown; message?: unknown };
-  return value?.code === 'DeviceNotRegistered' || value?.expoError === 'DeviceNotRegistered'
-    || (typeof value?.message === 'string' && value.message.includes('DeviceNotRegistered'));
-};
 export class DurableWorker {
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
@@ -156,7 +151,8 @@ export class DurableWorker {
         lang:(((target as { token?: Row }).token ?? (target as { subscription: Row }).subscription).lang as string),eventId:work.event_id });
       if (isExpo) {
         if (this.options.expoTransport) await this.options.expoTransport((target as { token: Row }).token,message,target.remaining);
-        else await this.expoSend((target as { token: Row }).token,message,target.remaining);
+        // Without the owner's credentials this throws, so the attempt retries with backoff and lands in the operator review queue, never delivered.
+        else await sendExpoPush((target as { token: Row }).token,message,target.remaining,URGENT_KINDS.includes(String(p.kind)));
       } else if (this.options.transport) await this.options.transport((target as unknown as { subscription: Row }).subscription,message,target.remaining);
       else {
         const invalid = await this.webPush((target as unknown as { subscription: Row }).subscription,message,target.remaining,String(work.payload.kind));
@@ -179,25 +175,6 @@ export class DurableWorker {
         exhausted?'review':'pending',Date.now()+backoff+randomInt(Math.max(1,Math.floor(backoff/4))),safe,work.event_id,work.destination,work.lease_owner);
     }
     return true;
-  }
-  private async expoSend(token: Row,message: string,ttl: number) {
-    // Real Expo delivery stays disabled until the owner configures EAS/FCM/APNs
-    // credentials and explicitly enables it; without that gate the attempt is
-    // retried with backoff and lands in the operator review queue, never delivered.
-    if (process.env.WIND_EXPO_PUSH_ENABLED !== '1') throw Object.assign(new Error('expo_not_configured'),{providerStatus:503});
-    const data=JSON.parse(message) as Row;
-    const response=await fetch('https://exp.host/--/api/v2/push/send',{method:'POST',redirect:'error',signal:AbortSignal.timeout(10_000),
-      headers:{Accept:'application/json','Content-Type':'application/json',...(process.env.EXPO_ACCESS_TOKEN?{Authorization:`Bearer ${process.env.EXPO_ACCESS_TOKEN}`}:{})},
-      body:JSON.stringify([{to:String(token.expo_push_token),title:'Wind',body:data.lang === 'en' ? 'You have a new update. Open Wind to view it.' : 'لديك تحديث جديد. افتح ويند لعرضه.',sound:'default',ttl,data:{kind:data.kind,order:data.order,url:data.url,eventId:data.eventId}}])});
-    const tickets=await response.json().catch(()=>null) as { data?: { status?: string; details?: { error?: string } }[] } | null;
-    await response.body?.cancel().catch(()=>{});
-    if (!response.ok) throw Object.assign(new Error('provider_failed'),{providerStatus:response.status});
-    const ticket=Array.isArray(tickets?.data)?tickets!.data[0]:undefined;
-    if (ticket?.status==='error') {
-      if (ticket.details?.error==='DeviceNotRegistered') throw Object.assign(new Error('DeviceNotRegistered'),{code:'DeviceNotRegistered'});
-      throw Object.assign(new Error('provider_failed'),{providerStatus:400});
-    }
-    if (ticket?.status!=='ok') throw Object.assign(new Error('provider_failed'),{providerStatus:502});
   }
   private async webPush(subscription: Row,message: string,ttl: number,kind: string) {
     const endpoint=pushEndpoint(subscription.endpoint);

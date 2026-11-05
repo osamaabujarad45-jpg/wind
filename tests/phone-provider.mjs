@@ -78,7 +78,7 @@ try {
   await call('/me/phone/challenges',{token:user.token,body:{...request,purpose:'verify',expectedRevision:1},expect:409});
   await call('/auth/phone/recovery/challenges',{body:request,expect:409});
 }finally{await sqlite.stop();}
-const productionEnv={...process.env,NODE_ENV:'production',DB_PATH:join(dir,'production-rejection.sqlite'),SUPPORT_CONTACT:'https://support.invalid',WIND_IDENTITY_MODE:'operator-verified'};
+const productionEnv={...process.env,NODE_ENV:'production',DB_PATH:join(dir,'production-rejection.sqlite'),SUPPORT_CONTACT:'https://support.invalid',WIND_IDENTITY_MODE:'operator-verified',WIND_PUSH_SUBJECT:'mailto:wind-suite@example.invalid',WIND_TRUST_PROXY:'1'};
 for(const key of Object.keys(productionEnv))if(/^(?:WIND_PHONE|WIND_OOREDOO|WIND_OTP)/.test(key) || ['WIND_DATABASE_URL','DATABASE_URL'].includes(key))delete productionEnv[key];
 productionEnv.WIND_PHONE_TEST_PROVIDER_URL='http://127.0.0.1:1/';
 const rejected=spawnSync(process.execPath,['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON','--disable-warning=ExperimentalWarning','server/main.ts'],{env:productionEnv,encoding:'utf8',windowsHide:true,timeout:15000});

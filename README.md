@@ -8,7 +8,7 @@ One Expo app serves three roles, chosen by the account that signs in:
 - **Driver:** register with a motorcycle, bicycle, car, van or truck, wait for approval, accept matching jobs, see the latest completed trip and earnings, Wind Pro plan.
 - **Admin:** revenue dashboard, all orders, approve/block users, reset passwords, reopen delivery-code attempts after recipient verification, activate plans, edit tariffs and commissions.
 
-The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
+The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`. Its only npm dependency is `pg`, for the gated PostgreSQL path.
 
 ## Current workspace verification — 29 October 2026
 
@@ -139,7 +139,10 @@ API origin. Provider delivery and real user journeys need separate checks.
 | `SOUQ_PARTNER_KEY` | disabled | 32+ character server-only key shared with سوقنا as `WIND_PARTNER_KEY` |
 | `WIND_IDENTITY_MODE` | required in production | Current launch: `self-service`; use `operator-verified` only to close public registration deliberately |
 | `WIND_CONTACT_VERIFICATION_REQUIRED` | `false` | Future verification gate. Leave false until a real proof or approval process can admit new users. |
-| `WIND_TRUST_PROXY` | `0` | Set `1` only behind a private proxy that overwrites `X-Real-IP`; used by durable public authentication limits |
+| `WIND_TRUST_PROXY` | required in production | `1` behind a reverse proxy, so per-address limits key on the rightmost `X-Forwarded-For` hop instead of holding every user in the proxy's bucket; `0` when directly exposed. `X-Real-IP` is ignored |
+| `WIND_PUSH_SUBJECT` | required in production | Operator contact for Web Push, a `mailto:` address or `https:` origin you control. Without it every push fails silently |
+| `WIND_EXPO_PUSH_ENABLED` | unset | `1` sends native push through Expo. Needs the Firebase and EAS setup in `docs/operations/deploy.md` first |
+| `EXPO_ACCESS_TOKEN` | unset | Only if the Expo project has enhanced push security on |
 | `WIND_EMAIL_FROM` | unset | Sender on a domain onboarded in Cloudflare → Email Service → Email Sending, e.g. `no-reply@your-domain`. With the two below it turns on email codes: verify the address, self-service password reset, and the admin caller identity check |
 | `CLOUDFLARE_ACCOUNT_ID` | unset | Cloudflare account that owns that domain |
 | `CLOUDFLARE_EMAIL_TOKEN` | unset | Server-only API token with **Email Sending: Edit**; never in mobile build variables |

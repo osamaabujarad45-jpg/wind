@@ -20,7 +20,7 @@ import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/priv
 import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
 import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
-import { NativePush, nativePushAvailable, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
+import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
@@ -54,7 +54,7 @@ import {
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
 import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
-import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
+import { b64url, encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, pushSubject } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
@@ -69,15 +69,14 @@ const registrationOpen = selfService || (!production && process.env.WIND_IDENTIT
 const entra = (() => { try { return entraConfig(); } catch (error) { console.error('Entra disabled:', error instanceof Error ? error.message : error); return null; } })();
 
 // Zro / MoonMath provider config placeholder
-const ZRO_PROVIDER_NAME = process.env.ZRO_PROVIDER_NAME ?? process.env.ZRO_PROVIDER ?? '';
-const ZRO_API_KEY = process.env.ZRO_API_KEY ?? process.env.ZRO_KEY ?? '';
-if (ZRO_PROVIDER_NAME && ZRO_API_KEY) {
-  // Small runtime notice so local runs show the provider is available. Real wiring belongs in a provider module.
-  console.log(`ZRO provider configured: ${ZRO_PROVIDER_NAME}`);
-}
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
   if (!process.env.SUPPORT_CONTACT?.trim()) throw new Error('Production requires a real SUPPORT_CONTACT');
+  if (/example|placeholder|changeme|<[^>]*>|0{6,}$/i.test(process.env.SUPPORT_CONTACT.trim())) throw new Error('Production requires a real SUPPORT_CONTACT, not an example value');
+  // Both fail silently otherwise: every push delivery throws in its best-effort catch, and behind a proxy every
+  // request shares the proxy's address, so one per-address limit holds all users.
+  if (!/^(mailto:|https:)/.test(process.env.WIND_PUSH_SUBJECT?.trim() ?? '')) throw new Error('Production requires WIND_PUSH_SUBJECT: a mailto: address or https: origin you control');
+  if (!['0', '1'].includes(process.env.WIND_TRUST_PROXY ?? '')) throw new Error('Production requires WIND_TRUST_PROXY: 1 behind a reverse proxy, 0 when directly exposed');
   if (!['operator-verified', 'self-service'].includes(process.env.WIND_IDENTITY_MODE ?? '')) throw new Error('Production requires WIND_IDENTITY_MODE=operator-verified or self-service');
   if (process.platform !== 'win32') process.umask(0o077);
 }
@@ -1053,16 +1052,26 @@ const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admi
 const flushPush = () => persistence.flushEffects();
 async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string) {
   const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
-  for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds)))
-    void persistence.detached(() => deliverCapped(s, JSON.stringify({ kind, order, url, lang: s.lang }), URGENT_KINDS.includes(kind) ? 'high' : 'normal',
-      kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600));
+  const ids = userIds.map(() => '?').join(',');
+  const urgent = URGENT_KINDS.includes(kind), ttl = kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600;
+  for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${ids})`, ...userIds)))
+    void persistence.detached(() => capped(() => deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), urgent ? 'high' : 'normal', ttl)));
+  // Ending a session removes its token (foreign key), and blocking an account ends its sessions, so each row here is live.
+  for (const t of (await all(`SELECT * FROM native_push_tokens WHERE user_id IN (${ids})`, ...userIds)))
+    if (!nativeSuppression(t.prefs_json, kind, t.disabled_at))
+      void persistence.detached(() => capped(() => deliverNative(t, JSON.stringify({ kind, order, url, lang: t.lang }), ttl, urgent)));
 }
 
 let pushInFlight = 0; const pushWaiters: (() => void)[] = [];
-async function deliverCapped(s: Row, message: string, urgency: string, ttl: number) {
+async function capped(delivery: () => Promise<void>) {
   if (pushInFlight >= 8) await new Promise<void>(done => pushWaiters.push(done));
   pushInFlight++;
-  try { await deliver(s, message, urgency, ttl); } finally { pushInFlight--; pushWaiters.shift()?.(); }
+  try { await delivery(); } finally { pushInFlight--; pushWaiters.shift()?.(); }
+}
+// ponytail: reads the send ticket only; Expo receipts catch later failures, add them when the pilot shows stale tokens.
+async function deliverNative(t: Row, message: string, ttl: number, urgent: boolean) {
+  try { await sendExpoPush(t, message, ttl, urgent); }
+  catch (error) { if (isDeviceNotRegistered(error)) await run('DELETE FROM native_push_tokens WHERE token_hash = ?', t.token_hash); /* otherwise best effort, like web push */ }
 }
 async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   try {

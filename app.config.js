@@ -7,6 +7,8 @@ const googleIosKey = process.env.GOOGLE_MAPS_IOS_KEY;
 // A referrer-restricted browser key is public by design; it only ever reaches the web bundle, and the
 // server widens its CSP for Google origins only when this same variable is configured there.
 const googleBrowserKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
+// Android push: an EAS file variable holding the Firebase project's google-services.json, which names only the store package.
+const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 
 // Store builds bake EXPO_PUBLIC_API_URL into the bundle. Missing or plain http would ship an app that
 // can't reach the server (release builds block cleartext), so fail the EAS build instead.
@@ -55,6 +57,7 @@ if (release) {
 
 module.exports = ({ config }) => ({
   ...config,
+  ...(googleServicesFile && !phoneTest && { android: { ...config.android, googleServicesFile } }),
   ...(phoneTest && {
     name: `Wind ${testRole[0].toUpperCase() + testRole.slice(1)} Test`,
     scheme: `wind-test-${testRole}`,

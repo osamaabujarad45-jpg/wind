@@ -32,6 +32,8 @@ if (Platform.OS !== 'web') {
 export async function registerNativePush(lang: 'ar' | 'en'): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
+    // The channel must exist before Android 13 can ask for permission; high importance gives a heads-up. server/push.ts names it.
+    if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
     let status = (await Notifications.getPermissionsAsync()).status;
     if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
     if (status !== 'granted') return;

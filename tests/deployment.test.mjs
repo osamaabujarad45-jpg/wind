@@ -69,7 +69,7 @@ writeFileSync(join(web, 'index.html'), '<!doctype html><title>Wind web</title><d
 writeFileSync(join(web, 'manifest.webmanifest'), '{"name":"Wind"}');
 const moduleUrl = new URL('../server/main.ts', import.meta.url).href;
 const env = { ...process.env, NODE_ENV: 'production', DB_PATH: path, SUPPORT_CONTACT: 'Synthetic support +970599001234',
-  WIND_IDENTITY_MODE: 'operator-verified', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
+  WIND_IDENTITY_MODE: 'operator-verified', WIND_PUSH_SUBJECT: 'mailto:wind-deployment-suite@example.invalid', WIND_TRUST_PROXY: '1', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
 const flags = ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'];
 const cli = (args, extra = {}, input) => spawnSync(process.execPath, [...flags, main, ...args], { env: { ...env, ...extra }, input, encoding: 'utf8', timeout: 10_000 });
 const code = source => [...flags, '--input-type=module', '-e', source];
@@ -90,6 +90,8 @@ async function call(path, token, body, expected = 200) {
 }
 try {
   for (const [extra, message] of [[{ DB_PATH: 'relative.db' }, 'absolute DB_PATH'], [{ SUPPORT_CONTACT: '' }, 'SUPPORT_CONTACT'],
+    [{ SUPPORT_CONTACT: '+970599000000' }, 'not an example'], [{ SUPPORT_CONTACT: 'help@example.com' }, 'not an example'], [{ SUPPORT_CONTACT: '<actual support contact>' }, 'not an example'],
+    [{ WIND_PUSH_SUBJECT: '' }, 'WIND_PUSH_SUBJECT'], [{ WIND_PUSH_SUBJECT: 'wind-api' }, 'WIND_PUSH_SUBJECT'], [{ WIND_TRUST_PROXY: '' }, 'WIND_TRUST_PROXY'],
     [{ WIND_IDENTITY_MODE: '' }, 'WIND_IDENTITY_MODE']]) {
     const rejected = cli([], extra); assert.notEqual(rejected.status, 0); assert.match(rejected.stderr, new RegExp(message));
   }

@@ -284,6 +284,15 @@ try {
 // T25, additive: an administrator who resolves a pending handover leaves an actor and a reason on the row.
 for (const column of ['resolved_by INTEGER', "resolution_note TEXT"])
   if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
+// Native push on this runtime, additive (user_version stays 3). As on PostgreSQL, ending a session drops its token.
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_user ON sessions(token_hash, user_id);
+CREATE TABLE IF NOT EXISTS native_push_tokens (
+  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), auth_session_hash TEXT NOT NULL,
+  device_hash TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK(platform IN ('ios','android')), expo_push_token TEXT NOT NULL,
+  lang TEXT NOT NULL DEFAULT 'ar' CHECK(lang IN ('ar','en')), prefs_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, disabled_at INTEGER,
+  FOREIGN KEY(auth_session_hash, user_id) REFERENCES sessions(token_hash, user_id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS native_push_tokens_user ON native_push_tokens(user_id, created_at);`);
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }
