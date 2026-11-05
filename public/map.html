@@ -113,7 +113,7 @@ const labelField = language => language === 'ar'
 
 let failed = false;
 const fail = () => { if (!failed) { failed = true; send({ type: 'failed' }); } };
-const readyTimeout = Number.isSafeInteger(config.readyMs) ? config.readyMs : 20000; // the app's mapReadyTimeoutMs
+const readyTimeout = Number.isSafeInteger(config.readyMs) && config.readyMs >= 5000 && config.readyMs <= 30000 ? config.readyMs : 20000; // the app's mapReadyTimeoutMs
 let timer = setTimeout(fail, readyTimeout); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
