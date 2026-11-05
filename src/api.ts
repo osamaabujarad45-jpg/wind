@@ -39,8 +39,9 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
   // Billable endpoints (a Google display route) must load once per path and never again on an app-foreground
   // bounce: rerenders and refocuses are not reasons to bill (T08's trigger policy). Free endpoints keep the
   // default refresh-on-focus.
-  // ponytail: one path per mount, so a remount or a renderer flip and back asks again (one call each). Add a per-URL
-  // cache of billed answers if Google goes live and those calls matter; production has no Google keys yet.
+  // Per mount: a remount asks once more, and a renderer flip does only when the preview URL differs from the one already
+  // held. The paid-trigger policy allows both as a shown preview. No cache of paid answers: Google's Routes policy restricts
+  // caching route content.
   const refetchOnFocus = options?.refetchOnFocus ?? true;
   const loaded = useRef<string | null>(null);
   const [data, setResult] = useState<{ path: string; value: T }>();

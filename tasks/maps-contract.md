@@ -23,6 +23,8 @@ Every route request is associated with account, order, driver, next stop, endpoi
 
 Paid triggers: initial meaningful preview, destination change, significant foreground movement, explicit authorized retry. No paid trigger on rerender, stationary poll, background timer or anonymous link refresh. Before activation, T08 must enforce atomic per-user and global finite request budgets, simultaneous-request reservations, coalescing, timeout handling and explicit exhaustion responses using a fake provider. Unapproved/unset production budgets disable paid routing. Operator approval of traffic forecast, monetary limits, restricted keys, billing, geography and alert ownership is required for live activation.
 
+A paid approach is an overlay, not the only route: the free OSRM approach keeps running on a Google map, and carries the line and minutes whenever the paid ETA has lapsed, the call failed or the answer has not arrived. Waiting costs nothing and never buys a refresh. Paid answers are held in memory only, for one mounted screen.
+
 No raw Google response logging or unreviewed durable caching. Review applicable agreement and each content class before storage. Google Routes map results require Google maps presentation; current policy reference: https://developers.google.com/maps/documentation/routes/policies (read 29 October 2026). Terms and field acceptance are separate gates. SDK baseline: https://docs.expo.dev/versions/v57.0.0/ .
 
 ## Synthetic regional corpus
