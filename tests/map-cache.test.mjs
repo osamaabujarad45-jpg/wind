@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+const root = mkdtempSync(join(tmpdir(), 'wind-map-cache-'));
+process.env.DB_PATH = join(root, 'test.db');
+process.env.WEB_ROOT = root;
+const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+const path = join(root, 'map.html');
+writeFileSync(path, page);
+const { server, shutdown } = await import('../server/main.ts');
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const origin = `http://127.0.0.1:${server.address().port}`;
+const get = (url = '/map/v1/map.html', headers = {}) => fetch(origin + url, { headers });
+try {
+  const cold = await get();
+  assert.equal(cold.status, 200); assert.equal(await cold.text(), page);
+  assert.equal(cold.headers.get('cache-control'), 'public, max-age=86400');
+  assert.equal(cold.headers.get('content-security-policy'), null);
+  assert.equal(cold.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const etag = cold.headers.get('etag'), modified = cold.headers.get('last-modified');
+  assert.match(etag, /^W\/"[a-f0-9]{64}"$/);
+  const warm = await get(undefined, { 'If-None-Match': etag });
+  assert.equal(warm.status, 304); assert.equal(await warm.text(), '');
+  assert.equal(warm.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.equal(warm.headers.get('cache-control'), 'public, max-age=86400');
+  const legacy = await get('/map.html');
+  assert.equal(legacy.status, 200); assert.equal(await legacy.text(), page);
+  assert.equal(legacy.headers.get('cache-control'), 'no-cache');
+  const compressed = await get(undefined, { 'Accept-Encoding': 'br' });
+  assert.equal(compressed.headers.get('content-encoding'), 'br'); assert.equal(await compressed.text(), page);
+  const time = statSync(path), updated = page + '\n<!-- compatible map fix -->';
+  writeFileSync(path, updated); utimesSync(path, time.atime, time.mtime);
+  const changed = await get(undefined, { 'If-None-Match': etag, 'If-Modified-Since': modified, 'Accept-Encoding': 'br' });
+  assert.equal(changed.status, 200, 'changed bytes take precedence over an equal timestamp');
+  assert.notEqual(changed.headers.get('etag'), etag); assert.equal(await changed.text(), updated);
+  assert.equal((await get('/map/v2/map.html')).status, 404);
+  console.log('Map cache: versioned and legacy delivery, validators, Brotli, frame policy and unknown versions passed');
+} finally { await shutdown(); rmSync(root, { recursive: true, force: true }); }

@@ -214,7 +214,7 @@ npx eas-cli@latest submit --platform all
 
 - `EXPO_PUBLIC_API_URL` is required and must be `https`; the EAS build fails fast otherwise.
 - `EXPO_PUBLIC_SUPPORT_WHATSAPP` (international digits) shows "Contact support" in the app. Optional.
-- Android loads the hosted `public/map.html` (`<EXPO_PUBLIC_API_URL>/map.html`) in a WebView using MapLibre/OpenFreeMap; no Google Maps key is needed. The API must serve that page and the vendored map assets; if it cannot load, the route card shows with a Retry button. iOS uses Apple Maps.
+- Map-first native screens load `public/map.html` through `<EXPO_PUBLIC_API_URL>/map/v1/map.html` in a WebView. Deploy and probe that endpoint before releasing the new app; installed clients still use `/map.html`. The v1 shell can remain cached for 24 hours: breaking bridge changes need a new version and continued support for v1. Map tiles are not available offline.
 
 ### 3. Web / iPhone access
 

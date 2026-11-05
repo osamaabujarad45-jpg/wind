@@ -188,6 +188,7 @@ console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close ca
   const h = harness('map-page.native.tsx'); const changed = [];
   const props = { config: { mode: 'pin', center: first }, height: 320, update: { center: first }, onFail() {}, onCenter: point => changed.push(point) };
   h.render(h.exports.MapPage, props);
+  assert.equal(find(h.tree, 'WebView').source.uri.split('#')[0], 'https://api.example.test/map/v1/map.html');
   h.render(undefined, { ...props, update: { center: latest } });
   const message = value => find(h.tree, 'WebView').onMessage({ nativeEvent: { data: JSON.stringify(value) } });
   message({ type: 'drawing' });

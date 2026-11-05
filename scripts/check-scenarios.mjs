@@ -559,7 +559,7 @@ try {
     if (!route.request().url().includes('/styles/')) await tilesReady;
     await route.continue();
   });
-  await androidMap.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, driver: { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 }, padding: 40, recenter: copy.ar.recenter }))}`);
+  await androidMap.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, driver: { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 }, padding: 40, recenter: copy.ar.recenter }))}`);
   await androidMap.locator('.maplibregl-marker').nth(1).waitFor();
   const prematureReady = await androidMap.evaluate(() => window.mapMessages.some(m => m.type === 'ready'));
   releaseTiles();
@@ -603,7 +603,7 @@ try {
     window.setTimeout = (fn, ms, ...args) => later(fn, ms === 20_000 ? 5_000 : ms, ...args);
   });
   await badTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
-  await badTiles.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
+  await badTiles.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'failed'), null, { timeout: 12_000 });
   assert.equal(await badTiles.evaluate(() => window.mapMessages.some(m => m.type === 'ready')), false,

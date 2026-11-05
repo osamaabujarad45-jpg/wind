@@ -105,7 +105,8 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   try { requested = decodeURIComponent(pathname === '/' ? '/index.html' : pathname); }
   catch { return false; }
   if (requested.includes('\0')) return false;
-  const candidate = resolve(webRoot, `.${requested}`);
+  const versionedMap = requested === '/map/v1/map.html';
+  const candidate = resolve(webRoot, versionedMap ? './map.html' : `.${requested}`);
   const outside = relative(webRoot, candidate);
   if (outside.startsWith('..') || isAbsolute(outside)) return false;
   const file = (() => {
@@ -119,13 +120,16 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const contentType = webContentTypes[extension] ?? 'application/octet-stream';
   const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   const modified = statSync(file).mtime;
-  const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
+  const cacheControl = versionedMap ? 'public, max-age=86400' : extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
     ? 'no-cache' : 'public, max-age=604800, immutable';
-  // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
   if (file === resolve(webRoot, 'map.html')) res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // the web app shows this page in an iframe; a 304 must say so too
+  const etag = file === resolve(webRoot, 'map.html') ? `W/"${createHash('sha256').update(readFileSync(file)).digest('hex')}"` : undefined;
   const since = req.headers['if-modified-since'];
-  if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
-    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
+  const matches = etag && req.headers['if-none-match'] !== undefined
+    ? String(req.headers['if-none-match']).split(',').some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag.replace(/^W\//, ''))
+    : since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000;
+  if (matches) {
+    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding', ...(etag && { ETag: etag }) }).end();
     return true;
   }
   res.writeHead(200, {
@@ -133,11 +137,12 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
     // map.html (the Android WebView map) runs an inline module, so it keeps the frame/sniff headers only.
     ...(extension === '.html' && file !== resolve(webRoot, 'map.html') && { 'Content-Security-Policy': webCsp }),
     'Cache-Control': cacheControl,
+    ...(etag && { ETag: etag }),
     'Last-Modified': modified.toUTCString(),
     'Vary': 'Accept-Encoding', // always: a shared cache must not hand a brotli body to a client that cannot read it
     ...(useBrotli ? { 'Content-Encoding': 'br' } : {}),
   });
-  if (useBrotli) compressed(file).then(body => res.end(body), () => res.destroy());
+  if (useBrotli) compressed(file, etag).then(body => res.end(body), () => res.destroy());
   else createReadStream(file).on('error', () => res.destroy()).pipe(res);
   return true;
 }
@@ -159,9 +164,9 @@ const compressible = (type: string) => /^(text\/|application\/(javascript|json|m
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
 const brotliCache = new Map<string, Promise<Buffer>>();
-const compressed = (file: string) => {
+const compressed = (file: string, revision: string | number = statSync(file).mtimeMs) => {
   // Keyed by mtime as well: an edited file must not be served from the body cached for the previous one.
-  const key = `${file}:${statSync(file).mtimeMs}`;
+  const key = `${file}:${revision}`;
   let body = brotliCache.get(key);
   if (!body) {
     body = promisify(brotliCompress)(readFileSync(file));

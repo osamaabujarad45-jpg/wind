@@ -45,6 +45,7 @@ const suites = [
   "cash.test.mjs",
   "share.test.mjs",
   "map.test.mjs",
+  "map-cache.test.mjs",
   "map-security.test.mjs",
   "route.test.mjs",
   "routing-policy.test.mjs",
