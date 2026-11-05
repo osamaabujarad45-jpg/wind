@@ -518,6 +518,8 @@ const ar = {
   // means "saved, awaiting connection" — never claim the save itself failed.
   bookingOfflineSaved: 'تعذّر الاتصال بويند. حُفظ طلبك على هذا الجهاز بانتظار الاتصال.',
   bookingStorageError: 'تعذّر الوصول إلى الطلب المحفوظ على جهازك. يُرجى المحاولة مرة أخرى.',
+  orderAgainFailed: 'تعذّر تحميل ذلك الطلب. أدخل المسار بنفسك، أو ارجع وحاول مرة أخرى.',
+  codeHeldForRetry: 'انقطع الاتصال قبل تأكيد هذا الرمز. اضغط الزر لإرساله مرة أخرى، وبعدها يمكنك تعديله عند الحاجة.',
   bookingRecoveryChecking: 'جارٍ التحقق…',
   bookingRecoveryAbsent: 'لا يوجد طلب بهذا المعرّف. يمكنك تعديله أو تجاهله.',
   bookingRecoveryUnknown: 'لم يُؤكَّد هذا الطلب بعد.',
@@ -1568,6 +1570,8 @@ const en: Copy = {
   // Mirrors the Arabic rationale: the command is saved before the POST.
   bookingOfflineSaved: 'Couldn’t reach Wind. Your booking is saved on this device, waiting for a connection.',
   bookingStorageError: 'Could not access the booking saved on this device. Try again.',
+  orderAgainFailed: 'Could not load that order. Enter the route yourself, or go back and try again.',
+  codeHeldForRetry: 'The connection dropped before this code was confirmed. Tap the button to send it again. Then you can change it if needed.',
   bookingRecoveryChecking: 'Checking…',
   bookingRecoveryAbsent: 'This request has no order. You can edit or discard it.',
   bookingRecoveryUnknown: 'This request is not confirmed yet.',

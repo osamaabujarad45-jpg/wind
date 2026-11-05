@@ -30,9 +30,10 @@
   #pin.lift { transform: translateY(-12px); }
   #pin-base { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
     border-radius: 50%; background: rgba(0,0,0,.35); pointer-events: none; }
-  #recenter { position: absolute; bottom: calc(var(--inset-bottom) + 34px); right: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
+  #recenter { position: absolute; bottom: calc(var(--inset-bottom) + 34px); right: calc(var(--inset-right) + 10px); width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
   .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: var(--inset-bottom); }
+  .maplibregl-ctrl-bottom-right { right: var(--inset-right); }
   .stop { position: relative; }
   .stop-label { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: 150px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
     background: #fff; color: #12342A; font: 600 12px/18px system-ui, sans-serif; padding: 3px 10px; border-radius: 13px; box-shadow: 0 1px 6px rgba(0,0,0,.22); pointer-events: none; }

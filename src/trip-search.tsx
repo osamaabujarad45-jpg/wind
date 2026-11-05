@@ -30,10 +30,10 @@ function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title
   </View>;
 }
 
-export function TripSearch({ field, onField, pickupText, dropoffText, near, places, locating, locationError, onPick, onMap, onLocate, onClose, onForget }: {
+export function TripSearch({ field, onField, pickupText, dropoffText, near, places, locating, locationError, notice, onRetry, onPick, onMap, onLocate, onClose, onForget }: {
   field: TripField; onField: (field: TripField) => void;
   pickupText: string; dropoffText: string; near: Point | null; places: Places;
-  locating: boolean; locationError?: string;
+  locating: boolean; locationError?: string; notice?: string; onRetry?: () => void;
   onPick: (field: TripField, place: TripPlace) => void; onMap: (field: TripField) => void; onLocate: () => void; onClose: () => void; onForget: (id: number) => void;
 }) {
   const { c, language, row, rtl, align } = useCopy();
@@ -96,6 +96,8 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
         <Txt variant="title" style={{ flex: 1, textAlign: align }}>{locating ? c.locating : c.useLocation}</Txt>
       </Press>}
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8, textAlign: align }}>{locationError}</Txt>}
+      {!!notice && <ErrorText>{notice}</ErrorText>}
+      {onRetry && <Button title={c.retry} size="sm" variant="soft" onPress={onRetry} />}
       <Row icon="pin-outline" title={c.setOnMap} onPress={() => { haptic.tap(); onMap(field); }} />
       {!term && <>
         {places.saved.map(p => <Row key={`s${p.id}`} icon={p.label === 'home' ? 'home-outline' : p.label === 'work' ? 'briefcase-outline' : 'star-outline'} title={placeName(p.label, p.note)}

@@ -121,6 +121,8 @@ function BookForm() {
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
+  const [storageAttempt, setStorageAttempt] = useState(0); // a failed read of the saved booking fails closed, and can be asked again
+  const retryStorage = () => { setError(''); setStorageAttempt(attempt => attempt + 1); };
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
   const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
@@ -301,7 +303,8 @@ function BookForm() {
         void checkPending(existing);
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
-        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
+        // Missing, foreign or offline: an empty form, and it says so rather than look like the old route was copied.
+        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => { if (mounted) setError(c.orderAgainFailed); return null; });
         if (!mounted) return;
         if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
           const p = pickupForm(old);
@@ -322,7 +325,7 @@ function BookForm() {
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [savedKey, checkPending, c.bookingStorageError, params.again, params.keep]);
+  }, [savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, params.again, params.keep, storageAttempt]);
 
   // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
   useEffect(() => {
@@ -560,6 +563,7 @@ function BookForm() {
           <Txt variant="title">{c.serviceUnavailable}</Txt>
           <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
         </Card>}
+        {!ready && error && <Button title={c.retry} variant="soft" onPress={retryStorage} />}
         {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
         {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
@@ -704,7 +708,7 @@ function BookForm() {
     </MapSheet>}
 
     {step === 'search' && <TripSearch field={field} onField={setField} pickupText={pickupTitle} dropoffText={dropoffTitle} near={pickupChosen ? previewFrom : here} places={places}
-      locating={locating} locationError={locationError} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
+      locating={locating} locationError={locationError} notice={error} onRetry={!ready && error ? retryStorage : undefined} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
       onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e))), c.forgetPlace, c.no)}
       onClose={() => { if (routeChosen) setStep('trip'); else if (router.canGoBack()) router.back(); else router.replace('/'); }} />}
   </View>;
