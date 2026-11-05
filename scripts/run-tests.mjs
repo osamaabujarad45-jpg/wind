@@ -27,6 +27,7 @@ const suites = [
   "privacy-location.test.mjs",
   "admin-settings.test.mjs",
   "admin-stats-daily.test.mjs",
+  "admin-recovery-ui.test.mjs",
   "client-address.test.mjs",
   "unblock-custody.test.mjs",
   "deployment.test.mjs",
