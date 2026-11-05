@@ -77,6 +77,11 @@ try {
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, amountCents: 301 }, expect: 409 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { ...retry, reason: 'Same id, other form' }, expect: 409 });
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, requestId: 'not-a-uuid' }, expect: 400 });
+  // A double tap sends both at once: one entry, and both replies name it.
+  const tapped = { driverId: driver.user.id, amountCents: 1, requestId: randomUUID() };
+  const taps = await Promise.all([1, 2, 3].map(() => call('/admin/cash/remittance', { token: admin.token, body: tapped })));
+  assert.equal(new Set(taps.map(entry => entry.id)).size, 1);
+  await call(`/driver/cash/${taps[0].id}/confirm`, { token: driver.token, body: { decision: 'dispute' } });
   await call(`/driver/cash/${wrong.id}/confirm`, { token: driver.token, body: { decision: 'dispute' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.owedCents, commissionCents - 500); // disputed never counts
@@ -91,7 +96,7 @@ try {
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.adjustmentsCents, 0);
   assert.equal(cash.owedCents, commissionCents - 500);
-  assert.deepEqual(cash.entries.map(e => [e.kind, e.status]), [['remittance', 'disputed'], ['remittance', 'confirmed']]);
+  assert.deepEqual(cash.entries.map(e => [e.kind, e.status]), [['remittance', 'disputed'], ['remittance', 'disputed'], ['remittance', 'confirmed']]);
 
   const list = await call('/admin/cash', { token: admin.token });
   assert.deepEqual(list.map(r => r.driverId), [driver.user.id, other.user.id]); // highest debt first

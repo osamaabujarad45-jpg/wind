@@ -176,7 +176,7 @@ with `node server/main.ts verify-phone <phone> --phone-verified` before its old
 sessions or login work in production. `promote` also refuses an unverified
 production account. No demo users are created by startup.
 
-`/api/health` checks process liveness; `/api/ready` checks readable schema, writable database/directory and a bounded SQLite writer reservation. Startup uses WAL, foreign keys, full synchronous commits, a quarter-second busy wait (a contended write answers with a retryable 503 instead of blocking every other request), atomic schema initialization and `user_version=1`. SQL write contention returns retryable 503. SIGTERM/SIGINT stop admission, drain requests for up to ten seconds, then close connections and the database. Use a stop grace period longer than ten seconds.
+`/api/health` checks process liveness; `/api/ready` checks readable schema, writable database/directory and a bounded SQLite writer reservation. Startup uses WAL, foreign keys, full synchronous commits, a quarter-second busy wait (a contended write answers with a retryable 503 instead of blocking every other request), atomic schema initialization. SQL write contention returns retryable 503. SIGTERM/SIGINT stop admission, drain requests for up to ten seconds, then close connections and the database. Use a stop grace period longer than ten seconds.
 
 Order advances require `requestId` (UUID) and `expectedStatus`; retries preserve the original code and request identity. A replay acknowledges the action with current server state; a new stale command is rejected. Wrong-proof retries under one identity count once. The current database schema is `user_version=3`. Upgrade clients before routing real users to this API.
 
