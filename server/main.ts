@@ -868,8 +868,8 @@ async function deleteAccount(user: User, proof?: { sessionHash: string; password
       const session = await one(`SELECT 1 FROM sessions WHERE user_id=? AND token_hash=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
         user.id, proof.sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
       if (!current || current.status === 'blocked' || !contactAllowed(current) || !session || (production && !(selfService ? current.role !== 'admin' || current.phone_verified_at || current.approved_at : current.phone_verified_at))) fail(401, 'unauthorized');
-      if (proof.passwordHash !== undefined && current.password !== proof.passwordHash) fail(401, 'wrong_password');
-      if (proof.oid !== undefined && (current.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
+      if (proof.passwordHash !== undefined && current?.password !== proof.passwordHash) fail(401, 'wrong_password');
+      if (proof.oid !== undefined && (current?.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
     }
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
