@@ -103,6 +103,16 @@ try {
     assert.equal(mapsPlugin(built).androidGoogleMapsApiKey, 'restricted-android-key');
     assert.equal(mapsPlugin(built).iosGoogleMapsApiKey, undefined, 'an Android build never embeds the iOS key');
     assert.equal(JSON.stringify(built.extra).includes('restricted-android-key'), false, 'key strings never enter public config');
+    const manifest = () => ({ manifest: { application: [{ 'meta-data': [
+      { $: { 'android:name': 'com.google.android.geo.API_KEY', 'android:value': 'restricted-android-key' } },
+      { $: { 'android:name': 'unrelated.setting', 'android:value': 'keep' } },
+    ] }] } });
+    const guarded = await releasePlugin(base).mods.android.manifest({ modResults: manifest(), modRequest: {} });
+    assert.equal(guarded.modResults.manifest.application[0]['meta-data'].length, 2, 'platform-specific Android key survives the release guard');
+    delete process.env.GOOGLE_MAPS_ANDROID_KEY;
+    const baseline = await releasePlugin(base).mods.android.manifest({ modResults: manifest(), modRequest: {} });
+    assert.deepEqual(baseline.modResults.manifest.application[0]['meta-data'].map(item => item.$['android:name']), ['unrelated.setting']);
+    process.env.GOOGLE_MAPS_ANDROID_KEY = 'restricted-android-key';
     process.env.EAS_BUILD_PLATFORM = 'ios';
     assert.throws(build, /missing: ios/, 'an opted-in iOS build fails early without its platform key');
     process.env.GOOGLE_MAPS_IOS_KEY = 'restricted-ios-key';
