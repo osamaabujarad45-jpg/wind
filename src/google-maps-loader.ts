@@ -1,4 +1,5 @@
 // Shared by route and pin maps. Failed scripts must be removed so Retry can actually fetch again.
+import { mapReadyMs } from './runtime-config.ts';
 let pending: Promise<any> | null = null;
 
 export function loadGoogleMaps(key: string): Promise<any> {
@@ -19,7 +20,7 @@ export function loadGoogleMaps(key: string): Promise<any> {
       if (error) { tag.remove(); pending = null; reject(error); }
       else resolve(window.google!.maps);
     };
-    const timer = setTimeout(() => finish(new Error('google maps timeout')), 25_000);
+    const timer = setTimeout(() => finish(new Error('google maps timeout')), mapReadyMs());
     window.windGoogleMapsReady = () => finish(window.google?.maps?.Map ? undefined : new Error('google maps did not initialize'));
     tag.onerror = () => finish(new Error('google maps failed to load'));
     document.head.appendChild(tag);

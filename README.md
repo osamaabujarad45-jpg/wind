@@ -194,7 +194,7 @@ four-hour task for that interactive account. It runs only while the workstation
 is online and the account is logged in; it does not provide independent key
 recovery, retention management or failure alerts.
 
-The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch.
+The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch. In-app deletion requires the current password or a fresh Microsoft sign-in. Release the updated app before enabling this API change: older apps cannot provide the proof and must use support instead. For Microsoft sign-in, configure the `auth_time` optional ID-token claim in the Entra app registration and verify the flow with the real tenant before rollout; missing or stale claims are rejected.
 
 For an external deletion request, support records the request and privately verifies ownership of the registered number; never ask for a password or delivery code. An authorized operator can then run `node server/main.ts delete-account <verified-phone> --phone-verified` from the server shell. This reuses the in-app deletion transaction and refuses accounts with active orders or administrator accounts. Resolve the active delivery safely, retry, and confirm completion to the requester. Record fulfillment without copying passwords or order contact details into support logs. Administrator deletion needs a controlled role-transfer procedure; that exception is not automated by this command. Define and publish the required retention periods for retained accounting records and backups before public launch; restored backups must reapply later completed deletion requests before serving users. There is no public unauthenticated deletion API.
 Restore into a separate offline database, run `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, verify order/command/session counts, and test sign-in plus a synthetic order before replacing a stopped service's file. Backups contain personal data and password hashes: restrict access, encrypt off-host copies and apply the agreed retention policy.
@@ -217,7 +217,7 @@ npx eas-cli@latest submit --platform all
 
 - `EXPO_PUBLIC_API_URL` is required and must be `https`; the EAS build fails fast otherwise.
 - `EXPO_PUBLIC_SUPPORT_WHATSAPP` (international digits) shows "Contact support" in the app. Optional.
-- Android loads the hosted `public/map.html` (`<EXPO_PUBLIC_API_URL>/map.html`) in a WebView using MapLibre/OpenFreeMap; no Google Maps key is needed. The API must serve that page and the vendored map assets; if it cannot load, the route card shows with a Retry button. iOS uses Apple Maps.
+- Map-first native screens load `public/map.html` through `<EXPO_PUBLIC_API_URL>/map/v1/map.html` in a WebView. Deploy and probe that endpoint before releasing the new app; installed clients still use `/map.html`. The v1 shell can remain cached for 24 hours: breaking bridge changes need a new version and continued support for v1. Map tiles are not available offline.
 
 ### 3. Web / iPhone access
 

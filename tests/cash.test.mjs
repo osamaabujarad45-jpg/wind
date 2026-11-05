@@ -136,7 +136,7 @@ try {
   assert.equal((await call('/driver/earnings', { token: driver.token })).all.jobs, 4);
   let open = cash.owedCents;
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
-  await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
+  await call('/me/delete', { token: driver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { role: 'customer' }, expect: 409 });
   const { db } = await import('../server/main.ts');
   assert.throws(() => db.prepare('DELETE FROM cash_entries').run(), /append-only/);
@@ -164,7 +164,7 @@ try {
   const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
-  await call('/me/delete', { token: driver.token, body: {} }); // settled drivers may leave
+  await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   console.log('cash: ok');
 } finally {

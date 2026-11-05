@@ -146,6 +146,30 @@ try {
     assert.equal(new Set(paidPaths(world)).size, 1, 'coming back names one route');
     assert.ok(before >= 1);
   }
+  // A background fix is not a billed baseline: resume measures the latest fix from the last shown route.
+  {
+    const { world, render, setApp } = harness('google');
+    render(order(world, start));
+    setApp('background');
+    render(order(world, { ...start, latitude: start.latitude + 0.003 }));
+    render(order(world, { ...start, latitude: start.latitude + 0.004 }));
+    assert.equal(paidPaths(world).length, 1, 'background movement cannot request a paid route');
+    setApp('active');
+    render(order(world, { ...start, latitude: start.latitude + 0.004 }));
+    const url = new URL(paidPaths(world).at(-1), 'https://wind.example');
+    assert.equal(url.searchParams.get('from'), '31.85400,35.15000', 'resume uses the latest location');
+    assert.equal(url.searchParams.get('metres'), '442', 'movement starts at the last foreground request');
+  }
+  {
+    const { world, render, setApp } = harness('google');
+    render(order(world, start));
+    setApp('background');
+    render(order(world, { ...start, latitude: start.latitude + 0.003 }));
+    const returned = { ...start, latitude: start.latitude + 0.0005 };
+    render(order(world, returned));
+    setApp('active'); render(order(world, returned));
+    assert.equal(paidPaths(world).length, 1, 'a background excursion which returns near the paid baseline buys no route');
+  }
   // A lapsed free ETA reloads the free route, on a Google map too, and never the paid one.
   {
     const { world, render, advance } = harness('google');

@@ -1,14 +1,15 @@
 // Pieces shared by the customer, driver and admin screens.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { api, apiSessionRevision, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { kmLabel } from './map-math';
 import { useSession } from './session';
+import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText } from './copy';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
@@ -379,18 +380,38 @@ export function AccountScreen() {
   const { me, signOut, forget, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [deleteError, setDeleteError] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
+  const [entraFailed, setEntraFailed] = useState(false);
+  const [entraRetry, setEntraRetry] = useState(0);
+  const revision = apiSessionRevision();
+  useEffect(() => {
+    if (!deleteOpen || !entraConfigured) return;
+    let active = true;
+    void api<{ nonce: string }>('/me/delete/challenge', {}).then(({ nonce }) => prepareEntraRequest(nonce))
+      .then(request => { if (active && revision === apiSessionRevision()) { setEntraRequest(request); setEntraFailed(false); } })
+      .catch(error => { if (active && revision === apiSessionRevision()) { setEntraRequest(null); setEntraFailed(errorCode(error) !== 'entra_unavailable'); } });
+    return () => { active = false; };
+  }, [deleteOpen, entraRetry, revision]);
   if (!me) return null;
   const { user } = me;
 
-  async function deleteAccount() {
+  async function deleteAccount(microsoft = false) {
+    if (pending.current || revision !== apiSessionRevision()) return;
+    pending.current = true; setBusy(true);
     setDeleteError('');
     try {
-      await api('/me/delete', {});
-      await forget();
+      const proof = microsoft && entraRequest ? await signInWithEntra(entraRequest) : { password };
+      if (!proof || revision !== apiSessionRevision()) return;
+      await api('/me/delete', proof);
+      if (revision === apiSessionRevision()) await forget();
     } catch (e) {
       haptic.error();
       setDeleteError(err(e));
-    }
+    } finally { pending.current = false; setBusy(false); if (microsoft) { setEntraRequest(null); setEntraRetry(n => n + 1); } }
   }
   return <Screen>
     <Header title={c.account} />
@@ -433,7 +454,17 @@ export function AccountScreen() {
     <ErrorText>{deleteError}</ErrorText>
     <ListGroup>
       <ListRow icon="log-out-outline" label={c.logout} danger onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
-      <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => confirm(c.deleteConfirm, deleteAccount, c.deleteAccount, c.no)} />
+      {!deleteOpen ? <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => setDeleteOpen(true)} />
+        : <View style={{ padding: 16, gap: 8 }}>
+          <Txt>{c.deleteReauth}</Txt>
+          <Field label={c.currentPassword} value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" disabled={busy} maxLength={100} />
+          <Button title={c.deleteAccount} variant="danger" disabled={!password || busy} loading={busy}
+            onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(); }, c.deleteAccount, c.no)} />
+          {!!entraRequest && <Button title={c.deleteMicrosoft} variant="soft" disabled={busy}
+            onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(true); }, c.deleteAccount, c.no)} />}
+          {entraFailed && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => setEntraRetry(n => n + 1)} />}
+          <Button title={c.cancel} variant="ghost" disabled={busy} onPress={() => { setDeleteOpen(false); setPassword(''); setDeleteError(''); setEntraRequest(null); setEntraFailed(false); }} />
+        </View>}
     </ListGroup>
   </Screen>;
 }

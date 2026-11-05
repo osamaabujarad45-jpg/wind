@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 
 // Exercise the real hook's focus/AppState callbacks without a renderer or device.
-const state = { refs: [], cursor: 0, calls: [], sets: [], hook: null, listener: null, focus: null };
+const state = { refs: [], cursor: 0, calls: [], sets: [], summaries: [], hook: null, listener: null, focus: null };
 globalThis.__apiFocusTest = state;
 const modules = {
   react: `const s=globalThis.__apiFocusTest;
@@ -15,11 +15,11 @@ const modules = {
   'expo-secure-store': `export const getItemAsync=async()=>null; export const deleteItemAsync=async()=>{};
     export const setItemAsync=async()=>{};export const AFTER_FIRST_UNLOCK=0;`,
   'expo-router': `export const useFocusEffect=fn=>{globalThis.__apiFocusTest.focus=fn;};`,
-  './api-client': `const s=globalThis.__apiFocusTest;export const request=async url=>{s.calls.push(url);if(s.gate)await s.gate;return {};};
+  './api-client': `const s=globalThis.__apiFocusTest;export const request=async url=>{s.calls.push(url);if(s.gate)await s.gate;return new URL(url).pathname==='/api/orders'?[]:{};};
     export const errorCode=error=>error.message;export class ApiError extends Error{};
     export const apiSessionRevision=()=>0;export const configureApi=()=>{};export const invalidateApiSessionActions=()=>{};`,
   './web-storage': `export const webGet=()=>null;export const webSet=()=>{};`,
-  './offline-recovery': `export const cacheOrderSummaries=()=>Promise.resolve();`,
+  './offline-recovery': `export const cacheOrderSummaries=(orders,replace)=>{globalThis.__apiFocusTest.summaries.push({orders,replace});return Promise.resolve();};`,
   './storage': `export const storage={get:async()=>null,set:async()=>{}};`,
   './wire-contracts': `export const readOrder=value=>value;`,
 };
@@ -36,7 +36,7 @@ const hooks = registerHooks({
 });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 try {
-  const { useApi } = await import('../src/api.ts');
+  const { api, useApi } = await import('../src/api.ts');
   const render = (path, options) => { state.cursor = 0; state.hook = useApi(path, undefined, options); return state.focus(); };
   let cleanup = render('/route/google?from=one&to=two', { refetchOnFocus: false });
   await flush();
@@ -59,6 +59,11 @@ try {
   state.listener('background'); state.listener('active'); await flush();
   assert.equal(state.calls.length, 4, 'ordinary endpoints still refresh when the app returns');
   cleanup();
+  assert.equal(state.summaries.at(-1).replace, true, 'the complete first page replaces stale assignments');
+  await api('/orders?before=200');
+  assert.equal(state.summaries.at(-1).replace, false, 'history pages do not replace current work');
+  await api('/orders?status=completed');
+  assert.equal(state.summaries.at(-1).replace, false, 'a filtered list is not a complete active-work snapshot');
   // An admin saves, then searches before the save's reload runs: that reload comes from the old search's render.
   cleanup = render('/admin/users?q=spare');
   await flush();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSession } from '../../session';
 import { View } from 'react-native';
 import { api, ApiError, useApi } from '../../api';
@@ -17,6 +17,7 @@ export default function Users() {
   const path = `/admin/users?q=${encodeURIComponent(q.trim())}${role === 'all' ? '' : `&role=${role}`}`;
   const { data, error, reload } = useApi<User[]>(path);
   const [busy, setBusy] = useState<number | null>(null);
+  const pending = useRef<number | null>(null);
   const [actionError, setActionError] = useState('');
   const [temp, setTemp] = useState<{ id: number; password: string } | null>(null);
   // Support caller check: a one-time code goes to the user's verified email and the caller reads it back.
@@ -24,30 +25,35 @@ export default function Users() {
   const [editing, setEditing] = useState<{ id: number; name: string; email: string; phone: string; role: 'customer' | 'driver'; vehicle: Vehicle; plate: string } | null>(null);
 
   async function action(user: User, suffix: string, body?: object, method?: 'POST' | 'PATCH' | 'DELETE') {
-    if (busy !== null) return;
+    if (pending.current !== null) return;
+    pending.current = user.id;
     setBusy(user.id); setActionError('');
+    let recover = false;
     try {
       await api(`/admin/users/${user.id}${suffix}`, body, method);
       haptic.success(); setEditing(null); setTemp(null); await reload();
     } catch (e) {
       // A courier mid-job: support confirms what happens to the parcels before the block goes through.
-      if (e instanceof ApiError && e.message === 'carrying_parcels') confirm(c.blockCarrying, () => action(user, suffix, { ...body, recovery: 'return' }, method), c.block, c.cancel);
+      if (e instanceof ApiError && e.message === 'carrying_parcels' && (!body || !('recovery' in body))) recover = true;
       else setActionError(err(e));
-    } finally { setBusy(null); }
+    } finally { pending.current = null; setBusy(null); }
+    if (recover) confirm(c.blockCarrying, () => { void action(user, suffix, { ...body, recovery: 'return' }, method); }, c.block, c.cancel);
   }
 
   async function resetPassword(user: User) {
-    if (busy !== null) return;
+    if (pending.current !== null) return;
+    pending.current = user.id;
     setBusy(user.id); setActionError('');
     try {
       const { password } = await api<{ password: string }>(`/admin/users/${user.id}/password`, {});
       haptic.success(); setTemp({ id: user.id, password });
     } catch (e) { setActionError(err(e)); }
-    finally { setBusy(null); }
+    finally { pending.current = null; setBusy(null); }
   }
 
   async function identityStep(user: User) {
-    if (busy !== null) return;
+    if (pending.current !== null) return;
+    pending.current = user.id;
     setBusy(user.id); setActionError('');
     try {
       if (identity?.id !== user.id) {
@@ -61,7 +67,7 @@ export default function Users() {
     } catch (e) {
       haptic.error(); setActionError(err(e));
       if (e instanceof ApiError && e.message === 'code_expired') setIdentity(null); // the button sends a fresh one
-    } finally { setBusy(null); }
+    } finally { pending.current = null; setBusy(null); }
   }
 
   return <Screen onRefresh={reload}>

@@ -68,8 +68,10 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const [steered, setSteered] = useState(nowhere);
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
-  const reanchor = (anchor: Anchor, set: (next: Anchor) => void, key: string, mayLeaveLine: boolean) => {
-    if (key !== anchor.key || (fix && !anchor.fix)) { set({ key, fix, metres: 0, at: monotonic }); return; }
+  const reanchor = (anchor: Anchor, set: (next: Anchor) => void, key: string, mayLeaveLine: boolean, tracking = true) => {
+    if (key !== anchor.key) { set({ key, fix: tracking ? fix : null, metres: 0, at: monotonic }); return; }
+    if (!tracking) return;
+    if (fix && !anchor.fix) { set({ key, fix, metres: 0, at: monotonic }); return; }
     if (!driver || !anchor.fix || (driver.latitude === anchor.fix.latitude && driver.longitude === anchor.fix.longitude)) return;
     const metres = Math.hypot((driver.longitude - anchor.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
       (driver.latitude - anchor.fix.latitude) * 110_540);
@@ -78,7 +80,7 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
     const left = mayLeaveLine && metres >= 50 && monotonic - anchor.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
     if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) set({ key, fix, metres, at: monotonic });
   };
-  reanchor(billed, setBilled, billKey, false);
+  reanchor(billed, setBilled, billKey, false, renderer !== 'google' || foreground);
   reanchor(steered, setSteered, stopKey, withSteps);
   const approachUrl = !renderer || !driver || !target ? null
     // The driver's turns need a line from where they are, not from a 110 m grid cell, which can be the next street.
@@ -87,7 +89,7 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   const approach = useApi<RoadRoute>(approachUrl, 25_000);
   // On a Google map a paid line overlays that free route. It is never polled or reloaded: when its ETA lapses or the call
   // fails, the free route carries the line and minutes, so a waiting driver costs nothing and never loses them.
-  const paidUrl = renderer === 'google' && driver && target && foreground && billKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
+  const paidUrl = renderer === 'google' && driver && target && foreground && billKey && billed.key === billKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
   const paidApproach = useApi<RoadRoute>(paidUrl, undefined, { refetchOnFocus: false });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);

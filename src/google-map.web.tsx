@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { farJump, fitBounds, glideMs, routeFramePoints } from './map-math';
+import { farJump, fitBounds, glideMs, routeFramePoints, turn } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { mapReadyMs } from './runtime-config';
 import { palette, shadow, useCopy } from './ui';
@@ -166,6 +166,7 @@ export default function RouteMap(props: RouteMapProps) {
     const span = snap ? 0 : glideMs(s.at === undefined ? 0 : performance.now() - s.at);
     s.at = performance.now();
     const still = reducedMotion();
+    const turnFrom = s.rotation ?? heading;
     const step = (t: number) => {
       const k = still ? 1 : Math.min(1, Math.max(0, span ? (t - s.at!) / span : 1));
       const lat = origin.latitude + (target.latitude - origin.latitude) * k;
@@ -175,7 +176,7 @@ export default function RouteMap(props: RouteMapProps) {
       s.driver.setVisible(true);
       s.driver.setOpacity(props.stale ? 0.45 : 1);
       if (heading != null) {
-        s.rotation = s.rotation == null ? heading : s.rotation + shortestTurn(s.rotation, heading) * (still ? 1 : Math.min(1, 16 / 500));
+        s.rotation = turn(turnFrom ?? heading, heading, k === 1 ? 1 : (t - s.at!) / 500);
         s.driver.setIcon(symbol(ARROW, palette.blue, { rotation: s.rotation }));
       }
       s.halo.setCenter({ lat, lng });
@@ -245,7 +246,7 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
     };
     const timer = setTimeout(fail, mapReadyMs() + 5_000);
     loadGoogle().then(maps => {
-      if (disposed || !hostElement) return;
+      if (disposed || broken || !hostElement) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (hostElement as unknown as HTMLElement).appendChild(el);
@@ -307,7 +308,6 @@ const bearingOf = (a: { latitude: number; longitude: number }, b: { latitude: nu
     Math.sin(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.cos(rad(b.longitude - a.longitude));
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 };
-const shortestTurn = (a: number, b: number) => ((b - a) % 360 + 540) % 360 - 180;
 
 const styles = StyleSheet.create({
   placeholder: { justifyContent: 'center' },

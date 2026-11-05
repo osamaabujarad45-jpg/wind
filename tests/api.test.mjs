@@ -13,7 +13,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SUPPORT_CONTACT = 'Synthetic <support> & "contact"';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
-const { server, db, promote } = await import('../server/main.ts');
+const { server, db, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -310,9 +310,11 @@ try {
   // Account deletion: refused with a live order, then erases personal data
   const leaver = await call('/auth/register', { body: { phone: '0599000004', name: 'Maya', password: 'secret1' } });
   const open = await call('/orders', { token: leaver.token, body: orderInput });
-  await call('/me/delete', { token: leaver.token, body: {}, expect: 409 });
+  await call('/me/delete', { token: leaver.token, body: {}, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'wrong' }, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/orders/${open.id}/cancel`, { token: leaver.token, body: {} });
-  await call('/me/delete', { token: leaver.token, body: {} });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' } });
   await call('/me', { token: leaver.token, expect: 401 });
   await call('/auth/login', { body: { phone: '0599000004', password: 'secret1' }, expect: 401 });
   const erased = await call(`/orders/${open.id}`, { token: admin.token });
@@ -320,6 +322,24 @@ try {
   assert.equal(erased.customerName, '—');
   await call('/auth/register', { body: { phone: '0599000004', name: 'Maya again', password: 'secret1' } }); // number is free again
   await call('/me/delete', { token: admin.token, body: {}, expect: 409 });
+  for (const [index, change] of ['password', 'session'].entries()) {
+    const target = await call('/auth/register', { body: { phone: `059987000${index}`, name: 'Race fixture', password: 'secret1' } });
+    const original = persistence.atomic;
+    let intercepted = false;
+    persistence.atomic = async function(actor, work) {
+      if (actor.id === target.user.id && !intercepted) {
+        intercepted = true;
+        if (change === 'password') db.prepare('UPDATE users SET password=? WHERE id=?').run('changed', target.user.id);
+        else db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.user.id);
+      }
+      return original.call(this, actor, work);
+    };
+    try {
+      await call('/me/delete', { token: target.token, body: { password: 'secret1' }, expect: 401 });
+      assert.equal(intercepted, true);
+      assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(target.user.id).status, 'active', `${change} race prevents deletion`);
+    } finally { persistence.atomic = original; }
+  }
 
   const privacy = await fetch(base.replace('/api', '/privacy'));
   assert.equal(privacy.status, 200);

@@ -104,7 +104,8 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   try { requested = decodeURIComponent(pathname === '/' ? '/index.html' : pathname); }
   catch { return false; }
   if (requested.includes('\0')) return false;
-  const candidate = resolve(webRoot, `.${requested}`);
+  const versionedMap = requested === '/map/v1/map.html';
+  const candidate = resolve(webRoot, versionedMap ? './map.html' : `.${requested}`);
   const outside = relative(webRoot, candidate);
   if (outside.startsWith('..') || isAbsolute(outside)) return false;
   const file = (() => {
@@ -118,13 +119,16 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const contentType = webContentTypes[extension] ?? 'application/octet-stream';
   const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   const modified = statSync(file).mtime;
-  const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
+  const cacheControl = versionedMap ? 'public, max-age=86400' : extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
     ? 'no-cache' : 'public, max-age=604800, immutable';
-  // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
   if (file === resolve(webRoot, 'map.html')) res.setHeader('X-Frame-Options', 'SAMEORIGIN'); // the web app shows this page in an iframe; a 304 must say so too
+  const etag = file === resolve(webRoot, 'map.html') ? `W/"${createHash('sha256').update(readFileSync(file)).digest('hex')}"` : undefined;
   const since = req.headers['if-modified-since'];
-  if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
-    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
+  const matches = etag && req.headers['if-none-match'] !== undefined
+    ? String(req.headers['if-none-match']).split(',').some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag.replace(/^W\//, ''))
+    : since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000;
+  if (matches) {
+    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding', ...(etag && { ETag: etag }) }).end();
     return true;
   }
   res.writeHead(200, {
@@ -132,11 +136,12 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
     // map.html (the Android WebView map) runs an inline module, so it keeps the frame/sniff headers only.
     ...(extension === '.html' && file !== resolve(webRoot, 'map.html') && { 'Content-Security-Policy': webCsp }),
     'Cache-Control': cacheControl,
+    ...(etag && { ETag: etag }),
     'Last-Modified': modified.toUTCString(),
     'Vary': 'Accept-Encoding', // always: a shared cache must not hand a brotli body to a client that cannot read it
     ...(useBrotli ? { 'Content-Encoding': 'br' } : {}),
   });
-  if (useBrotli) compressed(file).then(body => res.end(body), () => res.destroy());
+  if (useBrotli) compressed(file, etag).then(body => res.end(body), () => res.destroy());
   else createReadStream(file).on('error', () => res.destroy()).pipe(res);
   return true;
 }
@@ -158,9 +163,9 @@ const compressible = (type: string) => /^(text\/|application\/(javascript|json|m
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
 const brotliCache = new Map<string, Promise<Buffer>>();
-const compressed = (file: string) => {
+const compressed = (file: string, revision: string | number = statSync(file).mtimeMs) => {
   // Keyed by mtime as well: an edited file must not be served from the body cached for the previous one.
-  const key = `${file}:${statSync(file).mtimeMs}`;
+  const key = `${file}:${revision}`;
   let body = brotliCache.get(key);
   if (!body) {
     body = promisify(brotliCompress)(readFileSync(file));
@@ -587,7 +592,15 @@ const realtime = new Realtime(persistence, fail);
 registerRealtimeRoutes(route, realtime);
 export const phoneIdentity = new PhoneIdentity(persistence, fail, value => hashPassword(newPassword(value, 12)), checkPassword);
 registerPhoneRoutes(route, phoneIdentity);
-registerEntraRoutes(route, entraExchange);
+registerEntraRoutes(route, entraExchange, async ({ user, req }) => {
+  if (!entra || !(await one('SELECT entra_oid FROM users WHERE id=?', user.id))?.entra_oid) fail(409, 'entra_unavailable');
+  await limit(identityKey('delete-challenge', user.id), 10, 10 * 60_000);
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const nonce = randomBytes(32).toString('hex');
+  await run('DELETE FROM entra_replay WHERE expires_at < ?', Date.now());
+  await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`delete-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
+  return { nonce };
+});
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
@@ -844,13 +857,26 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
-async function deleteAccount(user: User) {
+async function deleteAccount(user: User, proof?: { sessionHash: string; passwordHash?: string; oid?: string; challengeHash?: string; tokenHash?: string; expiresAt?: number; authenticatedAt?: number }) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    if ((await one('SELECT role FROM users WHERE id = ?', user.id))?.role === 'admin') fail(409, 'cannot_change_self');
+    const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, user.id);
+    if (current?.role === 'admin') fail(409, 'cannot_change_self');
+    if (proof) {
+      const now = Date.now();
+      const session = await one(`SELECT 1 FROM sessions WHERE user_id=? AND token_hash=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
+        user.id, proof.sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
+      if (!current || current.status === 'blocked' || !contactAllowed(current) || !session || (production && !(selfService ? current.role !== 'admin' || current.phone_verified_at || current.approved_at : current.phone_verified_at))) fail(401, 'unauthorized');
+      if (proof.passwordHash !== undefined && current?.password !== proof.passwordHash) fail(401, 'wrong_password');
+      if (proof.oid !== undefined && (current?.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
+    }
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
+    if (proof?.oid) {
+      if (!(await run('DELETE FROM entra_replay WHERE token_hash=? AND expires_at>? AND expires_at<=?', proof.challengeHash!, Date.now(), proof.authenticatedAt! + 5 * 60_000 + 999)).changes) fail(401, 'invalid_token');
+      if (!(await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?) ON CONFLICT(token_hash) DO NOTHING', proof.tokenHash!, proof.expiresAt!)).changes) fail(401, 'invalid_token');
+    }
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
@@ -873,7 +899,25 @@ async function deleteAccount(user: User) {
   }
   return { ok: true };
 }
-route('POST', '/api/me/delete', async ({ user }) => (await deleteAccount(user)));
+route('POST', '/api/me/delete', async ({ user, body, req }) => {
+  if (user.role === 'admin') fail(409, 'cannot_change_self');
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const key = identityKey('delete-auth', user.id);
+  await limit(key, 5, 10 * 60_000, false);
+  const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
+  if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
+    return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), passwordHash: current.password }));
+  if (entra && current.entra_oid && typeof body.idToken === 'string' && typeof body.nonce === 'string' && /^[a-f0-9]{64}$/.test(body.nonce)) {
+    let claims: EntraClaims | undefined;
+    try { claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 }); }
+    catch (error) { if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable'); }
+    if (claims?.oid === current.entra_oid) return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), oid: claims!.oid,
+      challengeHash: sha(`delete-challenge:${token}:${body.nonce}`), tokenHash: sha(claims!.tokenId || body.idToken), expiresAt: claims!.expiresAt,
+      authenticatedAt: claims!.authenticatedAt ?? undefined }));
+  }
+  await limit(key, 5, 10 * 60_000);
+  fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
+});
 
 // Saved and recent places (SPEC-saved-places.md): landmarks are the address here, so a repeat booking reuses them.
 const MAX_PLACES = 10;
@@ -3231,7 +3275,8 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
         if (body.offerId === undefined && body.leaseNonce === undefined) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
-        if (!await one('SELECT id FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id)) fail(404, 'not_found');
+        const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
+        if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
         await eligibility.guard(Number(customerOffer[2]), Number(customerOffer[1]), 'offer_accept', body.capacityProtocol, undefined, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && url.pathname === '/api/orders' && body.capacityProtocol !== undefined) {
         // An installed booking may be measured by an operator; it cannot assert its own verified load.
@@ -3255,7 +3300,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
     } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
-      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/password|admin\/users\/\d+\/password)$/.test(url.pathname)
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/(?:password|delete)|admin\/users\/\d+\/password)$/.test(url.pathname)
         || /^\/api\/partner\//.test(url.pathname))) {
       // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
       // envelope would hold a pooled connection and a transaction for the whole hash. Entra and

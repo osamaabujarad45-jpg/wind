@@ -580,6 +580,11 @@
           "method": "POST",
           "path": "/api/auth/entra",
           "anonymousStatus": 503
+        },
+        {
+          "method": "POST",
+          "path": "/api/me/delete/challenge",
+          "anonymousStatus": 401
         }
       ]
     }
