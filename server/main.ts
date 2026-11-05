@@ -593,7 +593,15 @@ const realtime = new Realtime(persistence, fail);
 registerRealtimeRoutes(route, realtime);
 export const phoneIdentity = new PhoneIdentity(persistence, fail, value => hashPassword(newPassword(value, 12)), checkPassword);
 registerPhoneRoutes(route, phoneIdentity);
-registerEntraRoutes(route, entraExchange);
+registerEntraRoutes(route, entraExchange, async ({ user, req }) => {
+  if (!entra || !(await one('SELECT entra_oid FROM users WHERE id=?', user.id))?.entra_oid) fail(409, 'entra_unavailable');
+  await limit(identityKey('delete-challenge', user.id), 10, 10 * 60_000);
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const nonce = randomBytes(32).toString('hex');
+  await run('DELETE FROM entra_replay WHERE expires_at < ?', Date.now());
+  await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`delete-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
+  return { nonce };
+});
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
@@ -850,13 +858,26 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
-async function deleteAccount(user: User) {
+async function deleteAccount(user: User, proof?: { sessionHash: string; passwordHash?: string; oid?: string; challengeHash?: string; tokenHash?: string; expiresAt?: number; authenticatedAt?: number }) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    if ((await one('SELECT role FROM users WHERE id = ?', user.id))?.role === 'admin') fail(409, 'cannot_change_self');
+    const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, user.id);
+    if (current?.role === 'admin') fail(409, 'cannot_change_self');
+    if (proof) {
+      const now = Date.now();
+      const session = await one(`SELECT 1 FROM sessions WHERE user_id=? AND token_hash=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
+        user.id, proof.sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
+      if (!current || current.status === 'blocked' || !contactAllowed(current) || !session || (production && !(selfService ? current.role !== 'admin' || current.phone_verified_at || current.approved_at : current.phone_verified_at))) fail(401, 'unauthorized');
+      if (proof.passwordHash !== undefined && current.password !== proof.passwordHash) fail(401, 'wrong_password');
+      if (proof.oid !== undefined && (current.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
+    }
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
+    if (proof?.oid) {
+      if (!(await run('DELETE FROM entra_replay WHERE token_hash=? AND expires_at>? AND expires_at<=?', proof.challengeHash!, Date.now(), proof.authenticatedAt! + 5 * 60_000 + 999)).changes) fail(401, 'invalid_token');
+      if (!(await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?) ON CONFLICT(token_hash) DO NOTHING', proof.tokenHash!, proof.expiresAt!)).changes) fail(401, 'invalid_token');
+    }
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
@@ -879,7 +900,25 @@ async function deleteAccount(user: User) {
   }
   return { ok: true };
 }
-route('POST', '/api/me/delete', async ({ user }) => (await deleteAccount(user)));
+route('POST', '/api/me/delete', async ({ user, body, req }) => {
+  if (user.role === 'admin') fail(409, 'cannot_change_self');
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const key = identityKey('delete-auth', user.id);
+  await limit(key, 5, 10 * 60_000, false);
+  const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
+  if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
+    return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), passwordHash: current.password }));
+  if (entra && current.entra_oid && typeof body.idToken === 'string' && typeof body.nonce === 'string' && /^[a-f0-9]{64}$/.test(body.nonce)) {
+    let claims: EntraClaims | undefined;
+    try { claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 }); }
+    catch (error) { if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable'); }
+    if (claims?.oid === current.entra_oid) return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), oid: claims!.oid,
+      challengeHash: sha(`delete-challenge:${token}:${body.nonce}`), tokenHash: sha(claims!.tokenId || body.idToken), expiresAt: claims!.expiresAt,
+      authenticatedAt: claims!.authenticatedAt ?? undefined }));
+  }
+  await limit(key, 5, 10 * 60_000);
+  fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
+});
 
 // Saved and recent places (SPEC-saved-places.md): landmarks are the address here, so a repeat booking reuses them.
 const MAX_PLACES = 10;
@@ -3232,7 +3271,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
     } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
-      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/password|admin\/users\/\d+\/password)$/.test(url.pathname)
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/(?:password|delete)|admin\/users\/\d+\/password)$/.test(url.pathname)
         || /^\/api\/partner\//.test(url.pathname))) {
       // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
       // envelope would hold a pooled connection and a transaction for the whole hash. Entra and

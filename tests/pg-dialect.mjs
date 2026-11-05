@@ -60,7 +60,7 @@ try{
   const stats=await call('/admin/stats',{token:admin.token});assert.equal(typeof stats.gmv,'number');
   assert.equal(stats.daily.length,14);
   const gone=await register(9);const countedBefore=(await call('/admin/stats',{token:admin.token})).users.customer;
-  await call('/me/delete',{token:gone.token,body:{}});
+  await call('/me/delete',{token:gone.token,body:{password:'synthetic-secret'}});
   assert.equal((await call('/admin/stats',{token:admin.token})).users.customer,countedBefore-1,'PostgreSQL stops counting a deleted account');
   assert.equal(stats.daily.at(-1).commission,stats.commission,'PostgreSQL groups today’s completed order');
   assert.equal(stats.daily.at(-1).subscriptions,stats.subscriptions,'PostgreSQL groups today’s activated subscription');

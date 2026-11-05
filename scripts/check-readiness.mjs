@@ -239,6 +239,8 @@ try {
   assert.equal((await call('/auth/login', { body: { identifier: lifecycle.user.phone, password: newPassword } })).user.id, lifecycle.user.id);
   await call('/auth/login', { body: { identifier: lifecycle.user.phone, password }, expect: 401 });
   await button(accountPage, c.deleteAccount).click();
+  await field(accountPage, c.currentPassword).fill(newPassword);
+  await button(accountPage, c.deleteAccount).click();
   await accountPage.waitForURL(/\/auth$/);
   // Accounting foreign keys retain an anonymized row; personal identity and every session must be gone.
   const deleted = db.prepare('SELECT name,phone,email,password,status FROM users WHERE id=?').get(lifecycle.user.id);

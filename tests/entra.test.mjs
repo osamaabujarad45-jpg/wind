@@ -36,6 +36,10 @@ assert.equal(claims.phoneVerified, true);
 assert.equal(claims.emailVerified, true);
 assert.equal(claims.tokenId, 'token-id-1');
 assert.ok(claims.expiresAt > now);
+await assert.rejects(verifyEntraIdToken(sign(base), config, { nonce: 'nonce-1', fetchImpl, now, maxAuthAgeSeconds: 300 }), /invalid_token/);
+await assert.rejects(verifyEntraIdToken(sign({ ...base, auth_time: Math.floor(now / 1000) - 310 }), config, { nonce: 'nonce-1', fetchImpl, now, maxAuthAgeSeconds: 300 }), /invalid_token/);
+await assert.rejects(verifyEntraIdToken(sign({ ...base, auth_time: Math.floor(now / 1000) + 40 }), config, { nonce: 'nonce-1', fetchImpl, now, maxAuthAgeSeconds: 300 }), /invalid_token/);
+await verifyEntraIdToken(sign({ ...base, auth_time: Math.floor(now / 1000) }), config, { nonce: 'nonce-1', fetchImpl, now, maxAuthAgeSeconds: 300 });
 
 // Key rotation: an unknown kid must refetch the JWKS once, not fail until the TTL.
 resetEntraJwksCache();

@@ -102,7 +102,7 @@ try {
 
   // Deleting the inviter disables the code.
   await call(`/orders/${own.id}/cancel`, { token: inviter.token, body: {} });
-  await call('/me/delete', { token: inviter.token, body: {} });
+  await call('/me/delete', { token: inviter.token, body: { password: 'secret1' } });
   assert.equal((await call('/promos/check', { token: other.token, body: { code: mine.code, price }, expect: 400 })).error, 'invalid_promo');
 
   console.log('referral: ok');

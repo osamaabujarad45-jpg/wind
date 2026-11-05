@@ -154,7 +154,7 @@ try {
 
   // Erasing the customer removes proposal addresses and the original snapshots too.
   await call(`/orders/${next.id}/cancel`, { token: customer.token, body: {} });
-  await call('/me/delete', { token: customer.token, body: {} });
+  await call('/me/delete', { token: customer.token, body: { password: 'secret1' } });
   for (const row of db.prepare('SELECT original, dropoff_note, dropoff_lat, dropoff_lng FROM destination_changes WHERE customer_id = ?').all(customer.user.id)) {
     assert.deepEqual([row.original, row.dropoff_note, row.dropoff_lat, row.dropoff_lng], ['[]', '', null, null]);
   }
