@@ -245,7 +245,7 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
     };
     const timer = setTimeout(fail, mapReadyMs() + 5_000);
     loadGoogle().then(maps => {
-      if (disposed || !hostElement) return;
+      if (disposed || broken || !hostElement) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (hostElement as unknown as HTMLElement).appendChild(el);

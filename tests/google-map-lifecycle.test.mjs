@@ -11,9 +11,9 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 // Execute the real TSX with controllable hooks, SDK loading, DOM and clock.
 // This checks lifecycle behavior, not browser rendering or real Google tiles.
-function harness(file = 'google-map.web.tsx', deniedStorage = false) {
-  const slots = [], pending = [], timers = new Map(), maps = [], lines = [], hostRefs = new Set();
-  let cursor = 0, serial = 0, component, props, tree, loadResolve;
+function harness(file = 'google-map.web.tsx', deniedStorage = false, preferences = {}) {
+  const slots = [], pending = [], timers = new Map(), frames = new Map(), maps = [], lines = [], overlays = [], hostRefs = new Set();
+  let cursor = 0, serial = 0, now = 0, component, props, tree, loadResolve;
   const loading = new Promise(resolve => { loadResolve = resolve; });
   const element = () => ({ style: {}, children: [], addEventListener() {}, removeEventListener() {}, appendChild(child) { child.parent = this; this.children.push(child); },
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); } });
@@ -40,7 +40,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     panTo(center) { this.center = center; }
   }
   class Overlay {
-    constructor(options) { this.options = options; this.map = options.map; this.path = options.path; if ('path' in options) lines.push(this); }
+    constructor(options) { this.options = options; this.map = options.map; this.path = options.path; overlays.push(this); if ('path' in options) lines.push(this); }
     setMap(map) { this.map = map; }
     setPath(path) { this.path = path; }
     setVisible() {}
@@ -48,7 +48,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     setCenter() {}
     setRadius() {}
     setPosition() {}
-    setIcon() {}
+    setIcon(value) { this.icon = value; }
     set() {}
   }
   const sdk = { Map: MapStub, Polyline: Overlay, Circle: Overlay, Marker: Overlay,
@@ -60,13 +60,13 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     Platform: { OS: 'web' }, StyleSheet: { create: value => value, absoluteFill: {} } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, './map-math': math, './route-preview': { __esModule: true, default: 'RoutePreview' },
-    './ui': { Button: 'Button', Txt: 'Txt', palette: {}, shadow: {}, useCopy: () => ({ c: { retry: 'Retry', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
+    './ui': { Button: 'Button', Txt: 'Txt', palette: {}, shadow: {}, useCopy: () => ({ rtl: !!preferences.rtl, c: { retry: 'Retry', routeOnMap: 'Route map', pinHint: 'Move the map to select the pin', pinPositionFailed: 'Positioning failed', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
     './route-map': { PinMap: 'PinMap' }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     './customer-location': require('../src/customer-location.ts'),
     'react-native-webview': { WebView: 'WebView' }, './api': { API_URL: 'https://api.example.test' },
     './google-map.native': { __esModule: true, default: 'GoogleRouteMap', PinMap: 'GooglePinMap' },
     './map-provider-boundary': { MapProviderBoundary: 'MapProviderBoundary' },
-    'react-native-maps': { __esModule: true, default: 'MapView' }, './motion': { useReducedMotion: () => false },
+    'react-native-maps': { __esModule: true, default: 'MapView' }, './motion': { useReducedMotion: () => !!preferences.still },
     './route-map.native': { Car: 'Car' },
     './google-maps-loader': { loadGoogleMaps: () => loading }, './web-storage': storage,
     'expo-secure-store': {},
@@ -78,7 +78,8 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
   };
   const context = { exports: {}, require: name => modules[name] ?? require(name), process: { env: {} }, AbortController, Error,
     document: { createElement: element }, setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; },
-    clearTimeout: id => timers.delete(id), requestAnimationFrame: () => ++serial, cancelAnimationFrame() {}, performance };
+    clearTimeout: id => timers.delete(id), requestAnimationFrame: fn => { const id = ++serial; frames.set(id, fn); return id; },
+    cancelAnimationFrame: id => frames.delete(id), performance: { now: () => now } };
   if (deniedStorage) Object.defineProperty(context, 'localStorage', { get() { throw new Error('Storage denied'); } });
   const compile = name => ts.transpileModule(readFileSync(new URL('../src/' + name, import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -87,7 +88,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
   runInNewContext(compile('map-bridge.ts'), { ...context, exports: bridge.exports }, { filename: 'map-bridge.ts' });
   modules['./map-bridge'] = bridge.exports;
   const source = compile(file);
-  const internal = file === 'route-map.native.tsx' ? '\nexports.TestPin = ApplePin;' : '';
+  const internal = file === 'route-map.native.tsx' ? '\nexports.TestPin = ApplePin; exports.TestRoute = AppleRouteMap;' : '';
   runInNewContext(source + internal, context, { filename: file });
   function attach(node) { if (!node || typeof node !== 'object') return;
     if (node.props?.ref) { node.props.ref.current = host; hostRefs.add(node.props.ref); }
@@ -97,9 +98,10 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false) {
     while (pending.length) pending.shift()();
     return tree;
   };
-  return { exports: context.exports, host, maps, lines, sdk, render,
+  return { exports: context.exports, host, maps, lines, overlays, sdk, render,
+    frame(time) { now = time; const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(fn => fn(time)); },
     resolveSdk: () => loadResolve(sdk),
-    deadline() { for (const [id, timer] of [...timers]) if (timer.delay === 25_000) { timers.delete(id); timer.fn(); } },
+    deadline(delay = 25_000) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.fn(); } },
     get tree() { return tree; },
     unmount() { for (const ref of hostRefs) ref.current = null;
       for (const slot of slots) slot?.cleanup?.(); },
@@ -110,6 +112,45 @@ function find(node, type, title) {
   if (!node || typeof node !== 'object') return;
   if (node.type === type && (!title || node.props.title === title)) return node.props;
   for (const child of [node.props?.children].flat()) { const found = find(child, type, title); if (found) return found; }
+}
+{
+  const h = harness(); let failed = 0;
+  h.render(h.exports.PinMap, { center: first, onChange() {}, onFail: () => failed++ });
+  h.deadline(); h.render(); h.resolveSdk(); await flush();
+  assert.equal(failed, 1);
+  assert.equal(h.maps.length, 0, 'a late Google SDK must not construct a map after the deadline');
+  h.unmount();
+}
+for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
+  const h = harness(file), seen = [];
+  const props = { center: first, onChange: point => seen.push(point) };
+  h.render(file === 'google-map.native.tsx' ? h.exports.PinMap : h.exports.TestPin, props);
+  h.render(undefined, { ...props, center: latest });
+  find(h.tree, 'MapView').onRegionChangeComplete(first);
+  assert.equal(seen.length, 0, file + ': an old native center cannot replace a target received before readiness');
+  const map = find(h.tree, 'MapView'); (map.onMapLoaded ?? map.onMapReady)(); h.render();
+  assert.deepEqual(plain(h.host.regions.at(-1)), { ...latest, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+  h.unmount();
+}
+for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) for (const completion of ['missing', 'completed', 'gesture']) {
+  const h = harness(file); let failures = 0;
+  const props = { center: first, onChange() {}, onFail: () => failures++ };
+  h.render(file === 'google-map.native.tsx' ? h.exports.PinMap : h.exports.TestPin, props);
+  const map = find(h.tree, 'MapView'); (map.onMapLoaded ?? map.onMapReady)(); h.render();
+  assert.equal(map.accessibilityLabel, 'Move the map to select the pin');
+  h.render(undefined, { ...props, center: latest });
+  if (completion === 'completed') find(h.tree, 'MapView').onRegionChangeComplete(latest);
+  if (completion === 'gesture') find(h.tree, 'MapView').onPanDrag();
+  h.deadline(20_000);
+  assert.equal(failures, completion === 'missing' ? 1 : 0, file + ': positioning deadline respects completion and gestures');
+  h.unmount();
+}
+for (const rtl of [false, true]) for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
+  const h = harness(file, false, { rtl });
+  h.render(file === 'google-map.native.tsx' ? h.exports.default : h.exports.TestRoute, { pickup: first, dropoff: latest, pickupTitle: 'A', dropoffTitle: 'B' });
+  const label = find(h.tree, 'MapView').accessibilityLabel;
+  assert.ok(label?.includes('Route map: A') && label.includes(rtl ? '←' : '→'), file + ': native route is described in the chosen direction');
+  h.unmount();
 }
 
 // Pickup sheets must acquire a real fix, then wait for the visible camera to agree before confirming.
@@ -173,6 +214,36 @@ function find(node, type, title) {
   h.unmount();
 }
 console.log('Pickup sheet: fresh fix, visible camera agreement, gesture/close cancellation, failure/retry and saved-pin preservation passed');
+{
+  const h = harness('pin-sheet.tsx'); let rejectOld, resolveNew, starts = 0;
+  h.render(h.exports.default, { start: first, autoLocate: true, onConfirm() {}, onLocate: () => ++starts === 1
+    ? new Promise((_resolve, reject) => { rejectOld = reject; }) : new Promise(resolve => { resolveNew = resolve; }) });
+  find(h.tree, 'PinMap').onGesture(); h.render();
+  find(h.tree, 'Button', 'Use location').onPress(); h.render();
+  rejectOld(new Error('unavailable')); await flush(); h.render();
+  assert.equal(find(h.tree, 'Button', 'Locating')?.loading, true, 'an aborted request cannot clear a newer location attempt');
+  resolveNew(latest); await flush(); h.render();
+  find(h.tree, 'PinMap').onReady(); find(h.tree, 'PinMap').onChange(latest); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false);
+  h.unmount();
+}
+{
+  const h = harness('pin-sheet.tsx');
+  h.render(h.exports.default, { start: first, autoLocate: true, onLocate: async () => latest, onConfirm() {} });
+  find(h.tree, 'PinMap').onReady(); await flush(); h.render();
+  h.deadline(20_000); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true, 'a camera timeout cannot confirm an unseen GPS target');
+  assert.ok(JSON.stringify(h.tree).includes('Positioning failed'));
+  find(h.tree, 'PinMap').onGesture(); find(h.tree, 'PinMap').onChange(first); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, false, 'manual selection recovers after timeout');
+  h.unmount();
+}
+{
+  const h = harness('pin-sheet.tsx', false, { still: true });
+  h.render(h.exports.default, { start: first, onConfirm() {} });
+  assert.equal(h.tree.props.animationType, 'none', 'reduced motion disables the picker slide');
+  h.unmount();
+}
 {
   const h = harness('pin-sheet.tsx'); const requests = [];
   h.render(h.exports.default, { start: first, autoLocate: true, onLocate: async (_signal, canRequest) => {
