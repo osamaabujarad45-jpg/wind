@@ -6,6 +6,8 @@ import type { Point } from './model';
 import { pickupErrorKey } from './customer-location';
 import { PinMap } from './route-map';
 import { Button, palette, Txt, useCopy } from './ui';
+import { useReducedMotion } from './motion';
+import { mapReadyMs } from './runtime-config';
 
 // Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
 export default function PinSheet({ title, hint, start, onClose, onConfirm, onLocate, autoLocate = false }: {
@@ -13,6 +15,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
   onLocate?: (signal: AbortSignal, canRequest: boolean) => Promise<Point>; autoLocate?: boolean;
 }) {
   const { c } = useCopy();
+  const still = useReducedMotion();
   const { height } = useWindowDimensions();
   const [point, setPoint] = useState<Point>({ latitude: start.latitude, longitude: start.longitude });
   const dragged = useRef(false);
@@ -25,6 +28,15 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
   const [locating, setLocating] = useState(autoLocate);
   const [locationError, setLocationError] = useState('');
   const [selected, setSelected] = useState(!autoLocate);
+  useEffect(() => {
+    if (!positioning || locating) return;
+    const target = cameraTarget.current;
+    const timer = setTimeout(() => {
+      if (!target || cameraTarget.current !== target) return;
+      cameraTarget.current = null; setPositioning(false); setSelected(false); setLocationError(c.pinPositionFailed);
+    }, mapReadyMs());
+    return () => clearTimeout(timer);
+  }, [positioning, locating, c.pinPositionFailed]);
   async function locate(canRequest = true) {
     if (!locateCallback.current) return;
     request.current?.abort();
@@ -38,7 +50,6 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
         setPositioning(!!cameraTarget.current); setPoint(found); setSelected(true);
       }
     } catch (error) {
-      setLocating(false);
       if (!next.signal.aborted) setSelected(before);
       if (!next.signal.aborted) setLocationError(error instanceof Error && error.message === 'prompt' ? '' : c[pickupErrorKey(error)]);
     } finally { if (!next.signal.aborted) setLocating(false); }
@@ -51,7 +62,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
   useEffect(() => { if (!dragged.current) setPoint({ latitude: start.latitude, longitude: start.longitude }); }, [start.latitude, start.longitude]);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
-  return <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+  return <Modal visible transparent animationType={still ? 'none' : 'slide'} onRequestClose={onClose}>
     <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
     <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
       <ScrollView style={{ flexShrink: 1 }}>

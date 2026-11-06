@@ -28,6 +28,12 @@
     },
     {
       "type": "index",
+      "name": "native_push_tokens_user",
+      "tableName": "native_push_tokens",
+      "sql": "CREATE INDEX native_push_tokens_user ON native_push_tokens(user_id, created_at)"
+    },
+    {
+      "type": "index",
       "name": "order_messages_order",
       "tableName": "order_messages",
       "sql": "CREATE INDEX order_messages_order ON order_messages(order_id, id)"
@@ -112,6 +118,12 @@
     },
     {
       "type": "index",
+      "name": "sessions_token_user",
+      "tableName": "sessions",
+      "sql": "CREATE UNIQUE INDEX sessions_token_user ON sessions(token_hash, user_id)"
+    },
+    {
+      "type": "index",
       "name": "subscriptions_pending",
       "tableName": "subscriptions",
       "sql": "CREATE UNIQUE INDEX subscriptions_pending ON subscriptions(user_id, plan) WHERE status = 'pending'"
@@ -169,6 +181,12 @@
       "name": "entra_replay",
       "tableName": "entra_replay",
       "sql": "CREATE TABLE entra_replay (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "native_push_tokens",
+      "tableName": "native_push_tokens",
+      "sql": "CREATE TABLE native_push_tokens (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), auth_session_hash TEXT NOT NULL,\n  device_hash TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK(platform IN ('ios','android')), expo_push_token TEXT NOT NULL,\n  lang TEXT NOT NULL DEFAULT 'ar' CHECK(lang IN ('ar','en')), prefs_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, disabled_at INTEGER,\n  FOREIGN KEY(auth_session_hash, user_id) REFERENCES sessions(token_hash, user_id) ON DELETE CASCADE)"
     },
     {
       "type": "table",
@@ -1005,6 +1023,131 @@
         }
       ],
       "foreignKeys": []
+    },
+    {
+      "name": "native_push_tokens",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "token_hash",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "auth_session_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "device_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "platform",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "expo_push_token",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "lang",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'ar'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "prefs_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'{}'",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "disabled_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "sessions",
+          "from": "auth_session_hash",
+          "to": "token_hash",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 0,
+          "seq": 1,
+          "table": "sessions",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
     },
     {
       "name": "order_actions",

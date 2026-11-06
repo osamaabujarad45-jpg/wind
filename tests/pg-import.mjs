@@ -34,7 +34,12 @@ const driver = sqlite.prepare("SELECT id FROM users WHERE role='driver' ORDER BY
 const order = sqlite.prepare('SELECT id FROM orders ORDER BY id LIMIT 1').get().id;
 const now = Date.now();
 const token = randomBytes(32).toString('hex');
-sqlite.prepare('INSERT INTO sessions(token_hash,user_id,created_at) VALUES(?,?,?)').run(createHash('sha256').update(token).digest('hex'), driver, now);
+const sessionHash = createHash('sha256').update(token).digest('hex');
+sqlite.prepare('INSERT INTO sessions(token_hash,user_id,created_at) VALUES(?,?,?)').run(sessionHash, driver, now);
+// A driver's closed app hears jobs only through this row; a cutover must not silence it. Keys out of order: JSONB reorders them.
+const pushHash = createHash('sha256').update('synthetic-expo').digest('hex');
+sqlite.prepare("INSERT INTO native_push_tokens(token_hash,user_id,auth_session_hash,device_hash,platform,expo_push_token,lang,prefs_json,created_at,updated_at,disabled_at) VALUES(?,?,?,?,'android','ExpoPushToken[synthetic-import]','en',?,?,?,?)")
+  .run(pushHash, driver, sessionHash, createHash('sha256').update('synthetic-device').digest('hex'), '{"zeta":true,"alpha":false,"quietHours":{"startMinute":1320,"endMinute":360,"utcOffsetMinutes":120}}', now, now, now);
 // Replay entries must survive a cutover too; otherwise an already exchanged ID token could be reused.
 sqlite.prepare('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)').run(createHash('sha256').update('synthetic-entra-replay').digest('hex'), now + 300_000);
 // Synthetic Arabic, timezone and REAL rounding data. Existing installed tariff/settings stay unchanged.
@@ -76,6 +81,21 @@ try {
   assert.deepEqual(redemptions.keyColumns,['order_id'],'PK-less table uses its non-null unique natural key');
   assert.equal(redemptions.sourceRows,2);assert.equal(redemptions.targetRows,2);
   assert.ok(report.reconciliation.openCustodyCount>0,'open custody is rehearsed');
+  const pushRow=await database.one('SELECT * FROM native_push_tokens WHERE token_hash=?',pushHash);
+  assert.deepEqual([pushRow.user_id,pushRow.auth_session_hash,pushRow.lang,pushRow.prefs_json,pushRow.disabled_at],[driver,sessionHash,'en',{alpha:false,zeta:true,quietHours:{startMinute:1320,endMinute:360,utcOffsetMinutes:120}},now],'the token, its session and its preferences move exactly');
+  const pushReport=report.reconciliation.tables.find(t=>t.table==='native_push_tokens');
+  assert.deepEqual([pushReport.sourceRows,pushReport.targetRows],[1,1]);
+  assert.ok(!JSON.stringify(report).includes('ExpoPushToken'),'import reports carry no push credential');
+  await database.run("UPDATE native_push_tokens SET prefs_json='{\"zeta\":false}'::jsonb WHERE token_hash=?",pushHash);
+  assert.ok((await reconcile(snapshot,database)).mismatches.some(m=>m.table==='native_push_tokens'),'a changed preference fails reconciliation');
+  await database.run("UPDATE native_push_tokens SET prefs_json='{\"zeta\":true,\"alpha\":false,\"quietHours\":{\"startMinute\":1320,\"endMinute\":360,\"utcOffsetMinutes\":120}}'::jsonb WHERE token_hash=?",pushHash);
+  // A snapshot from before closed-app alerts existed still imports, with nothing to carry.
+  const older=await freshPostgres('import_old');
+  try {
+    const oldReport=await importSnapshot({...snapshot,tables:snapshot.tables.filter(t=>t.name!=='native_push_tokens'),rows:{...snapshot.rows,native_push_tokens:undefined}},older.database,older.schema);
+    assert.equal(oldReport.ok,true,JSON.stringify(oldReport.errors));
+    assert.equal((await older.database.one('SELECT count(*) n FROM native_push_tokens')).n,0);
+  } finally { await older.database.close(); }
   const geometry=await database.one('SELECT ST_X(point) longitude,ST_Y(point) latitude,ST_SRID(point) srid FROM driver_locations WHERE driver_id=?',driver);
   assert.deepEqual(geometry,{longitude:35.2034,latitude:31.9038,srid:4326});
   assert.ok((await database.all("SELECT indexdef FROM pg_indexes WHERE schemaname=? AND indexdef LIKE '%USING gist%'",schema)).length>=2);

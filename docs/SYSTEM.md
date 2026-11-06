@@ -140,7 +140,7 @@ Still simplified versus the plan above, in order of likely need:
   hidden until the owner onboards a sending domain. Administrators cannot
   self-register, and the future contact gate must remain off until a proof or
   approval path is ready.
-- **Push:** Web Push ships for the web and home-screen app (job offers, status, chat, holds). Native push still needs an Expo/EAS project and FCM credentials, so a closed native app only updates when it is opened.
+- **Push:** Web Push ships for the web and home-screen app (job offers, status, chat, holds). Native push is built on both backends and stays off until the owner adds the Firebase credentials and sets `WIND_EXPO_PUSH_ENABLED=1` (`docs/operations/deploy.md`); until then a closed native app only updates when it is opened.
 - **Driver location:** native apps use an active-delivery background location task and visible Android location service. Browser tracking requires an open foreground page. Only the latest point is stored. See the 2026-10-07 deployment audit for phone evidence and OS limits.
 - **Cash only**; plans are paid offline and activated by an admin.
 - **Single instance:** SQLite on one local persistent volume with WAL, foreign keys, full synchronous commits and a quarter-second busy wait (a contended write answers with a retryable 503 instead of blocking the event loop). Authentication/password attempt budgets survive restart in SQLite. Move to a shared transactional store before running several API instances.

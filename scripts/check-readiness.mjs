@@ -216,6 +216,7 @@ try {
   await button(adminPage, c.block).waitFor();
   await button(adminPage, c.editUser).click();
   const resetResponse = adminPage.waitForResponse(r => r.url().endsWith(`/admin/users/${spare.user.id}/password`) && r.request().method() === 'POST');
+  await field(adminPage, c.resetAttestation).fill('Readiness check: called the registered number back');
   await button(adminPage, c.resetPassword).click();
   const reset = await (await resetResponse).json();
   assert.ok(reset.password.length >= 12);
@@ -238,6 +239,8 @@ try {
   await accountPage.getByText(c.passwordChanged, { exact: true }).waitFor();
   assert.equal((await call('/auth/login', { body: { identifier: lifecycle.user.phone, password: newPassword } })).user.id, lifecycle.user.id);
   await call('/auth/login', { body: { identifier: lifecycle.user.phone, password }, expect: 401 });
+  await button(accountPage, c.deleteAccount).click();
+  await field(accountPage, c.currentPassword).fill(newPassword);
   await button(accountPage, c.deleteAccount).click();
   await accountPage.waitForURL(/\/auth$/);
   // Accounting foreign keys retain an anonymized row; personal identity and every session must be gone.

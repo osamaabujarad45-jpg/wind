@@ -79,10 +79,10 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
             <View style={styles.grip} />
           </Pressable>
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
-          {!footer && <View style={{ height: padBottom }} />}{/* the closed sheet's content stays below the system navigation bar */}
+          {!footer && !open && <View style={{ height: padBottom }} />}{/* the closed sheet's content stays above the system navigation bar; open, the same space would be a dead band mid-sheet */}
         </View>
         {/* It ends at the footer, not under it, so a focused field scrolls clear of the footer too. */}
-        <ScrollView ref={scrollRef} style={{ flex: 1, marginBottom: footer ? footerHeight : 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }} keyboardShouldPersistTaps="handled"
+        <ScrollView ref={scrollRef} style={{ flex: 1, marginBottom: footer ? footerHeight : 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 + (footer ? 0 : padBottom) }} keyboardShouldPersistTaps="handled"
           refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}
           showsVerticalScrollIndicator={false} accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}>
           {children}

@@ -13,7 +13,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SUPPORT_CONTACT = 'Synthetic <support> & "contact"';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
-const { server, db, promote } = await import('../server/main.ts');
+const { server, db, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -192,7 +192,8 @@ try {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'PROOF_FAILED'").get(order.id).n, 5);
   await call(`/admin/orders/${order.id}/proof-reset`, { token: driver.token, body: { reason: 'Recipient confirmed by support' }, expect: 403 });
   await call(`/admin/orders/${order.id}/proof-reset`, { token: admin.token, body: { reason: 'Recipient confirmed by support' } });
-  const done = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { code: order.handoverCode } });
+  // A courier's Arabic keypad sends the same digits in another script: the code still matches.
+  const done = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { code: order.handoverCode.replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[d]) } });
   assert.equal((await call(`/orders/${order.id}/advance`, { token: driver.token, body: arrival })).status, 'completed'); // replay never regresses current state
   assert.equal(done.status, 'completed');
   assert.equal(done.commission, Math.round(order.price * defaultSettings.commission * 100) / 100);
@@ -262,6 +263,7 @@ try {
   await call('/orders', { token: customer.token, body: { ...orderInput, service: 'ride', option: '2', detail: '' }, expect: 409 });
 
   // Passwords: change, forgotten → support reset
+  const supportAttestation = 'Called the registered number back; caller named last order';
   const oldSession = await call('/auth/login', { body: { phone: '0599000002', password: 'secret1' } });
   await call('/me/password', { token: customer.token, body: { current: 'wrong1', password: 'newpass1' }, expect: 401 });
   await call('/me/password', { token: customer.token, body: { current: 'secret1', password: 'newpass1' } });
@@ -272,15 +274,21 @@ try {
   const passwordBeforeReset = db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id).password;
   db.exec(`CREATE TRIGGER fail_reset_revoke BEFORE DELETE ON sessions WHEN OLD.user_id=${customer.user.id}
     BEGIN SELECT RAISE(ABORT, 'synthetic session write failure'); END`);
-  await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {}, expect: 500 });
+  await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation: supportAttestation }, expect: 500 });
   assert.ok(db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id).password === passwordBeforeReset, 'failed reset changed credential state');
   await call('/me', { token: customer.token }); // failed reset must preserve the complete previous credential state
   db.exec('DROP TRIGGER fail_reset_revoke');
-  const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {} });
+  // No email path for this account: the admin writes down what they checked, or there is no reset.
+  for (const attestation of [undefined, '', 'too short', 'x'.repeat(301), 42, 'Called them back on 0599123456', 'Called them back on ٠٥٩٩١٢٣٤٥٦', 'Called them on 0597/127547', 'Called them on 059,712,7547', 'Called them on ‪+970 597 127 547‬', 'Called them on 059‏7127547'])
+    assert.equal((await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation }, expect: 400 })).error, 'attestation_required');
+  await call('/me', { token: customer.token }); // a refused reset changes nothing
+  const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation: ` ${supportAttestation} ` } });
   const resetAudit = db.prepare("SELECT * FROM security_events WHERE action = 'SUPPORT_PASSWORD_RESET' ORDER BY id DESC LIMIT 1").get();
   assert.equal(resetAudit?.order_id, null, 'account-level audit rows have no order');
   assert.equal(resetAudit?.actor_id, admin.user.id);
   assert.match(resetAudit?.detail ?? '', new RegExp(`"targetId":${customer.user.id}`));
+  assert.deepEqual(JSON.parse(resetAudit.detail).verification, { method: 'attested', note: supportAttestation }, 'the audit says what was checked');
+  assert.ok(!resetAudit.detail.includes(temp), 'the temporary password stays out of the audit');
   await call('/me', { token: customer.token, expect: 401 }); // reset signs out everywhere
   const relogged = await call('/auth/login', { body: { phone: '0599000002', password: temp } });
 
@@ -310,9 +318,11 @@ try {
   // Account deletion: refused with a live order, then erases personal data
   const leaver = await call('/auth/register', { body: { phone: '0599000004', name: 'Maya', password: 'secret1' } });
   const open = await call('/orders', { token: leaver.token, body: orderInput });
-  await call('/me/delete', { token: leaver.token, body: {}, expect: 409 });
+  await call('/me/delete', { token: leaver.token, body: {}, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'wrong' }, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/orders/${open.id}/cancel`, { token: leaver.token, body: {} });
-  await call('/me/delete', { token: leaver.token, body: {} });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' } });
   await call('/me', { token: leaver.token, expect: 401 });
   await call('/auth/login', { body: { phone: '0599000004', password: 'secret1' }, expect: 401 });
   const erased = await call(`/orders/${open.id}`, { token: admin.token });
@@ -320,6 +330,24 @@ try {
   assert.equal(erased.customerName, '—');
   await call('/auth/register', { body: { phone: '0599000004', name: 'Maya again', password: 'secret1' } }); // number is free again
   await call('/me/delete', { token: admin.token, body: {}, expect: 409 });
+  for (const [index, change] of ['password', 'session'].entries()) {
+    const target = await call('/auth/register', { body: { phone: `059987000${index}`, name: 'Race fixture', password: 'secret1' } });
+    const original = persistence.atomic;
+    let intercepted = false;
+    persistence.atomic = async function(actor, work) {
+      if (actor.id === target.user.id && !intercepted) {
+        intercepted = true;
+        if (change === 'password') db.prepare('UPDATE users SET password=? WHERE id=?').run('changed', target.user.id);
+        else db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.user.id);
+      }
+      return original.call(this, actor, work);
+    };
+    try {
+      await call('/me/delete', { token: target.token, body: { password: 'secret1' }, expect: 401 });
+      assert.equal(intercepted, true);
+      assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(target.user.id).status, 'active', `${change} race prevents deletion`);
+    } finally { persistence.atomic = original; }
+  }
 
   const privacy = await fetch(base.replace('/api', '/privacy'));
   assert.equal(privacy.status, 200);

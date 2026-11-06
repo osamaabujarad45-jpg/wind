@@ -14,6 +14,26 @@ node tests/azure-infra.test.mjs
 
 The validation script compiles/lints the template and builds all three parameter examples with a fixed compile-only placeholder. It does not read operator secrets. The test checks compiled ingress/probe ports against the packaged API, the polling worker's minimum replica, and the separate graph-storage foundation. It has no deployment command, Azure login, or authenticated provider call.
 
+## Production VM, what actually runs today
+
+Production is one VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, with SQLite at `/srv/wind-data/wind.db`. The Container Apps template below is staging preparation and is not live. `infra/vm/deploy.sh` starts the new image and rolls back by itself if it does not become ready.
+
+`/srv/wind-api.env` must hold these before starting an image that has the boot checks, or the deploy rolls back with the reason in its log:
+
+```sh
+WIND_TRUST_PROXY=1   # Caddy is the proxy; without this every user shares one per-address limit
+WIND_PUSH_SUBJECT=https://windapi236.swedencentral.cloudapp.azure.com
+```
+
+### Turning on native push (Android)
+
+Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase, which only the owner can create:
+
+1. Create a Firebase project, add an Android app with the package in `app.json`, and download `google-services.json`.
+2. Make it available to EAS builds: `npx eas-cli@latest env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment production --environment preview`. `app.config.js` reads it.
+3. In Firebase, generate a service account key and upload it with `npx eas-cli@latest credentials` under Android > Google Service Account > FCM V1. Do not commit this key.
+4. Build and install the app, then add `WIND_EXPO_PUSH_ENABLED=1` to `/srv/wind-api.env` and restart.
+
 ## Owner-run review after gates
 
 West Europe is the report's staging baseline, subject to review. Production region, service quota, data-location, latency, SKU availability, network/DNS and HA remain unapproved. On a protected operator workstation, after Azure access and approval exist, inspect the resolved parameters (never print secret env vars), then run an authenticated what-if:

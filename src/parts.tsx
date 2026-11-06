@@ -1,14 +1,15 @@
 // Pieces shared by the customer, driver and admin screens.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { api, apiSessionRevision, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { kmLabel } from './map-math';
 import { useSession } from './session';
+import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText } from './copy';
 import {
   Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
@@ -299,6 +300,27 @@ export function PlanCard() {
   </Appear>;
 }
 
+/** A Microsoft sign-in ready to prove the account for one sensitive action. Stays null for an account not linked to Microsoft. */
+function useEntraReauth(challengePath: string, open: boolean) {
+  const [request, setRequest] = useState<EntraRequest | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const revision = apiSessionRevision();
+  useEffect(() => {
+    if (!open || !entraConfigured) return;
+    let active = true;
+    const load = (first: boolean) => void api<{ nonce: string }>(challengePath, {}).then(({ nonce }) => prepareEntraRequest(nonce))
+      .then(next => { if (active && revision === apiSessionRevision()) { setRequest(next); setFailed(false); } })
+      .catch(error => { if (first && active && revision === apiSessionRevision()) { setRequest(null); setFailed(errorCode(error) !== 'entra_unavailable'); } });
+    load(true);
+    // A challenge lasts five minutes and the sign-in popup must open from the tap, so a fresh one waits here rather than being fetched on press.
+    // Every two minutes leaves at least three for the sign-in. A failed refresh keeps the last one; the server has the final say.
+    const refresh = setInterval(() => load(false), 120_000);
+    return () => { active = false; clearInterval(refresh); };
+  }, [open, attempt, revision, challengePath]);
+  return { request, failed, revision, retry: () => { setRequest(null); setAttempt(n => n + 1); }, reset: () => { setRequest(null); setFailed(false); } };
+}
+
 export function PasswordCard() {
   const { c, err } = useCopy();
   const [open, setOpen] = useState(false);
@@ -307,12 +329,15 @@ export function PasswordCard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const entra = useEntraReauth('/me/password/challenge', open);
 
-  async function save() {
+  async function save(microsoft = false) {
     setBusy(true);
     setError('');
     try {
-      await api('/me/password', { current, password: next });
+      const proof = microsoft && entra.request ? await signInWithEntra(entra.request) : { current };
+      if (!proof) return;
+      await api('/me/password', { ...proof, password: next });
       haptic.success();
       setOpen(false);
       setCurrent('');
@@ -321,8 +346,10 @@ export function PasswordCard() {
     } catch (e) {
       haptic.error();
       setError(err(e));
+    } finally {
+      setBusy(false);
+      if (microsoft) entra.retry(); // a proof works once
     }
-    setBusy(false);
   }
 
   // A row inside a ListGroup; opens in place into the form.
@@ -335,9 +362,12 @@ export function PasswordCard() {
     <Field label={c.newPassword} value={next} onChangeText={setNext} placeholder={c.passwordHint} secureTextEntry autoComplete="new-password" />
     <ErrorText>{error}</ErrorText>
     <Row gap={8}>
-      <View style={{ flex: 1 }}><Button title={c.save} onPress={save} loading={busy} disabled={!current || next.length < 12 || next.length > 100} reason={c.password_rule} /></View>
+      <View style={{ flex: 1 }}><Button title={c.save} onPress={() => { void save(); }} loading={busy} disabled={!current || next.length < 12 || next.length > 100} reason={c.password_rule} /></View>
       <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" onPress={() => setOpen(false)} /></View>
     </Row>
+    {/* An account made with Microsoft never had a password to type here. */}
+    {!!entra.request && <View style={{ marginTop: 8 }}><Button title={c.deleteMicrosoft} variant="soft" disabled={busy || next.length < 12 || next.length > 100} reason={c.password_rule} onPress={() => { void save(true); }} /></View>}
+    {entra.failed && <View style={{ marginTop: 8 }}><Button title={c.retry} variant="soft" disabled={busy} onPress={entra.retry} /></View>}
   </Appear>;
 }
 
@@ -379,18 +409,28 @@ export function AccountScreen() {
   const { me, signOut, forget, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [deleteError, setDeleteError] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const entra = useEntraReauth('/me/delete/challenge', deleteOpen);
+  const { revision } = entra;
   if (!me) return null;
   const { user } = me;
 
-  async function deleteAccount() {
+  async function deleteAccount(microsoft = false) {
+    if (pending.current || revision !== apiSessionRevision()) return;
+    pending.current = true; setBusy(true);
     setDeleteError('');
     try {
-      await api('/me/delete', {});
-      await forget();
+      const proof = microsoft && entra.request ? await signInWithEntra(entra.request) : { password };
+      if (!proof || revision !== apiSessionRevision()) return;
+      await api('/me/delete', proof);
+      if (revision === apiSessionRevision()) await forget();
     } catch (e) {
       haptic.error();
       setDeleteError(err(e));
-    }
+    } finally { pending.current = false; setBusy(false); if (microsoft) entra.retry(); }
   }
   return <Screen>
     <Header title={c.account} />
@@ -432,8 +472,18 @@ export function AccountScreen() {
     </ListGroup>
     <ErrorText>{deleteError}</ErrorText>
     <ListGroup>
-      <ListRow icon="log-out-outline" label={c.logout} danger onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
-      <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => confirm(c.deleteConfirm, deleteAccount, c.deleteAccount, c.no)} />
+      <ListRow icon="log-out-outline" label={c.logout} danger onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setDeleteError(err(e))); }, c.logout, c.no)} />
+      {!deleteOpen ? <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => setDeleteOpen(true)} />
+        : <View style={{ padding: 16, gap: 8 }}>
+          <Txt>{c.deleteReauth}</Txt>
+          <Field label={c.currentPassword} value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" disabled={busy} maxLength={100} />
+          <Button title={c.deleteAccount} variant="danger" disabled={!password || busy} loading={busy}
+            onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(); }, c.deleteAccount, c.no)} />
+          {!!entra.request && <Button title={c.deleteMicrosoft} variant="soft" disabled={busy}
+            onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(true); }, c.deleteAccount, c.no)} />}
+          {entra.failed && <Button title={c.retry} variant="soft" disabled={busy} onPress={entra.retry} />}
+          <Button title={c.cancel} variant="ghost" disabled={busy} onPress={() => { setDeleteOpen(false); setPassword(''); setDeleteError(''); entra.reset(); }} />
+        </View>}
     </ListGroup>
   </Screen>;
 }

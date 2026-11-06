@@ -35,4 +35,15 @@ assert.doesNotMatch(poisoned.icon, /onerror|<image|compromised/);
 assert.doesNotMatch(poisoned.marker, /position:fixed|attacker|url\(/);
 for (const invalid of [null, [], 'blue', 7, { blue: '#123' }, { blue: '#12345678' }, { blue: '#123456\n' },
   { blue: ' #123456' }, { blue: 'url(javascript:alert(1))' }]) assert.deepEqual(render(invalid).colors, defaults);
+const deadline = page.slice(page.indexOf('const readyTimeout ='), page.indexOf('let timer ='));
+for (const input of [undefined, null, '7000', 4999, 30001, NaN, Infinity, {}, []]) {
+  const context = { config: { readyMs: input } };
+  runInNewContext(deadline + ';globalThis.result = readyTimeout;', context);
+  assert.equal(context.result, 20000, 'invalid map deadlines use the safe default');
+}
+for (const input of [5000, 7000, 30000]) {
+  const context = { config: { readyMs: input } };
+  runInNewContext(deadline + ';globalThis.result = readyTimeout;', context);
+  assert.equal(context.result, input, 'valid runtime deadlines are preserved');
+}
 console.log('Map fragment security: real parser/SVG/CSS reject color injection and preserve valid palette colors');

@@ -23,7 +23,7 @@ export const nativeTokenHash = (expoPushToken: string) => sha256(expoPushToken);
 export const nativeDeviceHash = (deviceId: string) => sha256(`wp09-device:${deviceId.toLowerCase()}`);
 
 export async function nativePushAvailable(db: Persistence): Promise<boolean> {
-  if (db.backend !== 'postgres') return false;
+  if (db.backend !== 'postgres') return true; // server/db/sqlite-schema.ts always creates the table
   const tables = await db.one("SELECT to_regclass('native_push_tokens') AS tokens, to_regclass('schema_migrations') AS migrations");
   return !!(tables?.tokens && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=12'));
 }
@@ -71,6 +71,7 @@ export class NativePush {
     if (!body || Array.isArray(body) || Object.keys(body).some(k => !allowed.includes(k))) this.fail(400, 'invalid_input');
   }
   private async available() { if (!(await nativePushAvailable(this.db))) this.fail(409, 'native_push_unavailable'); }
+  private get jsonParam() { return this.db.backend === 'postgres' ? '?::jsonb' : '?'; }
   private sessionHash(req: IncomingMessage) {
     const raw = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
     if (!raw) this.fail(401, 'unauthorized');
@@ -78,9 +79,10 @@ export class NativePush {
   }
   private async actor(ctx: Context) {
     const hash = this.sessionHash(ctx.req);
-    const user = await this.db.one('SELECT id, role, status FROM users WHERE id=? FOR UPDATE', ctx.user.id);
+    const pg = this.db.backend === 'postgres';
+    const user = await this.db.one(`SELECT id, role, status FROM users WHERE id=?${pg ? ' FOR UPDATE' : ''}`, ctx.user.id);
     if (!user || user.status === 'blocked') this.fail(401, 'unauthorized');
-    if (!await this.db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? FOR KEY SHARE', hash, user.id, Date.now() - 90 * 86_400_000))
+    if (!await this.db.one(`SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>?${pg ? ' FOR KEY SHARE' : ''}`, hash, user.id, Date.now() - 90 * 86_400_000))
       this.fail(401, 'unauthorized');
     return { user: user!, sessionHash: hash };
   }
@@ -123,7 +125,7 @@ export class NativePush {
     await this.db.run('DELETE FROM native_push_tokens WHERE device_hash=? AND token_hash<>?', deviceHash, tokenHash);
     await this.db.run('DELETE FROM native_push_tokens WHERE token_hash=? AND device_hash<>?', tokenHash, deviceHash);
     await this.db.run(`INSERT INTO native_push_tokens(token_hash,user_id,auth_session_hash,device_hash,platform,expo_push_token,lang,prefs_json,created_at,updated_at,disabled_at)
-      VALUES(?,?,?,?,?,?,?,?::jsonb,?,?,NULL)
+      VALUES(?,?,?,?,?,?,?,${this.jsonParam},?,?,NULL)
       ON CONFLICT(token_hash) DO UPDATE SET user_id=excluded.user_id,auth_session_hash=excluded.auth_session_hash,device_hash=excluded.device_hash,
       platform=excluded.platform,expo_push_token=excluded.expo_push_token,lang=excluded.lang,prefs_json=excluded.prefs_json,updated_at=excluded.updated_at,disabled_at=NULL`,
       tokenHash, user.id, sessionHash, deviceHash, ctx.body.platform, expoPushToken, lang, JSON.stringify(prefs), now, now);
@@ -144,11 +146,11 @@ export class NativePush {
     if (ctx.body.disabled !== undefined && typeof ctx.body.disabled !== 'boolean') this.fail(400, 'invalid_input');
     const deviceHash = nativeDeviceHash(this.deviceId(ctx.body.deviceId));
     const { user } = await this.actor(ctx);
-    const row = await this.db.one('SELECT * FROM native_push_tokens WHERE user_id=? AND device_hash=? FOR UPDATE', user.id, deviceHash);
+    const row = await this.db.one(`SELECT * FROM native_push_tokens WHERE user_id=? AND device_hash=?${this.db.backend === 'postgres' ? ' FOR UPDATE' : ''}`, user.id, deviceHash);
     if (!row) this.fail(404, 'not_found');
     const prefs = ctx.body.prefs === undefined ? parsePrefs(row!.prefs_json) : this.prefsInput(ctx.body.prefs);
     const disabledAt = ctx.body.disabled === undefined ? row!.disabled_at : ctx.body.disabled ? Date.now() : null;
-    await this.db.run('UPDATE native_push_tokens SET prefs_json=?::jsonb,disabled_at=?,updated_at=? WHERE token_hash=?',
+    await this.db.run(`UPDATE native_push_tokens SET prefs_json=${this.jsonParam},disabled_at=?,updated_at=? WHERE token_hash=?`,
       JSON.stringify(prefs), disabledAt, Date.now(), row!.token_hash);
     return { ok: true, prefs, disabled: disabledAt != null };
   }

@@ -13,7 +13,8 @@ const hash = (value: string | Buffer) => createHash('sha256').update(value).dige
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // WP08 operational tables are PostgreSQL-only: quotes are 120s-ephemeral and road
 // restrictions/policy move only via the operator policy exchange, never snapshot import.
-export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+export const NON_LEGACY_TABLES = new Set(['native_push_tokens', 'quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_hash','platform','expo_push_token','lang','prefs_json','created_at','updated_at','disabled_at'];
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
@@ -22,7 +23,9 @@ NON_LEGACY_TABLES.add('opencode_jobs');
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
 const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
-const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
+// Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
+const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+  ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
 export const minor = (amount: number | null) => {
@@ -124,6 +127,13 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
       sourceRowsHash: hash(snapshot.rows[table.name].map(stable).sort().join('\n')),
       targetRowsHash: hash(rows.map(stable).sort().join('\n')) });
   }
+  // Compared by content: JSONB reorders keys and comes back parsed, and only the hash ever reaches the report.
+  const pushRows = (rows: Row[]) => new Map(rows.map(row => [hash(String(row.token_hash)), stable({ ...row, prefs_json: stable(typeof row.prefs_json === 'string' ? JSON.parse(row.prefs_json) : row.prefs_json) })]));
+  const pushSource = pushRows(snapshot.rows.native_push_tokens ?? []), pushTarget = pushRows(await database.all(`SELECT ${NATIVE_PUSH_COLUMNS.join(',')} FROM native_push_tokens`));
+  for (const [key, value] of pushSource) if (pushTarget.get(key) !== value) mismatches.push({ table: 'native_push_tokens', key, reason: pushTarget.has(key) ? 'row/multiplicity differs' : 'missing key' });
+  for (const key of pushTarget.keys()) if (!pushSource.has(key)) mismatches.push({ table: 'native_push_tokens', key, reason: 'unexpected key' });
+  tables.push({ table: 'native_push_tokens', keyColumns: ['token_hash'], sourceRows: pushSource.size, targetRows: pushTarget.size,
+    sourceKeys: hash([...pushSource.keys()].sort().join('\n')), targetKeys: hash([...pushTarget.keys()].sort().join('\n')) });
   const sum = (rows: Row[], column: string, money = false) => rows.reduce((total, row) => total + BigInt(money ? minor(row[column]) ?? 0 : row[column] ?? 0), 0n).toString();
   const orders = snapshot.rows.orders;
   const cash = snapshot.rows.cash_entries;
@@ -201,6 +211,19 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
           await database.run('ROLLBACK TO SAVEPOINT import_row');
           const e = error as { code?: string; constraint?: string };
           errors.push({ table: table.name, key, reason: 'row rejected; retained source unchanged', code: e.code, constraint: e.constraint });
+        }
+        await database.run('RELEASE SAVEPOINT import_row');
+      }
+      // Closed apps hear alerts only through these rows. Not in the generic pass: their sessions must exist first, and
+      // prefs_json changes type. A snapshot from before closed-app alerts has none. A rejected row reports its key, never the token.
+      for (const row of snapshot.rows.native_push_tokens ?? []) {
+        await database.run('SAVEPOINT import_row');
+        try {
+          await database.run(`INSERT INTO native_push_tokens(${NATIVE_PUSH_COLUMNS.join(',')}) VALUES(?,?,?,?,?,?,?,?::jsonb,?,?,?)`, ...NATIVE_PUSH_COLUMNS.map(c => row[c]));
+        } catch (error) {
+          await database.run('ROLLBACK TO SAVEPOINT import_row');
+          const e = error as { code?: string; constraint?: string };
+          errors.push({ table: 'native_push_tokens', key: hash(String(row.token_hash)), reason: 'row rejected; retained source unchanged', code: e.code, constraint: e.constraint });
         }
         await database.run('RELEASE SAVEPOINT import_row');
       }

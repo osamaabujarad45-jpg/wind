@@ -24,6 +24,33 @@ export function encrypt(plaintext: Buffer, uaPublic: Buffer, authSecret: Buffer,
   return Buffer.concat([header, asPublic, body]);
 }
 
+export const isDeviceNotRegistered = (error: unknown) => {
+  const value = error as { code?: unknown; expoError?: unknown; message?: unknown };
+  return value?.code === 'DeviceNotRegistered' || value?.expoError === 'DeviceNotRegistered'
+    || (typeof value?.message === 'string' && value.message.includes('DeviceNotRegistered'));
+};
+
+/** One Expo push, worded generically: what happened stays inside the app, which re-checks authority when opened.
+ * Real delivery waits for the owner's FCM/APNs credentials and WIND_EXPO_PUSH_ENABLED=1; until then this throws. */
+export async function sendExpoPush(token: { expo_push_token?: unknown }, message: string, ttl: number, urgent: boolean) {
+  if (process.env.WIND_EXPO_PUSH_ENABLED !== '1') throw Object.assign(new Error('expo_not_configured'), { providerStatus: 503 });
+  const data = JSON.parse(message) as { kind: unknown; order: unknown; url: unknown; lang: unknown; eventId?: unknown };
+  const response = await fetch('https://exp.host/--/api/v2/push/send', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}) },
+    // channelId names the high-importance channel src/native-push.ts creates, so Android shows a heads-up; priority wakes a dozing phone.
+    body: JSON.stringify([{ to: String(token.expo_push_token), title: 'Wind', body: data.lang === 'en' ? 'You have a new update. Open Wind to view it.' : 'لديك تحديث جديد. افتح ويند لعرضه.',
+      sound: 'default', ttl, priority: urgent ? 'high' : 'normal', channelId: 'default', data: { kind: data.kind, order: data.order, url: data.url, eventId: data.eventId } }]) });
+  const tickets = await response.json().catch(() => null) as { data?: { status?: string; details?: { error?: string } }[] } | null;
+  await response.body?.cancel().catch(() => {});
+  if (!response.ok) throw Object.assign(new Error('provider_failed'), { providerStatus: response.status });
+  const ticket = Array.isArray(tickets?.data) ? tickets!.data[0] : undefined;
+  if (ticket?.status === 'error') {
+    if (ticket.details?.error === 'DeviceNotRegistered') throw Object.assign(new Error('DeviceNotRegistered'), { code: 'DeviceNotRegistered' });
+    throw Object.assign(new Error('provider_failed'), { providerStatus: 400 });
+  }
+  if (ticket?.status !== 'ok') throw Object.assign(new Error('provider_failed'), { providerStatus: 502 });
+}
+
 /** VAPID Authorization header for one push service origin, valid 12 hours. */
 /** T37: the VAPID subject identifies the operator to push services. The obsolete Railway host default is
  * gone — set WIND_PUSH_SUBJECT (a mailto: address or https: origin you control) before web push can send. */

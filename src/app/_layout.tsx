@@ -66,6 +66,7 @@ function OfflineOrders({ summary }: { summary: OfflineSummary }) {
   const { time } = useFormat();
   return <Card tone="muted" style={{ marginTop: 16 }}>
     <Txt variant="caption">{fill(c.offlineSaved, { t: time(summary.savedAt) })}</Txt>
+    <Txt variant="caption">{c.offlineSavedWarning}</Txt>
     {summary.orders.map(order => <View key={order.id} style={{ marginTop: 10 }}>
       <Txt variant="title">{city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}</Txt>
       <Txt variant="caption">{orderCode(order.id)}, {statusText(c, order, summary.role === 'driver')}</Txt>
@@ -84,9 +85,11 @@ function Routes() {
       : SUPPORT_URL ? <Button title={c.support} icon="chatbubble-outline" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
   </View>;
   if (!ready) return null;
+  const summary = !me || (offlineSummary && me.user.status === 'active' && me.user.id === offlineSummary.actorId && me.user.role === offlineSummary.role)
+    ? offlineSummary : null;
   if (offline) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
     <Empty icon="cloud-offline-outline" title={c.offline} body={c.offlineDesc} action={<Button title={c.retry} onPress={refresh} />} />
-    {!!offlineSummary?.orders.length && <OfflineOrders summary={offlineSummary} />}
+    {!!summary?.orders.length && <OfflineOrders summary={summary} />}
   </View>;
   const role = me?.user.role;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.

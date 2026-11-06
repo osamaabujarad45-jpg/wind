@@ -11,7 +11,7 @@ import { useSession, type Me } from '../session';
 import { PhoneRecovery } from '../phone-recovery';
 import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from '../entra-auth';
 import { phoneApi } from '../phone/client';
-import { gateOf, type Capabilities } from '../phone/flow';
+import { codeInput, gateOf, type Capabilities } from '../phone/flow';
 import { takeAuthNotice } from '../phone/notice';
 import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
@@ -178,7 +178,7 @@ export default function Auth() {
             <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
               maxLength={254} disabled={busy} onSubmitEditing={resetSent ? undefined : submit} />
             {resetSent && <Appear>
-              <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
+              <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad"
                 autoComplete="one-time-code" maxLength={6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
               <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={c.passwordMinimum} secureTextEntry
                 maxLength={100} disabled={busy} autoComplete="new-password" onSubmitEditing={submit} />

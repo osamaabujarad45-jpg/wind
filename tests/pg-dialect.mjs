@@ -60,19 +60,37 @@ try{
   const stats=await call('/admin/stats',{token:admin.token});assert.equal(typeof stats.gmv,'number');
   assert.equal(stats.daily.length,14);
   const gone=await register(9);const countedBefore=(await call('/admin/stats',{token:admin.token})).users.customer;
-  await call('/me/delete',{token:gone.token,body:{}});
+  await call('/me/delete',{token:gone.token,body:{password:'synthetic-secret'}});
   assert.equal((await call('/admin/stats',{token:admin.token})).users.customer,countedBefore-1,'PostgreSQL stops counting a deleted account');
+  for (const [number, change] of [[6, 'password'], [7, 'session']]) {
+    const target = await register(number);
+    const original = persistence.atomic;
+    let intercepted = false;
+    persistence.atomic = async function(actor, work) {
+      if (actor.id === target.user.id && !intercepted) {
+        intercepted = true;
+        if (change === 'password') await persistence.run('UPDATE users SET password=? WHERE id=?', 'changed', target.user.id);
+        else await persistence.run('DELETE FROM sessions WHERE user_id=?', target.user.id);
+      }
+      return original.call(this, actor, work);
+    };
+    try {
+      await call('/me/delete', { token: target.token, body: { password: 'synthetic-secret' }, expect: 401 });
+      assert.equal(intercepted, true);
+      assert.equal((await persistence.one('SELECT status FROM users WHERE id=?', target.user.id)).status, 'active', `${change} change prevents PostgreSQL deletion`);
+    } finally { persistence.atomic = original; }
+  }
   assert.equal(stats.daily.at(-1).commission,stats.commission,'PostgreSQL groups today’s completed order');
   assert.equal(stats.daily.at(-1).subscriptions,stats.subscriptions,'PostgreSQL groups today’s activated subscription');
   const credential=await persistence.one('SELECT password FROM users WHERE id=?',customer.user.id);
   await persistence.run(`CREATE FUNCTION fail_reset_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF OLD.user_id=${customer.user.id} THEN RAISE EXCEPTION 'synthetic session write failure'; END IF; RETURN OLD; END $$;
     CREATE TRIGGER wp03_fail_reset BEFORE DELETE ON sessions FOR EACH ROW EXECUTE FUNCTION fail_reset_revoke()`);
-  await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{},expect:500});
+  await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{attestation: 'Called the registered number back; caller named last order'},expect:500});
   assert.deepEqual(await persistence.one('SELECT password FROM users WHERE id=?',customer.user.id),credential,'failed password reset rolls back credential mutation');
   await call('/me',{token:customer.token});
   await persistence.run('ALTER TABLE sessions DISABLE TRIGGER wp03_fail_reset');
-  const reset=await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{}});
+  const reset=await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{attestation: 'Called the registered number back; caller named last order'}});
   await call('/me',{token:customer.token,expect:401});
   assert.equal((await call('/auth/login',{body:{phone:customer.user.phone,password:reset.password}})).user.id,customer.user.id);
   console.log('PG HTTP dialect: casefold email, nullable role, scalar/aggregate MIN, camelCase referral alias, numeric cash/aggregates, revision/epoch/minor units passed');

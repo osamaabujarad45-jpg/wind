@@ -57,34 +57,39 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
 
   // T08.2/T14: a Google approach bills once as a shown preview per stop, then only for a significant movement
   // while foregrounded; the URL is built from the last billed fix, so a stationary poll, a background timer or
-  // a refocus never even changes it. The free OSRM approach keeps its ~110 m grid and refresh-on-focus.
+  // a refocus never even changes it. The free OSRM approach keeps its ~110 m grid and refresh-on-focus, and also moves only
+  // on a significant movement: a new URL per fix would spend the route budget (120 per 10 minutes) on a fast road and lose the ETA.
   const stopKey = order && target ? approachKey(order, target, renderer ?? 'unavailable') : '';
+  // A status change at the same stop, assigned to at_pickup say, is not a new route to buy.
+  const billKey = order && target ? approachKey({ ...order, status: undefined }, target, renderer ?? 'unavailable') : '';
   const nowhere: Anchor = { key: '', fix: null, metres: 0, at: 0 };
   const [billed, setBilled] = useState(nowhere);
   // The free turn-by-turn route keeps its own anchor: leaving the line reroutes it, and that must never move what the paid URL is built from.
   const [steered, setSteered] = useState(nowhere);
   const [kept, setKept] = useState<{ stop: string; route: RoadRoute }>();
   const fix = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading } : null;
-  const reanchor = (anchor: Anchor, set: (next: Anchor) => void, mayLeaveLine: boolean) => {
-    if (stopKey !== anchor.key || (fix && !anchor.fix)) { set({ key: stopKey, fix, metres: 0, at: monotonic }); return; }
+  const reanchor = (anchor: Anchor, set: (next: Anchor) => void, key: string, mayLeaveLine: boolean, tracking = true) => {
+    if (key !== anchor.key) { set({ key, fix: tracking ? fix : null, metres: 0, at: monotonic }); return; }
+    if (!tracking) return;
+    if (fix && !anchor.fix) { set({ key, fix, metres: 0, at: monotonic }); return; }
     if (!driver || !anchor.fix || (driver.latitude === anchor.fix.latitude && driver.longitude === anchor.fix.longitude)) return;
     const metres = Math.hypot((driver.longitude - anchor.fix.longitude) * 111_320 * Math.cos(driver.latitude * Math.PI / 180),
       (driver.latitude - anchor.fix.latitude) * 110_540);
     // Leaving the line asks for a new one after 50 m so GPS drift cannot refetch, and at most every 30 s so an unmapped track
     // cannot spend the route budget (120 per 10 minutes, blocked calls included).
     const left = mayLeaveLine && metres >= 50 && monotonic - anchor.at >= 30_000 && kept?.stop === stopKey && !nearLine(driver, kept.route.line, 40);
-    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) set({ key: stopKey, fix, metres, at: monotonic });
+    if (metres >= SIGNIFICANT_MOVEMENT_METRES || left) set({ key, fix, metres, at: monotonic });
   };
-  reanchor(billed, setBilled, false);
-  reanchor(steered, setSteered, withSteps);
+  reanchor(billed, setBilled, billKey, false, renderer !== 'google' || foreground);
+  reanchor(steered, setSteered, stopKey, withSteps);
   const approachUrl = !renderer || !driver || !target ? null
     // The driver's turns need a line from where they are, not from a 110 m grid cell, which can be the next street.
     : withSteps ? steered.fix && `${roadPath(steered.fix, target, 5, steered.fix.heading)}&steps=1&lang=${stepsLanguage}`
-    : roadPath(driver, target, 3, driver.heading);
+    : steered.fix && roadPath(steered.fix, target, 3, steered.fix.heading);
   const approach = useApi<RoadRoute>(approachUrl, 25_000);
   // On a Google map a paid line overlays that free route. It is never polled or reloaded: when its ETA lapses or the call
   // fails, the free route carries the line and minutes, so a waiting driver costs nothing and never loses them.
-  const paidUrl = renderer === 'google' && driver && target && foreground && stopKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
+  const paidUrl = renderer === 'google' && driver && target && foreground && billKey && billed.key === billKey && billed.fix ? googleApproachPath(billed.fix, target, billed.metres) : null;
   const paidApproach = useApi<RoadRoute>(paidUrl, undefined, { refetchOnFocus: false });
   // useApi keeps the last data when a refresh fails, so a failed fetch must not count as fresh.
   const fetched = approach.error ? undefined : showable(approach.data);

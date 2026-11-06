@@ -47,9 +47,16 @@ function AppleRouteMap(props: RouteMapProps) {
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!driver || moved || failed) return;
+    // Only the person driving rides with the car. Anyone else sees the car with where it is heading, as on web and Android.
+    const stop = props.focus === 'pickup' ? pickup : props.focus === 'dropoff' ? dropoff : undefined;
+    if (!props.follow && stop) {
+      view.current?.fitToCoordinates([driver, stop], { animated: !still,
+        edgePadding: { top: 72 + (props.insets?.top ?? 0), right: 72 + (props.insets?.right ?? 0), bottom: 72 + (props.insets?.bottom ?? 0), left: 72 } });
+      return;
+    }
     view.current?.animateToRegion({ latitude: driver.latitude, longitude: driver.longitude,
       latitudeDelta: FOLLOW_DELTA, longitudeDelta: FOLLOW_DELTA }, still ? 0 : 800);
-  }, [driver?.latitude, driver?.longitude, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driver?.latitude, driver?.longitude, props.follow, props.focus, moved, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;
@@ -72,6 +79,7 @@ function AppleRouteMap(props: RouteMapProps) {
   </View>;
   return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
+    accessibilityLabel={`${c.routeOnMap}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? ` · ${driverTitle ?? ''}` : ''}`}
     onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
@@ -147,15 +155,20 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    if (!ready || (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude)) return;
-    pendingCenter.current = center;
-    view.current?.animateToRegion({ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 0);
-  }, [center.latitude, center.longitude, ready, attempt]); // eslint-disable-line react-hooks/exhaustive-deps -- the coordinates are the change, not the object identity
-  // The callbacks are inline arrows: they change every render, so they are kept in a ref and the timer
-  // below depends on the map's state only, not on their identity.
   const callbacks = useRef({ onFail, onReady });
   useEffect(() => { callbacks.current = { onFail, onReady }; });
+  useEffect(() => {
+    if (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude) return;
+    const target = { latitude: center.latitude, longitude: center.longitude };
+    pendingCenter.current = target;
+    if (!ready) return;
+    view.current?.animateToRegion({ ...target, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 0);
+    const timer = setTimeout(() => {
+      if (pendingCenter.current !== target) return;
+      pendingCenter.current = null; setFailed(true); callbacks.current.onFail?.();
+    }, mapReadyMs());
+    return () => clearTimeout(timer);
+  }, [center.latitude, center.longitude, ready, attempt]);
   // The sheet offers no pin to confirm until the map says it is ready; a map that never loads says so.
   useEffect(() => {
     if (ready) { callbacks.current.onReady?.(); return; }
@@ -169,6 +182,7 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
   </View>;
   return <View style={{ height, width: '100%' }}>
     <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+      accessibilityLabel={c.pinHint}
       pitchEnabled={false} rotateEnabled={false} // Apple reports no isGesture and its pan recogniser misses pinch: any touch takes over from a pending GPS camera.
       onTouchStart={() => { pendingCenter.current = null; onGesture?.(); }} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapReady={() => setReady(true)}
       onRegionChangeComplete={r => {

@@ -121,6 +121,8 @@ function BookForm() {
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
+  const [storageAttempt, setStorageAttempt] = useState(0); // a failed read of the saved booking fails closed, and can be asked again
+  const retryStorage = () => { setError(''); setStorageAttempt(attempt => attempt + 1); };
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
   const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
@@ -232,7 +234,7 @@ function BookForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- describe only closes over the language, which re-renders this anyway
   }, [step, pinPoint, pinMoving, language]);
   function confirmPinSpot() {
-    if (!pinPoint || !pinServed || pinMoving) return;
+    if (locating || !mapReady || !pinPoint || !pinServed || pinMoving) return;
     haptic.success();
     const note = pinNote || pinLabel?.name || city(pinServed)[language];
     setPinNote('');
@@ -301,7 +303,8 @@ function BookForm() {
         void checkPending(existing);
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
-        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => null); // missing/foreign: empty form
+        // Missing, foreign or offline: an empty form, and it says so rather than look like the old route was copied.
+        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => { if (mounted) setError(c.orderAgainFailed); return null; });
         if (!mounted) return;
         if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
           const p = pickupForm(old);
@@ -322,7 +325,7 @@ function BookForm() {
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [savedKey, checkPending, c.bookingStorageError, params.again, params.keep]);
+  }, [savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, params.again, params.keep, storageAttempt]);
 
   // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
   useEffect(() => {
@@ -503,7 +506,7 @@ function BookForm() {
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
       label={routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
-      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { setPinMoving(true); setPinLabel(null); setLocationError(''); }}
+      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { locationRequest.current?.abort(); if (pinFor === 'pickup') pickupTouched.current = true; setLocating(false); setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
 
@@ -538,7 +541,7 @@ function BookForm() {
         {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
           <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
         {mapFailed ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.pinUnavailable}</Txt>
-          : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={!mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
+          : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={locating || !mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
       </SafeAreaView>
     </>}
 
@@ -560,6 +563,7 @@ function BookForm() {
           <Txt variant="title">{c.serviceUnavailable}</Txt>
           <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
         </Card>}
+        {!ready && error && <Button title={c.retry} variant="soft" onPress={retryStorage} />}
         {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
         {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
@@ -704,7 +708,7 @@ function BookForm() {
     </MapSheet>}
 
     {step === 'search' && <TripSearch field={field} onField={setField} pickupText={pickupTitle} dropoffText={dropoffTitle} near={pickupChosen ? previewFrom : here} places={places}
-      locating={locating} locationError={locationError} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
+      locating={locating} locationError={locationError} notice={error} onRetry={!ready && error ? retryStorage : undefined} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
       onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e))), c.forgetPlace, c.no)}
       onClose={() => { if (routeChosen) setStep('trip'); else if (router.canGoBack()) router.back(); else router.replace('/'); }} />}
   </View>;

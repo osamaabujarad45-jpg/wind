@@ -15,5 +15,7 @@ docker exec wind-api node --disable-warning=ExperimentalWarning -e "
 "
 gzip -9 "$dir/wind-$stamp.db"
 printf 'url = "%s"\n' "$(echo "$BLOB_URL" | sed "s#?#/wind-$stamp.db.gz?#")" | curl -fsS --retry 3 -K - -X PUT -H 'x-ms-blob-type: BlockBlob' --data-binary "@$dir/wind-$stamp.db.gz" -o /dev/null # -K: the SAS stays off the process list
+# The API alerts admins when this marker goes stale, so it moves only after the off-VM copy succeeded.
+touch "$dir/last-ok"
 find "$dir" -name 'wind-*.db.gz' -mtime +14 -delete
 echo "backup wind-$stamp.db.gz $(stat -c %s "$dir/wind-$stamp.db.gz") bytes"

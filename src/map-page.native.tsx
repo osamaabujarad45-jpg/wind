@@ -7,7 +7,7 @@ import { useMapBridge, type MapEvents } from './map-bridge';
 import { mapReadyMs } from './runtime-config';
 import { palette } from './ui';
 
-const PAGE = `${API_URL}/map.html`;
+const PAGE = `${API_URL}/map/v1/map.html`;
 const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
 export const MAP_GROUND = '#EEEFEC';
 export type MapPageProps = MapEvents & { config: { mode?: string } & Record<string, unknown>; height?: number; fill?: boolean; update?: object };

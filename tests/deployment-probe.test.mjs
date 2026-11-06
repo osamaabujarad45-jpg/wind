@@ -20,6 +20,12 @@ const server = createServer((request, response) => {
   if (path === '/api/auth/options') return json(defect === 'old-api' ? { registrationOpen: true } : { registrationOpen: true, emailReset: false });
   if (path === '/api/orders/1/live') { response.statusCode = defect === 'missing-route' ? 404 : 401; return json({ error: 'unauthorized' }); }
   if (path === '/map.html') { response.setHeader('content-type', 'text/html'); return response.end(defect === 'old-map' ? 'old map' : map); }
+  if (path === '/map/v1/map.html') {
+    response.statusCode = defect === 'missing-versioned-map' ? 404 : 200;
+    response.setHeader('content-type', 'text/html');
+    response.setHeader('cache-control', defect === 'uncached-map' ? 'no-cache' : 'public, max-age=86400');
+    return response.end(map);
+  }
   if (path === '/') {
     response.setHeader('content-type', 'text/html');
     const source = defect === 'external-script' ? 'https://external.example/_expo/static/js/web/index.js' : '/_expo/static/js/web/index.js';
@@ -39,7 +45,7 @@ try {
   assert.equal((await run()).status, 0, 'healthy deployment passes');
   for (const [name, label] of [['html-ready', '/api/ready'], ['old-api', 'authentication capabilities'],
     ['missing-route', 'unauthenticated tracking access'], ['old-map', 'current map page'], ['wrong-origin', 'web bundle API origin'],
-    ['external-script', 'web bundle API origin']]) {
+    ['external-script', 'web bundle API origin'], ['missing-versioned-map', 'versioned map page'], ['uncached-map', 'versioned map page']]) {
     defect = name;
     const result = await run();
     assert.equal(result.status, 1, name);

@@ -88,7 +88,7 @@ try {
   // Revocation: account deletion, admin block, admin password reset, phone-path session deletion.
   const del = await reg(6);
   await call('/push/native/register', { token: del.token, body: { expoPushToken: rawToken('delete'), deviceId: randomUUID(), platform: 'ios' } });
-  await call('/me/delete', { token: del.token, body: {} });
+  await call('/me/delete', { token: del.token, body: { password: 'synthetic-secret' } });
   assert.equal(await countTokens(del.user.id), 0, 'account-delete cascade');
   const blocked = await reg(7);
   await call('/push/native/register', { token: blocked.token, body: { expoPushToken: rawToken('block'), deviceId: randomUUID(), platform: 'android' } });
@@ -96,7 +96,7 @@ try {
   assert.equal(await countTokens(blocked.user.id), 0, 'admin block cascade');
   const reset = await reg(8);
   await call('/push/native/register', { token: reset.token, body: { expoPushToken: rawToken('reset'), deviceId: randomUUID(), platform: 'android' } });
-  await call(`/admin/users/${reset.user.id}/password`, { token: admin.token, body: {} });
+  await call(`/admin/users/${reset.user.id}/password`, { token: admin.token, body: { attestation: 'Called the registered number back; caller named last order' } });
   assert.equal(await countTokens(reset.user.id), 0, 'admin password-reset cascade');
   const phoneUser = await reg(9);
   await call('/push/native/register', { token: phoneUser.token, body: { expoPushToken: rawToken('phone'), deviceId: randomUUID(), platform: 'android' } });

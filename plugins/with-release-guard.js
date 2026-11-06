@@ -40,7 +40,7 @@ module.exports = config => withAndroidManifest(withAppBuildGradle(config, config
   return config;
 }), config => {
   // No map key uses the route preview; discard metadata left by an earlier keyed prebuild.
-  if (!process.env.GOOGLE_MAPS_API_KEY) {
+  if (!(process.env.GOOGLE_MAPS_ANDROID_KEY ?? process.env.GOOGLE_MAPS_API_KEY)) {
     for (const application of config.modResults.manifest.application ?? []) {
       if (application['meta-data']) application['meta-data'] = application['meta-data'].filter(item => item.$?.['android:name'] !== 'com.google.android.geo.API_KEY');
     }

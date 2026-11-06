@@ -314,6 +314,8 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.ok(roadSource.includes('googleApproachPath(billed.fix'), 'the paid URL is built from the last billed fix, so stationary fixes cannot refetch');
   assert.ok(roadSource.includes('roadPath(steered.fix, target, 5'), 'a navigating driver gets a route from their own fix, not a 110 m grid cell, refreshed on movement');
   assert.ok(!readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8').includes('enabled={open}'), 'a closed sheet can hold a field, such as the handover code: the keyboard must lift it too');
+  { const sheet = readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8');
+    assert.ok(sheet.includes('!footer && !open &&') && sheet.includes('16 + (footer ? 0 : padBottom)'), 'open, the navigation-bar inset ends the content instead of leaving a band mid-sheet (A53)'); }
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never
   // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');
@@ -338,6 +340,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   // Android: the page labels its own map, so the WebView is not wrapped in an accessible group that would hide Recenter.
   const androidMap = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8'), mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.ok(!androidMap.includes('accessible={!!label}') && readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8').includes('label={`${c.routeOnMap}'), 'the route label travels in the page update');
+  assert.ok(mapPage.includes('right: calc(var(--inset-right) + 10px)') && mapPage.includes('.maplibregl-ctrl-bottom-right { right: var(--inset-right)'), 'map controls clear a side sheet, or recenter is unreachable under it');
+  const appleSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
+  assert.ok(appleSource.includes('!props.follow && stop') && appleSource.includes('fitToCoordinates([driver, stop]'), 'iOS frames the car with its next stop for anyone not driving');
   assert.ok(mapPage.includes("mapEl.setAttribute('aria-label', update.label)") && mapPage.indexOf('id="recenter"') > mapPage.indexOf('<div id="map"></div>'), 'map.html labels the map; Recenter is outside it');
   // Apple reports no isGesture: a touch (pinch included) must stop the route camera following, like every other renderer.
   assert.ok(readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8').includes('onTouchStart={() => setMoved(true)}'), 'an Apple pinch stops follow');

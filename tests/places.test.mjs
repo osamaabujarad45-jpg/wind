@@ -60,7 +60,7 @@ try {
 
   // Account deletion removes them (open orders block deletion, so cancel first).
   for (const o of await call('/orders', { token: t })) await call(`/orders/${o.id}/cancel`, { token: t, body: {} });
-  await call('/me/delete', { token: t, body: {} });
+  await call('/me/delete', { token: t, body: { password: 'secret1' } });
   assert.equal(db.prepare('SELECT COUNT(*) n FROM saved_places').get().n, 0);
 
   console.log('places: ok');

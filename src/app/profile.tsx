@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../api';
 import { useFormat } from '../parts';
 import { PhoneCard } from '../phone-card';
+import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
 import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
 
@@ -108,7 +109,7 @@ function EmailCard() {
       <Txt variant="title" style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{sent ? fill(c.emailCodeSent, { email }) : fill(c.emailVerifyBody, { email })}</Txt>
       {/* sign-up already emailed a code, so the field comes first */}
-      <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
+      <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad"
         autoComplete="one-time-code" maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? verify : undefined} />
       <ErrorText>{error}</ErrorText>
       <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} reason={c.code_six_digits} />

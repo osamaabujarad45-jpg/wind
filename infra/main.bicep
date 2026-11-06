@@ -46,6 +46,8 @@ param enableAcs bool = false
 param acsDataLocation string = 'Europe'
 @description('Real support contact shown on the legal pages; required when workloads are enabled.')
 param supportContact string = ''
+@description('Operator subject for Web Push, a mailto: address or https: origin; required when workloads are enabled.')
+param pushSubject string = ''
 @description('Production identity policy; operator-verified keeps self-registration closed.')
 @allowed(['operator-verified', 'self-service'])
 param identityMode string = 'operator-verified'
@@ -54,6 +56,7 @@ param identityMode string = 'operator-verified'
 var checkedImage = !enableWorkloads || !empty(trim(imageDigest)) ? imageDigest : fail('imageDigest is required when enableWorkloads is true')
 var checkedOsrmImage = !enableWorkloads || !empty(trim(osrmImageDigest)) ? osrmImageDigest : fail('osrmImageDigest is required when enableWorkloads is true')
 var checkedSupportContact = !enableWorkloads || !empty(trim(supportContact)) ? supportContact : fail('supportContact is required when enableWorkloads is true')
+var checkedPushSubject = !enableWorkloads || !empty(trim(pushSubject)) ? pushSubject : fail('pushSubject is required when enableWorkloads is true')
 var suffix = uniqueString(subscription().id, resourceGroup().id, prefix)
 var commonTags = { application: 'fastship', environment: environment, managedBy: 'bicep' }
 var vnetName = '${prefix}-${environment}-vnet'
@@ -372,6 +375,7 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
       { name: 'WIND_ACS_ENDPOINT', value: enableAcs ? 'https://${comm!.properties.hostName}' : '' }
       { name: 'WIND_ACS_SENDER', value: acsSender }
       { name: 'WIND_TRUST_PROXY', value: '1' }
+      { name: 'WIND_PUSH_SUBJECT', value: checkedPushSubject }
     ]
     keyVaultSecrets: [
       { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }
@@ -405,6 +409,7 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
     command: ['node', 'server/worker.ts']
     environmentVariables: [
       { name: 'WIND_POSTGRES_STAGING', value: '1' }
+      { name: 'WIND_PUSH_SUBJECT', value: checkedPushSubject }
     ]
     keyVaultSecrets: [
       { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }

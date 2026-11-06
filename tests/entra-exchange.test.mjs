@@ -59,7 +59,7 @@ try {
     'a verified external address cannot take over an account that never verified it');
 
   db.prepare('UPDATE users SET entra_oid = ? WHERE id = ?').run('linked-user', existing.user.id);
-  await exchange({ oid: 'linked-user', email: 'different@example.com', email_verified: true,
+  const linked = await exchange({ oid: 'linked-user', email: 'different@example.com', email_verified: true,
     phone_number: '+970599300102', phone_number_verified: true });
   const unchanged = db.prepare('SELECT phone_verified_at, email_verified_at FROM users WHERE id = ?').get(existing.user.id);
   assert.equal(unchanged.phone_verified_at, null, 'a different claimed phone cannot verify the stored phone');
@@ -81,10 +81,51 @@ try {
   const row = db.prepare('SELECT phone_verified_at, email_verified_at FROM users WHERE id = ?').get(created.user.id);
   assert.equal(row.phone_verified_at, null, 'a manually entered phone is never treated as verified');
   assert.ok(row.email_verified_at, 'the attested email can satisfy contact verification');
+  const expired = await call('/me/delete/challenge', { token: linked.token, body: {} });
+  db.prepare('UPDATE entra_replay SET expires_at=? WHERE token_hash=?').run(Date.now() - 2_000,
+    createHash('sha256').update(`delete-challenge:${linked.token}:${expired.nonce}`).digest('hex'));
+  await call('/me/delete', { token: linked.token, body: { idToken: token({ oid: 'linked-user', nonce: expired.nonce, auth_time: Math.floor(Date.now() / 1000) }), nonce: expired.nonce }, expect: 401 });
+  const afterLogin = await call('/me/delete/challenge', { token: linked.token, body: {} });
+  await call('/me/delete', { token: linked.token, body: { idToken: token({ oid: 'linked-user', nonce: afterLogin.nonce, auth_time: Math.floor(Date.now() / 1000) - 10 }), nonce: afterLogin.nonce }, expect: 401 });
+  const challenge = await call('/me/delete/challenge', { token: created.token, body: {} });
+  const fresh = Math.floor(Date.now() / 1000);
+  const proof = claims => ({ idToken: token({ nonce: challenge.nonce, auth_time: fresh, ...claims }), nonce: challenge.nonce });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'another-rider' }), expect: 401 });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider', auth_time: undefined }), expect: 401 });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider', auth_time: fresh - 310 }), expect: 401 });
+  const otherSession = await exchange({ oid: 'new-rider' });
+  await call('/me/delete', { token: otherSession.token, body: proof({ oid: 'new-rider' }), expect: 401 });
+  assert.notEqual(db.prepare('SELECT status FROM users WHERE id=?').get(created.user.id).status, 'blocked');
   await exchange({ oid: 'another-rider', email: 'other@example.com', email_verified: true },
     { phone: '0599300104', consent: true }, 403);
   await exchange({ oid: 'no-proof', email: 'unknown@example.com', email_verified: false },
     { phone: '0599300105', consent: true }, 400);
+
+  // A Microsoft-only account never saw its placeholder password: a fresh Microsoft sign-in sets a real one, and nothing weaker does.
+  const chosen = 'microsoft-chosen-123';
+  const noLink = await register('0599300108', 'nolink@example.com');
+  assert.equal((await call('/me/password/challenge', { token: noLink.token, body: {}, expect: 409 })).error, 'entra_unavailable');
+  await call('/me/password', { token: created.token, body: { current: 'not-the-placeholder', password: chosen }, expect: 401 });
+  const passwordChallenge = await call('/me/password/challenge', { token: created.token, body: {} });
+  const signedInAt = Math.floor(Date.now() / 1000) + 1; // the Microsoft sign-in follows the challenge
+  const setWith = (claims, extra = {}) => ({ idToken: token({ nonce: passwordChallenge.nonce, auth_time: signedInAt, ...claims }), nonce: passwordChallenge.nonce, password: chosen, ...extra });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'another-rider' }), expect: 401 });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider', auth_time: undefined }), expect: 401 });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider', auth_time: signedInAt - 310 }), expect: 401 });
+  await call('/me/password', { token: otherSession.token, body: setWith({ oid: 'new-rider' }), expect: 401 });
+  // A nonce issued for deletion cannot authorize a password change, or the reverse.
+  await call('/me/password', { token: created.token, body: { idToken: token({ oid: 'new-rider', nonce: challenge.nonce, auth_time: signedInAt }), nonce: challenge.nonce, password: chosen }, expect: 401 });
+  await call('/me/delete', { token: created.token, body: { idToken: token({ oid: 'new-rider', nonce: passwordChallenge.nonce, auth_time: signedInAt }), nonce: passwordChallenge.nonce }, expect: 401 });
+  assert.equal((await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider' }, { password: 'short' }), expect: 400 })).error, 'weak_password');
+  const proofToken = setWith({ oid: 'new-rider' });
+  assert.deepEqual(await call('/me/password', { token: created.token, body: proofToken }), { ok: true });
+  await call('/me/password', { token: created.token, body: { ...proofToken, password: 'second-choice-1234' }, expect: 401 });
+  await call('/me', { token: otherSession.token, expect: 401 }); // other sessions end, this one stays
+  await call('/me', { token: created.token });
+  assert.equal((await call('/auth/login', { body: { identifier: '0599300104', password: chosen } })).user.id, created.user.id);
+
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider' }) });
+  assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(created.user.id).status, 'blocked');
   console.log('Entra exchange: account linking, contact proof, and email-based registration passed');
 } finally {
   globalThis.fetch = realFetch;

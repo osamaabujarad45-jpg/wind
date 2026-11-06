@@ -11,7 +11,7 @@ import { hashPassword, verifyPassword, passwordKdfStatus, PasswordBusyError } fr
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-registration-'));
 const path = join(dir, 'test.db');
-Object.assign(process.env, { NODE_ENV: 'production', WIND_IDENTITY_MODE: 'self-service', DB_PATH: path,
+Object.assign(process.env, { NODE_ENV: 'production', WIND_PUSH_SUBJECT: 'mailto:wind-suite@example.invalid', WIND_TRUST_PROXY: '1', WIND_IDENTITY_MODE: 'self-service', DB_PATH: path,
   SUPPORT_CONTACT: 'Synthetic support', WIND_ENABLED_SERVICES: 'parcel' });
 const password = 'Synthetic_Password123';
 const salt = 'synthetic-migration-salt';
@@ -165,6 +165,13 @@ try {
   assert.equal(await (await fetch(base + '/terms')).text().then(s => s.includes('Synthetic support')), true);
   assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
+  const interrupted = { ...input, phone: '0599000088', email: 'interrupted@example.test' };
+  db.exec("CREATE TRIGGER fail_signup_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'synthetic session failure'); END");
+  try {
+    await call('/auth/register', null, interrupted, 500);
+    assert.equal(db.prepare('SELECT id FROM users WHERE phone=?').get(interrupted.phone), undefined, 'a failed session cannot leave a half-created account');
+  } finally { db.exec('DROP TRIGGER fail_signup_session'); }
+  assert.ok((await call('/auth/register', null, interrupted)).token, 'the same signup can be retried after the failure');
   console.log('Self-service checks passed: schema-1 upgrade, immediate email/phone login, truthfully unverified identities, pending-driver safety, admin edit/approve/block/delete, session revocation and order integrity');
 } finally {
   await shutdown();

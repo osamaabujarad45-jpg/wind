@@ -11,6 +11,7 @@ import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } 
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
@@ -72,7 +73,7 @@ export default function OrderScreen() {
   const [proofInput, setProofInput] = useState({ context: proofContext, value: '' });
   if (proofInput.context !== proofContext) setProofInput({ context: proofContext, value: '' });
   const code = proofInput.context === proofContext ? proofInput.value : '';
-  const setCode = (value: string) => setProofInput({ context: proofContext, value });
+  const setCode = (value: string) => setProofInput({ context: proofContext, value: codeInput(value, 4) });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
@@ -636,6 +637,7 @@ export default function OrderScreen() {
         {needsCode &&
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
+        {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'

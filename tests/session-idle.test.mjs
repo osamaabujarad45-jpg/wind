@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-session-idle-'));
-Object.assign(process.env, { NODE_ENV: 'production', WIND_IDENTITY_MODE: 'self-service',
+Object.assign(process.env, { NODE_ENV: 'production', WIND_PUSH_SUBJECT: 'mailto:wind-suite@example.invalid', WIND_TRUST_PROXY: '1', WIND_IDENTITY_MODE: 'self-service',
   DB_PATH: join(dir, 'test.db'), SUPPORT_CONTACT: 'Synthetic support', WIND_ENABLED_SERVICES: 'parcel' });
 const password = 'Synthetic_Password123';
 const { server, db, shutdown } = await import('../server/main.ts');

@@ -146,6 +146,30 @@ try {
     assert.equal(new Set(paidPaths(world)).size, 1, 'coming back names one route');
     assert.ok(before >= 1);
   }
+  // A background fix is not a billed baseline: resume measures the latest fix from the last shown route.
+  {
+    const { world, render, setApp } = harness('google');
+    render(order(world, start));
+    setApp('background');
+    render(order(world, { ...start, latitude: start.latitude + 0.003 }));
+    render(order(world, { ...start, latitude: start.latitude + 0.004 }));
+    assert.equal(paidPaths(world).length, 1, 'background movement cannot request a paid route');
+    setApp('active');
+    render(order(world, { ...start, latitude: start.latitude + 0.004 }));
+    const url = new URL(paidPaths(world).at(-1), 'https://wind.example');
+    assert.equal(url.searchParams.get('from'), '31.85400,35.15000', 'resume uses the latest location');
+    assert.equal(url.searchParams.get('metres'), '442', 'movement starts at the last foreground request');
+  }
+  {
+    const { world, render, setApp } = harness('google');
+    render(order(world, start));
+    setApp('background');
+    render(order(world, { ...start, latitude: start.latitude + 0.003 }));
+    const returned = { ...start, latitude: start.latitude + 0.0005 };
+    render(order(world, returned));
+    setApp('active'); render(order(world, returned));
+    assert.equal(paidPaths(world).length, 1, 'a background excursion which returns near the paid baseline buys no route');
+  }
   // A lapsed free ETA reloads the free route, on a Google map too, and never the paid one.
   {
     const { world, render, advance } = harness('google');
@@ -257,6 +281,33 @@ try {
     assert.ok(shows(road, paidEnd), 'the paid line draws');
     assert.equal(road.steps, steps, 'and the turn banner keeps its steps');
     assert.equal(road.navLine.at(-1), freeEnd, 'measured along the line those steps belong to');
+  }
+  // A status change at the same stop buys nothing; a new stop buys its one preview.
+  {
+    const { world, render } = harness('google');
+    const issued = world.now;
+    world.answer = path => path.includes('/route/google') ? paid(180, issued) : path.includes('heading=') ? free(600, issued) : undefined;
+    render(order(world));
+    assert.equal(paidPaths(world).length, 1);
+    render(order(world, start, { status: 'at_pickup' }));
+    assert.equal(paidPaths(world).length, 1, 'arriving at the same pickup is not a new route');
+    assert.match(paidPaths(world)[0], /trigger=preview&shown=1/);
+    render(order(world, start, { status: 'in_transit' }));
+    assert.equal(paidPaths(world).length, 2, 'heading for the dropoff is');
+  }
+  // A fast road keeps the route budget: 120 calls per 10 minutes, shared with the 25 s poll, or the ETA vanishes on a 429.
+  {
+    const { world, render, advance } = harness('baseline');
+    const issued = () => world.now;
+    world.answer = path => path.includes('heading=') ? free(600, issued()) : undefined;
+    const freePaths = () => new Set(world.seen.map(item => item.path).filter(path => path.includes('heading=')));
+    let road;
+    for (let i = 0; i < 120; i++) { // ten minutes at 100 km/h, a fix every 5 s, on a winding road
+      road = render(order(world, { latitude: 31.85 + i * 0.00125, longitude: 35.15 }, { driverLocation: { latitude: 31.85 + i * 0.00125, longitude: 35.15, heading: (i * 37) % 360, updatedAt: world.now } }));
+      advance(5_000);
+    }
+    assert.ok(freePaths().size <= 96, `${freePaths().size} route URLs leave no room for the 24 polls`);
+    assert.ok(road.approach && road.eta, 'and the driver still has a line and minutes');
   }
   // The baseline map never asks for anything paid, and Google content never reaches it.
   {

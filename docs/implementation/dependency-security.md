@@ -33,3 +33,7 @@ GHSA-qr28-fpjm-wq7f / CVE-2026-118664 (published 29 Oct 2026, high: the fallback
 - `npx expo export --platform web` — passed with `WIND_LOCAL_TEST=1` and `EXPO_PUBLIC_API_URL=http://127.0.0.1:4191`. A production-mode export correctly rejected the reserved `.example` placeholder host before this local-mode run.
 
 No Expo or React Native API was changed. The SDK 57 versioned documentation confirms `npx expo install` is the SDK module installer; no new Expo module was added.
+
+## `expo` pinned one patch behind (5 November 2026)
+
+`package.json` excludes `expo` from Expo's version check at 57.0.31. Moving it to 57.0.32 crashes npm's resolver (`Cannot read properties of null (reading 'name')` in `Link.matches`) on the vendored `file:` overrides for `node-forge`, `deepmerge` and `decode-uri-component`. Remove the exclude when npm or the overrides change.
