@@ -8,6 +8,9 @@ import { dayKey, scheduleSlots } from '../src/booking.ts';
 import { copy } from '../src/copy.ts';
 import { apiCaller } from './support/api.mjs';
 
+for (const language of ['en', 'ar']) for (const key of ['scheduledMissed', 'err_route_prohibited', 'err_itinerary_changed', 'err_quote_not_found'])
+  assert.ok(typeof copy[language][key] === 'string' && copy[language][key].length > 0, `${language}.${key} is missing`);
+
 // Slots follow Palestine time even on a phone set elsewhere.
 process.env.TZ = 'Europe/London';
 {
