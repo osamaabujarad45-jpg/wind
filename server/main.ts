@@ -1302,7 +1302,6 @@ async function recommend(user: User, b: Row) {
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
   const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
-  apartPins(b.pickupPoint, b.dropoffPoint);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
   let trip: RoadRoute | null = null;
   try { trip = await roadRoute(from, to); } catch { /* estimate */ }
@@ -1323,6 +1322,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
   (await limit(identityKey('price', user.id), 120, 10 * 60_000));
+  apartPins(body.pickupPoint, body.dropoffPoint); // a booking only: a trip under way may head back to its pickup
   const base = (await recommend(user, body));
   if (!(await quotesAvailable(persistence))) return base;
   const service = body.service as Service;
@@ -1486,6 +1486,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     // the 120s window must not void the fare the customer accepted).
     const effPoint = fillPoint(quoted.pickup_lat, quoted.pickup_lng, body.pickupPoint, quoted.pickup_city);
     const effDropoffPoint = fillPoint(quoted.dropoff_lat, quoted.dropoff_lng, body.dropoffPoint, quoted.dropoff_city);
+    apartPins(effPoint, effDropoffPoint);
     if (quoted.service === 'ride' && body.recipientPhone != null && body.recipientPhone !== '') fail(400, 'invalid_input');
     const effRecipientPhone = fillPhone(quoted.recipient_phone, body.recipientPhone);
     const effRecipientName = effRecipientPhone ? fillText(quoted.recipient_name, body.recipientName, 60, false) : '';

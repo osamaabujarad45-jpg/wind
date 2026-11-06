@@ -46,6 +46,12 @@ try {
   order = await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
   assert.equal(order.price, 20);
   assert.equal(order.commission, 3);
+  // Only a booking must have two spots: a trip under way may head back to where it started.
+  const spot = { latitude: 31.905, longitude: 35.205 };
+  const homeward = await call('/orders', { token: customer.token, body: { ...input, pickupPoint: spot, quotedPrice: quote(defaultSettings, input) } });
+  await call(`/jobs/${homeward.id}/accept`, { token: other.token, body: {} });
+  await post(homeward.id, 'quote', customer.token, { city: 'ramallah', note: 'Back where it started', point: spot });
+  await call(`/orders/${homeward.id}/cancel`, { token: customer.token, body: {} });
   await call('/admin/settings', { token: admin.token, body: { parcelPrice: 34, commission: 0.3 } });
   const request = { city: 'hebron', note: 'New address', point: { latitude: 31.5326, longitude: 35.0998 } };
   const roads = await call('/admin/roads', { token: admin.token, body: { name: 'Hebron checkpoint', cities: ['hebron'] } });
