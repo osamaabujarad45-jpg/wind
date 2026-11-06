@@ -447,3 +447,10 @@ for (const lang of ['ar', 'en']) assert.ok(copy[lang].err_storage_unavailable, l
 assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
 
 console.log('Phone UI rules passed');
+
+// A system permission sheet pauses the app. Found on the phone: the first Accept after granting said location was off.
+{
+  const work = readFileSync(new URL('../src/driver-work.tsx', import.meta.url), 'utf8');
+  const prepare = work.slice(work.indexOf('const prepareTracking'), work.indexOf('const requestBackgroundPermission'));
+  assert.ok(prepare.indexOf('if (asked) await backFromSheet()') > prepare.indexOf('requestPermission()') && prepare.indexOf('if (asked) await backFromSheet()') < prepare.indexOf('if (!current() || !value?.granted)'), 'the revision is re-read after the sheet, before the answer is judged');
+}

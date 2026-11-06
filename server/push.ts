@@ -30,7 +30,27 @@ export const isDeviceNotRegistered = (error: unknown) => {
     || (typeof value?.message === 'string' && value.message.includes('DeviceNotRegistered'));
 };
 
-/** One Expo push, worded generically: what happened stays inside the app, which re-checks authority when opened.
+/** What the lock screen says: the event only, never a name, address or price. Details stay in the app, which re-checks authority when opened. */
+const pushWords: Record<string, { ar: string; en: string }> = {
+  job: { ar: 'طلب توصيل جديد متاح. افتح ويند لقبوله.', en: 'New delivery job available. Open Wind to take it.' },
+  offer: { ar: 'عرض جديد على طلب. افتح ويند للرد.', en: 'A new offer on a job. Open Wind to respond.' },
+  offer_accepted: { ar: 'قُبل عرضك. افتح ويند للتفاصيل.', en: 'Your offer was accepted. Open Wind for details.' },
+  assigned: { ar: 'قبل سائق طلبك وهو في الطريق.', en: 'A driver took your order and is on the way.' },
+  at_pickup: { ar: 'وصل السائق إلى نقطة الاستلام.', en: 'Your driver has reached the pickup.' },
+  in_transit: { ar: 'طلبك في الطريق. جهّز رمز التسليم.', en: 'Your order is on its way. Have the handover code ready.' },
+  completed: { ar: 'تم التوصيل. شكراً لاستخدامك ويند.', en: 'Delivered. Thank you for using Wind.' },
+  released: { ar: 'نبحث عن سائق آخر لطلبك.', en: 'Looking for another driver for your order.' },
+  cancelled: { ar: 'أُلغي الطلب. افتح ويند للتفاصيل.', en: 'The order was cancelled. Open Wind for details.' },
+  message: { ar: 'رسالة جديدة بخصوص طلبك.', en: 'New message about your order.' },
+  on_hold: { ar: 'طلبك متوقف مؤقتاً. افتح ويند للتفاصيل.', en: 'Your order is on hold. Open Wind for details.' },
+  returning: { ar: 'يعود طلبك إلى المرسل. جهّز رمز الإرجاع.', en: 'Your order is coming back. Have the return code ready.' },
+  returned: { ar: 'أُعيد الطلب إلى المرسل.', en: 'The order was returned to the sender.' },
+  decided: { ar: 'صدر قرار بخصوص طلبك. افتح ويند.', en: 'A decision was made on your job. Open Wind.' },
+  approved: { ar: 'تمت الموافقة على حسابك. يمكنك استلام الطلبات الآن.', en: 'Your account is approved. You can take jobs now.' },
+};
+const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
+
+/** One Expo push.
  * Real delivery waits for the owner's FCM/APNs credentials and WIND_EXPO_PUSH_ENABLED=1; until then this throws. */
 export async function sendExpoPush(token: { expo_push_token?: unknown }, message: string, ttl: number, urgent: boolean) {
   if (process.env.WIND_EXPO_PUSH_ENABLED !== '1') throw Object.assign(new Error('expo_not_configured'), { providerStatus: 503 });
@@ -38,7 +58,7 @@ export async function sendExpoPush(token: { expo_push_token?: unknown }, message
   const response = await fetch('https://exp.host/--/api/v2/push/send', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}) },
     // channelId names the high-importance channel src/native-push.ts creates, so Android shows a heads-up; priority wakes a dozing phone.
-    body: JSON.stringify([{ to: String(token.expo_push_token), title: 'Wind', body: data.lang === 'en' ? 'You have a new update. Open Wind to view it.' : 'لديك تحديث جديد. افتح ويند لعرضه.',
+    body: JSON.stringify([{ to: String(token.expo_push_token), title: 'Wind', body: pushBody(data.kind, data.lang),
       sound: 'default', ttl, priority: urgent ? 'high' : 'normal', channelId: 'default', data: { kind: data.kind, order: data.order, url: data.url, eventId: data.eventId } }]) });
   const tickets = await response.json().catch(() => null) as { data?: { status?: string; details?: { error?: string } }[] } | null;
   await response.body?.cancel().catch(() => {});

@@ -71,7 +71,8 @@ try {
   assert.equal(sent[0].ttl, 300, 'a job alert is stale after five minutes');
   assert.equal(sent[0].data.url, '/driver');
   assert.equal(sent[0].data.kind, 'job');
-  assert.equal(sent[0].body, 'You have a new update. Open Wind to view it.', 'in the language the device registered');
+  assert.equal(sent[0].body, 'New delivery job available. Open Wind to take it.', 'says what happened, in the language the device registered');
+assert.ok(!/Rana|Lina|0599|Ramallah|Nablus|₪/.test(sent[0].body + sent[0].title), 'and nothing personal on the lock screen');
   assert.ok(!JSON.stringify(sent[0]).includes('Secret'), 'no order detail leaves the server');
 
   // A muted kind is not sent. Muting is per device and reversible.
@@ -90,7 +91,7 @@ try {
   await settle();
   assert.deepEqual(sent.map(m => m.to), [customerToken]);
   assert.equal(sent[0].data.url, `/order/${order.id}`);
-  assert.equal(sent[0].body, 'لديك تحديث جديد. افتح ويند لعرضه.');
+  assert.equal(sent[0].body, 'قبل سائق طلبك وهو في الطريق.');
   assert.ok(sent[0].ttl <= 3600);
 
   // A second token for the same device replaces the first, and a phone passed to another account leaves the old one.

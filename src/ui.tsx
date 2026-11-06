@@ -182,7 +182,7 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
   const { align, language } = useCopy();
   // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
   // Keyed by language: Android kept the Arabic width after an in-app switch and clipped "Your current order".
-  return <Text key={language} maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  return <Text key={language} textBreakStrategy="simple" maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
@@ -272,11 +272,12 @@ export function Reason({ children }: { children: string }) {
 
 export function Choices<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
   const { row } = useCopy();
-  return <View style={[styles.choices, { flexDirection: row }]} accessibilityRole="radiogroup">
+  const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
+  return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup">
     {items.map(item => {
       const on = item.key === value;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} aria-checked={on} aria-disabled={disabled} disabled={disabled}
-        onPress={() => onChange(item.key)} style={{ flex: 1 }} hitSlop={{ top: 4, bottom: 4 }}>
+        onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }} hitSlop={{ top: 4, bottom: 4 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
         </Animated.View>
