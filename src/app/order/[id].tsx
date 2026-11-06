@@ -152,6 +152,7 @@ export default function OrderScreen() {
           throw new ApiError('driver_command_previous', 409);
         }
         if (result.state === 'other_order') throw new ApiError('driver_command_other_order', 409);
+        if (result.state === 'other_settled') { await reload(); throw new ApiError(result.notice, 409); }
         if (result.state === 'conflict') throw new ApiError('order_changed', 409);
         if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);
         if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);

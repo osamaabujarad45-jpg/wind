@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
-import { advanceRequest, earlierOutcome, newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } from '../src/driver-command.ts';
+import { advanceRequest, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } from '../src/driver-command.ts';
 import { copy } from '../src/copy.ts';
+// Only a confirmed command may claim it went through: a refusal did not, and a conflict is unknown.
+assert.equal(otherOrderNotice('applied'), 'driver_command_other_done');
+for (const state of ['rejected', 'conflict']) assert.equal(otherOrderNotice(state), 'driver_command_other_unconfirmed', state);
+for (const language of ['ar', 'en']) for (const state of ['applied', 'rejected'])
+  assert.ok(copy[language][`err_${otherOrderNotice(state)}`]?.trim(), `${language} ${state} has a message`);
 { // A command saved for parcel A must not block parcel B when A can no longer be settled from its own screen: reassigned, the courier cannot open A at all.
   const a = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
   const pending = newDriverCommand(9, a, 'advance', { code: '1234' }, 1000, 60_000);

@@ -3134,8 +3134,8 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
       user.id, JSON.stringify({ targetId: target.id, role: target.role, from: target.status }), Date.now()));
     if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
     (await persistence.exec('COMMIT'));
-    return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  return (await toUser((await one('SELECT * FROM users WHERE id = ?', Number(params[0])))!));
 });
 route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
   need(user, 'admin');

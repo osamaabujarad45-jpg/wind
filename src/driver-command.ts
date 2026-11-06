@@ -60,6 +60,9 @@ export const commandMatches = (c: DriverCommand, actorId: number, order: Order) 
 export const earlierOutcome = <T extends { state: string }>(result: T, earlier: boolean) =>
   earlier && result.state !== 'other_order' ? { state: 'previous' as const, previous: result } : result;
 
+/** What to tell the courier once a saved command on another order is finished. Only a confirmed one may say it went through: 'conflict' means that order moved on, and whether the command landed is unknown. */
+export const otherOrderNotice = (state: string) => state === 'applied' ? 'driver_command_other_done' : 'driver_command_other_unconfirmed';
+
 /** The server decided and will not change its mind: the saved command is finished. */
 const definiteRefusal = (error: unknown) => {
   const e = error as { status?: number; message?: string };

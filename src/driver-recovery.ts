@@ -1,6 +1,6 @@
 import { api, ApiError } from './api';
 import { apiSessionRevision, serverOffset } from './api-client';
-import { driverCommandBody, earlierOutcome, newDriverCommand, readDriverCommand, resumeDriverCommand, settleOtherOrder, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
+import { driverCommandBody, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, resumeDriverCommand, settleOtherOrder, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
 import { recoveryStorage } from './recovery-storage';
 import { effectiveRuntime } from './runtime-config';
 import type { Order } from './model';
@@ -30,7 +30,7 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
     if (saved && action !== undefined && saved.actorId === actorId && saved.orderId !== order.id) {
       const settled = await settleOtherOrder(io, actorId, saved, id => api<Order>(`/orders/${id}?recoveryProtocol=1&capacityProtocol=1&journeyProtocol=1`));
       if (settled.state === 'other_order') return settled;
-      if (settled.state !== 'empty') return { state: 'previous' as const, previous: {} }; // this screen's order is unchanged: it reloads and asks to repeat
+      if (settled.state !== 'empty') return { state: 'other_settled' as const, notice: otherOrderNotice(settled.state) };
       saved = null; earlier = false; // nothing was reconciled ahead of this action, so it simply goes ahead
     }
     if (!saved) {
