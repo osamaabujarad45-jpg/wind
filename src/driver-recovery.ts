@@ -1,6 +1,6 @@
 import { api, ApiError } from './api';
 import { apiSessionRevision, serverOffset } from './api-client';
-import { driverCommandBody, newDriverCommand, readDriverCommand, resumeDriverCommand, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
+import { driverCommandBody, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, resumeDriverCommand, settleOtherOrder, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
 import { recoveryStorage } from './recovery-storage';
 import { effectiveRuntime } from './runtime-config';
 import type { Order } from './model';
@@ -22,7 +22,17 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
     }
     if (!valid()) throw new ApiError('session_changed', 401);
     if (!saved && !action) return { state: 'empty' as const };
-    const earlier = !!saved && action !== undefined;
+    const io = { read: async () => saved, write: (command: DriverCommand | null) => recoveryStorage.write('command', command, effectiveRuntime().values.commandMaxAgeMs), valid,
+      receipt: (command: DriverCommand) => api<DriverReceipt>(`/orders/${command.orderId}/actions/${command.requestId}`),
+      send: (command: DriverCommand) => api<Order>(`/orders/${command.orderId}/${command.action}`, driverCommandBody(command)),
+    };
+    let earlier = !!saved && action !== undefined;
+    if (saved && action !== undefined && saved.actorId === actorId && saved.orderId !== order.id) {
+      const settled = await settleOtherOrder(io, actorId, saved, id => api<Order>(`/orders/${id}?recoveryProtocol=1&capacityProtocol=1&journeyProtocol=1`));
+      if (settled.state === 'other_order') return settled;
+      if (settled.state !== 'empty') return { state: 'other_settled' as const, notice: otherOrderNotice(settled.state) };
+      saved = null; earlier = false; // nothing was reconciled ahead of this action, so it simply goes ahead
+    }
     if (!saved) {
       // A definite refusal advances recovery metadata without changing status.
       // Bind a new intent to a fresh snapshot, never the screen's last poll.
@@ -36,18 +46,12 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       order = fresh;
       await recoveryStorage.write('command', saved, effectiveRuntime(now).values.commandMaxAgeMs);
     }
-    const result = await resumeDriverCommand({ read: async () => saved, write: command => recoveryStorage.write('command', command, effectiveRuntime().values.commandMaxAgeMs), valid,
-      receipt: command => api<DriverReceipt>(`/orders/${command.orderId}/actions/${command.requestId}`),
-      send: command => api<Order>(`/orders/${command.orderId}/${command.action}`, driverCommandBody(command)),
-    }, actorId, order);
+    const result = await resumeDriverCommand(io, actorId, order);
     if (result.state === 'conflict') {
       // The fresh snapshot invalidates the old version/assignment; that command cannot change the new state.
       await recoveryStorage.write('command', null, 1);
     }
-    // A saved earlier command went first and was reconciled: it is not the action just requested,
-    // so its outcome is reported as the earlier one's, never as the new action's success.
-    if (earlier) return { state: 'previous' as const, previous: result };
-    return result;
+    return earlierOutcome(result, earlier);
   });
   actionQueue = run.catch(() => undefined);
   return run;

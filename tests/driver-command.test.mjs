@@ -1,5 +1,62 @@
 import assert from 'node:assert/strict';
-import { advanceRequest, newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand } from '../src/driver-command.ts';
+import { advanceRequest, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } from '../src/driver-command.ts';
+import { copy } from '../src/copy.ts';
+// Only a confirmed command may claim it went through: a refusal did not, and a conflict is unknown.
+assert.equal(otherOrderNotice('applied'), 'driver_command_other_done');
+for (const state of ['rejected', 'conflict']) assert.equal(otherOrderNotice(state), 'driver_command_other_unconfirmed', state);
+for (const language of ['ar', 'en']) for (const state of ['applied', 'rejected'])
+  assert.ok(copy[language][`err_${otherOrderNotice(state)}`]?.trim(), `${language} ${state} has a message`);
+{ // A command saved for parcel A must not block parcel B when A can no longer be settled from its own screen: reassigned, the courier cannot open A at all.
+  const a = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
+  const pending = newDriverCommand(9, a, 'advance', { code: '1234' }, 1000, 60_000);
+  const rig = (receiptState = 'unknown', send = async () => ({ id: 5, status: 'completed' })) => {
+    const io = { stored: structuredClone(pending), sends: 0, read: async () => io.stored, write: async c => { io.stored = c; }, valid: () => true,
+      receipt: async c => ({ schemaVersion: 1, orderId: c.orderId, requestId: c.requestId, state: receiptState }),
+      send: async c => { io.sends++; return send(c); } };
+    return io;
+  };
+  const gone = status => async () => { throw Object.assign(new Error('not_found'), { status }); };
+  for (const status of [403, 404]) {
+    const io = rig();
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, gone(status)), { state: 'empty' }, `A answers ${status}: it is no longer this courier's`);
+    assert.equal(io.stored, null, 'the dead command stops blocking other parcels');
+    assert.equal(io.sends, 0);
+  }
+  { const io = rig();
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => ({ ...a, driverId: 77 })), { state: 'empty' }, 'reassigned to another driver');
+    assert.equal(io.stored, null); assert.equal(io.sends, 0); }
+  { const io = rig();
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => { throw new Error('network'); }), { state: 'other_order', orderId: 5 }, 'offline proves nothing: keep it');
+    assert.deepEqual(io.stored, pending); }
+  { const io = rig('applied');
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'applied', error: undefined, httpStatus: undefined }, 'A had already committed');
+    assert.equal(io.stored, null); assert.equal(io.sends, 0, 'a committed receipt is never sent again'); }
+  { const io = rig();
+    const settled = await settleOtherOrder(io, 9, pending, async () => a);
+    assert.equal(settled.state, 'applied', 'still pending and still valid: the same request is replayed');
+    assert.equal(io.sends, 1); assert.equal(io.stored, null);
+    assert.ok(!('order' in settled), "A's order must not be handed to B's screen"); }
+  { const io = rig('unknown', async () => { throw new Error('network'); });
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'other_order', orderId: 5 }, 'a lost reply stays unconfirmed');
+    assert.deepEqual(io.stored, pending, 'and keeps its identity'); }
+  { const io = rig('unknown', async () => { throw Object.assign(new Error('wrong_code'), { status: 400 }); });
+    io.read = async () => pending; // as in driver-recovery.ts: read returns the command it captured, whatever write stored since
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'rejected' }, 'a definite refusal settles A');
+    assert.equal(io.stored, null); }
+  { const io = rig('unknown', async () => { throw Object.assign(new Error('idempotency_conflict'), { status: 409 }); });
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'other_order', orderId: 5 }, 'not definite: the same refusal rule as resume keeps it');
+    assert.deepEqual(io.stored, pending); }
+  { const io = rig();
+    assert.equal((await settleOtherOrder(io, 9, pending, async () => ({ ...a, status: 'completed' }))).state, 'conflict', "A moved on, so this command can't apply");
+    assert.equal(io.stored, null, 'and it is dropped, as it is on A'); assert.equal(io.sends, 0); }
+}
+// A command saved for another order was never settled: saying "your earlier action was processed first" would be false, and it needs its own message.
+assert.equal(earlierOutcome({ state: 'other_order', orderId: 4 }, true).state, 'other_order');
+assert.deepEqual(earlierOutcome({ state: 'applied' }, true), { state: 'previous', previous: { state: 'applied' } });
+assert.deepEqual(earlierOutcome({ state: 'rejected' }, true), { state: 'previous', previous: { state: 'rejected' } });
+assert.deepEqual(earlierOutcome({ state: 'applied' }, false), { state: 'applied' }, 'the requested action reports as itself');
+for (const language of ['ar', 'en']) for (const key of ['err_driver_command_other_order', 'err_driver_command_pending', 'err_driver_command_previous'])
+  assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 const order = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
 const command = newDriverCommand(9, order, 'advance', { code: '1234' }, 1000, 60_000);
 let saved = structuredClone(command), sends = 0, valid = true;

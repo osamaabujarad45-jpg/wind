@@ -2,6 +2,13 @@
 
 ## Status update — 6 November 2026 (read this first; it replaces the older status below)
 
+**Blockers only the owner can clear:**
+1. **GitHub Actions will not start:** `The job was not started because recent account payments have failed or your spending limit needs to be increased`. PR #15 cannot merge until CI runs: `gh run rerun` the failed runs once billing is fixed. Nothing was bypassed.
+2. **The phone is not attached:** `adb devices` is empty.
+3. **AWS login expired**, so Bedrock models are unavailable.
+
+Work is on `fix/booking-section` (PR #15) and `fix/driver-section` on top of it. Nothing is deployed.
+
 **The registration section's code is finished, gated and driven on the A53, on the Android test apps. It is not production-proven: nothing is deployed, sign-up was not driven on the native test apps (they sign in by themselves; the form ran in Chrome), and there is no iOS device, Entra tenant or email sending domain.** The merge the old text calls "in progress" is finished as commit `10f8d16`. This branch contains every commit on PR #13, so merging it lands #13 too.
 
 ### Open items from the section below, now resolved
@@ -108,6 +115,50 @@ Drafted by Kimi K3; each row below was rechecked by the lead unless it says othe
 
 **What this means for booking (interpretation):** plan for West Bank users on 3G for now. **Booking has never been measured on a 3G connection**; all phone runs used a local backend. Pin-and-landmark entry fits the evidence. Accessibility, cash and checkpoints were not researched for this section yet. Kimi's report also cited outage details for Gaza and the West Bank, which were not rechecked and are left out here.
 
+### Driver section, on `fix/driver-section`
+
+**Not closed: nothing here ran on a phone.** The branch sits on top of `fix/booking-section`.
+
+| Issue | Change | Proof |
+|---|---|---|
+| A courier marked a parcel arrived and picked up from 80 minutes away, unquestioned | Past 1 km on a fresh fix, the screen shows the distance and asks first. It never blocks, and says nothing when the distance is unknown. Rides keep their own server fence. `PARCEL_PICKUP_FAR_KM` is the knob | `tests/parcel-pickup-far.test.mjs`; scenario stage fails with the confirm removed (`the far pickup must ask first: []`) |
+| **A saved command for parcel A blocked parcel B for up to 15 minutes.** A lost reply on A, then A reassigned: the courier cannot open A, nothing settles the command, and every action on B is refused | Acting on B now settles A from there with the same logic as A's own screen. It stays saved while the server cannot be asked, such as offline. If A has moved on it is dropped even though it may have landed, as A's own screen does, and the courier is told it could not be confirmed | `tests/driver-command.test.mjs`. Found by Kimi K3.1 review, not by the Luna trace |
+| That same state said "your earlier action was confirmed first", when nothing had been | It now says to open that order from trips | Same test; failed with the fix reverted |
+| `driver_command_pending` had no copy, so it read as a generic error | Added in both languages | Same test |
+
+Traced, no defect found (reading only): approval and pending state, jobs filtering and `already_taken`, navigation with a town-level pickup, wrong-code lockout, and cash: a cancelled parcel earns nothing. The cancel race and notifications are under booking.
+
+**Limits:** the 1 km threshold is a guess, not calibrated against real A53 GPS. Blocking a courier holding a parcel ends their session with "contact support" and sends them nothing, by design: **support must phone the courier**, an operational dependency. Cancel at `at_pickup` assumes the parcel was not yet handed over; if it physically was, no return flow exists. Route choice stays the owner's decision.
+
+**Needs the phone:** every driver flow on the device, GPS accuracy, foreground service, the warning on a real fix.
+
+### Admin section, on `fix/driver-section`
+
+**Not closed: browser and API only.** A trace found no way for a non-admin to reach admin routes; `tests/admin-audit.test.mjs` checks 403 on the routes it uses, not every admin route.
+
+| Issue | Change | Proof |
+|---|---|---|
+| **Security: after account recovery, a stolen session's browser kept receiving the victim's order alerts.** Reset, admin edit or block and support reset deleted sessions but not web push subscriptions | All now delete both, as does the expiry sweep once a user's last session is gone | `tests/admin-audit.test.mjs`; reverted block fails (`admin block removes browser alerts`). Sweep found by Kimi K3.1 review |
+| Same hole when a victim changes their own password | Deletes all of that user's subscriptions, since a stolen session's browser cannot be told apart. **Cost:** this browser's alerts stop until Account next opens and subscribes again | Same test |
+| Nobody could tell who approved a user, decided a subscription, changed a tariff, stopped a promo, deleted an account or cancelled as admin. Commission changes affect orders still searching, which take the rate at acceptance | `security_events` rows in the same transaction, with no personal data | Same test, including a scan for phone numbers, names and email; reverted approve fails |
+| The last platform admin could demote themselves, and nobody could undo it | 409 `last_platform_admin`, locking in one order so two mutual demotions cannot both win | `tests/pg-staff-roles.mjs`; reverted fails |
+| A failed action low on a long admin screen showed nothing, the error being above the fold | Orders, cash, subscriptions and roads scroll to it; a stopped promo shows it beside the code | Scenario stage `admin action errors on long lists` |
+| A failed checkpoint move lost the chosen point | Kept for the retry | Scenario stage `checkpoint move retry` |
+
+**Limits:** rows written before this change have no audit. An admin phone edit leaves stale optional phone-identity rows; no verification bypass was found. Native push tokens were not changed: they cascade from the session. **Staff roles limit only the `ops.ts` routes:** a demoted admin keeps settings, approvals, promos and user deletion, as `docs/implementation/WP15.md` says. A support-reset note may hold a name an admin typed: phone numbers are refused, names are not screened. Explicit transactions on approve, cancel, promo and subscription decisions hold SQLite's write lock slightly longer; not measured under load. The far-pickup warning also shows for freight, deliberately: its pickup works the same way.
+
+### Market evidence for driver and admin, checked 6 November
+
+Each row was read by the lead from the search result text, with the full page not opened unless stated. Bedrock's login had expired, so no model drafted this.
+
+| Topic | Evidence | Source |
+|---|---|---|
+| Checkpoints, West Bank | As of December 2025, 925 movement obstacles: 89 checkpoints staffed 24/7, 218 partial checkpoints, 232 road gates (159 frequently closed), 114 linear closures, 167 earthmounds, 105 roadblocks. 43% above the 20-year average of 647 | [OCHA, 23 Apr 2026](https://www.ochaopt.org/content/movement-and-access-west-bank-april-2026). Later reports give 942 ([Anadolu, 26 Sep 2026](https://www.aa.com.tr/en/middle-east/un-says-israel-s-942-checkpoints-barriers-in-occupied-west-bank-restrict-palestinian-movement/4069785)), citing the Palestinian commission and OCHA |
+| Disability | 59,000 people or 1.8% in the West Bank; about 58,000 or 2.6% in Gaza, **before October 2023**. Among adults 2.6% and 3.9%. Current Gaza is far higher and not counted here | PCBS via [WAFA, 3 Dec 2023](https://wafa.ps/Pages/Details/85612) |
+| Cash | Draft law would bar cash payments above ILS 20,000 (published 30 Oct 2025), far above a parcel fare. Status not checked. "Most Palestinians remain unbanked" is a 2023 secondary claim; Findex 2025 has newer data, whose figures were **not read** | [UCL, 29 Jan 2026](https://www.ucl.ac.uk/bartlett/blogs/2026/jan/blog-what-cash-can-tell-us-about-palestines-fragmented-geography), [Cash Essentials, 27 Nov 2023](https://cashessentials.org/palestine-card-and-digital-payments/), [Findex catalog](https://microdata.worldbank.org/index.php/catalog/7999) |
+
+**What this means (interpretation):** with road gates that often close, a static ETA can be badly wrong, so the driver's route and the customer's ETA should keep saying what they do not know. Cash-on-delivery fits the evidence so far, but no source measured it for deliveries. TalkBack remains unproven and matters for a small but real group.
+
 ### Workers used on 6 November
 
 | Job | Model | Result | Reuse |
@@ -118,7 +169,14 @@ Drafted by Kimi K3; each row below was rechecked by the lead unless it says othe
 | Price refusal and scheduled text | `azure-gpt6/gpt-6.1-terra` | Fix correct. One test could not fail, and a message showed to drivers too; both fixed by the lead | Yes, check tests by mutation |
 | Market evidence | `amazon-bedrock/us.moonshotai.kimi-k3` | Useful, but one cited URL was dead and it missed the later 2027 report | Yes, with rechecking |
 | Source review | `amazon-bedrock/us.moonshotai.kimi-k3` | No findings. One run was interrupted with no result, and the retry finished | Yes |
-| Review, first choice and fallback | `azure-terra/Kimi-K3.1-Pro`, `azure-terra/grok-4.7` | Both stopped on `exceeded token rate limit`, no output | Not for a diff this size |
+| Review, large diff | `azure-terra/Kimi-K3.1-Pro`, `azure-terra/grok-4.7` | Both stopped on `exceeded token rate limit`, no output | Not for a diff this size |
+| Review, split small diffs | `azure-terra/Kimi-K3.1-Pro` | **Best reviewer today:** a 15-minute custody dead end, a bug in the lead's own fix, a false audit record, a missed expiry path | Yes, narrow questions on under 100 lines |
+| Trace driver and admin | `azure-gpt6/gpt-6-luna` | Admin push and audit findings confirmed. Missed the stuck parcel | Yes, for reading only |
+| Audit, push and role fixes | `azure-gpt6/gpt-6.1-sol` | Correct; its own test had one wrong price | Yes |
+| Admin screen errors, driver warning | `azure-gpt6/gpt-6.1-terra` | Correct, strict tests | Yes |
+| Any Bedrock model | | Stopped working mid-session: `AWS default credential chain failed: Your session has expired` | After the owner signs in again |
+
+**Trap:** `isolation: "worktree"` starts from the root checkout's old lineage (`b609229`), not this branch, whatever the brief says. Terra's first driver diff had to be ported by hand. Use the shared checkout with disjoint files.
 
 Owner decisions:
 - **Flat ₪20 parcel:** `SPEC-parcel-standard` sets it by owner instruction. In practice Ramallah to Nablus, 53.5 km and about an hour, pays the driver ₪17, against ₪74 for a ride on the same road. It assumes a courier carrying many parcels; a single-parcel driver takes a loss. Not changed.

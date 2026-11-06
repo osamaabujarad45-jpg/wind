@@ -55,6 +55,20 @@ export const commandMatches = (c: DriverCommand, actorId: number, order: Order) 
   && (c.expectedAssignmentEpoch === undefined || c.expectedAssignmentEpoch === order.recovery?.assignmentEpoch)
   && (c.expectedPinRevision === undefined || c.expectedPinRevision === order.journey?.boarding?.pinRevision);
 
+/** A saved earlier command went first and was reconciled: it is not the action just requested, so its outcome is reported
+ * as the earlier one's, never as the new action's success. One saved for another order was not reconciled at all. */
+export const earlierOutcome = <T extends { state: string }>(result: T, earlier: boolean) =>
+  earlier && result.state !== 'other_order' ? { state: 'previous' as const, previous: result } : result;
+
+/** What to tell the courier once a saved command on another order is finished. Only a confirmed one may say it went through: 'conflict' means that order moved on, and whether the command landed is unknown. */
+export const otherOrderNotice = (state: string) => state === 'applied' ? 'driver_command_other_done' : 'driver_command_other_unconfirmed';
+
+/** The server decided and will not change its mind: the saved command is finished. */
+const definiteRefusal = (error: unknown) => {
+  const e = error as { status?: number; message?: string };
+  return !!e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && e.message !== 'idempotency_conflict';
+};
+
 /** This bounded outbox never runs a restored action without a fresh authorized order snapshot. */
 export async function resumeDriverCommand(io: CommandIO, actorId: number, order: Order) {
   const command = readDriverCommand(await io.read());
@@ -84,8 +98,33 @@ export async function resumeDriverCommand(io: CommandIO, actorId: number, order:
     await io.write(null);
     return { state: 'applied' as const, order: updated };
   } catch (error) {
-    const e = error as { status?: number; message?: string };
-    if (io.valid() && e.status && e.status < 500 && ![401,408,426,429].includes(e.status) && e.message !== 'idempotency_conflict') await io.write(null);
+    if (io.valid() && definiteRefusal(error)) await io.write(null);
     throw error;
+  }
+}
+
+/** A courier acts on parcel B while a command is saved for parcel A. A may be reassigned and impossible to open, so settle it from
+ * here, as its own screen would; otherwise B stays blocked until the command expires. 'empty' means nothing stands in B's way.
+ * The command is kept only while its outcome is really unknown, such as offline. */
+export async function settleOtherOrder(io: CommandIO, actorId: number, command: DriverCommand, snapshot: (orderId: number) => Promise<Order>) {
+  const otherOrder = { state: 'other_order' as const, orderId: command.orderId };
+  const dropped = async () => { await io.write(null); return { state: 'empty' as const }; };
+  const noLongerTheirs = (error: unknown) => [403, 404].includes((error as { status?: number }).status ?? 0);
+  let other: Order;
+  try { other = await snapshot(command.orderId); }
+  catch (error) {
+    if (!io.valid()) throw new Error('session_changed');
+    return noLongerTheirs(error) ? dropped() : otherOrder;
+  }
+  if (!io.valid()) throw new Error('session_changed');
+  if (other.driverId !== actorId || !other.recovery) return dropped();
+  try {
+    const settled = await resumeDriverCommand(io, actorId, other);
+    if (settled.state === 'conflict') await io.write(null);
+    return 'order' in settled ? { state: 'applied' as const } : settled; // that order is not the screen's: it reloads its own
+  } catch (error) {
+    if (!io.valid()) throw new Error('session_changed');
+    if (noLongerTheirs(error)) return dropped();
+    return definiteRefusal(error) ? { state: 'rejected' as const } : otherOrder;
   }
 }

@@ -1,8 +1,8 @@
 // Road status: crowd-reported checkpoint conditions (SPEC-road-status.md). Everyone signed in reads it;
 // active drivers and administrators report; administrators choose which checkpoints are listed.
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { AccessibilityInfo, View } from 'react-native';
+import { AccessibilityInfo, ScrollView, View } from 'react-native';
 import { api, useApi } from '../api';
 import { cities, city, type CityId, type Point, type Road } from '../model';
 import PinSheet from '../pin-sheet';
@@ -18,9 +18,12 @@ export default function Roads() {
   const { data, error, reload, setData } = useApi<Road[]>('/roads', 60_000);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState('');
+  const list = useRef<ScrollView>(null);
+  const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
   const [draft, setDraft] = useState<{ name: string; cities: CityId[]; point?: Point }>({ name: '', cities: [] });
   // Pin sheet: an existing checkpoint (its id) or the new one being added ('draft').
   const [pinFor, setPinFor] = useState<{ id: number | 'draft'; start: Point } | null>(null);
+  const [pinRetry, setPinRetry] = useState<Record<number, Point>>({});
   const [now, setNow] = useState(Date.now);
   useFocusEffect(useCallback(() => { // report ages stay current while the screen is open
     setNow(Date.now());
@@ -36,14 +39,14 @@ export default function Roads() {
       setData(await api<Road[]>(path, body)); haptic.success();
       if (done) AccessibilityInfo.announceForAccessibility(done);
       return true;
-    } catch (e) { haptic.error(); setFailure(err(e)); return false; } finally { setBusy(null); }
+    } catch (e) { haptic.error(); fail(err(e)); return false; } finally { setBusy(null); }
   }
   const ago = (ms: number) => { const m = Math.max(1, Math.round((now - ms) / 60_000)); return m < 60 ? fill(c.agoMinutes, { n: m }) : fill(c.agoHours, { n: Math.floor(m / 60) }); };
 
-  return <Screen onRefresh={reload}>
+  return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.roads} back />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.roadsIntro}</Txt>
-    <ErrorText>{(error && err(error)) || failure}</ErrorText>
+    <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="trail-sign-outline" title={c.noRoads} body={isAdmin ? c.noRoadsAdmin : undefined} />
       : data.map(road => <Card key={road.id}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -64,7 +67,7 @@ export default function Roads() {
         </Row>}
         {isAdmin && <Txt variant="caption" style={{ marginTop: 8, color: road.point ? palette.olive : palette.clayInk }}>{road.point ? c.roadPlaced : c.roadUnplaced}</Txt>}
         {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}
-          loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: road.point ?? city(road.cities[0]) })} />}
+          loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: pinRetry[road.id] ?? road.point ?? city(road.cities[0]) })} />}
         {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}
           onPress={() => confirm(fill(c.roadRemoveConfirm, { name: road.name }), () => send(`rm${road.id}`, `/admin/roads/${road.id}/remove`, {}, c.roadRemoved), c.roadRemove, c.no)} />}
       </Card>)}
@@ -91,11 +94,14 @@ export default function Roads() {
         onPress={() => send('add', '/admin/roads', { name: draft.name.trim(), cities: draft.cities, ...(draft.point && { point: draft.point }) })
           .then(ok => ok && setDraft({ name: '', cities: [] }))} />
     </Card>}
-    {pinFor && <PinSheet title={c.roadPinTitle} hint={c.roadPinHint} start={pinFor.start} onClose={() => setPinFor(null)} onConfirm={point => {
+    {pinFor && <PinSheet title={c.roadPinTitle} hint={c.roadPinHint} start={pinFor.start} onClose={() => setPinFor(null)} onConfirm={async point => {
       const target = pinFor.id;
       setPinFor(null);
       if (target === 'draft') setDraft(d => ({ ...d, point }));
-      else void send(`pin${target}`, `/admin/roads/${target}/place`, { point }, c.roadPlaceDone);
+      else {
+        setPinRetry(v => ({ ...v, [target]: point }));
+        if (await send(`pin${target}`, `/admin/roads/${target}/place`, { point }, c.roadPlaceDone)) setPinRetry(v => { const next = { ...v }; delete next[target]; return next; });
+      }
     }} />}
   </Screen>;
 }

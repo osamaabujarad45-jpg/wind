@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Linking, View } from 'react-native';
+import { useRef, useState, type RefObject } from 'react';
+import { Linking, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../api';
 import { latinDigits, ltr, orderCode, type OrderStatus, type SafetyKind } from '../../model';
@@ -12,15 +12,16 @@ type DisputeRow = { id: number; orderId: number; reason: string; status: 'open' 
 
 export default function AdminOrders() {
   const { c, err } = useCopy();
+  const list = useRef<ScrollView>(null);
   const { filter } = useLocalSearchParams<{ filter?: string }>();
   // Tabs stay mounted: use the current URL so dashboard alerts still select Safety on later visits.
   const status: Filter = filters.includes(filter as Filter) ? filter as Filter : 'all';
   const { data, error, reload, more } = useOrders(status === 'disputes' || status === 'safety' ? null : status === 'all' ? '/orders' : `/orders?status=${status}`, 15_000);
-  return <Screen onRefresh={reload}>
+  return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.allOrders} />
     {/* FilterChips is its own Rail; a ScrollView around it kept the Rail from scrolling, so Arabic opened on the list's far end with 'all' hidden */}
     <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={filter => router.setParams({ filter })} />
-    {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
+    {status === 'safety' ? <Incidents list={list} /> : status === 'disputes' ? <Disputes list={list} /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
         ? <Empty icon="receipt-outline" title={c.noOrdersFilter} />
@@ -34,23 +35,24 @@ type IncidentRow = { id: number; orderId: number; kind: SafetyKind; note: string
   reporterName: string; reporterPhone: string; customerName: string; customerPhone: string; orderContact: string; driverName: string | null; driverPhone: string | null;
   latitude: number | null; longitude: number | null; createdAt: number };
 
-function Incidents() {
+function Incidents({ list }: { list: RefObject<ScrollView | null> }) {
   const { c, err } = useCopy();
   const { time } = useFormat();
   const { data, error, reload } = useApi<IncidentRow[]>('/admin/incidents', 10_000);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
+  const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
   // Open first, then what was already closed: a resolved report stays readable, it does not vanish.
   const rows = (data ?? []).slice().sort((a, b) => (a.status === b.status ? b.id - a.id : a.status === 'open' ? -1 : 1));
   async function resolve(id: number) {
     setBusy(id); setFailure('');
     try { await api(`/admin/incidents/${id}/resolve`, { resolution: drafts[id].trim() }); reload(); }
-    catch (e) { setFailure(err(e)); } finally { setBusy(null); }
+    catch (e) { fail(err(e)); } finally { setBusy(null); }
   }
-  const call = (phone: string) => () => { Linking.openURL(`tel:${phone}`).catch(() => setFailure(c.callUnavailable)); };
+  const call = (phone: string) => () => { Linking.openURL(`tel:${phone}`).catch(() => fail(c.callUnavailable)); };
   return <>
-    <ErrorText>{(error && err(error)) || failure}</ErrorText>
+    <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : rows.map(d => <Card key={d.id} tone={d.status === 'open' ? 'clay' : undefined}>
       <Txt variant="title">{`${c[`safety_${d.kind}`]} · ${time(d.createdAt)}`}</Txt>
       <Txt variant="caption" style={{ marginBottom: 6 }}>{`${c.reporter}: ${c[d.reporterRole]} · ${d.reporterName}`}</Txt>
@@ -84,13 +86,14 @@ function creditOf(text = '') {
   return Number.isInteger(n) && n >= 1 && n <= 50 ? n : undefined;
 }
 
-function Disputes() {
+function Disputes({ list }: { list: RefObject<ScrollView | null> }) {
   const { c, err, money } = useCopy();
   const { data, error, reload } = useApi<DisputeRow[]>('/admin/disputes', 15_000);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [credits, setCredits] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
+  const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
   const rows = (data ?? []).slice().sort((a, b) => (a.status === b.status ? b.id - a.id : a.status === 'open' ? -1 : 1));
   async function resolve(id: number) {
     setBusy(id);
@@ -99,10 +102,10 @@ function Disputes() {
       const credit = creditOf(credits[id]);
       await api(`/admin/disputes/${id}/resolve`, { resolution: drafts[id].trim(), ...(credit != null && { creditShekels: credit }) });
       reload();
-    } catch (e) { setFailure(err(e)); } finally { setBusy(null); }
+    } catch (e) { fail(err(e)); } finally { setBusy(null); }
   }
   return <>
-    <ErrorText>{(error && err(error)) || failure}</ErrorText>
+    <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="flag-outline" title={c.noDisputes} /> : rows.map(d => <Card key={d.id}>
       <Button title={`${ltr(orderCode(d.orderId))} · ${d.customerName}`} variant="ghost" size="sm" icon="receipt-outline"
         onPress={() => router.push(`/order/${d.orderId}`)} />

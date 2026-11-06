@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { typedNumber } from '../../model';
@@ -21,6 +21,8 @@ export default function AdminCash() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
+  const list = useRef<ScrollView>(null);
+  const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
   // Shekels in the form, integer agorot on the wire.
   const cents = (text: string) => Math.round(typedNumber(text) * 100);
 
@@ -34,7 +36,7 @@ export default function AdminCash() {
       haptic.success();
       if (entry.reference) setMessage(fill(c.cashRecorded, { r: entry.reference }));
       setOpen(null); reload(); reloadPending();
-    } catch (e) { setFailure(err(e)); } finally { setBusy(false); }
+    } catch (e) { fail(err(e)); } finally { setBusy(false); }
   }
 
   // T25: the resolution is deliberate (a confirmation dialog), names a reason and an optional evidence
@@ -47,10 +49,10 @@ export default function AdminCash() {
       haptic.success();
       setMessage(c.cashResolved);
       setResolving(null); reload(); reloadPending();
-    } catch (e) { setFailure(err(e)); } finally { setBusy(false); }
+    } catch (e) { fail(err(e)); } finally { setBusy(false); }
   }
 
-  return <Screen onRefresh={reload}>
+  return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     <ErrorText>{failure || (error && err(error))}</ErrorText>

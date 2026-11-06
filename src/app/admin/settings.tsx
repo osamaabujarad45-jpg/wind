@@ -81,16 +81,17 @@ function Promos() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const set = (key: keyof typeof blank) => (v: string) => { setForm(f => ({ ...f, [key]: v })); setError(''); setMessage(''); };
+  const [stopError, setStopError] = useState<{ id: number; message: string } | null>(null);
+  const set = (key: keyof typeof blank) => (v: string) => { setForm(f => ({ ...f, [key]: v })); setError(''); setStopError(null); setMessage(''); };
   async function create() {
-    setBusy(true); setError(''); setMessage('');
+    setBusy(true); setError(''); setStopError(null); setMessage('');
     try {
       await api('/admin/promos', { code: form.code.trim(), amount: typedNumber(form.amount), maxUses: typedNumber(form.maxUses), days: typedNumber(form.days), firstOrderOnly: form.firstOrderOnly });
       haptic.success(); setForm(blank); setMessage(c.promoCreated); reload();
     } catch (e) { haptic.error(); setError(err(e)); } finally { setBusy(false); }
   }
-  const stop = (p: Promo) => confirm(c.promoDeactivateConfirm, () => api(`/admin/promos/${p.id}/deactivate`, {}).then(() => { haptic.success(); reload(); })
-    .catch(e => setError(err(e))), c.promoDeactivate, c.no);
+  const stop = (p: Promo) => confirm(c.promoDeactivateConfirm, () => { setError(''); setStopError(null); api(`/admin/promos/${p.id}/deactivate`, {}).then(() => { haptic.success(); reload(); })
+    .catch(e => setStopError({ id: p.id, message: err(e) })); }, c.promoDeactivate, c.no);
   return <Card>
     <Txt variant="h2" style={{ marginBottom: 4 }}>{c.promos}</Txt>
     <Txt variant="caption" style={{ marginBottom: 10 }}>{c.promosHint}</Txt>
@@ -101,6 +102,7 @@ function Promos() {
         <Row gap={8}><Txt variant="title">{`${p.code} · ${money(p.amount)}`}</Txt>
           <Badge label={p.live ? c.promoActive : p.active ? c.promoExpired : c.promoEnded} status={p.live ? 'completed' : 'cancelled'} /></Row>
         <Txt variant="micro">{fill(c.promoUses, { n: p.uses, max: p.maxUses, t: date(p.expiresAt) })}{p.firstOrderOnly ? ` · ${c.promoFirstOnly}` : ''}</Txt>
+        {stopError?.id === p.id && <ErrorText>{stopError.message}</ErrorText>}
       </View>
       {p.live && <IconButton icon="pause-circle-outline" tone="muted" label={`${c.promoDeactivate} ${p.code}`} onPress={() => stop(p)} />}
     </Row>)}

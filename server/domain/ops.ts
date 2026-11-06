@@ -68,7 +68,16 @@ export class Ops {
   async grantRole(actor: Actor, targetId: number, body: Row) {
     await this.gate(); actor = await staffActor(this.db, actor); needStaff(actor, this.fail); const purpose = this.purpose(body.purpose); targetId = this.id(targetId);
     if (body.staffRole !== null && !roles.includes(body.staffRole)) this.fail(400, 'invalid_input');
-    return this.tx(async () => { const target = await this.db.one('SELECT id,role FROM users WHERE id=? FOR UPDATE', targetId) ?? this.fail(404, 'not_found'); if (target.role !== 'admin') this.fail(400, 'invalid_target'); await this.db.run('UPDATE users SET staff_role=? WHERE id=?', body.staffRole, targetId); await this.audit(actor, 'grant_role', 'user', targetId, purpose); return { id: targetId, staffRole: body.staffRole }; });
+    return this.tx(async () => {
+      // Lock the shared set first, in one order: target-first locks deadlock on mutual demotions.
+      const admins = await this.db.all("SELECT id FROM users WHERE role='admin' AND COALESCE(staff_role,'platform_admin')='platform_admin' ORDER BY id FOR UPDATE");
+      actor = await staffActor(this.db, actor); needStaff(actor, this.fail);
+      const target = await this.db.one('SELECT id,role,staff_role FROM users WHERE id=? FOR UPDATE', targetId) ?? this.fail(404, 'not_found');
+      if (target.role !== 'admin') this.fail(400, 'invalid_target');
+      if (staffRoleOf(target as Actor) === 'platform_admin' && body.staffRole !== null && body.staffRole !== 'platform_admin'
+        && !admins.some(admin => admin.id !== targetId)) this.fail(409, 'last_platform_admin');
+      await this.db.run('UPDATE users SET staff_role=? WHERE id=?', body.staffRole, targetId); await this.audit(actor, 'grant_role', 'user', targetId, purpose); return { id: targetId, staffRole: body.staffRole };
+    });
   }
   async requestApproval(actor: Actor, body: Row) {
     await this.gate(); actor = await staffActor(this.db, actor); needStaff(actor, this.fail, 'finance');
