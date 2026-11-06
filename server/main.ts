@@ -819,6 +819,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
   try {
     (await run('UPDATE users SET password = ? WHERE id = ?', password, r.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', r.id)); // a reset ends the session on every device
+    (await run('DELETE FROM push_subscriptions WHERE user_id = ?', r.id));
     for (const id of [r.phone, r.email].filter(Boolean)) (await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase())));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -878,6 +879,8 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
     // Re-check the exact credential the KDF approved: a concurrent change must not be overwritten.
     if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', password, user.id, stored)).changes) fail(401, 'wrong_password');
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
+    // A browser here cannot be told from the one that made this change, and a stolen session's browser must stop alerting. This one subscribes again when Account next opens.
+    (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
     (await run('DELETE FROM request_limits WHERE key = ?', key));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -919,6 +922,8 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id));
     (await run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
+    if (actorId !== null && actorId !== user.id) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'ACCOUNT_DELETED_BY_ADMIN', ?, ?)`,
+      actorId, JSON.stringify({ targetId: user.id }), Date.now()));
     (await persistence.exec('COMMIT'));
   } catch (error) {
     (await persistence.exec('ROLLBACK'));
@@ -1082,7 +1087,13 @@ route('POST', '/api/admin/promos', async ({ user, body }) => {
 });
 route('POST', '/api/admin/promos/:id/deactivate', async ({ user, params }) => {
   need(user, 'admin');
-  if (!(await run('UPDATE promo_codes SET active = 0 WHERE id = ? AND active = 1', Number(params[0]))).changes) fail(404, 'not_found');
+  (await persistence.exec('BEGIN IMMEDIATE'));
+  try {
+    if (!(await run('UPDATE promo_codes SET active = 0 WHERE id = ? AND active = 1', Number(params[0]))).changes) fail(404, 'not_found');
+    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'PROMO_DEACTIVATED', ?, ?)`,
+      user.id, JSON.stringify({ promoId: Number(params[0]) }), Date.now()));
+    (await persistence.exec('COMMIT'));
+  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return (await Promise.all((await all(adminPromos)).map(promoRow)));
 });
 
@@ -1789,12 +1800,17 @@ route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
   if (order.status === 'cancelled' && (user.role === 'admin' || user.id === order.customerId)) return order;
   const allowed = (user.role === 'admin' || user.id === order.customerId) && cancellable.includes(order.status);
   if (!allowed) fail(409, 'cannot_cancel');
-  if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-  // Read again: with two SQLite processes a driver can accept between the read above and this update (PostgreSQL holds the row lock).
-  const cancelled = (await getOrder(order.id, user));
-  if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
-  if (user.role === 'admin') await queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
-  return cancelled;
+  (await persistence.exec('BEGIN IMMEDIATE'));
+  try {
+    if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
+    if (user.role === 'admin') (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', '{}', ?)`, user.id, order.id, Date.now()));
+    // Read again: with two SQLite processes a driver can accept between the read above and this update (PostgreSQL holds the row lock).
+    const cancelled = (await getOrder(order.id, user));
+    if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
+    if (user.role === 'admin') await queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
+    (await persistence.exec('COMMIT'));
+    return cancelled;
+  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
 });
 
 // A scheduled parcel moves to another time until drivers can see it (RELEASE_BEFORE ahead of pickup).
@@ -3058,7 +3074,10 @@ const editUser: Handler = async ({ user, params, body }) => {
       (await run("UPDATE subscriptions SET ends_at = MIN(ends_at, ?) WHERE user_id = ? AND status = 'active'", Date.now(), target.id));
       (await run("UPDATE subscriptions SET status = 'rejected' WHERE user_id = ? AND status = 'pending'", target.id));
     }
-    if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+    if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) {
+      (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+      (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
+    }
     const now = Date.now();
     const auditFields = [
       name !== target.name ? 'name' : null,
@@ -3098,18 +3117,24 @@ route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
 route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => {
   need(user, 'admin');
-  const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
-  if (target.role === 'admin') fail(409, 'cannot_change_admin');
-  // Unblocking a courier must not skip what blocking enforces. The admin users screen sends
-  // this route to clear a block, so without this check a blocked driver holding parcels came
-  // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
-  if (target.role === 'driver' && target.status === 'blocked') {
-    const carrying = await all(`SELECT id, status FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
-    if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
-  }
-  (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
-  if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
-  return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
+  (await persistence.exec('BEGIN IMMEDIATE'));
+  try {
+    const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
+    if (target.role === 'admin') fail(409, 'cannot_change_admin');
+    // Unblocking a courier must not skip what blocking enforces. The admin users screen sends
+    // this route to clear a block, so without this check a blocked driver holding parcels came
+    // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
+    if (target.role === 'driver' && target.status === 'blocked') {
+      const carrying = await all(`SELECT id, status FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+    }
+    (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
+    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'DRIVER_APPROVED', ?, ?)`,
+      user.id, JSON.stringify({ targetId: target.id }), Date.now()));
+    if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
+    (await persistence.exec('COMMIT'));
+    return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
+  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
 });
 route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
   need(user, 'admin');
@@ -3152,6 +3177,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
       // The password the check was bound to, or two requests racing one proof would both win.
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
+      (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
         user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
       (await persistence.exec('COMMIT'));
@@ -3189,21 +3215,27 @@ route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => 
   // T22: the decision reads, checks and writes inside one transaction with a status predicate on the
   // update, so a concurrent activate/reject race has exactly one outcome; the loser is already_decided.
   return (await persistence.atomic({ purpose: 'admin_subscription_decision' }, async () => {
-    const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
-    if (body.action === 'activate') {
-      const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-      if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
-      if (!(await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ? AND status = 'pending'", Date.now(), Date.now() + 30 * DAY, sub.id)).changes)
-        fail(409, 'subscription_decided');
-    }
-    else if (body.action === 'reject') {
-      if (!(await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ? AND status = 'pending'", sub.id)).changes)
-        fail(409, 'subscription_decided');
-    }
-    else fail(400, 'invalid_action');
-    const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-    await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
-    return { ok: true };
+    (await persistence.exec('BEGIN IMMEDIATE'));
+    try {
+      const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
+      if (body.action === 'activate') {
+        const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+        if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
+        if (!(await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ? AND status = 'pending'", Date.now(), Date.now() + 30 * DAY, sub.id)).changes)
+          fail(409, 'subscription_decided');
+      }
+      else if (body.action === 'reject') {
+        if (!(await run("UPDATE subscriptions SET status = 'rejected' WHERE id = ? AND status = 'pending'", sub.id)).changes)
+          fail(409, 'subscription_decided');
+      }
+      else fail(400, 'invalid_action');
+      (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUBSCRIPTION_DECIDED', ?, ?)`,
+        user.id, JSON.stringify({ subscriptionId: sub.id, decision: body.action }), Date.now()));
+      const holder = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
+      await queuePush([sub.user_id], 'plan', 0, holder.role === 'driver' ? '/driver/account' : '/account');
+      (await persistence.exec('COMMIT'));
+      return { ok: true };
+    } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   }));
 });
 
@@ -3219,7 +3251,14 @@ route('POST', '/api/admin/settings', async ({ user, body }) => {
   if (bad) fail(400, `invalid_setting:${bad}`);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    // Serialize saves before the snapshot, including keys that have no stored row yet.
+    if (persistence.backend === 'postgres') await one("SELECT pg_advisory_xact_lock(hashtextextended('wind:admin_settings',0))");
+    const previous = await settings();
+    const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => previous[key as keyof Settings] !== Number(value))
+      .map(([key, value]) => [key, { old: previous[key as keyof Settings], new: Number(value) }]));
     for (const [key, value] of Object.entries(body)) (await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, Number(value)));
+    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SETTINGS_UPDATED', ?, ?)`,
+      user.id, JSON.stringify({ changes }), Date.now()));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return (await settings());

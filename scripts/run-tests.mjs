@@ -27,6 +27,7 @@ const suites = [
   "api.test.mjs",
   "privacy-location.test.mjs",
   "admin-settings.test.mjs",
+  "admin-audit.test.mjs",
   "admin-stats-daily.test.mjs",
   "admin-recovery-ui.test.mjs",
   "client-address.test.mjs",
