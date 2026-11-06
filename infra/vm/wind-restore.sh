@@ -24,10 +24,11 @@ docker run --rm --network none --entrypoint node -v "$work:/r" "$image" --disabl
   db.close();
   console.log('copy ok', before);
 "
+installed=no
 put_back() { # the service is down and the restore failed: what was there goes back and starts again
   echo "restore failed, putting back what was there" >&2
+  [ "$installed" = no ] || rm -f "$data/wind.db" "$data/wind.db-wal" "$data/wind.db-shm" # only once the old files are all safely moved
   for suffix in '' -wal -shm; do
-    rm -f "$data/wind.db$suffix"
     [ ! -e "$kept$suffix" ] || mv -f "$kept$suffix" "$data/wind.db$suffix"
   done
   docker start "$name" >/dev/null
@@ -37,6 +38,7 @@ swap() {
   for suffix in '' -wal -shm; do # a stale journal must not replay over the restored file
     [ ! -e "$data/wind.db$suffix" ] || mv -f "$data/wind.db$suffix" "$kept$suffix" || return 1
   done
+  installed=yes
   mv "$work/wind.db" "$data/wind.db" && chmod 600 "$data/wind.db" && docker start "$name" >/dev/null
 }
 rm -f "/run/wind-watchdog/$name" # strikes from before this downtime must not restart the container in the middle of the swap

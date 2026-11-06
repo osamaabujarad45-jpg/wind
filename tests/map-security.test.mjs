@@ -13,7 +13,7 @@ const driver = page.slice(page.indexOf('function driverIcon('), page.indexOf('co
 assert.ok(parser.includes('JSON.parse') && driver.includes('innerHTML'), 'test exercises the real fragment-to-markup boundary');
 function render(colors) {
   const context = { window: {}, location: { hash: '#' + encodeURIComponent(JSON.stringify({ colors })) },
-    document: { createElement: () => ({ style: {}, classList: { add() {} } }) } };
+    document: { documentElement: {}, createElement: () => ({ style: {}, classList: { add() {} } }) } };
   runInNewContext(parser + stop + driver + `
     globalThis.result = { colors: C, icon: driverIcon(true).innerHTML,
       marker: stopMarker(C.forest, false).innerHTML };`, context);

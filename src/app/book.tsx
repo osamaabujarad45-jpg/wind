@@ -413,6 +413,7 @@ function BookForm() {
     if (Object.values(problems).some(Boolean)) {
       haptic.error();
       setInvalid(problems);
+      if (error === c.fixMarked && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(c.fixMarked); // the same text again changes nothing for ErrorText to announce
       setError(c.fixMarked);
       setSheetOpen(true);
       // The details sit near the top; the contact field is right above the button.

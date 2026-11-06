@@ -24,7 +24,7 @@ Two reconciliation duties belong to the rehearsal before the payments gate opens
 
 Update the script on the VM with any image that has this alert (`sudo cp infra/vm/wind-backup.sh /srv/wind-backup.sh`), or the dashboard reports a stale backup that is not stale.
 
-To restore, on the VM or a replacement:
+To restore, on the VM or a replacement. If any account was blocked or deleted since the copy, run `sudo docker stop caddy` first, because a blocked person could otherwise sign in as soon as the API is up:
 
 ```sh
 sudo /srv/wind-restore.sh /srv/wind-data/backups/wind-<stamp>.db.gz
@@ -32,7 +32,7 @@ sudo /srv/wind-restore.sh /srv/wind-data/backups/wind-<stamp>.db.gz
 
 Use the script, not a hand-typed pipe: `gunzip | tee wind.db` empties the live database when the file is missing, and the API opens an empty file as a new one. It checks the copy before touching anything, keeps the old database as `wind.db.before-restore-<time>`, and puts it back if the swap or the start fails.
 
-**After a restore everyone signs in again,** and closed-app alerts stop until each person does. This is deliberate: a session revoked after the copy was taken must not come back. Orders since the copy are not recovered, and neither are blocks or deletions. If any account was blocked or deleted since the copy, a blocked person could sign in again as soon as the API is up, so run `sudo docker stop caddy` first, reach the API through `ssh -L 4000:127.0.0.1:4000` to re-apply them from the incident timeline, then `sudo docker start caddy`. Then sign in as an admin and open a recent order. `tests/backup.test.mjs` runs the data path on a synthetic database.
+**After a restore everyone signs in again,** and closed-app alerts stop until each person does. This is deliberate: a session revoked after the copy was taken must not come back. Orders since the copy are not recovered, and neither are blocks or deletions. With Caddy stopped, reach the API through `ssh -L 4000:127.0.0.1:4000` to re-apply them from the incident timeline, then `sudo docker start caddy`. Then sign in as an admin and open a recent order. `tests/backup.test.mjs` runs the data path on a synthetic database.
 
 **If the VM itself is lost:** the copies on its disk are gone too, so take the newest from Blob. The SAS on the VM can only write, so a compromised VM cannot read or delete old copies, and it cannot be used here either. From the owner's PC, then `scp` it to the new VM:
 
