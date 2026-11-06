@@ -26,7 +26,7 @@ process.env.NODE_ENV = 'test';
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-wp01-contracts-')), 'synthetic.db');
 process.env.SOUQ_PARTNER_KEY = 'wp01-isolated-synthetic-partner-key-for-tests-only';
 for (const key of ['WIND_ENABLED_SERVICES', 'WIND_IDENTITY_MODE', 'WIND_CONTACT_VERIFICATION_REQUIRED',
-  'OSRM_URL', 'WIND_EMAIL_FROM', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_EMAIL_TOKEN', 'WEB_ROOT']) delete process.env[key];
+  'OSRM_URL', 'WIND_EMAIL_FROM', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_EMAIL_TOKEN', 'WIND_FIREBASE_API_KEY', 'WIND_FIREBASE_SERVICE_ACCOUNT', 'WEB_ROOT']) delete process.env[key];
 const { server, db, promote, shutdown } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;

@@ -30,6 +30,7 @@ import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
+import { firebaseReset } from './domain/firebase-reset.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
@@ -608,7 +609,7 @@ registerEntraRoutes(route, entraExchange, purpose => async ({ user, req }) => {
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
-route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady }), true);
+route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady, ...(!emailReady && firebaseReset ? { emailResetLink: true } : {}) }), true);
 route('GET', '/api/ready', async () => {
   let schema = 3;
   try {
@@ -619,7 +620,7 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 21 || applied !== 19) fail(503, 'unavailable');
+      if (schema < 30 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -681,8 +682,38 @@ route('POST', '/api/auth/login', async ({ body }) => {
   (await limit(key, 5, 10 * 60_000, false));
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  const r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
-  if (!r || !await checkPassword(String(body.password ?? ''), r.password)) {
+  let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
+  const supplied = String(body.password ?? '');
+  let valid = !!r && await checkPassword(supplied, r.password);
+  if (r && !valid && firebaseReset && r.email && r.status !== 'blocked' && r.role !== 'admin'
+    && supplied.length >= (production || selfService ? 12 : 6) && supplied.length <= 100) {
+    const pending = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ? AND requested_at > ?', r.id, Date.now() - FIREBASE_RESET_TTL);
+    let verified = false;
+    if (pending) try { verified = await firebaseReset.verify(r.id, r.email, supplied); } catch { /* provider failures look like a wrong password */ }
+    if (verified && pending) {
+      const hashed = await hashPassword(supplied);
+      const account = r;
+      await persistence.atomic({ id: account.id }, async () => {
+        await persistence.exec('BEGIN IMMEDIATE');
+        try {
+          const changed = await run(`UPDATE users SET password = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ? AND password = ? AND email = ?
+            AND status <> 'blocked' AND role <> 'admin' AND EXISTS (SELECT 1 FROM firebase_resets WHERE user_id = ? AND requested_at = ? AND requested_at > ?)`,
+          hashed, Date.now(), account.id, account.password, account.email, account.id, pending.requested_at, Date.now() - FIREBASE_RESET_TTL); // the emailed link proves the address; no account could verify one earlier without a sending domain
+          if (changed.changes) {
+            await run('DELETE FROM sessions WHERE user_id = ?', account.id);
+            await run('DELETE FROM push_subscriptions WHERE user_id = ?', account.id);
+            for (const id of [account.phone, account.email, identifier].filter(Boolean)) await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase()));
+            await clearFirebaseReset(account.id);
+            await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'FIREBASE_PASSWORD_RESET', '{}', ?)", account.id, Date.now());
+            valid = true;
+          }
+          await persistence.exec('COMMIT');
+        } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+      });
+      if (valid) r = await one('SELECT * FROM users WHERE id = ?', r.id);
+    }
+  }
+  if (!r || !valid) {
     (await limit(key, 5, 10 * 60_000));
     fail(401, 'wrong_credentials');
   }
@@ -711,6 +742,13 @@ const cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID?.trim(), cloudflareT
 const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
 const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
+const FIREBASE_RESET_TTL = 60 * 60_000;
+// shortcut: same-process only; use shared fencing before running multiple API instances.
+const firebaseSending = new Set<number>();
+async function clearFirebaseReset(userId: number) {
+  const removed = await run('DELETE FROM firebase_resets WHERE user_id = ?', userId);
+  if (removed.changes && firebaseReset) persistence.defer(() => firebaseReset.deleteUser(userId).catch(() => {}));
+}
 type CodePurpose = 'verify' | 'reset' | 'support';
 const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
   verify: code => [`رمز ويند ${code} · Wind code`, [`رمز تأكيد بريدك في ويند: ${code}`, 'ينتهي خلال 15 دقيقة. إن لم تطلبه فتجاهل هذه الرسالة.', '',
@@ -801,16 +839,35 @@ route('POST', '/api/me/email/verify', async ({ user, body }) => {
 
 // Forgotten password, self-service: only to an already verified address (a typed one could be someone else's), never
 // for administrators (operator shell only). The same answer whether or not the account exists.
-const accountFor = async (identifier: unknown) => {
+const accountFor = async (identifier: unknown, verified = true) => {
   const value = String(identifier ?? '').trim(), phone = normalizePhone(value), email = normalizeEmail(value);
   const r = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone)) : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  return r && r.email_verified_at && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
+  return r && (r.email_verified_at || !verified) && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
 };
 route('POST', '/api/auth/reset/code', async ({ body }) => {
-  if (!emailReady) fail(503, 'email_unavailable');
-  const r = (await accountFor(body.identifier));
+  if (!emailReady && !firebaseReset) fail(503, 'email_unavailable');
+  const r = (await accountFor(body.identifier, emailReady));
   // Not awaited: the reply time must not tell a real account (provider call) from none; errors stay silent too.
-  if (r) void persistence.detached(() => sendCode(r, 'reset')).catch(() => {});
+  if (r) void persistence.detached(async () => {
+    if (emailReady) return sendCode(r, 'reset');
+    if (!firebaseReset || !r.email) return;
+    if (firebaseSending.has(r.id)) return;
+    firebaseSending.add(r.id);
+    try {
+      const previous = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ?', r.id);
+      if (previous && Date.now() - previous.requested_at < CODE_GAP) return;
+      await limit(identityKey('email-reset', r.id), 5, FIREBASE_RESET_TTL);
+      await run('DELETE FROM firebase_resets WHERE user_id = ?', r.id);
+      const requestedAt = Date.now();
+      try {
+        await firebaseReset.send(r.id, r.email, body.lang === 'en' ? 'en' : 'ar');
+        const result = await run(`INSERT INTO firebase_resets (user_id, requested_at)
+          SELECT id, ? FROM users WHERE id = ? AND password = ? AND email = ? AND status <> 'blocked' AND role <> 'admin'
+          ON CONFLICT(user_id) DO UPDATE SET requested_at = excluded.requested_at`, requestedAt, r.id, r.password, r.email);
+        if (!result.changes) await firebaseReset.deleteUser(r.id).catch(() => {});
+      } catch { await firebaseReset.deleteUser(r.id).catch(() => {}); }
+    } finally { firebaseSending.delete(r.id); }
+  }).catch(() => {});
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', async ({ body }) => {
@@ -824,6 +881,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
     (await run('UPDATE users SET password = ? WHERE id = ?', password, r.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', r.id)); // a reset ends the session on every device
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', r.id));
+    await clearFirebaseReset(r.id);
     for (const id of [r.phone, r.email].filter(Boolean)) (await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase())));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -885,6 +943,7 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
     // A browser here cannot be told from the one that made this change, and a stolen session's browser must stop alerting. This one subscribes again when Account next opens.
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
+    await clearFirebaseReset(user.id);
     (await run('DELETE FROM request_limits WHERE key = ?', key));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -920,6 +979,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
+    await clearFirebaseReset(user.id);
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
@@ -3100,6 +3160,7 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) {
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
       (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
+      await clearFirebaseReset(target.id);
     }
     const now = Date.now();
     const auditFields = [
@@ -3203,6 +3264,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
       (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
+      await clearFirebaseReset(target.id);
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
         user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
       (await persistence.exec('COMMIT'));
@@ -3491,6 +3553,9 @@ server.maxConnections = 2_000; // a held live request is a socket: a cap keeps o
 let presenceSweepTimer: ReturnType<typeof setInterval> | undefined;
 let presenceSweepJob: Promise<void> = Promise.resolve();
 let presenceSweepRunning = false;
+let firebaseSweepTimer: ReturnType<typeof setInterval> | undefined;
+let firebaseSweepJob: Promise<void> = Promise.resolve();
+let firebaseSweepRunning = false;
 server.on('listening', () => {
   const minimumBuild = process.env.WIND_MIN_CLIENT_BUILD;
   if (minimumBuild && !(Number.isSafeInteger(Number(minimumBuild)) && Number(minimumBuild) > 0))
@@ -3506,6 +3571,15 @@ server.on('listening', () => {
   sweep();
   presenceSweepTimer=setInterval(sweep,15_000);
   presenceSweepTimer.unref();
+  const sweepFirebase = () => {
+    if (firebaseSweepRunning || draining) return;
+    firebaseSweepRunning = true;
+    firebaseSweepJob = persistence.detached(sweepFirebaseResets).catch(error => { logServerError('firebase_maintenance_failed', error); })
+      .finally(() => { firebaseSweepRunning = false; });
+  };
+  sweepFirebase();
+  firebaseSweepTimer = setInterval(sweepFirebase, 60_000);
+  firebaseSweepTimer.unref();
 });
 
 export async function pruneExpired() {
@@ -3513,15 +3587,22 @@ export async function pruneExpired() {
   (await run('DELETE FROM push_subscriptions WHERE user_id NOT IN (SELECT user_id FROM sessions)')); // the last session gone, no browser should keep alerting
   (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
 }
+export async function sweepFirebaseResets() {
+  for (const row of await all('SELECT user_id, requested_at FROM firebase_resets WHERE requested_at <= ? LIMIT 10', Date.now() - FIREBASE_RESET_TTL)) {
+    if ((await run('DELETE FROM firebase_resets WHERE user_id = ? AND requested_at = ?', row.user_id, row.requested_at)).changes && firebaseReset)
+      await firebaseReset.deleteUser(row.user_id).catch(() => {});
+  }
+}
 export async function shutdown() {
   if (draining) return;
   draining = true;
   if(presenceSweepTimer)clearInterval(presenceSweepTimer);
+  if(firebaseSweepTimer)clearInterval(firebaseSweepTimer);
   fixWaiters.forEach(set => set.forEach(wake => wake())); // live watchers answer now instead of holding the close
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }
-  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
+  finally { clearTimeout(force); await presenceSweepJob; await firebaseSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
 }
 
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.

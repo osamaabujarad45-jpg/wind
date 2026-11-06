@@ -2,6 +2,7 @@ import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from '
 import type { IncomingMessage } from 'node:http';
 import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 import { clientAddress } from './client-address.ts';
+import { firebaseReset } from './firebase-reset.ts';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { parsePhoneNumber, type PhoneNumber } from './phone-number.ts';
 import { AcsCommunication, OoredooCommunication, phoneConfig, type PhoneConfig } from './phone-provider.ts';
@@ -345,6 +346,8 @@ export class PhoneIdentity {
           const hashedPassword=password!.prepared;
           if(!hashedPassword)return bad();
           await this.db.run('UPDATE users SET password=? WHERE id=?',hashedPassword,user.id);
+          const pending = await this.db.run('DELETE FROM firebase_resets WHERE user_id=?',user.id);
+          if(pending.changes && firebaseReset)this.db.defer(()=>firebaseReset.deleteUser(user.id).catch(()=>{}));
           await this.db.run('DELETE FROM sessions WHERE user_id=?',user.id);
           await this.db.run('DELETE FROM push_subscriptions WHERE user_id=?',user.id);
           for(const identifier of [user.phone,user.email?.toLowerCase(),c.target_e164,...(parsePhoneNumber(c.target_e164,'PS')?.aliases??[])].filter(Boolean))

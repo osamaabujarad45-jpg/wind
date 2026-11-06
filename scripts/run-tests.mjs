@@ -82,6 +82,7 @@ const suites = [
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",
   "email.test.mjs",
+  "firebase-reset.test.mjs",
   "dependencies.test.mjs",
   "clean-typecheck.test.mjs",
   "background-location.test.mjs",
@@ -142,7 +143,8 @@ const selected = suites.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No tests match the requested filter');
 for (const name of selected) {
   const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
-    fileURLToPath(new URL('../tests/' + name, import.meta.url))], { stdio: 'inherit', windowsHide: true });
+    fileURLToPath(new URL('../tests/' + name, import.meta.url))], { stdio: 'inherit', windowsHide: true,
+      env: { ...process.env, WIND_FIREBASE_API_KEY: '', WIND_FIREBASE_SERVICE_ACCOUNT: '' } });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }

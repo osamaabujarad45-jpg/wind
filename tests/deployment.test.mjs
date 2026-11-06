@@ -69,7 +69,7 @@ writeFileSync(join(web, 'index.html'), '<!doctype html><title>Wind web</title><d
 writeFileSync(join(web, 'manifest.webmanifest'), '{"name":"Wind"}');
 const moduleUrl = new URL('../server/main.ts', import.meta.url).href;
 const env = { ...process.env, NODE_ENV: 'production', DB_PATH: path, SUPPORT_CONTACT: 'Synthetic support +970599001234',
-  WIND_IDENTITY_MODE: 'operator-verified', WIND_PUSH_SUBJECT: 'mailto:wind-deployment-suite@example.invalid', WIND_TRUST_PROXY: '1', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
+  WIND_FIREBASE_API_KEY: '', WIND_FIREBASE_SERVICE_ACCOUNT: '', WIND_IDENTITY_MODE: 'operator-verified', WIND_PUSH_SUBJECT: 'mailto:wind-deployment-suite@example.invalid', WIND_TRUST_PROXY: '1', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
 const flags = ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'];
 const cli = (args, extra = {}, input) => spawnSync(process.execPath, [...flags, main, ...args], { env: { ...env, ...extra }, input, encoding: 'utf8', timeout: 10_000 });
 const code = source => [...flags, '--input-type=module', '-e', source];

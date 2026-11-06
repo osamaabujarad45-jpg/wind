@@ -107,7 +107,7 @@ for (const [input, expected] of [
 // Exercise the real email-code callbacks and their request bodies, not just the helper in isolation.
 {
   let slots = [], cursor = 0, first = true;
-  const calls = [], c = copy.en;
+  const calls = []; let c = copy.en, language = 'en', linkMode = false;
   const react = {
     useState(value) { const slot = slots[cursor++] ??= { value: typeof value === 'function' ? value() : value };
       return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; }]; },
@@ -122,10 +122,10 @@ for (const [input, expected] of [
     'react-native': { KeyboardAvoidingView: 'KeyboardAvoidingView', Linking: {}, Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, 'expo-router': { router: {} },
     '../motion': { default: { View: 'Animated.View' }, FadeInDown: fade, FadeInUp: fade, useReducedMotion: () => false },
-    '../api': { api: async (path, body) => { calls.push({ path, body }); return path === '/auth/options' ? { registrationOpen: true, emailReset: true } : {}; } },
+    '../api': { api: async (path, body) => { calls.push({ path, body }); return path === '/auth/options' ? { registrationOpen: true, emailReset: !linkMode, ...(linkMode && { emailResetLink: true }) } : {}; } },
     '../model': model, '../parts': { HelpLinks: 'HelpLinks', useFormat: () => ({ date: () => '' }) },
     '../install-link': { InstallLink: 'InstallLink' }, '../phone-recovery': { PhoneRecovery: 'PhoneRecovery' }, '../phone-card': { PhoneCard: 'PhoneCard' },
-    '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language: 'en' }) },
+    '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language }) },
     '../entra-auth': { entraConfigured: false }, '../phone/client': { phoneApi: { capabilities: async () => ({ available: false, enabled: false }) } },
     '../phone/flow': { codeInput, gateOf }, '../phone/notice': { takeAuthNotice: () => null },
     '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, palette: {}, tones: {}, useCopy: () => ({ c, err: error => String(error) }) },
@@ -161,6 +161,22 @@ for (const [input, expected] of [
   find(renderAuth(), node => node.type === 'Field' && node.props.label === c.newPassword).props.onChangeText('Synthetic-password-123');
   await button(renderAuth(), c.resetSave).onPress();
   assert.equal(calls.find(call => call.path === '/auth/reset').body.code, '123456');
+
+  linkMode = true;
+  for (language of ['en', 'ar']) {
+    c = copy[language]; slots = []; cursor = 0; first = true; calls.length = 0;
+    renderAuth(); await Promise.resolve();
+    find(renderAuth(), node => node.type === 'Press' && node.props.accessibilityLabel === c.forgotPasswordEmail).props.onPress();
+    find(renderAuth(), node => node.type === 'Field' && node.props.label === c.identifier).props.onChangeText('test@example.com');
+    assert.equal(field(renderAuth()), undefined, 'link mode never asks for a code');
+    await button(renderAuth(), c.resetSend).onPress();
+    const request = calls.find(call => call.path === '/auth/reset/code');
+    assert.equal(request.body.identifier, 'test@example.com');
+    assert.equal(request.body.lang, language);
+    assert.ok(find(renderAuth(), node => node.type === 'Txt' && node.props.children === c.resetLinkSent));
+    assert.ok(!calls.some(call => call.path === '/auth/reset'));
+  }
+  c = copy.en;
 
   slots = []; cursor = 0;
   const Profile = load('profile');
