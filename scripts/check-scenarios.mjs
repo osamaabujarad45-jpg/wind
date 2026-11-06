@@ -711,10 +711,16 @@ try {
   await pricePage.route(bookingPath, route => route.fulfill({ status: 409, json: { error: bookingError } }));
   for (const code of ['itinerary_changed', 'quote_not_found']) {
     bookingError = code;
+    // A refused booking refetches anyway; what matters is that the old price cannot be requested while the new one loads.
+    await pricePage.route(pricePath, async route => { await new Promise(resolve => setTimeout(resolve, 2000)); await route.continue(); });
     const refreshed = pricePage.waitForResponse(r => new URL(r.url()).pathname === '/api/price' && r.status() === 200);
+    refreshed.catch(() => undefined); // a failure below closes the page; this must not crash the run before the failure prints
     await requestButton.click();
     await pricePage.getByText(c[`err_${code}`], { exact: true }).waitFor();
+    await pricePage.waitForTimeout(700);
+    assert.equal(await requestButton.isDisabled(), true, `${code}: the old price must not be requestable while the new one loads`);
     await refreshed;
+    await pricePage.unroute(pricePath);
     await until(() => requestButton.isEnabled(), Boolean, `The price was not refreshed after ${code}`);
   }
   await pricePage.unroute(bookingPath);
