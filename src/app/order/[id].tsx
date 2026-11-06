@@ -516,11 +516,8 @@ export default function OrderScreen() {
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
-      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Card tone="olive">
-        <Txt variant="title">{c.rideBoardingCode}</Txt>
-        <Txt variant="h2" selectable accessibilityLabel={`${c.rideBoardingCode} ${boardingPin.split('').join(' ')}`}>{boardingPin}</Txt>
-        <Txt variant="caption">{c.rideBoardingHint}</Txt>
-      </Card>}
+      {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
+      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
       {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
         {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
       </Txt>}

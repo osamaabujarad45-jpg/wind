@@ -39,7 +39,7 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   assert.match(errorText, /useEffect\(\(\) => \{ if \(children && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(children\); \}, \[children\]\)/);
   assert.match(errorText, /accessibilityRole="alert"/);
   const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
-  assert.equal(screen.match(/accessibilityLabel=\{`\$\{c\.rideBoardingCode\} \$\{boardingPin\.split\(''\)\.join\(' '\)\}`\}/g)?.length, 2, 'both PIN displays separate digits');
+  assert.equal(screen.match(/accessibilityLabel=\{`\$\{c\.rideBoardingCode\} \$\{boardingPin\.split\(''\)\.join\(' '\)\}`\}/g)?.length, 1, 'the PIN shows once, and reads as separate digits');
   assert.match(ui.slice(ui.indexOf('export function Txt'), ui.indexOf('// Section heading')), /<Text[^>]*accessibilityLabel=\{accessibilityLabel\}/);
 
   // Exercise the actual effect with successive snapshots, including a first load, unchanged polls and another order.
