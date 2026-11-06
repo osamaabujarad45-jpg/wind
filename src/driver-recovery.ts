@@ -3,13 +3,15 @@ import { apiSessionRevision, serverOffset } from './api-client';
 import { driverCommandBody, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, resumeDriverCommand, settleOtherOrder, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
 import { recoveryStorage } from './recovery-storage';
 import { effectiveRuntime } from './runtime-config';
+import { storage } from './storage';
 import type { Order } from './model';
 let actionQueue: Promise<unknown> = Promise.resolve();
 
 /** One acknowledged action at a time across screens; a failed write can never be presented as saved. */
 export function recoverDriverAction(actorId: number, order: Order, action?: DriverAction, payload: DriverCommand['payload'] = {}, allowed: () => boolean = () => true) {
   const revision = apiSessionRevision();
-  const run = actionQueue.then(async () => {
+  // The saved command is shared between tabs: without the lock a late reply in one tab clears the command another just saved.
+  const run = actionQueue.then(() => storage.exclusive(async () => {
     const valid = () => revision === apiSessionRevision() && allowed();
     if (!valid()) throw new ApiError('session_changed', 401);
     if (!order.recovery) throw new ApiError('driver_recovery_unavailable', 409);
@@ -52,7 +54,7 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       await recoveryStorage.write('command', null, 1);
     }
     return earlierOutcome(result, earlier);
-  });
+  }, 'wind.driver.command'));
   actionQueue = run.catch(() => undefined);
   return run;
 }

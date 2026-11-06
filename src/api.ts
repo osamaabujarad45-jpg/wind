@@ -18,6 +18,9 @@ const supportNumber = process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP?.replace(/\D/g, '
 const supportContact = process.env.EXPO_PUBLIC_SUPPORT_CONTACT?.trim();
 export const SUPPORT_URL = supportNumber ? `https://wa.me/${supportNumber}`
   : supportContact && /^(mailto:|https:\/\/)/.test(supportContact) ? supportContact : null;
+// Where a refused build gets the new one. Unset: the forced-upgrade screen can only offer support.
+const updateLink = process.env.EXPO_PUBLIC_UPDATE_URL?.trim();
+export const UPDATE_URL = updateLink && updateLink.startsWith('https://') ? updateLink : null;
 
 export const api = async <T>(path: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> => {
   const revision = apiSessionRevision();

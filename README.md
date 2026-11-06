@@ -117,7 +117,8 @@ Any Docker host with a persistent volume and HTTPS in front (Fly.io, Railway, a 
 ```bash
 docker build --build-arg EXPO_PUBLIC_API_URL=https://<public-api-origin> -t wind-api .
 docker run -d -p 127.0.0.1:4000:4000 -v wind-data:/data \
-  -e WIND_IDENTITY_MODE=self-service -e SUPPORT_CONTACT="<actual support contact>" wind-api
+  -e WIND_IDENTITY_MODE=self-service -e SUPPORT_CONTACT="<actual support contact>" \
+  -e WIND_TRUST_PROXY=1 -e WIND_PUSH_SUBJECT=https://<public-api-origin> wind-api
 ```
 
 The API origin is a required build argument: it is embedded in the web bundle.

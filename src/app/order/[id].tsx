@@ -490,8 +490,6 @@ export default function OrderScreen() {
       </View>}
     </Card>}
 
-    {!live && <ErrorText>{actionError}</ErrorText>}
-
     <View style={{ gap: 8 }}>
       {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
         reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}

@@ -8,9 +8,9 @@ export const storage = {
    * Reading the session token and acting on it, with no other tab's sign-in or sign-out in between.
    * ponytail: Web Locks need a secure context, so plain http falls back to the old race; native storage has one process and no tabs.
    */
-  exclusive: <T>(run: () => Promise<T>): Promise<T> => {
+  exclusive: <T>(run: () => Promise<T>, lock = 'wind.session.token'): Promise<T> => {
     const locks = Platform.OS === 'web' ? (globalThis.navigator as unknown as { locks?: LockManager } | undefined)?.locks : undefined;
-    return locks ? locks.request('wind.session.token', run) : run();
+    return locks ? locks.request(lock, run) : run();
   },
   get: async (key: string, required = false) => Platform.OS === 'web' ? webGet(webStore, key, required) : SecureStore.getItemAsync(key),
   set: async (key: string, value: string | null, required = false) => {

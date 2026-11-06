@@ -87,9 +87,17 @@ try {
   const restored = join(dir, 'restored.db');
   writeFileSync(restored, gunzipSync(gzipSync(readFileSync(copy))));
   assert.ok(!existsSync(`${restored}-wal`), 'no journal to replay');
+  // The same statement as infra/vm/wind-restore.sh: nobody's session from before the copy survives it.
+  const wipe = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8').match(/db\.exec\('(BEGIN;[^']*)'\)/)[1];
+  const cleaning = new DatabaseSync(restored);
+  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 1, 'the copy holds the admin device');
+  cleaning.exec(wipe);
+  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 0, 'native push tokens go with their sessions');
+  cleaning.close();
   const api = await startApiProcess({ DB_PATH: restored });
   try {
     const remote = apiCaller(() => api.base, realFetch);
+    await remote('/me', { token: customer.token, expect: 401 });
     const signedIn = await remote('/auth/login', { body: { phone: '0599170002', password: 'secret1' } });
     assert.equal((await remote(`/orders/${order.id}`, { token: signedIn.token })).id, order.id, 'the order is there');
     const added = await remote('/orders', { token: signedIn.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });

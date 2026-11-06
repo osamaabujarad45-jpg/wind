@@ -292,7 +292,9 @@ try {
   await call('/me', { token: customer.token, expect: 401 }); // reset signs out everywhere
   const relogged = await call('/auth/login', { body: { phone: '0599000002', password: temp } });
 
-  // Blocking revokes access
+  // Blocking revokes access, once no open order would be stranded without its customer
+  await call(`/admin/users/${customer.user.id}`, { token: admin.token, body: { status: 'blocked' }, expect: 409 });
+  await call(`/orders/${plusOrder.id}/cancel`, { token: relogged.token, body: {} });
   let finishSlowBody;
   const slowMutation = new Promise((resolve, reject) => {
     const pending = httpRequest(base + '/me', { method: 'POST', headers: { Authorization: `Bearer ${relogged.token}`, 'Content-Type': 'application/json' } }, response => {

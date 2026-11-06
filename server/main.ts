@@ -513,7 +513,11 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
 const eligibility = new Eligibility(persistence, fail);
-registerEligibilityRoutes(route, eligibility);
+registerEligibilityRoutes(route, eligibility, async (order, action) => {
+  if (action === 'confirm_return') await postOrderJournals(order.id);
+  await queuePush([order.driver_id], 'decided', order.id);
+  await queuePush([order.customer_id], ({ hold: 'on_hold', return: 'returning', confirm_return: 'returned' } as const)[action], order.id);
+});
 const presence = new Presence(persistence, eligibility, fail, production && selfService);
 // Going online needs the PostgreSQL presence tables (migration 9). Without them, as on SQLite in production today, the jobs board
 // is the whole driver flow, so the app must not offer a button that can only fail. Tests keep the card unless they ask for production's behaviour.
@@ -1205,6 +1209,14 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
 async function dispatchOrBroadcast(service: Service, orderId: number, customerId: number, exceptDriver = 0) {
   if (service === 'ride' && await dispatch.startRound(orderId)) return true;
   return newJobPush(service, orderId, customerId, exceptDriver);
+}
+/** An order back in the pool after a driver left it, by release or block. That driver is excluded; a ride needs a new round, since the old one closed as matched. */
+async function reofferReleased(service: Service, orderId: number, customerId: number, driverId: number) {
+  if (service === 'ride' && dispatch.enabled()) {
+    await dispatch.recordRelease(orderId, driverId);
+    if (await dispatch.startRound(orderId)) return;
+  }
+  await newJobPush(service, orderId, customerId, driverId);
 }
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 export async function alertReleasedJobs(now = Date.now()) {
@@ -2316,8 +2328,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   })();
   if (!order) return { ok: true };
   await queuePush([order.customerId!], 'released', order.id);
-  if (order.service === 'ride' && dispatch.enabled()) { await dispatch.recordRelease(order.id, user.id); if (!(await dispatch.startRound(order.id))) (await newJobPush(order.service, order.id, order.customerId!, user.id)); }
-  else (await newJobPush(order.service, order.id, order.customerId!, user.id)); // the releasing driver is excluded
+  await reofferReleased(order.service, order.id, order.customerId!, user.id);
   return { ok: true };
 });
 
@@ -2394,7 +2405,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     const order = (await one('SELECT customer_id, driver_id, status FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (body.action === 'reattempt') (await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id));
-    else if (body.action === 'confirm_return') (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+    else if (body.action === 'confirm_return') {
+      (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+      await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
+    }
     else {
       (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), Date.now(), id));
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
@@ -3059,6 +3073,9 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (identityOrRoleChange &&
       (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
     if (roleChanged && target.role === 'driver') (await cashSettled(target.id));
+    // A blocked customer loses the handover code, so a courier on the way could never finish. Support cancels or waits first.
+    if (target.role === 'customer' && status === 'blocked' && target.status !== 'blocked'
+      && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
       carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id));
@@ -3096,6 +3113,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));
+        await rideLifecycle.clearAssignment(Number(o.id));
       }
       else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
         (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
@@ -3107,7 +3125,7 @@ const editUser: Handler = async ({ user, params, body }) => {
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   for (const o of carrying) {
-    if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); (await newJobPush(o.service, o.id, o.customer_id, target.id)); }
+    if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); await reofferReleased(o.service as Service, Number(o.id), Number(o.customer_id), target.id); }
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
