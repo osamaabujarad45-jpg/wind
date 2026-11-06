@@ -81,7 +81,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–29 under `MIGRATION_LOCK`. `/api/ready` must then report schema 29. Its own check only refuses below 21, so read the number rather than trusting the 200. This is owner-run, never CI, and must not run concurrently with another migration. Validate restored fresh infrastructure before accepting live writes. If rollback follows PostgreSQL writes, do not point at stale SQLite: close writes and repair forward or use an independently tested reconciliation. Never delete custody, money, event, evidence, or outbox history to make rollback easier.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–30 under `MIGRATION_LOCK`. `/api/ready` must then report schema 30. This is owner-run, never CI, and must not run concurrently with another migration. Validate restored fresh infrastructure before accepting live writes. If rollback follows PostgreSQL writes, do not point at stale SQLite: close writes and repair forward or use an independently tested reconciliation. Never delete custody, money, event, evidence, or outbox history to make rollback easier.
 
 ## Microsoft API references pinned by this template
 

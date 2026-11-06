@@ -18,6 +18,7 @@ const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
+NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; a cutover simply asks the user to request it again
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
