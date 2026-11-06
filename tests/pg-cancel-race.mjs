@@ -15,12 +15,13 @@ async function pair(cancel, action, mode) {
   }
   return Promise.all([cancel(), action()]);
 }
+let retried = 0;
 const post = async (base, path, headers, body) => {
   // A 503 is the API's retryable answer to a lock wait past lock_timeout, not a race outcome, and nothing was applied: send it again.
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
     const text = await response.text();
-    if (response.status === 503 && attempt < 5) { await new Promise(resolve => setTimeout(resolve, 200)); continue; }
+    if (response.status === 503 && attempt < 5) { retried++; await new Promise(resolve => setTimeout(resolve, 200)); continue; }
     let data; try { data = JSON.parse(text); } catch { data = text; }
     return { status: response.status, data };
   }
@@ -36,7 +37,9 @@ const no5xx = (results, label) => {
 };
 
 const f = await fixture('cancelrace', { WIND_DISPATCH_TEST_ONLY: '1', SOUQ_PARTNER_KEY: partnerKey });
+const deadlocks = async () => Number((await f.db.one('SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()')).deadlocks);
 try {
+  const deadlocksBefore = await deadlocks();
   assert.notEqual(f.a.child.pid, f.b.child.pid, 'race requests must use independent API processes');
   // The shared fixture starts with 0598 numbers; give this test's synthetic actors the requested 0599 range before enrollment.
   for (const [i, account] of [f.admin, f.customer, f.d1, f.d2].entries())
@@ -200,6 +203,11 @@ try {
     assert.equal(queued.length, 1, `${label} lag=${lag}: a courier whose accept succeeded must hear about the partner's cancel`);
   }
   assert.ok(accepts > 0, 'D: at least one accept must win, or the race proved nothing');
+
+  // The 503 retry must not hide the defect these races look for: a deadlock also answers 503.
+  await new Promise(resolve => setTimeout(resolve, 2000)); // PostgreSQL flushes its statistics about once a second
+  assert.equal(await deadlocks() - deadlocksBefore, 0, 'cancel and driver actions must never deadlock');
+  console.log(`pg-cancel-race: ${retried} 503 retries, ${accepts}/40 partner accepts won`);
 } finally {
   try {
     await Promise.all([f.a.stop(), f.b.stop()]);
