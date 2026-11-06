@@ -8,6 +8,7 @@ dir=/srv/wind-data/backups
 trap 'rm -f "$dir/wind-$stamp.db"' EXIT # a failed run must not leave an uncompressed copy that nothing ever deletes
 docker exec wind-api mkdir -p /data/backups
 docker exec wind-api node --disable-warning=ExperimentalWarning -e "
+  process.umask(0o077); // private from the first byte: this copy holds the same accounts as the live database
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB_PATH || '/data/wind.db');
   db.exec(\"VACUUM INTO '/data/backups/wind-$stamp.db'\");

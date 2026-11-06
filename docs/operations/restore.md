@@ -27,30 +27,30 @@ Update the script on the VM with any image that has this alert (`sudo cp infra/v
 To restore, on the VM or a replacement:
 
 ```sh
-sudo sh infra/vm/wind-restore.sh /srv/wind-data/backups/wind-<stamp>.db.gz
+sudo /srv/wind-restore.sh /srv/wind-data/backups/wind-<stamp>.db.gz
 ```
 
-Use the script, not a hand-typed pipe: `gunzip | tee wind.db` empties the live database when the file is missing, and the API opens an empty file as a new one. It checks the copy before touching anything and keeps the old database as `wind.db.before-restore`.
+Use the script, not a hand-typed pipe: `gunzip | tee wind.db` empties the live database when the file is missing, and the API opens an empty file as a new one. It checks the copy before touching anything, keeps the old database as `wind.db.before-restore-<time>`, and puts it back if the swap or the start fails.
 
-**After a restore everyone signs in again,** and closed-app alerts stop until each person does. This is deliberate: a session revoked after the copy was taken must not come back. Accounts blocked or deleted since the copy, and orders since it, are not recovered: re-apply the blocks and deletions from the incident timeline, then sign in as an admin and open a recent order. `tests/backup.test.mjs` runs the data path on a synthetic database.
+**After a restore everyone signs in again,** and closed-app alerts stop until each person does. This is deliberate: a session revoked after the copy was taken must not come back. Orders since the copy are not recovered, and neither are blocks or deletions. If any account was blocked or deleted since the copy, a blocked person could sign in again as soon as the API is up, so run `sudo docker stop caddy` first, reach the API through `ssh -L 4000:127.0.0.1:4000` to re-apply them from the incident timeline, then `sudo docker start caddy`. Then sign in as an admin and open a recent order. `tests/backup.test.mjs` runs the data path on a synthetic database.
 
-**If the VM itself is lost:** the copies on its disk are gone too, so take the newest from Blob. The SAS on the VM can only write, so a compromised VM cannot read or delete old copies, and it cannot be used here either. From the owner's PC:
+**If the VM itself is lost:** the copies on its disk are gone too, so take the newest from Blob. The SAS on the VM can only write, so a compromised VM cannot read or delete old copies, and it cannot be used here either. From the owner's PC, then `scp` it to the new VM:
 
 ```sh
 az storage blob list --subscription "Azure subscription 1" --account-name windprodstore --container-name wind-backups --auth-mode key -o table
 az storage blob download --subscription "Azure subscription 1" --account-name windprodstore --container-name wind-backups --auth-mode key -n wind-<stamp>.db.gz -f wind-<stamp>.db.gz
 ```
 
-The default `az` subscription is the disabled student one, so name the subscription. These files are not in any backup and must be recreated on a new VM: `/srv/wind-api.env` (no secrets today: `DB_PATH WIND_IDENTITY_MODE NODE_ENV WEB_ROOT TZ WIND_ENABLED_SERVICES HOST PORT SUPPORT_CONTACT OSRM_URL`, values in `docs/operations/deploy.md` and `.env.example`), `/srv/wind-backup.env` (a new write-only SAS), `/srv/Caddyfile`, and `/etc/cron.d/wind`. The OSRM graph at `/srv/osrm` is rebuilt, not restored. `deploy.sh` and `wind-restore.sh` both expect a `wind-api` container, so on a new VM first start one by hand with the `docker run` line from `infra/vm/deploy.sh`. **Not rehearsed:** this replacement path was never run end to end.
+The default `az` subscription is the disabled student one, so name the subscription. These files are not in any backup and must be recreated on a new VM: `/srv/wind-api.env` (no secrets today: `DB_PATH WIND_IDENTITY_MODE NODE_ENV WEB_ROOT TZ WIND_ENABLED_SERVICES HOST PORT SUPPORT_CONTACT OSRM_URL`, plus `WIND_TRUST_PROXY` and `WIND_PUSH_SUBJECT`, which the current code refuses to start without; values in `docs/operations/deploy.md` and `.env.example`), `/srv/wind-backup.env` (a new write-only SAS), `/srv/Caddyfile`, and `/etc/cron.d/wind`. The OSRM graph at `/srv/osrm` is rebuilt, not restored. `deploy.sh` and `wind-restore.sh` both expect a `wind-api` container, so on a new VM first start one by hand with the `docker run` line from `infra/vm/deploy.sh`. **Not rehearsed:** this replacement path was never run end to end.
 
-The hourly copies on the owner's PC (`scripts/backup-azure.ps1`) are a second source, encrypted to that Windows account. `-VerifyLatest` needs the VM, so it is no help when the VM is gone. To unwrap one offline:
+The four-hourly copies on the owner's PC (`scripts/backup-azure.ps1`) are a second source, encrypted to that Windows account. `-VerifyLatest` needs the VM, so it is no help when the VM is gone. To unwrap one offline:
 
 ```powershell
 $j = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes('<file>.dpapi'), $null, 'CurrentUser')) | ConvertFrom-Json
 [IO.File]::WriteAllBytes("$PWD\wind.db", [Convert]::FromBase64String($j.data)); (Get-FileHash wind.db -Algorithm SHA256).Hash -ieq $j.sha256  # True. Delete wind.db when done
 ```
 
-**Restore drill, 6 November 2026:** the newest nightly copy (`wind-20261106T031001Z.db.gz`) was byte-identical on the VM and in Blob. `wind-restore.sh` ran against a throwaway container and data folder, with the production image and `/srv/wind-api.env`, while `wind-api` kept running: a missing file and a non-database file each stopped it with the container up and the data untouched, and the real copy was restored and ready in 12 seconds with no sessions left. Production then held 2 users and no orders, so this proves the path and says nothing about a restore at real volume.
+**Restore drill, 6 November 2026:** the newest nightly copy (`wind-20261106T031001Z.db.gz`) was byte-identical on the VM and in Blob. `wind-restore.sh` ran against a throwaway container and data folder, with the production image and `/srv/wind-api.env`, while `wind-api` kept running: a missing file and a non-database file each stopped it with the container up and the data untouched, a failed start and a failed readiness check each put the old database back and restarted it, and the real copy was restored and ready in 12 seconds with no sessions left. Production then held 2 users and no orders, so this proves the path and says nothing about a restore at real volume.
 
 **Retention:** Blob has no lifecycle rule and soft delete is off, so copies stay forever, including the data of accounts deleted since. The privacy page says earlier backups may hold such data; an owner decision on how long is still open.
 

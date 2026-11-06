@@ -3129,7 +3129,7 @@ const editUser: Handler = async ({ user, params, body }) => {
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
-  return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
+  return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found')));
 };
 route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
@@ -3153,7 +3153,7 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
-  return (await toUser((await one('SELECT * FROM users WHERE id = ?', Number(params[0])))!));
+  return (await toUser((await one('SELECT * FROM users WHERE id = ?', Number(params[0]))) ?? fail(404, 'not_found')));
 });
 route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
   need(user, 'admin');
