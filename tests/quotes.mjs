@@ -125,8 +125,8 @@ try {
   // Pins added after an unpinned quote still cannot name one spot twice.
   const local = { ...orderInput, dropoffCity: orderInput.pickupCity };
   const spot = { latitude: 31.905, longitude: 35.205 };
-  const price6 = await call('/price', { token: customer.token, body: local });
-  assert.equal((await call('/orders', { token: customer.token, body: { ...local, quoteId: price6.quoteId, pickupPoint: spot, dropoffPoint: spot, requestId: randomUUID() }, expect: 400 })).error, 'same_place');
+  const priceSameSpot = await call('/price', { token: customer.token, body: local });
+  assert.equal((await call('/orders', { token: customer.token, body: { ...local, quoteId: priceSameSpot.quoteId, pickupPoint: spot, dropoffPoint: spot, requestId: randomUUID() }, expect: 400 })).error, 'same_place');
 
   // 8. Tariff change after quote still allows booking at old price (immutable)
   const price6 = await call('/price', { token: customer.token, body: orderInput });
