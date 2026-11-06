@@ -347,7 +347,7 @@ export class PhoneIdentity {
           if(!hashedPassword)return bad();
           await this.db.run('UPDATE users SET password=? WHERE id=?',hashedPassword,user.id);
           const pending = await this.db.run('DELETE FROM firebase_resets WHERE user_id=?',user.id);
-          if(pending.changes && firebaseReset)this.db.defer(()=>firebaseReset.deleteUser(user.id).catch(()=>{}));
+          const reset=firebaseReset;if(pending.changes && reset)this.db.defer(()=>reset.deleteUser(user.id).catch(()=>{}));
           await this.db.run('DELETE FROM sessions WHERE user_id=?',user.id);
           await this.db.run('DELETE FROM push_subscriptions WHERE user_id=?',user.id);
           for(const identifier of [user.phone,user.email?.toLowerCase(),c.target_e164,...(parsePhoneNumber(c.target_e164,'PS')?.aliases??[])].filter(Boolean))

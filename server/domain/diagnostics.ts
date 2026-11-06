@@ -1,5 +1,5 @@
 type Category = 'http_request_failed' | 'postgres_idle_connection_failed' | 'committed_effect_failed'
-  | 'outbox_worker_failed' | 'email_provider_failed' | 'account_command_failed' | 'maintenance_failed' | 'presence_maintenance_failed' | 'shutdown_failed';
+  | 'outbox_worker_failed' | 'email_provider_failed' | 'account_command_failed' | 'maintenance_failed' | 'firebase_maintenance_failed' | 'presence_maintenance_failed' | 'shutdown_failed';
 
 /** Error objects are untrusted: PostgreSQL detail/message/where can contain entire private rows. */
 export function logServerError(category: Category, error?: unknown, context: { correlationId?: string; httpStatus?: number; operatorAction?: 'cannot_change_self' | 'Verify phone ownership' } = {}) {

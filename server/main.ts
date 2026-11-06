@@ -747,7 +747,8 @@ const FIREBASE_RESET_TTL = 60 * 60_000;
 const firebaseSending = new Set<number>();
 async function clearFirebaseReset(userId: number) {
   const removed = await run('DELETE FROM firebase_resets WHERE user_id = ?', userId);
-  if (removed.changes && firebaseReset) persistence.defer(() => firebaseReset.deleteUser(userId).catch(() => {}));
+  const reset = firebaseReset;
+  if (removed.changes && reset) persistence.defer(() => reset.deleteUser(userId).catch(() => {}));
 }
 type CodePurpose = 'verify' | 'reset' | 'support';
 const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
