@@ -34,6 +34,19 @@ sudo rm -f /srv/wind-data/wind.db-wal /srv/wind-data/wind.db-shm       # a stale
 sudo docker start wind-api                                             # refuses to start if its quick check fails
 ```
 
-Then sign in as an admin and open a recent order. Off the VM, list the blob container with an account that can read it; the SAS on the VM can only write, so a compromised VM cannot read or delete old copies. `tests/backup.test.mjs` runs this path on a synthetic database.
+Then sign in as an admin and open a recent order. `tests/backup.test.mjs` runs this path on a synthetic database.
+
+**If the VM itself is lost:** the copies on its disk are gone too, so take the newest from Blob. The SAS on the VM can only write, so a compromised VM cannot read or delete old copies, and it cannot be used here either. From the owner's PC:
+
+```sh
+az storage blob list --subscription "Azure subscription 1" --account-name windprodstore --container-name wind-backups --auth-mode key -o table
+az storage blob download --subscription "Azure subscription 1" --account-name windprodstore --container-name wind-backups --auth-mode key -n wind-<stamp>.db.gz -f wind-<stamp>.db.gz
+```
+
+The default `az` subscription is the disabled student one, so name the subscription. These files are not in any backup and must be recreated on a new VM: `/srv/wind-api.env` (no secrets today: `DB_PATH WIND_IDENTITY_MODE NODE_ENV WEB_ROOT TZ WIND_ENABLED_SERVICES HOST PORT SUPPORT_CONTACT OSRM_URL`, values in `docs/operations/deploy.md` and `.env.example`), `/srv/wind-backup.env` (a new write-only SAS), `/srv/Caddyfile`, and `/etc/cron.d/wind`. The OSRM graph at `/srv/osrm` is rebuilt, not restored. **Not rehearsed:** this replacement path was never run end to end.
+
+**Restore drill, 6 November 2026:** the newest nightly copy (`wind-20261106T031001Z.db.gz`) was byte-identical on the VM and in Blob. In a throwaway container using the production image and `/srv/wind-api.env`, `/api/ready` answered 3 seconds after unzip started, with integrity and foreign keys clean, while `wind-api` kept running. Production then held 2 users and no orders, so this proves the path and says nothing about a restore at real volume.
+
+**Retention:** Blob has no lifecycle rule and soft delete is off, so copies stay forever, including the data of accounts deleted since. The privacy page says earlier backups may hold such data; an owner decision on how long is still open.
 
 Recovery objectives are not set by this IaC. The operator must approve numeric RPO/RTO based on a timed fresh restore before production. Flexible Server backup retention is configured by environment; geo-redundant backup is disabled pending regional/data-location review. Blob redundancy/lifecycle, soft delete/versioning, quarantine scanning and evidence retention also require explicit policy/cost approval. No recovery is complete solely because Azure reports a backup or deployment succeeded.
