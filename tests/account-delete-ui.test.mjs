@@ -13,7 +13,7 @@ const find = (node, type, property, value) => {
   if (node.type === type && node.props[property] === value) return node.props;
   for (const child of [node.props?.children].flat(Infinity)) { const found = find(child, type, property, value); if (found) return found; }
 };
-function account() {
+function account({ linked = true } = {}) {
   let revision = 1, cursor = 0, effects = [], calls = [], forgot = 0, resolveMicrosoft;
   const slots = [], same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {
@@ -27,14 +27,17 @@ function account() {
     react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View', Share: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, 'expo-router': { router: {} }, './model': model, './booking': {}, './map-math': {}, './copy': copy,
-    './api': { api: async (path, body) => { calls.push({ path, body }); return path === '/me/delete/challenge' ? { nonce: 'nonce' } : {}; }, apiSessionRevision: () => revision, errorCode: e => e.message },
+    './api': { api: async (path, body) => { calls.push({ path, body });
+      if (path.endsWith('/challenge')) { if (!linked) throw new Error('entra_unavailable'); return { nonce: 'nonce' }; }
+      return {}; }, apiSessionRevision: () => revision, errorCode: e => e.message },
     './push': { pushSupported: () => false }, './session': { useSession: () => ({ me: { user: { id: 1, role: 'customer', name: 'Test', phone: '0599000000' } }, forget: async () => { forgot++; }, signOut: async () => {}, language: 'en', setLanguage() {} }) },
     './entra-auth': { entraConfigured: true, prepareEntraRequest: async nonce => ({ nonce }), signInWithEntra: async () => new Promise(resolve => { resolveMicrosoft = resolve; }) },
-    './ui': { ...ui, palette: {}, tones: {}, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {} } },
+    './ui': { ...ui, palette: {}, tones: {}, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; } };
   runInNewContext(source, context);
   return { c, calls, render() { cursor = 0; effects = []; const tree = context.exports.AccountScreen(); effects.forEach(fn => fn()); return tree; },
+    renderPassword() { cursor = 0; effects = []; const tree = context.exports.PasswordCard(); effects.forEach(fn => fn()); return tree; },
     switchAccount() { revision++; }, resolveMicrosoft(value) { resolveMicrosoft(value); }, get forgot() { return forgot; } };
 }
 {
@@ -58,4 +61,38 @@ function account() {
   assert.equal(h.calls.some(call => call.path === '/me/delete'), false, 'late Microsoft result cannot delete a replacement account');
   assert.equal(h.forgot, 0);
 }
-console.log('Account deletion UI requires proof and fences a late Microsoft sign-in');
+{
+  // A Microsoft-only account has no password to type: the new one, then a Microsoft sign-in, sets it.
+  const h = account();
+  find(h.renderPassword(), 'ListRow', 'label', h.c.changePassword).onPress();
+  h.renderPassword(); await flush(); await flush();
+  let button = find(h.renderPassword(), 'Button', 'title', h.c.deleteMicrosoft);
+  assert.ok(button, 'a linked account gets the Microsoft option');
+  assert.equal(button.disabled, true, 'not before a valid new password');
+  find(h.renderPassword(), 'Field', 'label', h.c.newPassword).onChangeText('long-enough-password');
+  button = find(h.renderPassword(), 'Button', 'title', h.c.deleteMicrosoft);
+  assert.equal(button.disabled, false);
+  assert.equal(find(h.renderPassword(), 'Button', 'title', h.c.save).disabled, true, 'the password route still needs the current one');
+  button.onPress(); await flush();
+  h.resolveMicrosoft({ idToken: 'token', nonce: 'nonce' }); await flush();
+  assert.equal(JSON.stringify(h.calls.find(call => call.path === '/me/password').body), JSON.stringify({ idToken: 'token', nonce: 'nonce', password: 'long-enough-password' }));
+}
+{
+  const h = account();
+  find(h.renderPassword(), 'ListRow', 'label', h.c.changePassword).onPress();
+  h.renderPassword(); await flush(); await flush();
+  find(h.renderPassword(), 'Field', 'label', h.c.newPassword).onChangeText('long-enough-password');
+  find(h.renderPassword(), 'Button', 'title', h.c.deleteMicrosoft).onPress(); await flush();
+  h.resolveMicrosoft(null); await flush(); // the person closed the browser
+  assert.equal(h.calls.some(call => call.path === '/me/password'), false, 'a cancelled sign-in changes nothing');
+  assert.equal(find(h.renderPassword(), 'Button', 'title', h.c.save).loading, false, 'and the form is usable again');
+}
+{
+  const h = account({ linked: false });
+  find(h.renderPassword(), 'ListRow', 'label', h.c.changePassword).onPress();
+  h.renderPassword(); await flush(); await flush();
+  const tree = h.renderPassword();
+  assert.equal(find(tree, 'Button', 'title', h.c.deleteMicrosoft), undefined, 'an unlinked account sees no Microsoft option');
+  assert.equal(find(tree, 'Button', 'title', h.c.retry), undefined, 'and no retry for something it does not have');
+}
+console.log('Account deletion UI requires proof and fences a late Microsoft sign-in; a Microsoft account can set a password');

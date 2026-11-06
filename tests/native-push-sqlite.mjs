@@ -20,10 +20,11 @@ const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
 const sent = [];
 let ticket = { status: 'ok', id: 'ticket' };
+let deliveryGate;
 globalThis.fetch = (url, init) => {
   if (!String(url).startsWith('https://exp.host/')) return realFetch(url, init);
   sent.push(JSON.parse(init.body)[0]);
-  return Promise.resolve(Response.json({ data: [ticket] }));
+   return (deliveryGate ?? Promise.resolve()).then(() => Response.json({ data: [ticket] }));
 };
 const inFlight = new Set();
 const detached = persistence.detached.bind(persistence);
@@ -146,7 +147,19 @@ try {
   assert.equal(tokensOf(blockedDriver.user.id).length, 0, 'a blocked account holds no token');
 
   // Ending the session ends its token, on every path that deletes sessions.
-  await call('/auth/logout', { token: other.token, body: {} });
+  // Fill the actual delivery queue, then revoke while the ninth delivery waits for a slot.
+  for (let i = 0; i < 8; i++) await call('/push/native/register', { token: other.token,
+    body: { expoPushToken: expoToken(`queued-${i}`), deviceId: randomUUID(), platform: 'android' } });
+  let releaseDelivery;
+  deliveryGate = new Promise(resolve => { releaseDelivery = resolve; });
+  sent.length = 0;
+  try {
+    await call('/orders', { token: second.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+    for (let i = 0; sent.length < 8 && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sent.length, 8, 'eight sends occupy every delivery slot');
+    await call('/auth/logout', { token: other.token, body: {} });
+  } finally { releaseDelivery(); deliveryGate = undefined; await settle(); }
+  assert.equal(sent.length, 8, 'a queued delivery cannot use a revoked session token');
   assert.equal(tokensOf(other.user.id).length, 0, 'signing out removes the token');
   const leaving = await call('/auth/register', { body: { phone: '0599160005', name: 'Lina', password: 'secret1' } });
   const leavingDevice = randomUUID();

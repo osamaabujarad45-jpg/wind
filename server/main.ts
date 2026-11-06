@@ -9,7 +9,7 @@ import { databaseUnavailable } from './http/database-errors.ts';
 import { customerStatistics, driverStatistics } from './domain/statistics.ts';
 import { durableProtocolAvailable, enqueuePush, publicEvent } from './domain/events.ts';
 import { versionedCommand } from './domain/commands.ts';
-import { PhoneIdentity, registerPhoneRoutes } from './domain/phone-identity.ts';
+import { holdsPhoneNumber, PhoneIdentity, registerPhoneRoutes } from './domain/phone-identity.ts';
 import { Eligibility, measuredCapability, measuredScopes, registerEligibilityRoutes } from './domain/eligibility.ts';
 import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
@@ -48,7 +48,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
@@ -592,13 +592,13 @@ const realtime = new Realtime(persistence, fail);
 registerRealtimeRoutes(route, realtime);
 export const phoneIdentity = new PhoneIdentity(persistence, fail, value => hashPassword(newPassword(value, 12)), checkPassword);
 registerPhoneRoutes(route, phoneIdentity);
-registerEntraRoutes(route, entraExchange, async ({ user, req }) => {
+registerEntraRoutes(route, entraExchange, purpose => async ({ user, req }) => {
   if (!entra || !(await one('SELECT entra_oid FROM users WHERE id=?', user.id))?.entra_oid) fail(409, 'entra_unavailable');
-  await limit(identityKey('delete-challenge', user.id), 10, 10 * 60_000);
+  await limit(identityKey(`${purpose}-challenge`, user.id), 10, 10 * 60_000);
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
   const nonce = randomBytes(32).toString('hex');
   await run('DELETE FROM entra_replay WHERE expires_at < ?', Date.now());
-  await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`delete-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
+  await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`${purpose}-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
   return { nonce };
 });
 await phoneIdentity.reconcileStale();
@@ -648,12 +648,20 @@ route('POST', '/api/auth/register', async ({ body }) => {
   const hashed = await hashPassword(password);
   // The KDF stays outside this short transaction; the user, its alert and its session commit together.
   const [id, session] = await persistence.atomic({ purpose: 'http_public' }, async () => {
-    const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      phone, name, hashed, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
-      selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
-    // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
-    if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
-    return [id, await startSession(id)] as const;
+    await persistence.exec('BEGIN IMMEDIATE');
+    try {
+      const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        phone, name, hashed, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+        selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
+      // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
+      if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
+      const session = await startSession(id);
+      await persistence.exec('COMMIT');
+      return [id, session] as const;
+    } catch (error) {
+      await persistence.exec('ROLLBACK');
+      throw error;
+    }
   });
   if (!emailReady || !email) return session;
   // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
@@ -701,11 +709,11 @@ const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflar
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
 type CodePurpose = 'verify' | 'reset' | 'support';
 const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
-  verify: code => [`Ø±Ù…Ø² ÙˆÙŠÙ†Ø¯ ${code} Â· Wind code`, [`Ø±Ù…Ø² ØªØ£ÙƒÙŠØ¯ Ø¨Ø±ÙŠØ¯Ùƒ ÙÙŠ ÙˆÙŠÙ†Ø¯: ${code}`, 'ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©. Ø¥Ù† Ù„Ù… ØªØ·Ù„Ø¨Ù‡ ÙØªØ¬Ø§Ù‡Ù„ Ù‡Ø°Ù‡ Ø§Ù„Ø±Ø³Ø§Ù„Ø©.', '',
+  verify: code => [`رمز ويند ${code} · Wind code`, [`رمز تأكيد بريدك في ويند: ${code}`, 'ينتهي خلال 15 دقيقة. إن لم تطلبه فتجاهل هذه الرسالة.', '',
     `Your Wind email confirmation code: ${code}`, 'It expires in 15 minutes. If you did not ask for it, ignore this email.']],
-  reset: code => [`Ø±Ù…Ø² Ø¥Ø¹Ø§Ø¯Ø© ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± ${code} Â· Wind password code`, [`Ø±Ù…Ø² Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± ÙˆÙŠÙ†Ø¯: ${code}`, 'ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©. Ù„Ø§ ØªØ´Ø§Ø±ÙƒÙ‡ Ù…Ø¹ Ø£Ø­Ø¯ØŒ ÙØ±ÙŠÙ‚ ÙˆÙŠÙ†Ø¯ Ù„Ù† ÙŠØ·Ù„Ø¨Ù‡ Ù…Ù†Ùƒ.', '',
+  reset: code => [`رمز إعادة كلمة المرور ${code} · Wind password code`, [`رمز إعادة تعيين كلمة مرور ويند: ${code}`, 'ينتهي خلال 15 دقيقة. لا تشاركه مع أحد، فريق ويند لن يطلبه منك.', '',
     `Your Wind password reset code: ${code}`, 'It expires in 15 minutes. Never share it; Wind staff will never ask for it.']],
-  support: code => [`Ø±Ù…Ø² Ø§Ù„ØªØ­Ù‚Ù‚ Ù„Ù„Ø¯Ø¹Ù… ${code} Â· Wind support check`, [`Ø¯Ø¹Ù… ÙˆÙŠÙ†Ø¯ ÙŠØªØ­Ù‚Ù‚ Ù…Ù† Ù‡ÙˆÙŠØªÙƒ. Ø§Ù„Ø±Ù…Ø²: ${code}`, 'Ø§Ù‚Ø±Ø£Ù‡ Ù„Ù…ÙˆØ¸Ù Ø§Ù„Ø¯Ø¹Ù… ÙÙ‚Ø· Ø¥Ù† ÙƒÙ†Øª Ø£Ù†Øª Ù…Ù† ØªÙˆØ§ØµÙ„ Ù…Ø¹ ÙˆÙŠÙ†Ø¯. ÙŠÙ†ØªÙ‡ÙŠ Ø®Ù„Ø§Ù„ 15 Ø¯Ù‚ÙŠÙ‚Ø©.', '',
+  support: code => [`رمز التحقق للدعم ${code} · Wind support check`, [`دعم ويند يتحقق من هويتك. الرمز: ${code}`, 'اقرأه لموظف الدعم فقط إن كنت أنت من تواصل مع ويند. ينتهي خلال 15 دقيقة.', '',
     `Wind support is confirming it is you. Code: ${code}`, 'Read it to the agent only if you contacted Wind support yourself. It expires in 15 minutes.']],
 };
 
@@ -838,15 +846,35 @@ route('POST', '/api/me', async ({ user, body }) => {
   return (await me((await toUser((await one('SELECT * FROM users WHERE id = ?', user.id))!))));
 });
 
+// A Microsoft account never saw its placeholder password. A fresh Microsoft sign-in, bound to this session by a one-use nonce
+// issued for this one purpose, stands in for it; each proof works once, inside the transaction it authorizes.
+type EntraProof = { oid: string; challengeHash: string; tokenHash: string; expiresAt: number; authenticatedAt?: number };
+async function entraProof(purpose: 'delete' | 'password', token: string, body: Row, oid: unknown): Promise<EntraProof | undefined> {
+  if (!entra || !oid || typeof body.idToken !== 'string' || typeof body.nonce !== 'string' || !/^[a-f0-9]{64}$/.test(body.nonce)) return undefined;
+  let claims: EntraClaims | undefined;
+  try { claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 }); }
+  catch (error) { if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable'); }
+  if (claims?.oid !== oid) return undefined;
+  return { oid: claims.oid, challengeHash: sha(`${purpose}-challenge:${token}:${body.nonce}`), tokenHash: sha(claims.tokenId || body.idToken),
+    expiresAt: claims.expiresAt, authenticatedAt: claims.authenticatedAt ?? undefined };
+}
+async function spendEntraProof(proof: EntraProof) {
+  if (!(await run('DELETE FROM entra_replay WHERE token_hash=? AND expires_at>? AND expires_at<=?', proof.challengeHash, Date.now(), proof.authenticatedAt! + 5 * 60_000 + 999)).changes) fail(401, 'invalid_token');
+  if (!(await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?) ON CONFLICT(token_hash) DO NOTHING', proof.tokenHash, proof.expiresAt)).changes) fail(401, 'invalid_token');
+}
+
 route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
   (await limit(key, 5, 10 * 60_000, false));
-  const stored = (await one('SELECT password FROM users WHERE id = ?', user.id))!.password;
-  if (!await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, 'wrong_password'); }
-  const password = await hashPassword(newPassword(body.password));
+  const account = (await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id))!;
+  const stored = account.password;
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
+  const proof = await entraProof('password', currentToken, body, account.entra_oid);
+  if (!proof && !await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, body.idToken ? 'invalid_token' : 'wrong_password'); }
+  const password = await hashPassword(newPassword(body.password));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    if (proof) await spendEntraProof(proof);
     // Re-check the exact credential the KDF approved: a concurrent change must not be overwritten.
     if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', password, user.id, stored)).changes) fail(401, 'wrong_password');
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
@@ -857,9 +885,10 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
-async function deleteAccount(user: User, proof?: { sessionHash: string; passwordHash?: string; oid?: string; challengeHash?: string; tokenHash?: string; expiresAt?: number; authenticatedAt?: number }) {
+async function deleteAccount(user: User, actorId: number | null, proof?: { sessionHash: string; passwordHash?: string } & Partial<EntraProof>) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    await phoneIdentity.serialize();
     const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, user.id);
     if (current?.role === 'admin') fail(409, 'cannot_change_self');
     if (proof) {
@@ -873,12 +902,10 @@ async function deleteAccount(user: User, proof?: { sessionHash: string; password
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
-    if (proof?.oid) {
-      if (!(await run('DELETE FROM entra_replay WHERE token_hash=? AND expires_at>? AND expires_at<=?', proof.challengeHash!, Date.now(), proof.authenticatedAt! + 5 * 60_000 + 999)).changes) fail(401, 'invalid_token');
-      if (!(await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?) ON CONFLICT(token_hash) DO NOTHING', proof.tokenHash!, proof.expiresAt!)).changes) fail(401, 'invalid_token');
-    }
+    if (proof?.oid) await spendEntraProof(proof as EntraProof);
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
+    await phoneIdentity.forget(user.id, current?.phone, actorId);
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
     // T33: the privacy scrub follows the capability on both backends (destination_changes hosts proposals).
@@ -906,15 +933,9 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
   await limit(key, 5, 10 * 60_000, false);
   const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
   if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
-    return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), passwordHash: current.password }));
-  if (entra && current.entra_oid && typeof body.idToken === 'string' && typeof body.nonce === 'string' && /^[a-f0-9]{64}$/.test(body.nonce)) {
-    let claims: EntraClaims | undefined;
-    try { claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 }); }
-    catch (error) { if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable'); }
-    if (claims?.oid === current.entra_oid) return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), oid: claims!.oid,
-      challengeHash: sha(`delete-challenge:${token}:${body.nonce}`), tokenHash: sha(claims!.tokenId || body.idToken), expiresAt: claims!.expiresAt,
-      authenticatedAt: claims!.authenticatedAt ?? undefined }));
-  }
+    return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
+  const proof = await entraProof('delete', token, body, current.entra_oid);
+  if (proof) return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), ...proof }));
   await limit(key, 5, 10 * 60_000);
   fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
 });
@@ -1122,7 +1143,12 @@ async function sendPush(userIds: number[], kind: PushKind, order: number, path?:
   // Ending a session removes its token (foreign key), and blocking an account ends its sessions, so each row here is live.
   for (const t of (await all(`SELECT * FROM native_push_tokens WHERE user_id IN (${ids})`, ...userIds)))
     if (!nativeSuppression(t.prefs_json, kind, t.disabled_at))
-      void persistence.detached(() => capped(() => deliverNative(t, JSON.stringify({ kind, order, url, lang: t.lang }), ttl, urgent)));
+      void persistence.detached(() => capped(async () => {
+        const current = await one('SELECT * FROM native_push_tokens WHERE token_hash=? AND user_id=? AND auth_session_hash=? AND device_hash=?',
+          t.token_hash, t.user_id, t.auth_session_hash, t.device_hash);
+        if (current && !nativeSuppression(current.prefs_json, kind, current.disabled_at))
+          await deliverNative(current, JSON.stringify({ kind, order, url, lang: current.lang }), ttl, urgent);
+      }));
 }
 
 let pushInFlight = 0; const pushWaiters: (() => void)[] = [];
@@ -1134,7 +1160,7 @@ async function capped(delivery: () => Promise<void>) {
 // ponytail: reads the send ticket only; Expo receipts catch later failures, add them when the pilot shows stale tokens.
 async function deliverNative(t: Row, message: string, ttl: number, urgent: boolean) {
   try { await sendExpoPush(t, message, ttl, urgent); }
-  catch (error) { if (isDeviceNotRegistered(error)) await run('DELETE FROM native_push_tokens WHERE token_hash = ?', t.token_hash); /* otherwise best effort, like web push */ }
+  catch (error) { if (isDeviceNotRegistered(error)) await run('DELETE FROM native_push_tokens WHERE token_hash=? AND user_id=? AND auth_session_hash=? AND device_hash=?', t.token_hash, t.user_id, t.auth_session_hash, t.device_hash); /* otherwise best effort, like web push */ }
 }
 async function deliver(s: Row, message: string, urgency: string, ttl: number) {
   try {
@@ -2288,7 +2314,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
     if (((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
-    if (expected && String(body.code ?? '').trim() !== expected) {
+    if (expected && latinDigits(String(body.code ?? '').trim()) !== expected) {
       (await run(`INSERT INTO proof_attempts (order_id, failures) VALUES (?, 1) ON CONFLICT(order_id) DO UPDATE SET failures = proof_attempts.failures + 1`, r.id));
       (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'PROOF_FAILED', ?)`, user.id, r.id, now));
       if ((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures === 5) await queuePush((await adminIds()), 'attention', r.id, '/admin/orders'); // the fifth miss locks it
@@ -3085,24 +3111,45 @@ route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
   need(user, 'admin');
   const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
-  return (await deleteAccount((await toUser(target))));
+  return (await deleteAccount((await toUser(target)), user.id));
 });
 
+// What a support reset must show. An account the app can email has to pass the code check: a receipt from identity-check, bound
+// to this admin, this account and its current password, so it dies with the reset it buys. With no email path (no provider, or no
+// verified address) nothing can prove the caller, so the admin writes down what they checked, and that line goes in the audit.
+const SUPPORT_PROOF_TTL = 10 * 60_000;
+const supportProof = (adminId: number, r: Row, at: number) => createHmac('sha256', codeKey).update(`support-proof:${adminId}:${r.id}:${r.password}:${at}`).digest('hex');
+function resetVerification(adminId: number, target: Row, body: Row) {
+  if (emailReady && target.email_verified_at) {
+    const [at, signature] = String(body.proof ?? '').split('.');
+    const confirmedAt = Number(at), age = Date.now() - confirmedAt;
+    const expected = Buffer.from(supportProof(adminId, target, confirmedAt), 'hex'), given = Buffer.from(signature ?? '', 'hex');
+    if (!Number.isSafeInteger(confirmedAt) || age < 0 || age > SUPPORT_PROOF_TTL || given.length !== expected.length || !timingSafeEqual(given, expected)) fail(403, 'identity_check_required');
+    return { method: 'email_code', confirmedAt };
+  }
+  const note = typeof body.attestation === 'string' ? body.attestation.trim() : '';
+  // The security log outlives a deleted account, so it says what was checked, never the number.
+  if (note.length < 10 || note.length > 300 || holdsPhoneNumber(note)) fail(400, 'attestation_required');
+  return { method: 'attested', note };
+}
+
 // No SMS provider yet: support verifies the caller, resets, and reads the temporary password out to them.
-route('POST', '/api/admin/users/:id/password', async ({ user, params }) => {
+route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) => {
   need(user, 'admin');
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
   const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
+  const verification = resetVerification(user.id, target, body);
   const password = randomBytes(12).toString('base64url');
   const hashed = await hashPassword(password);
   // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
   await persistence.atomic({ id: user.id, correlationId: randomUUID() }, async () => {
     (await persistence.exec('BEGIN IMMEDIATE'));
     try {
-      (await run('UPDATE users SET password = ? WHERE id = ?', hashed, target.id));
+      // The password the check was bound to, or two requests racing one proof would both win.
+      if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
-        user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true }), Date.now()));
+        user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
       (await persistence.exec('COMMIT'));
     } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   });
@@ -3123,7 +3170,8 @@ route('POST', '/api/admin/users/:id/identity-check', async ({ user, params, body
   const target = (await supportTarget(params[0]));
   if (!target.email_verified_at) fail(409, 'email_not_verified');
   (await useCode(target, 'support', body.code));
-  return { confirmed: true, at: Date.now() };
+  const at = Date.now();
+  return { confirmed: true, at, proof: `${at}.${supportProof(user.id, target, at)}` };
 });
 
 route('GET', '/api/admin/subscriptions', async ({ user }) => {
@@ -3418,7 +3466,7 @@ if (import.meta.main) {
       if (process.argv[4] !== '--phone-verified') throw Object.assign(new Error('Operator attestation required'), { code: 'OPERATOR_REQUEST_PROOF_REQUIRED' });
       const phone = normalizePhone(process.argv[3] ?? '') ?? fail(400, 'invalid_phone');
       const account = (await one('SELECT * FROM users WHERE phone = ?', phone)) ?? fail(404, 'not_found');
-      await persistence.scope(async () => deleteAccount(await toUser(account)));
+      await persistence.scope(async () => deleteAccount(await toUser(account), null));
       console.log('Verified account deletion completed');
     } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
     finally { db.close(); }

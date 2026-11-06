@@ -234,7 +234,7 @@ function BookForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- describe only closes over the language, which re-renders this anyway
   }, [step, pinPoint, pinMoving, language]);
   function confirmPinSpot() {
-    if (!pinPoint || !pinServed || pinMoving) return;
+    if (locating || !mapReady || !pinPoint || !pinServed || pinMoving) return;
     haptic.success();
     const note = pinNote || pinLabel?.name || city(pinServed)[language];
     setPinNote('');
@@ -506,7 +506,7 @@ function BookForm() {
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
       label={routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
-      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { setPinMoving(true); setPinLabel(null); setLocationError(''); }}
+      onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { locationRequest.current?.abort(); if (pinFor === 'pickup') pickupTouched.current = true; setLocating(false); setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
 
@@ -541,7 +541,7 @@ function BookForm() {
         {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
           <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
         {mapFailed ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.pinUnavailable}</Txt>
-          : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={!mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
+          : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={locating || !mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
       </SafeAreaView>
     </>}
 

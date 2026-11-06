@@ -96,7 +96,7 @@ try {
   assert.equal(await countTokens(blocked.user.id), 0, 'admin block cascade');
   const reset = await reg(8);
   await call('/push/native/register', { token: reset.token, body: { expoPushToken: rawToken('reset'), deviceId: randomUUID(), platform: 'android' } });
-  await call(`/admin/users/${reset.user.id}/password`, { token: admin.token, body: {} });
+  await call(`/admin/users/${reset.user.id}/password`, { token: admin.token, body: { attestation: 'Called the registered number back; caller named last order' } });
   assert.equal(await countTokens(reset.user.id), 0, 'admin password-reset cascade');
   const phoneUser = await reg(9);
   await call('/push/native/register', { token: phoneUser.token, body: { expoPushToken: rawToken('phone'), deviceId: randomUUID(), platform: 'android' } });

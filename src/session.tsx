@@ -60,21 +60,48 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (ready && !announced.current && startedAt.current !== null) { announced.current = true; clientDiagnostics.record('session_ready', { durationMs: Math.min(120_000, Math.max(0, Date.now() - startedAt.current)) }); }
   }, [ready]);
 
-  const forget = useCallback(async () => {
-    const endedCredential = apiSessionCredential();
-    invalidateApiSessionActions();
+  const endLocally = useCallback(() => {
     configureRecoveryActor(null); resetRuntime(); retryMapProviders(); setOfflineSummary(null);
     clientDiagnostics.clear();
-    await recoveryStorage.clear().catch(() => {});
-    void stopPresence().catch(() => {}); // invalidate local presence before clearing the account
-    await stopBackgroundLocation().catch(() => {});
     void dropLocalPush(); // an ended session must not leave this browser alerting
     configureApi(null, () => {});
     accountLoaded.current = false;
     setMe(null);
     setOffline(false);
-    if (await storage.get('token') === endedCredential) await storage.set('token', null);
   }, []);
+
+  const forget = useCallback(async (revoke = false) => {
+    const endedCredential = apiSessionCredential();
+    invalidateApiSessionActions();
+    const revision = apiSessionRevision();
+    const current = () => revision === apiSessionRevision() && endedCredential === apiSessionCredential();
+    void stopPresence().catch(() => {}); // invalidate local presence before clearing the account
+    await stopBackgroundLocation().catch(() => {});
+    if (!current()) return;
+    const removed = await storage.exclusive(async () => {
+      let stored = await storage.get('token', true);
+      if (!current() || (stored !== null && stored !== endedCredential)) return false;
+      if (stored === null) return true;
+      await storage.set('token', null, true);
+      if (!current()) return false;
+      stored = await storage.get('token', true);
+      return current() && stored === null;
+    }).catch(() => { throw new ApiError('session_remove_failed'); });
+    if (!removed) return;
+    // Only now: until the token is gone this session is still open, and a failed sign-out must leave its records readable.
+    if (endedCredential) await recoveryStorage.clear(endedCredential).catch(() => {});
+    if (!current()) return;
+    if (revoke && endedCredential) void api('/auth/logout', {}).catch(() => {});
+    endLocally();
+  }, [endLocally]);
+
+  // The server already ended this session (a 401, a deleted account, a changed phone). Storage refusing to delete the token
+  // must not leave a dead session on screen; it stays harmless on disk, and the next launch gets a 401 and tries again.
+  const ended = useCallback(async () => {
+    const dead = apiSessionCredential();
+    await forget().catch(() => { if (dead === apiSessionCredential()) endLocally(); });
+  }, [forget, endLocally]);
+  const expired = useCallback(() => { void ended(); }, [ended]);
 
   const refresh = useCallback(async () => {
     const revision = apiSessionRevision();
@@ -87,7 +114,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           identifier: phoneTest.identifier, password: phoneTest.password,
         });
         if (account.user.role !== phoneTest.role) throw new Error('Phone test role mismatch');
-        configureApi(token, forget);
+        configureApi(token, expired);
         await storage.set('token', token);
         data = account;
       } else data = await api<Me>('/me');
@@ -107,7 +134,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // not reach the account has nothing to show. That screen keeps trying by itself, below.
       if (!accountLoaded.current && (phoneTest || errorCode(error) === 'network' || (error instanceof ApiError && (error.status ?? 0) >= 500))) setOffline(true);
     }
-  }, [forget]);
+  }, [expired]);
   useEffect(() => {
     if (!offline) return;
     const timer = setInterval(() => { void refresh(); }, 6_000);
@@ -128,7 +155,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (phoneTest || token) {
         // Refresh older native token accessibility while the app is open, before starting any tracker.
         if (token && Platform.OS !== 'web') await storage.set('token', token).catch(() => {});
-        configureApi(token, forget);
+        configureApi(token, expired);
         // The saved read-only summary appears only if the account cannot be reached (refresh clears it on success),
         // so an online launch never flashes the offline screen.
         if (!phoneTest) setOfflineSummary(await savedOfflineSummary().catch(() => null));
@@ -136,21 +163,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
       setReady(true);
     })();
-  }, [forget, refresh]);
+  }, [expired, refresh]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const changed = (event: StorageEvent) => {
       if (event.key !== 'token' || event.newValue === apiSessionCredential()) return;
       invalidateApiSessionActions(); configureRecoveryActor(null); resetRuntime(); retryMapProviders(); clientDiagnostics.clear();
+      accountLoaded.current = false;
       setMe(null); setOffline(false); setOfflineSummary(null);
       void stopBackgroundLocation().catch(() => {}); void stopPresence().catch(() => {});
-      configureApi(event.newValue, forget);
+      configureApi(event.newValue, expired);
       if (event.newValue) void refresh();
     };
     window.addEventListener('storage', changed);
     return () => window.removeEventListener('storage', changed);
-  }, [forget, refresh]);
+  }, [expired, refresh]);
 
   // Web: tell the browser the page language, or Chrome offers to "translate from English". Not dir: rows are flipped in code.
   useEffect(() => { if (Platform.OS === 'web') document.documentElement.lang = language; }, [language]);
@@ -183,27 +211,42 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [signedIn, language]);
 
   const value: Session = {
-    ready, offline, offlineSummary, me, language, refresh, forget, onboarded,
+    ready, offline, offlineSummary, me, language, refresh, forget: ended, onboarded,
     finishOnboarding: () => { setOnboarded(true); void storage.set('onboarded', '1').catch(() => {}); },
     setLanguage: next => { setLanguageState(next); void storage.set('language', next).catch(() => {}); },
     signIn: async ({ token, ...data }) => {
-      await recoveryStorage.clear().catch(() => {}); resetRuntime(); retryMapProviders(); setOfflineSummary(null);
+      try { await storage.exclusive(() => storage.set('token', token, true)); } catch { throw new ApiError('session_save_failed'); }
+      // Old recovery records remain encrypted under the old credential if sign-in replaces it.
+      resetRuntime(); retryMapProviders(); setOfflineSummary(null);
       clientDiagnostics.clear();
-      void registerNativePush(language);
-      configureApi(token, forget);
-      await Promise.all([storage.set('token', token), storage.set('onboarded', '1')]);
+      configureApi(token, expired);
+      void storage.set('onboarded', '1').catch(() => {});
       setOnboarded(true);
       setMe(data);
       configureRecoveryActor(data.user);
+      accountLoaded.current = true;
+      setOffline(false);
+      void registerNativePush(language);
     },
     signOut: async () => {
+      const endedCredential = apiSessionCredential();
       invalidateApiSessionActions();
+      const revision = apiSessionRevision();
+      const current = async () => {
+        if (revision !== apiSessionRevision() || endedCredential !== apiSessionCredential()) return false;
+        let stored: string | null;
+        try { stored = await storage.get('token', true); } catch { throw new ApiError('session_remove_failed'); }
+        return revision === apiSessionRevision() && endedCredential === apiSessionCredential() && stored === endedCredential;
+      };
+      if (!await current()) return;
       // Give the server a short opportunity to revoke, but never hold sign-out on a failed network.
       await Promise.race([stopPresence().catch(() => false), new Promise(resolve => setTimeout(resolve, 5000))]);
+      if (!await current()) return;
       await disablePush().catch(() => {}); // a shared browser stops alerting this account
+      if (!await current()) return;
       await unregisterNativePush().catch(() => {});
-      await api('/auth/logout', {}).catch(() => {});
-      await forget();
+      if (!await current()) return;
+      await forget(true);
     },
   };
   return <Context.Provider value={value}>{children}</Context.Provider>;

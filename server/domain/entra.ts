@@ -153,7 +153,8 @@ type Register = (method: string, path: string, handler: (ctx: Context) => Promis
 
 // Public boundary: the ID token itself is the credential; account linking and
 // session minting stay in the API composition root (server/main.ts).
-export function registerEntraRoutes(route: Register, exchange: (ctx: Context) => Promise<unknown>, deleteChallenge: (ctx: Context) => Promise<unknown>) {
+export function registerEntraRoutes(route: Register, exchange: (ctx: Context) => Promise<unknown>, challenge: (purpose: 'delete' | 'password') => (ctx: Context) => Promise<unknown>) {
   route('POST', '/api/auth/entra', exchange, true);
-  route('POST', '/api/me/delete/challenge', deleteChallenge);
+  route('POST', '/api/me/delete/challenge', challenge('delete'));
+  route('POST', '/api/me/password/challenge', challenge('password'));
 }

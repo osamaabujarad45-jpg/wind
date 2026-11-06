@@ -37,7 +37,7 @@ try {
   assert.equal(restore('customer'), true);
   let customer = await login('customer');
   await call('/me', { token: accounts.customer.token, expect: 401 });
-  await call(`/admin/users/${accounts.customer.userId}/password`, { token: accounts.admin.token, body: {} });
+  await call(`/admin/users/${accounts.customer.userId}/password`, { token: accounts.admin.token, body: { attestation: 'Called the registered number back; caller named last order' } });
   restore('customer');
   customer = await login('customer');
   assert.equal(customer.user.id, accounts.customer.userId);

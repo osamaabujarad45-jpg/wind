@@ -1,7 +1,7 @@
 // "Where to?": pickup and destination fields over instant suggestions from the server's Palestine place index, with saved
 // and recent places first. Works offline for towns and saved places. The fallback asks OpenStreetMap's wider search.
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
@@ -58,7 +58,8 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   const saved = term ? searchPlaces(term, places.saved).choices.filter(p => p.saved) : [];
   // Towns from the app's own list only when the server cannot answer, so search never comes up empty offline.
   const offlineTowns = term && shown?.failed ? searchPlaces(term).choices.filter(p => !p.saved) : [];
-  const pick = (place: TripPlace) => { haptic.tap(); setQuery(q => ({ ...q, [field]: '' })); onPick(field, place); };
+  // Dismiss before the step changes: once this field unmounts there is nothing left to blur, and the keyboard stays over the map pin's confirm button.
+  const pick = (place: TripPlace) => { Keyboard.dismiss(); haptic.tap(); setQuery(q => ({ ...q, [field]: '' })); onPick(field, place); };
   const pickHit = (hit: Hit) => {
     const point = { latitude: hit.latitude, longitude: hit.longitude }, near_ = servedCity(point);
     if (near_) pick({ city: near_, point, note: hit.name });
@@ -98,7 +99,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8, textAlign: align }}>{locationError}</Txt>}
       {!!notice && <ErrorText>{notice}</ErrorText>}
       {onRetry && <Button title={c.retry} size="sm" variant="soft" onPress={onRetry} />}
-      <Row icon="pin-outline" title={c.setOnMap} onPress={() => { haptic.tap(); onMap(field); }} />
+      <Row icon="pin-outline" title={c.setOnMap} onPress={() => { Keyboard.dismiss(); haptic.tap(); onMap(field); }} />
       {!term && <>
         {places.saved.map(p => <Row key={`s${p.id}`} icon={p.label === 'home' ? 'home-outline' : p.label === 'work' ? 'briefcase-outline' : 'star-outline'} title={placeName(p.label, p.note)}
           detail={p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} onForget={() => onForget(p.id)} />)}

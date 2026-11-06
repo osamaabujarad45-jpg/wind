@@ -10,7 +10,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$phoneSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+# Windows PowerShell 5.1 turns any native stderr line into a terminating error under Stop, so an npm
+# deprecation warning would abort the build. Each caller judges the tool by its exit code instead.
+function Invoke-Logged([string]$Log, [scriptblock]$Tool) {
+  $ErrorActionPreference = 'Continue'
+  & $Tool *> $Log
+}
+$phoneSource =[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (!$ProvisionPath) { $ProvisionPath = Join-Path $phoneSource '.expo\phone-qa\provision.json' }
 if (!$OutputDirectory) { $OutputDirectory = Join-Path $phoneSource '.expo\phone-qa\apks' }
 $phoneBuild = [IO.Path]::GetFullPath($BuildRoot).TrimEnd('\')
@@ -68,7 +74,10 @@ foreach ($phoneEnvName in $phoneEnvNames) { $phoneSavedEnv[$phoneEnvName] = [Env
 $phoneArtifactsPath = Join-Path $phoneOutput 'artifacts.json'
 $phoneArtifacts = if (Test-Path -LiteralPath $phoneArtifactsPath) { @(Get-Content -LiteralPath $phoneArtifactsPath -Raw | ConvertFrom-Json) } else { @() }
 try {
-  $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+  if (!$env:ANDROID_HOME) { $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+  # A space makes CMake call the compiler by its 8.3 name. clang picks C++ mode from its own program name, so
+  # CLANG_~1.EXE links no C++ runtime and the build dies 20 minutes in on undefined operator delete.
+  if ($env:ANDROID_HOME -match '\s') { throw "The Android SDK path must have no spaces: set ANDROID_HOME to one that does not ($env:ANDROID_HOME)." }
   $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
   $phoneJdk = Join-Path $env:USERPROFILE 'scoop\apps\temurin17-jdk\current'
   if (Test-Path -LiteralPath (Join-Path $phoneJdk 'bin\java.exe')) { $env:JAVA_HOME = $phoneJdk }
@@ -90,7 +99,7 @@ try {
       ((Get-Content -LiteralPath $phoneInstalledLock -Raw).Trim() -eq $phoneLockHash)
     if (!$phoneDependenciesCurrent -or !(Test-Path -LiteralPath (Join-Path $phoneBuild 'node_modules\expo\bin\cli'))) {
       Write-Host 'Installing frozen SDK-compatible dependencies in the isolated build directory.'
-      & npm.cmd ci --include=dev --no-audit --no-fund *> (Join-Path $phoneLogs 'dependencies.log')
+      Invoke-Logged (Join-Path $phoneLogs 'dependencies.log') { & npm.cmd ci --include=dev --no-audit --no-fund }
       if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed; see the private build log.' }
       Set-Content -LiteralPath $phoneInstalledLock -Value $phoneLockHash -Encoding ascii
     }
@@ -115,7 +124,7 @@ try {
       }
       Write-Host "Generating the $phoneRole test app."
       try {
-        & node (Join-Path $phoneBuild 'node_modules\expo\bin\cli') prebuild --platform android --no-install --clean *> (Join-Path $phoneLogs "$phoneRole-prebuild.log")
+        Invoke-Logged (Join-Path $phoneLogs "$phoneRole-prebuild.log") { & node (Join-Path $phoneBuild 'node_modules\expo\bin\cli') prebuild --platform android --no-install --clean }
         if ($LASTEXITCODE -ne 0) { throw "$phoneRole prebuild failed; see its private build log." }
       } finally {
         if (Test-Path -LiteralPath $phoneGradleBackup) {
@@ -129,7 +138,7 @@ try {
         # Expo 57 suppresses --reset-cache in CI. Every role gets a fresh native
         # bundle; none may reuse another export's EXPO_PUBLIC_API_URL transform.
         $env:CI = '0'
-        & .\gradlew.bat :app:assembleDebug "-PreactNativeArchitectures=$Architecture" --no-daemon --max-workers=2 *> (Join-Path $phoneLogs "$phoneRole-build.log")
+        Invoke-Logged (Join-Path $phoneLogs "$phoneRole-build.log") { & .\gradlew.bat :app:assembleDebug "-PreactNativeArchitectures=$Architecture" --no-daemon --max-workers=8 }
         if ($LASTEXITCODE -ne 0) { throw "$phoneRole build failed; see its private build log." }
       } finally { $env:CI = '1'; Pop-Location }
       $phoneApk = Join-Path $phoneNative 'app\build\outputs\apk\debug\app-debug.apk'

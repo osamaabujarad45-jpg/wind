@@ -192,7 +192,8 @@ try {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'PROOF_FAILED'").get(order.id).n, 5);
   await call(`/admin/orders/${order.id}/proof-reset`, { token: driver.token, body: { reason: 'Recipient confirmed by support' }, expect: 403 });
   await call(`/admin/orders/${order.id}/proof-reset`, { token: admin.token, body: { reason: 'Recipient confirmed by support' } });
-  const done = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { code: order.handoverCode } });
+  // A courier's Arabic keypad sends the same digits in another script: the code still matches.
+  const done = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { code: order.handoverCode.replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[d]) } });
   assert.equal((await call(`/orders/${order.id}/advance`, { token: driver.token, body: arrival })).status, 'completed'); // replay never regresses current state
   assert.equal(done.status, 'completed');
   assert.equal(done.commission, Math.round(order.price * defaultSettings.commission * 100) / 100);
@@ -262,6 +263,7 @@ try {
   await call('/orders', { token: customer.token, body: { ...orderInput, service: 'ride', option: '2', detail: '' }, expect: 409 });
 
   // Passwords: change, forgotten → support reset
+  const supportAttestation = 'Called the registered number back; caller named last order';
   const oldSession = await call('/auth/login', { body: { phone: '0599000002', password: 'secret1' } });
   await call('/me/password', { token: customer.token, body: { current: 'wrong1', password: 'newpass1' }, expect: 401 });
   await call('/me/password', { token: customer.token, body: { current: 'secret1', password: 'newpass1' } });
@@ -272,15 +274,21 @@ try {
   const passwordBeforeReset = db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id).password;
   db.exec(`CREATE TRIGGER fail_reset_revoke BEFORE DELETE ON sessions WHEN OLD.user_id=${customer.user.id}
     BEGIN SELECT RAISE(ABORT, 'synthetic session write failure'); END`);
-  await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {}, expect: 500 });
+  await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation: supportAttestation }, expect: 500 });
   assert.ok(db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id).password === passwordBeforeReset, 'failed reset changed credential state');
   await call('/me', { token: customer.token }); // failed reset must preserve the complete previous credential state
   db.exec('DROP TRIGGER fail_reset_revoke');
-  const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: {} });
+  // No email path for this account: the admin writes down what they checked, or there is no reset.
+  for (const attestation of [undefined, '', 'too short', 'x'.repeat(301), 42, 'Called them back on 0599123456', 'Called them back on ٠٥٩٩١٢٣٤٥٦'])
+    assert.equal((await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation }, expect: 400 })).error, 'attestation_required');
+  await call('/me', { token: customer.token }); // a refused reset changes nothing
+  const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation: ` ${supportAttestation} ` } });
   const resetAudit = db.prepare("SELECT * FROM security_events WHERE action = 'SUPPORT_PASSWORD_RESET' ORDER BY id DESC LIMIT 1").get();
   assert.equal(resetAudit?.order_id, null, 'account-level audit rows have no order');
   assert.equal(resetAudit?.actor_id, admin.user.id);
   assert.match(resetAudit?.detail ?? '', new RegExp(`"targetId":${customer.user.id}`));
+  assert.deepEqual(JSON.parse(resetAudit.detail).verification, { method: 'attested', note: supportAttestation }, 'the audit says what was checked');
+  assert.ok(!resetAudit.detail.includes(temp), 'the temporary password stays out of the audit');
   await call('/me', { token: customer.token, expect: 401 }); // reset signs out everywhere
   const relogged = await call('/auth/login', { body: { phone: '0599000002', password: temp } });
 

@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import type { Journey } from '../../src/journey-contracts.ts';
+import { latinDigits } from '../../src/model.ts';
 import { eligibilityDefaults } from './eligibility.ts';
 
 type Fail = (status: number, message: string) => never;
@@ -252,7 +253,7 @@ export class RideLifecycle {
     const attempts = await this.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=? FOR UPDATE', order.id);
     const failures = Number(attempts?.failures ?? 0);
     if (failures >= eligibilityDefaults.newBoardingChallengeAttempts) this.fail(409, 'boarding_locked');
-    const supplied = typeof boardingCode === 'string' ? boardingCode.trim()
+    const supplied = typeof boardingCode === 'string' ? latinDigits(boardingCode.trim())
       : Number.isSafeInteger(boardingCode) ? String(boardingCode) : '';
     // A client without revisions (legacy builds) still holding the code a rotation replaced is stale, not guessing.
     if (pinRevision === undefined && row.previous_boarding_code && supplied === row.previous_boarding_code) this.fail(409, 'boarding_challenge_changed');

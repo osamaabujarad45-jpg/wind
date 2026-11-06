@@ -18,14 +18,18 @@ store = createProtectedRecovery(io);
 assert.deepEqual(await store.read('command'), { requestId: 'same', code: '1234' }, 'process replacement reopens exact encrypted pending payload');
 token = 'session-two'; revision++;
 assert.equal(await store.read('command'), null, 'another login cannot read or overwrite an earlier session');
-token = 'session-one'; revision++; await store.clear(); token = 'session-two'; revision++;
+token = 'session-one'; revision++; await store.clear('session-one'); token = 'session-two'; revision++;
 await store.write('summary', { safe: true }, 1000); now = 2000;
 await assert.rejects(store.read('summary'), /recovery_record_unavailable/);
 now = 1000; let finish; pauseSeal = new Promise(r => { finish = r; });
 const pending = store.write('command', { code: '9999' }, 1000);
 await new Promise(r => setImmediate(r)); revision++;
-const logout = store.clear(); pauseSeal = null; finish();
+const logout = store.clear('session-two'); pauseSeal = null; finish();
 await assert.rejects(pending, /session_changed/); await logout; assert.equal([...data.keys()].filter(key => !key.endsWith('.index')).length, 0, 'logout cannot race an old writer');
+await store.write('command', { kept: true }, 1000);
+await store.clear('session-one'); // a cleanup for a session that has since been replaced
+assert.deepEqual(await store.read('command'), { kept: true }, 'clearing an ended session leaves the session that took over');
+await store.clear('session-two');
 await assert.rejects(store.write('command', { oversized: 'x'.repeat(3000) }, 1000), /too_large/);
 const summary = offlineSummary(7, 'driver', [{ id: 4, driverId: 7, service: 'parcel', status: 'assigned', pickupCity: 'ramallah', dropoffCity: 'nablus',
   handoverCode: 'secret-proof', driverPhone: 'private-phone', pickupNote: 'private-address', price: 999 }], 1000);

@@ -216,6 +216,7 @@ try {
   await button(adminPage, c.block).waitFor();
   await button(adminPage, c.editUser).click();
   const resetResponse = adminPage.waitForResponse(r => r.url().endsWith(`/admin/users/${spare.user.id}/password`) && r.request().method() === 'POST');
+  await field(adminPage, c.resetAttestation).fill('Readiness check: called the registered number back');
   await button(adminPage, c.resetPassword).click();
   const reset = await (await resetResponse).json();
   assert.ok(reset.password.length >= 12);

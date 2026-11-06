@@ -58,6 +58,9 @@ try {
   assert.equal(welcome.auth, 'Bearer cf-email-token');
   assert.equal(welcome.from, 'no-reply@wind.example');
   assert.match(welcome.subject, new RegExp(welcome.code));
+  assert.match(welcome.subject, /رمز ويند/);
+  assert.match(welcome.text, /رمز تأكيد بريدك في ويند:/);
+  assert.match(welcome.text, /ينتهي خلال 15 دقيقة/);
   assert.ok(welcome.html.includes(welcome.code) && !JSON.stringify(customer).includes(welcome.code));
 
   // A minute between codes; a wrong code is refused; the right one verifies once and for good.
@@ -111,6 +114,9 @@ try {
   assert.deepEqual(await call('/auth/reset/code', { body: { identifier: 'USER1@mail.example' } }), { ok: true });
   const reset = await mailTo('user1@mail.example', 2);
   assert.match(reset.text, /password reset code/);
+  assert.match(reset.subject, /رمز إعادة كلمة المرور/);
+  assert.match(reset.text, /رمز إعادة تعيين كلمة مرور ويند:/);
+  assert.match(reset.html, /لا تشاركه مع أحد/);
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: other(reset.code), password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700002', code: reset.code, password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
@@ -154,9 +160,46 @@ try {
   assert.deepEqual(await call(`/admin/users/${id}/identity-code`, { token: admin.token, body: {} }), { sent: true });
   const check = await mailTo('user1@mail.example', 3);
   assert.match(check.text, /Wind support is confirming it is you/);
+  assert.match(check.subject, /رمز التحقق للدعم/);
+  assert.match(check.text, /دعم ويند يتحقق من هويتك/);
   assert.equal((await call(`/admin/users/${id}/identity-check`, { token: admin.token, body: { code: other(check.code) }, expect: 400 })).error, 'wrong_email_code');
-  assert.equal((await call(`/admin/users/${id}/identity-check`, { token: admin.token, body: { code: check.code } })).confirmed, true);
+  const confirmed = await call(`/admin/users/${id}/identity-check`, { token: admin.token, body: { code: check.code } });
+  assert.equal(confirmed.confirmed, true);
   assert.equal((await call(`/admin/users/${id}/identity-check`, { token: admin.token, body: { code: check.code }, expect: 400 })).error, 'code_expired');
+
+  // A support reset needs the check to have happened: for this admin, this account, this password, and recently.
+  const secondAdminRow = await call('/auth/register', { body: { name: 'Admin Two', email: 'admin2@mail.example', phone: '0599700008', password, consent: true } });
+  await promote('0599700008');
+  await mailTo('admin2@mail.example'); // its sign-up email must land before the inbox counts below
+  const admin2 =await call('/auth/login', { body: { identifier: '0599700008', password } });
+  assert.equal(admin2.user.id, secondAdminRow.user.id);
+  const resetUrl = target => `/admin/users/${target}/password`;
+  const required = async (target, token, body) => assert.equal((await call(resetUrl(target), { token, body, expect: 403 })).error, 'identity_check_required');
+  await required(id, admin.token, {});
+  await required(id, admin.token, { attestation: 'I am sure this is really them' }); // a verified address means the code, not a promise
+  await required(id, admin.token, { proof: 'forged' });
+  await required(id, admin.token, { proof: `${confirmed.at}.${'0'.repeat(64)}` });
+  await required(id, admin2.token, { proof: confirmed.proof });
+  await required(third.user.id, admin.token, { proof: confirmed.proof });
+  assert.ok(!(await call('/me', { token: signedIn.token })).error, 'refused resets changed nothing');
+  // A stale proof: the check stands for ten minutes.
+  const realNow = Date.now;
+  Date.now = () => realNow() + 10 * 60_000 + 1_000;
+  try { await required(id, admin.token, { proof: confirmed.proof }); } finally { Date.now = realNow; }
+  // A password that changed after the check voids the proof.
+  await call('/me/password', { token: signedIn.token, body: { current: 'New-Password-123', password: 'Changed-After-Check-1' } });
+  await required(id, admin.token, { proof: confirmed.proof });
+  // The third account proves the whole path, and one proof buys one reset.
+  await call(`/admin/users/${third.user.id}/identity-code`, { token: admin.token, body: {} });
+  const thirdCheck = await mailTo('user3b@mail.example', 2);
+  const thirdConfirmed = await call(`/admin/users/${third.user.id}/identity-check`, { token: admin.token, body: { code: thirdCheck.code } });
+  const { password: temporary } = await call(resetUrl(third.user.id), { token: admin.token, body: { proof: thirdConfirmed.proof } });
+  await call('/me', { token: third.token, expect: 401 });
+  assert.equal((await call('/auth/login', { body: { identifier: 'user3b@mail.example', password: temporary } })).user.id, third.user.id);
+  await required(third.user.id, admin.token, { proof: thirdConfirmed.proof });
+  const audit = (await persistence.one("SELECT detail FROM security_events WHERE action = 'SUPPORT_PASSWORD_RESET' ORDER BY id DESC LIMIT 1")).detail;
+  assert.deepEqual(JSON.parse(audit).verification, { method: 'email_code', confirmedAt: thirdConfirmed.at });
+  assert.ok(!audit.includes(thirdConfirmed.proof) && !audit.includes(temporary));
 
   // A changed address is unverified, and a code sent to the old one no longer works.
   await new Promise(resolve => setTimeout(resolve, 0));

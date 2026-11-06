@@ -76,9 +76,10 @@ export function createProtectedRecovery(io: IO) {
         if (revision !== io.revision() || !await same(token)) { await io.write(recordKey, null); throw new Error('session_changed'); }
       });
     },
-    clear(): Promise<void> { return serial(async () => {
-      const token = await io.credential();
-      if (token) { const scope = await namespace(token); for (const slot of slots) await io.write(key(slot, scope), null); }
+    /** Runs after older writes. A session that took over while it waited keeps its records. */
+    clear(ended: string): Promise<void> { return serial(async () => {
+      if (await io.credential() !== ended) return;
+      const scope = await namespace(ended); for (const slot of slots) await io.write(key(slot, scope), null);
     }); },
   };
 }

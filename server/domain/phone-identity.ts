@@ -29,6 +29,9 @@ const sendLeaseMs=30000;
 export const phonePolicy=Object.freeze({version:1,codeSeconds:300,maxAttempts:5,resendSeconds:45,phoneDevicePer15Minutes:3,phoneDevicePerDay:10,ipPerHourReview:30,
   serverGeneratedCode:true,proofMeansPhoneControlOnly:true,providerAcceptanceMeansDelivery:false});
 
+/** Seven digits or more, in any script, however spaced: too long to be a date or an order reference. */
+export const holdsPhoneNumber=(text:string)=>/(?:[\d٠-٩۰-۹][\s().-]*){7,}/.test(text);
+
 export async function phoneSchemaAvailable(db:Persistence) {
   if (db.backend!=='postgres') return false;
   const tables=await db.one("SELECT to_regclass('schema_migrations') m,to_regclass('phone_challenges') p");
@@ -390,8 +393,9 @@ export class PhoneIdentity {
     if(ctx.user?.role!=='admin')this.fail(403,'forbidden');
     this.fields(ctx.body,['userId','phone','countryContext','routingPhone','expectedVersion','state','reason','evidenceRef']);
     const userId=this.int(ctx.body.userId,1),phone=this.phone(ctx.body.phone,ctx.body.countryContext),routing=this.phone(ctx.body.routingPhone,ctx.body.countryContext),expected=this.int(ctx.body.expectedVersion);
+    // Both land in the append-only audit, which outlives the account: a phone number typed here could never be erased.
     if(phone.canonicalGroup!==routing.canonicalGroup || !['reviewed','suspended'].includes(ctx.body.state) || typeof ctx.body.reason!=='string' || ctx.body.reason.trim().length<5 || ctx.body.reason.length>500
-      || typeof ctx.body.evidenceRef!=='string' || !/^[A-Za-z0-9_.:/-]{3,160}$/.test(ctx.body.evidenceRef))this.fail(400,'invalid_input');
+      || typeof ctx.body.evidenceRef!=='string' || !/^[A-Za-z0-9_.:/-]{3,160}$/.test(ctx.body.evidenceRef) || holdsPhoneNumber(ctx.body.reason) || holdsPhoneNumber(ctx.body.evidenceRef))this.fail(400,'invalid_input');
     await this.available(false);
     const response=await this.db.atomic({id:ctx.user!.id,correlationId:randomUUID()},async()=>{
       await this.lock('identity_commands');
@@ -410,6 +414,37 @@ export class PhoneIdentity {
       await this.audit('mapping_reviewed',null,userId,ctx.user!.id,ctx.body.reason.trim(),ctx.body.evidenceRef);return ok(row!);
     });
     if(response.status!==200)this.fail(response.status,response.body.error);return response.body;
+  }
+  /** Same lock order as every phone command: deleting takes this before the account row. */
+  async serialize() {if(await phoneSchemaAvailable(this.db))await this.lock('identity_commands');}
+  /**
+   * Account deletion, inside its transaction: the number stops identifying anyone and can be enrolled again.
+   * Challenges stay as rows because the append-only audit references them; the audit keeps ids, not numbers.
+   */
+  async forget(userId:number,phone:unknown,actorId:number|null) {
+    if(!await phoneSchemaAvailable(this.db))return;
+    const mapped=(await this.db.all('SELECT canonical_group FROM phone_mappings WHERE user_id=?',userId)).map(r=>r.canonical_group as string);
+    const profile=await this.db.one('SELECT canonical_group FROM phone_profiles WHERE user_id=?',userId);
+    const groups=new Set<string>(mapped);
+    if(profile)groups.add(profile.canonical_group);
+    const legacy=parsePhoneNumber(phone,'PS')?.canonicalGroup;if(legacy)groups.add(legacy);
+    const now=Date.now(),tombstone=`deleted-${userId}`;
+    // A prepared code never reached the provider and now never will, and the dispatcher returns without releasing it.
+    // A requested one may have been paid for, so it stays counted.
+    for(const c of await this.db.all("SELECT id,budget_day,budget_cost_minor FROM phone_challenges WHERE (user_id=? OR actor_id=?) AND delivery_state='prepared' AND budget_day IS NOT NULL AND budget_released=0",userId,userId)) {
+      await this.db.run('UPDATE phone_provider_budget SET reserved_messages=reserved_messages-1,reserved_minor=reserved_minor-? WHERE day=?',c.budget_cost_minor,c.budget_day);
+      await this.db.run('UPDATE phone_challenges SET budget_released=1 WHERE id=?::uuid',c.id);
+    }
+    // An unsent code goes with the account: a send claimed after this finds nothing to do, and the row keeps no destination.
+    const scrub=`canonical_group=?,target_e164='',display_phone='',code_digest='',provider_reference=NULL,superseded_at=COALESCE(superseded_at,?),
+      delivery_state=CASE WHEN delivery_state IN('prepared','requested') THEN 'obsolete' ELSE delivery_state END,send_lease_until=NULL`;
+    await this.db.run(`UPDATE phone_challenges SET ${scrub} WHERE user_id=? OR actor_id=?`,tombstone,now,userId,userId);
+    // Requests naming the number with no account attached still name it. A row bound to another account is that account's.
+    for(const group of groups)await this.db.run(`UPDATE phone_challenges SET ${scrub} WHERE canonical_group=? AND user_id IS NULL`,tombstone,now,group);
+    for(const group of mapped)await this.db.run('DELETE FROM phone_aliases WHERE canonical_group=?',group);
+    await this.db.run('DELETE FROM phone_mappings WHERE user_id=?',userId);
+    await this.db.run('DELETE FROM phone_profiles WHERE user_id=?',userId);
+    await this.audit('account_deleted',null,userId,actorId,'Phone identity removed with the account');
   }
 }
 

@@ -68,6 +68,7 @@ const suites = [
   "review-fixes.test.mjs",
   "parcels.test.mjs",
   "booking-auth.test.mjs",
+  "booking-gps-gesture.test.mjs",
   "driver-scope.test.mjs",
   "sqlite-review.test.mjs",
   "customer-rating.test.mjs",

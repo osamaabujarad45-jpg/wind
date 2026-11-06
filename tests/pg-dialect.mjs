@@ -86,11 +86,11 @@ try{
   await persistence.run(`CREATE FUNCTION fail_reset_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF OLD.user_id=${customer.user.id} THEN RAISE EXCEPTION 'synthetic session write failure'; END IF; RETURN OLD; END $$;
     CREATE TRIGGER wp03_fail_reset BEFORE DELETE ON sessions FOR EACH ROW EXECUTE FUNCTION fail_reset_revoke()`);
-  await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{},expect:500});
+  await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{attestation: 'Called the registered number back; caller named last order'},expect:500});
   assert.deepEqual(await persistence.one('SELECT password FROM users WHERE id=?',customer.user.id),credential,'failed password reset rolls back credential mutation');
   await call('/me',{token:customer.token});
   await persistence.run('ALTER TABLE sessions DISABLE TRIGGER wp03_fail_reset');
-  const reset=await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{}});
+  const reset=await call(`/admin/users/${customer.user.id}/password`,{token:admin.token,body:{attestation: 'Called the registered number back; caller named last order'}});
   await call('/me',{token:customer.token,expect:401});
   assert.equal((await call('/auth/login',{body:{phone:customer.user.phone,password:reset.password}})).user.id,customer.user.id);
   console.log('PG HTTP dialect: casefold email, nullable role, scalar/aggregate MIN, camelCase referral alias, numeric cash/aggregates, revision/epoch/minor units passed');

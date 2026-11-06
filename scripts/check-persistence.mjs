@@ -8,7 +8,7 @@ const tests = ['journey.mjs', 'db-persistence.test.mjs', 'db-api.test.mjs', 'pg-
   'cross-process-claims.test.mjs', 'runtime-dependencies.test.mjs',
   'commands.mjs', 'commands-sqlite.mjs', 'events.mjs', 'outbox.mjs',
   'coverage.mjs', 'capacity.mjs', 'eligibility.mjs', 'eligibility-legacy.mjs', 'eligibility-review.mjs', 'pg-live-commit.mjs',
-  'phone-identity.mjs', 'phone-identity-limits.mjs', 'phone-identity-recovery.mjs', 'phone-identity-authority.mjs',
+  'phone-identity.mjs', 'phone-identity-limits.mjs', 'phone-identity-recovery.mjs', 'phone-identity-authority.mjs', 'phone-identity-deletion.mjs',
   'review-security-admission.mjs', 'review-security-lease.mjs', 'review-security-migration.mjs', 'presence-migration.mjs', 'presence.mjs', 'driver-presence-api.mjs', 'active-gps.mjs',
   'quotes.mjs', 'quotes-routing.mjs', 'native-push.mjs', 'realtime-auth.mjs',
   'dispatch-migration.mjs', 'dispatch.mjs', 'dispatch-races.mjs', 'ride-lifecycle.mjs', 'ride-lifecycle-races.mjs', 'resource-scope.mjs', 'private-objects.mjs', 'ledger.mjs', 'payments.mjs', 'ops.mjs'];

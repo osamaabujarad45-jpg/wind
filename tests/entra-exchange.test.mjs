@@ -100,6 +100,30 @@ try {
     { phone: '0599300104', consent: true }, 403);
   await exchange({ oid: 'no-proof', email: 'unknown@example.com', email_verified: false },
     { phone: '0599300105', consent: true }, 400);
+
+  // A Microsoft-only account never saw its placeholder password: a fresh Microsoft sign-in sets a real one, and nothing weaker does.
+  const chosen = 'microsoft-chosen-123';
+  const noLink = await register('0599300108', 'nolink@example.com');
+  assert.equal((await call('/me/password/challenge', { token: noLink.token, body: {}, expect: 409 })).error, 'entra_unavailable');
+  await call('/me/password', { token: created.token, body: { current: 'not-the-placeholder', password: chosen }, expect: 401 });
+  const passwordChallenge = await call('/me/password/challenge', { token: created.token, body: {} });
+  const signedInAt = Math.floor(Date.now() / 1000) + 1; // the Microsoft sign-in follows the challenge
+  const setWith = (claims, extra = {}) => ({ idToken: token({ nonce: passwordChallenge.nonce, auth_time: signedInAt, ...claims }), nonce: passwordChallenge.nonce, password: chosen, ...extra });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'another-rider' }), expect: 401 });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider', auth_time: undefined }), expect: 401 });
+  await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider', auth_time: signedInAt - 310 }), expect: 401 });
+  await call('/me/password', { token: otherSession.token, body: setWith({ oid: 'new-rider' }), expect: 401 });
+  // A nonce issued for deletion cannot authorize a password change, or the reverse.
+  await call('/me/password', { token: created.token, body: { idToken: token({ oid: 'new-rider', nonce: challenge.nonce, auth_time: signedInAt }), nonce: challenge.nonce, password: chosen }, expect: 401 });
+  await call('/me/delete', { token: created.token, body: { idToken: token({ oid: 'new-rider', nonce: passwordChallenge.nonce, auth_time: signedInAt }), nonce: passwordChallenge.nonce }, expect: 401 });
+  assert.equal((await call('/me/password', { token: created.token, body: setWith({ oid: 'new-rider' }, { password: 'short' }), expect: 400 })).error, 'weak_password');
+  const proofToken = setWith({ oid: 'new-rider' });
+  assert.deepEqual(await call('/me/password', { token: created.token, body: proofToken }), { ok: true });
+  await call('/me/password', { token: created.token, body: { ...proofToken, password: 'second-choice-1234' }, expect: 401 });
+  await call('/me', { token: otherSession.token, expect: 401 }); // other sessions end, this one stays
+  await call('/me', { token: created.token });
+  assert.equal((await call('/auth/login', { body: { identifier: '0599300104', password: chosen } })).user.id, created.user.id);
+
   await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider' }) });
   assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(created.user.id).status, 'blocked');
   console.log('Entra exchange: account linking, contact proof, and email-based registration passed');

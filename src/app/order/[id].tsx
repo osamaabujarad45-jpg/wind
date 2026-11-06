@@ -11,6 +11,7 @@ import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } 
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
@@ -72,7 +73,7 @@ export default function OrderScreen() {
   const [proofInput, setProofInput] = useState({ context: proofContext, value: '' });
   if (proofInput.context !== proofContext) setProofInput({ context: proofContext, value: '' });
   const code = proofInput.context === proofContext ? proofInput.value : '';
-  const setCode = (value: string) => setProofInput({ context: proofContext, value });
+  const setCode = (value: string) => setProofInput({ context: proofContext, value: codeInput(value, 4) });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });

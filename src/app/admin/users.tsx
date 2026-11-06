@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useSession } from '../../session';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { api, ApiError, useApi } from '../../api';
 import { vehicles, type Role, type User, type Vehicle } from '../../model';
 import { useFormat } from '../../parts';
+import { codeInput } from '../../phone/flow';
 import {
   Appear, Badge, Button, Card, Choices, confirm, Empty, ErrorText, Field, fill, FilterChips, haptic, Header, Loading, palette, Row, Screen, tones, Txt, useCopy,
 } from '../../ui';
@@ -19,9 +20,18 @@ export default function Users() {
   const [busy, setBusy] = useState<number | null>(null);
   const pending = useRef<number | null>(null);
   const [actionError, setActionError] = useState('');
+  // The list is long and the error line sits above it: a failed action scrolls up to it, the card stays open as it was.
+  const list = useRef<ScrollView>(null);
+  const fail = (message: string) => { setActionError(message); list.current?.scrollTo({ y: 0 }); };
   const [temp, setTemp] = useState<{ id: number; password: string } | null>(null);
   // Support caller check: a one-time code goes to the user's verified email and the caller reads it back.
-  const [identity, setIdentity] = useState<{ id: number; code: string; confirmedAt?: number } | null>(null);
+  const [identity, setIdentity] = useState<{ id: number; code: string; confirmedAt?: number; proof?: string } | null>(null);
+  // With no email path, what the admin checked goes in the audit. Held per account: a note about one caller must never justify another's reset.
+  const [attestation, setAttestation] = useState({ id: 0, text: '' });
+  const noteFor = (user: User) => attestation.id === user.id ? attestation.text : '';
+  // Mirrors the server: an account the app can email passes the code check; otherwise the admin writes down what they checked.
+  const resetByEmail = (user: User) => !!(me?.capabilities?.emailVerification && user.email && user.emailVerifiedAt);
+  const resetBlocked = (user: User) => resetByEmail(user) ? !(identity?.id === user.id && identity.proof) : noteFor(user).trim().length < 10 || noteFor(user).trim().length > 300;
   const [editing, setEditing] = useState<{ id: number; name: string; email: string; phone: string; role: 'customer' | 'driver'; vehicle: Vehicle; plate: string } | null>(null);
 
   async function action(user: User, suffix: string, body?: object, method?: 'POST' | 'PATCH' | 'DELETE') {
@@ -35,7 +45,7 @@ export default function Users() {
     } catch (e) {
       // A courier mid-job: support confirms what happens to the parcels before the block goes through.
       if (e instanceof ApiError && e.message === 'carrying_parcels' && (!body || !('recovery' in body))) recover = true;
-      else setActionError(err(e));
+      else fail(err(e));
     } finally { pending.current = null; setBusy(null); }
     if (recover) confirm(c.blockCarrying, () => { void action(user, suffix, { ...body, recovery: 'return' }, method); }, c.block, c.cancel);
   }
@@ -45,9 +55,14 @@ export default function Users() {
     pending.current = user.id;
     setBusy(user.id); setActionError('');
     try {
-      const { password } = await api<{ password: string }>(`/admin/users/${user.id}/password`, {});
-      haptic.success(); setTemp({ id: user.id, password });
-    } catch (e) { setActionError(err(e)); }
+      const { password } = await api<{ password: string }>(`/admin/users/${user.id}/password`,
+        identity?.id === user.id && identity.proof ? { proof: identity.proof } : { attestation: noteFor(user) });
+      haptic.success(); setTemp({ id: user.id, password }); setAttestation({ id: 0, text: '' });
+      if (identity?.id === user.id) setIdentity(null); // the receipt bought this one reset
+    } catch (e) {
+      fail(err(e));
+      if (e instanceof ApiError && e.message === 'identity_check_required') setIdentity(null); // it lapsed: the button sends a fresh code
+    }
     finally { pending.current = null; setBusy(null); }
   }
 
@@ -60,17 +75,17 @@ export default function Users() {
         await api(`/admin/users/${user.id}/identity-code`, {});
         setIdentity({ id: user.id, code: '' });
       } else {
-        const { at } = await api<{ at: number }>(`/admin/users/${user.id}/identity-check`, { code: identity.code });
-        setIdentity({ ...identity, confirmedAt: at });
+        const { at, proof } = await api<{ at: number; proof: string }>(`/admin/users/${user.id}/identity-check`, { code: identity.code });
+        setIdentity({ ...identity, confirmedAt: at, proof });
       }
       haptic.success();
     } catch (e) {
-      haptic.error(); setActionError(err(e));
+      haptic.error(); fail(err(e));
       if (e instanceof ApiError && e.message === 'code_expired') setIdentity(null); // the button sends a fresh one
     } finally { pending.current = null; setBusy(null); }
   }
 
-  return <Screen onRefresh={reload}>
+  return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.users} />
     <Field label={c.search} value={q} onChangeText={setQ} placeholder={c.usersSearch} />
     <View style={{ marginBottom: 12 }}>
@@ -103,7 +118,7 @@ export default function Users() {
               : <>
                 <Txt variant="caption" style={{ marginVertical: 6 }}>{fill(c.identityBody, { email: user.email })}</Txt>
                 {identity?.id === user.id && <Field label={c.emailCodeLabel} value={identity.code} keyboardType="number-pad" maxLength={6} disabled={busy !== null}
-                  onChangeText={code => setIdentity({ id: user.id, code: code.replace(/\D/g, '').slice(0, 6) })} />}
+                  onChangeText={code => setIdentity({ id: user.id, code: codeInput(code) })} />}
                 <Button title={identity?.id === user.id ? c.identityCheck : c.identitySend} icon={identity?.id === user.id ? 'shield-checkmark-outline' : 'mail-outline'} variant="soft"
                   loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} reason={busy !== null ? c.wait_busy : c.code_six_digits} onPress={() => identityStep(user)} />
               </>}
@@ -115,7 +130,9 @@ export default function Users() {
             <Row gap={8}>
               <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car', plate: user.plate ?? '' })} /></View>
               <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null} reason={c.wait_busy}
-                onPress={() => action(user, '', { status: user.status === 'blocked' ? user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' : 'blocked' }, 'PATCH')} /></View>
+                onPress={() => user.status === 'blocked'
+                  ? action(user, '', { status: user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' }, 'PATCH')
+                  : confirm(fill(c.blockConfirm, { name: user.name }), () => action(user, '', { status: 'blocked' }, 'PATCH'), c.block, c.cancel)} /></View>
             </Row>
             {editing?.id === user.id && <View>
               <Field label={c.name} value={editing.name} onChangeText={name => setEditing({ ...editing, name })} maxLength={60} disabled={busy !== null} />
@@ -129,7 +146,11 @@ export default function Users() {
                 <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>
               </Row>
               {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clayInk }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
-                : <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />}
+                : <>
+                  {!resetByEmail(user) && <Field label={c.resetAttestation} value={noteFor(user)} onChangeText={text => setAttestation({ id: user.id, text })} placeholder={c.resetAttestationHint} maxLength={300} multiline disabled={busy !== null} />}
+                  <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null || resetBlocked(user)} reason={busy !== null ? c.wait_busy : resetByEmail(user) ? c.resetNeedsIdentity : c.resetNeedsAttestation}
+                    onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />
+                </>}
             </View>}
             <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.deleteUserConfirm, { name: user.name }), () => action(user, '', undefined, 'DELETE'), c.deleteAccount, c.cancel)} />

@@ -1,13 +1,17 @@
 // WP06 phone UI rules: truthful states, command IDs across lost acknowledgments, session-scoped storage, exact request bodies.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 import {
   awaitingProvider, clock, codeInput, codeUsable, deliveryKey, gateOf, gateReasonKey, issueKey, latestChallenge, normalizePhoneInput,
   outcomeOf, phoneInputOk, secondsUntil,
 } from '../src/phone/flow.ts';
 import { commandSlot, memorySlot, sessionScope, stableDeviceId, storedSlot } from '../src/phone/command.ts';
 import { issueBody, phoneRequests, proveBody, recoveryIssueBody, recoveryProveBody } from '../src/phone/requests.ts';
-import { copy } from '../src/copy.ts';
+import { copy, fill } from '../src/copy.ts';
+import * as model from '../src/model.ts';
 import { ApiError, errorCode } from '../src/api-client.ts';
 import { webGet, webSet } from '../src/web-storage.ts';
 
@@ -24,6 +28,81 @@ for (const ok of ['0599123456', '599123456', '+972599123456', '00970599123456', 
 for (const bad of ['', '0588123456', '+972588123456', '12345', '059912345678', '+1 5551234567', '05991234x'])
   assert.ok(!phoneInputOk(bad), bad);
 assert.equal(codeInput('12 34-56789'), '123456');
+// The handover PIN goes through the same filter at its own length: an Arabic keypad's digits are the same digits.
+for (const [input, expected] of [['٤٢٧١', '4271'], ['۴۲۷۱', '4271'], ['4٢7۱9', '4271'], ['42 71', '4271']]) assert.equal(codeInput(input, 4), expected, input);
+assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8'), /setProofInput\(\{ context: proofContext, value: codeInput\(value, 4\) \}\)/, 'the order screen filters the handover PIN');
+for (const [input, expected] of [
+  ['٠١٢٣٤٥', '012345'], ['٦٧٨٩', '6789'], ['۰۱۲۳۴۵', '012345'], ['۶۷۸۹', '6789'],
+  ['123456', '123456'], ['1٢۳-٤۵6extra7', '123456'], ['', ''],
+]) assert.equal(codeInput(input), expected, input);
+
+// Exercise the real email-code callbacks and their request bodies, not just the helper in isolation.
+{
+  let slots = [], cursor = 0, first = true;
+  const calls = [], c = copy.en;
+  const react = {
+    useState(value) { const slot = slots[cursor++] ??= { value: typeof value === 'function' ? value() : value };
+      return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; }]; },
+    useRef(value) { return slots[cursor++] ??= { current: value }; },
+    useEffect(fn) { if (first) fn(); },
+  };
+  const ui = Object.fromEntries(['Appear', 'Avatar', 'Badge', 'Button', 'Card', 'Choices', 'ErrorText', 'Field', 'Header', 'Loading', 'Logo', 'Press', 'Row', 'Screen', 'Txt'].map(name => [name, name]));
+  const user = { id: 1, name: 'Test', email: 'test@example.com', emailVerifiedAt: null, createdAt: 0 };
+  const fade = { duration: () => ({ delay: () => ({}) }) };
+  const modules = {
+    react, 'react/jsx-runtime': { Fragment: 'Fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    'react-native': { KeyboardAvoidingView: 'KeyboardAvoidingView', Linking: {}, Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View' },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' }, 'expo-router': { router: {} },
+    '../motion': { default: { View: 'Animated.View' }, FadeInDown: fade, FadeInUp: fade, useReducedMotion: () => false },
+    '../api': { api: async (path, body) => { calls.push({ path, body }); return path === '/auth/options' ? { registrationOpen: true, emailReset: true } : {}; } },
+    '../model': model, '../parts': { HelpLinks: 'HelpLinks', useFormat: () => ({ date: () => '' }) },
+    '../install-link': { InstallLink: 'InstallLink' }, '../phone-recovery': { PhoneRecovery: 'PhoneRecovery' }, '../phone-card': { PhoneCard: 'PhoneCard' },
+    '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language: 'en' }) },
+    '../entra-auth': { entraConfigured: false }, '../phone/client': { phoneApi: { capabilities: async () => ({ available: false, enabled: false }) } },
+    '../phone/flow': { codeInput, gateOf }, '../phone/notice': { takeAuthNotice: () => null },
+    '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, palette: {}, tones: {}, useCopy: () => ({ c, err: error => String(error) }) },
+  };
+  const load = file => {
+    const source = ts.transpileModule(readFileSync(new URL(`../src/app/${file}.tsx`, import.meta.url), 'utf8'),
+      { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; } };
+    runInNewContext(source, context);
+    return context.exports.default;
+  };
+  const find = (node, predicate) => {
+    if (!node || typeof node !== 'object') return;
+    if (predicate(node)) return node;
+    for (const child of [node.props?.children].flat(Infinity)) { const found = find(child, predicate); if (found) return found; }
+  };
+  const field = tree => find(tree, node => node.type === 'Field' && node.props.label === c.emailCodeLabel)?.props;
+  const button = (tree, title) => find(tree, node => node.type === 'Button' && node.props.title === title)?.props;
+  const inputs = [['٠١٢٣٤٥', '012345'], ['۰۱۲۳۴۵', '012345'], ['123456', '123456'], ['1٢۳٤۵6', '123456']];
+  const exercise = render => {
+    for (const [input, expected] of inputs) {
+      field(render()).onChangeText(input);
+      assert.equal(field(render()).value, expected, input);
+    }
+  };
+  const Auth = load('auth');
+  const renderAuth = () => { cursor = 0; const tree = Auth(); first = false; return tree; };
+  renderAuth(); await Promise.resolve();
+  find(renderAuth(), node => node.type === 'Press' && node.props.accessibilityLabel === c.forgotPasswordEmail).props.onPress();
+  find(renderAuth(), node => node.type === 'Field' && node.props.label === c.identifier).props.onChangeText('test@example.com');
+  await button(renderAuth(), c.resetSend).onPress();
+  exercise(renderAuth);
+  find(renderAuth(), node => node.type === 'Field' && node.props.label === c.newPassword).props.onChangeText('Synthetic-password-123');
+  await button(renderAuth(), c.resetSave).onPress();
+  assert.equal(calls.find(call => call.path === '/auth/reset').body.code, '123456');
+
+  slots = []; cursor = 0;
+  const Profile = load('profile');
+  const emailCard = find(Profile(), node => typeof node.type === 'function' && node.type.name === 'EmailCard').type;
+  slots = [];
+  const renderEmail = () => { cursor = 0; return emailCard(); };
+  exercise(renderEmail);
+  await button(renderEmail(), c.emailConfirm).onPress();
+  assert.equal(calls.find(call => call.path === '/me/email/verify').body.code, '123456');
+}
 
 // Gates: the module can be absent (SQLite), switched off (no provider), or ready; a failed check is never "closed".
 assert.equal(gateOf(null, false), 'checking');

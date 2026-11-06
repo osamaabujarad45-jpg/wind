@@ -2,6 +2,8 @@
 // Truthful states: an accepted provider answer is never "delivered", and a verified proof means phone control only.
 // No React, no Expo imports here, so node tests load this file directly.
 
+import { latinDigits } from '../model.ts';
+
 export type Delivery = 'prepared' | 'requested' | 'accepted' | 'failed' | 'unknown' | 'obsolete' | 'suppressed';
 
 export type Capabilities = {
@@ -24,8 +26,8 @@ export function phoneInputOk(raw: string): boolean {
   return PHONE_FORMS.some(form => form.test(value));
 }
 
-export function codeInput(raw: string): string {
-  return raw.replace(/\D/g, '').slice(0, 6);
+export function codeInput(raw: string, length = 6): string {
+  return latinDigits(raw).replace(/\D/g, '').slice(0, length);
 }
 
 /** Two gates the server reports: the module exists (SQLite cannot run it) and the provider is switched on. */

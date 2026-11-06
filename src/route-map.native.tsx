@@ -168,7 +168,7 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
       pendingCenter.current = null; setFailed(true); callbacks.current.onFail?.();
     }, mapReadyMs());
     return () => clearTimeout(timer);
-  }, [center.latitude, center.longitude, ready, attempt]); // eslint-disable-line react-hooks/exhaustive-deps -- the coordinates are the change, not the object identity
+  }, [center.latitude, center.longitude, ready, attempt]);
   // The sheet offers no pin to confirm until the map says it is ready; a map that never loads says so.
   useEffect(() => {
     if (ready) { callbacks.current.onReady?.(); return; }
