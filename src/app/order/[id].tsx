@@ -608,7 +608,8 @@ export default function OrderScreen() {
         <ServiceIcon service={order.service} size={28} />
       </Radar>
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
-      <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : isCustomer && order.scheduledFor && now > order.scheduledFor ? c.scheduledMissed : c.findingBody}</Txt>
+      {/* Addressed to the sender; a driver or admin viewing the same order reads the title only. */}
+      {isCustomer && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : order.scheduledFor && now > order.scheduledFor ? c.scheduledMissed : c.findingBody}</Txt>}
       {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
         <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
           onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />

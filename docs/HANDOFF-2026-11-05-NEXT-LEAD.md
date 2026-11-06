@@ -55,7 +55,7 @@ The phone runs above predate these three fixes. None changes a screen the trip u
 
 **Everything testable without the phone is done. The phone was not attached on the afternoon of 6 November (`adb devices` empty, nothing on USB), so the items marked below as needing it are blocked, not finished.**
 
-**Fixed earlier and rechecked on the A53:**
+**Fixed earlier and rechecked on the A53, the morning of 6 November in the previous session (not rerun, and no log names these two changes):**
 
 - **Enabled buttons reported as disabled to accessibility tools.** A control going from `disabled` to `undefined` kept Android's disabled flag, so the pin confirm read as disabled while it worked; TalkBack may also have refused to activate it, not tested. `Press` now always sends a boolean. The tree now reports it enabled. **TalkBack itself has not been run.**
 - **Trip search opened with the field focused and no keyboard.** `autoFocus` on the active field opens it on arrival.
@@ -73,10 +73,12 @@ Passed on the A53, no change needed: with the backend cut mid-order the app show
 | A scheduled order whose time passed with no driver said only "finding a driver" | New `scheduledMissed` text, customers only. Expiry and dispatch unchanged | Same stage; reverting fails it |
 | The scheduled hint said cancel stops when a driver accepts; the server and the button allow it until pickup | Copy now says "until pickup" | `tests/schedule.test.mjs`: failed first, then passed |
 | With two SQLite processes a driver accepting between cancel's read and its update got no cancellation push | `POST /orders/:id/cancel` re-reads before notifying | **Not reproduced**: that window was never hit in a test. Correct by reading the code; `tests/cancel-race.test.mjs` guards the behaviour |
-| Reschedule updated by id alone | Compare-and-set on status and time | `tests/cancel-race.test.mjs` race C |
+| Reschedule updated by id alone | The update now requires a searching order still outside the release window. It does not compare the time the customer read, so two tabs still end as last write wins | `tests/cancel-race.test.mjs` race C |
 | "Keep time" ran past the card edge at 130% text | The row wraps | `scripts/screens.mjs` booking check failed first, then passed |
 
-**Cancel race, proven on both backends without a defect:** `tests/cancel-race.test.mjs` (SQLite) and `tests/pg-cancel-race.mjs` (two PostgreSQL API processes) run cancel against accept, pickup and reschedule, 20 concurrent rounds plus both fixed orderings. Cancel always wins before transit; after transit it is refused with `cannot_cancel`; never both. An accepted courier gets the push and no load or earnings remain. Mutation-checked: dropping the driver's push, or allowing cancel in transit, turns the SQLite test red. `tests/dispatch-races.mjs` no longer skips its cancel check silently. Driven by API only, not on a phone.
+**Cancel race:** `tests/cancel-race.test.mjs` (SQLite) and `tests/pg-cancel-race.mjs` (two PostgreSQL API processes) run cancel against accept, pickup and reschedule, 20 concurrent rounds plus both fixed orderings. Cancel always succeeds against an accept. Racing the pickup, exactly one of the two wins; once in transit, cancel is refused with `cannot_cancel`. An accepted courier gets the push and no load or earnings remain. Mutation-checked: dropping the driver's push, or allowing cancel in transit, turns the SQLite test red. `tests/dispatch-races.mjs` no longer skips its cancel check silently. Driven by API only, not on a phone.
+
+**Real defect found, partner cancel on PostgreSQL:** partner routes run outside the request's row lock, so a driver could accept between the partner cancel's read and its update. The order was cancelled and the driver was never told, and would keep driving to the pickup. Reproduced on round 0 of a new race in `tests/pg-cancel-race.mjs`, then fixed by re-reading before notifying. Partner API needs `SOUQ_PARTNER_KEY`.
 
 **Ride and freight:** the service list, form and schedule picker render in both languages. The ride trip and the freight counter-offer pass in the browser scenarios, on the test PC. `scripts/check-expanded-services.mjs`, their real phone run, needs the phone. Production stays parcel-only (`WIND_ENABLED_SERVICES`).
 
@@ -87,6 +89,8 @@ Passed on the A53, no change needed: with the backend cut mid-order the app show
 **Needs the phone:** English on the phone, Android large text, TalkBack, ride and freight on the device, the cancel race seen from the app, the confirm-press retest.
 
 **Recovery:** a pending booking, a lost reply and a refused reply are covered above. A scheduled order nobody takes keeps searching for 24 hours after its time (`SEARCH_EXPIRY_MS`), then is cancelled with a push.
+
+**For the PostgreSQL cutover:** the client never reads `quoteExpiresAt`, so after the 120-second quote lifetime the old price stays shown and the first press is refused with `quote_expired`, then the price refreshes. Nothing is charged at the old price. Not changed: refreshing on a timer would add `/price` calls from idle forms. SQLite has no quotes, so this is not live today.
 
 **Operational dependencies:** `WIND_ENABLED_SERVICES` for ride and freight; dispatch and boarding gates; real SMS and email are not configured.
 

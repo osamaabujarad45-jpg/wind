@@ -1729,8 +1729,10 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   // own mutation transaction (enqueuePush refuses without one); same short boundary as partner create.
   return (await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
     if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-    if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
-    return (await partnerOrder(req, order.id));
+    // Read again: this route holds no row lock while it reads above, so a driver can accept before the update.
+    const cancelled = (await partnerOrder(req, order.id));
+    if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
+    return cancelled;
   }));
 }, true);
 

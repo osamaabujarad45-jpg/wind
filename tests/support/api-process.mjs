@@ -26,6 +26,7 @@ export async function startApiProcess(storage) {
   Object.assign(env, storage, { NODE_ENV: 'test', WIND_ENABLED_SERVICES: 'parcel,ride,freight', WIND_IDENTITY_MODE: 'operator-verified' });
   for (const key of ['OSRM_URL', 'WIND_EMAIL_FROM', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_EMAIL_TOKEN',
     'SOUQ_PARTNER_KEY', 'WEB_ROOT', 'EAS_BUILD', 'WIND_RELEASE', 'WIND_CONTACT_VERIFICATION_REQUIRED']) delete env[key];
+  if (storage.SOUQ_PARTNER_KEY) env.SOUQ_PARTNER_KEY = storage.SOUQ_PARTNER_KEY; // a fixture's own synthetic key; an inherited one stays out
   const child = fork(fileURLToPath(import.meta.url), [], { env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     execArgv: ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'] });
   let diagnostics = '';

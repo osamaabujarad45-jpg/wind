@@ -708,7 +708,7 @@ try {
   await until(() => requestButton.isEnabled(), Boolean, 'Initial price was not ready');
   const bookingPath = apiRoute('/api/orders');
   let bookingError = 'itinerary_changed';
-  await pricePage.route(bookingPath, route => route.fulfill({ status: 409, json: { error: bookingError } }));
+  await pricePage.route(bookingPath, route => route.fulfill({ status: bookingError === 'quote_not_found' ? 404 : 409, json: { error: bookingError } })); // the statuses the server sends
   for (const code of ['itinerary_changed', 'quote_not_found']) {
     bookingError = code;
     // A refused booking refetches anyway; what matters is that the old price cannot be requested while the new one loads.

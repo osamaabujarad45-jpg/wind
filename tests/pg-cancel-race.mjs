@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PARCEL_LOAD } from '../src/model.ts';
 import { expoDestination } from '../server/domain/events.ts';
-import { dispatchFixture } from './dispatch-support.mjs';
+import { fixture } from './eligibility-support.mjs';
 
 const modes = ['action-first', 'cancel-first', ...Array.from({ length: 20 }, (_, i) => i % 2 ? 'race-action-first' : 'race-cancel-first')];
 async function pair(cancel, action, mode) {
@@ -15,13 +15,18 @@ async function pair(cancel, action, mode) {
   }
   return Promise.all([cancel(), action()]);
 }
-const raw = async (base, path, token, body = {}) => {
-  const response = await fetch(base + path, { method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-  const text = await response.text();
-  let data; try { data = JSON.parse(text); } catch { data = text; }
-  return { status: response.status, data };
+const post = async (base, path, headers, body) => {
+  // A 503 is the API's retryable answer to a lock wait past lock_timeout, not a race outcome, and nothing was applied: send it again.
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    const text = await response.text();
+    if (response.status === 503 && attempt < 5) { await new Promise(resolve => setTimeout(resolve, 200)); continue; }
+    let data; try { data = JSON.parse(text); } catch { data = text; }
+    return { status: response.status, data };
+  }
 };
+const raw = (base, path, token, body = {}) => post(base, path, { Authorization: `Bearer ${token}` }, body);
+const partnerKey = 'synthetic-cancel-race-partner-key';
 const ok = (result, label) => {
   assert.equal(result.status, 200, `${label}: ${JSON.stringify(result)}`);
   return result.data;
@@ -30,7 +35,7 @@ const no5xx = (results, label) => {
   for (const result of results) assert.ok(result.status < 500, `${label}: ${JSON.stringify(result)}`);
 };
 
-const f = await dispatchFixture('cancelrace');
+const f = await fixture('cancelrace', { WIND_DISPATCH_TEST_ONLY: '1', SOUQ_PARTNER_KEY: partnerKey });
 try {
   assert.notEqual(f.a.child.pid, f.b.child.pid, 'race requests must use independent API processes');
   // The shared fixture starts with 0598 numbers; give this test's synthetic actors the requested 0599 range before enrollment.
@@ -168,6 +173,33 @@ try {
     assert.equal((await view(order.id)).status, 'cancelled', `${label}: remains cancelled after reschedule retry`);
     assert.equal((await f.other(`/orders/${order.id}`, { token: customer.token })).status, 'cancelled', `${label}: other process agrees`);
   }
+
+  // D: partner cancel runs outside the HTTP envelope, so it holds no row lock while it reads: a driver can accept before its update.
+  const sample = await book({}, false);
+  ok(await cancel(sample.id), 'D sample');
+  const delivery = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false, contact: '0599970013', pickupContact: '0599970014',
+    detail: 'Synthetic sealed item', pickupNote: 'Synthetic pickup', dropoffNote: 'Synthetic dropoff', pickupPoint: sample.pickupPoint, dropoffPoint: sample.dropoffPoint };
+  const partner = (base, path, body = {}) => post(base, path, { 'X-Partner-Key': partnerKey }, body);
+  const quoted = ok(await partner(f.a.base, '/partner/quotes', delivery), 'D quote').price;
+  let accepts = 0;
+  for (let round = 0; round < 40; round++) {
+    const label = `D ${round}`;
+    const order = ok(await partner(f.a.base, '/partner/orders', { ...delivery, externalRef: `cancel-race:${round}:${randomUUID()}`, quotedPrice: quoted }), label);
+    await f.assess(order, { approach: false });
+    await f.approach(order);
+    const cancelBase = round % 2 ? f.b.base : f.a.base, acceptBase = round % 2 ? f.a.base : f.b.base;
+    const lag = round % 20; // staggered so the accept lands anywhere around the cancel's read
+    const [accepted, cancelled] = await Promise.all([accept(order.id, acceptBase),
+      new Promise(resolve => setTimeout(resolve, lag)).then(() => partner(cancelBase, `/partner/orders/${order.id}/cancel`))]);
+    no5xx([accepted, cancelled], label);
+    assert.equal(ok(cancelled, label).status, 'cancelled', label);
+    if (accepted.status !== 200) continue;
+    accepts++;
+    const queued = await f.db.all(`SELECT e.id FROM domain_events e JOIN outbox q ON q.event_id=e.id
+      WHERE e.order_id=? AND e.type='notification.requested' AND e.payload->>'kind'='cancelled' AND q.destination=?`, order.id, destination);
+    assert.equal(queued.length, 1, `${label} lag=${lag}: a courier whose accept succeeded must hear about the partner's cancel`);
+  }
+  assert.ok(accepts > 0, 'D: at least one accept must win, or the race proved nothing');
 } finally {
   try {
     await Promise.all([f.a.stop(), f.b.stop()]);
