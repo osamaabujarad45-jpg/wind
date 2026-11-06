@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS firebase_resets (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  requested_at BIGINT NOT NULL
+);

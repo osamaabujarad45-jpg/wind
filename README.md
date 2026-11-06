@@ -117,7 +117,8 @@ Any Docker host with a persistent volume and HTTPS in front (Fly.io, Railway, a 
 ```bash
 docker build --build-arg EXPO_PUBLIC_API_URL=https://<public-api-origin> -t wind-api .
 docker run -d -p 127.0.0.1:4000:4000 -v wind-data:/data \
-  -e WIND_IDENTITY_MODE=self-service -e SUPPORT_CONTACT="<actual support contact>" wind-api
+  -e WIND_IDENTITY_MODE=self-service -e SUPPORT_CONTACT="<actual support contact>" \
+  -e WIND_TRUST_PROXY=1 -e WIND_PUSH_SUBJECT=https://<public-api-origin> wind-api
 ```
 
 The API origin is a required build argument: it is embedded in the web bundle.
@@ -146,6 +147,10 @@ API origin. Provider delivery and real user journeys need separate checks.
 | `WIND_EMAIL_FROM` | unset | Sender on a domain onboarded in Cloudflare → Email Service → Email Sending, e.g. `no-reply@your-domain`. With the two below it turns on email codes: verify the address, self-service password reset, and the admin caller identity check |
 | `CLOUDFLARE_ACCOUNT_ID` | unset | Cloudflare account that owns that domain |
 | `CLOUDFLARE_EMAIL_TOKEN` | unset | Server-only API token with **Email Sending: Edit**; never in mobile build variables |
+| `WIND_FIREBASE_API_KEY` | unset | Server-only Firebase web API key for password-reset links when Cloudflare email is off |
+| `WIND_FIREBASE_SERVICE_ACCOUNT` | unset | Server-only base64-encoded service-account JSON for that Firebase project; never put it in mobile build variables |
+
+Firebase reset requires both settings, a dedicated Firebase Authentication project with email/password sign-in enabled, and service-account permission to look up, create and delete users. Apply PostgreSQL migration 30 before enabling it. Cloudflare takes precedence when configured. Only non-blocked, non-admin accounts with an already verified email can reset: Firebase sends a link and the new password is adopted at Wind sign-in within one hour. Configure Firebase's password policy to require at least 12 characters. Reset accounts are deleted best-effort; monitor and remove leftovers after provider failures. The project must not contain other users: issuing a reset deletes any Firebase account with the same email.
 
 For an approved operator, `WIND_ENABLED_SERVICES=parcel,ride,freight` exposes all three services. New bookings use `shared:false`; pooling is disabled and a ride or freight load is exclusive, while a courier may carry several parcels. Existing assigned trips can finish if their service is later disabled.
 

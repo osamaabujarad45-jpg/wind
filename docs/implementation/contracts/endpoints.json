@@ -41,11 +41,12 @@
       "method": "GET",
       "path": "/api/auth/options",
       "roles": "anonymous",
-      "guard": "public; auth endpoints have durable IP/identity limits; provider unavailable is not success",
+      "guard": "public; emailResetLink is present only when Firebase fallback is configured and Cloudflare is off",
       "sourceLine": 522,
       "anonymousStatus": 200,
       "boundaryFixture": "boundary:GET:/api/auth/options",
       "behaviorSuites": [
+        "tests/firebase-reset.test.mjs",
         "tests/api.test.mjs",
         "tests/registration.test.mjs",
         "tests/deployment.test.mjs",
@@ -91,6 +92,7 @@
       "anonymousStatus": 401,
       "boundaryFixture": "boundary:POST:/api/auth/login",
       "behaviorSuites": [
+        "tests/firebase-reset.test.mjs",
         "tests/api.test.mjs",
         "tests/registration.test.mjs",
         "tests/deployment.test.mjs",
@@ -146,6 +148,7 @@
       "anonymousStatus": 503,
       "boundaryFixture": "boundary:POST:/api/auth/reset/code",
       "behaviorSuites": [
+        "tests/firebase-reset.test.mjs",
         "tests/email.test.mjs"
       ]
     },

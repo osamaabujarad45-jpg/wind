@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { advanceRequest, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } from '../src/driver-command.ts';
 import { copy } from '../src/copy.ts';
+import { readFileSync } from 'node:fs';
+// The saved command is shared between tabs, so the whole recovery runs under its own lock (not the session's: a 401 inside takes that one).
+const recovery = readFileSync(new URL('../src/driver-recovery.ts', import.meta.url), 'utf8');
+assert.match(recovery, /storage\.exclusive\(async[\s\S]*'wind\.driver\.command'\)/);
 // Only a confirmed command may claim it went through: a refusal did not, and a conflict is unknown.
 assert.equal(otherOrderNotice('applied'), 'driver_command_other_done');
 for (const state of ['rejected', 'conflict']) assert.equal(otherOrderNotice(state), 'driver_command_other_unconfirmed', state);

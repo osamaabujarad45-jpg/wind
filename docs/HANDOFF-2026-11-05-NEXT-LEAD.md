@@ -1,6 +1,75 @@
 # Next lead handoff — 5 November 2026
 
-## Status update — 6 November 2026 (read this first; it replaces the older status below)
+## Operations section — 6 November 2026, evening (read this first)
+
+On `fix/operations-section`, stacked on `fix/driver-section`. **Blockers only the owner can clear:** GitHub billing still stops every CI job, so nothing merges. The phone and AWS blockers below are cleared.
+
+### Fixed
+
+| Found by | Issue | Change | Proof |
+|---|---|---|---|
+| Lead | Nightly backups `644` while `wind.db` is `600`; a failed check left an uncompressed copy forever | `wind-backup.sh`: umask 077, `chmod 600`, `trap` | `tests/backup.test.mjs`, reverted fails |
+| Terra audit | Restore recipe piped into `wind.db`: a missing file emptied the live database and the API opened it as new | New `infra/vm/wind-restore.sh` proves the copy before touching anything | Drill on the VM, below |
+| Astra audit | Restored copy revives sessions revoked since | Script removes sessions and browser push rows; everyone signs in again | Test and drill; `/me` with the old token is 401 |
+| Terra review | Failed swap left the service down; a retry overwrote the saved database; old strikes could restart mid-swap; a copy missing `cash_entries` passed | Puts back and restarts on failure; timestamped saves; clears strikes; checks the table | Drill with a stub `docker` failing start, then readiness |
+| Terra trace | Blocking a customer with an open order left the courier unable to get the handover code | 409 `customer_active_order`; both languages | `tests/courier-block.test.mjs`; seen on the phone |
+| Terra trace | Blocking the driver of a dispatched ride left it unacceptable | Shares `reofferReleased` with the release route, clears the assignment | `tests/dispatch.mjs`, reverted fails |
+| Terra trace | Support-confirmed returns posted no ledger journal on PostgreSQL | Both routes post; eligibility recovery also tells both parties | `tests/pg-cash.mjs`, `tests/capacity.mjs`, reverted fail |
+| Astra review | Two web tabs: a late reply in one cleared the command the other just saved | Recovery holds its own Web Lock | Source assertion only; not driven with two tabs |
+| Terra audit | Update screen offered no way to update; README, `.env.example`, migration doc stale | `EXPO_PUBLIC_UPDATE_URL`; docs corrected | Not seen on a device |
+| Mistral | Admin edit and approve threw 500 if the user vanished after commit | 404 | Reading only |
+| Phone | Handover code only inside the opened sheet, with the courier at the door | Header of the closed sheet in transit, on hold and returning | `tests/map.test.mjs`; phone |
+| Phone runner | Ride PIN shown twice with the sheet open | Header keeps the PIN, body keeps the hint | `tests/phone-ui.test.mjs`; phone |
+| Phone runner | Set on map opens at the customer's position, so a destination confirmed unmoved booked a trip to the same spot | 400 `same_place` under 50 m, a guess, on price, order and partner quote | `tests/api.test.mjs`; message seen on the phone |
+| Haiku review | Put-back could delete a live database whose move failed; Caddy step came after the script; update screen dropped support; repeat custody decisions pushed again; a repeated booking error stayed silent; scripts not executable | All fixed | Drill with a failing `mv`, source tests |
+| Terra audit | Refusals, status changes and proposals silent to a screen reader; search left the map focusable | Announcements, hidden map, digit-by-digit PINs, exposed addresses and counts, larger hit areas | `tests/phone-ui.test.mjs`. **Speech not heard** |
+
+### Answered, not changed
+
+- **Headerless older builds pass the upgrade gate:** deliberate; 1.0.13 and earlier cannot send the header.
+- **Step: duplicate error on finished orders:** wrong. Finished orders use the plain screen; removing the line broke a test that had it right.
+- **Astra: clock rewind can raise the far-pickup warning:** costs one extra confirm.
+- **Job card earnings up to a minute stale after a commission change:** a real limit, and small.
+- **Terra: root-owned data folder:** the API could not run there either.
+- **Support-reset note may hold a name:** known, listed under Limits below.
+
+### Backup evidence
+
+Newest nightly copy byte-identical on the VM and in Blob. Script run against a throwaway container on the VM with the production image: missing file and non-database leave the service up; failed start and failed readiness put the old database back; real copy restored in 12 seconds. Production holds 2 users and 0 orders, so this says nothing about real volume. The replacement-VM path is written but never rehearsed.
+
+### Before the next deploy
+
+`/srv/wind-api.env` lacks `WIND_TRUST_PROXY` and `WIND_PUSH_SUBJECT`, and `/srv/wind-backup.sh` lacks the `last-ok` marker; `docs/operations/deploy.md` has the steps. Production runs `wind-api:20261104-adminfix`.
+
+### Owner decisions
+
+- **How long Blob backups live:** no lifecycle rule and soft delete off, so forever, including data of deleted accounts.
+- **Who hears when the VM dies:** the alert runs on the VM, so nothing fires. Azure Monitor or a free uptime check would need the owner's account.
+- **`SouqWind-Railway-Backups` task on this PC** fails every hour (result 1). Production left Railway on 29 October. Left alone; it is the owner's.
+- **Map-only pin adjustment** has no spoken alternative; a blind user relies on search results. Needs a design decision.
+- Flat ₪20 parcel and Israeli roads, below.
+
+### Phone, SM-A5360, 6 November evening
+
+Passed: parcel trip W-00008 with real GPS (accept; arrive and pick up each warned "48 km" and No held; wrong code refused with the message in view; right code delivered); foreground location service and high-accuracy GPS; keyboard leaves field and button visible; English mirrored; 130% text on home, search, booking and driver; admin Block refused. **Confirm press: 20 of 20,** tapping about 0.5 s after the pick, so a faster tap is untested and the first miss stays unexplained.
+
+**TalkBack not tested:** enabled with restoration, but the tool's tap opened a field on the first touch with no focus ring, so injected taps bypass it. It needs a person. **Ride and freight passed on the phone** in Chrome (`scripts/check-expanded-services.mjs`, its freight steps updated for map-first booking): leased ride, Arrive cue, lost acknowledgement recovered with one transition, PIN start and completion, quote-bound freight, offer and acceptance, diagnostics, offline view, forced upgrade; no page errors. Those use a synthetic GPS fixture and the web build. Not run: Arabic digits on the Samsung keyboard.
+
+**Traps:** an edit to `pb.cmd` silently failed once, leaving a stale admin APK, so check the bundle for a new string after any build. The test PC's database gathers a schema per test run; at 1,129 `pg_dump` timed out in `tests/pg-import.mjs`, cleared by recreating it. The persistence gate used a runner that retries once on the pool's 1 s connect timeout.
+
+### Workers, evening
+
+| Job | Model | Result |
+|---|---|---|
+| Backup, restore, restore script, joins, release, accessibility | `azure-gpt6/gpt-6.1-terra` at `xhigh` | Best of the set: most fixes came from here, one finding rejected. **Owner's preferred worker** |
+| Whole diff | `claude-haiku-5-5` at `xhigh` | Seven real findings, including the put-back data loss every drill and worker missed |
+| Backup audit, driver client | `azure-gpt6/gpt-6-astra` | Two real findings each, one minor |
+| #16 server | `nvidia/mistralai/mistral-large-4-1t-a52b` at `high` | Clean verdict with a precise list of what it checked. Slow |
+| #15 source, ops server | `nvidia/stepfun-ai/step-5-preview` | One wrong finding at medium; sound verdict at `max`. Slow |
+| | `amazon-bedrock/us.moonshotai.kimi-k3` | Failed twice on expired credentials while the CLI worked |
+| | `opencode/deepseek-v4.1-flash-free` | Free limit reached |
+
+## Status update — 6 November 2026, earlier (the phone and AWS blockers are now cleared; otherwise current)
 
 **Blockers only the owner can clear:**
 1. **GitHub Actions will not start:** `The job was not started because recent account payments have failed or your spending limit needs to be increased`. PR #15 cannot merge until CI runs: `gh run rerun` the failed runs once billing is fixed. Nothing was bypassed.

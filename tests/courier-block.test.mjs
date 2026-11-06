@@ -69,6 +69,16 @@ try {
   await call(`/orders/${assigned.id}/cancel`, { token: customer.token, body: {} });
   await call(`/admin/users/${spare.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } });
 
+  // A blocked customer loses the handover code, so a block waits for their open order; the order and its session are untouched.
+  const sender = await call('/auth/register', { body: { phone: '0599300005', name: 'Rana', password: 'secret1' } });
+  const openOrder = await call('/orders', { token: sender.token, body: { ...input, contact: '0599300005', quotedPrice: quote(defaultSettings, input) } });
+  const senderPath = `/admin/users/${sender.user.id}`;
+  assert.equal((await call(senderPath, { token: admin.token, method: 'PATCH', body: { status: 'blocked' }, expect: 409 })).error, 'customer_active_order');
+  assert.equal((await call(`/orders/${openOrder.id}`, { token: sender.token })).status, 'searching');
+  await call(`/orders/${openOrder.id}/cancel`, { token: sender.token, body: {} });
+  await call(senderPath, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } });
+  await call(`/orders/${openOrder.id}`, { token: sender.token, expect: 401 });
+
   console.log('courier-block: ok');
 } finally {
   await shutdown();

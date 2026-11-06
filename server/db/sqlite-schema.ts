@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS saved_places (
   city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note));
 -- Driver offers (SPEC-driver-offers.md): one pending price per driver per order; accepted or expired offers are deleted.
 -- One-time email codes (verify the address, reset a password, support identity check); the hash binds the address.
+CREATE TABLE IF NOT EXISTS firebase_resets (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, requested_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS email_codes (
   user_id INTEGER NOT NULL REFERENCES users(id), purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset','support')),
   code_hash TEXT NOT NULL, sent_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0,

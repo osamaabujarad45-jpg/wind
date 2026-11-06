@@ -7,7 +7,7 @@ import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
-import { SUPPORT_URL } from '../api';
+import { SUPPORT_URL, UPDATE_URL } from '../api';
 import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
 import { Button, Card, Empty, fill, palette, Txt, useCopy } from '../ui';
 import { useFormat } from '../parts';
@@ -82,7 +82,10 @@ function Routes() {
   if (mustUpdate) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
     <Empty icon="cloud-download-outline" title={c.updateRequired} body={c.updateRequiredDesc} action={Platform.OS === 'web'
       ? <Button title={c.updateRequiredWeb} onPress={() => window.location.reload()} />
-      : SUPPORT_URL ? <Button title={c.support} icon="chatbubble-outline" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
+      : <View style={{ gap: 10, alignSelf: 'stretch' }}>
+        {UPDATE_URL && <Button title={c.updateRequired} icon="cloud-download-outline" onPress={() => { void Linking.openURL(UPDATE_URL!); }} />}
+        {SUPPORT_URL && <Button title={c.support} icon="chatbubble-outline" variant="ghost" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} />}
+      </View>} />
   </View>;
   if (!ready) return null;
   const summary = !me || (offlineSummary && me.user.status === 'active' && me.user.id === offlineSummary.actorId && me.user.role === offlineSummary.role)

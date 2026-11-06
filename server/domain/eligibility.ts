@@ -366,7 +366,7 @@ export class Eligibility {
   }
 }
 
-export function registerEligibilityRoutes(route: Register, e: Eligibility) {
+export function registerEligibilityRoutes(route: Register, e: Eligibility, custodyDecided: (order: { id: number; driver_id: number; customer_id: number }, action: 'hold'|'return'|'confirm_return') => Promise<void>) {
   const db=e.db, fail=e.fail;
   const admin=(user: Actor)=>{ if (user.role!=='admin') fail(403,'forbidden'); };
   const driver=(user: Actor)=>{ if (user.role!=='driver') fail(403,'forbidden'); };
@@ -588,6 +588,6 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility) {
       await db.run("UPDATE orders SET status='returned',completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id);
     }
     await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
-    await e.audit(user.id,`custody_${action}`,id,reason,ref); return await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id);
+    await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return'); return after;
   }));
 }

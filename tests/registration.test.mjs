@@ -13,6 +13,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-registration-'));
 const path = join(dir, 'test.db');
 Object.assign(process.env, { NODE_ENV: 'production', WIND_PUSH_SUBJECT: 'mailto:wind-suite@example.invalid', WIND_TRUST_PROXY: '1', WIND_IDENTITY_MODE: 'self-service', DB_PATH: path,
   SUPPORT_CONTACT: 'Synthetic support', WIND_ENABLED_SERVICES: 'parcel' });
+delete process.env.WIND_FIREBASE_API_KEY; delete process.env.WIND_FIREBASE_SERVICE_ACCOUNT;
 const password = 'Synthetic_Password123';
 const salt = 'synthetic-migration-salt';
 const stored = `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;

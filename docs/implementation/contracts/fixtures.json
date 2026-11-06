@@ -3467,28 +3467,28 @@
             "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "tubas"
+            "id": "tubas",
+            "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "jerusalem"
+            "id": "jerusalem",
+            "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "gaza"
+            "id": "gaza",
+            "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "deir_albalah"
+            "id": "deir_albalah",
+            "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "khan_younis"
+            "id": "khan_younis",
+            "ar": "<ar>"
           },
           {
-            "ar": "<ar>",
-            "id": "rafah"
+            "id": "rafah",
+            "ar": "<ar>"
           }
         ],
         "enabledServices": [

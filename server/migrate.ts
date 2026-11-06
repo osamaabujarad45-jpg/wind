@@ -18,6 +18,7 @@ const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
+NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; a cutover simply asks the user to request it again
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
@@ -190,7 +191,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
         if (columns.length && (await database.one(`SELECT COUNT(*) count FROM ${quote(table.name)}`))!.count) errors.push({ table: table.name, reason: 'target is not empty; never merge or overwrite' });
       }
       const legacyTables = actual.map(r => r.table_name).filter(name => !['schema_migrations','driver_run_resources','service_zone_geometries','command_results','event_sequences','domain_events','outbox','consumer_inbox','event_projection',
-        'eligibility_policy','service_areas','route_permissions','vehicles','driver_eligibility','driver_vehicles','verification_checks','order_requirements','vehicle_runs','capacity_reservations','capacity_stops','eligibility_offers','eligibility_audit','order_approaches',
+        'firebase_resets','eligibility_policy','service_areas','route_permissions','vehicles','driver_eligibility','driver_vehicles','verification_checks','order_requirements','vehicle_runs','capacity_reservations','capacity_stops','eligibility_offers','eligibility_audit','order_approaches',
         'phone_profiles','phone_mappings','phone_aliases','phone_challenges','phone_command_results','phone_rate_windows','phone_provider_budget','phone_audit',
         'driver_presence_sessions','driver_latest_locations','driver_presence_audit','driver_active_gps_sessions','driver_active_gps_session_ids','driver_active_gps_generations','native_push_tokens','quotes','road_restrictions','road_restriction_policy','dispatch_rounds','dispatch_offers','assignment_history','ride_lifecycle','ride_boarding_attempts','order_declared_scope','custody_records','order_scope_checks','private_objects','private_object_reads','ledger_accounts','ledger_journals','ledger_entries','cash_receipts','cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals'].includes(name));
       for (const name of new Set(legacyTables)) if (!snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });

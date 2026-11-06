@@ -98,6 +98,19 @@ try {
   const offers = await g.db.all('SELECT state FROM dispatch_offers WHERE order_id=? ORDER BY issued_at', order.id);
   assert.ok(offers.every(o => o.state !== 'open'), 'cancel left no open offer');
   assert.equal((await g.db.one('SELECT state,close_reason FROM dispatch_rounds WHERE order_id=? ORDER BY round_number DESC LIMIT 1', order.id)).state, 'cancelled');
+
+  // Blocking the driver of a dispatched ride is a release: a new round, or nobody can accept it.
+  const blockedRide = await bookRide(g);
+  const nearest = await addDriver(g, { latitude: 31.90001, longitude: 35.195 });
+  await assessRide(g, blockedRide, [nearest.vehicle, secondDriver.vehicle]);
+  await g.call(`/orders/${blockedRide.id}/dispatch/retry`, { token: g.customer.token, body: {} });
+  await acceptOffer(g, blockedRide.id, nearest.driver, await myOffer(g, blockedRide.id, nearest.driver));
+  await g.call(`/admin/users/${nearest.driver.user.id}`, { token: g.admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  const reopened = await g.call(`/orders/${blockedRide.id}`, { token: g.customer.token });
+  assert.equal(reopened.status, 'searching');
+  assert.equal(reopened.dispatch.state, 'open', 'the block opened a new round');
+  assert.ok(await g.db.one("SELECT 1 FROM assignment_history WHERE order_id=? AND driver_id=? AND action='released'", blockedRide.id, nearest.driver.user.id));
+  await g.call(`/orders/${blockedRide.id}/cancel`, { token: g.customer.token, body: {} });
   await g.call(`/orders/${order.id}/dispatch/retry`, { token: g.customer.token, body: {}, expect: 409 });
   console.log('WP10 dispatch: release re-dispatch excluding the releaser and cancel revocation passed');
 } finally { await g.close(); }

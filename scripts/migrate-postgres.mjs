@@ -1,6 +1,6 @@
 // Owner-run migration for the only non-loopback PostgreSQL gate the runtime accepts.
 // Never called by CI, the API or the worker: enabling workloads with an empty/old schema
-// would make every query fail. Creates wp16_staging and applies migrations 3..21 under
+// would make every query fail. Creates wp16_staging and applies migrations 3..30 under
 // the same advisory lock as the tests.
 import { Persistence } from '../server/db/persistence.ts';
 import { initializePostgres } from '../server/db/postgres-schema.ts';

@@ -30,6 +30,7 @@ import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
+import { firebaseReset } from './domain/firebase-reset.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
@@ -513,7 +514,11 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
 const eligibility = new Eligibility(persistence, fail);
-registerEligibilityRoutes(route, eligibility);
+registerEligibilityRoutes(route, eligibility, async (order, action) => {
+  if (action === 'confirm_return') await postOrderJournals(order.id);
+  await queuePush([order.driver_id], 'decided', order.id);
+  await queuePush([order.customer_id], ({ hold: 'on_hold', return: 'returning', confirm_return: 'returned' } as const)[action], order.id);
+});
 const presence = new Presence(persistence, eligibility, fail, production && selfService);
 // Going online needs the PostgreSQL presence tables (migration 9). Without them, as on SQLite in production today, the jobs board
 // is the whole driver flow, so the app must not offer a button that can only fail. Tests keep the card unless they ask for production's behaviour.
@@ -604,7 +609,7 @@ registerEntraRoutes(route, entraExchange, purpose => async ({ user, req }) => {
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
-route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady }), true);
+route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady, ...(!emailReady && firebaseReset ? { emailResetLink: true } : {}) }), true);
 route('GET', '/api/ready', async () => {
   let schema = 3;
   try {
@@ -615,7 +620,7 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 21 || applied !== 19) fail(503, 'unavailable');
+      if (schema < 30 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -677,8 +682,38 @@ route('POST', '/api/auth/login', async ({ body }) => {
   (await limit(key, 5, 10 * 60_000, false));
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  const r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
-  if (!r || !await checkPassword(String(body.password ?? ''), r.password)) {
+  let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
+  const supplied = String(body.password ?? '');
+  let valid = !!r && await checkPassword(supplied, r.password);
+  if (r && !valid && firebaseReset && r.email && r.status !== 'blocked' && r.role !== 'admin'
+    && supplied.length >= (production || selfService ? 12 : 6) && supplied.length <= 100) {
+    const pending = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ? AND requested_at > ?', r.id, Date.now() - FIREBASE_RESET_TTL);
+    let verified = false;
+    if (pending) try { verified = await firebaseReset.verify(r.id, r.email, supplied); } catch { /* provider failures look like a wrong password */ }
+    if (verified && pending) {
+      const hashed = await hashPassword(supplied);
+      const account = r;
+      await persistence.atomic({ id: account.id }, async () => {
+        await persistence.exec('BEGIN IMMEDIATE');
+        try {
+          const changed = await run(`UPDATE users SET password = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ? AND password = ? AND email = ?
+            AND status <> 'blocked' AND role <> 'admin' AND EXISTS (SELECT 1 FROM firebase_resets WHERE user_id = ? AND requested_at = ? AND requested_at > ?)`,
+          hashed, Date.now(), account.id, account.password, account.email, account.id, pending.requested_at, Date.now() - FIREBASE_RESET_TTL); // the emailed link proves the address; no account could verify one earlier without a sending domain
+          if (changed.changes) {
+            await run('DELETE FROM sessions WHERE user_id = ?', account.id);
+            await run('DELETE FROM push_subscriptions WHERE user_id = ?', account.id);
+            for (const id of [account.phone, account.email, identifier].filter(Boolean)) await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase()));
+            await clearFirebaseReset(account.id);
+            await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'FIREBASE_PASSWORD_RESET', '{}', ?)", account.id, Date.now());
+            valid = true;
+          }
+          await persistence.exec('COMMIT');
+        } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+      });
+      if (valid) r = await one('SELECT * FROM users WHERE id = ?', r.id);
+    }
+  }
+  if (!r || !valid) {
     (await limit(key, 5, 10 * 60_000));
     fail(401, 'wrong_credentials');
   }
@@ -707,6 +742,15 @@ const cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID?.trim(), cloudflareT
 const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
 const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
+const FIREBASE_RESET_TTL = 60 * 60_000;
+if (process.env.WIND_FIREBASE_API_KEY && !firebaseReset) console.error('Firebase reset settings are invalid: the email reset option stays off');
+// shortcut: same-process only; use shared fencing before running multiple API instances.
+const firebaseSending = new Set<number>();
+async function clearFirebaseReset(userId: number) {
+  const removed = await run('DELETE FROM firebase_resets WHERE user_id = ?', userId);
+  const reset = firebaseReset;
+  if (removed.changes && reset) persistence.defer(() => reset.deleteUser(userId).catch(() => {}));
+}
 type CodePurpose = 'verify' | 'reset' | 'support';
 const codeMail: Record<CodePurpose, (code: string) => [string, string[]]> = {
   verify: code => [`رمز ويند ${code} · Wind code`, [`رمز تأكيد بريدك في ويند: ${code}`, 'ينتهي خلال 15 دقيقة. إن لم تطلبه فتجاهل هذه الرسالة.', '',
@@ -784,6 +828,7 @@ route('POST', '/api/me/email', async ({ user, body }) => {
   if ((await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, r.id))) fail(409, 'email_taken');
   (await run('UPDATE users SET email = ? WHERE id = ?', email, r.id));
   (await run('DELETE FROM email_codes WHERE user_id = ?', r.id));
+  await clearFirebaseReset(r.id); // a link sent to the old address must not reset this account
   return (await me((await toUser((await one('SELECT * FROM users WHERE id = ?', r.id))!))));
 });
 route('POST', '/api/me/email/verify', async ({ user, body }) => {
@@ -797,16 +842,35 @@ route('POST', '/api/me/email/verify', async ({ user, body }) => {
 
 // Forgotten password, self-service: only to an already verified address (a typed one could be someone else's), never
 // for administrators (operator shell only). The same answer whether or not the account exists.
-const accountFor = async (identifier: unknown) => {
+const accountFor = async (identifier: unknown, verified = true) => {
   const value = String(identifier ?? '').trim(), phone = normalizePhone(value), email = normalizeEmail(value);
   const r = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone)) : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  return r && r.email_verified_at && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
+  return r && (r.email_verified_at || !verified) && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
 };
 route('POST', '/api/auth/reset/code', async ({ body }) => {
-  if (!emailReady) fail(503, 'email_unavailable');
-  const r = (await accountFor(body.identifier));
+  if (!emailReady && !firebaseReset) fail(503, 'email_unavailable');
+  const r = (await accountFor(body.identifier, emailReady));
   // Not awaited: the reply time must not tell a real account (provider call) from none; errors stay silent too.
-  if (r) void persistence.detached(() => sendCode(r, 'reset')).catch(() => {});
+  if (r) void persistence.detached(async () => {
+    if (emailReady) return sendCode(r, 'reset');
+    if (!firebaseReset || !r.email) return;
+    if (firebaseSending.has(r.id)) return;
+    firebaseSending.add(r.id);
+    try {
+      const previous = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ?', r.id);
+      if (previous && Date.now() - previous.requested_at < CODE_GAP) return;
+      await limit(identityKey('email-reset', r.id), 5, FIREBASE_RESET_TTL);
+      await run('DELETE FROM firebase_resets WHERE user_id = ?', r.id);
+      const requestedAt = Date.now();
+      try {
+        await firebaseReset.send(r.id, r.email, body.lang === 'en' ? 'en' : 'ar');
+        const result = await run(`INSERT INTO firebase_resets (user_id, requested_at)
+          SELECT id, ? FROM users WHERE id = ? AND password = ? AND email = ? AND status <> 'blocked' AND role <> 'admin'
+          ON CONFLICT(user_id) DO UPDATE SET requested_at = excluded.requested_at`, requestedAt, r.id, r.password, r.email);
+        if (!result.changes) await firebaseReset.deleteUser(r.id).catch(() => {});
+      } catch { await firebaseReset.deleteUser(r.id).catch(() => {}); }
+    } finally { firebaseSending.delete(r.id); }
+  }).catch(() => {});
   return { ok: true };
 }, true);
 route('POST', '/api/auth/reset', async ({ body }) => {
@@ -820,6 +884,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
     (await run('UPDATE users SET password = ? WHERE id = ?', password, r.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', r.id)); // a reset ends the session on every device
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', r.id));
+    await clearFirebaseReset(r.id);
     for (const id of [r.phone, r.email].filter(Boolean)) (await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase())));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -881,6 +946,7 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
     (await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, sha(currentToken)));
     // A browser here cannot be told from the one that made this change, and a stolen session's browser must stop alerting. This one subscribes again when Account next opens.
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
+    await clearFirebaseReset(user.id);
     (await run('DELETE FROM request_limits WHERE key = ?', key));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -916,6 +982,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
+    await clearFirebaseReset(user.id);
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
@@ -1206,6 +1273,14 @@ async function dispatchOrBroadcast(service: Service, orderId: number, customerId
   if (service === 'ride' && await dispatch.startRound(orderId)) return true;
   return newJobPush(service, orderId, customerId, exceptDriver);
 }
+/** An order back in the pool after a driver left it, by release or block. That driver is excluded; a ride needs a new round, since the old one closed as matched. */
+async function reofferReleased(service: Service, orderId: number, customerId: number, driverId: number) {
+  if (service === 'ride' && dispatch.enabled()) {
+    await dispatch.recordRelease(orderId, driverId);
+    if (await dispatch.startRound(orderId)) return;
+  }
+  await newJobPush(service, orderId, customerId, driverId);
+}
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
@@ -1273,6 +1348,9 @@ function pointOf(p: any): { latitude: number; longitude: number } | null {
 }
 // A booking pin must sit within the service bound of the city it is booked under (the app also checks it is the nearest;
 // twin cities like Ramallah and Al-Bireh make that too strict to refuse here).
+// Set on map opens at the customer's position, so confirming the destination unmoved books a trip to nowhere.
+// ponytail: 50 m straight line, a guess; widen if the pilot shows it too small.
+const apartPins = (a: unknown, b: unknown) => { const from = pointOf(a), to = pointOf(b); if (from && to && crowKm(from, to) < 0.05) fail(400, 'same_place'); };
 function bookedPoint(p: unknown, id: CityId) {
   const point = pointOf(p);
   if (point && crowKm(city(id), point) > SERVICE_KM) fail(400, 'outside_area');
@@ -1307,6 +1385,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
   (await limit(identityKey('price', user.id), 120, 10 * 60_000));
+  apartPins(body.pickupPoint, body.dropoffPoint); // a booking only: a trip under way may head back to its pickup
   const base = (await recommend(user, body));
   if (!(await quotesAvailable(persistence))) return base;
   const service = body.service as Service;
@@ -1470,6 +1549,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     // the 120s window must not void the fare the customer accepted).
     const effPoint = fillPoint(quoted.pickup_lat, quoted.pickup_lng, body.pickupPoint, quoted.pickup_city);
     const effDropoffPoint = fillPoint(quoted.dropoff_lat, quoted.dropoff_lng, body.dropoffPoint, quoted.dropoff_city);
+    apartPins(effPoint, effDropoffPoint);
     if (quoted.service === 'ride' && body.recipientPhone != null && body.recipientPhone !== '') fail(400, 'invalid_input');
     const effRecipientPhone = fillPhone(quoted.recipient_phone, body.recipientPhone);
     const effRecipientName = effRecipientPhone ? fillText(quoted.recipient_name, body.recipientName, 60, false) : '';
@@ -1543,6 +1623,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
   const point = bookedPoint(body.pickupPoint, body.pickupCity), dropoff = bookedPoint(body.dropoffPoint, body.dropoffCity);
+  apartPins(body.pickupPoint, body.dropoffPoint);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
   // Who receives a parcel or load (SPEC-parcel-recipient.md); optional, never on a ride.
   const recipientPhone = body.recipientPhone == null || body.recipientPhone === '' ? null
@@ -1681,7 +1762,7 @@ route('POST', '/api/partner/quotes', async ({ req, body }) => {
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity) || !['small', 'medium', 'large'].includes(String(body.option))) fail(400, 'invalid_input');
   // Optional pins are refused here, before the seller agrees, rather than at booking where the buyer can no longer fix them.
-  bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity);
+  bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity); apartPins(body.pickupPoint, body.dropoffPoint);
   return { currency: 'ILS', price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
     option: body.option, shared: body.shared === true }) };
 }, true);
@@ -2316,8 +2397,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   })();
   if (!order) return { ok: true };
   await queuePush([order.customerId!], 'released', order.id);
-  if (order.service === 'ride' && dispatch.enabled()) { await dispatch.recordRelease(order.id, user.id); if (!(await dispatch.startRound(order.id))) (await newJobPush(order.service, order.id, order.customerId!, user.id)); }
-  else (await newJobPush(order.service, order.id, order.customerId!, user.id)); // the releasing driver is excluded
+  await reofferReleased(order.service, order.id, order.customerId!, user.id);
   return { ok: true };
 });
 
@@ -2394,7 +2474,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     const order = (await one('SELECT customer_id, driver_id, status FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (body.action === 'reattempt') (await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id));
-    else if (body.action === 'confirm_return') (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+    else if (body.action === 'confirm_return') {
+      (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+      await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
+    }
     else {
       (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), Date.now(), id));
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
@@ -3059,6 +3142,9 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (identityOrRoleChange &&
       (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
     if (roleChanged && target.role === 'driver') (await cashSettled(target.id));
+    // A blocked customer loses the handover code, so a courier on the way could never finish. Support cancels or waits first.
+    if (target.role === 'customer' && status === 'blocked' && target.status !== 'blocked'
+      && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
       carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id));
@@ -3077,6 +3163,7 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) {
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
       (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
+      await clearFirebaseReset(target.id);
     }
     const now = Date.now();
     const auditFields = [
@@ -3096,6 +3183,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));
+        await rideLifecycle.clearAssignment(Number(o.id));
       }
       else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
         (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
@@ -3107,11 +3195,11 @@ const editUser: Handler = async ({ user, params, body }) => {
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   for (const o of carrying) {
-    if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); (await newJobPush(o.service, o.id, o.customer_id, target.id)); }
+    if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); await reofferReleased(o.service as Service, Number(o.id), Number(o.customer_id), target.id); }
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
-  return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
+  return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found')));
 };
 route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
@@ -3135,7 +3223,7 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
-  return (await toUser((await one('SELECT * FROM users WHERE id = ?', Number(params[0])))!));
+  return (await toUser((await one('SELECT * FROM users WHERE id = ?', Number(params[0]))) ?? fail(404, 'not_found')));
 });
 route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
   need(user, 'admin');
@@ -3179,6 +3267,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
       (await run('DELETE FROM push_subscriptions WHERE user_id = ?', target.id));
+      await clearFirebaseReset(target.id);
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
         user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
       (await persistence.exec('COMMIT'));
@@ -3467,6 +3556,9 @@ server.maxConnections = 2_000; // a held live request is a socket: a cap keeps o
 let presenceSweepTimer: ReturnType<typeof setInterval> | undefined;
 let presenceSweepJob: Promise<void> = Promise.resolve();
 let presenceSweepRunning = false;
+let firebaseSweepTimer: ReturnType<typeof setInterval> | undefined;
+let firebaseSweepJob: Promise<void> = Promise.resolve();
+let firebaseSweepRunning = false;
 server.on('listening', () => {
   const minimumBuild = process.env.WIND_MIN_CLIENT_BUILD;
   if (minimumBuild && !(Number.isSafeInteger(Number(minimumBuild)) && Number(minimumBuild) > 0))
@@ -3482,6 +3574,15 @@ server.on('listening', () => {
   sweep();
   presenceSweepTimer=setInterval(sweep,15_000);
   presenceSweepTimer.unref();
+  const sweepFirebase = () => {
+    if (firebaseSweepRunning || draining) return;
+    firebaseSweepRunning = true;
+    firebaseSweepJob = persistence.detached(sweepFirebaseResets).catch(error => { logServerError('firebase_maintenance_failed', error); })
+      .finally(() => { firebaseSweepRunning = false; });
+  };
+  sweepFirebase();
+  firebaseSweepTimer = setInterval(sweepFirebase, 60_000);
+  firebaseSweepTimer.unref();
 });
 
 export async function pruneExpired() {
@@ -3489,15 +3590,22 @@ export async function pruneExpired() {
   (await run('DELETE FROM push_subscriptions WHERE user_id NOT IN (SELECT user_id FROM sessions)')); // the last session gone, no browser should keep alerting
   (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
 }
+export async function sweepFirebaseResets() {
+  for (const row of await all('SELECT user_id, requested_at FROM firebase_resets WHERE requested_at <= ? LIMIT 10', Date.now() - FIREBASE_RESET_TTL)) {
+    if ((await run('DELETE FROM firebase_resets WHERE user_id = ? AND requested_at = ?', row.user_id, row.requested_at)).changes && firebaseReset)
+      await firebaseReset.deleteUser(row.user_id).catch(() => {});
+  }
+}
 export async function shutdown() {
   if (draining) return;
   draining = true;
   if(presenceSweepTimer)clearInterval(presenceSweepTimer);
+  if(firebaseSweepTimer)clearInterval(firebaseSweepTimer);
   fixWaiters.forEach(set => set.forEach(wake => wake())); // live watchers answer now instead of holding the close
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }
-  finally { clearTimeout(force); await presenceSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
+  finally { clearTimeout(force); await presenceSweepJob; await firebaseSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
 }
 
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.

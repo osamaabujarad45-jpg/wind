@@ -5,8 +5,10 @@ set -eu
 . /srv/wind-backup.env
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 dir=/srv/wind-data/backups
+trap 'rm -f "$dir/wind-$stamp.db"' EXIT # a failed run must not leave an uncompressed copy that nothing ever deletes
 docker exec wind-api mkdir -p /data/backups
 docker exec wind-api node --disable-warning=ExperimentalWarning -e "
+  process.umask(0o077); // private from the first byte: this copy holds the same accounts as the live database
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB_PATH || '/data/wind.db');
   db.exec(\"VACUUM INTO '/data/backups/wind-$stamp.db'\");
@@ -14,6 +16,7 @@ docker exec wind-api node --disable-warning=ExperimentalWarning -e "
   if (check.integrity_check !== 'ok') { console.error(check); process.exit(1); }
 "
 gzip -9 "$dir/wind-$stamp.db"
+chmod 600 "$dir"/wind-*.db.gz # as private as the live database; these hold the same accounts
 printf 'url = "%s"\n' "$(echo "$BLOB_URL" | sed "s#?#/wind-$stamp.db.gz?#")" | curl -fsS --retry 3 -K - -X PUT -H 'x-ms-blob-type: BlockBlob' --data-binary "@$dir/wind-$stamp.db.gz" -o /dev/null # -K: the SAS stays off the process list
 # The API alerts admins when this marker goes stale, so it moves only after the off-VM copy succeeded.
 touch "$dir/last-ok"

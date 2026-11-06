@@ -72,6 +72,8 @@ try {
   const script = readFileSync(new URL('../infra/vm/wind-backup.sh', import.meta.url), 'utf8');
   assert.ok(script.indexOf('curl -fsS') > 0 && script.indexOf('curl -fsS') < script.indexOf('touch "$dir/last-ok"'), 'marker after upload');
   assert.match(script, /^set -eu/m, 'and a failed upload stops the script before it');
+  assert.ok(script.indexOf('chmod 600') > script.indexOf('gzip -9') && script.indexOf('chmod 600') < script.indexOf('curl -fsS'), 'copies are private before anything else runs');
+  assert.ok(script.indexOf('trap ') > 0 && script.indexOf('trap ') < script.indexOf('VACUUM INTO'), 'a failed run leaves no uncompressed copy');
 
   // Restore: the nightly copy, unzipped into place, runs the service with its accounts and orders.
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
@@ -85,9 +87,17 @@ try {
   const restored = join(dir, 'restored.db');
   writeFileSync(restored, gunzipSync(gzipSync(readFileSync(copy))));
   assert.ok(!existsSync(`${restored}-wal`), 'no journal to replay');
+  // The same statement as infra/vm/wind-restore.sh: nobody's session from before the copy survives it.
+  const wipe = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8').match(/db\.exec\('(BEGIN;[^']*)'\)/)[1];
+  const cleaning = new DatabaseSync(restored);
+  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 1, 'the copy holds the admin device');
+  cleaning.exec(wipe);
+  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 0, 'native push tokens go with their sessions');
+  cleaning.close();
   const api = await startApiProcess({ DB_PATH: restored });
   try {
     const remote = apiCaller(() => api.base, realFetch);
+    await remote('/me', { token: customer.token, expect: 401 });
     const signedIn = await remote('/auth/login', { body: { phone: '0599170002', password: 'secret1' } });
     assert.equal((await remote(`/orders/${order.id}`, { token: signedIn.token })).id, order.id, 'the order is there');
     const added = await remote('/orders', { token: signedIn.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });

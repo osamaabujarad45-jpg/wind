@@ -25,6 +25,7 @@ export default function Auth() {
   const [mode, setMode] = useState<'in' | 'up' | 'reset' | 'phone'>('in');
   // Forgot password by email (server has email): ask for a code, then code + new password.
   const [emailReset, setEmailReset] = useState(false);
+  const [emailResetLink, setEmailResetLink] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState('');
   const [notice, setNotice] = useState(() => takeAuthNotice() ?? ''); // e.g. after a verified number change ended the last session
@@ -57,8 +58,8 @@ export default function Auth() {
   const passwordRef = useRef<TextInput>(null);
   useEffect(() => {
     let active = true;
-    void api<{ registrationOpen: boolean; emailReset?: boolean }>('/auth/options').then(options => {
-      if (active) { setRegistration(options.registrationOpen ? 'open' : 'closed'); setEmailReset(!!options.emailReset); }
+    void api<{ registrationOpen: boolean; emailReset?: boolean; emailResetLink?: boolean }>('/auth/options').then(options => {
+      if (active) { setRegistration(options.registrationOpen ? 'open' : 'closed'); setEmailReset(!!options.emailReset); setEmailResetLink(!!options.emailResetLink); }
     }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
   }, [policyTry]);
@@ -85,7 +86,8 @@ export default function Auth() {
     setError('');
     try {
       if (!resetSent) {
-        await api('/auth/reset/code', { identifier: phone });
+        await api('/auth/reset/code', emailResetLink ? { identifier: phone, lang: language } : { identifier: phone });
+        if (emailResetLink) { setMode('in'); setPassword(''); setNotice(c.resetLinkSent); setBusy(false); return; }
         setResetSent(true);
         setBusy(false);
         return;
@@ -174,7 +176,7 @@ export default function Auth() {
           {mode === 'phone' ? <PhoneRecovery gate={phoneGate} onBack={() => { setMode('in'); setError(''); }}
             onDone={text => { setMode('in'); setPassword(''); setError(''); setNotice(text); }} /> : mode === 'reset' ? <>
             <Txt variant="h2" style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
-            <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : c.resetBody}</Txt>
+            <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : emailResetLink ? c.resetLinkBody : c.resetBody}</Txt>
             <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
               maxLength={254} disabled={busy} onSubmitEditing={resetSent ? undefined : submit} />
             {resetSent && <Appear>
@@ -245,9 +247,9 @@ export default function Auth() {
           {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
             disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
             onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}
-          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword} hitSlop={8}
-            onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
-            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
+          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset || emailResetLink ? c.forgotPasswordEmail : c.forgotPassword} hitSlop={8}
+            onPress={() => { if (emailReset || emailResetLink) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
+            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset || emailResetLink ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
           {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} hitSlop={8} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
             <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>

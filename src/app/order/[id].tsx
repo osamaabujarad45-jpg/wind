@@ -65,6 +65,19 @@ export default function OrderScreen() {
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
     ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
+  const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
+  useEffect(() => {
+    if (!order || !me) return;
+    const driver = me.user.role === 'driver' && order.driverId === me.user.id;
+    const proposal = (me.user.role === 'customer' || driver) && ['assigned', 'at_pickup', 'in_transit'].includes(order.status) ? order.destinationChange?.id : undefined;
+    const before = announced.current;
+    announced.current = { orderId: order.id, viewerId: me.user.id, status: order.status, proposalId: proposal };
+    if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
+    const status = before.status !== order.status ? statusText(c, order, driver) : '';
+    const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
+    const message = [status, destination].filter(Boolean).join(' ');
+    if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
+  }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const focusRevision = useRef(0);
   useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
@@ -220,6 +233,37 @@ export default function OrderScreen() {
 
   const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
   const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
+  // Near the door the customer needs this at a glance, so it leaves the sheet's body for the header a closed sheet still shows.
+  const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
+  const codes = <>
+    {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
+      <Card tone="clay">
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
+            <Txt variant="title">{c.handoverCode}</Txt>
+            <Txt variant="caption">{c.handoverHint}</Txt>
+          </View>
+          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
+            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+          </View>
+        </Row>
+      </Card>
+    </Appear>}
+
+    {isCustomer && order.returnCode && <Appear index={4}>
+      <Card tone="clay">
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
+            <Txt variant="title">{c.returnCode}</Txt>
+            <Txt variant="caption">{c.returnHint}</Txt>
+          </View>
+          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
+            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+          </View>
+        </Row>
+      </Card>
+    </Appear>}
+  </>;
   const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 
@@ -371,33 +415,7 @@ export default function OrderScreen() {
       </Card>
     </Appear> : null}
 
-    {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
-      <Card tone="clay">
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
-            <Txt variant="title">{c.handoverCode}</Txt>
-            <Txt variant="caption">{c.handoverHint}</Txt>
-          </View>
-          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
-            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
-          </View>
-        </Row>
-      </Card>
-    </Appear>}
-
-    {isCustomer && order.returnCode && <Appear index={4}>
-      <Card tone="clay">
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
-            <Txt variant="title">{c.returnCode}</Txt>
-            <Txt variant="caption">{c.returnHint}</Txt>
-          </View>
-          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
-            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
-          </View>
-        </Row>
-      </Card>
-    </Appear>}
+    {!codeAtDoor && codes}
 
     {/* Codes sit above the chat: they are what the customer needs at the door. */}
     {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
@@ -498,11 +516,8 @@ export default function OrderScreen() {
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
-      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Card tone="olive">
-        <Txt variant="title">{c.rideBoardingCode}</Txt>
-        <Txt variant="h2" selectable>{boardingPin}</Txt>
-        <Txt variant="caption">{c.rideBoardingHint}</Txt>
-      </Card>}
+      {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
+      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
       {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
         {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
       </Txt>}
@@ -605,6 +620,7 @@ export default function OrderScreen() {
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
     <ErrorText>{actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
+    {codeAtDoor && <View style={{ paddingBottom: 8 }}>{codes}</View>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={serviceMeta[order.service].color} size={64}>
         <ServiceIcon service={order.service} size={28} />
@@ -631,7 +647,7 @@ export default function OrderScreen() {
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
             <Txt variant="caption" style={{ flex: 1 }}>{c.rideBoardingCode}</Txt>
-            <Txt variant="h2" selectable>{boardingPin}</Txt>
+            <Txt variant="h2" selectable accessibilityLabel={`${c.rideBoardingCode} ${boardingPin.split('').join(' ')}`}>{boardingPin}</Txt>
           </Row>}
           {isCustomer && order.driverName && <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}

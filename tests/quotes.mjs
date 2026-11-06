@@ -122,6 +122,12 @@ try {
   await call('/orders', { token: customer.token, body: { ...orderInput, quoteId: price5.quoteId, price: 999, requestId: randomUUID() }, expect: 400 });
   console.log('✓ quote-bound cannot supply total');
 
+  // Pins added after an unpinned quote still cannot name one spot twice.
+  const local = { ...orderInput, dropoffCity: orderInput.pickupCity };
+  const spot = { latitude: 31.905, longitude: 35.205 };
+  const priceSameSpot = await call('/price', { token: customer.token, body: local });
+  assert.equal((await call('/orders', { token: customer.token, body: { ...local, quoteId: priceSameSpot.quoteId, pickupPoint: spot, dropoffPoint: spot, requestId: randomUUID() }, expect: 400 })).error, 'same_place');
+
   // 8. Tariff change after quote still allows booking at old price (immutable)
   const price6 = await call('/price', { token: customer.token, body: orderInput });
   const oldPrice = price6.price;

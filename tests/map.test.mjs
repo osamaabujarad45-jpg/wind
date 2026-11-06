@@ -319,7 +319,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   { // A refused cancel changed nothing on screen: the error sat in the body of a closed sheet (A53).
     const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
     const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
-    assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
+    assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
+    assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
+    assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
     assert.ok(book.includes("on || s === 'parcel' ? '' : '≈ '"), 'the parcel is a standard price, never an estimate'); }

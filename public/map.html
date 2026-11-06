@@ -4,7 +4,7 @@
      Input: JSON in the URL fragment (never sent to the server), then window.wind({...}) updates.
      Output: messages to the host (ReactNativeWebView or the parent window): {type: 'ready' | 'failed' | 'drawing' | 'gesture' | 'moving'}
      and, in pin mode, {type: 'center', latitude, longitude}. -->
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -55,6 +55,7 @@ let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
 // A missing/empty fragment used to throw on config.colors and leave a blank WebView; tell the app to fall back.
 if (!config || typeof config !== 'object') { send({ type: 'failed' }); throw new Error('bad config'); }
+document.documentElement.lang = config.language === 'ar' ? 'ar' : 'en';
 const defaultColors = { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
 // The public page can be opened with an arbitrary URL fragment. These values
 // reach SVG markup and CSS, so accept only the app's six-digit hex colors.

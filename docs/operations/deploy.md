@@ -25,9 +25,19 @@ WIND_TRUST_PROXY=1   # Caddy is the proxy; without this every user shares one pe
 WIND_PUSH_SUBJECT=https://windapi236.swedencentral.cloudapp.azure.com
 ```
 
-### Turning on native push (Android)
+As of 6 November 2026 the VM runs `wind-api:20261104-adminfix` and its env file has neither, so add both before the next deploy. Also copy `infra/vm/wind-backup.sh` and `infra/vm/wind-restore.sh` to `/srv/` then: the VM's backup script still lacks the `last-ok` marker, so without it the new image reports a stale backup that is not stale.
 
-Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase, which only the owner can create:
+Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL` (https, the store page or APK link) in the EAS environment. Otherwise the update screen on a refused build offers only support.
+
+### Firebase (done 7 November 2026, project `wind-development`)
+
+The backend stays on the VM. Firebase only sends closed-app alerts and password-reset email. The production app `ps.wind.app` is registered; `GOOGLE_SERVICES_JSON` is in the EAS production and preview environments; the FCM V1 key is uploaded to EAS. Email/password is on, client sign-up is **off** (or anyone could pre-create a Firebase user for someone's email), minimum 12 characters. Server settings: `WIND_FIREBASE_API_KEY` (restricted to Identity Toolkit), `WIND_FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `WIND_EXPO_PUSH_ENABLED=1`. The repository is `osamaabujarad45-jpg/wind`.
+
+**Known limit:** a user who mistyped their email at signup can lose the account to whoever owns that address. Accepted for a pilot among people the owner knows; verify email before a wider launch.
+
+### Turning on native push (Android), from scratch
+
+Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase:
 
 1. Create a Firebase project, add an Android app with the package in `app.json`, and download `google-services.json`.
 2. Make it available to EAS builds: `npx eas-cli@latest env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment production --environment preview`. `app.config.js` reads it.
@@ -71,7 +81,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–21 under `MIGRATION_LOCK`. `/api/ready` must then report schema 21 with all 19 versions applied. This is owner-run, never CI, and must not run concurrently with another migration. Validate restored fresh infrastructure before accepting live writes. If rollback follows PostgreSQL writes, do not point at stale SQLite: close writes and repair forward or use an independently tested reconciliation. Never delete custody, money, event, evidence, or outbox history to make rollback easier.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–30 under `MIGRATION_LOCK`. `/api/ready` must then report schema 30. This is owner-run, never CI, and must not run concurrently with another migration. Validate restored fresh infrastructure before accepting live writes. If rollback follows PostgreSQL writes, do not point at stale SQLite: close writes and repair forward or use an independently tested reconciliation. Never delete custody, money, event, evidence, or outbox history to make rollback easier.
 
 ## Microsoft API references pinned by this template
 

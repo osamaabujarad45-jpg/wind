@@ -73,7 +73,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   };
   const placeName = (label: string, note: string) => label === 'other' || label === 'recent' ? note : c[`place_${label as 'home' | 'work'}`];
   const input = (which: TripField, placeholder: string, value: string) => <TextInput autoFocus={which === field} ref={r => { inputs.current[which] = r; }}
-    accessibilityLabel={which === 'pickup' ? c.pickup : c.dropoff}
+    accessibilityLabel={`${which === 'pickup' ? c.pickup : c.dropoff}${value && !query[which] ? `: ${value}` : ''}`}
     value={query[which]} placeholder={value || placeholder} placeholderTextColor={value ? palette.ink : palette.faint} onFocus={() => onField(which)} maxLength={100}
     onChangeText={text => setQuery(q => ({ ...q, [which]: text }))} returnKeyType="search" autoCorrect={false}
     style={[styles.input, { textAlign: align, writingDirection: rtl ? 'rtl' : 'ltr' }, field === which && styles.inputOn, Platform.OS === 'web' && ({ outlineStyle: 'none' } as object)]} />;
