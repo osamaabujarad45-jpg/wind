@@ -39,6 +39,9 @@ export default function Help() {
           </Row>
           <Txt variant="caption">{c.noSupportLine}</Txt>
         </Card>}
+      {SUPPORT_URL?.startsWith('https://wa.me/') && <View style={{ marginTop: 10 }}>
+        <Button title={c.sendFeedback} icon="create-outline" variant="soft" onPress={() => { void Linking.openURL(`${SUPPORT_URL}?text=${encodeURIComponent(c.feedbackMessage)}`); }} />
+      </View>}
     </Appear>
 
     <Txt variant="h2" style={{ marginVertical: 12 }}>{c.faq}</Txt>

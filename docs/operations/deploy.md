@@ -29,9 +29,15 @@ As of 6 November 2026 the VM runs `wind-api:20261104-adminfix` and its env file 
 
 Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL` (https, the store page or APK link) in the EAS environment. Otherwise the update screen on a refused build offers only support.
 
-### Turning on native push (Android)
+### Firebase (done 7 November 2026, project `wind-development`)
 
-Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase, which only the owner can create:
+The backend stays on the VM. Firebase only sends closed-app alerts and password-reset email. The production app `ps.wind.app` is registered; `GOOGLE_SERVICES_JSON` is in the EAS production and preview environments; the FCM V1 key is uploaded to EAS. Email/password is on, client sign-up is **off** (or anyone could pre-create a Firebase user for someone's email), minimum 12 characters. Server settings: `WIND_FIREBASE_API_KEY` (restricted to Identity Toolkit), `WIND_FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `WIND_EXPO_PUSH_ENABLED=1`. The repository is `osamaabujarad45-jpg/wind`.
+
+**Known limit:** a user who mistyped their email at signup can lose the account to whoever owns that address. Accepted for a pilot among people the owner knows; verify email before a wider launch.
+
+### Turning on native push (Android), from scratch
+
+Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase:
 
 1. Create a Firebase project, add an Android app with the package in `app.json`, and download `google-services.json`.
 2. Make it available to EAS builds: `npx eas-cli@latest env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment production --environment preview`. `app.config.js` reads it.
