@@ -94,3 +94,29 @@ export async function resumeDriverCommand(io: CommandIO, actorId: number, order:
     throw error;
   }
 }
+
+/** A courier acts on parcel B while a command is saved for parcel A. A may be reassigned and impossible to open, so settle it from
+ * here, as its own screen would; otherwise B stays blocked until the command expires. 'empty' means nothing stands in B's way.
+ * The command is kept only while its outcome is really unknown, such as offline. */
+export async function settleOtherOrder(io: CommandIO, actorId: number, command: DriverCommand, snapshot: (orderId: number) => Promise<Order>) {
+  const otherOrder = { state: 'other_order' as const, orderId: command.orderId };
+  const dropped = async () => { await io.write(null); return { state: 'empty' as const }; };
+  const noLongerTheirs = (error: unknown) => [403, 404].includes((error as { status?: number }).status ?? 0);
+  let other: Order;
+  try { other = await snapshot(command.orderId); }
+  catch (error) {
+    if (!io.valid()) throw new Error('session_changed');
+    return noLongerTheirs(error) ? dropped() : otherOrder;
+  }
+  if (!io.valid()) throw new Error('session_changed');
+  if (other.driverId !== actorId || !other.recovery) return dropped();
+  try {
+    const settled = await resumeDriverCommand(io, actorId, other);
+    if (settled.state === 'conflict') await io.write(null);
+    return 'order' in settled ? { state: 'applied' as const } : settled; // that order is not the screen's: it reloads its own
+  } catch (error) {
+    if (!io.valid()) throw new Error('session_changed');
+    if (noLongerTheirs(error)) return dropped();
+    return await io.read() ? otherOrder : { state: 'rejected' as const }; // resume drops the command only on a definite refusal
+  }
+}
