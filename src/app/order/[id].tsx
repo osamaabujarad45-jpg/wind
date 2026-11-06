@@ -488,7 +488,7 @@ export default function OrderScreen() {
       </View>}
     </Card>}
 
-    <ErrorText>{actionError}</ErrorText>
+    {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
       {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
@@ -600,6 +600,9 @@ export default function OrderScreen() {
     </SafeAreaView>
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
+    {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
+    <ErrorText>{actionError}</ErrorText>
+    {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={serviceMeta[order.service].color} size={64}>
         <ServiceIcon service={order.service} size={28} />
@@ -652,7 +655,6 @@ export default function OrderScreen() {
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
       </View> : undefined}>
-      {error && <ErrorText>{c.updatesPaused}</ErrorText>}
       {body}
     </MapSheet>
   </View>;

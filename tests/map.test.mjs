@@ -316,6 +316,13 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.ok(!readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8').includes('enabled={open}'), 'a closed sheet can hold a field, such as the handover code: the keyboard must lift it too');
   { const sheet = readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8');
     assert.ok(sheet.includes('!footer && !open &&') && sheet.includes('16 + (footer ? 0 : padBottom)'), 'open, the navigation-bar inset ends the content instead of leaving a band mid-sheet (A53)'); }
+  { // A refused cancel changed nothing on screen: the error sat in the body of a closed sheet (A53).
+    const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+    const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
+    assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
+    assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
+    const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+    assert.ok(book.includes("on || s === 'parcel' ? '' : '≈ '"), 'the parcel is a standard price, never an estimate'); }
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never
   // unconditionally — and the Google renderer's readiness must come from loaded tiles, not initialization.
   const androidSource = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8');

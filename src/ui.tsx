@@ -229,8 +229,8 @@ export function Press({ children, onPress, style, containerStyle, disabled, acce
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
-  return <Pressable style={containerStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+  return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
+    aria-disabled={!!disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }

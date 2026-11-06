@@ -576,7 +576,7 @@ function BookForm() {
               <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
               {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${fill(c.minutesShort, { m: minutes })}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
             </View>
-            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on ? '' : '≈ '}${money(value)}`}</Txt>}
+            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on || s === 'parcel' ? '' : '≈ '}${money(value)}`}</Txt>}
           </Press>;
         })}
         {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>

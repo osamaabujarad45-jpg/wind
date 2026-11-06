@@ -47,11 +47,25 @@ The phone runs above predate these three fixes. None changes a screen the trip u
 
 ### Open items found by the trip, for the booking and driver sections
 
-- **Route through Israel:** the driver's route from Tulkarm to Ramallah ran west of the Green Line, along roads a West Bank driver may be unable to use. The sandbox uses the public OSRM demo server, so this is not evidence about production's self-hosted `wind-osrm`. Check that graph with the same trip, and the checkpoint-aware claim in `docs/SYSTEM.md`, before the driver section closes.
+- **Route through Israel (owner decision needed):** the driver's route from Tulkarm to Ramallah ran west of the Green Line. The sandbox uses the public OSRM demo server, but production is likely the same: `infra/osrm/Dockerfile` builds from Geofabrik's `israel-and-palestine` extract with the default `car.lua`, so nothing excludes Israeli roads, and no production route was checked. Whether that is wrong depends on which plates and permits the first drivers hold, and the rollout is West Bank first. The fix is a routing profile or a West Bank graph, once the owner says which roads drivers may use. `docs/SYSTEM.md` already says the code does not verify route coverage.
 - **Arrive and pick up work from 80 minutes away:** the driver marked arrival and pickup from Tulkarm for a Ramallah pickup. Decide whether a real trip should warn or refuse.
-- **Search field focused with no keyboard:** opening trip search focuses the field but the keyboard stays down until tapped, on the first field of a screen. Later fields do open it.
-- **Accessibility state of the pin confirm button:** the a11y tree kept reporting `enabled: false` while the button looked and acted enabled. The admin reset button updates correctly, so it is not all buttons. Check with TalkBack; it may be a stale tree rather than what a screen reader hears.
 - **One missed press:** a confirm-pickup tap did nothing on the first try, right after the keyboard closed by hand. It did not recur once the keyboard fix was in, over one retest. Not explained.
+
+### Booking section, started 6 November on `fix/booking-section`
+
+Not closed, and uncommitted until the owner approves a commit. Fixed and rechecked on the A53:
+
+- **Enabled buttons reported as disabled to accessibility tools.** A control going from `disabled` to `undefined` kept Android's disabled flag, so the pin confirm read as disabled while it worked; TalkBack may also have refused to activate it, not tested. `Press` now always sends a boolean. The tree now reports it enabled. **TalkBack itself has not been run.**
+- **Trip search opened with the field focused and no keyboard.** `autoFocus` on the active field opens it on arrival.
+- **Recovery card said "this identifier" to customers.** Reworded in Arabic and English. Text only, not seen on the phone.
+
+Passed on the A53, no change needed: with the backend cut mid-order the app showed the pending card and blocked edit; the pending order survived an app relaunch and a backend restart; the retry created exactly one order (W-00005); cancel confirmed first and the order list showed it cancelled. A response lost after the server took the order was not driven on the phone; `tests/` covers that replay.
+
+Still to do here: ride and freight bookings, scheduled orders, English on the phone, RTL and large text, a cancel race against a driver accepting, TalkBack.
+
+Owner decisions:
+- **Flat ₪20 parcel:** `SPEC-parcel-standard` sets it by owner instruction. In practice Ramallah to Nablus, 53.5 km and about an hour, pays the driver ₪17, against ₪74 for a ride on the same road. It assumes a courier carrying many parcels; a single-parcel driver takes a loss. Not changed.
+- **Israeli roads:** below.
 
 ### Limits to keep stating
 
