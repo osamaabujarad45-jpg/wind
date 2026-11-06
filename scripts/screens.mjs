@@ -639,6 +639,68 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   }
   console.log('Driver presence at 360 px, 100% and 130% text: no horizontal overflow, Go online reachable, reduced motion active');
 }
+// ---------- 4d. booking at 360 px and large text, same approximation as 4c: not a device's font-scale behaviour ----------
+if (!only || only.includes('booking-narrow')) {
+  const narrowDir = join(root, '.screens', 'narrow');
+  mkdirSync(narrowDir, { recursive: true });
+  const route = 'from=ramallah&to=nablus';
+  const views = [
+    { id: 'book-parcel', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.request) },
+    { id: 'book-ride', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.request) },
+    { id: 'book-freight', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.request) },
+    { id: 'order-searching', path: `/order/${searching.id}`, ready: t => t.cancelOrder },
+    { id: 'book-parcel-form', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
+    { id: 'book-ride-form', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
+    { id: 'book-freight-form', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
+    { id: 'order-scheduled', path: `/order/${scheduled.id}`, ready: t => t.saveTime, open: t => [t.changeTime] },
+  ];
+  for (const language of ['ar', 'en']) for (const scale of [1, 1.3]) for (const view of views) {
+    const t = copy[language], where = `${view.id} ${language} at 360px scale ${scale}`;
+    const context = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2,
+      locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
+    await context.addInitScript(({ token, language }) => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.clear();
+      localStorage.setItem('language', language);
+      localStorage.setItem('onboarded', '1');
+      localStorage.setItem('token', token);
+    }, { token: layla.token, language });
+    const page = await context.newPage();
+    await page.goto(`http://localhost:${WEB_PORT}${view.path}`, { waitUntil: 'networkidle' });
+    for (const name of view.open?.(t) ?? []) await page.getByRole('button', { name, exact: true }).or(page.getByRole('radio', { name, exact: true })).first().click();
+    const ready = view.ready(t);
+    const target = page.getByRole('button', typeof ready === 'string' ? { name: ready, exact: true } : { name: ready }).first();
+    await target.waitFor({ timeout: 15000 }).catch(async error => { await page.screenshot({ path: join(narrowDir, `debug-${view.id}-${language}.png`) }); throw error; });
+    if (scale !== 1) {
+      await page.evaluate(factor => {
+        for (const element of document.querySelectorAll('body *')) {
+          if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+          element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * factor}px`;
+        }
+      }, scale);
+      await page.waitForTimeout(400);
+    }
+    await page.screenshot({ path: join(narrowDir, `${view.id}-${language}-${scale === 1 ? '100' : '130'}.png`) });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 0, `${where}: horizontal overflow ${overflow}px`);
+    const clipped = await page.evaluate(() => [...document.querySelectorAll('[role="button"]')]
+      .filter(b => b.getBoundingClientRect().bottom > 0 && b.getBoundingClientRect().top < innerHeight)
+      .filter(b => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1)
+      .map(b => b.textContent.trim()));
+    assert.deepEqual(clipped, [], `${where}: clipped buttons`);
+    // A row of buttons wider than its card still fits the document: nothing inside a side-scrolling list may reach the screen edge.
+    const atEdge = await page.evaluate(() => [...document.querySelectorAll('[role="button"]')]
+      .filter(b => { const r = b.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.width > 0 && (r.right > innerWidth - 8 || r.left < 8); })
+      .filter(b => { for (let p = b.parentElement; p; p = p.parentElement) if (/auto|scroll/.test(getComputedStyle(p).overflowX) && p.scrollWidth > p.clientWidth) return false; return true; })
+      .map(b => b.textContent.trim()));
+    assert.deepEqual(atEdge, [], `${where}: buttons past the screen gutter`);
+    const box = await target.boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 360, `${where}: main action inside 360px: ${JSON.stringify(box)}`);
+    await context.close();
+  }
+  console.log('Booking at 360 px, 100% and 130% text, Arabic and English: no horizontal overflow, no clipped button, main action inside the screen');
+}
 await browser.close();
 await Promise.all([
   new Promise(resolve => server.close(resolve)),

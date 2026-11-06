@@ -247,7 +247,7 @@ export default function OrderScreen() {
           onPress={() => { const slots = scheduleSlots(); setMoving(slots.includes(later) ? later : slots[0] ?? null); }} /></View>
         : <View style={{ marginTop: 10, gap: 8 }}>
           <SlotPicker slots={scheduleSlots()} value={moving} onChange={setMoving} />
-          <Row gap={8}>
+          <Row gap={8} style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>{/* a disabled Save carries its reason underneath, and large text moves Keep to its own line */}
             <Button title={c.saveTime} size="sm" loading={busy === 'schedule'} disabled={!!busy || moving === later} reason={busy ? c.wait_busy : c.time_unchanged}
               onPress={() => act('schedule', `/orders/${order.id}/schedule`, { scheduledFor: moving }, () => setMoving(null))} />
             <Button title={c.keepTime} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy} onPress={() => setMoving(null)} />

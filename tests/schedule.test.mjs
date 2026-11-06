@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { dayKey, scheduleSlots } from '../src/booking.ts';
+import { copy } from '../src/copy.ts';
 import { apiCaller } from './support/api.mjs';
 
 // Slots follow Palestine time even on a phone set elsewhere.
@@ -90,6 +91,11 @@ try {
   // The customer can still cancel a scheduled order before a driver takes it.
   const another = await book({ scheduledFor: Date.now() + DAY });
   assert.equal((await call(`/orders/${another.id}/cancel`, { token: customer.token, body: {} })).status, 'cancelled');
+
+  // The hint promises what the server does: a driver taking the order does not end the customer's right to cancel.
+  assert.equal((await call(`/orders/${later.id}`, { token: customer.token })).status, 'assigned');
+  assert.equal((await call(`/orders/${later.id}/cancel`, { token: customer.token, body: {} })).status, 'cancelled');
+  assert.ok(copy.en.scheduledHint.includes('until pickup') && copy.ar.scheduledHint.includes('قبل الاستلام'), 'the scheduled hint matches when cancel really stops');
 
   console.log('schedule: ok');
 } finally {

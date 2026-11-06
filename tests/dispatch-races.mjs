@@ -169,7 +169,8 @@ try {
   await assessRide(h, ride2, [driver2.vehicle]);
   await h.call(`/orders/${ride2.id}/dispatch/retry`, { token: h.customer.token, body: {} });
   const offer2 = await myOffer(h, ride2.id, driver2.driver);
-  if (offer2) {
+  assert.ok(offer2, 'cancel vs accept requires a live offer');
+  {
     await Promise.allSettled([
       raw(h.a.base, `/jobs/${ride2.id}/accept`, driver2.driver.token, { offerId: offer2.id, leaseNonce: offer2.leaseNonce }),
       raw(h.b.base, `/orders/${ride2.id}/cancel`, h.customer.token, {}),
