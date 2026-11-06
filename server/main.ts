@@ -743,6 +743,7 @@ const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
 const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
 const FIREBASE_RESET_TTL = 60 * 60_000;
+if (process.env.WIND_FIREBASE_API_KEY && !firebaseReset) console.error('Firebase reset settings are invalid: the email reset option stays off');
 // shortcut: same-process only; use shared fencing before running multiple API instances.
 const firebaseSending = new Set<number>();
 async function clearFirebaseReset(userId: number) {
@@ -827,6 +828,7 @@ route('POST', '/api/me/email', async ({ user, body }) => {
   if ((await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, r.id))) fail(409, 'email_taken');
   (await run('UPDATE users SET email = ? WHERE id = ?', email, r.id));
   (await run('DELETE FROM email_codes WHERE user_id = ?', r.id));
+  await clearFirebaseReset(r.id); // a link sent to the old address must not reset this account
   return (await me((await toUser((await one('SELECT * FROM users WHERE id = ?', r.id))!))));
 });
 route('POST', '/api/me/email/verify', async ({ user, body }) => {

@@ -184,6 +184,12 @@
     },
     {
       "type": "table",
+      "name": "firebase_resets",
+      "tableName": "firebase_resets",
+      "sql": "CREATE TABLE firebase_resets (\n  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, requested_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
       "name": "native_push_tokens",
       "tableName": "native_push_tokens",
       "sql": "CREATE TABLE native_push_tokens (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), auth_session_hash TEXT NOT NULL,\n  device_hash TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK(platform IN ('ios','android')), expo_push_token TEXT NOT NULL,\n  lang TEXT NOT NULL DEFAULT 'ar' CHECK(lang IN ('ar','en')), prefs_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, disabled_at INTEGER,\n  FOREIGN KEY(auth_session_hash, user_id) REFERENCES sessions(token_hash, user_id) ON DELETE CASCADE)"
@@ -1023,6 +1029,39 @@
         }
       ],
       "foreignKeys": []
+    },
+    {
+      "name": "firebase_resets",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "requested_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ]
     },
     {
       "name": "native_push_tokens",
