@@ -315,6 +315,7 @@ try {
   stage = 'scheduled delivery';
   const scheduledId = await booking(customerPage, { scheduled: true });
   assert.ok(state(scheduledId).scheduled_for > Date.now());
+  const scheduledSnapshot = await call(`/orders/${scheduledId}?journeyProtocol=1`, { token: customerToken });
   assert.ok(!(await call('/jobs', { token: driverToken })).some(o => o.id === scheduledId), 'Future jobs must not be dispatched immediately');
   await button(customerPage, c.cancelOrder).click();
   await atStatus(scheduledId, 'cancelled');
@@ -670,6 +671,77 @@ try {
   await unreachable.goto(base + '/book?again=424242');
   await unreachable.getByText(c.orderAgainFailed).waitFor();
   pass('booking storage retry and a failed order-again both say what happened');
+
+  stage = 'booking price failure and missed pickup';
+  const pricePage = await newPage();
+  await login(pricePage, '0599000701');
+  const pricePath = apiRoute('/api/price');
+  await pricePage.route(pricePath, route => route.fulfill({ status: 409, json: { error: 'route_prohibited' } }));
+  await pricePage.goto(base + '/book?from=ramallah&to=nablus');
+  await pricePage.getByText(c.err_route_prohibited, { exact: true }).waitFor();
+  assert.equal(await button(pricePage, c.request).isDisabled(), true, 'A refused route cannot be requested');
+  await pricePage.unroute(pricePath);
+  await pricePage.route(pricePath, route => route.abort());
+  await button(pricePage, c.retry).click();
+  await pricePage.getByText(c.quote_failed, { exact: true }).waitFor();
+  assert.equal(await button(pricePage, c.request).isDisabled(), true, 'A failed price cannot be requested');
+  await pricePage.unroute(pricePath);
+  for (const status of [401, 408, 429, 500]) {
+    await pricePage.route(pricePath, route => route.fulfill({ status, json: { error: 'route_prohibited' } }));
+    const response = pricePage.waitForResponse(r => new URL(r.url()).pathname === '/api/price' && r.status() === status);
+    await button(pricePage, c.retry).click();
+    await pricePage.getByText(c.quote_failed, { exact: true }).waitFor({ state: 'hidden' });
+    await response;
+    await pricePage.getByText(c.quote_failed, { exact: true }).waitFor();
+    assert.equal(await button(pricePage, c.request).isDisabled(), true, `${status} must leave Request disabled`);
+    await pricePage.unroute(pricePath);
+  }
+
+  await pricePage.goto(base + '/book?from=ramallah&to=nablus');
+  await button(pricePage, c.sheetExpand).click();
+  await field(pricePage, c.pickupNote).fill('QA pickup: shop entrance');
+  await field(pricePage, c.dropoffNote).fill('QA dropoff: office reception');
+  await field(pricePage, c.parcelDetail).fill('Sealed documents');
+  await field(pricePage, c.recipientPhone).fill('0599000707');
+  await field(pricePage, c.recipientName).fill('QA Recipient');
+  const requestButton = button(pricePage, new RegExp(`^${c.request}`));
+  await until(() => requestButton.isEnabled(), Boolean, 'Initial price was not ready');
+  const bookingPath = apiRoute('/api/orders');
+  let bookingError = 'itinerary_changed';
+  await pricePage.route(bookingPath, route => route.fulfill({ status: bookingError === 'quote_not_found' ? 404 : 409, json: { error: bookingError } })); // the statuses the server sends
+  for (const code of ['itinerary_changed', 'quote_not_found']) {
+    bookingError = code;
+    // A refused booking refetches anyway; what matters is that the old price cannot be requested while the new one loads.
+    await pricePage.route(pricePath, async route => { await new Promise(resolve => setTimeout(resolve, 2000)); await route.continue(); });
+    const refreshed = pricePage.waitForResponse(r => new URL(r.url()).pathname === '/api/price' && r.status() === 200);
+    refreshed.catch(() => undefined); // a failure below closes the page; this must not crash the run before the failure prints
+    await requestButton.click();
+    await pricePage.getByText(c[`err_${code}`], { exact: true }).waitFor();
+    await pricePage.waitForTimeout(700);
+    assert.equal(await requestButton.isDisabled(), true, `${code}: the old price must not be requestable while the new one loads`);
+    await refreshed;
+    await pricePage.unroute(pricePath);
+    await until(() => requestButton.isEnabled(), Boolean, `The price was not refreshed after ${code}`);
+  }
+  await pricePage.unroute(bookingPath);
+
+  const orderPath = apiRoute(`/api/orders/${scheduledId}`);
+  let orderFixture = { ...scheduledSnapshot, scheduledFor: Date.now() - 60_000, dispatch: null };
+  await pricePage.route(orderPath, route => route.fulfill({ json: orderFixture }));
+  await pricePage.goto(`${base}/order/${scheduledId}`);
+  await pricePage.getByText(c.scheduledMissed, { exact: true }).waitFor();
+  await button(pricePage, c.cancelOrder).waitFor();
+  orderFixture = { ...orderFixture, dispatch: { roundId: '0b8c5e1e-4a7b-4d2a-9c3e-2f1a6b7c8d9e', state: 'exhausted', deadlineAt: Date.now() } };
+  await pricePage.reload();
+  await pricePage.getByText(c.dispatchExhausted, { exact: true }).waitFor();
+  orderFixture = { ...orderFixture, scheduledFor: Date.now() + 60_000, dispatch: null };
+  await pricePage.reload();
+  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  orderFixture = { ...orderFixture, scheduledFor: null };
+  await pricePage.reload();
+  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  await pricePage.unroute(orderPath);
+  pass('price refusals and missed scheduled pickups show the right guidance');
   assert.deepEqual(errors, [], 'Unhandled browser errors');
   pass('driver earnings, admin mobile/tablet/desktop, Arabic order, zero unhandled browser errors');
 } catch (error) {

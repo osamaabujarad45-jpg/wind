@@ -47,11 +47,82 @@ The phone runs above predate these three fixes. None changes a screen the trip u
 
 ### Open items found by the trip, for the booking and driver sections
 
-- **Route through Israel:** the driver's route from Tulkarm to Ramallah ran west of the Green Line, along roads a West Bank driver may be unable to use. The sandbox uses the public OSRM demo server, so this is not evidence about production's self-hosted `wind-osrm`. Check that graph with the same trip, and the checkpoint-aware claim in `docs/SYSTEM.md`, before the driver section closes.
+- **Route through Israel (owner decision needed):** the driver's route from Tulkarm to Ramallah ran west of the Green Line. The sandbox uses the public OSRM demo server, but production is likely the same: `infra/osrm/Dockerfile` builds from Geofabrik's `israel-and-palestine` extract with the default `car.lua`, so nothing excludes Israeli roads, and no production route was checked. Whether that is wrong depends on which plates and permits the first drivers hold, and the rollout is West Bank first. The fix is a routing profile or a West Bank graph, once the owner says which roads drivers may use. `docs/SYSTEM.md` already says the code does not verify route coverage.
 - **Arrive and pick up work from 80 minutes away:** the driver marked arrival and pickup from Tulkarm for a Ramallah pickup. Decide whether a real trip should warn or refuse.
-- **Search field focused with no keyboard:** opening trip search focuses the field but the keyboard stays down until tapped, on the first field of a screen. Later fields do open it.
-- **Accessibility state of the pin confirm button:** the a11y tree kept reporting `enabled: false` while the button looked and acted enabled. The admin reset button updates correctly, so it is not all buttons. Check with TalkBack; it may be a stale tree rather than what a screen reader hears.
 - **One missed press:** a confirm-pickup tap did nothing on the first try, right after the keyboard closed by hand. It did not recur once the keyboard fix was in, over one retest. Not explained.
+
+### Booking section, on `fix/booking-section`
+
+**Everything testable without the phone is done. The phone was not attached on the afternoon of 6 November (`adb devices` empty, nothing on USB), so the items marked below as needing it are blocked, not finished.**
+
+**Fixed earlier and rechecked on the A53, the morning of 6 November in the previous session (not rerun, and no log names these two changes):**
+
+- **Enabled buttons reported as disabled to accessibility tools.** A control going from `disabled` to `undefined` kept Android's disabled flag, so the pin confirm read as disabled while it worked; TalkBack may also have refused to activate it, not tested. `Press` now always sends a boolean. The tree now reports it enabled. **TalkBack itself has not been run.**
+- **Trip search opened with the field focused and no keyboard.** `autoFocus` on the active field opens it on arrival.
+- **Recovery card said "this identifier" to customers.** Reworded in Arabic and English. Text only, not seen on the phone.
+
+Passed on the A53, no change needed: with the backend cut mid-order the app showed the pending card and blocked edit; the pending order survived an app relaunch and a backend restart; the retry created exactly one order (W-00005); cancel confirmed first and the order list showed it cancelled. A response lost after the server took the order was not driven on the phone; `tests/` covers that replay.
+
+**Fixed after that, without the phone:**
+
+| Issue | Change | Proof |
+|---|---|---|
+| A refused route told the customer to check their connection, and retrying could never help | `src/app/book.tsx`: a 4xx refusal from `/price` shows the server's reason; transport, 5xx, 401, 408 and 429 keep the connection message | Scenario stage `price refusals...`; reverting the fix fails it |
+| `route_prohibited`, `itinerary_changed`, `quote_not_found` had no message, so they read as "something went wrong" | Copy in both languages | `tests/schedule.test.mjs`, same scenario stage |
+| After `itinerary_changed` or `quote_not_found` the old price stayed requestable while the new one loaded | Both now call `requote()`, which disables Request until the price lands | Same stage. The first version of this test passed with the fix reverted, because the price refetches anyway; it now asserts Request stays disabled during a delayed response, and fails with the fix reverted |
+| A scheduled order whose time passed with no driver said only "finding a driver" | New `scheduledMissed` text, customers only. Expiry and dispatch unchanged | Same stage; reverting fails it |
+| The scheduled hint said cancel stops when a driver accepts; the server and the button allow it until pickup | Copy now says "until pickup" | `tests/schedule.test.mjs`: failed first, then passed |
+| With two SQLite processes a driver accepting between cancel's read and its update got no cancellation push | `POST /orders/:id/cancel` re-reads before notifying | **Not reproduced**: that window was never hit in a test. Correct by reading the code; `tests/cancel-race.test.mjs` guards the behaviour |
+| Reschedule updated by id alone | The update now requires a searching order still outside the release window. It does not compare the time the customer read, so two tabs still end as last write wins | `tests/cancel-race.test.mjs` race C |
+| "Keep time" ran past the card edge at 130% text | The row wraps | `scripts/screens.mjs` booking check failed first, then passed |
+
+**Cancel race:** `tests/cancel-race.test.mjs` (SQLite) and `tests/pg-cancel-race.mjs` (two PostgreSQL API processes) run cancel against accept, pickup and reschedule, 20 concurrent rounds plus both fixed orderings. Cancel always succeeds against an accept. Racing the pickup, exactly one of the two wins; once in transit, cancel is refused with `cannot_cancel`. An accepted courier gets the push and no load or earnings remain. Mutation-checked: dropping the driver's push, or allowing cancel in transit, turns the SQLite test red. `tests/dispatch-races.mjs` no longer skips its cancel check silently. Driven by API only, not on a phone.
+
+**Real defect found, partner cancel on PostgreSQL:** partner routes run outside the request's row lock, so a driver could accept between the partner cancel's read and its update. The order was cancelled and the driver was never told, and would keep driving to the pickup. Reproduced on round 0 of a new race in `tests/pg-cancel-race.mjs`, then fixed by re-reading before notifying. Partner API needs `SOUQ_PARTNER_KEY`.
+
+**Ride and freight:** the service list, form and schedule picker render in both languages. The ride trip and the freight counter-offer pass in the browser scenarios, on the test PC. `scripts/check-expanded-services.mjs`, their real phone run, needs the phone. Production stays parcel-only (`WIND_ENABLED_SERVICES`).
+
+**RTL and large text:** `npm run screens -- --only=booking-narrow` runs eight booking views at 360 px, 100% and 130% text, Arabic and English. It scales font sizes in the browser, without line height, so it finds overflow and clipped buttons and proves nothing about Android's font scale. Clipped Arabic descenders in its pictures come from the method. `Button` labels are raw `Text` with no `maxFontSizeMultiplier` while `Txt` caps at 1.35, so button text can grow further than the rest on a device. Not judged without the phone.
+
+**The missed confirm press: not explained.** Two candidates, neither proven: the map's `moving` message disables Confirm during a move (`public/map.html:329`), including the 350 ms ease on arriving at the pin (`:197`); or the tap landed while the keyboard window was still closing. The keyboard path is gone either way, because search now dismisses before leaving. Retest when the phone is back: pick a place, tap Confirm at once, 20 times, and count misses.
+
+**Needs the phone:** English on the phone, Android large text, TalkBack, ride and freight on the device, the cancel race seen from the app, the confirm-press retest.
+
+**Recovery:** a pending booking, a lost reply and a refused reply are covered above. A scheduled order nobody takes keeps searching for 24 hours after its time (`SEARCH_EXPIRY_MS`), then is cancelled with a push.
+
+**For the PostgreSQL cutover:** the client never reads `quoteExpiresAt`, so after the 120-second quote lifetime the old price stays shown and the first press is refused with `quote_expired`, then the price refreshes. Nothing is charged at the old price. Not changed: refreshing on a timer would add `/price` calls from idle forms. SQLite has no quotes, so this is not live today.
+
+**Operational dependencies:** `WIND_ENABLED_SERVICES` for ride and freight; dispatch and boarding gates; real SMS and email are not configured.
+
+### Palestinian-market evidence for booking, checked 6 November
+
+Drafted by Kimi K3; each row below was rechecked by the lead unless it says otherwise. Figures are as printed by the source.
+
+| | West Bank | Gaza | Source |
+|---|---|---|---|
+| Mobile data today | 3G since 2018; Israel approved 4G on 4 January 2026 | 2G only, excluded from that approval | [Jerusalem Post/Reuters, 6 Jan 2026](https://www.jpost.com/middle-east/article-882496), [Times of Israel, 6 Jan 2026](https://www.timesofisrael.com/israel-grants-4g-access-to-palestinian-west-bank-cell-companies-after-delay-due-to-war/) |
+| When 4G arrives | Reported as four to six months in January. An Ooredoo filing reportedly assumes a 2027 start | Same report: mid-2027 | [Times of Palestine, 30 Jul 2026](https://www.timesofpalestine.com/en/story/israel-s-spectrum-hold-delays-palestinian-4g-to-7c751a9c6d.html). One secondary report of an accounting assumption; the filing itself was not read |
+| Postal codes | Published by the ministry for all 11 governorates | Published for all 5 | [Ministry of Telecom and Digital Economy](https://www.mtde.gov.ps/home/PostalCodes): the list of 16 was read. Actual use was not measured |
+| Household internet, Q1 2022 (not rechecked) | 91%; smartphone owners aged 10+ 82% | 90%; 56% | PCBS press release, [postId 20321](https://www.pcbs.gov.ps/ar/post-details/?postId=20321). Pre-war data, and Kimi's reading only: the lead's page tool does not take query strings |
+| Landmark addresses (not rechecked) | Most buildings have no street number; addresses use landmarks | No source found; do not assume | [Engage in Palestine, 17 Mar 2022](https://ecpalestine.org/sending-and-receiving-mail-in-the-west-bank-palestine). One local organisation, not a survey |
+
+**What this means for booking (interpretation):** plan for West Bank users on 3G for now. **Booking has never been measured on a 3G connection**; all phone runs used a local backend. Pin-and-landmark entry fits the evidence. Accessibility, cash and checkpoints were not researched for this section yet. Kimi's report also cited outage details for Gaza and the West Bank, which were not rechecked and are left out here.
+
+### Workers used on 6 November
+
+| Job | Model | Result | Reuse |
+|---|---|---|---|
+| Delegation probe, booking test list | `azure-gpt6/gpt-6-luna` | Accurate | Yes |
+| Trace scheduled, ride, freight flows | `azure-gpt6/gpt-6-luna` | Five findings; three led to fixes, one was narrowed, one was not a defect | Yes, for reading only |
+| Cancel race tests | `azure-gpt6/gpt-6.1-sol` | Strong. One setup line was wrong (`registration_closed`), fixed by the lead | Yes |
+| Price refusal and scheduled text | `azure-gpt6/gpt-6.1-terra` | Fix correct. One test could not fail, and a message showed to drivers too; both fixed by the lead | Yes, check tests by mutation |
+| Market evidence | `amazon-bedrock/us.moonshotai.kimi-k3` | Useful, but one cited URL was dead and it missed the later 2027 report | Yes, with rechecking |
+| Source review | `amazon-bedrock/us.moonshotai.kimi-k3` | No findings. One run was interrupted with no result, and the retry finished | Yes |
+| Review, first choice and fallback | `azure-terra/Kimi-K3.1-Pro`, `azure-terra/grok-4.7` | Both stopped on `exceeded token rate limit`, no output | Not for a diff this size |
+
+Owner decisions:
+- **Flat ₪20 parcel:** `SPEC-parcel-standard` sets it by owner instruction. In practice Ramallah to Nablus, 53.5 km and about an hour, pays the driver ₪17, against ₪74 for a ride on the same road. It assumes a courier carrying many parcels; a single-parcel driver takes a loss. Not changed.
+- **Israeli roads:** below.
 
 ### Limits to keep stating
 
@@ -73,7 +144,7 @@ Limits: this is the latest public notice found, and it is two years old. A Decem
 
 ### Not started
 
-The rest of the Palestinian-market research (accessibility, connectivity, cash, landmarks, checkpoints), then customer booking, driver and admin sections.
+Driver and admin sections. Palestinian-market research for accessibility, cash and checkpoints.
 
 ## Owner's goal
 
@@ -88,31 +159,7 @@ The preceding interrupted Opus session is <t3-thread://v2/4717e1f7-4946-418a-907
 - This session discovered no Claude-Mem search tools; the root `docs/CURRENT-WORK.md` says it was not installed there. We therefore read the T3 thread messages and checked Git branches, files, and K5 logs directly. Those sources, not memory summaries or old handoffs, establish the status below. Do not claim Claude-Mem recovered anything or install/configure its hooks as a side effect of resuming the app task.
 - When a memory connection is available later, search for this project and the relevant topic/date, verify the retrieved claim against current source and actual logs, and never save secrets or whole transcripts as memory. The handoff and git state remain the immediate starting points even if memory search is unavailable.
 
-## Recommended subagents for the next lead
-
-Keep the user-selected lead in charge. Use a small number of narrowly scoped workers on the **same active section**, one writer per file, with the lead reproducing findings and owning money, authorization, migration and release decisions. Do not dispatch all sections at once. Delegated reviews are not device or production acceptance. Do not expose `.env`, databases, credentials or production secrets to workers.
-
-| Next task | Recommended worker | Evidence / constraint |
-| --- | --- | --- |
-| Finish registration/session fixes and their regression tests | **GPT-6.1 Terra, Azure** (`azure-gpt6/gpt-6.1-terra`) | Terra already mapped registration and implemented the Arabic-code and session drafts. It correctly identified the SQLite signup failure and mojibake, both reproduced on K5. Its other findings need verification; session draft explicitly has an unresolved cross-tab race. Assign only disjoint owned files and have the lead review. |
-| Independent narrow account/security review | **Kimi K3, AWS Bedrock** (`amazon-bedrock/...kimi-k3`) | Useful second perspective on deletion, recovery and admin proof. An AWS K3 call completed in this continuation, but its market research lacked key primary sources, so do not treat output as verified. Discover the exact currently available model/profile before calling it. |
-| Review one small, high-risk diff or second opinion on money/permissions | **GPT-6.1 Sol, Azure** (`azure-gpt6/gpt-6.1-sol`) | Reserve for a bounded, independently checked correctness review of a completed diff. It is not an independent vendor from another GPT/Azure reviewer. The lead remains responsible for the final decision. |
-| Palestinian-market evidence for the active section | **Kimi K3 on AWS**, or **Kimi K3.1 Pro on Azure** (`azure-terra/Kimi-K3.1-Pro`) for a *small* packet | Require dated primary URLs, Arabic and English queries, and explicit geographic/uncertainty limits. Azure K3.1 hit its **100k TPM** quota in this session; keep inputs narrow and do not claim its failed result. Previous AWS K3 market output did not verify the necessary ITU/PCBS claims. |
-| Later map/route and tracking audit, once registration is closed | **DeepSeek 4.1 Flash Free on OpenCode** (`opencode/deepseek-v4.1-flash-free`) | The previous session's DeepSeek review led to a confirmed route-budget issue. Use it for bounded source/test triage; the lead must verify with the real routing and device tests. This is the free model ID observed on 6 November, not the paid `opencode/deepseek-v4.1-flash`. |
-| Later release configuration and orphaned-code inventory | **MiniMax M3.1 Flash**, requested via MiniMax Code | The previous MiniMax sweep produced useful cleanup candidates, but each still needs verification. The requested MiniMax Code provider's exact model availability was not established here; `minimax-mavis/MiniMax-M3.1-Flash` is a separately listed provider, **not** proof that MiniMax Code offers it. Check provider/model and obtain the owner's choice before silently switching. |
-| Later visual/accessibility or market-copy review | **Gemini 3.8 Flash via Antigravity**, if actually available | Availability of that exact provider/model was not established. Source review cannot certify Arabic rendering, accessibility, or layouts: the lead must inspect the exact build on the physical phone. |
-
-The model registry can change: discover current IDs, variants and provider availability before delegation; use `orchestrator_capabilities` and `delegate_task` as required by the harness. Record unavailable providers or quota errors rather than claiming a model ran. A child gets a bounded brief, explicit file ownership, no subagents and no commit/push/deploy; the lead independently reviews its diff and runs the K5 gate. Avoid running multiple jobs against the same K5 test directory.
-
-## Critical: preserve the work
-
-- **Continue in** `C:\Users\osama\.t3\worktrees\Fastship\fix-complete-nov5-session`, branch `fix/complete-nov5-session`, HEAD `747f601`.
-- **A merge is in progress.** `git status` reports `UU src/road.tsx`: the working file has its conflict markers resolved, but has **not** been staged or committed. Review its combined paid-route foreground fence, no rebill for same stop, and free-route request budget before staging. There are many staged **and** unstaged changes and an untracked `tests/booking-gps-gesture.test.mjs`; inspect `git diff`, `git diff --cached`, and untracked files. Do not reset, clean, discard, or replace them.
-- The root checkout `C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship` is an old commit `b609229` with extensive unrelated dirty work. Preserve it; do not apply its changes wholesale or use it as the new integration base.
-- HEAD already merges `claude/client-recovery-gaps` (`279a9ef`) with the branch for [PR #13](https://github.com/osama-2000236/wind/pull/13). The in-progress merge is `claude/land-stale-tree-fixes` (`2f887c1`): deletion proof, COD replay, session recovery, versioned map delivery, offline recovery, map adapters and tests. Its source worktree `C:\Users\osama\.t3\worktrees\Fastship\t3-bb5ccf24` has the original untracked GPS regression; our worktree has a copy with a Windows line-ending fix and registration in `scripts/run-tests.mjs`.
-- PR #13 remains **open**, head `3d085f280f972d7722733b73d6c819a8923cbc77`; its checks were green when checked, and it was linked to this thread. A Haiku review and disposition are recorded in its comments; GitHub Codex review failed on quota. Its production boot checks require explicit `WIND_TRUST_PROXY` and `WIND_PUSH_SUBJECT`, and its backup marker script must be deployed with the API. Do not confuse PR #13 checks with checks of the combined, uncommitted tree. No PR, push, merge to master, production deployment or migration was performed in this continuation.
-
-## Current section: registration, login and account recovery
+## Earlier record: registration, login and account recovery (5 November; see the status update above for what closed)
 
 ### Changes made in this continuation
 
@@ -122,7 +169,7 @@ The model registry can change: discover current IDs, variants and provider avail
 4. **Queued SQLite native push:** a reviewer found queued notification rows could survive revocation/mute. Eight mocked delivery slots reproduce the ninth send after logout in `tests/native-push-sqlite.mjs` (`nov5-registration-red.log`). The sender now rereads token/session/device binding and preferences after acquiring a slot, and only deletes a matching binding on a dead token. The focused test passed; examine reassignment and provider-in-flight limitations before calling this fully resolved.
 5. **Booking GPS:** a manual gesture now cancels the pending location request and marks pickup touched; confirming is disabled/guarded while locating or the map is not ready. The copied regression failed on the old behavior (`nov5-gps-red2.log`) and then passed on K5.
 
-### Still open — do not mark section complete
+### Open on 5 November, resolved in the 6 November table above
 
 - Verify whether the PostgreSQL phone identity tables (`phone_profiles`, `phone_mappings`, aliases/challenges) retain identifiable phone data after account deletion and prevent reuse. Terra identified this from source, not runtime; preserve audit/retention requirements and test enrollment, deletion, re-registration and data cleanup before changing it. PostgreSQL activation stays gated.
 - Microsoft-only accounts appear to receive an unknown placeholder password, while password/phone changes require the current password. Trace real user flows and implement a safe Microsoft reauthentication or verified-password setup if reproduced; never bypass reauthentication.
@@ -152,9 +199,3 @@ The model registry can change: discover current IDs, variants and provider avail
 - The owner named GPT-6.1 Terra (Azure), Kimi K3 (AWS), Kimi K3.1 Pro (Azure 100k TPM), DeepSeek 4.1 Flash free (OpenCode), MiniMax M3.1 Flash (MiniMax Code), Gemini 3.8 Flash (Antigravity), and other suitable providers. Discover exact available model IDs and provider capabilities; do not silently substitute. Use narrow read-only reviews, one writer per file, no secrets, and personally verify findings. User wants quality and efficiency, not model use for its own sake.
 - After registration/account recovery is actually green, cover customer booking/trips and interrupted retries; then driver onboarding/approval, offers, pickup, navigation, delivery and cash; then admin identity, support, operations and permissions. For each section record source, positive/negative tests, real-device evidence, accessibility/RTL, recovery, operational dependencies and remaining uncertainty. Finally cover joins, backup/restore, release packaging and staged deployment readiness.
 - Apply `AGENTS.md`/`CLAUDE.md`: Expo SDK **57**, fetch matching versioned docs before touching Expo/RN APIs, no hand edits to generated native directories, run lint/typecheck, refresh bilingual screenshots after UI changes. Do not add paid Google calls or bypass map provider restrictions.
-
-## First actions for the next lead
-
-1. Read this handoff, the current git status/diffs and the prior thread; preserve every dirty file. Review and stage the already-resolved `src/road.tsx` conflict only after confirming both routing behaviors; finish the merge without losing unstaged work.
-2. Finish the **registration/account** open items above; add failing behavioral tests first. Check real operational provider gates instead of declaring their configuration complete.
-3. Run focused checks and then full integration/persistence on the isolated K5 environment; build a candidate and perform phone acceptance. Document exact evidence, blockers and remaining scope honestly. Continue section by section.

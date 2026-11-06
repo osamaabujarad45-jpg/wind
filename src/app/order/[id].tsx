@@ -247,7 +247,7 @@ export default function OrderScreen() {
           onPress={() => { const slots = scheduleSlots(); setMoving(slots.includes(later) ? later : slots[0] ?? null); }} /></View>
         : <View style={{ marginTop: 10, gap: 8 }}>
           <SlotPicker slots={scheduleSlots()} value={moving} onChange={setMoving} />
-          <Row gap={8}>
+          <Row gap={8} style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>{/* a disabled Save carries its reason underneath, and large text moves Keep to its own line */}
             <Button title={c.saveTime} size="sm" loading={busy === 'schedule'} disabled={!!busy || moving === later} reason={busy ? c.wait_busy : c.time_unchanged}
               onPress={() => act('schedule', `/orders/${order.id}/schedule`, { scheduledFor: moving }, () => setMoving(null))} />
             <Button title={c.keepTime} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy} onPress={() => setMoving(null)} />
@@ -488,7 +488,7 @@ export default function OrderScreen() {
       </View>}
     </Card>}
 
-    <ErrorText>{actionError}</ErrorText>
+    {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
       {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
@@ -600,12 +600,16 @@ export default function OrderScreen() {
     </SafeAreaView>
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
+    {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
+    <ErrorText>{actionError}</ErrorText>
+    {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={serviceMeta[order.service].color} size={64}>
         <ServiceIcon service={order.service} size={28} />
       </Radar>
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
-      <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.findingBody}</Txt>
+      {/* Addressed to the sender; a driver or admin viewing the same order reads the title only. */}
+      {isCustomer && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : order.scheduledFor && now > order.scheduledFor ? c.scheduledMissed : c.findingBody}</Txt>}
       {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
         <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
           onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
@@ -652,7 +656,6 @@ export default function OrderScreen() {
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
       </View> : undefined}>
-      {error && <ErrorText>{c.updatesPaused}</ErrorText>}
       {body}
     </MapSheet>
   </View>;

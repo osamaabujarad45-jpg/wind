@@ -343,13 +343,13 @@ function BookForm() {
   const requote = () => { setQuotedAt(Date.now()); setPriceTick(n => n + 1); };
   // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
   const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, priceTick]);
-  const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null } | null>(null);
+  const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null; error?: unknown } | null>(null);
   useEffect(() => {
     if (!isCustomer || pending || !routeChosen || scopeInvalid) return; // a pending booking keeps its complete terms
     let live = true;
     const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity,
       ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(declaredScope && { declaredScope }), ...(scheduledFor !== null && { scheduledFor }) })
-      .then(quote => quote, () => null).then(quote => { if (live) setQuoted({ key: priceKey, quote }); }), 300);
+      .then(quote => { if (live) setQuoted({ key: priceKey, quote }); }, error => { if (live) setQuoted({ key: priceKey, quote: null, error }); }), 300);
     return () => { live = false; clearTimeout(timer); };
   }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeInvalid, declaredScope]);
   const quoting = isCustomer && !pending && routeChosen && !scopeInvalid && quoted?.key !== priceKey; // the Request button waits for it
@@ -459,7 +459,7 @@ function BookForm() {
         }
       }
       if (errorCode(e) === 'price_changed') { await refresh(); requote(); } // new tariff or road state: customer confirms again
-      if (['quote_expired', 'quote_consumed'].includes(errorCode(e) ?? '')) requote();
+      if (['quote_expired', 'quote_consumed', 'itinerary_changed', 'quote_not_found'].includes(errorCode(e) ?? '')) requote();
       if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
         setPromo(null);
         api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
@@ -482,7 +482,7 @@ function BookForm() {
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
-  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? c.quote_failed
+  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? (quoted?.error instanceof ApiError && quoted.error.status !== undefined && quoted.error.status >= 400 && quoted.error.status < 500 && ![401, 408, 429].includes(quoted.error.status) ? err(quoted.error) : c.quote_failed)
     : !available && !pending ? c.serviceUnavailable : null;
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
@@ -576,7 +576,7 @@ function BookForm() {
               <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
               {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${fill(c.minutesShort, { m: minutes })}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
             </View>
-            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on ? '' : '≈ '}${money(value)}`}</Txt>}
+            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on || s === 'parcel' ? '' : '≈ '}${money(value)}`}</Txt>}
           </Press>;
         })}
         {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>

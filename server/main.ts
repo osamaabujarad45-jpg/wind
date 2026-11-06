@@ -1729,8 +1729,10 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   // own mutation transaction (enqueuePush refuses without one); same short boundary as partner create.
   return (await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
     if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-    if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
-    return (await partnerOrder(req, order.id));
+    // Read again: this route holds no row lock while it reads above, so a driver can accept before the update.
+    const cancelled = (await partnerOrder(req, order.id));
+    if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
+    return cancelled;
   }));
 }, true);
 
@@ -1788,9 +1790,11 @@ route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
   const allowed = (user.role === 'admin' || user.id === order.customerId) && cancellable.includes(order.status);
   if (!allowed) fail(409, 'cannot_cancel');
   if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
-  if (order.driverId) await queuePush([order.driverId], 'cancelled', order.id);
+  // Read again: with two SQLite processes a driver can accept between the read above and this update (PostgreSQL holds the row lock).
+  const cancelled = (await getOrder(order.id, user));
+  if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
   if (user.role === 'admin') await queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
-  return (await getOrder(order.id, user));
+  return cancelled;
 });
 
 // A scheduled parcel moves to another time until drivers can see it (RELEASE_BEFORE ahead of pickup).
@@ -1803,7 +1807,7 @@ route('POST', '/api/orders/:id/schedule', async ({ user, params, body }) => {
   if (order.service !== 'parcel' || order.status !== 'searching' || order.scheduledFor == null || order.scheduledFor <= now + RELEASE_BEFORE)
     fail(409, 'cannot_reschedule');
   if (!(Number.isInteger(at) && at >= now + RELEASE_BEFORE && at <= now + 7 * DAY)) fail(400, 'invalid_schedule');
-  (await run('UPDATE orders SET scheduled_for = ?, updated_at = ? WHERE id = ?', at, now, order.id));
+  if (!(await run("UPDATE orders SET scheduled_for = ?, updated_at = ? WHERE id = ? AND status = 'searching' AND scheduled_for > ?", at, now, order.id, now + RELEASE_BEFORE)).changes) fail(409, 'cannot_reschedule');
   return (await getOrder(order.id, user));
 });
 

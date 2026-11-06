@@ -57,6 +57,7 @@ const suites = [
   "safety.test.mjs",
   "places.test.mjs",
   "schedule.test.mjs",
+  "cancel-race.test.mjs",
   "roads.test.mjs",
   "chat.test.mjs",
   "promo.test.mjs",

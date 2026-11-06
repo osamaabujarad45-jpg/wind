@@ -11,7 +11,7 @@ const tests = ['journey.mjs', 'db-persistence.test.mjs', 'db-api.test.mjs', 'pg-
   'phone-identity.mjs', 'phone-identity-limits.mjs', 'phone-identity-recovery.mjs', 'phone-identity-authority.mjs', 'phone-identity-deletion.mjs',
   'review-security-admission.mjs', 'review-security-lease.mjs', 'review-security-migration.mjs', 'presence-migration.mjs', 'presence.mjs', 'driver-presence-api.mjs', 'active-gps.mjs',
   'quotes.mjs', 'quotes-routing.mjs', 'native-push.mjs', 'realtime-auth.mjs',
-  'dispatch-migration.mjs', 'dispatch.mjs', 'dispatch-races.mjs', 'ride-lifecycle.mjs', 'ride-lifecycle-races.mjs', 'resource-scope.mjs', 'private-objects.mjs', 'ledger.mjs', 'payments.mjs', 'ops.mjs'];
+  'dispatch-migration.mjs', 'dispatch.mjs', 'dispatch-races.mjs', 'pg-cancel-race.mjs', 'ride-lifecycle.mjs', 'ride-lifecycle-races.mjs', 'resource-scope.mjs', 'private-objects.mjs', 'ledger.mjs', 'payments.mjs', 'ops.mjs'];
 const filter = process.argv.find(value => value.startsWith('--filter='))?.slice('--filter='.length);
 const selected = tests.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No persistence tests match the filter');

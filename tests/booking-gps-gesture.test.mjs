@@ -47,3 +47,10 @@ leaving.pick({ city: 'ramallah', point: null, note: '' });
 assert.deepEqual(order.splice(0), ['dismiss', 'leave'], 'picking a place closes the keyboard first');
 leaving.mapRow();
 assert.deepEqual(order.splice(0), ['dismiss', 'leave'], 'choosing on the map closes the keyboard first');
+
+// Android keeps a view disabled when `disabled` goes from true to undefined: the pin's confirm looked ready while the
+// accessibility tree still said disabled. Press always sends an explicit boolean.
+const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
+assert.ok(ui.includes('disabled={!!disabled} accessibilityRole={accessibilityRole}') && ui.includes('aria-disabled={!!disabled}'), 'Press sends an explicit disabled state');
+// focus() during mount leaves the keyboard down on Android; autoFocus opens it, so "Where to?" is ready to type.
+assert.ok(search.includes('autoFocus={which === field}'), 'the active search field opens the keyboard on arrival');
