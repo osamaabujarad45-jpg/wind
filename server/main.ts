@@ -3129,8 +3129,9 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
       if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
-    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'DRIVER_APPROVED', ?, ?)`,
-      user.id, JSON.stringify({ targetId: target.id }), Date.now()));
+    // This route also unblocks customers: the row says what changed, not that a driver was approved.
+    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_APPROVED', ?, ?)`,
+      user.id, JSON.stringify({ targetId: target.id, role: target.role, from: target.status }), Date.now()));
     if (target.role === 'driver' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
     (await persistence.exec('COMMIT'));
     return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!));
@@ -3483,6 +3484,11 @@ server.on('listening', () => {
   presenceSweepTimer.unref();
 });
 
+export async function pruneExpired() {
+  (await run('DELETE FROM sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?', Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY));
+  (await run('DELETE FROM push_subscriptions WHERE user_id NOT IN (SELECT user_id FROM sessions)')); // the last session gone, no browser should keep alerting
+  (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
+}
 export async function shutdown() {
   if (draining) return;
   draining = true;
@@ -3544,12 +3550,8 @@ if (import.meta.main) {
     finally { db.close(); }
   } else {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
-    const prune = async () => {
-      (await run('DELETE FROM sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?', Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY));
-      (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
-    };
-    (await prune());
-    setInterval(async () => { try { (await prune()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
+    (await pruneExpired());
+    setInterval(async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts

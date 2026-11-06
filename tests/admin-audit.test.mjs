@@ -25,7 +25,7 @@ Object.assign(process.env, { NODE_ENV: 'test', DB_PATH: join(dir, 'test.db'), WI
   CLOUDFLARE_EMAIL_TOKEN: 'synthetic-email-token',
   CLOUDFLARE_API_BASE: `http://127.0.0.1:${mailServer.address().port}/client/v4` });
 for (const key of ['WIND_DATABASE_URL', 'DATABASE_URL', 'WIND_POSTGRES_STAGING']) delete process.env[key];
-const { server, shutdown, db, promote } = await import('../server/main.ts');
+const { server, shutdown, db, promote, pruneExpired } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 const phones = [], names = [], email = 'recovery@wind.example', password = 'Synthetic-Audit-123';
@@ -102,7 +102,15 @@ try {
 
   await forbidden(`/admin/users/${driver.user.id}/approve`);
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
-  audit('DRIVER_APPROVED', admin, { targetId: driver.user.id });
+  audit('USER_APPROVED', admin, { targetId: driver.user.id, role: 'driver', from: driver.user.status });
+
+  // A session that simply expired ends the same way as a revoked one, but only once it is the user's last.
+  const idle = await register(), lively = await register();
+  subscribe(idle); subscribe(lively);
+  db.prepare('UPDATE sessions SET created_at = 1, last_seen_at = 1 WHERE user_id = ?').run(idle.user.id);
+  await pruneExpired();
+  assert.equal(subscriptions(idle), 0, 'the browser of an expired last session stops alerting');
+  assert.equal(subscriptions(lively), 1, 'a live session keeps its browser');
 
   // Activation and rejection are both attributed to the deciding admin.
   for (const [holder, decision] of [[customer, 'activate'], [removed, 'reject']]) {
