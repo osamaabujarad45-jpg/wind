@@ -135,8 +135,15 @@ try {
   checks.push('A53 confirms arrival, displays grace clock, starts with passenger PIN and completes ride');
 
   await login(f.customer, '/book?service=freight&from=ramallah&to=nablus');
-  await click(c.pickupOnMap); await click(c.confirmPin);
-  await click(c.dropoffOnMap); await click(c.confirmPin);
+  // Map-first booking: each trip row opens search, Set on map opens the pin over the same map.
+  await page.getByRole('button', { name: new RegExp(`^${c.pickup}: `) }).click();
+  await click(c.setOnMap); await click(c.confirmPickupSpot);
+  // As a customer would: search the town, then confirm its spot. Set on map would open at the customer's position.
+  await page.getByRole('button', { name: new RegExp(`^${c.dropoff}: `) }).click();
+  await page.getByRole('textbox', { name: new RegExp(`^${c.dropoff}`) }).fill('Nablus');
+  await page.getByRole('button', { name: /Nablus/ }).first().click();
+  await page.getByRole('button', { name: c.confirmDropoffSpot, exact: true }).click({ timeout: 4000 }).catch(() => {}); // only a town asks; a named place has its spot
+  await click(c.sheetExpand);
   for (const [label, value] of [[c.pickupNote, 'Synthetic depot'], [c.dropoffNote, 'Synthetic receiver'], [c.freightDetail, 'Two equal-sized sealed boxes'],
     [c.freightPieces, '2'], [c.freightLength, '10'], [c.freightWidth, '20'], [c.freightHeight, '30'], [c.freightMass, '2'], [c.freightCrew, '1']])
     await page.getByLabel(label, { exact: true }).fill(value);

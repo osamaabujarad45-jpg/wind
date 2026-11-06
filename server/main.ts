@@ -1285,6 +1285,9 @@ function pointOf(p: any): { latitude: number; longitude: number } | null {
 }
 // A booking pin must sit within the service bound of the city it is booked under (the app also checks it is the nearest;
 // twin cities like Ramallah and Al-Bireh make that too strict to refuse here).
+// Set on map opens at the customer's position, so confirming the destination unmoved books a trip to nowhere.
+// ponytail: 50 m straight line, a guess; widen if the pilot shows it too small.
+const apartPins = (a: unknown, b: unknown) => { const from = pointOf(a), to = pointOf(b); if (from && to && crowKm(from, to) < 0.05) fail(400, 'same_place'); };
 function bookedPoint(p: unknown, id: CityId) {
   const point = pointOf(p);
   if (point && crowKm(city(id), point) > SERVICE_KM) fail(400, 'outside_area');
@@ -1299,6 +1302,7 @@ async function recommend(user: User, b: Row) {
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
   const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
+  apartPins(b.pickupPoint, b.dropoffPoint);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
   let trip: RoadRoute | null = null;
   try { trip = await roadRoute(from, to); } catch { /* estimate */ }
@@ -1555,6 +1559,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
   const point = bookedPoint(body.pickupPoint, body.pickupCity), dropoff = bookedPoint(body.dropoffPoint, body.dropoffCity);
+  apartPins(body.pickupPoint, body.dropoffPoint);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
   // Who receives a parcel or load (SPEC-parcel-recipient.md); optional, never on a ride.
   const recipientPhone = body.recipientPhone == null || body.recipientPhone === '' ? null
@@ -1693,7 +1698,7 @@ route('POST', '/api/partner/quotes', async ({ req, body }) => {
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity) || !['small', 'medium', 'large'].includes(String(body.option))) fail(400, 'invalid_input');
   // Optional pins are refused here, before the seller agrees, rather than at booking where the buyer can no longer fix them.
-  bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity);
+  bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity); apartPins(body.pickupPoint, body.dropoffPoint);
   return { currency: 'ILS', price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
     option: body.option, shared: body.shared === true }) };
 }, true);

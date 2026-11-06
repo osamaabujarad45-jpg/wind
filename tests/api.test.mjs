@@ -119,6 +119,11 @@ try {
   // Souq pins are optional; given, the courier gets the real points like a Wind booking. A pin outside its city fails at quote time.
   const pinned = { ...orderInput, pickupPoint: { latitude: 31.905, longitude: 35.205 }, dropoffPoint: { latitude: 32.222, longitude: 35.255 } };
   await call('/partner/quotes', { partnerKey, body: { ...pinned, dropoffPoint: pinned.pickupPoint }, expect: 400 });
+  // Same spot, in a city where neither pin is out of area: a destination pin confirmed unmoved.
+  const samePlace = { ...orderInput, dropoffCity: orderInput.pickupCity, pickupPoint: pinned.pickupPoint, dropoffPoint: pinned.pickupPoint };
+  assert.equal((await call('/price', { token: customer.token, body: samePlace, expect: 400 })).error, 'same_place');
+  assert.equal((await call('/orders', { token: customer.token, body: samePlace, expect: 400 })).error, 'same_place');
+  assert.equal((await call('/partner/quotes', { partnerKey, body: samePlace, expect: 400 })).error, 'same_place');
   await call('/partner/quotes', { partnerKey, body: { ...pinned, pickupPoint: { latitude: '31.9', longitude: 35.2 } }, expect: 400 });
   const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
     quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });

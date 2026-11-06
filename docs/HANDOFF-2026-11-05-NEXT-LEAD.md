@@ -19,6 +19,9 @@ On `fix/operations-section`, stacked on `fix/driver-section`. **Blockers only th
 | Terra audit | Update screen offered no way to update; README, `.env.example`, migration doc stale | `EXPO_PUBLIC_UPDATE_URL`; docs corrected | Not seen on a device |
 | Mistral | Admin edit and approve threw 500 if the user vanished after commit | 404 | Reading only |
 | Phone | Handover code only inside the opened sheet, with the courier at the door | Header of the closed sheet in transit, on hold and returning | `tests/map.test.mjs`; phone |
+| Phone runner | Ride PIN shown twice with the sheet open | Header keeps the PIN, body keeps the hint | `tests/phone-ui.test.mjs`; phone |
+| Phone runner | Set on map opens at the customer's position, so a destination confirmed unmoved booked a trip to the same spot | 400 `same_place` under 50 m, a guess, on price, order and partner quote | `tests/api.test.mjs`; message seen on the phone |
+| Haiku review | Put-back could delete a live database whose move failed; Caddy step came after the script; update screen dropped support; repeat custody decisions pushed again; a repeated booking error stayed silent; scripts not executable | All fixed | Drill with a failing `mv`, source tests |
 | Terra audit | Refusals, status changes and proposals silent to a screen reader; search left the map focusable | Announcements, hidden map, digit-by-digit PINs, exposed addresses and counts, larger hit areas | `tests/phone-ui.test.mjs`. **Speech not heard** |
 
 ### Answered, not changed
@@ -50,15 +53,16 @@ Newest nightly copy byte-identical on the VM and in Blob. Script run against a t
 
 Passed: parcel trip W-00008 with real GPS (accept; arrive and pick up each warned "48 km" and No held; wrong code refused with the message in view; right code delivered); foreground location service and high-accuracy GPS; keyboard leaves field and button visible; English mirrored; 130% text on home, search, booking and driver; admin Block refused. **Confirm press: 20 of 20,** tapping about 0.5 s after the pick, so a faster tap is untested and the first miss stays unexplained.
 
-**TalkBack not tested:** enabled with restoration, but the tool's tap opened a field on the first touch with no focus ring, so injected taps bypass it. It needs a person. Not run: ride and freight on the device, Arabic digits on the Samsung keyboard.
+**TalkBack not tested:** enabled with restoration, but the tool's tap opened a field on the first touch with no focus ring, so injected taps bypass it. It needs a person. **Ride and freight passed on the phone** in Chrome (`scripts/check-expanded-services.mjs`, its freight steps updated for map-first booking): leased ride, Arrive cue, lost acknowledgement recovered with one transition, PIN start and completion, quote-bound freight, offer and acceptance, diagnostics, offline view, forced upgrade; no page errors. Those use a synthetic GPS fixture and the web build. Not run: Arabic digits on the Samsung keyboard.
 
-**Trap:** the phone build reads a role list. An edit to `pb.cmd` silently failed once, leaving a stale admin APK; check the bundle for a new string after any build.
+**Traps:** an edit to `pb.cmd` silently failed once, leaving a stale admin APK, so check the bundle for a new string after any build. The test PC's database gathers a schema per test run; at 1,129 `pg_dump` timed out in `tests/pg-import.mjs`, cleared by recreating it. The persistence gate used a runner that retries once on the pool's 1 s connect timeout.
 
 ### Workers, evening
 
 | Job | Model | Result |
 |---|---|---|
 | Backup, restore, restore script, joins, release, accessibility | `azure-gpt6/gpt-6.1-terra` at `xhigh` | Best of the set: most fixes came from here, one finding rejected. **Owner's preferred worker** |
+| Whole diff | `claude-haiku-5-5` at `xhigh` | Seven real findings, including the put-back data loss every drill and worker missed |
 | Backup audit, driver client | `azure-gpt6/gpt-6-astra` | Two real findings each, one minor |
 | #16 server | `nvidia/mistralai/mistral-large-4-1t-a52b` at `high` | Clean verdict with a precise list of what it checked. Slow |
 | #15 source, ops server | `nvidia/stepfun-ai/step-5-preview` | One wrong finding at medium; sound verdict at `max`. Slow |
