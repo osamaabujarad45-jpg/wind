@@ -35,8 +35,12 @@ import { copy } from '../src/copy.ts';
     assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'other_order', orderId: 5 }, 'a lost reply stays unconfirmed');
     assert.deepEqual(io.stored, pending, 'and keeps its identity'); }
   { const io = rig('unknown', async () => { throw Object.assign(new Error('wrong_code'), { status: 400 }); });
+    io.read = async () => pending; // as in driver-recovery.ts: read returns the command it captured, whatever write stored since
     assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'rejected' }, 'a definite refusal settles A');
     assert.equal(io.stored, null); }
+  { const io = rig('unknown', async () => { throw Object.assign(new Error('idempotency_conflict'), { status: 409 }); });
+    assert.deepEqual(await settleOtherOrder(io, 9, pending, async () => a), { state: 'other_order', orderId: 5 }, 'not definite: the same refusal rule as resume keeps it');
+    assert.deepEqual(io.stored, pending); }
   { const io = rig();
     assert.equal((await settleOtherOrder(io, 9, pending, async () => ({ ...a, status: 'completed' }))).state, 'conflict', "A moved on, so this command can't apply");
     assert.equal(io.stored, null, 'and it is dropped, as it is on A'); assert.equal(io.sends, 0); }

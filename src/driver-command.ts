@@ -60,6 +60,12 @@ export const commandMatches = (c: DriverCommand, actorId: number, order: Order) 
 export const earlierOutcome = <T extends { state: string }>(result: T, earlier: boolean) =>
   earlier && result.state !== 'other_order' ? { state: 'previous' as const, previous: result } : result;
 
+/** The server decided and will not change its mind: the saved command is finished. */
+const definiteRefusal = (error: unknown) => {
+  const e = error as { status?: number; message?: string };
+  return !!e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && e.message !== 'idempotency_conflict';
+};
+
 /** This bounded outbox never runs a restored action without a fresh authorized order snapshot. */
 export async function resumeDriverCommand(io: CommandIO, actorId: number, order: Order) {
   const command = readDriverCommand(await io.read());
@@ -89,8 +95,7 @@ export async function resumeDriverCommand(io: CommandIO, actorId: number, order:
     await io.write(null);
     return { state: 'applied' as const, order: updated };
   } catch (error) {
-    const e = error as { status?: number; message?: string };
-    if (io.valid() && e.status && e.status < 500 && ![401,408,426,429].includes(e.status) && e.message !== 'idempotency_conflict') await io.write(null);
+    if (io.valid() && definiteRefusal(error)) await io.write(null);
     throw error;
   }
 }
@@ -117,6 +122,6 @@ export async function settleOtherOrder(io: CommandIO, actorId: number, command: 
   } catch (error) {
     if (!io.valid()) throw new Error('session_changed');
     if (noLongerTheirs(error)) return dropped();
-    return await io.read() ? otherOrder : { state: 'rejected' as const }; // resume drops the command only on a definite refusal
+    return definiteRefusal(error) ? { state: 'rejected' as const } : otherOrder;
   }
 }
