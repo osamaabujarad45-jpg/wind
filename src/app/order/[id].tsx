@@ -15,7 +15,7 @@ import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
-import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
+import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, parcelPickupFarKm, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
 import { kmLabel } from '../../map-math';
 import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
@@ -125,6 +125,7 @@ export default function OrderScreen() {
   // Like a geofence prompt: Arrive leads only once the latest fix is inside the server's arrival radius.
   const arrivalKm = mine && rideAction === 'arrive' ? arrivalDistanceKm(order.pickupPoint, order.driverLocation, now) : null;
   const arrivalFar = arrivalKm !== null && arrivalKm * 1000 > RIDE_ARRIVAL_RADIUS_METERS;
+  const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
@@ -150,7 +151,7 @@ export default function OrderScreen() {
           if ('order' in earlier && earlier.order) { setData(earlier.order); work.update(earlier.order); } else await reload();
           throw new ApiError('driver_command_previous', 409);
         }
-        if (result.state === 'other_order') throw new ApiError('driver_command_pending', 409);
+        if (result.state === 'other_order') throw new ApiError('driver_command_other_order', 409);
         if (result.state === 'conflict') throw new ApiError('order_changed', 409);
         if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);
         if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);
@@ -643,12 +644,15 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
+        {parcelFarKm !== null && <Txt variant="caption">{fill(c.parcelPickupFar, { km: kmLabel(parcelFarKm) })}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
           reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
-          onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`) : act('advance', `/orders/${order.id}/advance`, { code })} />}
+          onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
+            : parcelFarKm !== null ? confirm(fill(c.parcelPickupFarConfirm, { km: kmLabel(parcelFarKm) }), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
+            : act('advance', `/orders/${order.id}/advance`, { code })} />}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
           openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)

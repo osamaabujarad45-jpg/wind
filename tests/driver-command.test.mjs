@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { advanceRequest, newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand } from '../src/driver-command.ts';
+import { advanceRequest, earlierOutcome, newDriverCommand, readDriverCommand, driverCommandBody, resumeDriverCommand } from '../src/driver-command.ts';
+import { copy } from '../src/copy.ts';
+// A command saved for another order was never settled: saying "your earlier action was processed first" would be false, and it needs its own message.
+assert.equal(earlierOutcome({ state: 'other_order', orderId: 4 }, true).state, 'other_order');
+assert.deepEqual(earlierOutcome({ state: 'applied' }, true), { state: 'previous', previous: { state: 'applied' } });
+assert.deepEqual(earlierOutcome({ state: 'rejected' }, true), { state: 'previous', previous: { state: 'rejected' } });
+assert.deepEqual(earlierOutcome({ state: 'applied' }, false), { state: 'applied' }, 'the requested action reports as itself');
+for (const language of ['ar', 'en']) for (const key of ['err_driver_command_other_order', 'err_driver_command_pending', 'err_driver_command_previous'])
+  assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 const order = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
 const command = newDriverCommand(9, order, 'advance', { code: '1234' }, 1000, 60_000);
 let saved = structuredClone(command), sends = 0, valid = true;

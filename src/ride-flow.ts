@@ -32,6 +32,16 @@ export function arrivalDistanceKm(pickup: Point | null | undefined, fix: Order['
   return pickup && fix && age !== undefined && age * 1000 <= RIDE_ARRIVAL_FIX_MAX_AGE_MS ? crowKm(pickup, fix) : null;
 }
 
+/** Calibration knob: wider than the ride fence because a parcel pickup may be town-level and this only warns. */
+export const PARCEL_PICKUP_FAR_KM = 1;
+
+/** How far a courier is from a parcel's pickup while marking it arrived or collected, or null when near or unknown. A warning, never a block: GPS can be wrong. */
+export function parcelPickupFarKm(order: Pick<Order, 'service' | 'status' | 'pickupPoint' | 'driverLocation'>, now: number) {
+  if (order.service === 'ride' || !['assigned', 'at_pickup'].includes(order.status)) return null;
+  const distance = arrivalDistanceKm(order.pickupPoint, order.driverLocation, now);
+  return distance !== null && distance > PARCEL_PICKUP_FAR_KM ? distance : null;
+}
+
 /** An expired/missing lease cannot silently become a legacy accept command. */
 export function dispatchAcceptance(order: Pick<Order, 'dispatch' | 'journey'>, now: number) {
   if (!order.dispatch) return {};

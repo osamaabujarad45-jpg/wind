@@ -326,8 +326,23 @@ try {
   await driverPage.goto(base + '/driver');
   await button(driverPage, c.accept).click();
   await driverPage.waitForURL(new RegExp(`/order/${returnId}$`));
+  // Far from the pickup by GPS: warned and asked, never blocked (found on the A53, 80 minutes away).
+  const prompts = [], farPath = apiRoute(`/api/orders/${returnId}`);
+  driverPage.on('dialog', dialog => prompts.push(dialog.message()));
+  await driverPage.route(farPath, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), pickupPoint: { latitude: 31.9, longitude: 35.2 }, driverLocation: { latitude: 32.31, longitude: 35.03, updatedAt: Date.now(), ageSeconds: 0 } } });
+  });
+  await driverPage.getByText(new RegExp(c.parcelPickupFar.replace('{km}', '[\\d.,]+'))).waitFor();
   await advance(driverPage, returnId, 'assigned', 'at_pickup');
+  assert.ok(prompts.some(text => text.includes(c.parcelPickupFarConfirm.split('{km}')[1])), `the far pickup must ask first: ${JSON.stringify(prompts)}`);
+  await driverPage.unroute(farPath);
+  prompts.length = 0;
+  await driverPage.getByText(new RegExp(c.parcelPickupFar.replace('{km}', '[\\d.,]+'))).waitFor({ state: 'hidden' });
   await advance(driverPage, returnId, 'at_pickup', 'in_transit');
+  assert.deepEqual(prompts, [], 'near or unknown, the courier is not asked');
+  pass('a courier far from the pickup is warned and asked, and can still continue');
   await button(driverPage, c.sheetExpand).click(); // the problem form is on the open sheet, as for a real driver
   await field(driverPage, c.problemNote).fill('Recipient absent after contact attempts.');
   await button(driverPage, c.reportProblem).click();

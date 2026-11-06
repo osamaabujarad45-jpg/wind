@@ -1,6 +1,6 @@
 import { api, ApiError } from './api';
 import { apiSessionRevision, serverOffset } from './api-client';
-import { driverCommandBody, newDriverCommand, readDriverCommand, resumeDriverCommand, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
+import { driverCommandBody, earlierOutcome, newDriverCommand, readDriverCommand, resumeDriverCommand, type DriverAction, type DriverCommand, type DriverReceipt } from './driver-command';
 import { recoveryStorage } from './recovery-storage';
 import { effectiveRuntime } from './runtime-config';
 import type { Order } from './model';
@@ -44,10 +44,7 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       // The fresh snapshot invalidates the old version/assignment; that command cannot change the new state.
       await recoveryStorage.write('command', null, 1);
     }
-    // A saved earlier command went first and was reconciled: it is not the action just requested,
-    // so its outcome is reported as the earlier one's, never as the new action's success.
-    if (earlier) return { state: 'previous' as const, previous: result };
-    return result;
+    return earlierOutcome(result, earlier);
   });
   actionQueue = run.catch(() => undefined);
   return run;

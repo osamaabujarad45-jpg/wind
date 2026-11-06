@@ -55,6 +55,11 @@ export const commandMatches = (c: DriverCommand, actorId: number, order: Order) 
   && (c.expectedAssignmentEpoch === undefined || c.expectedAssignmentEpoch === order.recovery?.assignmentEpoch)
   && (c.expectedPinRevision === undefined || c.expectedPinRevision === order.journey?.boarding?.pinRevision);
 
+/** A saved earlier command went first and was reconciled: it is not the action just requested, so its outcome is reported
+ * as the earlier one's, never as the new action's success. One saved for another order was not reconciled at all. */
+export const earlierOutcome = <T extends { state: string }>(result: T, earlier: boolean) =>
+  earlier && result.state !== 'other_order' ? { state: 'previous' as const, previous: result } : result;
+
 /** This bounded outbox never runs a restored action without a fresh authorized order snapshot. */
 export async function resumeDriverCommand(io: CommandIO, actorId: number, order: Order) {
   const command = readDriverCommand(await io.read());
