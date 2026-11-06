@@ -65,6 +65,19 @@ export default function OrderScreen() {
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
     ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
+  const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
+  useEffect(() => {
+    if (!order || !me) return;
+    const driver = me.user.role === 'driver' && order.driverId === me.user.id;
+    const proposal = (me.user.role === 'customer' || driver) && ['assigned', 'at_pickup', 'in_transit'].includes(order.status) ? order.destinationChange?.id : undefined;
+    const before = announced.current;
+    announced.current = { orderId: order.id, viewerId: me.user.id, status: order.status, proposalId: proposal };
+    if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
+    const status = before.status !== order.status ? statusText(c, order, driver) : '';
+    const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
+    const message = [status, destination].filter(Boolean).join(' ');
+    if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
+  }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const focusRevision = useRef(0);
   useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
@@ -505,7 +518,7 @@ export default function OrderScreen() {
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
       {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Card tone="olive">
         <Txt variant="title">{c.rideBoardingCode}</Txt>
-        <Txt variant="h2" selectable>{boardingPin}</Txt>
+        <Txt variant="h2" selectable accessibilityLabel={`${c.rideBoardingCode} ${boardingPin.split('').join(' ')}`}>{boardingPin}</Txt>
         <Txt variant="caption">{c.rideBoardingHint}</Txt>
       </Card>}
       {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
@@ -637,7 +650,7 @@ export default function OrderScreen() {
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
             <Txt variant="caption" style={{ flex: 1 }}>{c.rideBoardingCode}</Txt>
-            <Txt variant="h2" selectable>{boardingPin}</Txt>
+            <Txt variant="h2" selectable accessibilityLabel={`${c.rideBoardingCode} ${boardingPin.split('').join(' ')}`}>{boardingPin}</Txt>
           </Row>}
           {isCustomer && order.driverName && <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}

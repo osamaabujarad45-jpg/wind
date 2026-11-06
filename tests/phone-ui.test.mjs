@@ -31,6 +31,74 @@ assert.equal(codeInput('12 34-56789'), '123456');
 // The handover PIN goes through the same filter at its own length: an Arabic keypad's digits are the same digits.
 for (const [input, expected] of [['٤٢٧١', '4271'], ['۴۲۷۱', '4271'], ['4٢7۱9', '4271'], ['42 71', '4271']]) assert.equal(codeInput(input, 4), expected, input);
 assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8'), /setProofInput\(\{ context: proofContext, value: codeInput\(value, 4\) \}\)/, 'the order screen filters the handover PIN');
+
+// Accessibility: errors speak on change; both boarding PINs read as separate digits.
+{
+  const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
+  const errorText = ui.slice(ui.indexOf('export function ErrorText'), ui.indexOf('// ---------- display ----------'));
+  assert.match(errorText, /useEffect\(\(\) => \{ if \(children && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(children\); \}, \[children\]\)/);
+  assert.match(errorText, /accessibilityRole="alert"/);
+  const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+  assert.equal(screen.match(/accessibilityLabel=\{`\$\{c\.rideBoardingCode\} \$\{boardingPin\.split\(''\)\.join\(' '\)\}`\}/g)?.length, 2, 'both PIN displays separate digits');
+  assert.match(ui.slice(ui.indexOf('export function Txt'), ui.indexOf('// Section heading')), /<Text[^>]*accessibilityLabel=\{accessibilityLabel\}/);
+
+  // Exercise the actual effect with successive snapshots, including a first load, unchanged polls and another order.
+  const start = screen.indexOf('  useEffect(() => {', screen.indexOf('const announced = useRef'));
+  const end = screen.indexOf('  }, [order, me, c]);', start);
+  assert.ok(start >= 0 && end > start, 'order announcement effect exists');
+  const effect = new Function('order', 'me', 'c', 'announced', 'statusText', 'AccessibilityInfo', 'Platform',
+    screen.slice(start + '  useEffect(() => {'.length, end));
+  const announced = { current: null }, spoken = [];
+  const reader = { announceForAccessibility: text => spoken.push(text) };
+  const customer = { user: { id: 1, role: 'customer' } }, driver = { user: { id: 2, role: 'driver' } };
+  const run = (order, viewer = customer) => effect(order, viewer, copy.en, announced, (_c, o, mine) => `${o.status}:${mine}`, reader, { OS: 'android' });
+  const order = { id: 1, status: 'assigned', driverId: 2, destinationChange: null };
+  run(order); run({ ...order });
+  assert.deepEqual(spoken, [], 'first load and unchanged polls stay silent');
+  run({ ...order, status: 'at_pickup' });
+  assert.deepEqual(spoken, ['at_pickup:false'], 'a changed status uses the customer text');
+  const proposed = { ...order, status: 'at_pickup', destinationChange: { id: 'p1' } };
+  run(proposed); run({ ...proposed });
+  assert.deepEqual(spoken, ['at_pickup:false', copy.en.destinationWaiting], 'a proposal is announced once');
+  run({ ...proposed, id: 2 });
+  assert.equal(spoken.length, 2, 'a new order starts silently, even with a proposal');
+  run({ ...proposed, id: 2 }, driver);
+  run({ ...proposed, id: 2, status: 'in_transit', destinationChange: { id: 'p2' } }, driver);
+  assert.equal(spoken[2], `in_transit:true ${copy.en.destinationDriverRequest}`, 'driver status and proposal speak together');
+}
+
+// The map is hidden as a sibling, not an ancestor of the search overlay.
+{
+  const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+  assert.match(book, /<View[^>]*accessibilityElementsHidden=\{step === 'search'\}[^>]*importantForAccessibility=\{step === 'search' \? 'no-hide-descendants' : 'auto'\}[^>]*aria-hidden=\{step === 'search'\}[^>]*>\s*<SceneMap/);
+  assert.match(book, /onFail=\{\(\) => \{ setMapReady\(false\); setMapFailed\(true\); \}\} \/>\s*<\/View>/);
+  assert.ok(book.indexOf("{step === 'search' && <TripSearch") > book.indexOf('setMapFailed(true); }} />'), 'the overlay is outside the hidden map view');
+  assert.match(book, /if \(locationError && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(locationError\)/);
+  const submit = book.slice(book.indexOf('  async function submit()'), book.indexOf('  async function release('));
+  assert.match(submit, /\} catch \(e\) \{\s*haptic\.error\(\);\s*setSheetOpen\(true\);/);
+  const search = readFileSync(new URL('../src/trip-search.tsx', import.meta.url), 'utf8');
+  assert.match(search, /value && !query\[which\] \? `: \$\{value\}`/);
+}
+
+// Controls retain their appearance while exposing count, selection and larger hit areas.
+{
+  const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
+  const stepper = ui.slice(ui.indexOf('export function Stepper'), ui.indexOf('// Horizontal scroller'));
+  assert.match(stepper, /accessibilityValue=\{\{ min, max, now: value, text: String\(value\) \}\}/);
+  assert.match(stepper, /previous\.current !== value && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(`\$\{label\}: \$\{value\}`\)/);
+  assert.equal(stepper.match(/hitSlop=\{2\}/g)?.length, 2);
+  assert.match(ui, /hitSlop=\{small \? 2 : 1\}/);
+  const sheet = readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8');
+  assert.match(sheet, /hitSlop=\{\{ bottom: 26 \}\}/);
+  const admin = readFileSync(new URL('../src/app/admin/index.tsx', import.meta.url), 'utf8');
+  assert.match(admin, /\$\{c\.commissionRevenue\} \$\{money\(d\.commission\)\}, \$\{c\.subscriptionRevenue\} \$\{money\(d\.subscriptions\)\}/);
+  assert.match(admin, /accessibilityState=\{\{ selected: i === selected \}\}/);
+  const map = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
+  const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
+  assert.match(scene, /const config = \{ mode, language,/);
+  assert.match(scene, /const run = `\$\{language\}:\$\{attempt\}`/);
+}
 for (const [input, expected] of [
   ['٠١٢٣٤٥', '012345'], ['٦٧٨٩', '6789'], ['۰۱۲۳۴۵', '012345'], ['۶۷۸۹', '6789'],
   ['123456', '123456'], ['1٢۳-٤۵6extra7', '123456'], ['', ''],

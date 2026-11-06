@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  AccessibilityInfo, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
   type ColorValue, type LayoutRectangle, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -174,14 +174,15 @@ const textVariants = {
   micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.faint },
 } satisfies Record<string, TextStyle>;
 
-export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header }: {
+export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header, accessibilityLabel }: {
   children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
+  accessibilityLabel?: string;
 }) {
   const { align, language } = useCopy();
   // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
   // Keyed by language: Android kept the Arabic width after an in-app switch and clipped "Your current order".
-  return <Text key={language} maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  return <Text key={language} maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
@@ -251,7 +252,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   // keeps its colours so the spinner reads as work in progress. Callers add a <Reason> under it saying why it waits.
   const off = !!disabled && !loading;
   const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
-  const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
+  const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false} hitSlop={small ? 2 : 1}
     accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
@@ -287,13 +288,18 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
 // Plus/minus counter: passengers, quantities.
 export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }: { value: number; min?: number; max?: number; onChange: (n: number) => void; label: string; disabled?: boolean }) {
   const { row, c } = useCopy();
+  const previous = React.useRef(value);
+  useEffect(() => {
+    if (previous.current !== value && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(`${label}: ${value}`);
+    previous.current = value;
+  }, [value, label]);
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} hitSlop={2} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
-    <Text accessibilityLabel={`${label}: ${value}`} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} style={styles.stepperKey}>
+    <Text accessibilityLabel={label} accessibilityValue={{ min, max, now: value, text: String(value) }} style={styles.stepperValue}>{value}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} hitSlop={2} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
   </View>;
@@ -378,6 +384,7 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
 }
 
 export function ErrorText({ children }: { children?: string }) {
+  useEffect(() => { if (children && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(children); }, [children]);
   if (!children) return null;
   return <Animated.View entering={FadeInDown.duration(200)}>
     <Text accessibilityRole="alert" style={styles.error}>{children}</Text>

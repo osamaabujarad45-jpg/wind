@@ -111,7 +111,7 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
         {daily.map((d, i) => {
           const total = d.commission + d.subscriptions;
           return <Pressable key={d.date} style={styles.hit} onPress={() => setSelected(i)} hitSlop={4}
-            accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${money(d.commission)} + ${money(d.subscriptions)}`}>
+            accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${c.commissionRevenue} ${money(d.commission)}, ${c.subscriptionRevenue} ${money(d.subscriptions)}`} accessibilityState={{ selected: i === selected }}>
             <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === selected ? 1 : 0.75 },
               !reduced && { animationName: GROW, animationDuration: '450ms', animationDelay: `${i * 25}ms`, animationTimingFunction: EASE_OUT, animationFillMode: 'backwards' }]}>
               {d.subscriptions > 0 && <View style={[styles.segment, styles.top, { flex: d.subscriptions, backgroundColor: SERIES.subscriptions }]} />}

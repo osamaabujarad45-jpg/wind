@@ -77,6 +77,7 @@ function BookForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [locationError, setLocationError] = useState('');
+  useEffect(() => { if (locationError && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(locationError); }, [locationError]);
   const locationRequest = useRef<AbortController | null>(null);
   useEffect(() => () => locationRequest.current?.abort(), []);
   const [pending, setPending] = useState<PendingBooking | null>(null);
@@ -400,7 +401,7 @@ function BookForm() {
     if (!pending && scopeInvalid) { setError(c.freightScopeInvalid); return; }
     if (!pending && !routeChosen) { setField(pickupChosen ? 'dropoff' : 'pickup'); setStep('search'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
-      haptic.error(); setSlot(null); setError(c.err_invalid_schedule); return;
+      haptic.error(); setSlot(null); setError(c.err_invalid_schedule); setSheetOpen(true); return;
     }
     const problems = {
       pickupNote: pickupNote.trim() ? undefined : c.fieldRequired,
@@ -444,6 +445,7 @@ function BookForm() {
       router.replace(`/order/${order.id}`);
     } catch (e) {
       haptic.error();
+      setSheetOpen(true);
       // Once the command is persisted, a transport failure is "saved, awaiting connection" —
       // the pending card below is already on screen. A failed write never claims it was saved.
       if (!(e instanceof ApiError)) setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
@@ -500,6 +502,7 @@ function BookForm() {
   const camera = step === 'pin' ? pinCenter ?? previewFrom : here ?? previewFrom;
   const side = useSideSheet();
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
+    <View style={StyleSheet.absoluteFill} accessibilityElementsHidden={step === 'search'} importantForAccessibility={step === 'search' ? 'no-hide-descendants' : 'auto'} aria-hidden={step === 'search'}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
       insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && { right: SIDE_SHEET }) }} padding={40}
@@ -509,6 +512,7 @@ function BookForm() {
       onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { locationRequest.current?.abort(); if (pinFor === 'pickup') pickupTouched.current = true; setLocating(false); setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
+    </View>
 
     {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topCard, shadow, { flexDirection: row }]}>
