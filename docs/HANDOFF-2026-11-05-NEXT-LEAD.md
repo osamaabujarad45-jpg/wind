@@ -2,7 +2,7 @@
 
 ## Status update — 6 November 2026 (read this first; it replaces the older status below)
 
-**The registration section's code is finished, gated and driven on the A53, on the Android test apps. It is not production-proven: nothing is deployed, sign-up was not driven on the native test apps (they sign in by themselves; the form ran in Chrome), and there is no iOS device, Entra tenant or email sending domain.** The merge the old text calls "in progress" is finished as commit `10f8d16`. PR #13 is not updated by this work.
+**The registration section's code is finished, gated and driven on the A53, on the Android test apps. It is not production-proven: nothing is deployed, sign-up was not driven on the native test apps (they sign in by themselves; the form ran in Chrome), and there is no iOS device, Entra tenant or email sending domain.** The merge the old text calls "in progress" is finished as commit `10f8d16`. This branch contains every commit on PR #13, so merging it lands #13 too.
 
 ### Open items from the section below, now resolved
 
@@ -38,6 +38,12 @@ What the trip found, each fixed and rechecked on the phone with the Samsung keyb
 | A refused admin reset showed its error above the fold, nothing where the admin was looking | `src/app/admin/users.tsx`: a failed action scrolls to the error and keeps the card and note |
 | Open customer order sheet: dead band mid-sheet, last rows under the system buttons | `src/map-sheet.tsx`: the inset ends the content when open |
 | One stray tap on Block ended every session of a synthetic account, with no question asked | `src/app/admin/users.tsx`: Block now confirms, like delete and reset. Unblock does not |
+
+### Review, PR #14
+
+Claude Haiku 5.5 at extra effort. Fixed: nested JSONB keys broke import reconciliation for any token with quiet hours, so a cutover would have aborted (`server/migrate.ts`); the phone-number guard missed numbers split by `/`, `,` or bidi marks (`holdsPhoneNumber`); an open Microsoft reauth panel kept a challenge past its five minutes (`useEntraReauth` now refreshes every two). Answered: a note is allowed for any account without a verified email, which is what "no email path" means. A date of eight digits in a note is refused too, by choice: the admin rewords.
+
+The phone runs above predate these three fixes. None changes a screen the trip used: the import is server-side, the reauth panel needs an Entra tenant, and the guard is covered by `tests/api.test.mjs`.
 
 ### Open items found by the trip, for the booking and driver sections
 

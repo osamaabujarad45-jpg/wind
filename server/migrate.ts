@@ -23,7 +23,9 @@ NON_LEGACY_TABLES.add('opencode_jobs');
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
 const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
-const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
+// Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
+const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+  ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
 export const minor = (amount: number | null) => {

@@ -309,10 +309,14 @@ function useEntraReauth(challengePath: string, open: boolean) {
   useEffect(() => {
     if (!open || !entraConfigured) return;
     let active = true;
-    void api<{ nonce: string }>(challengePath, {}).then(({ nonce }) => prepareEntraRequest(nonce))
+    const load = (first: boolean) => void api<{ nonce: string }>(challengePath, {}).then(({ nonce }) => prepareEntraRequest(nonce))
       .then(next => { if (active && revision === apiSessionRevision()) { setRequest(next); setFailed(false); } })
-      .catch(error => { if (active && revision === apiSessionRevision()) { setRequest(null); setFailed(errorCode(error) !== 'entra_unavailable'); } });
-    return () => { active = false; };
+      .catch(error => { if (first && active && revision === apiSessionRevision()) { setRequest(null); setFailed(errorCode(error) !== 'entra_unavailable'); } });
+    load(true);
+    // A challenge lasts five minutes and the sign-in popup must open from the tap, so a fresh one waits here rather than being fetched on press.
+    // Every two minutes leaves at least three for the sign-in. A failed refresh keeps the last one; the server has the final say.
+    const refresh = setInterval(() => load(false), 120_000);
+    return () => { active = false; clearInterval(refresh); };
   }, [open, attempt, revision, challengePath]);
   return { request, failed, revision, retry: () => { setRequest(null); setAttempt(n => n + 1); }, reset: () => { setRequest(null); setFailed(false); } };
 }

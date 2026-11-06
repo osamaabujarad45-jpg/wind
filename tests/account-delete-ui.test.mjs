@@ -14,7 +14,7 @@ const find = (node, type, property, value) => {
   for (const child of [node.props?.children].flat(Infinity)) { const found = find(child, type, property, value); if (found) return found; }
 };
 function account({ linked = true } = {}) {
-  let revision = 1, cursor = 0, effects = [], calls = [], forgot = 0, resolveMicrosoft;
+  let revision = 1, cursor = 0, effects = [], calls = [], forgot = 0, resolveMicrosoft, refreshChallenge, challengeFails = false, challengeCount = 0;
   const slots = [], same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {
     useRef(value) { return slots[cursor++] ??= { current: value }; },
@@ -28,17 +28,17 @@ function account({ linked = true } = {}) {
     'react-native': { Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View', Share: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, 'expo-router': { router: {} }, './model': model, './booking': {}, './map-math': {}, './copy': copy,
     './api': { api: async (path, body) => { calls.push({ path, body });
-      if (path.endsWith('/challenge')) { if (!linked) throw new Error('entra_unavailable'); return { nonce: 'nonce' }; }
+      if (path.endsWith('/challenge')) { if (!linked) throw new Error('entra_unavailable'); if (challengeFails) throw new Error('offline'); return { nonce: `nonce-${++challengeCount}` }; }
       return {}; }, apiSessionRevision: () => revision, errorCode: e => e.message },
     './push': { pushSupported: () => false }, './session': { useSession: () => ({ me: { user: { id: 1, role: 'customer', name: 'Test', phone: '0599000000' } }, forget: async () => { forgot++; }, signOut: async () => {}, language: 'en', setLanguage() {} }) },
     './entra-auth': { entraConfigured: true, prepareEntraRequest: async nonce => ({ nonce }), signInWithEntra: async () => new Promise(resolve => { resolveMicrosoft = resolve; }) },
     './ui': { ...ui, palette: {}, tones: {}, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
   };
-  const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; } };
+  const context = { exports: {}, setInterval: fn => { refreshChallenge = fn; return 1; }, clearInterval: () => { refreshChallenge = null; }, require: name => { assert.ok(name in modules, name); return modules[name]; } };
   runInNewContext(source, context);
   return { c, calls, render() { cursor = 0; effects = []; const tree = context.exports.AccountScreen(); effects.forEach(fn => fn()); return tree; },
     renderPassword() { cursor = 0; effects = []; const tree = context.exports.PasswordCard(); effects.forEach(fn => fn()); return tree; },
-    switchAccount() { revision++; }, resolveMicrosoft(value) { resolveMicrosoft(value); }, get forgot() { return forgot; } };
+    switchAccount() { revision++; }, refresh: () => refreshChallenge(), failChallenges() { challengeFails = true; }, get challengeCount() { return challengeCount; }, get refreshing() { return !!refreshChallenge; }, resolveMicrosoft(value) { resolveMicrosoft(value); }, get forgot() { return forgot; } };
 }
 {
   const h = account();
@@ -94,5 +94,19 @@ function account({ linked = true } = {}) {
   const tree = h.renderPassword();
   assert.equal(find(tree, 'Button', 'title', h.c.deleteMicrosoft), undefined, 'an unlinked account sees no Microsoft option');
   assert.equal(find(tree, 'Button', 'title', h.c.retry), undefined, 'and no retry for something it does not have');
+}
+{
+  // A challenge lasts five minutes and the popup must open from the tap: an open panel keeps a fresh one ready.
+  const h = account();
+  find(h.renderPassword(), 'ListRow', 'label', h.c.changePassword).onPress();
+  h.renderPassword(); await flush(); await flush();
+  assert.equal(h.challengeCount, 1);
+  h.refresh(); await flush(); await flush();
+  assert.equal(h.challengeCount, 2, 'an open panel fetches a new challenge before the old one lapses');
+  h.failChallenges(); h.refresh(); await flush(); await flush();
+  const tree = h.renderPassword();
+  assert.ok(find(tree, 'Button', 'title', h.c.deleteMicrosoft), 'a failed refresh keeps the last challenge');
+  assert.equal(find(tree, 'Button', 'title', h.c.retry), undefined, 'and shows no error while it may still be good');
+  assert.equal(h.refreshing, true);
 }
 console.log('Account deletion UI requires proof and fences a late Microsoft sign-in; a Microsoft account can set a password');

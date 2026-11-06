@@ -279,7 +279,7 @@ try {
   await call('/me', { token: customer.token }); // failed reset must preserve the complete previous credential state
   db.exec('DROP TRIGGER fail_reset_revoke');
   // No email path for this account: the admin writes down what they checked, or there is no reset.
-  for (const attestation of [undefined, '', 'too short', 'x'.repeat(301), 42, 'Called them back on 0599123456', 'Called them back on ٠٥٩٩١٢٣٤٥٦'])
+  for (const attestation of [undefined, '', 'too short', 'x'.repeat(301), 42, 'Called them back on 0599123456', 'Called them back on ٠٥٩٩١٢٣٤٥٦', 'Called them on 0597/127547', 'Called them on 059,712,7547', 'Called them on ‪+970 597 127 547‬', 'Called them on 059‏7127547'])
     assert.equal((await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation }, expect: 400 })).error, 'attestation_required');
   await call('/me', { token: customer.token }); // a refused reset changes nothing
   const { password: temp } = await call(`/admin/users/${customer.user.id}/password`, { token: admin.token, body: { attestation: ` ${supportAttestation} ` } });

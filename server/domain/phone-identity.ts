@@ -29,8 +29,8 @@ const sendLeaseMs=30000;
 export const phonePolicy=Object.freeze({version:1,codeSeconds:300,maxAttempts:5,resendSeconds:45,phoneDevicePer15Minutes:3,phoneDevicePerDay:10,ipPerHourReview:30,
   serverGeneratedCode:true,proofMeansPhoneControlOnly:true,providerAcceptanceMeansDelivery:false});
 
-/** Seven digits or more, in any script, however spaced: too long to be a date or an order reference. */
-export const holdsPhoneNumber=(text:string)=>/(?:[\d٠-٩۰-۹][\s().-]*){7,}/.test(text);
+/** Seven digits or more, in any script, whatever sits between them short of a letter (pasted numbers carry bidi marks). Errs towards refusing: a full date also trips it, and the admin rewords. */
+export const holdsPhoneNumber=(text:string)=>/(?:[\d٠-٩۰-۹][^\p{L}\d٠-٩۰-۹]{0,3}){7,}/u.test(text);
 
 export async function phoneSchemaAvailable(db:Persistence) {
   if (db.backend!=='postgres') return false;
