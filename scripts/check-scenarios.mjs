@@ -193,6 +193,88 @@ try {
   const driverToken = await driverPage.evaluate(() => localStorage.getItem('token'));
   pass('customer and driver UI registration, pending gate, admin approval, driver login');
 
+  stage = 'admin action errors on long lists';
+  const subscriptionsPath = apiRoute('/api/admin/subscriptions'), subscriptionAction = apiRoute('/api/admin/subscriptions/918');
+  const cashPath = apiRoute('/api/admin/cash'), cashAction = apiRoute('/api/admin/cash/remittance');
+  const promosPath = apiRoute('/api/admin/promos'), promoAction = apiRoute('/api/admin/promos/951/deactivate');
+  await adminPage.route(subscriptionsPath, route => route.fulfill({ json: Array.from({ length: 18 }, (_, i) => ({
+    id: 901 + i, userId: 901 + i, plan: 'plus', status: 'pending', price: 10, endsAt: null, createdAt: Date.now(), userName: `QA Subscription ${i + 1}`, userPhone: '0599000701',
+  })) }));
+  await adminPage.route(subscriptionAction, route => route.fulfill({ status: 409, json: { error: 'route_prohibited' } }));
+  await adminPage.route(cashPath, route => route.fulfill({ json: Array.from({ length: 18 }, (_, i) => ({
+    driverId: 901 + i, name: `QA Cash Driver ${i + 1}`, phone: '0599000702', owedCents: 1000, pendingCents: 0, lastRemittanceAt: null,
+  })) }));
+  await adminPage.route(cashAction, route => route.fulfill({ status: 409, json: { error: 'route_prohibited' } }));
+  await adminPage.route(promosPath, route => route.fulfill({ json: Array.from({ length: 18 }, (_, i) => ({
+    id: 951 + i, code: `QAPROMO${i + 1}`, amount: 10, maxUses: 100, uses: 0, expiresAt: Date.now() + 86400000, firstOrderOnly: false, active: true, live: true,
+  })) }));
+  await adminPage.route(promoAction, route => route.fulfill({ status: 409, json: { error: 'route_prohibited' } }));
+  try {
+    await adminPage.goto(base + '/admin/subscriptions');
+    await adminPage.getByText('QA Subscription 18', { exact: false }).waitFor();
+    await button(adminPage, c.activate).last().scrollIntoViewIfNeeded();
+    assert.ok((await adminPage.getByText('QA Subscription 1', { exact: false }).first().boundingBox()).y < 0, 'Subscription list must be scrolled down');
+    await button(adminPage, c.activate).last().click();
+    const subError = adminPage.getByText(c.err_route_prohibited, { exact: true });
+    await subError.waitFor();
+    await until(() => subError.boundingBox(), box => box && box.y >= 0 && box.y + box.height <= adminPage.viewportSize().height, 'Subscription error is off-screen');
+
+    await adminPage.goto(base + '/admin/cash');
+    await adminPage.getByText('QA Cash Driver 18', { exact: true }).waitFor();
+    await button(adminPage, c.cashRecord).last().scrollIntoViewIfNeeded();
+    assert.ok((await adminPage.getByText('QA Cash Driver 1', { exact: true }).boundingBox()).y < 0, 'Cash list must be scrolled down');
+    await button(adminPage, c.cashRecord).last().click();
+    await field(adminPage, c.cashAmount).waitFor();
+    await button(adminPage, c.cashRecord).last().click();
+    const cashError = adminPage.getByText(c.err_route_prohibited, { exact: true });
+    await cashError.waitFor();
+    await until(() => cashError.boundingBox(), box => box && box.y >= 0 && box.y + box.height <= adminPage.viewportSize().height, 'Cash error is off-screen');
+
+    await adminPage.goto(base + '/admin/settings');
+    await button(adminPage, `${c.promoDeactivate} QAPROMO1`).click();
+    const promoError = adminPage.getByText(c.err_route_prohibited, { exact: true });
+    await promoError.waitFor();
+    await until(() => promoError.boundingBox(), box => box && box.y >= 0 && box.y + box.height <= adminPage.viewportSize().height, 'Promo stop error is off-screen');
+    pass('long subscription and cash lists reveal failed actions, and promo stop errors stay beside the code');
+  } finally {
+    await adminPage.unroute(subscriptionsPath); await adminPage.unroute(subscriptionAction);
+    await adminPage.unroute(cashPath); await adminPage.unroute(cashAction);
+    await adminPage.unroute(promosPath); await adminPage.unroute(promoAction);
+  }
+
+  stage = 'checkpoint move retry';
+  const roadsPath = apiRoute('/api/roads'), roadPlace = apiRoute('/api/admin/roads/991/place');
+  const roadStart = { latitude: 31.9038, longitude: 35.2034 };
+  await adminPage.route(roadsPath, route => route.fulfill({ json: [{ id: 991, name: 'QA checkpoint', cities: ['ramallah'], point: roadStart, status: null, note: '', reportedAt: null, agreeing: 0 }] }));
+  await adminPage.route(roadPlace, route => route.fulfill({ status: 409, json: { error: 'route_prohibited' } }));
+  try {
+    await adminPage.goto(base + '/roads');
+    await button(adminPage, c.roadMove).click();
+    await until(() => button(adminPage, c.confirmPin).isEnabled(), Boolean, 'Checkpoint map did not become ready');
+    const roadCanvas = mapOf(adminPage).locator('canvas.maplibregl-canvas').last();
+    const roadBox = await roadCanvas.boundingBox();
+    await adminPage.mouse.move(roadBox.x + roadBox.width / 2, roadBox.y + roadBox.height / 2);
+    await adminPage.mouse.down();
+    await adminPage.mouse.move(roadBox.x + roadBox.width / 2 + 60, roadBox.y + roadBox.height / 2 + 20, { steps: 10 });
+    await adminPage.mouse.up();
+    const firstMove = adminPage.waitForRequest(r => new URL(r.url()).pathname === '/api/admin/roads/991/place' && r.method() === 'POST');
+    await button(adminPage, c.confirmPin).click();
+    const chosenRoad = (await firstMove).postDataJSON().point;
+    assert.ok(Math.abs(chosenRoad.latitude - roadStart.latitude) + Math.abs(chosenRoad.longitude - roadStart.longitude) > 0.0001, 'Checkpoint pin must actually move');
+    await adminPage.getByText(c.err_route_prohibited, { exact: true }).waitFor();
+    await button(adminPage, c.roadMove).click();
+    await until(() => button(adminPage, c.confirmPin).isEnabled(), Boolean, 'Checkpoint retry map did not become ready');
+    const retryMove = adminPage.waitForRequest(r => new URL(r.url()).pathname === '/api/admin/roads/991/place' && r.method() === 'POST');
+    const retryResponse = adminPage.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/roads/991/place' && r.request().method() === 'POST');
+    await button(adminPage, c.confirmPin).click();
+    const retriedRoad = (await retryMove).postDataJSON().point;
+    await retryResponse;
+    assert.ok(Math.abs(chosenRoad.latitude - retriedRoad.latitude) + Math.abs(chosenRoad.longitude - retriedRoad.longitude) < 0.00001, 'Retry must retain the chosen checkpoint point');
+    pass('a failed checkpoint move retains the chosen point for retry');
+  } finally {
+    await adminPage.unroute(roadsPath); await adminPage.unroute(roadPlace);
+  }
+
   stage = 'booking retry';
   const countBefore = db.prepare('SELECT COUNT(*) n FROM orders').get().n;
   const id = await booking(customerPage, { lostResponse: true });

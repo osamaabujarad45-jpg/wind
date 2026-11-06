@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import type { Subscription } from '../../model';
 import { useFormat } from '../../parts';
@@ -11,6 +11,8 @@ export default function Subscriptions() {
   const { data, error, reload } = useApi<Subscription[]>('/admin/subscriptions', 30_000);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  const list = useRef<ScrollView>(null);
+  const fail = (message: string) => { setActionError(message); list.current?.scrollTo({ y: 0 }); };
 
   async function decide(sub: Subscription, action: 'activate' | 'reject') {
     setBusy(`${sub.id}${action}`);
@@ -20,12 +22,12 @@ export default function Subscriptions() {
       haptic.success();
       await reload();
     } catch (e) {
-      setActionError(err(e));
+      fail(err(e));
     }
     setBusy(null);
   }
 
-  return <Screen onRefresh={reload}>
+  return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.subscriptions} />
     <ErrorText>{actionError || (error && err(error))}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="sparkles-outline" title={c.noSubscriptions} />
