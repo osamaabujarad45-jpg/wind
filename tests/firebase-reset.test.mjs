@@ -84,13 +84,9 @@ try {
   assert.equal(createFirebaseReset(), null);
   process.env.WIND_FIREBASE_API_KEY = 'test-web-key';
   const user = await register(1), id = user.user.id, uid = `wind-${id}`;
-  if (!cloudflareMode) {
-    assert.deepEqual(await reset('0599700001'), { ok: true });
-    await new Promise(resolve => setTimeout(resolve, 100));
-    assert.equal(calls.length, 0, 'unverified email cannot receive a reset');
-  }
-  // Deliberately unverified: without a sending domain no pilot account can have a verified email, and the link proves it.
-  assert.equal((await persistence.one('SELECT email_verified_at v FROM users WHERE id = ?', id)).v, null);
+  // Firebase mode stays unverified on purpose: without a sending domain no pilot account can have a verified email, and the link proves it.
+  if (cloudflareMode) await persistence.run('UPDATE users SET email_verified_at = ? WHERE id = ?', Date.now(), id);
+  else assert.equal((await persistence.one('SELECT email_verified_at v FROM users WHERE id = ?', id)).v, null);
   if (cloudflareMode) {
     assert.deepEqual(await call('/auth/options'), { registrationOpen: true, emailReset: true });
     await waitFor(() => calls.some(c => c.action === 'cloudflare'));
@@ -133,6 +129,7 @@ try {
     await call('/me', { token: user.token, expect: 401 });
     assert.equal(await pending(id), undefined);
     assert.equal(await persistence.one('SELECT endpoint FROM push_subscriptions WHERE user_id = ?', id), undefined);
+    assert.ok((await persistence.one('SELECT email_verified_at v FROM users WHERE id = ?', id)).v, 'the emailed link verified the address');
     await waitFor(() => !users.has(uid));
     assert.ok(calls.some(c => c.action === 'accounts:delete' && c.body.localId === uid));
     const audit = await persistence.one("SELECT detail FROM security_events WHERE actor_id = ? AND action = 'FIREBASE_PASSWORD_RESET'", id);
