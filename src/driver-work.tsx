@@ -187,9 +187,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     ?'reconnecting':presenceResult.state;
   const enablePresence=useCallback(async()=>{
     if(actor===null || !foreground || activeOrderId!==undefined || !presenceOrdersKnown || presenceRunning.current)return;
-    const current=presenceGeneration.current,ticket=presenceStartGuard.snapshot();presenceRunning.current=true;setPresencePending(true);setPresenceError(undefined);
+    const current=presenceGeneration.current,askedAt=lifecycleRef.current.revision;let ticket=presenceStartGuard.snapshot();presenceRunning.current=true;setPresencePending(true);setPresenceError(undefined);
     try {
       if(!await prepareTracking()) {if(current===presenceGeneration.current)setPresenceResult({actor,revision:lifecycleRef.current.revision,state:'permission_denied'});return;}
+      if(lifecycleRef.current.revision!==askedAt)ticket=presenceStartGuard.snapshot(); // the permission sheet paused the app, which voids the first ticket; prepareTracking already judged the return
       if(current!==presenceGeneration.current || !presenceStartGuard.allows(ticket,{foreground:lifecycleRef.current.active,known:presenceOrdersKnown,hasOrder:activeOrderId!==undefined}))return;
       if(await startPresence(true) && current===presenceGeneration.current)setPresenceConsentAccepted(true);
     } catch(error) {if(current===presenceGeneration.current)setPresenceError(errorCode(error));}

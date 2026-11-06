@@ -33,7 +33,7 @@ export const isDeviceNotRegistered = (error: unknown) => {
 /** What the lock screen says: the event only, never a name, address or price. Details stay in the app, which re-checks authority when opened. */
 const pushWords: Record<string, { ar: string; en: string }> = {
   job: { ar: 'طلب توصيل جديد متاح. افتح ويند لقبوله.', en: 'New delivery job available. Open Wind to take it.' },
-  offer: { ar: 'عرض جديد على طلب. افتح ويند للرد.', en: 'A new offer on a job. Open Wind to respond.' },
+  offer: { ar: 'عرض سعر جديد. افتح ويند للرد.', en: 'A new price offer. Open Wind to respond.' },
   offer_accepted: { ar: 'قُبل عرضك. افتح ويند للتفاصيل.', en: 'Your offer was accepted. Open Wind for details.' },
   assigned: { ar: 'قبل سائق طلبك وهو في الطريق.', en: 'A driver took your order and is on the way.' },
   at_pickup: { ar: 'وصل السائق إلى نقطة الاستلام.', en: 'Your driver has reached the pickup.' },
@@ -47,6 +47,12 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   returned: { ar: 'أُعيد الطلب إلى المرسل.', en: 'The order was returned to the sender.' },
   decided: { ar: 'صدر قرار بخصوص طلبك. افتح ويند.', en: 'A decision was made on your job. Open Wind.' },
   approved: { ar: 'تمت الموافقة على حسابك. يمكنك استلام الطلبات الآن.', en: 'Your account is approved. You can take jobs now.' },
+  support: { ar: 'تحديث من الدعم بخصوص طلبك.', en: 'An update from support about your order.' },
+  cash: { ar: 'تحديث في حساب النقد. افتح ويند للتفاصيل.', en: 'An update to your cash balance. Open Wind for details.' },
+  safety: { ar: 'بلاغ أمان يحتاج إلى مراجعة فورية.', en: 'A safety report needs review now.' },
+  destination_request: { ar: 'طلب الزبون تغيير الوجهة. افتح ويند للرد.', en: 'The customer asked to change the destination. Open Wind to respond.' },
+  destination_accepted: { ar: 'قبل السائق تغيير الوجهة.', en: 'The driver accepted the new destination.' },
+  destination_declined: { ar: 'لم يقبل السائق تغيير الوجهة.', en: 'The driver declined the new destination.' },
 };
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 

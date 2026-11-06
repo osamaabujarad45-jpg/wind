@@ -453,4 +453,6 @@ console.log('Phone UI rules passed');
   const work = readFileSync(new URL('../src/driver-work.tsx', import.meta.url), 'utf8');
   const prepare = work.slice(work.indexOf('const prepareTracking'), work.indexOf('const requestBackgroundPermission'));
   assert.ok(prepare.indexOf('if (asked) await backFromSheet()') > prepare.indexOf('requestPermission()') && prepare.indexOf('if (asked) await backFromSheet()') < prepare.indexOf('if (!current() || !value?.granted)'), 'the revision is re-read after the sheet, before the answer is judged');
+  assert.match(prepare, /const backFromSheet = async \(\) => \{[\s\S]*?revision = lifecycleRef\.current\.revision;[\s\S]*?\};/, 'and re-reading it moves the revision current() compares');
+  assert.match(work, /if\(lifecycleRef\.current\.revision!==askedAt\)ticket=presenceStartGuard\.snapshot\(\)/, 'going online survives the same sheet');
 }
