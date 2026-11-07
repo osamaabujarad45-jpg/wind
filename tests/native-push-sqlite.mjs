@@ -1,12 +1,17 @@
 // Native push on the SQLite runtime production runs on: registration, delivery through a mocked Expo, muting, stale tokens and revocation.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+import { PUSH_KINDS } from '../server/domain/native-push.ts';
+
+// Every kind says what happened; a missing entry would fall back to a generic line on the lock screen.
+const pushSource = readFileSync(new URL('../server/push.ts', import.meta.url), 'utf8');
+assert.deepEqual(PUSH_KINDS.filter(kind => !new RegExp(`^  ${kind}: \{ ar: `, 'm').test(pushSource)), [], 'every push kind has its own words');
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-native-push-'));
 process.env.DB_PATH = join(dir, 'test.db');
