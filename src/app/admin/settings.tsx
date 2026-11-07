@@ -4,7 +4,7 @@ import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, ListRow, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)[] }[] = [
@@ -21,6 +21,7 @@ export default function AdminSettings() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [bad, setBad] = useState(''); // the setting the server would refuse: its own field says so
 
   async function save() {
     setBusy(true);
@@ -33,6 +34,7 @@ export default function AdminSettings() {
     if (bad) {
       setBusy(false);
       haptic.error();
+      setBad(String(bad));
       setError(fill(c.set_invalid, { field: c[`set_${bad}`] }));
       return;
     }
@@ -40,6 +42,7 @@ export default function AdminSettings() {
       await api('/admin/settings', numbers);
       await refresh();
       haptic.success();
+      setBad('');
       setMessage(c.saved);
     } catch (e) {
       haptic.error();
@@ -50,16 +53,18 @@ export default function AdminSettings() {
 
   return <Screen>
     <Header title={c.settings} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
+    <ListGroup><ListRow icon="cash-outline" label={c.cashTab} onPress={() => router.push('/admin/cash')} /></ListGroup>
     {groups.map(group => <Card key={group.title}>
-      <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
+      <Txt variant="h2" header style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad"
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
-        value={values[key]} onChangeText={text => setValues(v => ({ ...v, [key]: text }))} />)}
+        error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>
-    {!!message && <Txt center style={{ marginBottom: 10, fontWeight: '800' }}>{message}</Txt>}
+    {!!message && <View accessibilityLiveRegion="polite"><Txt center style={{ marginBottom: 10, fontWeight: '800' }}>{message}</Txt></View>}
     <View style={{ gap: 10 }}>
       <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
       <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
@@ -92,15 +97,15 @@ function Promos() {
   const stop = (p: Promo) => confirm(c.promoDeactivateConfirm, () => api(`/admin/promos/${p.id}/deactivate`, {}).then(() => { haptic.success(); reload(); })
     .catch(e => setError(err(e))), c.promoDeactivate, c.no);
   return <Card>
-    <Txt variant="h2" style={{ marginBottom: 4 }}>{c.promos}</Txt>
+    <Txt variant="h2" header style={{ marginBottom: 4 }}>{c.promos}</Txt>
     <Txt variant="caption" style={{ marginBottom: 10 }}>{c.promosHint}</Txt>
     {!!loadError && <ErrorText>{err(loadError)}</ErrorText>}
     {data?.length === 0 && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.noPromos}</Txt>}
     {data?.map(p => <Row key={p.id} gap={8} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.hair }}>
       <View style={{ flex: 1 }}>
-        <Row gap={8}><Txt variant="title">{`${p.code} · ${money(p.amount)}`}</Txt>
+        <Row gap={8}><Txt variant="title">{`${p.code}, ${money(p.amount)}`}</Txt>
           <Badge label={p.live ? c.promoActive : p.active ? c.promoExpired : c.promoEnded} status={p.live ? 'completed' : 'cancelled'} /></Row>
-        <Txt variant="micro">{fill(c.promoUses, { n: p.uses, max: p.maxUses, t: date(p.expiresAt) })}{p.firstOrderOnly ? ` · ${c.promoFirstOnly}` : ''}</Txt>
+        <Txt variant="micro">{fill(c.promoUses, { n: p.uses, max: p.maxUses, t: date(p.expiresAt) })}{p.firstOrderOnly ? `, ${c.promoFirstOnly}` : ''}</Txt>
       </View>
       {p.live && <IconButton icon="pause-circle-outline" tone="muted" label={`${c.promoDeactivate} ${p.code}`} onPress={() => stop(p)} />}
     </Row>)}
@@ -110,7 +115,7 @@ function Promos() {
       <Field label={c.promoMaxUses} keyboardType="number-pad" value={form.maxUses} onChangeText={set('maxUses')} maxLength={5} />
       <Field label={c.promoDays} keyboardType="number-pad" value={form.days} onChangeText={set('days')} maxLength={2} />
       <Txt variant="label" style={{ marginBottom: 6 }}>{c.promoFirstOnly}</Txt>
-      <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} />
+      <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={form.firstOrderOnly ? 'yes' : 'no'} onChange={k => setForm(f => ({ ...f, firstOrderOnly: k === 'yes' }))} label={c.promoFirstOnly} />
       <ErrorText>{error}</ErrorText>
       {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 8 }}>{message}</Txt></View>}
       <Button title={c.promoCreate} icon="add-circle-outline" variant="soft" loading={busy} disabled={!form.code.trim()} reason={c.promo_need_code} onPress={create} />

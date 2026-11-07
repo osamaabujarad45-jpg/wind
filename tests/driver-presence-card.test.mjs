@@ -54,8 +54,13 @@ assert.match(copy.en.presence_consent_background, /another tap/);
 assert.match(copy.ar.presence_consent_background, /ضغطة أخرى/);
 
 // Component rules: no effect may start going online, and no looping motion (reduced motion keeps state in text).
+// An effect may only announce a state change for a screen reader: it must never start presence or tracking.
 const source = readFileSync(new URL('../src/driver-presence-card.tsx', import.meta.url), 'utf8');
-assert.ok(!/useEffect/.test(source), 'nothing runs on mount');
+const effects = source => [...source.matchAll(/useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[/g)].map(m => m[1]);
+for (const body of effects(source)) {
+  assert.match(body, /announceForAccessibility/, 'an effect only announces a state change');
+  assert.doesNotMatch(body, /onConsentAndEnable|enablePresence|startPresence|startTracking|requestBackground/i, 'an effect never starts presence or tracking');
+}
 for (const banned of ['setInterval', 'Pulse', 'Radar', 'animationIterationCount', 'ActivityIndicator', 'c.online', 'presence_ready'])
   assert.ok(!source.includes(banned), `component must not use ${banned}`);
 for (const line of source.split('\n').filter(l => l.includes('onConsentAndEnable()')))
@@ -84,8 +89,12 @@ assert.match(copy.en.presence_bg_not_on, /Job sharing works while Wind is open/)
 // Driver screen wiring: the presence card replaces the false strip, starts only from its own presses, background is its own tap.
 const screen = readFileSync(new URL('../src/app/driver/index.tsx', import.meta.url), 'utf8');
 assert.ok(!/c\.online\b|c\.onlineNote|Pulse/.test(screen), 'the false ready strip and its pulse are gone');
-assert.ok(/<DriverPresenceCard/.test(screen) && /requestsOn=\{false\b/.test(screen), 'presence card mounted with requests off');
-assert.ok(!/useEffect/.test(screen), 'the driver screen runs nothing on mount');
+assert.ok(/<DriverPresenceCard/.test(screen) && /requestsOn=\{work.presenceState === 'online' && matching.data\?\.eligibleForMatching === true\}/.test(screen),
+  'requests require an online state and explicit server eligibility; unknown capability stays off');
+for (const body of effects(screen)) {
+  assert.match(body, /announceForAccessibility/, 'a driver screen effect only announces a state change');
+  assert.doesNotMatch(body, /enablePresence|startPresence|startTracking|requestBackground/i, 'a driver screen effect never starts presence or tracking');
+}
 const enableLines = screen.split('\n').filter(line => line.includes('enablePresence()'));
 assert.equal(enableLines.length, 1, 'enablePresence is called from one place');
 assert.ok(/onConsentAndEnable=/.test(enableLines[0]), 'enablePresence only from the card consent/go-online callback');

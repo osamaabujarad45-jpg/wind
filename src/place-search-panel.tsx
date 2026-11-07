@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { city, type SavedPlace } from './model';
 import { confirmPlace, proposePlace, searchPlaces, type PlaceCandidate, type PlaceChoice } from './place-search';
-import { Button, Card, ErrorText, Field, palette, Press, Row, Txt, useCopy } from './ui';
+import { Button, Card, ErrorText, Field, fill, palette, Press, Row, Txt, useCopy } from './ui';
 
 /** Strings this panel needs beyond src/copy.ts; the parent supplies them until the copy keys land. */
 export type PlaceSearchText = {
@@ -38,7 +38,7 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
     ? item.saved.label === 'other' ? item.saved.note : c[`place_${item.saved.label}`]
     : city(item.city)[language];
   const detail = (item: PlaceChoice) => !item.saved ? city(item.city)[language === 'ar' ? 'en' : 'ar']
-    : item.saved.label === 'other' ? city(item.city)[language] : `${city(item.city)[language]} · ${item.saved.note}`;
+    : item.saved.label === 'other' ? city(item.city)[language] : `${city(item.city)[language]}, ${item.saved.note}`;
 
   return <View style={styles.panel}>
     <Field label={text.label} value={query} onChangeText={value => { setQuery(value); setChoice(null); onQuery?.(value.trim()); }} icon="search" />
@@ -46,6 +46,10 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
     {!online && <Txt variant="caption" style={styles.note}>{text.offline}</Txt>}
     <ErrorText>{outside ? c.pinOutsideArea : undefined}</ErrorText>
     {!!term && !result.choices.length && <Txt variant="caption" center style={styles.note}>{c.noCities}</Txt>}
+    {/* The list itself is not a live region: a count says how much changed without repeating every row. */}
+    {!!term && !!result.choices.length && <View accessibilityLiveRegion="polite">
+      <Txt variant="micro" style={styles.note}>{fill(c.placeResults, { n: result.choices.length })}</Txt>
+    </View>}
     {result.choices.map(item => <Press key={item.key} accessibilityLabel={`${name(item)}, ${detail(item)}`} onPress={() => setChoice(item)}>
       <Row gap={8} style={styles.row}>
         <View style={styles.text}>

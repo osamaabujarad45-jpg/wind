@@ -363,7 +363,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   let releaseRecovery, recoveryRequested;
   const recoveryGate = new Promise(resolve => { releaseRecovery = resolve; });
   const recoveryRequest = new Promise(resolve => { recoveryRequested = resolve; });
-  await page.route('**/api/orders', async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
+  // Foreground recovery re-reads the order the driver is on: the app polls /api/orders/<id>, not the old list endpoint.
+  await page.route('**/api/orders/**', async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
   const beforeResume = publications;
   await page.evaluate(visibility, false);
   await Promise.race([recoveryRequest, new Promise((_, reject) => setTimeout(() => reject(new Error('Foreground recovery did not request orders')), 5000))]);
@@ -371,7 +372,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, beforeResume); // the retained assignment cannot restart GPS before recovery finishes
   releaseRecovery();
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.unroute('**/api/orders');
+  await page.unroute('**/api/orders/**');
 
   // Returning from Settings must re-read permission; retained grants cannot start GPS while that read is pending or failed.
   async function permissionResume(state, mode = 'ready') {
@@ -382,7 +383,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       check.state = state; check.mode = mode;
       return check.reads;
     }, { state, mode });
-    const recovered = page.waitForResponse(response => response.url().endsWith('/api/orders') && response.ok());
+    const recovered = page.waitForResponse(response => response.url().includes('/api/orders/') && response.ok());
     await page.evaluate(visibility, false);
     await recovered;
     await page.waitForFunction(reads => window.permissionCheck.reads > reads, reads, { timeout: 3000 });
@@ -580,7 +581,8 @@ for (const language of ['ar', 'en']) {
         state: 'request_recorded', expiresAt: Date.now() + 300000, resendAfterSeconds: 45, accountStateConcealed: true } }));
     },
     run: async page => {
-      await page.getByRole('link', { name: t.phone_recovery_open, exact: true }).click();
+      // The phone-code recovery opens an in-app screen, so it is a button, not a link.
+      await page.getByRole('button', { name: t.phone_recovery_open, exact: true }).click();
       await page.getByRole('textbox', { name: t.phone, exact: true }).fill('0599000001');
       await page.getByRole('button', { name: t.phone_recovery_send, exact: true }).click();
       await page.getByText(t.phone_recovery_recorded, { exact: true }).waitFor();

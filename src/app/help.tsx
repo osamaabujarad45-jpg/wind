@@ -31,7 +31,7 @@ export default function Help() {
     {/* the button already says "contact support"; the titled card only frames the no-line note */}
     <Appear>
       {SUPPORT_URL
-        ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
+        ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand}, ${orderRef}`)}` : SUPPORT_URL!)} />
         : <Card tone="olive">
           <Row gap={12} style={{ marginBottom: 12 }}>
             <View style={styles.icon}><Ionicons name="chatbubbles-outline" size={22} color={palette.olive} /></View>
@@ -41,7 +41,7 @@ export default function Help() {
         </Card>}
     </Appear>
 
-    <Txt variant="h2" style={{ marginVertical: 12 }}>{c.faq}</Txt>
+    <Txt variant="h2" header style={{ marginVertical: 12 }}>{c.faq}</Txt>
     <Card style={{ paddingVertical: 4 }}>
       {shown.map((key, i) => {
         const expanded = open === key;
@@ -53,7 +53,7 @@ export default function Help() {
               <Ionicons name={expanded ? 'remove' : 'add'} size={20} color={palette.olive} />
             </Row>
           </Pressable>
-          {expanded && <Animated.View entering={FadeIn.duration(220)} style={{ paddingBottom: 14 }}>
+          {expanded && <Animated.View entering={FadeIn.duration(220)} style={{ paddingBottom: 14 }} accessibilityLiveRegion="polite">
             <Txt>{c[`a_${key}`]}</Txt>
           </Animated.View>}
         </Animated.View>;

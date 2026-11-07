@@ -17,6 +17,7 @@ import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Loading, Logo,
 
 const HERO = FadeInUp.duration(400);
 const FORM = FadeInDown.duration(300).delay(120);
+type FieldErrors = { name?: string; email?: string; phone?: string; password?: string; plate?: string; consent?: string; code?: string };
 
 export default function Auth() {
   const { signIn, language, setLanguage } = useSession();
@@ -44,6 +45,8 @@ export default function Auth() {
   const [vehicle, setVehicle] = useState<Vehicle>('car');
   const [plate, setPlate] = useState('');
   const [busy, setBusy] = useState(false);
+  // Each field owns its error, so a wrong entry is explained under the field it belongs to.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
   const [entraPrepareFailed, setEntraPrepareFailed] = useState(false);
   const [entraTry, setEntraTry] = useState(0);
@@ -52,9 +55,11 @@ export default function Auth() {
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
   const [policyTry, setPolicyTry] = useState(0);
   // Enter moves through the sign-up fields and submits from the password (web keyboard users).
+  const nameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const clearError = (key: keyof FieldErrors) => setFieldErrors(errors => (errors[key] ? { ...errors, [key]: undefined } : errors));
   useEffect(() => {
     let active = true;
     void api<{ registrationOpen: boolean; emailReset?: boolean }>('/auth/options').then(options => {
@@ -78,9 +83,12 @@ export default function Auth() {
 
   async function reset() {
     if (busy) return;
-    if (!phone.trim()) return setError(err('invalid_input'));
-    if (resetSent && code.length !== 6) return setError(err('wrong_email_code'));
-    if (resetSent && (password.length < 12 || password.length > 100)) return setError(err('weak_password'));
+    const invalid: FieldErrors = {};
+    if (!phone.trim()) invalid.phone = err('invalid_input');
+    if (resetSent && code.length !== 6) invalid.code = err('wrong_email_code');
+    if (resetSent && (password.length < 12 || password.length > 100)) invalid.password = err('weak_password');
+    setFieldErrors(invalid);
+    if (Object.keys(invalid).length) { haptic.error(); return; }
     setBusy(true);
     setError('');
     try {
@@ -103,17 +111,35 @@ export default function Auth() {
     }
   }
 
+  // The checks the server will make anyway, made here so the reader is told which field is wrong.
+  function signInErrors(): FieldErrors {
+    const next: FieldErrors = {};
+    if (!phone.trim()) next.phone = err('invalid_input');
+    if (!password) next.password = err('invalid_input');
+    return next;
+  }
+  function signUpErrors(): FieldErrors {
+    const next: FieldErrors = {};
+    if (!name.trim()) next.name = err('invalid_input');
+    if (!normalizeEmail(email)) next.email = err('invalid_email');
+    if (!isValidPhone(phone)) next.phone = err('invalid_phone');
+    if (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2) next.plate = err('invalid_plate');
+    if (password.length < 12 || password.length > 100) next.password = err('weak_password');
+    if (!consent) next.consent = err('consent_required');
+    return next;
+  }
+
   async function submit() {
     if (busy) return;
     if (mode === 'reset') return reset();
-    if (mode === 'in' && (!phone.trim() || !password)) return setError(err('invalid_input'));
-    if (mode === 'up') {
-      if (!name.trim()) return setError(err('invalid_input'));
-      if (!normalizeEmail(email)) return setError(err('invalid_email'));
-      if (!isValidPhone(phone)) return setError(err('invalid_phone'));
-      if (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2) return setError(err('invalid_plate'));
-      if (password.length < 12 || password.length > 100) return setError(err('weak_password'));
-      if (!consent) return setError(err('consent_required'));
+    const invalid = mode === 'up' ? signUpErrors() : signInErrors();
+    setFieldErrors(invalid);
+    if (Object.keys(invalid).length) {
+      haptic.error();
+      // Put the caret in the first field that needs attention, so the fix starts where the reader is looking.
+      const first = invalid.name ? nameRef : invalid.email ? emailRef : invalid.phone ? phoneRef : invalid.password ? passwordRef : null;
+      first?.current?.focus();
+      return;
     }
     setBusy(true);
     setError('');
@@ -131,8 +157,10 @@ export default function Auth() {
 
   async function entraSignIn() {
     if (busy || !entraRequest) return;
-    if (mode === 'up' && (!consent || !name.trim() || !normalizeEmail(email) || !isValidPhone(phone) || (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2))) {
-      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone' : 'invalid_plate'));
+    if (mode === 'up') {
+      const invalid = signUpErrors();
+      setFieldErrors(invalid);
+      if (Object.keys(invalid).length) { haptic.error(); return; }
     }
     setBusy(true);
     setError('');
@@ -160,97 +188,98 @@ export default function Auth() {
     <Screen>
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <Press accessibilityLabel={c.language} hitSlop={4} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
-          style={{ paddingHorizontal: 14, minHeight: 36, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.card }}>
+          style={{ paddingHorizontal: 14, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card }}>
           <Txt variant="label">{c.language}</Txt>
         </Press>
       </Row>
       <Animated.View entering={still ? undefined : HERO} style={{ alignItems: 'center', marginTop: 8, marginBottom: 20, gap: 8 }}>
         <Logo size={60} />
-        <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 34 }}>{c.brand}</Txt>
+        <Txt variant="h1" center header style={{ fontSize: 26, lineHeight: 38 }}>{c.brand}</Txt>
         <Txt center>{c.tagline}</Txt>
       </Animated.View>
       <Animated.View entering={still ? undefined : FORM}>
         <Card>
           {mode === 'phone' ? <PhoneRecovery gate={phoneGate} onBack={() => { setMode('in'); setError(''); }}
             onDone={text => { setMode('in'); setPassword(''); setError(''); setNotice(text); }} /> : mode === 'reset' ? <>
-            <Txt variant="h2" style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
+            <Txt variant="h2" header style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
             <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : c.resetBody}</Txt>
-            <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
-              maxLength={254} disabled={busy} onSubmitEditing={resetSent ? undefined : submit} />
+            <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); clearError('phone'); }} autoComplete="username"
+              maxLength={254} disabled={busy} error={fieldErrors.phone} onSubmitEditing={resetSent ? undefined : submit} />
             {resetSent && <Appear>
               <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
-                autoComplete="one-time-code" maxLength={6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
-              <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={c.passwordMinimum} secureTextEntry
-                maxLength={100} disabled={busy} autoComplete="new-password" onSubmitEditing={submit} />
+                autoComplete="one-time-code" maxLength={6} disabled={busy} error={fieldErrors.code} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+              <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={next => { setPassword(next); clearError('password'); }} placeholder={c.passwordMinimum} secureTextEntry
+                maxLength={100} disabled={busy} error={fieldErrors.password} autoComplete="new-password" onSubmitEditing={submit} />
             </Appear>}
             <ErrorText>{error}</ErrorText>
             <Button title={resetSent ? c.resetSave : c.resetSend} icon={resetSent ? 'key-outline' : 'mail-outline'} onPress={submit} loading={busy} />
             {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={() => { setResetSent(false); setCode(''); }} />}
-            <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} hitSlop={8} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
+            <Press accessibilityRole="button" accessibilityLabel={c.resetNoEmail} hitSlop={8} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
               <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.resetNoEmail}</Txt>
             </Press>
-            <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} hitSlop={8} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
+            <Press accessibilityRole="button" accessibilityLabel={c.backToSignIn} hitSlop={8} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
               <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
             </Press>
           </> : <>
-          <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
-            onChange={next => { setMode(next); setError(''); }} />
+          <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode} label={c.authModeLabel}
+            onChange={next => { setMode(next); setError(''); setFieldErrors({}); }} />
           <View style={{ height: 10 }} />
           {mode === 'up' && registration === null ? <Loading />
           : mode === 'up' && registration === 'failed' ? <>
-            <Txt center>{c.offlineDesc}</Txt>
+            <Txt center>{c.err_registration_check}</Txt>
             <Loading failed onRetry={() => { setRegistration(null); setPolicyTry(n => n + 1); }} />
           </> : mode === 'up' && registration === 'closed' ? <>
             <Txt center style={{ marginBottom: 12 }}>{c.err_registration_closed}</Txt>
             {SUPPORT_URL && <Button title={c.support} icon="mail-outline" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
           </> : <>
           {mode === 'up' && <Appear>
-            <Field label={c.name} value={name} onChangeText={setName} autoComplete="name" maxLength={60} disabled={busy}
-              returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()} />
-            <Field label={c.email} inputRef={emailRef} value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy}
-              returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} />
+            <Field label={c.name} inputRef={nameRef} value={name} onChangeText={next => { setName(next); clearError('name'); }} autoComplete="name" maxLength={60} disabled={busy}
+              error={fieldErrors.name} returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()} />
+            <Field label={c.email} inputRef={emailRef} value={email} onChangeText={next => { setEmail(next); clearError('email'); }} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy}
+              error={fieldErrors.email} returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} />
           </Appear>}
-          <Field label={mode === 'in' ? c.identifier : c.phone} inputRef={phoneRef} value={phone} onChangeText={setPhone}
+          <Field label={mode === 'in' ? c.identifier : c.phone} inputRef={phoneRef} value={phone} onChangeText={next => { setPhone(next); clearError('phone'); }}
             placeholder={mode === 'up' ? c.phoneHint : undefined} keyboardType={mode === 'up' ? 'phone-pad' : 'default'}
-            autoComplete={mode === 'up' ? 'tel' : 'username'} maxLength={254} disabled={busy}
+            autoComplete={mode === 'up' ? 'tel' : 'username'} maxLength={254} disabled={busy} error={fieldErrors.phone}
             returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
-          <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
-            autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
+          <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={next => { setPassword(next); clearError('password'); }} placeholder={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
+            error={fieldErrors.password} autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
           {mode === 'up' && <Appear>
             <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
-            <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />
+            <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} label={c.iAm} />
             {role === 'driver' && <Appear>
               <Txt variant="label" style={{ marginVertical: 7 }}>{c.vehicle}</Txt>
-              <Choices items={vehicles.map(v => ({ key: v, label: c[v] }))} value={vehicle} onChange={setVehicle} disabled={busy} />
+              <Choices items={vehicles.map(v => ({ key: v, label: c[v] }))} value={vehicle} onChange={setVehicle} disabled={busy} label={c.vehicle} />
               {vehicle !== 'bicycle' && <View style={{ marginTop: 12 }}>
-                <Field label={c.plate} value={plate} onChangeText={setPlate} placeholder={c.plateHint} maxLength={12} disabled={busy} />
+                <Field label={c.plate} value={plate} onChangeText={next => { setPlate(next); clearError('plate'); }} placeholder={c.plateHint} maxLength={12} disabled={busy} error={fieldErrors.plate} />
               </View>}
             </Appear>}
             <View style={{ height: 8 }} />
             <Press accessibilityRole="checkbox" accessibilityLabel={c.consent} accessibilityState={{ checked: consent }} disabled={busy}
-              onPress={() => setConsent(!consent)} style={{ minHeight: 44, justifyContent: 'center' }}>
+              onPress={() => { setConsent(!consent); clearError('consent'); }} style={{ minHeight: 44, justifyContent: 'center' }}>
               <Row gap={8}>
                 <Ionicons name={consent ? 'checkbox' : 'square-outline'} size={22} color={consent ? palette.olive : palette.secondary} />
                 <Txt variant="caption">{c.consent}</Txt>
               </Row>
             </Press>
+            {!!fieldErrors.consent && <ErrorText>{fieldErrors.consent}</ErrorText>}
             <Row gap={16} style={{ justifyContent: 'center', marginBottom: 8 }}>
-              <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(PRIVACY_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
-              <Press accessibilityRole="link" accessibilityLabel={c.terms} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.privacy} style={{ paddingVertical: 14, minWidth: 44, alignItems: 'center' }} onPress={() => Linking.openURL(PRIVACY_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.terms} style={{ paddingVertical: 14, minWidth: 44, alignItems: 'center' }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}
-          {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
+          {mode === 'in' && !!notice && <View accessibilityLiveRegion="polite"><Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt></View>}
           <ErrorText>{error}</ErrorText>
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
           {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
             disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
             onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}
-          {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword} hitSlop={8}
+          {mode === 'in' && <Press accessibilityRole="button" accessibilityLabel={emailReset ? c.forgotPasswordEmail : c.forgotPassword}
             onPress={() => { if (emailReset) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
-            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
+            <Txt variant="caption" center style={{ marginTop: 4, paddingVertical: 14, color: palette.olive, fontWeight: '700' }}>{emailReset ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
-          {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} hitSlop={8} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
-            <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
+          {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="button" accessibilityLabel={c.phone_recovery_open} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
+            <Txt variant="caption" center style={{ paddingVertical: 14, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
           </Press>}
           {mode === 'in' && !!phoneNote && <Txt variant="caption" center style={{ paddingVertical: 6 }}>{phoneNote}</Txt>}
           {mode === 'in' && phoneGate === 'failed' && <Button title={c.retry} variant="ghost" disabled={busy} reason={c.wait_busy}

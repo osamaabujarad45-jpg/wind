@@ -1,8 +1,8 @@
 // Driver presence card (WP07). Presentation only: the parent makes the server calls and passes the state it has confirmed.
 // Nothing reads as online until the parent says so. Stale, reconnecting, blocked and pending states never look ready, and
 // automatic requests stay "not active" until requestsOn is true (the server reports eligibleForMatching:false today).
-import { useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CopyKey } from './copy';
 import { Appear, Button, Card, IconName, palette, Row, tones, Txt, useCopy } from './ui';
@@ -54,9 +54,17 @@ export function DriverPresenceCard({ state, consentAccepted = false, requestsOn 
   const connectHeld = waiting || !!blocker || startDisabled;
   const connectReason = waiting ? c.presence_reason_pending : blocker ? c[blocker] : startDisabled ? startReason : undefined;
   const disconnectReason = waiting ? c.presence_reason_pending : undefined;
+  // accessibilityLiveRegion is Android-only: say the change out loud so VoiceOver hears it too.
+  const said = useRef(state);
+  useEffect(() => {
+    if (said.current === state) return;
+    said.current = state;
+    AccessibilityInfo.announceForAccessibility(c[view.title]);
+  }, [state, view.title, c]);
 
   const buttons = <View style={styles.actions}>
-    {state === 'permission_denied' && onOpenSettings && <Button title={c.presence_open_settings} icon="settings-outline" variant="outline" onPress={onOpenSettings} />}
+    {/* Location services off is a blocker with a way out: the OS settings open it. */}
+    {(state === 'permission_denied' || state === 'unavailable') && onOpenSettings && <Button title={c.presence_open_settings} icon="settings-outline" variant="outline" onPress={onOpenSettings} />}
     {showConnect && <Button title={c.presence_go_online} icon="radio-outline" disabled={connectHeld} reason={connectReason}
       onPress={() => consentAccepted ? onConsentAndEnable() : setConsenting(true)} />}
     {showDisconnect && <Button title={c.presence_go_offline} icon="power-outline" variant="outline" disabled={waiting} reason={disconnectReason} onPress={onDisable} />}
@@ -76,10 +84,10 @@ export function DriverPresenceCard({ state, consentAccepted = false, requestsOn 
         </View>
       </Row>
     </View>
-    {!!error && <Text accessibilityRole="alert" style={[styles.error, { textAlign: align }]}>{error}</Text>}
+    {!!error && <Text maxFontSizeMultiplier={1.35} accessibilityRole="alert" style={[styles.error, { textAlign: align }]}>{error}</Text>}
 
     {consenting && state === 'offline' ? <Appear style={styles.consent}>
-      <Txt variant="h2">{c.presence_consent_title}</Txt>
+      <Txt variant="h2" header>{c.presence_consent_title}</Txt>
       <Txt variant="label" style={styles.gap}>{c.presence_consent_before_h}</Txt>
       <Txt variant="body">{c.presence_consent_before_body}</Txt>
       <Txt variant="label" style={styles.gap}>{c.presence_consent_job_h}</Txt>
@@ -117,16 +125,16 @@ export function BackgroundLocationAction({ onRequest }: { onRequest: () => Promi
       <Button title={c.presence_bg_action} icon="location-outline" variant="outline" loading={asking} onPress={() => { void ask(); }} />
     </View>
     {/* Polite: the answer is announced once the OS decision is known. */}
-    {result && <View accessibilityLiveRegion="polite"><Text style={[styles.result, { textAlign: align }]}>{result === 'granted' ? c.presence_bg_granted : c.presence_bg_not_on}</Text></View>}
+    {result && <View accessibilityLiveRegion="polite"><Text maxFontSizeMultiplier={1.35} style={[styles.result, { textAlign: align }]}>{result === 'granted' ? c.presence_bg_granted : c.presence_bg_not_on}</Text></View>}
   </Card>;
 }
 
 const styles = StyleSheet.create({
-  result: { marginTop: 10, fontSize: 13, fontWeight: '700', color: palette.ink },
+  result: { marginTop: 10, fontSize: 13, lineHeight: 19, fontWeight: '700', color: palette.ink },
   icon:{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1 },
   gap: { marginTop: 4 },
   actions: { gap: 8, marginTop: 12 },
   consent: { gap: 4, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.line },
-  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginTop: 10, overflow: 'hidden' },
+  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, lineHeight: 19, fontWeight: '700', marginTop: 10, overflow: 'hidden' },
 });
