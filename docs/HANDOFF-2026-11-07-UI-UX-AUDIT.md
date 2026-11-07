@@ -14,6 +14,14 @@ Two commits, in this order:
 2. `fix(ui): the full UI/UX audit — type scale, touch targets, semantics and headings on
    every screen` — the audit itself: every screen file, the shared library, the copy, the
    audit tooling, the report and the regenerated screenshots.
+3. `fix(deps): vendor the upstream 0.5.1 decoder instead of the hand-written backport` —
+   the vendored URL decoder was the 0.5.0 algorithm with a scanner added by hand, but its
+   replacement map still scanned the whole input once per key: 32,000 distinct percent-runs
+   took 8.7 s, so CVE-2026-118664 was not fixed and `tests/url-decoder.test.mjs` failed.
+   Upstream 0.5.1 is the release that fixes it (118 ms for the same input) and it is what
+   the repository's own decoder test expects. The file stays CommonJS for Expo Router's
+   query-string 7 and the reviewed-bytes pin is updated, so the dependency gate still
+   holds.
 
 The workspace had CRLF line endings in the edited files while the repository stores LF.
 The edited files were normalised to LF so the diff shows the real change and not every
@@ -44,6 +52,8 @@ node scripts/ui-audit.mjs       # 66 combinations measured; 14 findings, all ext
 node scripts/ui-audit-summary.mjs
 npx tsc --noEmit               # clean
 npx expo lint                  # clean
+npm test                       # 105 suites passed
+npm run check:audit            # the high-severity chain stays mitigated
 ```
 
 The PostgreSQL suites need the isolated loopback database:

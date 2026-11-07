@@ -131,7 +131,8 @@ findings so one fix covers all of them.
 | `npm run screens` | 96 screenshots (48 Arabic, 48 English) + the 360 px / 130% text checks, all green |
 | `npx tsc --noEmit` | clean |
 | `npx expo lint` | clean (0 errors, 0 warnings) |
-| `npm test` | every suite passes up to the PostgreSQL suites (see below) |
+| `npm test` | **105 suites passed** (the isolated loopback PostgreSQL included) |
+| `npm run check:audit` | the high-severity chain stays mitigated, only moderate/low remain reported |
 
 Two stale checks in the repo's own scripts were corrected, not worked around:
 
@@ -147,6 +148,22 @@ Two stale checks in the repo's own scripts were corrected, not worked around:
   state change to a screen reader. The test now asserts the rule it was written for: no
   effect may start presence or tracking, only announce.
 
+## One more fix the audit run uncovered
+
+The full test suite was red before it could be trusted: `tests/url-decoder.test.mjs` failed
+because the vendored decoder was the 0.5.0 algorithm with a scanner added by hand, but its
+replacement map still scanned the whole input once per key. Thirty-two thousand distinct
+percent-runs took **8.7 seconds**, so CVE-2026-118664 was not actually fixed by that
+backport, and one of the decoder's own expectations (`%41%FE%FF` → `A��`) never held.
+
+Upstream **0.5.1** is the release that fixes that advisory. It decodes each percent-run in
+a single pass (118 ms for the same input), turns the UTF-16 BOM pair into two replacement
+characters and a truncated `%C2` into one, and leaves everything else literal — which is
+exactly what the repository's own decoder test expects. The vendored copy is now that
+release, still published as CommonJS for Expo Router's query-string 7, and the
+reviewed-bytes pin in `scripts/check-audit.mjs` is updated to its hash so the dependency
+gate keeps doing its job.
+
 ## Known limits (not app defects)
 
 - The 14 console findings are `/api/route` returning 503 because the local sandbox has no
@@ -155,10 +172,10 @@ Two stale checks in the repo's own scripts were corrected, not worked around:
   its own colours (2.85:1 white on grey). It is the vendor's overlay, not the app's text.
 - The PostgreSQL suites (`subscription-migration`, `db-persistence`, `db-api`) need the
   isolated loopback PostgreSQL on `127.0.0.1:55473` (`node scripts/local-postgres.mjs
-  start`). The instance on this machine was recovering from an interrupted shutdown and
-  needed minutes to finish; the suites were re-run once it was up.
+  start`). It had been left stopped after an interrupted shutdown and took twenty minutes
+  of crash recovery to finish; with it up, the whole suite passes.
 - A local debug APK build (`gradlew assembleDebug`) fails on this machine with
   "Filename longer than 260 characters": the repository path is inside a OneDrive folder
-  and the CMake object paths for `react-native-gesture-handler` exceed the Windows limit.
-  The fix is to build from a short path or with long-path support for the toolchain; the
-  app's own acceptance path (the screenshot pipeline) is unaffected.
+  and the CMake object paths for the React Native modules exceed the Windows limit. The
+  fix is to build from a short path (a copy on the system drive); the app's own acceptance
+  path (the screenshot pipeline) is unaffected.
