@@ -4,6 +4,7 @@ import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { openExternal } from './external-link';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
@@ -169,21 +170,21 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Row style={{ justifyContent: 'space-between' }}>
-              <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+            <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+              <Txt variant="title" style={{ flexBasis: 160, flexGrow: 1, flexShrink: 1 }}>
                 {city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
-              <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>
+              <Txt variant="title" style={[{ flexShrink: 0 }, order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }]}>{money(order.price)}</Txt>
             </Row>
             {/* private is the default and sat on every row; only shared, the exception, is marked */}
-            <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
+            <Txt variant="caption">{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
               {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
-              <Row gap={8}>
-                <Txt variant="micro">{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
-                <Txt variant="micro">{orderCode(order.id)}</Txt>
+              <Row gap={8} style={{ flexWrap: 'wrap', flexShrink: 1, maxWidth: '100%', justifyContent: 'flex-end' }}>
+                <Txt variant="micro" style={{ flexShrink: 1 }}>{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
+                <Txt variant="micro" style={{ flexShrink: 0 }}>{orderCode(order.id)}</Txt>
               </Row>
             </Row>
           </View>
@@ -357,17 +358,25 @@ export function VerifyEmailNudge() {
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
   const { c } = useCopy();
-  return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-    {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
-      <Txt variant="caption" style={styles.link}>{c.help}</Txt>
-    </Press>}
-    {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => Linking.openURL(SUPPORT_URL!)}>
-      <Txt variant="caption" style={styles.link}>{c.support}</Txt>
-    </Press>}
-    {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => Linking.openURL(PRIVACY_URL)}>
-      <Txt variant="caption" style={styles.link}>{c.privacy}</Txt>
-    </Press>}
-  </Row>;
+  const [failed, setFailed] = useState(false);
+  async function open(url: string) {
+    setFailed(false);
+    if (!(await openExternal(url))) { haptic.error(); setFailed(true); }
+  }
+  return <View>
+    <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+      {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
+        <Txt variant="caption" style={styles.link}>{c.help}</Txt>
+      </Press>}
+      {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => { void open(SUPPORT_URL!); }}>
+        <Txt variant="caption" style={styles.link}>{c.support}</Txt>
+      </Press>}
+      {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => { void open(PRIVACY_URL); }}>
+        <Txt variant="caption" style={styles.link}>{c.privacy}</Txt>
+      </Press>}
+    </Row>
+    <ErrorText>{failed ? c.linkUnavailable : undefined}</ErrorText>
+  </View>;
 }
 
 export function AccountScreen() {
@@ -464,7 +473,7 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
+  link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8, paddingHorizontal: 4, minHeight: 48, minWidth: 48, textAlignVertical: 'center' },
   stop: { alignItems: 'stretch', gap: 10 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },

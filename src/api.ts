@@ -47,26 +47,36 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
   const latestPath = useRef(path);
   useEffect(() => { latestPath.current = path; }, [path]);
   const inFlight = useRef<number | null>(null);
-  const load = useCallback(async (force = false) => {
-    if (!path) return undefined;
+  const requestRef = useRef<Promise<string | undefined> | null>(null);
+  const load = useCallback((force = false): Promise<string | undefined> => {
+    if (!path) return Promise.resolve(undefined);
     if (inFlight.current === generation.current) {
-      if (!force) return undefined;
-      generation.current++; // a manual refresh must not wait for an older snapshot
+      if (!force) return requestRef.current ?? Promise.resolve(undefined); // focus/poll/manual retry join the same request
+      generation.current++; // a forced refresh may still deliberately supersede an older snapshot
     }
     const current = generation.current;
     inFlight.current = current;
-    try {
-      const next = await api<T>(path);
-      if (current === generation.current && latestPath.current === path) { setResult({ path, value: next }); setError(undefined); }
-      return undefined;
-    } catch (e) {
-      const code = errorCode(e);
-      if (current !== generation.current || latestPath.current !== path) return undefined;
-      // Keep the last snapshot for transient failures, but never display data after access is revoked.
-      if (terminal(code)) setResult(previous => previous?.path === path ? undefined : previous);
-      setError({ path, value: code });
-      return code;
-    } finally { if (inFlight.current === current) inFlight.current = null; }
+    const request = (async () => {
+      try {
+        const next = await api<T>(path);
+        if (current === generation.current && latestPath.current === path) { setResult({ path, value: next }); setError(undefined); }
+        return undefined;
+      } catch (e) {
+        const code = errorCode(e);
+        if (current !== generation.current || latestPath.current !== path) return undefined;
+        // Keep the last snapshot for transient failures, but never display data after access is revoked.
+        if (terminal(code)) setResult(previous => previous?.path === path ? undefined : previous);
+        setError({ path, value: code });
+        return code;
+      } finally {
+        if (inFlight.current === current) {
+          inFlight.current = null;
+          requestRef.current = null;
+        }
+      }
+    })();
+    requestRef.current = request;
+    return request;
   }, [path]);
   useFocusEffect(useCallback(() => {
     generation.current++;
@@ -101,8 +111,17 @@ export function useApi<T>(path: string | null, pollMs?: number, options?: { refe
     generation.current++; // an acknowledged action wins over a poll that started before it
     if (path) setResult({ path, value: next });
   };
+  // Acknowledged actions keep the original forced reload: a pre-mutation poll must never satisfy their refresh.
   const reload = useCallback(() => load(true), [load]);
-  return { data: data?.path === path ? data.value : undefined, error: error?.path === path ? error.value : undefined, reload, setData };
+  const retryToken = useRef(0);
+  const [retrying, setRetrying] = useState(false);
+  // Visible Retry joins the current poll; only the latest retry generation may clear its pending presentation.
+  const retry = useCallback(async () => {
+    const token = ++retryToken.current;
+    setRetrying(true);
+    try { return await load(false); } finally { if (retryToken.current === token) setRetrying(false); }
+  }, [load]);
+  return { data: data?.path === path ? data.value : undefined, error: error?.path === path ? error.value : undefined, reload, retry, retrying, setData };
 }
 
 // Live driver fix over the server's long-poll (`.../live?since=`): each answer arrives as soon as the driver's next fix

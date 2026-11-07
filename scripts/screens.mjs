@@ -27,6 +27,24 @@ const webDir = join(root, '.screens', 'web');
 const outDir = join(root, 'docs', 'screens');
 const phone = { width: 390, height: 844 };
 
+// Inner React Native ScrollViews do not grow document.documentElement. Grow the viewport until every vertical
+// scroller fits, including content revealed after a validation/reset/capability state change.
+async function growCaptureViewport(page, width) {
+  const overflow = () => page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
+    .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
+    .map(d => d.scrollHeight - d.clientHeight)));
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const extra = await overflow();
+    if (extra <= 4) return;
+    const current = page.viewportSize();
+    const next = Math.min(current.height + extra + 48, 10000);
+    assert.ok(next > current.height, `capture viewport cannot grow past ${current.height}px`);
+    await page.setViewportSize({ width, height: next });
+    await page.waitForTimeout(200);
+  }
+  assert.ok(await overflow() <= 4, 'capture still has vertically clipped scroll content after growth');
+}
+
 // ---------- 1. throwaway API with seeded data ----------
 const dbDir = mkdtempSync(join(tmpdir(), 'wind-screens-'));
 process.env.DB_PATH = join(dbDir, 'screens.db');
@@ -159,10 +177,12 @@ const screens = [
   { id: 'sign-in', group: 'Launch', name: 'Sign in', route: '/auth', file: 'src/app/auth.tsx', role: null },
   { id: 'sign-up', group: 'Launch', name: 'Create account (driver)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp', 'driver'] },
   { id: 'sign-up-customer', group: 'Launch', name: 'Create account (customer)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp'] },
+  { id: 'sign-up-consent-error', group: 'Launch', name: 'Create account · consent error attached to its checkbox', route: '/auth', file: 'src/app/auth.tsx', role: null, generated: true },
   { id: 'sign-in-phone-recovery', group: 'Launch', name: 'Sign in · reset with a phone code (synthetic capability, generic reply)', route: '/auth', file: 'src/phone-recovery.tsx', role: null, state: 'phone-recovery' },
   { id: 'help', group: 'Launch', name: 'Help & support', route: '/help?topic=password', file: 'src/app/help.tsx', role: null },
 
   { id: 'home', group: 'Customer', name: 'Home', route: '/', file: 'src/app/(customer)/index.tsx', role: 'customer' },
+  { id: 'home-service-choice', group: 'Customer', name: 'Home · explicit service after Where to', route: '/', file: 'src/app/(customer)/index.tsx', role: 'customer', clicks: ['whereTo'] },
   { id: 'book-parcel', group: 'Customer', name: 'Book a parcel', route: '/book?service=parcel', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-ride', group: 'Customer', name: 'Book a ride', route: '/book?service=ride', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-calculating', group: 'Customer', name: 'Book a ride · price being calculated (Request disabled, reason shown)', route: '/book?service=ride&from=ramallah&to=nablus', file: 'src/app/book.tsx', role: 'customer', state: 'calculating' },
@@ -211,7 +231,7 @@ const shots = [];
 for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
   for (const screen of screens) {
-    if (screen.state) continue; // captured after the scenarios that set them up
+    if (screen.state || screen.generated) continue; // captured by the interaction/scenario that sets them up
     const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
     await context.addInitScript(({ token, language, onboarded }) => {
@@ -249,13 +269,286 @@ for (const language of ['ar', 'en']) {
     }
     if (screen.motion) await page.waitForTimeout(900); // mid-ripple
     // Grow the viewport to the scroll content so long screens are captured whole (tab bar stays at the bottom).
-    const extra = await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
-      .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
-      .map(d => d.scrollHeight - d.clientHeight)));
-    if (extra) { await page.setViewportSize({ width: phone.width, height: Math.min(phone.height + extra, 2600) }); await page.waitForTimeout(400); }
+    await growCaptureViewport(page, phone.width);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
+    const captureState = async (id, name) => {
+      await growCaptureViewport(page, phone.width);
+      const stateFile = join(outDir, language, `${id}.png`);
+      await page.screenshot({ path: stateFile });
+      shots.push({ ...screen, id, name, language, file: stateFile });
+    };
+    if (screen.id === 'welcome-1') {
+      const t = copy[language];
+      for (const name of [t.skip, t.language]) {
+        const box = await page.getByRole('button', { name, exact: true }).boundingBox();
+        assert.ok(box && box.height >= 48, `${name} must have a 48px target`);
+      }
+      assert.equal(await page.getByRole('radiogroup').count(), 1);
+      const slides = await page.getByRole('radio').all();
+      assert.equal(slides.length, 3);
+      for (const slide of slides) {
+        const box = await slide.boundingBox();
+        assert.ok(box && box.width >= 48 && box.height >= 48, 'slide keys must be 48px targets');
+      }
+      const liveCopy = page.locator('#welcome-slide-copy');
+      await liveCopy.evaluate(element => { element.dataset.launchPersistence = 'stable'; });
+      const next = page.getByRole('button', { name: t.next, exact: true });
+      await next.click();
+      assert.equal(await liveCopy.getAttribute('data-launch-persistence'), 'stable', 'slide changes preserve the live-region node');
+      assert.ok((await liveCopy.textContent()).includes(t.ob2Title), 'the persistent live region receives the new slide copy');
+      assert.equal(await next.evaluate(element => element === document.activeElement), true, 'slide animation does not steal keyboard focus');
+      await slides[1].click();
+      const selected = async index => {
+        assert.equal(await slides[index].getAttribute('aria-checked'), 'true');
+        assert.equal(await slides[index].getAttribute('tabindex'), '0');
+        assert.equal(await slides[index].evaluate(element => element === document.activeElement), true);
+        assert.equal(await page.getByRole('radio', { checked: true }).count(), 1);
+      };
+      await selected(1);
+      await page.keyboard.press('ArrowDown');
+      await selected(2);
+      await page.keyboard.press('Home');
+      await selected(0);
+      await page.keyboard.press('End');
+      await selected(2);
+      await page.keyboard.press('ArrowUp');
+      await selected(1);
+      await page.keyboard.press('ArrowRight');
+      await selected(language === 'ar' ? 0 : 2);
+      await page.keyboard.press('ArrowLeft');
+      await selected(1);
+      console.log(`Welcome (${language}): targets, direct selection, arrows, Home/End and roving focus passed`);
+    }
+    if (screen.id === 'sign-in') {
+      const t = copy[language];
+      const identifier = page.getByRole('textbox', { name: t.identifier, exact: true });
+      const password = page.getByLabel(t.password, { exact: true });
+      const submit = page.getByRole('button', { name: t.signIn, exact: true });
+      for (const name of [t.help, t.privacy]) {
+        const box = await page.getByRole('link', { name, exact: true }).boundingBox();
+        assert.ok(box && box.width >= 48 && box.height >= 48, `${name} footer link must be at least 48x48`);
+      }
+      await submit.click();
+      await page.getByText(t.err_invalid_input, { exact: true }).waitFor();
+      assert.equal(await identifier.evaluate(element => element === document.activeElement), true);
+      await identifier.fill('0599000001');
+      assert.equal(await page.getByText(t.err_invalid_input, { exact: true }).count(), 0);
+      await submit.click();
+      await page.getByText(t.err_invalid_input, { exact: true }).waitFor();
+      assert.equal(await password.evaluate(element => element === document.activeElement), true);
+      await password.fill('Screenshot_Secret1');
+      let releaseLogin;
+      const loginGate = new Promise(resolve => { releaseLogin = resolve; });
+      await page.route('**/api/auth/login', async route => {
+        await loginGate;
+        await route.fulfill({ status: 401, json: { error: 'wrong_credentials' } });
+      });
+      await submit.click();
+      const signUpMode = page.getByRole('radio', { name: t.signUp, exact: true });
+      assert.equal(await signUpMode.isDisabled(), true);
+      await signUpMode.click({ force: true });
+      await page.getByRole('radio', { name: t.signIn, exact: true, checked: true }).waitFor();
+      assert.equal(await page.getByRole('textbox', { name: t.name, exact: true }).count(), 0);
+      releaseLogin();
+      await page.getByText(t.err_wrong_credentials, { exact: true }).waitFor();
+      await page.getByRole('radio', { name: t.signIn, exact: true, checked: true }).waitFor();
+      assert.equal(await page.getByRole('textbox', { name: t.name, exact: true }).count(), 0);
+      assert.equal(await signUpMode.isDisabled(), false);
+      await page.unroute('**/api/auth/login');
+      await page.route('**/api/auth/options', async route => {
+        const response = await route.fetch();
+        const options = await response.json();
+        options.emailReset = true;
+        await route.fulfill({ response, json: options });
+      });
+      await page.goto(base + '/auth', { waitUntil: 'networkidle' });
+      await page.unroute('**/api/auth/options');
+      await page.route('**/api/auth/reset/code', route => route.fulfill({ json: { ok: true } }));
+      await page.getByRole('link', { name: t.forgotPasswordEmail, exact: true }).click();
+      await identifier.fill('0599000001');
+      await page.getByRole('button', { name: t.resetSend, exact: true }).click();
+      let code = page.getByLabel(t.emailCodeLabel, { exact: true });
+      await code.waitFor();
+      assert.equal(await code.evaluate(element => element === document.activeElement), true, 'revealed OTP receives focus');
+      const focusStyle = await code.evaluate(element => {
+        const input = getComputedStyle(element);
+        const wrapper = getComputedStyle(element.parentElement);
+        return {
+          inputWidth: input.outlineWidth,
+          inputStyle: input.outlineStyle,
+          inputBorderWidth: input.borderLeftWidth,
+          inputBoxShadow: input.boxShadow,
+          wrapperWidth: wrapper.outlineWidth,
+          wrapperOffset: wrapper.outlineOffset,
+          wrapperStyle: wrapper.outlineStyle,
+        };
+      });
+      assert.equal(focusStyle.inputWidth, '0px', 'inner browser outline is suppressed');
+      assert.equal(focusStyle.inputStyle, 'solid', 'zero-width solid outline replaces Chromium auto focus ring');
+      assert.equal(focusStyle.inputBorderWidth, '0px');
+      assert.equal(focusStyle.inputBoxShadow, 'none');
+      assert.equal(focusStyle.wrapperWidth, '2px', 'wrapper owns the visible focus outline');
+      assert.equal(focusStyle.wrapperOffset, '0px', 'border and outline have no separating white gap');
+      assert.equal(focusStyle.wrapperStyle, 'solid');
+      await code.fill('123456');
+      await page.getByLabel(t.newPassword, { exact: true }).fill('Another_Secret1');
+      await identifier.fill('0599000002');
+      assert.equal(await code.count(), 0, 'changing a sent identifier hides the old OTP');
+      await page.getByRole('button', { name: t.resetSend, exact: true }).click();
+      code = page.getByLabel(t.emailCodeLabel, { exact: true });
+      await code.waitFor();
+      assert.equal(await code.inputValue(), '', 'new identifier never inherits the old OTP');
+      assert.equal(await page.getByLabel(t.newPassword, { exact: true }).inputValue(), '', 'new identifier never inherits the old new-password');
+      assert.equal(await code.evaluate(element => element === document.activeElement), true);
+      await captureState('reset-code-sent', 'Password reset · code sent with empty new credentials');
+      await page.route('**/api/auth/reset', route => route.fulfill({ json: { ok: true } }));
+      await page.route('**/api/auth/login', route => route.fulfill({ status: 401, json: { error: 'wrong_credentials' } }));
+      await code.fill('654321');
+      await page.getByLabel(t.newPassword, { exact: true }).fill('Final_Secret1');
+      await page.getByRole('button', { name: t.resetSave, exact: true }).click();
+      await page.getByRole('alert').filter({ hasText: t.resetDone }).waitFor();
+      console.log(`Authentication (${language}): focus, stale-secret clearing and reset-success alert passed`);
+    }
+    if (screen.id === 'sign-up-customer') {
+      const t = copy[language];
+      await page.getByRole('textbox', { name: t.name, exact: true }).fill('Test Customer');
+      await page.getByRole('textbox', { name: t.email, exact: true }).fill(`ui-${language}@example.test`);
+      await page.getByRole('textbox', { name: t.phone, exact: true }).fill('0599123999');
+      await page.getByLabel(t.password, { exact: true }).fill('Screenshot_Secret1');
+      await page.getByRole('button', { name: t.createAccount, exact: true }).click();
+      const consentError = page.locator('[role="alert"]').filter({ hasText: t.err_consent_required });
+      await consentError.waitFor();
+      assert.equal(await consentError.getAttribute('aria-live'), 'assertive');
+      const consent = page.getByRole('checkbox', { name: t.consent, exact: true });
+      assert.equal(await consent.getAttribute('aria-checked'), 'false');
+      assert.equal(await consent.getAttribute('aria-describedby'), 'auth-consent-error');
+      assert.equal(await page.locator('#auth-consent-error').innerText(), t.err_consent_required);
+      await captureState('sign-up-consent-error', 'Create account · consent error attached to its checkbox');
+      await consent.click();
+      assert.equal(await consent.getAttribute('aria-checked'), 'true');
+      assert.equal(await consent.getAttribute('aria-describedby'), null);
+      assert.equal(await consentError.count(), 0);
+      assert.equal(await page.locator('#auth-consent-error').count(), 0);
+      await page.evaluate(() => { window.open = () => { throw new Error('Blocked external handler'); }; });
+      await page.getByRole('link', { name: t.privacy, exact: true }).click();
+      await page.getByRole('alert').filter({ hasText: t.linkUnavailable }).waitFor();
+      await captureState('sign-up-link-error', 'Create account · external link failure');
+      console.log(`Sign-up (${language}): consent association, clearing and blocked-link recovery passed`);
+    }
+    if (screen.id === 'home' || screen.id === 'orders') {
+      const t = copy[language];
+      const orderPath = '**/api/orders*';
+      let failedRequests = 0;
+      await page.route(orderPath, route => { failedRequests++; return route.fulfill({ status: 503, json: { error: 'network' } }); });
+      const retry = page.getByRole('button', { name: t.retry, exact: true });
+      await retry.waitFor({ timeout: 20_000 }).catch(async error => {
+        console.error(`${screen.id} (${language}): intercepted failed order requests=${failedRequests}; page=${await page.locator('body').innerText()}`);
+        await page.screenshot({ path: join(root, '.screens', `retry-debug-${screen.id}-${language}.png`) });
+        throw error;
+      }); // the screen's real 10 s poll must retain stale data and expose recovery
+      assert.ok(await page.getByText('W-', { exact: false }).count() > 0, 'stale orders must remain visible');
+      await captureState(`${screen.id}-stale-error`, `${screen.name} · stale data with retry`);
+      await page.unroute(orderPath);
+      let retryRequests = 0;
+      const retrySeen = Promise.withResolvers();
+      const retryGate = Promise.withResolvers();
+      await page.route(orderPath, async route => {
+        retryRequests++;
+        retrySeen.resolve();
+        await retryGate.promise;
+        await route.continue();
+      });
+      await retry.click();
+      await retrySeen.promise;
+      assert.equal(await retry.isDisabled(), true, 'retry disables while its request is pending');
+      assert.equal(await retry.getAttribute('aria-busy'), 'true');
+      await retry.click({ force: true });
+      await page.waitForTimeout(100);
+      assert.equal(retryRequests, 1, 'a forced second click joins rather than duplicates the pending retry');
+      retryGate.resolve();
+      await retry.waitFor({ state: 'detached' });
+      await page.unroute(orderPath);
+      console.log(`${screen.id} (${language}): stale retry joins one pending request and recovers`);
+    }
+    if (screen.id === 'orders') {
+      const t = copy[language];
+      await page.route('**/api/orders*', route => route.fulfill({ json: [] }));
+      await page.goto(base + '/orders', { waitUntil: 'networkidle' });
+      await page.getByText(t.noOrders, { exact: true }).waitFor();
+      await captureState('orders-empty', 'Orders · empty with direct enabled-service actions');
+      await page.getByRole('button', { name: `${t.request} ${t.freight}`, exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/book');
+      assert.equal(new URL(page.url()).searchParams.get('service'), 'freight');
+      console.log(`Orders (${language}): empty state opens an enabled service directly`);
+    }
+    if (screen.id === 'home') {
+      const t = copy[language];
+      await page.getByText(t.activeOrders, { exact: true }).waitFor();
+      await page.getByRole('button', { name: t.whereTo, exact: true }).click();
+      assert.equal(await page.getByRole('button', { name: t.whereTo, exact: true }).getAttribute('aria-expanded'), 'true');
+      assert.equal(await page.getByRole('radiogroup').count(), 1);
+      const choiceHeights = await page.getByRole('radio').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+      assert.ok(Math.max(...choiceHeights) - Math.min(...choiceHeights) <= 1, 'service choices have equal heights');
+      await page.getByRole('radio', { name: t.parcel, exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/book');
+      let destination = new URL(page.url());
+      assert.equal(destination.searchParams.get('service'), 'parcel');
+      assert.equal(destination.searchParams.get('pick'), 'to');
+      await page.goto(base + '/', { waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: t.later, exact: true }).click();
+      await page.getByRole('radio', { name: t.freight, exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/book');
+      destination = new URL(page.url());
+      assert.equal(destination.searchParams.get('service'), 'freight');
+      assert.equal(destination.searchParams.get('when'), 'later');
+      let enabledServices = ['parcel'];
+      await page.route('**/api/me', async route => {
+        const response = await route.fetch();
+        const me = await response.json();
+        me.capabilities.enabledServices = enabledServices;
+        await route.fulfill({ response, json: me });
+      });
+      await page.goto(base + '/', { waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: t.whereTo, exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/book');
+      destination = new URL(page.url());
+      assert.equal(destination.searchParams.get('service'), 'parcel');
+      assert.equal(destination.searchParams.get('pick'), 'to');
+      enabledServices = [];
+      await page.goto(base + '/', { waitUntil: 'networkidle' });
+      await page.getByText(t.servicesUnavailable, { exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: t.whereTo, exact: true }).isDisabled(), true);
+      assert.equal(await page.getByRole('button', { name: t.later, exact: true }).isDisabled(), true);
+      await captureState('home-no-services', 'Home · no enabled services with Help recovery');
+      await page.unroute('**/api/me');
+      await page.route('**/api/orders*', async route => {
+        const response = await route.fetch();
+        const orders = await response.json();
+        const common = { status: 'completed', pickupCity: 'ramallah', dropoffCity: 'nablus', scheduledFor: null };
+        orders[0] = { ...orders[0], ...common, id: 900001, service: 'parcel' };
+        orders[1] = { ...orders[1], ...common, id: 900002, service: 'ride' };
+        await route.fulfill({ response, json: orders });
+      });
+      await page.goto(base + '/', { waitUntil: 'networkidle' });
+      const recentNames = await page.getByRole('button', { name: t.requestAgain, exact: false }).evaluateAll(elements => elements.map(element => element.getAttribute('aria-label') ?? ''));
+      assert.ok(recentNames.some(name => name.startsWith(`${t.requestAgain}: ${t.parcel},`)), 'recent parcel name includes its service');
+      assert.ok(recentNames.some(name => name.startsWith(`${t.requestAgain}: ${t.ride},`)), 'recent ride name includes its service');
+      assert.ok(recentNames.every(name => name.includes(` ${t.to} `)), 'recent names include a localized direction word');
+      await page.route('**/api/me', async route => {
+        const response = await route.fetch();
+        const me = await response.json();
+        me.capabilities.enabledServices = [];
+        await route.fulfill({ response, json: me });
+      });
+      await page.goto(base + '/', { waitUntil: 'networkidle' });
+      const unavailableRecent = await page.getByRole('button', { name: t.requestAgain, exact: false }).all();
+      assert.ok(unavailableRecent.length >= 2, 'zero-service fixture retains recent history');
+      for (const recent of unavailableRecent) assert.equal(await recent.isDisabled(), true, 'recent routes cannot bypass disabled services');
+      assert.equal(await page.getByText(t.chooseService, { exact: true }).count(), 0, 'no empty service panel is exposed');
+      console.log(`Home (${language}): capability guards, retry, plural/recent names and direct navigation passed`);
+    }
     if (screen.id === 'driver-jobs') {
       await page.getByRole('button', { name: copy[language].activeOrder, exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: copy[language].accept, exact: true }).count() > 0, true);
@@ -658,6 +951,88 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
     await context.close();
   }
   console.log('Driver presence at 360 px, 100% and 130% text: no horizontal overflow, Go online reachable, reduced motion active');
+}
+// Launch/customer reflow: narrow browser approximation, with uncapped text scaled after layout.
+// This catches clipping/overflow in the web bundle; physical Android font-scale and TalkBack remain separate acceptance gates.
+const narrowLaunchCases = [
+  { id: 'welcome-1', route: '/', token: null, fresh: true },
+  { id: 'sign-up-customer', route: '/auth', token: null, click: 'signUp' },
+  { id: 'home', route: '/', token: layla.token },
+  { id: 'home-service-choice', route: '/', token: layla.token, click: 'whereTo' },
+  { id: 'orders', route: '/orders', token: layla.token },
+];
+const selectedNarrowLaunch = only ? narrowLaunchCases.filter(item => only.includes(item.id)) : narrowLaunchCases;
+if (selectedNarrowLaunch.length) {
+  const narrowDir = join(root, '.screens', 'narrow');
+  mkdirSync(narrowDir, { recursive: true });
+  for (const item of selectedNarrowLaunch) for (const language of ['ar', 'en']) for (const scale of [1, 1.3]) {
+    const context = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2,
+      locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
+    await context.addInitScript(({ token, language, fresh }) => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.clear();
+      localStorage.setItem('language', language);
+      if (!fresh) localStorage.setItem('onboarded', '1');
+      if (token) localStorage.setItem('token', token);
+    }, { token: item.token, language, fresh: !!item.fresh });
+    const page = await context.newPage();
+    await page.goto(`http://localhost:${WEB_PORT}${item.route}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1800);
+    if (item.click) await page.getByText(copy[language][item.click], { exact: true }).click();
+    if (scale !== 1) {
+      await page.evaluate(factor => {
+        for (const element of document.querySelectorAll('body *')) {
+          if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+          element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * factor}px`;
+        }
+      }, scale);
+      await page.waitForTimeout(400);
+    }
+    if (item.id === 'home-service-choice') {
+      const heights = await page.getByRole('radio').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+      assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `${language} ${scale}: service choices must remain equal height`);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 0, `${item.id} ${language} at 360px scale ${scale}: horizontal overflow ${overflow}px`);
+    const clipped = await page.evaluate(() => [...document.querySelectorAll('[role="button"],[role="radio"],[role="checkbox"],[role="link"]')]
+      .filter(control => control.getBoundingClientRect().bottom > 0 && control.getBoundingClientRect().top < innerHeight)
+      .filter(control => {
+        const style = getComputedStyle(control);
+        const horizontal = control.scrollWidth > control.clientWidth + 1; // visible horizontal ink can overlap a sibling
+        const clipsVertically = style.overflow !== 'visible' || style.overflowY !== 'visible';
+        return horizontal || (clipsVertically && control.scrollHeight > control.clientHeight + 1);
+      })
+      .map(control => ({ text: control.textContent.trim(), width: control.clientWidth, scrollWidth: control.scrollWidth, height: control.clientHeight, scrollHeight: control.scrollHeight,
+        overflow: getComputedStyle(control).overflow, innerHeight: control.firstElementChild?.clientHeight, innerScrollHeight: control.firstElementChild?.scrollHeight })));
+    if (clipped.length) await page.screenshot({ path: join(narrowDir, `debug-${item.id}-${language}-${scale}.png`) });
+    assert.deepEqual(clipped, [], `${item.id} ${language} at 360px scale ${scale}: clipped controls`);
+    assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
+    await page.screenshot({ path: join(narrowDir, `${item.id}-${language}-${scale === 1 ? '100' : '130'}.png`) });
+    if (item.id === 'home' || item.id === 'orders') {
+      const bottom = await page.evaluate(() => {
+        const scroller = [...document.querySelectorAll('div')]
+          .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
+          .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+        if (scroller) {
+          const before = scroller.scrollTop;
+          scroller.scrollTop = scroller.scrollHeight;
+          return { before, after: scroller.scrollTop, range: scroller.scrollHeight - scroller.clientHeight };
+        }
+        const before = window.scrollY;
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        return { before, after: window.scrollY, range: document.documentElement.scrollHeight - innerHeight };
+      });
+      if (bottom.range > 4) {
+        assert.ok(bottom.after > bottom.before, `${item.id} ${language} ${scale}: bottom capture must actually scroll`);
+        assert.ok(bottom.after >= bottom.range - 2, `${item.id} ${language} ${scale}: bottom capture must reach the scroll end`);
+      }
+      await page.waitForTimeout(350);
+      await page.screenshot({ path: join(narrowDir, `${item.id}-${language}-${scale === 1 ? '100' : '130'}-bottom.png`) });
+    }
+    await context.close();
+  }
+  console.log(`Launch/customer reflow passed for ${selectedNarrowLaunch.map(item => item.id).join(', ')} at 360px, 100% and 130% browser text`);
 }
 await browser.close();
 await Promise.all([

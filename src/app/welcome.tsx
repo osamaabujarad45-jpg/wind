@@ -1,6 +1,6 @@
 // First-launch welcome: three short slides, then sign in. Shown once per device (session.onboarded).
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState, type ComponentProps, type ComponentType, type KeyboardEvent } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, useReducedMotion, ZoomIn } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,15 +10,31 @@ import { InstallLink } from '../install-link';
 import { Button, fill, haptic, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
 
 const SLIDES = 3;
+// React Native's runtime View props forward key events on web; its 0.86 TS surface omits onKeyDown.
+type SlideKeyProps = ComponentProps<typeof Pressable> & { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void };
+const SlideKey = Pressable as ComponentType<SlideKeyProps>;
 
 export default function Welcome() {
   const { finishOnboarding, language, setLanguage } = useSession();
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const [index, setIndex] = useState(0);
+  const slideRefs = useRef<(View | null)[]>([]);
   const reduced = useReducedMotion();
   const last = index === SLIDES - 1;
   const title = [c.ob1Title, c.ob2Title, c.ob3Title][index];
   const body = [c.ob1Body, c.ob2Body, c.ob3Body][index];
+  function selectSlide(next: number, focus = false) {
+    const wrapped = (next + SLIDES) % SLIDES;
+    setIndex(wrapped);
+    if (focus) slideRefs.current[wrapped]?.focus();
+  }
+  function slideKey(event: KeyboardEvent<HTMLElement>) {
+    const delta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1
+      : event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0;
+    if (!delta && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    selectSlide(event.key === 'Home' ? 0 : event.key === 'End' ? SLIDES - 1 : index + delta, true);
+  }
 
   return <SafeAreaView style={styles.safe}>
     <Row style={{ justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8 }}>
@@ -42,20 +58,25 @@ export default function Welcome() {
         {index === 1 && <PriceArt label={c.ob2Save} />}
         {index === 2 && <HandoverArt label={c.ob3Code} steps={[c.assigned, c.in_transit, c.completed]} />}
       </Animated.View>
-      <Animated.View key={`text-${index}-${language}`} entering={reduced ? undefined : FadeInDown.duration(320).delay(80)} style={{ gap: 10 }}>
-        <Txt variant="h1" center>{title}</Txt>
-        <Txt center style={{ fontSize: 15, lineHeight: 23 }}>{body}</Txt>
-      </Animated.View>
+      <View nativeID="welcome-slide-copy" id="welcome-slide-copy" accessibilityLiveRegion="polite" aria-live="polite">
+        <Animated.View key={`text-${index}-${language}`} entering={reduced ? undefined : FadeInDown.duration(320).delay(80)} style={{ gap: 10 }}>
+          <Txt variant="h1" center>{title}</Txt>
+          <Txt center style={{ fontSize: 15, lineHeight: 23 }}>{body}</Txt>
+        </Animated.View>
+      </View>
     </ScrollView>
 
     <View style={styles.footer}>
-      <Row gap={8} style={{ justifyContent: 'center' }}>
-        {Array.from({ length: SLIDES }, (_, i) => <Pressable key={i} accessibilityRole="radio" style={styles.slideKey}
-          accessibilityLabel={fill(c.stepOf, { n: i + 1, total: SLIDES })} aria-checked={i === index}
-          onPress={() => setIndex(i)}>
-          <View style={[styles.dot, i === index && styles.dotOn]} />
-        </Pressable>)}
-      </Row>
+      <View accessibilityRole="radiogroup">
+        <Row gap={8} style={{ justifyContent: 'center' }}>
+          {Array.from({ length: SLIDES }, (_, i) => <SlideKey key={i} ref={node => { slideRefs.current[i] = node; }} accessibilityRole="radio" style={styles.slideKey}
+            accessibilityLabel={fill(c.stepOf, { n: i + 1, total: SLIDES })} aria-checked={i === index} accessibilityState={{ checked: i === index }}
+            tabIndex={i === index ? 0 : -1} onKeyDown={Platform.OS === 'web' ? slideKey : undefined}
+            onPress={() => selectSlide(i)}>
+            <View style={[styles.dot, i === index && styles.dotOn]} />
+          </SlideKey>)}
+        </Row>
+      </View>
       <Button title={last ? c.start : c.next} icon={last ? 'flash-outline' : undefined}
         onPress={() => { haptic.tap(); if (last) finishOnboarding(); else setIndex(index + 1); }} />
       <InstallLink />
@@ -118,13 +139,13 @@ function Road() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
-  pill: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card },
+  pill: { paddingHorizontal: 14, minHeight: 48, borderRadius: 24, justifyContent: 'center', backgroundColor: palette.card },
   body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 30 },
   art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' },
   footer: { paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.line },
   dotOn: { width: 24, backgroundColor: palette.olive },
-  slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  slideKey: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.forest, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
   saveText: { color: palette.onFill, fontSize: 16, fontWeight: '900' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },

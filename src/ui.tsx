@@ -222,16 +222,19 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // ---------- controls ----------
 
 // Press feedback: 3% scale over 120ms on the UI thread.
-export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
+export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityHint, describedBy, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; disabled?: boolean; selected?: boolean };
+  accessibilityLabel?: string; accessibilityHint?: string; describedBy?: string;
+  accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; disabled?: boolean; expanded?: boolean; selected?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
   const reduced = useReducedMotion();
-  return <Pressable style={containerStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
+  return <Pressable style={containerStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel}
+    accessibilityHint={accessibilityHint} {...(describedBy ? { 'aria-describedby': describedBy } : {})} hitSlop={hitSlop}
     accessibilityState={{ ...accessibilityState, disabled: !!disabled }} aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked}
+    aria-expanded={accessibilityState?.expanded} aria-selected={accessibilityState?.selected}
     onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && (reduced ? styles.pressed : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
@@ -271,7 +274,7 @@ export function Reason({ children }: { children: string }) {
   return <Txt variant="body" style={{ marginTop: 6 }}>{children}</Txt>;
 }
 
-export function Choices<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
+export function Choices<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K | null; onChange: (key: K) => void; disabled?: boolean }) {
   const { row } = useCopy();
   return <View style={[styles.choices, { flexDirection: row }]} accessibilityRole="radiogroup">
     {items.map(item => {
@@ -279,7 +282,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} aria-checked={on} aria-disabled={disabled} disabled={disabled}
         accessibilityState={{ checked: on, disabled: !!disabled }} onPress={() => onChange(item.key)} hitSlop={{ top: 4, bottom: 4 }}
         style={({ pressed }) => [{ flex: 1 }, (pressed || disabled) && { opacity: disabled ? 0.5 : 0.72 }]}>
-        <Animated.View style={[motion.choice, on && motion.choiceOn]}>
+        <Animated.View style={[motion.choice, { flex: 1 }, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
@@ -372,7 +375,7 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
-        autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+        autoCapitalize="none" style={[styles.input, Platform.OS === 'web' && styles.inputWeb, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
           the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
           font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
@@ -386,11 +389,11 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
   </View>;
 }
 
-export function ErrorText({ children }: { children?: string }) {
+export function ErrorText({ children, nativeID }: { children?: string; nativeID?: string }) {
   const reduced = useReducedMotion();
   if (!children) return null;
   return <Animated.View entering={reduced ? undefined : FadeInDown.duration(200)}>
-    <Text accessibilityRole="alert" style={styles.error}>{children}</Text>
+    <Text nativeID={nativeID} id={nativeID} accessibilityRole="alert" accessibilityLiveRegion="assertive" aria-live="assertive" style={styles.error}>{children}</Text>
   </Animated.View>;
 }
 
@@ -495,11 +498,12 @@ export function Stat({ label, value, tone = 'card', index = 0, detail }: { label
 }
 
 /** The first load in flight; once it has failed, a retry instead of a spinner that never ends (the screen's ErrorText says why). */
-export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () => void }) {
+export function Loading({ failed, onRetry, busy }: { failed?: boolean; onRetry?: () => void; busy?: boolean }) {
   const { c } = useCopy();
-  if (failed && onRetry) return <View style={{ paddingVertical: 16 }}><Button title={c.retry} icon="refresh" variant="soft" onPress={onRetry} /></View>;
+  if (failed && onRetry) return <View style={{ paddingVertical: 16 }}><Button title={c.retry} icon="refresh" variant="soft" loading={busy} onPress={onRetry} /></View>;
   return <View accessibilityRole="progressbar" accessibilityLabel={c.loading} accessibilityState={{ busy: true }} accessibilityLiveRegion="polite" style={{ padding: 32 }}>
     <ActivityIndicator color={palette.olive} />
+    <Txt variant="caption" center style={{ marginTop: 10 }}>{c.loading}</Txt>
   </View>;
 }
 
@@ -570,7 +574,7 @@ const styles = StyleSheet.create({
   outline: { borderWidth: 1, borderColor: palette.line },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
-  choiceText: { color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  choiceText: { width: '100%', color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3 },
   stepperKey: { width: 48, height: 48, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   stepperKeyDisabled: { backgroundColor: palette.muted },
@@ -580,11 +584,13 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '700', color: palette.secondary },
   field: { marginBottom: 12 },
   inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.inputBorder, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.paper },
-  inputFocused: { borderColor: palette.forest, backgroundColor: palette.card },
+  inputFocused: { borderColor: palette.forest, backgroundColor: palette.card, outlineWidth: 2, outlineColor: palette.forest, outlineOffset: 0, outlineStyle: 'solid' },
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
   inputDisabled: { backgroundColor: palette.muted, opacity: 0.72 },
   fieldError: { flex: 1, color: palette.error, fontSize: 12, fontWeight: '700' },
   input: { flex: 1, minHeight: 48, paddingVertical: 10, color: palette.ink, fontSize: 15 },
+  // The wrapper owns the shaped, high-contrast focus indicator; Chromium's rectangular input outline would double it.
+  inputWeb: { outlineWidth: 0, outlineStyle: 'solid' },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
   badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800' },

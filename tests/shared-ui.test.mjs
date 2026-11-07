@@ -98,6 +98,20 @@ await check('Input geometry and resting border contrast pass', () => {
   assert.ok(contrast(ui.palette.inputBorder, ui.palette.paper) >= 3);
   assert.ok(contrast(ui.palette.inputBorder, ui.palette.card) >= 3);
 });
+await check('Field focus uses one shaped wrapper outline, not a doubled web input ring', () => {
+  const field = render('Field', { label: 'Code', value: '', onChangeText() {} });
+  find(field, 'TextInput').props.onFocus();
+  const focused = render('Field', { label: 'Code', value: '', onChangeText() {} });
+  const wrap = findAll(focused, 'View').find(node => flat(node.props.style).borderWidth === 1);
+  assert.equal(flat(wrap.props.style).outlineWidth, 2);
+  assert.equal(flat(wrap.props.style).outlineOffset, 0, 'border and outline form one continuous indicator');
+  assert.equal(flat(wrap.props.style).outlineStyle, 'solid');
+  native.Platform.OS = 'web';
+  const webInput = find(render('Field', { label: 'Code', value: '', onChangeText() {} }), 'TextInput');
+  assert.equal(flat(webInput.props.style).outlineWidth, 0);
+  assert.equal(flat(webInput.props.style).outlineStyle, 'solid');
+  native.Platform.OS = 'android';
+});
 await check('Icon-button disabled state is visible as well as semantic', () => {
   const button = render('IconButton', { icon: 'add', label: 'Add', disabled: true, onPress() {} });
   assert.equal(button.props.disabled, true);
@@ -128,6 +142,22 @@ await check('Raw shared controls expose immediate pressed and disabled treatment
   }), 'Pressable');
   assert.equal(flat(typeof tab.props.style === 'function' ? tab.props.style({ pressed: true }) : tab.props.style).opacity, 0.72);
 });
+await check('Choice labels wrap inside narrow service and vehicle segments', () => {
+  const tree = render('Choices', { items: [{ key: 'motorcycle', label: 'Motorcycle' }, { key: 'car', label: 'Car' }], value: 'car', onChange() {} });
+  const label = findText(tree, 'Motorcycle');
+  assert.equal(flat(label.props.style).width, '100%');
+  assert.equal(label.props.numberOfLines, undefined);
+  assert.equal(flat(find(tree, 'Animated.View').props.style).flex, 1, 'choice surface fills the equal-height radio');
+});
+
+await check('Shared errors announce assertively in native and web semantics', () => {
+  const tree = render('ErrorText', { children: 'Network down' });
+  const text = findText(tree, 'Network down');
+  assert.equal(text.props.accessibilityRole, 'alert');
+  assert.equal(text.props.accessibilityLiveRegion, 'assertive');
+  assert.equal(text.props['aria-live'], 'assertive');
+});
+
 await check('Text scaling is not capped and essential labels can wrap', () => {
   assert.equal(find(render('Txt', { children: 'Orders' }), 'Text').props.maxFontSizeMultiplier, undefined);
   assert.equal(findText(render('Header', { title: 'Dashboard', subtitle: 'Today' }), 'Dashboard').props.numberOfLines, undefined);
@@ -154,6 +184,16 @@ await check('Loading exposes a localized busy status', () => {
   assert.equal(tree.props.accessibilityRole, 'progressbar');
   assert.equal(tree.props.accessibilityLabel, copy.en.loading);
   assert.equal(tree.props.accessibilityState.busy, true);
+  assert.ok(findText(tree, copy.en.loading), 'loading also has visible explanatory text');
+});
+await check('Failed-loading retry exposes and disables its pending state', () => {
+  const tree = render('Loading', { failed: true, busy: true, onRetry() {} });
+  const action = tree.props.children;
+  assert.equal(action.props.loading, true);
+  const button = ui.Button(action.props);
+  const pressable = find(ui.Press(button.props), 'Pressable');
+  assert.equal(pressable.props.disabled, true);
+  assert.equal(pressable.props.accessibilityState.busy, true);
 });
 await check('Reduced motion removes press scaling', () => {
   state.reduced = true;
