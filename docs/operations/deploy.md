@@ -25,9 +25,16 @@ WIND_TRUST_PROXY=1   # Caddy is the proxy; without this every user shares one pe
 WIND_PUSH_SUBJECT=https://windapi236.swedencentral.cloudapp.azure.com
 ```
 
-As of 6 November 2026 the VM runs `wind-api:20261104-adminfix` and its env file has neither, so add both before the next deploy. Also copy `infra/vm/wind-backup.sh` and `infra/vm/wind-restore.sh` to `/srv/` then: the VM's backup script still lacks the `last-ok` marker, so without it the new image reports a stale backup that is not stale.
+Both are set on the VM. Also copy `infra/vm/wind-backup.sh` and `infra/vm/wind-restore.sh` to `/srv/` then: the VM's backup script still lacks the `last-ok` marker, so without it the new image reports a stale backup that is not stale.
 
 Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL` (https, the store page or APK link) in the EAS environment. Otherwise the update screen on a refused build offers only support.
+
+### Releasing an image
+
+1. Run the **Release image** workflow on `master` with a new tag: `gh workflow run release-image.yml -f tag=<tag>`. It builds in GitHub Actions and pushes to `windprodacr` with the push-only `github-release` registry token, so no build runs on the owner's PC.
+2. Log the VM in with a short token (`az acr login --expose-token`, piped to `docker login`), run `sudo /srv/deploy.sh <tag>`, which rolls back by itself if the new image is unhealthy, then `docker logout`.
+
+The **Uptime** workflow checks `/api/ready` hourly from outside the VM. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
 
 ### Firebase (done 7 November 2026, project `wind-development`)
 

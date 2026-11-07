@@ -1,0 +1,19 @@
+name: Uptime
+
+# Outside the VM on purpose: the watchdog on the VM cannot report the VM itself being down.
+# A failed run emails whoever last changed this schedule, under their GitHub notification settings.
+# ponytail: hourly to stay inside the free Actions minutes; use a paid monitor when downtime must be seen sooner.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ready:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Production answers
+        run: curl --fail --silent --show-error --max-time 15 --retry 3 --retry-delay 30 --retry-all-errors https://windapi236.swedencentral.cloudapp.azure.com/api/ready

@@ -14,7 +14,7 @@ Production: `wind-api:20261107-pilot3`, parcels only, West Bank road graph, Fire
 
 **Production had all three services on** while this file said parcel-only. It is now really parcel-only.
 
-**Departure from the owner's rule that heavy builds run on the test PC:** the API image is built with Podman in WSL on the owner's PC, because the test PC has no container runtime. The owner has not approved this; install a container runtime on the test PC or get their approval. The VM's registry login expires; get a short token with `az acr login --expose-token` before `/srv/deploy.sh`, which lives on the VM and is not the same file as `infra/vm/deploy.sh`.
+**Releases:** images now build in GitHub Actions (`release-image.yml`), because the test PC has no hypervisor and so no container runtime. `pilot1` to `pilot3` were built on the owner's PC with Podman in WSL, against the owner's rule; do not repeat that. Steps: `docs/operations/deploy.md`.
 
 **Full `npm run screens` stalls** at `/order/2` (`networkidle`) on the test PC; for the last change only sign-in and sign-up were recaptured, and git shows only the sign-up images changed.
 
