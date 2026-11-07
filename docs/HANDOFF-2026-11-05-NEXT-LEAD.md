@@ -2,25 +2,25 @@
 
 ## Pilot launch — 7 November 2026 (read this first)
 
-Production: `wind-api:20261107-pilot2`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #4 merged with CI green. Running it: `docs/PILOT.md`.
+Production: `wind-api:20261107-pilot3`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview; the version is in `app.json`, the build number is held by EAS (`appVersionSource: remote`), and `package.json`'s version is unrelated. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #6 merged with CI green. Running it: `docs/PILOT.md`.
 
-**The old account:** the owner cannot sign in to `osama-2000236`, whose Actions refused every job, so the code moved. On this PC the global git username stays `osama-2000236` for other projects, and this repository's config sets `osamaabujarad45-jpg`. For `gh` here use `GH_TOKEN=$(gh auth token --user osamaabujarad45-jpg)`. `origin` points at the new repository.
+**The old account:** the owner cannot sign in to `osama-2000236`, whose Actions refused every job, so the code moved. On this PC the GitHub credential username (`credential.https://github.com.username`) stays `osama-2000236` globally for other projects, and this repository's config sets `osamaabujarad45-jpg`; the commit author name is unaffected. The `legacy-origin` remote still points at the frozen repository: never push to it. For `gh` here use `GH_TOKEN=$(gh auth token --user osamaabujarad45-jpg)`. `origin` points at the new repository.
 
 **Proved against production on the phone, with a clean install and synthetic accounts since deleted:** Arabic default, native sign-up as a courier, admin approval, alert with the app in the background through FCM, job card, Accept in one tap through the first-time location prompt, live Arabic turn guidance, far-pickup warning, customer cancel. Firebase reset: request, real email reaching Gmail, adoption, old password refused, Firebase record removed; the step of opening the link was simulated through the admin API.
 
 **Not proved:** a delivery completed on production, which would have put fake cash in the books (it passed on the sandbox with the same code); the new alert wording read on the device (`tests/native-push-sqlite.mjs` only); real users, real 3G, real GPS accuracy on the road; TalkBack by a person; ride and freight natively, and they are off in production. `/admin` was driven with a temporary admin, not the owner's own account.
 
-**Found on the phone in this pass, all fixed:** first Accept refused after granting location; generic alert text; a phone-code note under a working reset link; "Motorc/ycle". A heading seen once as "Your account is under" did not recur in Arabic after `textBreakStrategy="simple"`; not rechecked in English.
+**Found on the phone in this pass, all fixed:** first Accept refused after granting location; generic alert text (every kind in `PUSH_KINDS` now has words, and `tests/native-push-sqlite.mjs` fails if one does not); a phone-code note under a working reset link; "Motorc/ycle". A heading seen once as "Your account is under" did not recur in Arabic after `textBreakStrategy="simple"`; not rechecked in English.
 
 **Production had all three services on** while this file said parcel-only. It is now really parcel-only.
 
-**Exception to the owner's rule:** the API image is built with Podman in WSL on the owner's PC, because the test PC has no container runtime. The VM's registry login expires; get a short token with `az acr login --expose-token` before `/srv/deploy.sh`.
+**Departure from the owner's rule that heavy builds run on the test PC:** the API image is built with Podman in WSL on the owner's PC, because the test PC has no container runtime. The owner has not approved this; install a container runtime on the test PC or get their approval. The VM's registry login expires; get a short token with `az acr login --expose-token` before `/srv/deploy.sh`, which lives on the VM and is not the same file as `infra/vm/deploy.sh`.
 
-**Full `npm run screens` stalls** at `/order/2` (`networkidle`) on the test PC; only sign-in and sign-up were recaptured for the last change.
+**Full `npm run screens` stalls** at `/order/2` (`networkidle`) on the test PC; for the last change only sign-in and sign-up were recaptured, and git shows only the sign-up images changed.
 
 ## Operations section — 6 November 2026, evening
 
-On `fix/operations-section`, stacked on `fix/driver-section`. **Blockers only the owner can clear:** GitHub billing still stops every CI job, so nothing merges. The phone and AWS blockers below are cleared.
+*Historical. The billing blocker named here ended with the move to the new repository; see the section above.* On `fix/operations-section`, stacked on `fix/driver-section`. The phone and AWS blockers below are cleared.
 
 ### Fixed
 
