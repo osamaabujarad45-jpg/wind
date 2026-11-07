@@ -11,6 +11,7 @@ import { PUSH_KINDS } from '../server/domain/native-push.ts';
 
 // Every kind says what happened; a missing entry would fall back to a generic line on the lock screen.
 const pushSource = readFileSync(new URL('../server/push.ts', import.meta.url), 'utf8');
+assert.ok(PUSH_KINDS.length > 0, 'the kinds were found');
 assert.deepEqual(PUSH_KINDS.filter(kind => !new RegExp(`^  ${kind}: \{ ar: `, 'm').test(pushSource)), [], 'every push kind has its own words');
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-native-push-'));
