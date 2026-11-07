@@ -111,17 +111,26 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   // Background permission is a separate, optional action and does not guarantee delivery.
   const prepareTracking = useCallback(async () => {
     if (actor === null || !foreground) return false;
-    const session = apiSessionRevision(), revision = lifecycleRef.current.revision;
+    const session = apiSessionRevision();
+    let revision = lifecycleRef.current.revision;
     const current = () => mounted.current && actorRef.current === actor && lifecycleRef.current.active
       && lifecycleRef.current.revision === revision && apiSessionRevision() === session;
+    // A system sheet pauses the app, which moves the lifecycle revision. The answer still stands if the same courier came straight back.
+    const backFromSheet = async () => {
+      for (let waited = 0; !lifecycleRef.current.active && waited < 2000; waited += 50) await new Promise(done => setTimeout(done, 50));
+      revision = lifecycleRef.current.revision;
+    };
+    const asked = !permission?.granted;
     const value = permission?.granted ? permission : Platform.OS === 'web'
       ? await boundedPermission(requestPermission) : await requestPermission();
+    if (asked) await backFromSheet();
     if (!current() || !value?.granted) return false;
     let enabled = await refreshServices();
     if (!current()) return false;
     if (!enabled && Platform.OS === 'android') {
       try { await Location.enableNetworkProviderAsync(); }
       catch { return false; }
+      await backFromSheet();
       if (!current()) return false;
       enabled = await refreshServices();
     }
@@ -178,9 +187,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     ?'reconnecting':presenceResult.state;
   const enablePresence=useCallback(async()=>{
     if(actor===null || !foreground || activeOrderId!==undefined || !presenceOrdersKnown || presenceRunning.current)return;
-    const current=presenceGeneration.current,ticket=presenceStartGuard.snapshot();presenceRunning.current=true;setPresencePending(true);setPresenceError(undefined);
+    const current=presenceGeneration.current,askedAt=lifecycleRef.current.revision;let ticket=presenceStartGuard.snapshot();presenceRunning.current=true;setPresencePending(true);setPresenceError(undefined);
     try {
       if(!await prepareTracking()) {if(current===presenceGeneration.current)setPresenceResult({actor,revision:lifecycleRef.current.revision,state:'permission_denied'});return;}
+      if(lifecycleRef.current.revision!==askedAt)ticket=presenceStartGuard.snapshot(); // the permission sheet paused the app, which voids the first ticket; prepareTracking already judged the return
       if(current!==presenceGeneration.current || !presenceStartGuard.allows(ticket,{foreground:lifecycleRef.current.active,known:presenceOrdersKnown,hasOrder:activeOrderId!==undefined}))return;
       if(await startPresence(true) && current===presenceGeneration.current)setPresenceConsentAccepted(true);
     } catch(error) {if(current===presenceGeneration.current)setPresenceError(errorCode(error));}

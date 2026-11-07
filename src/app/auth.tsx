@@ -34,7 +34,8 @@ export default function Auth() {
   const [phoneCapsFailed, setPhoneCapsFailed] = useState(false);
   const [phoneCapsTry, setPhoneCapsTry] = useState(0);
   const phoneGate = gateOf(phoneCaps, phoneCapsFailed);
-  const phoneNote = phoneGate === 'unavailable' ? c.phone_recovery_unavailable : phoneGate === 'disabled' ? c.phone_recovery_disabled
+  // With an email reset on offer, a note that phone codes are off only reads as if the link above it were broken.
+  const phoneNote = emailReset || emailResetLink ? null : phoneGate === 'unavailable' ? c.phone_recovery_unavailable : phoneGate === 'disabled' ? c.phone_recovery_disabled
     : phoneGate === 'failed' ? c.phone_status_failed : null;
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
