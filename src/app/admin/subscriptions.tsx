@@ -28,7 +28,7 @@ export default function Subscriptions() {
   return <Screen onRefresh={reload}>
     <Header title={c.subscriptions} />
     <ErrorText>{actionError || (error && err(error))}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="sparkles-outline" title={c.nothingHere} />
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="sparkles-outline" title={c.noSubscriptions} />
       : data.map((sub, i) => {
         return <Appear key={sub.id} index={i}>
           <Card>

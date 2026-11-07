@@ -198,7 +198,7 @@ export default function Auth() {
           <View style={{ height: 10 }} />
           {mode === 'up' && registration === null ? <Loading />
           : mode === 'up' && registration === 'failed' ? <>
-            <Txt center>{c.offlineDesc}</Txt>
+            <Txt center>{c.err_registration_check}</Txt>
             <Loading failed onRetry={() => { setRegistration(null); setPolicyTry(n => n + 1); }} />
           </> : mode === 'up' && registration === 'closed' ? <>
             <Txt center style={{ marginBottom: 12 }}>{c.err_registration_closed}</Txt>

@@ -59,6 +59,7 @@ export default function Dashboard() {
               // empty statuses say nothing; only the counts that exist show
               data.statuses[s] ? <Badge key={s} status={s} label={`${c[s]} · ${data.statuses[s]}`} /> : null)}
           </Row>
+          {!Object.values(data.statuses).some(Boolean) && <Txt variant="caption">{c.noOrders}</Txt>}
           <Txt variant="title" style={{ marginVertical: 10 }}>{c.users}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
             {(['customer', 'driver', 'admin'] as const).map(r => <Badge key={r} tone={{ bg: palette.muted, fg: palette.ink }} label={`${c[r]} · ${data.users[r] ?? 0}`} />)}

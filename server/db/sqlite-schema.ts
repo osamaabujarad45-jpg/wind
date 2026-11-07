@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS road_restrictions (
   last_confirmed_at INTEGER NOT NULL, confidence TEXT NOT NULL CHECK (confidence IN ('high','medium','low','unknown')),
   confirmed_prohibition INTEGER NOT NULL, reviewer_id INTEGER NOT NULL REFERENCES users(id),
   evidence_ref TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(restriction_key, version));
-CREATE TABLE IF NOT EXISTS quotes (
+  CREATE TABLE IF NOT EXISTS quotes (
   id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),
   pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,
   pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,
@@ -198,6 +198,18 @@ CREATE TABLE IF NOT EXISTS quotes (
   feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,
   itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id));
 `);
+  // Optional local operator history must not change the installed delivery schema.
+  if (process.env.WIND_OPENCODE_ENABLED === '1' && process.env.NODE_ENV !== 'production') db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),
+    provider_job_id TEXT,
+    result TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`);
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 

@@ -113,6 +113,8 @@ try {
   const session = await exchange('customer-session', 'customer', '/me', { token: customer.token });
   assert.deepEqual(session.capabilities.enabledServices, ['parcel']);
   assert.equal(session.capabilities.pooling, false);
+  assert.equal(session.capabilities.declaredScope, persistence.backend === 'postgres' ? true : undefined,
+    'scope forms follow the migrated server capability');
   assert.equal(typeof session.user.id, 'number');
   for (const actor of actors) assert.equal((await persistence.one('SELECT token_hash FROM sessions WHERE user_id = ?', actor.user.id)).token_hash.length, 64);
   assert.equal((await persistence.one('SELECT 1 FROM sessions WHERE token_hash = ?', customer.token)), undefined);
@@ -309,9 +311,12 @@ try {
     for (const ex of [...cleanObserved.exchanges, ...expectedContracts.exchanges])
       if (ex.response && typeof ex.response === 'object') delete ex.response.canChangeDestination;
     for (const ex of cleanObserved.exchanges) {
+      // The new capability is asserted above; installed clients ignore the
+      // optional PostgreSQL extension. Keep every frozen field in the comparison.
+      if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 27, 'PG readiness must report the current migration set (21 + T22..T27)'); ex.response.schema = 3; }
+      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 29, 'PG readiness must report boarding metadata migration without changing installed payloads'); ex.response.schema = 3; }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;
         delete ex.response.quoteExpiresAt;
