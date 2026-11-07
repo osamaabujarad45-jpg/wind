@@ -20,7 +20,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',');
-const API_PORT = 4100, WEB_PORT = 4101;
+// Allow isolated worktrees/sessions to capture screenshots without stealing another run's ports.
+const API_PORT = Number(process.env.WIND_SCREENS_API_PORT || 4100);
+const WEB_PORT = Number(process.env.WIND_SCREENS_WEB_PORT || 4101);
 const webDir = join(root, '.screens', 'web');
 const outDir = join(root, 'docs', 'screens');
 const phone = { width: 390, height: 844 };
@@ -363,7 +365,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   let releaseRecovery, recoveryRequested;
   const recoveryGate = new Promise(resolve => { releaseRecovery = resolve; });
   const recoveryRequest = new Promise(resolve => { recoveryRequested = resolve; });
-  await page.route('**/api/orders', async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
+  const orderListRequest = url => url.pathname === '/api/orders';
+  await page.route(orderListRequest, async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
   const beforeResume = publications;
   await page.evaluate(visibility, false);
   await Promise.race([recoveryRequest, new Promise((_, reject) => setTimeout(() => reject(new Error('Foreground recovery did not request orders')), 5000))]);
@@ -371,7 +374,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, beforeResume); // the retained assignment cannot restart GPS before recovery finishes
   releaseRecovery();
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.unroute('**/api/orders');
+  await page.unroute(orderListRequest);
 
   // Returning from Settings must re-read permission; retained grants cannot start GPS while that read is pending or failed.
   async function permissionResume(state, mode = 'ready') {
@@ -382,7 +385,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       check.state = state; check.mode = mode;
       return check.reads;
     }, { state, mode });
-    const recovered = page.waitForResponse(response => response.url().endsWith('/api/orders') && response.ok());
+    const recovered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.ok());
     await page.evaluate(visibility, false);
     await recovered;
     await page.waitForFunction(reads => window.permissionCheck.reads > reads, reads, { timeout: 3000 });
