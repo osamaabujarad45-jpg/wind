@@ -125,8 +125,12 @@ try {
   await pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000});
   assert.equal((await pay.collectCod(driver,order.id,{amountMinor:400})).status,'partial');
   await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:601}), e => e.status === 400);
-  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600})).status,'collected');
-  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic'})).status,'remitted');
+  const finalCollect = randomUUID(), finalRemit = randomUUID();
+  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected');
+  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected', 'a lost final collection response replays once');
+  await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:500,requestId:finalCollect}), e => e.status === 409 && e.message === 'idempotency_conflict');
+  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic',requestId:finalRemit})).status,'remitted');
+  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic',requestId:finalRemit})).status,'remitted', 'a lost final remittance response replays once');
   assert.deepEqual(await f.db.one('SELECT price_minor,commission_minor FROM orders WHERE id=?', order.id), original);
   assert.deepEqual(await f.db.one('SELECT count(*) AS n FROM ledger_journals'), ledger);
   await assert.rejects(f.db.run('DELETE FROM payment_events WHERE id=?::uuid', dup.event.id));
@@ -190,10 +194,13 @@ try {
   await pay.createCod(admin, disputeOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 500, remittanceDueAt: Date.now() + 86_400_000 });
   await pay.collectCod(driver, disputeOrder.id, { amountMinor: 200 }); // collected, then disputed by the merchant
   await assert.rejects(pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'nope' }), e => e.status === 400);
+  await assert.rejects(pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'Goods returned but cash still outstanding' }), e => e.status === 409 && e.message === 'cod_outstanding');
+  assert.equal(Number((await pay.remitCod(admin, disputeOrder.id, { payoutRef: 'PO-dispute' })).remitted_minor), 200);
   const closed = await pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'Merchant took the goods back at the office' });
   assert.equal(closed.status, 'returned');
+  const resolutionAudit = await f.db.one("SELECT detail FROM security_events WHERE order_id=? AND action='COD_RETURNED'", disputeOrder.id);
+  assert.equal(JSON.parse(resolutionAudit.detail).reason, 'Merchant took the goods back at the office', 'the required finance reason survives the decision');
   await assert.rejects(pay.collectCod(driver, disputeOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
 
   console.log('WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed');
 } finally { await f.close(); }
-

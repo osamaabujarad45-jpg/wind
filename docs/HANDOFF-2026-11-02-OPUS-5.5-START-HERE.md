@@ -1,5 +1,13 @@
 # Fastship implementation handoff — Opus 5.5
 
+## Implementation checkpoint — 3 November 2026
+
+The subsequent [feature and quality review](../reports/app-quality-review-2026-11-03.md) maps all 28 functional and 15 nonfunctional knowledge requirements to current source, tests, gates and remaining acceptance. It also fixes offline-summary visibility/cache/expiry/session fencing, admin recovery serialization and native map descriptions. Final product code passes 105 integration suites, both typechecks, warning-free lint, Android/iOS JS exports and 26 rebuilt browser journeys on K5; bounded load passes all 14 gates. This is software evidence, not full Uber feature parity or a production-quality certification. Provider delivery, gated service activation, operating readiness and physical acceptance remain explicit in the report.
+
+The Android loading-center race, stale-marker rebuild opacity, web heading completion, configured map deadlines, late-SDK timeout fencing, RTL controls and reduced-motion gaps have been repaired in source. Native pre-ready centers and manual-gesture recovery are also covered. The remaining software pass repairs foreground route refetch/background baseline movement, adds versioned map delivery and cache validators, bounds pin positioning, and fixes late GPS cancellation errors. See [the first implementation record](../reports/handoff-implementation-2026-11-03.md) and [the completion record](../reports/handoff-completion-2026-11-03.md) for exact changes and K5 evidence.
+
+Physical acceptance is still open: the attached A53 is held by another device session, and there is no available physical iOS device. Numeric native pin tolerance, physical accessibility acceptance and physical WebView cache acceptance remain open. HTTP/Chromium cold/warm shell caching is verified, and the complete persistence/legacy gate has passed. The source-status table and work order below describe the original baseline; use this checkpoint and the completion report to avoid repeating completed fixes.
+
 ## Start here
 
 This is the only project document needed to begin the next implementation pass. It is written from Fastship source and tests. Work in small, verified batches; inspect the current source before changing a claim below.

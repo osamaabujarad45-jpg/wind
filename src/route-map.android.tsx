@@ -4,45 +4,63 @@
 // native Google renderer draws instead. Any failure shows the diagram.
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { WebView } from 'react-native-webview';
+import type { Point } from './model';
 import { API_URL } from './api';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
+import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, useCopy } from './ui';
+import { effectiveRuntime } from './runtime-config';
+import { useReducedMotion } from './motion';
 
 export type { PinMapProps, RouteMapProps };
 export const canPin = true;
-const PAGE = `${API_URL}/map.html`;
+const PAGE = `${API_URL}/map/v1/map.html`;
 const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
 
-type Message = { type: 'ready' | 'failed' | 'drawing' } | { type: 'center'; latitude: number; longitude: number };
+type Message = { type: 'ready' | 'failed' | 'drawing' | 'gesture' } | { type: 'center'; latitude: number; longitude: number };
 
 /** WebView on public/map.html; calls onFail if the page fails or never says it is ready (offline, blocked, server without the page). */
-function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
-  config: { mode?: string } & Record<string, unknown>; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onFail: () => void; onReady?: () => void; label?: string;
+function MapPage({ config, height, update, onCenter, onGesture, onFail, onReady, label }: {
+  config: { mode?: string } & Record<string, unknown>; height: number; update?: object; onCenter?: (p: { latitude: number; longitude: number }) => void; onGesture?: () => void; onFail: () => void; onReady?: () => void; label?: string;
 }) {
   const view = useRef<WebView>(null);
+  const reported = useRef<{ latitude: number; longitude: number } | null>(null);
+  const expectedCenter = useRef<Point | null>(null);
   const [state, setState] = useState<'loading' | 'drawing' | 'ready'>('loading');
   const failed = useRef(onFail);
-  const fail = () => failed.current();
+  const terminal = useRef(false);
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
+  useEffect(() => { failed.current = onFail; });
+  useEffect(() => { terminal.current = false; return () => { terminal.current = true; }; }, []);
+  const fail = () => { if (!terminal.current) { terminal.current = true; failed.current(); } };
   // The fragment stays on the device (never sent in the request); the page reads it once.
-  const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors }))}`);
+  const [uri] = useState(() => `${PAGE}#${encodeURIComponent(JSON.stringify({ ...config, colors, readyTimeout }))}`);
+  const ready = state === 'ready';
   useEffect(() => {
     // Parsing the style alone does not prove that map tiles can be drawn.
-    if (state === 'ready') return;
-    const timer = setTimeout(() => failed.current(), 25_000); // after the page's own 20 s deadline, like web
+    if (ready) return;
+    const timer = setTimeout(() => { if (!terminal.current) { terminal.current = true; failed.current(); } }, readyTimeout);
     return () => clearTimeout(timer);
-  }, [state, config.mode]);
+  }, [ready, readyTimeout]);
   const json = update ? JSON.stringify(update) : '';
   useEffect(() => {
     // The page can take updates as soon as its style is parsed; the tiles may still be loading.
-    if (state !== 'loading' && json) view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`);
+    if (!json) return;
+    const center = (JSON.parse(json) as { center?: { latitude: number; longitude: number } }).center;
+    if (center) {
+      expectedCenter.current = center; // the centre the bridge must report; a gesture invalidates it
+    }
+    if (state === 'loading') return;
+    if (center) {
+      // A gesture report is already on screen; echoing it could interrupt the next gesture frame.
+      if (reported.current?.latitude === center.latitude && reported.current.longitude === center.longitude) return;
+    }
+    view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`);
   }, [state, json]);
-  return <View style={{ height, width: '100%' }} accessible={!!label} accessibilityRole={label ? 'image' : undefined} accessibilityLabel={label}>
-    <WebView ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: '#E6ECE3' }} originWhitelist={['*']}
+  return <View style={{ height, width: '100%' }}>
+    <WebView ref={view} source={{ uri }} accessibilityLabel={label} style={{ flex: 1, backgroundColor: '#E6ECE3' }} originWhitelist={['*']}
       setSupportMultipleWindows={false} overScrollMode="never"
       // Only our map page loads here; map credits and any other link open in the browser.
       onShouldStartLoadWithRequest={r => {
@@ -53,28 +71,34 @@ function MapPage({ config, height, update, onCenter, onFail, onReady, label }: {
       // Android kills a background WebView's renderer to free memory; the view then stays blank.
       onError={fail} onHttpError={fail} onRenderProcessGone={fail}
       onMessage={e => {
+        if (terminal.current) return;
         let m: Message;
         try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
         if (m.type === 'ready') { setState('ready'); onReady?.(); }
         else if (m.type === 'failed') fail();
         // The style is parsed and the map is drawing: the tiles may still be coming, but the map works.
         else if (m.type === 'drawing') setState('drawing');
-        else if (m.type === 'center' && Number.isFinite(m.latitude) && Number.isFinite(m.longitude)) onCenter?.({ latitude: m.latitude, longitude: m.longitude });
+        else if (m.type === 'gesture') { expectedCenter.current = null; onGesture?.(); }
+        else if (m.type === 'center' && Number.isFinite(m.latitude) && Number.isFinite(m.longitude)) {
+          const expected = expectedCenter.current;
+          // Ignore the old viewport while a fresh fix is still crossing the WebView bridge.
+          if (expected && Math.abs(expected.latitude - m.latitude) + Math.abs(expected.longitude - m.longitude) > 0.000001) return;
+          reported.current = { latitude: m.latitude, longitude: m.longitude }; onCenter?.(reported.current);
+        }
       }} />
   </View>;
 }
 
 // Pickup/dropoff can become exact after the first render (order loads, pins confirmed): rebuild the map then.
 export default function RouteMap(props: RouteMapProps) {
+  return <MapProviderBoundary platform="android" route={props} render={RouteAdapter} />;
+}
+function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
+  const props = route!;
   const { pickup: a, dropoff: b } = props;
-  const [mode] = useMapMode();
-  // T06/T10/T15: the renderer must be one this binary actually contains — the capability is baked at build
-  // time (extra.googleMaps), so a kill switch or mode change can never select an absent renderer. A forced
-  // baseline (public tracking) draws the MapLibre page even in a Google-keyed build.
-  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}`;
-  const renderer = props.forceBaseline ? 'maplibre' : selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={key} {...props} />;
-  return <MapLibreRoute key={key} {...props} />;
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
+  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
+    : <MapLibreRoute key={key} {...props} onFail={attempt.onFail} />;
 }
 
 function MapLibreRoute(props: RouteMapProps) {
@@ -85,9 +109,10 @@ function MapLibreRoute(props: RouteMapProps) {
 function LiveMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c, language } = useCopy();
+  const still = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const config = { mode: 'route', language, pickup, dropoff, driver: driver ?? null, recenter: c.recenter,
+  const config = { mode: 'route', language, still, pickup, dropoff, driver: driver ?? null, recenter: c.recenter,
     padding: Math.round(Math.min(56, height / 5)) }; // markers clear of the edges without zooming a short map out
   const update = { driver: driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null,
     road: props.road ?? null, approach: props.approach ?? null, closed: props.closed ?? [], focus: props.focus, stale: !!props.stale };
@@ -95,19 +120,23 @@ function LiveMap(props: RouteMapProps) {
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}><Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} /></View>
   </View>;
-  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => setFailed(true)}
-    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
+  return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }}
+    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? `, ${props.driverTitle ?? ''}` : ''}`} />;
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('android', Constants.expoConfig?.extra?.googleMaps, mode) === 'google')
-    return <GooglePinMap center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
-  return <MapLibrePin center={center} onChange={onChange} onFail={onFail} onReady={onReady} height={height} />;
+export function PinMap(props: PinMapProps) {
+  return <MapProviderBoundary platform="android" pin={props} render={PinAdapter} />;
+}
+function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
+  const props = pin!;
+  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+    onGesture: () => { if (attempt.current()) props.onGesture?.(); },
+    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <MapLibrePin key={attempt.key} {...guarded} />;
 }
 
-function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function MapLibrePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -115,7 +144,8 @@ function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMap
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
     <Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} />
   </View>;
-  return <MapPage key={`${language}:${attempt}`} config={{ mode: 'pin', language, center }} height={height} onCenter={onChange}
+  return <MapPage key={`${language}:${attempt}`} config={{ mode: 'pin', language, center }} update={{ center }} height={height}
+    onCenter={onChange} onGesture={onGesture}
     onReady={onReady} onFail={() => { setFailed(true); onFail?.(); }} />;
 }
 

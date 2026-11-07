@@ -1,10 +1,14 @@
 import { isCity, optionsFor, services, type CityId, type Order, type Point, type Role, type Service } from './model.ts';
+import { validFreightScope, type FreightScope } from './freight-scope.ts';
+import { newRequestId } from './command-id.ts';
+export { newRequestId } from './command-id.ts';
 
 export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
   option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
   quoteId?: string; // server-locked quote (WP08); when set, the wire body omits quotedPrice
+  declaredScope?: FreightScope;
   promoCode?: string; expectedDiscount?: number;
   recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
@@ -15,14 +19,6 @@ export type PendingBooking = {
   attemptedAt?: number; // last POST start; absence is only trusted once the server can no longer be committing it
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function newRequestId(): string {
-  // Retry identity, never a credential or proof secret.
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const n = Math.floor(Math.random() * 16);
-    return (c === 'x' ? n : (n & 3) | 8).toString(16);
-  });
-}
 
 /** One retry id per unsent text: a failed text keeps its id when resent, even after other texts went out in between. */
 export function retryIds() {
@@ -84,6 +80,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || ['recipientName', 'recipientPhone'].some(key => p[key as 'recipientName'] !== undefined && typeof p[key as 'recipientName'] !== 'string')
     || (p.pricing !== undefined && p.pricing !== 'smart')
     || (p.quoteId !== undefined && !uuid.test(p.quoteId))
+    || (p.declaredScope !== undefined && (p.service !== 'freight' || !validFreightScope(p.declaredScope)))
     || (booking.sentAt !== undefined && !Number.isFinite(booking.sentAt))
     || (booking.attemptedAt !== undefined && !Number.isFinite(booking.attemptedAt))
     || [p.pickupPoint, p.dropoffPoint].some(point => point != null && (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)))
@@ -93,36 +90,17 @@ export function readBooking(saved: string | null): PendingBooking | null {
   return booking;
 }
 
-/** How long after a POST starts the server could still be routing and then committing it. */
-export const SETTLE_MS = 2 * 60_000;
-// Phone clocks drift from the server's createdAt; a wrong "present" costs a retry, a wrong "absent" costs a duplicate order.
-const CLOCK_SKEW = 15 * 60_000;
-
 /** The read-only answer to "did this stored command become an order?" Unknown is never an absence. */
 export type PendingOutcome = { state: 'present'; orderId: number } | { state: 'absent' } | { state: 'unknown' };
 
-const pin = (point: Point | null | undefined) => point ? `${point.latitude},${point.longitude}` : '';
-
-/** The fields the server echoes for this customer's order: enough to recognise this command's order. */
-function sameBooking(p: BookingPayload, o: Order) {
-  return o.service === p.service && o.pickupCity === p.pickupCity && o.dropoffCity === p.dropoffCity
-    && o.option === p.option && o.loadingHelp === p.loadingHelp && o.price === p.quotedPrice
-    && o.pickupNote === p.pickupNote.trim() && o.dropoffNote === p.dropoffNote.trim() && o.detail === p.detail.trim()
-    && (o.scheduledFor ?? null) === (p.scheduledFor ?? null)
-    && pin(o.pickupPoint) === pin(p.pickupPoint) && pin(o.dropoffPoint) === pin(p.dropoffPoint);
-}
-
 /**
- * `orders` is the customer's own list read from the server, never a local guess. The pending command is written before
- * its POST and the server may still be committing for a moment after the app gives up, so a fresh absence is unknown.
+ * A command receipt identifies the exact booking even after its fare or destination changes.
+ * A missing receipt remains unknown: the original POST could still commit. Retry keeps its identity.
  */
-export function pendingOutcome(command: PendingBooking, orders: readonly Order[], now = Date.now()): PendingOutcome {
-  const since = (command.sentAt ?? 0) - CLOCK_SKEW;
-  const found = orders.find(order => order.createdAt >= since && sameBooking(command.payload, order));
-  if (found) return { state: 'present', orderId: found.id };
-  // A record written before sentAt existed is old enough unless the app just updated.
-  const started = command.attemptedAt ?? command.sentAt ?? 0;
-  return now - started < SETTLE_MS ? { state: 'unknown' } : { state: 'absent' };
+export function pendingOutcome(receipt: unknown): PendingOutcome {
+  const orderId = receipt && typeof receipt === 'object' && 'orderId' in receipt ? receipt.orderId : null;
+  return typeof orderId === 'number' && Number.isSafeInteger(orderId) && orderId > 0
+    ? { state: 'present', orderId } : { state: 'unknown' };
 }
 
 /** Editing or discarding is only safe on a server-confirmed absence; present or unknown keep the frozen form. */

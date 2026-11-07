@@ -134,6 +134,11 @@ resource environmentIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2
   location: location
   tags: commonTags
 }
+resource osrmIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${prefix}-${environment}-osrm-id'
+  location: location
+  tags: commonTags
+}
 resource acaEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
   name: '${prefix}-${environment}-aca'
   location: location
@@ -330,6 +335,11 @@ resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if 
   scope: registry
   properties: { principalId: environmentIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') }
 }
+resource osrmRegistryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+  name: guid(registry.id, osrmIdentity.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  scope: registry
+  properties: { principalId: osrmIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') }
+}
 // Owner gate: workloads stay disabled until the runtime PostgreSQL cutover is reviewed, the
 // migration has run under the advisory lock, and the identity/provider gates are accepted.
 module api 'modules/container-app.bicep' = if (enableWorkloads) {
@@ -341,6 +351,7 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
     identityId: environmentIdentity.id
     tags: commonTags
     image: checkedImage
+    registryServer: registry.properties.loginServer
     containerName: 'api'
     cpu: '0.5'
     memory: '1Gi'
@@ -376,6 +387,7 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
       { type: 'Readiness', httpGet: { path: '/api/ready', port: 4000, scheme: 'HTTP' }, initialDelaySeconds: 10, periodSeconds: 30 }
     ]
   }
+  dependsOn: [registryPull, vaultSecretsUser, databaseUrlSecret]
 }
 module worker 'modules/container-app.bicep' = if (enableWorkloads) {
   name: 'worker'
@@ -386,6 +398,7 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
     identityId: environmentIdentity.id
     tags: commonTags
     image: checkedImage
+    registryServer: registry.properties.loginServer
     containerName: 'worker'
     cpu: '0.5'
     memory: '1Gi'
@@ -399,16 +412,23 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
     minReplicas: 1
     maxReplicas: 1
   }
+  dependsOn: [registryPull, vaultSecretsUser, databaseUrlSecret]
 }
 resource acaOsrm 'Microsoft.App/containerApps@2024-03-01' = if (enableWorkloads) {
   name: '${prefix}-${environment}-osrm'
   location: location
   tags: commonTags
+  identity: { type: 'UserAssigned', userAssignedIdentities: { '${osrmIdentity.id}': {} } }
   properties: {
     managedEnvironmentId: acaEnvironment.id
-    configuration: { activeRevisionsMode: 'Single', ingress: { external: false, targetPort: 5000, transport: 'http', allowInsecure: false } }
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [{ server: registry.properties.loginServer, identity: osrmIdentity.id }]
+      ingress: { external: false, targetPort: 5000, transport: 'http', allowInsecure: false }
+    }
     template: { containers: [{ name: 'osrm', image: checkedOsrmImage, resources: { cpu: osrmCpu, memory: osrmMemory }, volumeMounts: [{ volumeName: 'graph', mountPath: '/data' }] }], scale: { minReplicas: 1, maxReplicas: 1 }, volumes: [{ name: 'graph', storageType: 'AzureFile', storageName: 'osrm-graph' }] }
   }
+  dependsOn: [osrmRegistryPull, osrmEnvironmentStorage, osrmFileZoneGroup]
 }
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: '${prefix}-${environment}-appi-${suffix}'

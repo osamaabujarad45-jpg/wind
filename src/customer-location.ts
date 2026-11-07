@@ -3,10 +3,29 @@ import { servedCity, type CityId, type Point } from './model.ts';
 type Fix = { timestamp: number; coords: Point & { accuracy: number | null } };
 type Pickup = { city: CityId; point: Point; accuracy: number };
 type Subscription = { remove(): void };
-type Failure = 'unavailable' | 'permission' | 'blocked' | 'disabled' | 'timeout' | 'inaccurate';
+type Failure = 'unavailable' | 'prompt' | 'permission' | 'blocked' | 'disabled' | 'timeout' | 'inaccurate';
 // Native watches report free-text reasons; anything but our own codes counts as 'unavailable'.
 export type PickupWatch = (receive: (fix: Fix) => void, fail: (reason: string) => void, signal: AbortSignal) => Promise<Subscription>;
-const failureCodes = new Set<Failure>(['unavailable', 'permission', 'blocked', 'disabled', 'timeout', 'inaccurate']);
+const failureCodes = new Set<Failure>(['unavailable', 'prompt', 'permission', 'blocked', 'disabled', 'timeout', 'inaccurate']);
+
+type Permission = { granted: boolean; canAskAgain?: boolean };
+/** Opening a map may reuse consent; only the explicit location button may ask for it. */
+export async function pickupPermission(read: () => Promise<Permission>, request: () => Promise<Permission>, canRequest: boolean, signal: AbortSignal) {
+  const permission = await read();
+  if (signal.aborted) throw new Error('cancelled');
+  if (permission.granted) return permission;
+  if (permission.canAskAgain === false) throw new Error('blocked');
+  if (!canRequest) throw new Error('prompt');
+  return request();
+}
+
+export function pickupErrorKey(error: unknown) {
+  const reason = error instanceof Error ? error.message : '';
+  return reason === 'outside' ? 'pinOutsideArea' : reason === 'prompt' ? 'locationPurpose'
+    : reason === 'permission' ? 'locationPermissionDenied' : reason === 'blocked' ? 'locationPermissionBlocked'
+      : reason === 'disabled' ? 'locationServicesDisabled' : reason === 'inaccurate' ? 'locationInaccurate'
+        : reason === 'timeout' ? 'locationTimeout' : 'locationManual';
+}
 
 /** A cached pin hint must never hold the picker open or outlive its request. */
 export function cachedPickup(read: () => Promise<Fix | null>, signal: AbortSignal, timeoutMs = 250): Promise<Point | null> {
@@ -28,11 +47,11 @@ export function cachedPickup(read: () => Promise<Fix | null>, signal: AbortSigna
 }
 
 /** Keep the native permission prompt inside the same timeout/cancellation as GPS. */
-export function withPickupPermission(request: () => Promise<{ granted: boolean }>, watch: PickupWatch): PickupWatch {
+export function withPickupPermission(request: (signal: AbortSignal) => Promise<Permission>, watch: PickupWatch): PickupWatch {
   return async (receive, fail, signal) => {
-    const permission = await request();
+    const permission = await request(signal);
     if (signal.aborted) throw new Error('cancelled');
-    if (!permission.granted) throw new Error('permission');
+    if (!permission.granted) throw new Error(permission.canAskAgain === false ? 'blocked' : 'permission');
     return watch(receive, fail, signal);
   };
 }

@@ -1,5 +1,31 @@
 # Claims verification ledger — 2026-11-02
 
+## Current implementation status — 3 November 2026
+
+**Subsequent quality review:** [The 43-requirement assessment](../../reports/app-quality-review-2026-11-03.md) reconciles the knowledge report with current product scope, capabilities, provider gates and operating unknowns. Offline recovery/cache/session fencing, admin busy serialization and native labels were repaired. Final product code passes 105 integration suites, both typechecks, warning-free lint, fresh Android/iOS JS exports and 26 rebuilt browser journeys on K5. Bounded load passes all 14 gates; 525 archived inputs outside docs/reports/tasks match on both machines. No claim of full Uber parity, physical acceptance or production-provider readiness follows from these checks. The original research tables below remain historical.
+
+The tables below retain the original research verification results and historical line numbers. **VERIFIED means a claim was reproduced; it does not mean the defect was fixed.** This checkpoint reconciles the affected claims with the current source, the [first implementation pass](../../reports/handoff-implementation-2026-11-03.md) and the [remaining-work completion record](../../reports/handoff-completion-2026-11-03.md).
+
+| Claims | Current result | Evidence |
+| --- | --- | --- |
+| A1 / BUG-1 | Fixed in source: Android stores `expectedCenter` before returning during loading. The old initial-city message is rejected while the latest GPS target crosses the bridge. | `src/route-map.android.tsx`; the original failing assertion and gesture/echo regressions now pass in `tests/google-map-lifecycle.test.mjs`. |
+| A2 / BUG-2 | Pre-ready target tracking and gesture cancellation are repaired. Native adapters and the sheet now expire pending positioning without enabling confirmation, and retain manual recovery. Strict `> 0.000001` tolerance remains unchanged pending physical iOS calibration. | Native/sheet lifecycle checks cover timeout, completion, cancellation and manual recovery. Arabic/English positioning-failure copy is present. No physical iOS acceptance is claimed. |
+| A3 / BUG-3 | Fixed in source: the stale-opacity effect includes `driverKey`. | `src/route-map.tsx`; regression rebuilds a stale dot as an arrow, checks its fade, then checks recovery. |
+| A4 / BUG-4 | Versioned delivery implemented: Android requests `/map/v1/map.html` with a bounded 24-hour shell cache. `/map.html` remains supported. Content validators handle revalidation and compressed updates. Physical WebView acceptance remains open. | HTTP cache tests and K5 Chromium cold/warm/revalidation checks pass. Cached HTML availability does not prove offline map tiles. |
+| A5 / NEW-1 | Fixed in source: background/foreground bounces preserve the requested Google approach URL and its pending response. The shared `useApi` contract is unchanged. Historical paid-provider billing impact remains unproven. | `tests/road-focus.test.mjs` executes the actual hooks: the original four requests across three bounces become one; an in-flight response remains usable. |
+| A6 / NEW-2 | Fixed in source: background fixes do not advance the routing baseline; a changed order/driver/stop is fenced, and background mounts wait for visibility. | The routing regression checks full displacement from the last foreground request, latest-fix selection, changed-order deferral and unchanged baseline-provider refresh. |
+| A7 / NEW-3 | Fixed in source: heading uses elapsed time and the shared shortest-turn helper. | `src/google-map.web.tsx`; two frame schedules finish at the same heading, including 350°→10°. |
+| A8 / NEW-4 | Fixed in source: route/pin maps, the SDK loader and Android page consume the validated `mapReadyTimeoutMs` value. | Lifecycle/loader tests use a non-default 7-second deadline; map-fragment tests cover accepted bounds and invalid values. |
+| B1–B5 | Billing, map, lifecycle and both TypeScript checks now pass. B3's recorded failure below remains the baseline reproduction, not the current result. | K5 results and source hashes are retained with the [completion evidence](../../reports/handoff-completion-2026-11-03.md). |
+| B6 | Lint now passes with zero errors and zero warnings. | Same final run record; explicit coordinate fields resolve the native dependency warnings. |
+| A9–A30 and C1–C14, except the A/B updates explicitly listed above | Original research evidence retained. No new complete audit of these claims or recount of the reference artifact was performed in this implementation pass. | Historical tables and independent review below. C11/C12 remain method-dependent; A14 remains approximately 200 rather than an exact cross-method count. |
+
+Additional implementation evidence: the remaining-work pass has **104 integration suites**, all **52 persistence suites plus 22 PostgreSQL legacy suites**, corrected **26 browser journeys**, and Android/iOS JavaScript/assets exports passing on K5. The last one-line GPS cancellation correction passed focused map gates, both typechecks, warning-free lint, fresh exports and the rebuilt journeys with zero unhandled browser errors. All **519 tested-input hashes** match after verification; exact run chronology is in the completion report. These checks do not substitute for physical acceptance: the attached A53 is held by another device session and no physical iOS device is available.
+
+The first reconciliation was documentation-only. The subsequent remaining-work pass implements A4/A5/A6 and the A2 deadline above; its exact final source hashes, test runs and remaining hardware limits are recorded in the completion report. The original tables below continue to describe the research baseline.
+
+---
+
 Every claim in the handoff set, reproduced against the working tree (Fastship side) and the
 decompile (Uber side). Status: **PENDING** until a check is run and cited.
 

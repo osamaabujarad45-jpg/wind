@@ -83,7 +83,7 @@ try {
     window.mapMessages = [];
     window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
   });
-  await page.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, padding: 40, recenter: copy.ar.recenter }))}`);
+  await page.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, padding: 40, recenter: copy.ar.recenter }))}`);
   await page.waitForFunction(() => window.mapMessages.some(m => m.type === 'ready'));
   await page.locator('.maplibregl-marker').nth(1).waitFor();
   await page.evaluate(() => window.wind({ driver: { latitude: 31.9145, longitude: 35.2044, heading: 90, accuracy: 15 }, focus: 'pickup' }));

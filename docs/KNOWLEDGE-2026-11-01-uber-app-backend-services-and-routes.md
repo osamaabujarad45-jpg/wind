@@ -50,11 +50,11 @@ Route naming is uniform: `/rt/<service>/<verb-or-resource>`, kebab-case, with ve
 | --- | --- |
 | App start / session | `/rt/session/launch`, `/rt/riders/{riderUUID}/app-launch`, `/rt/riders/me/app-launch` |
 | Market and product state | `/rt/riders/evaluate-market-status`, `/rt/riders/product-configuration`, `/rt/riders/dispatchconfig` |
-| Place search and pickup | `/rt/locations/v2/autocomplete`, `/rt/locations/v3/labeled`, `/rt/locations/v4/…-geocode`, `/rt/pudo-presentation-helix/maps-search`, `/rt/riders/{riderUUID}/resolve-location`, `/rt/riders/{riderUUID}/v2/pickup` |
+| Place search and pickup | `/rt/locations/v3/labeled`, `/rt/locations/v4/…-geocode`, `/rt/pudo-presentation-helix/maps-search`, `/rt/riders/{riderUUID}/resolve-location`, `/rt/riders/{riderUUID}/v2/pickup` (text search is gRPC `maps.text-search/Search`; the `/rt/locations/v2/autocomplete` literal has no binding in the decompile — see the 2026-11-02 contract study) |
 | Price | `/rt/riders/{riderUUID}/fare-estimate`, `/rt/fares/metered-fare-estimate`, `/rt/fares/get-fare-breakdown`, `/rt/surge/batch` |
 | Request | `/rt/riders/{riderUUID}/create-draft-order`, `/rt/riders/v2/get-offers`, `/rt/riders/offer/accept`, `/rt/riders/offer/ack` |
 | Trip | `/rt/trips/{tripUUID}/begin`, `/rt/trips/{tripUUID}/share`, `/rt/trips/v2/start-waiting`, `/rt/trips/v2/complete-stops`, `/rt/trips/v2/end`, `/rt/trips/{tripUUID}/rider-cancel` |
-| Tracking display | `/rt/riders/{riderUUID}/dispatch-view`, `/rt/riders/pre-trip-map`, `/rt/riders/map-change`, `/rt/map-feed/get-map-feed`, `/rt/riders/notify-driver-spotlight` |
+| Tracking display | `/rt/riders/{riderUUID}/dispatch-view`, `/rt/riders/pre-trip-map`, `/rt/riders/map-change`, `/rt/riders/notify-driver-spotlight` (`/rt/map-feed/get-map-feed` was listed here in error: it is an unreferenced Eats stub) |
 | After the trip | `/rt/feedback/submit`, `/rt/receipts/v1/getreceipt`, `/rt/riders/send-trip-receipt`, `/rt/feedback/get-tip-options` |
 
 That ordering is the app's own vocabulary for the ride lifecycle — price → request → trip → receipt — and each step is a named server call, not a REST resource tree.
@@ -95,7 +95,7 @@ Reading: gRPC carries **surface-specific presentation services** (maps imagery a
 
 | Host | Literals | What it is used for |
 | --- | --- | --- |
-| `cn-geo1.uber.com` | 126 | the primary API host in this build's geography |
+| `cn-geo1.uber.com` | 126 | the primary API host in this build's geography, and the vendor's own public pages serve image assets from it — an independent confirmation that the name is an Uber property, not a third-party CDN |
 | `www.uber.com` | 53 | web links, legal, help redirects |
 | `tb-static.uber.com` | 33 | static assets |
 | `mobile-content.uber.com` | 32 | server-driven content bundles |
@@ -128,7 +128,7 @@ Reading: gRPC carries **surface-specific presentation services** (maps imagery a
 
 ## 10. Not determined
 
-- HTTP verb, header set, and authentication requirement per route: requires per-route code inspection; the string table gives names, not bindings. Only the identity subset (§7) is unambiguous by name.
+- HTTP verb, header set, and authentication requirement per route: requires per-route code inspection; the string table gives names, not bindings. Only the identity subset (§7) is unambiguous by name. **Update 2026-11-02:** verb, body, response and interface file for all 1,052 annotated routes are now in `docs/KNOWLEDGE-2026-11-02-uber-rider-api-backend-contract-study.md` §1 and the route index in the evidence folder (89% are POST).
 - Rate limits, retry/timeout values and caching policy per service: not in the string set.
 - Which routes the shipped build actually calls at runtime for a given screen: would require observing a live session, which this study does not do.
 

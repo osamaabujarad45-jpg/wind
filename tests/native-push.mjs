@@ -88,7 +88,7 @@ try {
   // Revocation: account deletion, admin block, admin password reset, phone-path session deletion.
   const del = await reg(6);
   await call('/push/native/register', { token: del.token, body: { expoPushToken: rawToken('delete'), deviceId: randomUUID(), platform: 'ios' } });
-  await call('/me/delete', { token: del.token, body: {} });
+  await call('/me/delete', { token: del.token, body: { password: 'synthetic-secret' } });
   assert.equal(await countTokens(del.user.id), 0, 'account-delete cascade');
   const blocked = await reg(7);
   await call('/push/native/register', { token: blocked.token, body: { expoPushToken: rawToken('block'), deviceId: randomUUID(), platform: 'android' } });

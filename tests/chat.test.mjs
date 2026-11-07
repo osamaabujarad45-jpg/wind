@@ -84,7 +84,7 @@ try {
   assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token })).length, 32);
 
   // Deleting an account replaces that person's words.
-  await call('/me/delete', { token: customer.token, body: {} });
+  await call('/me/delete', { token: customer.token, body: { password: 'secret1' } });
   assert.equal((await call(`/orders/${order.id}/messages`, { token: admin.token }))[0].body, '—');
 
   console.log('chat: ok');

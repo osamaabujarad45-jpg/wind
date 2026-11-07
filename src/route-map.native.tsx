@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
-import { bearing, glider } from './map-math';
+import { bearing, glider, routeFramePoints } from './map-math';
 import GoogleRouteMap, { PinMap as GooglePinMap } from './google-map.native';
-import { selectRenderer } from './map-provider';
-import { useMapMode } from './map-mode';
+import { MapProviderBoundary, type MapAttempt } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
+import { effectiveRuntime } from './runtime-config';
 
 export type { PinMapProps, RouteMapProps };
 // iOS: Apple Maps is the baseline (no key). When this binary was built with a restricted Google key
@@ -19,18 +18,21 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012; // about 1.3 km across the screen
 
 export default function RouteMap(props: RouteMapProps) {
-  const { pickup, dropoff } = props;
-  const [mode] = useMapMode();
-  const renderer = props.forceBaseline ? 'apple' : selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode);
-  if (renderer === 'google') return <GoogleRouteMap key={`${pickup.latitude},${pickup.longitude},${dropoff.latitude},${dropoff.longitude}`} {...props} />;
-  return <AppleRouteMap {...props} />;
+  return <MapProviderBoundary platform="ios" route={props} render={RouteAdapter} />;
+}
+function RouteAdapter({ route, attempt }: { route?: RouteMapProps; attempt: MapAttempt }) {
+  const props = route!;
+  const { pickup: a, dropoff: b } = props;
+  const key = `${a.latitude},${a.longitude},${b.latitude},${b.longitude}:${attempt.key}`;
+  return attempt.renderer === 'google' ? <GoogleRouteMap key={key} {...props} onFail={attempt.onFail} />
+    : <AppleRouteMap key={key} {...props} onFail={attempt.onFail} />;
 }
 
 function AppleRouteMap(props: RouteMapProps) {
-  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
-  const { c } = useCopy();
-  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
-  const points = driver ? [driver, ...stops] : stops;
+  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
+  const { c, rtl } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
+  const points = routeFramePoints(props);
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
   const region = {
     latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
@@ -44,10 +46,12 @@ function AppleRouteMap(props: RouteMapProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
-  // ponytail: a pan stops the follow camera; a pinch does not, because iOS reports the *fitted* region and no
-  // zoom comparison can tell the app's own animation from the user's. The next fix zooms back, like before.
+  // A physical drag (not a pinch-zoom) stops follow; programmatic animations never do.
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!driver || moved || failed) return;
@@ -57,27 +61,27 @@ function AppleRouteMap(props: RouteMapProps) {
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
     return () => sub.remove();
   }, [failed]);
   // A map that never becomes usable shows the diagram with a Retry, like web and Android (never a blank box).
   useEffect(() => {
     if (ready || failed) return;
-    const timer = setTimeout(() => setFailed(true), 20_000);
+    const timer = setTimeout(() => setFailed(true), readyTimeout);
     return () => clearTimeout(timer);
-  }, [ready, failed, attempt]);
+  }, [ready, failed, attempt, readyTimeout]);
   if (failed) return <View style={{ height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}
-    onRegionChangeComplete={r => { if (driver && Math.abs(r.latitude - driver.latitude) + Math.abs(r.longitude - driver.longitude) > 0.004) setMoved(true); }}>
+    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? `, ${driverTitle ?? ''}` : ''}`}
+    onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -89,7 +93,7 @@ function AppleRouteMap(props: RouteMapProps) {
   </MapView>
   {/* The recenter button only clears the gesture: the follow effect then animates the camera (one animation, not two). */}
   {moved && <Pressable onPress={() => setMoved(false)}
-    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
+    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
     <Ionicons name="locate" size={20} color={palette.blue} />
   </Pressable>}
   </View>;
@@ -135,40 +139,64 @@ export function Car({ driver, title, approach, still, stale }: { driver: NonNull
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
 
 export function PinMap(props: PinMapProps) {
-  const [mode] = useMapMode();
-  if (selectRenderer('ios', Constants.expoConfig?.extra?.googleMaps, mode) === 'google') return <GooglePinMap {...props} />;
-  return <ApplePin {...props} />;
+  return <MapProviderBoundary platform="ios" pin={props} render={PinAdapter} />;
+}
+function PinAdapter({ pin, attempt }: { pin?: PinMapProps; attempt: MapAttempt }) {
+  const props = pin!;
+  const guarded = { ...props, onReady: attempt.onReady, onFail: attempt.onFail,
+    onGesture: () => { if (attempt.current()) props.onGesture?.(); },
+    onChange: (point: PinMapProps['center']) => { if (attempt.current()) props.onChange(point); } };
+  return attempt.renderer === 'google' ? <GooglePinMap key={attempt.key} {...guarded} /> : <ApplePin key={attempt.key} {...guarded} />;
 }
 
-function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
+  const view = useRef<MapView>(null);
+  const reported = useRef(center);
+  const pendingCenter = useRef<PinMapProps['center'] | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // The callbacks are inline arrows: they change every render, so they are kept in a ref and the timer
-  // below depends on the map's state only, not on their identity.
   const callbacks = useRef({ onFail, onReady });
   useEffect(() => { callbacks.current = { onFail, onReady }; });
+  useEffect(() => {
+    if (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude) return;
+    pendingCenter.current = { latitude: center.latitude, longitude: center.longitude };
+    if (!ready) return;
+    view.current?.animateToRegion({ latitude: center.latitude, longitude: center.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 0);
+    const timer = setTimeout(() => {
+      if (!pendingCenter.current) return;
+      pendingCenter.current = null; setFailed(true); callbacks.current.onFail?.();
+    }, readyTimeout);
+    return () => clearTimeout(timer);
+  }, [center.latitude, center.longitude, ready, attempt, readyTimeout]);
   // The sheet offers no pin to confirm until the map says it is ready; a map that never loads says so.
   useEffect(() => {
     if (ready) { callbacks.current.onReady?.(); return; }
-    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, 20_000);
+    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, readyTimeout);
     return () => clearTimeout(timer);
-  }, [ready, attempt]);
+  }, [ready, attempt, readyTimeout]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
-    <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+    <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
-      pitchEnabled={false} rotateEnabled={false} onMapReady={() => setReady(true)} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+      accessibilityLabel={c.pinHint}
+      pitchEnabled={false} rotateEnabled={false} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapReady={() => setReady(true)}
+      onRegionChangeComplete={r => {
+        const target = pendingCenter.current;
+        if (target && Math.abs(target.latitude - r.latitude) + Math.abs(target.longitude - r.longitude) > 0.000001) return;
+        pendingCenter.current = null; reported.current = { latitude: r.latitude, longitude: r.longitude }; onChange(reported.current);
+      }} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>

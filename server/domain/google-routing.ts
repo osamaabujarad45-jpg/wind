@@ -1,3 +1,4 @@
+import { etaProjection } from './journey.ts';
 /**
  * Google Routes proxy core (T07/T08): validation, one billed request shape, budgets.
  *
@@ -266,7 +267,9 @@ export function registerGoogleRouteRoutes(route: Register, proxy: GoogleRoutes, 
     if (!outcome.ok) return guards.fail(STATUS_BY_CODE[outcome.error.code] ?? 503, outcome.error.code);
     const { metres, seconds, line } = outcome.route;
     // roadRoute's km rounding; minutes carry no checkpoint delay because this line is display-only.
-    return { km: Math.round(metres / 100) / 10, minutes: Math.max(1, Math.ceil(seconds / 60)), line, provider: outcome.provider };
+    const now = Date.now();
+    return { km: Math.round(metres / 100) / 10, minutes: Math.max(1, Math.ceil(seconds / 60)), line, provider: outcome.provider,
+      ...(query.get('journeyProtocol') === '1' ? { eta: etaProjection(Math.ceil(seconds), now, now + 30_000) } : {}) };
   });
 }
 

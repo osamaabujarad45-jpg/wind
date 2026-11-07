@@ -18,7 +18,7 @@ export type EntraRequest = { request: AuthSession.AuthRequest; nonce: string; di
 
 // Prepare PKCE and the authorization URL before the button is tapped, so the
 // system popup is opened directly from the user gesture on mobile web.
-export async function prepareEntraRequest(): Promise<EntraRequest | null> {
+export async function prepareEntraRequest(reauthNonce?: string): Promise<EntraRequest | null> {
   if (!entraConfigured) return null;
   const authority = `https://${tenantName}.ciamlogin.com/${tenant.toLowerCase()}`;
   const discovery: AuthSession.DiscoveryDocument = {
@@ -26,13 +26,14 @@ export async function prepareEntraRequest(): Promise<EntraRequest | null> {
     tokenEndpoint: `${authority}/oauth2/v2.0/token`,
     endSessionEndpoint: `${authority}/oauth2/v2.0/logout`,
   };
-  const nonce = Crypto.randomUUID();
+  const nonce = reauthNonce ?? Crypto.randomUUID();
   const request = new AuthSession.AuthRequest({
     clientId,
     scopes: ENTRA_SCOPES,
     redirectUri: AuthSession.makeRedirectUri({ scheme: 'wind', path: 'auth' }),
     usePKCE: true,
-    extraParams: { nonce },
+    extraParams: { nonce, ...(reauthNonce && { max_age: '0' }) },
+    ...(reauthNonce && { prompt: AuthSession.Prompt.Login }),
   });
   await request.makeAuthUrlAsync(discovery);
   return { request, nonce, discovery };
