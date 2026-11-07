@@ -32,7 +32,13 @@ Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL`
 ### Releasing an image
 
 1. Run the **Release image** workflow on `master` with a new tag: `gh workflow run release-image.yml -f tag=<tag>`. It builds in GitHub Actions and pushes to `windprodacr` with the push-only `github-release` registry token, so no build runs on the owner's PC.
-2. Log the VM in with a short token (`az acr login --expose-token`, piped to `docker login`), run `sudo /srv/deploy.sh <tag>`, which rolls back by itself if the new image is unhealthy, then `docker logout`.
+2. Check CI passed on that commit. The workflow does not check for you, and it refuses a tag that already exists.
+3. Log the VM in with a short token and deploy. `/srv/deploy.sh` is the VM's copy of `infra/vm/deploy.sh` and rolls back by itself if the new image is unhealthy:
+
+```sh
+az acr login --name windprodacr --expose-token --output tsv --query accessToken   | ssh windadmin@<vm> 'sudo docker login windprodacr.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin'
+ssh windadmin@<vm> 'sudo /srv/deploy.sh <tag>; sudo docker logout windprodacr.azurecr.io'
+```
 
 The **Uptime** workflow checks `/api/ready` hourly from outside the VM. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
 

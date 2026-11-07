@@ -239,7 +239,7 @@ for (const language of ['ar', 'en']) {
     // The server drops a driver fix after 120 s; send a fresh one so the live screen never depends on run time.
     if (screen.fix) await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
     await page.goto(base + screen.route, { waitUntil: 'load' });
-    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {}); // live screens poll and never go idle
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();

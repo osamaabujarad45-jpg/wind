@@ -2,7 +2,7 @@
 
 ## Pilot launch — 7 November 2026 (read this first)
 
-Production: `wind-api:20261107-pilot3`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview; the version is in `app.json`, the build number is held by EAS (`appVersionSource: remote`), and `package.json`'s version is unrelated. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #6 merged with CI green. Running it: `docs/PILOT.md`.
+Production: `wind-api:20261107-pilot4`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview; the version is in `app.json`, the build number is held by EAS (`appVersionSource: remote`), and `package.json`'s version is unrelated. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #6 merged with CI green. Running it: `docs/PILOT.md`.
 
 **The old account:** the owner cannot sign in to `osama-2000236`, whose Actions refused every job, so the code moved. On this PC the GitHub credential username (`credential.https://github.com.username`) stays `osama-2000236` globally for other projects, and this repository's config sets `osamaabujarad45-jpg`; the commit author name is unaffected. The `legacy-origin` remote still points at the frozen repository: never push to it. For `gh` here use `GH_TOKEN=$(gh auth token --user osamaabujarad45-jpg)`. `origin` points at the new repository.
 
@@ -14,9 +14,9 @@ Production: `wind-api:20261107-pilot3`, parcels only, West Bank road graph, Fire
 
 **Production had all three services on** while this file said parcel-only. It is now really parcel-only.
 
-**Releases:** images now build in GitHub Actions (`release-image.yml`), because the test PC has no hypervisor and so no container runtime. `pilot1` to `pilot3` were built on the owner's PC with Podman in WSL, against the owner's rule; do not repeat that. Steps: `docs/operations/deploy.md`.
+**Releases:** images now build in GitHub Actions (`release-image.yml`), because the test PC reports no hypervisor and has no container runtime (checked 7 November). `pilot1` to `pilot3` were built on the owner's PC with Podman in WSL, against the owner's rule; do not repeat that. Steps: `docs/operations/deploy.md`.
 
-**Full `npm run screens` stalls** at `/order/2` (`networkidle`) on the test PC; for the last change only sign-in and sign-up were recaptured, and git shows only the sign-up images changed.
+**Full gates and screenshots:** all gates and a complete `npm run screens` passed on the test PC on 7 November. The scenario check is not part of CI, so run it before a release.
 
 ## Operations section — 6 November 2026, evening
 
