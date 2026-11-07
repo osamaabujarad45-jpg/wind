@@ -68,4 +68,10 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Users | `/admin/users` | `src/app/admin/users.tsx` | [admin-users.png](ar/admin-users.png) | [admin-users.png](en/admin-users.png) |
 | Subscriptions | `/admin/subscriptions` | `src/app/admin/subscriptions.tsx` | [admin-subscriptions.png](ar/admin-subscriptions.png) | [admin-subscriptions.png](en/admin-subscriptions.png) |
 | Tariffs & settings | `/admin/settings` | `src/app/admin/settings.tsx` | [admin-settings.png](ar/admin-settings.png) | [admin-settings.png](en/admin-settings.png) |
+| Account | `/admin/account` | `src/app/admin/account.tsx` | [admin-account.png](ar/admin-account.png) | [admin-account.png](en/admin-account.png) |
+
+## On the physical phone
+
+The same app on the owner's `SM-A5360` (360×800 dp), checked through the on-device
+accessibility tree: [device-2026-11-07/README.md](device-2026-11-07/README.md).
 

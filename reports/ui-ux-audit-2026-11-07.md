@@ -6,7 +6,7 @@ rendered app, fixed, and re-measured. This report is the evidence for the final 
 - **Method:** source review of every screen in `src/app/` and every shared component in
   `src/ui.tsx` / `src/parts.tsx`, plus an objective render audit with
   `node scripts/ui-audit.mjs` (Playwright over the exported web build, 360×800, the A53's
-  width, Arabic and English, 33 screens × 2 languages = 66 combinations).
+  width, Arabic and English, 34 screens × 2 languages = 68 combinations).
 - **Rules applied:** the `ui-ux-pro-max` rule set (touch targets ≥44 pt, body text ≥12 pt,
   wrapping over truncation, one action per row, no dead controls, in-app navigation is a
   button and only a real URL is a link), WCAG 2.2 AA (contrast, accessible names, heading
@@ -24,7 +24,7 @@ rendered app, fixed, and re-measured. This report is the evidence for the final 
 | Clipped / truncated text | 4 | **0** |
 | Horizontal overflow outside a scroll rail | 45 | **0** |
 | Headings missing | (not measured) | **0** |
-| Screens with a heading for a screen reader | — | 33/33 |
+| Screens with a heading for a screen reader | — | 34/34 |
 | Controls without an accessible name | (not measured) | **0** |
 | Contrast failures in app text and icons | 26 | **0** |
 | Line-height failures (text ≥13 pt) | 1524 | **0** |
@@ -103,6 +103,10 @@ line it draws without a route. No app code is involved.
   message is a polite live region.
 - The Cash screen stays reachable as a Settings row and is hidden from the tab bar without
   breaking its deep link.
+- The admin account screen (new, `/admin/account`) is the same shared account screen the
+  customer and the driver use, with a back button because it is a stack screen and not a
+  tab. The settings links to it with a "حسابي" row instead of repeating the language, the
+  password and the sign-out at the bottom of a long page.
 
 ### Copy and separators
 
@@ -127,12 +131,13 @@ findings so one fix covers all of them.
 
 | Check | Result |
 |---|---|
-| `node scripts/ui-audit.mjs` | 66 combinations measured, 14 findings, all external |
-| `npm run screens` | 96 screenshots (48 Arabic, 48 English) + the 360 px / 130% text checks, all green |
+| `node scripts/ui-audit.mjs` | 68 combinations measured, 14 findings, all external |
+| `npm run screens` | 98 screenshots (49 Arabic, 49 English) + the 360 px / 130% text checks, all green |
 | `npx tsc --noEmit` | clean |
 | `npx expo lint` | clean (0 errors, 0 warnings) |
 | `npm test` | **105 suites passed** (the isolated loopback PostgreSQL included) |
 | `npm run check:audit` | the high-severity chain stays mitigated, only moderate/low remain reported |
+| Physical phone (`SM-A5360`, 360×800 dp) | all three roles walked through the real app; 11 screens captured and checked through the on-device accessibility tree; no JavaScript errors |
 
 Two stale checks in the repo's own scripts were corrected, not worked around:
 
@@ -147,6 +152,42 @@ Two stale checks in the repo's own scripts were corrected, not worked around:
   screen contain no `useEffect` at all. Both now have one effect that only announces a
   state change to a screen reader. The test now asserts the rule it was written for: no
   effect may start presence or tracking, only announce.
+
+## The device pass, and the one thing it found
+
+The automated audit measures the exported web build, so the final acceptance was done on
+the owner's phone, the way the repo requires: a local debug APK of this branch, installed
+under a separate package name so the installed release app was never touched, talking to a
+throwaway seeded API over `adb reverse`. The phone is 360×800 dp — the same width the
+audit measures at — and every screen was read through the on-device accessibility tree,
+which is what a screen reader actually sees. The screenshots and the per-screen notes are
+in `docs/screens/device-2026-11-07/`.
+
+What it confirmed: the Arabic layout is right-to-left on the device, every disabled
+control carries its reason (the driver's offline state, the booking's "اطلب" button, the
+auth screen's phone-recovery line), every field error sits with its field, the admin
+chart announces a name per data point plus its maximum label, the bottom bars hold three,
+three and five tabs, and the app stands down its animations when the phone asks for
+reduced motion.
+
+What it found: **the admin's sign-out was three scrolls down.** In
+`src/app/admin/settings.tsx` the account actions sat below the pricing cards *and* the
+promo-code form, so leaving the admin account meant scrolling past both. The admin bar
+already holds the five tabs the navigation limit allows, so there was no room for an
+account tab there either. The fix follows the rule the design system states — primary
+navigation and secondary navigation stay separate — and gives the admin the same account
+door the customer and the driver have:
+
+- The settings now opens with a **"حسابي" (My account)** row. It leads to a new
+  `/admin/account` route, which renders the same shared account screen the other roles
+  use, with a back button because it is a stack screen and not a tab.
+- The account screen carries the name, the phone, the role badge, the language, the
+  password, the roads, the help, the privacy, the sign-out and the delete-account — the
+  sign-out is one tap from the settings instead of three scrolls.
+- The settings keeps the work (the tariffs, the subscription prices, the promo codes, the
+  cash row) and no longer repeats the language, the password or the sign-out, so there is
+  one door to a destructive action and no second copy of a preference that lives on the
+  account screen.
 
 ## One more fix the audit run uncovered
 
@@ -174,8 +215,9 @@ gate keeps doing its job.
   isolated loopback PostgreSQL on `127.0.0.1:55473` (`node scripts/local-postgres.mjs
   start`). It had been left stopped after an interrupted shutdown and took twenty minutes
   of crash recovery to finish; with it up, the whole suite passes.
-- A local debug APK build (`gradlew assembleDebug`) fails on this machine with
-  "Filename longer than 260 characters": the repository path is inside a OneDrive folder
-  and the CMake object paths for the React Native modules exceed the Windows limit. The
-  fix is to build from a short path (a copy on the system drive); the app's own acceptance
-  path (the screenshot pipeline) is unaffected.
+- A local debug APK build (`gradlew assembleDebug`) fails in the repository folder with
+  "Filename longer than 260 characters": the path is inside a OneDrive folder and the
+  CMake object paths for the React Native modules exceed the Windows limit. Building from
+  a copy on the system drive (`C:\p`) with a short Gradle home (`gradlew -g C:\g`) works
+  and is how the phone build for this audit was made. Nothing in the repository was
+  changed for it: the copy is a scratch build tree, not a source of truth.

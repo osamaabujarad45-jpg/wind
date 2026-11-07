@@ -5,7 +5,7 @@
 
 ## What is in the branch
 
-Two commits, in this order:
+Four commits, in this order:
 
 1. `chore(app): the product baseline this UI audit sits on` — the product work that was
    already uncommitted in the workspace before the audit (presence, driver recovery, maps,
@@ -22,6 +22,15 @@ Two commits, in this order:
    the repository's own decoder test expects. The file stays CommonJS for Expo Router's
    query-string 7 and the reviewed-bytes pin is updated, so the dependency gate still
    holds.
+4. `fix(ui): the admin's sign-out was three scrolls down` — found on the physical phone, not
+   in the web build: in `src/app/admin/settings.tsx` the account actions sat below the
+   pricing cards *and* the promo-code form, and the admin bar already holds the five tabs
+   the navigation limit allows. The settings now opens with a "حسابي" row that leads to a
+   new `/admin/account` route — the same shared account screen the customer and the driver
+   use, with a back button because it is a stack screen — so the sign-out is one tap from
+   the settings. The settings keeps the work and no longer repeats the language, the
+   password or the sign-out. The device screenshots and the per-screen notes are in
+   `docs/screens/device-2026-11-07/`.
 
 The workspace had CRLF line endings in the edited files while the repository stores LF.
 The edited files were normalised to LF so the diff shows the real change and not every
@@ -30,7 +39,7 @@ line; the content is untouched.
 ## What the audit did
 
 - Every screen under `src/app/` and every shared component in `src/ui.tsx` / `src/parts.tsx`
-  was read, then measured in the running app with `scripts/ui-audit.mjs` (33 screens ×
+  was read, then measured in the running app with `scripts/ui-audit.mjs` (34 screens ×
   Arabic and English at 360×800).
 - The findings went from **2170 to 14**, and the 14 are the local routing provider answering
   `503` for `/api/route` (no key in the sandbox; the app draws its straight-line fallback).
@@ -47,8 +56,8 @@ Full inventory, before/after numbers and the file-by-file list: `reports/ui-ux-a
 ## How to verify it yourself
 
 ```powershell
-npm run screens                 # 96 screenshots (48 Arabic, 48 English) + 360 px / 130% text
-node scripts/ui-audit.mjs       # 66 combinations measured; 14 findings, all external
+npm run screens                 # 98 screenshots (49 Arabic, 49 English) + 360 px / 130% text
+node scripts/ui-audit.mjs       # 68 combinations measured; 14 findings, all external
 node scripts/ui-audit-summary.mjs
 npx tsc --noEmit               # clean
 npx expo lint                  # clean
@@ -74,14 +83,35 @@ The PostgreSQL suites need the isolated loopback database:
   one assertion was narrowed to the rule it was written for. The app's behaviour was not
   changed for them.
 
+## The device pass
+
+The automated audit measures the exported web build, so the final acceptance was done the
+way the repo requires: on the owner's phone (`SM-A5360`, adb `R5CTB0FJP9Z`, 360×800 dp).
+A local debug APK of this branch was built from a short-path copy (`C:\p`, `gradlew -g C:\g`)
+and installed under a separate package name (`ps.wind.audit`), so the installed release app
+was never touched. It ran against a throwaway seeded API over `adb reverse`.
+
+All three roles were walked through the real app — customer, driver, admin — and every
+screen was read through the on-device accessibility tree, which is what a screen reader
+sees. Eleven screens are captured in `docs/screens/device-2026-11-07/` with the tree
+confirmation for each. No JavaScript errors were logged during the walkthrough.
+
+The device pass is what found the buried admin sign-out, and it is what confirmed the
+rules the web build cannot show: the RTL layout, the reason on every disabled control, the
+error next to every field, the chart's per-point names, the tab counts and the
+reduced-motion behaviour.
+
+To repeat it: build from a short path (`robocopy` the project to `C:\p` without
+`node_modules/**/android/.cxx`, then `gradlew -g C:\g assembleDebug`), install the APK
+under a scratch package name, `adb reverse tcp:8081 tcp:8081` and `tcp:4100 tcp:4100`,
+and run a seeded API on 4100.
+
 ## Known limits, stated plainly
 
-- The device build is blocked on this machine: `gradlew assembleDebug` fails with
-  "Filename longer than 260 characters" because the repository sits inside a OneDrive
-  folder and the CMake object paths for the React Native modules exceed the Windows limit.
-  Building from a short path (a `subst` drive or a copy) is the fix. The repo's own
-  acceptance path (the screenshot pipeline) is unaffected and green.
 - The map is MapLibre, not Google Maps. Its attribution and its cooperative-gesture hint are
   the vendor's own overlay (2.85:1 white on grey) and are not the app's text.
 - The local routing provider has no key, so `/api/route` answers 503 and the console
   finding stays until one is configured.
+- The debug build on the phone was a local build with the debug keystore, so it could not
+  be installed over the release build (different signature); it was installed beside it
+  under a scratch package name instead. The owner's installed app was not modified.

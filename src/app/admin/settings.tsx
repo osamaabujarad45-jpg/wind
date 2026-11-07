@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
-import { PasswordCard, useFormat } from '../../parts';
+import { useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, ListRow, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
@@ -15,7 +15,7 @@ const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)
 ];
 
 export default function AdminSettings() {
-  const { me, refresh, signOut, language, setLanguage } = useSession();
+  const { me, refresh } = useSession();
   const { c, err } = useCopy();
   const [values, setValues] = useState(() => Object.fromEntries(Object.entries(me!.settings).map(([k, v]) => [k, String(v)])));
   const [busy, setBusy] = useState(false);
@@ -53,7 +53,12 @@ export default function AdminSettings() {
 
   return <Screen>
     <Header title={c.settings} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
-    <ListGroup><ListRow icon="cash-outline" label={c.cashTab} onPress={() => router.push('/admin/cash')} /></ListGroup>
+    <ListGroup>
+      {/* The account is one tap from here: the admin bar already holds five tabs, so the
+          sign-out lives on the account screen instead of at the bottom of a long page. */}
+      <ListRow icon="person-outline" label={c.account} onPress={() => router.push('/admin/account')} />
+      <ListRow icon="cash-outline" label={c.cashTab} onPress={() => router.push('/admin/cash')} />
+    </ListGroup>
     {groups.map(group => <Card key={group.title}>
       <Txt variant="h2" header style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
@@ -62,15 +67,11 @@ export default function AdminSettings() {
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
         value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); if (bad === key) setBad(''); }} />)}
     </Card>)}
-    <Promos />
     <ErrorText>{error}</ErrorText>
     {!!message && <View accessibilityLiveRegion="polite"><Txt center style={{ marginBottom: 10, fontWeight: '800' }}>{message}</Txt></View>}
-    <View style={{ gap: 10 }}>
-      <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
-      <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
-      <ListGroup><PasswordCard /></ListGroup>
-      <Button title={c.logout} icon="log-out-outline" variant="danger" onPress={() => confirm(c.logoutConfirm, signOut, c.logout, c.no)} />
-    </View>
+    <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
+    {/* Promo codes are a rarer task than pricing, so they stay last. */}
+    <Promos />
   </Screen>;
 }
 

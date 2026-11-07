@@ -382,7 +382,7 @@ export function HelpLinks({ help = true, privacy = true }: { help?: boolean; pri
   </Row>;
 }
 
-export function AccountScreen() {
+export function AccountScreen({ back = false }: { back?: boolean } = {}) {
   const { me, signOut, forget, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [deleteError, setDeleteError] = useState('');
@@ -420,7 +420,7 @@ export function AccountScreen() {
     } finally { pending.current = false; setBusy(false); if (microsoft) { setEntraRequest(null); setEntraRetry(n => n + 1); } }
   }
   return <Screen>
-    <Header title={c.account} />
+    <Header title={c.account} back={back} />
     <Appear>
       <Card>
         <Press accessibilityLabel={`${c.editProfile}. ${user.name}. ${user.phone}`} onPress={() => router.push('/profile')}>

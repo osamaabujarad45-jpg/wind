@@ -168,6 +168,7 @@ const screens = [
   { id: 'admin-users', route: '/admin/users', role: 'admin' },
   { id: 'admin-subscriptions', route: '/admin/subscriptions', role: 'admin' },
   { id: 'admin-settings', route: '/admin/settings', role: 'admin' },
+  { id: 'admin-account', route: '/admin/account', role: 'admin' },
   { id: 'admin-order', route: `/order/${proof.id}`, role: 'admin' },
   { id: 'roads', route: '/roads', role: 'customer' },
 ].filter(s => !only || only.includes(s.id));

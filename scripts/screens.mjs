@@ -197,6 +197,7 @@ const screens = [
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
+  { id: 'admin-account', group: 'Admin', name: 'Account', route: '/admin/account', file: 'src/app/admin/account.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
 const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
 
