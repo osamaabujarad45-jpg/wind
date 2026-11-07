@@ -10,7 +10,9 @@ export default function AdminTabs() {
     <Tabs.Screen name="orders" options={{ title: c.allOrders, tabBarIcon: tabIcon('receipt-outline') }} />
     <Tabs.Screen name="users" options={{ title: c.users, tabBarIcon: tabIcon('people-outline'), tabBarBadge: data?.pendingDrivers || undefined }} />
     <Tabs.Screen name="cash" options={{ title: c.cashTab, tabBarIcon: tabIcon('cash-outline') }} />
-    <Tabs.Screen name="subscriptions" options={{ title: c.subscriptions, tabBarIcon: tabIcon('sparkles-outline'), tabBarBadge: data?.pendingSubscriptions || undefined }} />
-    <Tabs.Screen name="settings" options={{ title: c.settings, tabBarIcon: tabIcon('settings-outline') }} />
+    <Tabs.Screen name="more" options={{ title: c.more, tabBarIcon: tabIcon('grid-outline'), tabBarBadge: data?.pendingSubscriptions || undefined }} />
+    {/* Keep both deep links; the labeled More destination owns their discoverability. */}
+    <Tabs.Screen name="subscriptions" options={{ title: c.subscriptions, href: null }} />
+    <Tabs.Screen name="settings" options={{ title: c.settings, href: null }} />
   </Tabs>;
 }

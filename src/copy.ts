@@ -162,6 +162,9 @@ const ar = {
   offlineSavedWarning: 'ملخّص للقراءة فقط وقد يكون قديماً. أعد الاتصال للتحقق من السائق والحالة قبل أي إجراء.',
   offlineSavedAt: 'آخر حفظ: {time}',
   retry: 'إعادة المحاولة',
+  loading: 'جارٍ التحميل…',
+  more: 'المزيد',
+  tabPending: '{label}، {n} بانتظار الإجراء',
   back: 'رجوع',
   // phone verification and recovery (WP06): truthful states; a provider answer is never "delivered"
   phone_unavailable: 'غير متاح',
@@ -1185,6 +1188,9 @@ const en: Copy = {
   offlineSavedWarning: 'Read-only information that may be out of date. Reconnect to verify the driver and status before taking action.',
   offlineSavedAt: 'Last saved: {time}',
   retry: 'Try again',
+  loading: 'Loading…',
+  more: 'More',
+  tabPending: '{label}, {n} pending',
   back: 'Back',
   // phone verification and recovery (WP06): truthful states; a provider answer is never "delivered"
   phone_unavailable: 'Unavailable',

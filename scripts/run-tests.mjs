@@ -15,6 +15,7 @@ const suites = [
   "driver-recovery-api.test.mjs",
   "model.test.mjs",
   "presentation.test.mjs",
+  "shared-ui.test.mjs",
   "driver-presence-card.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",

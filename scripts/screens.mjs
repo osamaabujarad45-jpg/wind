@@ -198,6 +198,7 @@ const screens = [
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
+  { id: 'admin-more', group: 'Admin', name: 'Admin · more destinations', route: '/admin/more', file: 'src/app/admin/more.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
 const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
@@ -288,6 +289,24 @@ for (const language of ['ar', 'en']) {
       const audit = db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'PROOF_RESET'").get(proofRecovery.id);
       assert.equal(JSON.parse(audit.detail).reason, reason);
       console.log('Admin proof recovery UI: verification cancellation, audited reset and required recipient code passed');
+    }
+    if (screen.id === 'admin-more') {
+      const t = copy[language];
+      const moreTab = () => page.getByRole('tab', { name: t.more, exact: false });
+      assert.equal(await page.getByRole('tab').count(), 5);
+      await page.getByRole('button', { name: t.subscriptions, exact: false }).first().click();
+      await page.waitForURL('**/admin/subscriptions');
+      assert.equal(await page.getByRole('tab').count(), 5);
+      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
+      await moreTab().click();
+      await page.waitForURL('**/admin/more');
+      await page.getByRole('button', { name: t.settings, exact: true }).click();
+      await page.waitForURL('**/admin/settings');
+      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
+      await page.goto(base + '/admin/settings', { waitUntil: 'networkidle' });
+      assert.equal(await page.getByRole('tab').count(), 5);
+      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
+      console.log(`Admin navigation (${language}): five tabs, More destinations and hidden deep links passed`);
     }
     await context.close();
   }

@@ -31,6 +31,7 @@ export const palette = {
   blue: '#2F5E8C',
   bluePale: '#E6EDF6',
   line: '#E2E1D8',
+  inputBorder: '#7F8781', // 3.29:1 on paper and 3.69:1 on white; resting controls stay identifiable
   hair: '#ECEBE4',
   muted: '#EAE8DF',
   error: '#A3392A',
@@ -41,9 +42,8 @@ export const palette = {
 // Soft lift instead of hairline borders. Small blur: large glows read as cheap on a phone.
 export const shadow: ViewStyle = { boxShadow: '0px 1px 2px rgba(14,31,25,0.06), 0px 4px 14px rgba(14,31,25,0.06)' };
 
-// Compact scale (Material 3 / Apple HIG): 14pt body, 36–46pt controls, every tap target ≥ 44pt through padding or hitSlop.
-export const size = { control: 46, small: 36, row: 52, radius: 16, gutter: 16 };
-const HIT = { top: 6, bottom: 6, left: 6, right: 6 };
+// Compact mobile scale with a real 48dp Android target. Hit slop may extend it, never shrink it.
+export const size = { control: 48, small: 48, row: 52, radius: 16, gutter: 16 };
 
 const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 export type IconName = keyof typeof Ionicons.glyphMap;
@@ -120,7 +120,7 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
   scrollRef?: React.RefObject<ScrollView | null>;
 }) {
   const [refreshing, setRefreshing] = useState(false);
-  const refresh = onRefresh && (async () => { setRefreshing(true); await onRefresh(); setRefreshing(false); });
+  const refresh = onRefresh && (async () => { setRefreshing(true); try { await onRefresh(); } catch { /* the owning screen keeps its visible error and stale data */ } finally { setRefreshing(false); } });
   // Inside tabs the TabBar already clears the system navigation bar; a second bottom inset left a dead band (A53).
   const inTabs = useContext(BottomTabBarHeightContext) !== undefined;
   // Android is edge-to-edge, so the keyboard no longer resizes the window: pad by the overlap instead. The ScrollView then
@@ -142,8 +142,8 @@ export function Header({ title, back = false, right, subtitle }: { title: string
     {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
       onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />}
     <View style={{ flex: 1 }}>
-      <Txt variant="h1" header numberOfLines={1}>{title}</Txt>
-      {!!subtitle && <Txt variant="caption" numberOfLines={1}>{subtitle}</Txt>}
+      <Txt variant="h1" header>{title}</Txt>
+      {!!subtitle && <Txt variant="caption">{subtitle}</Txt>}
     </View>
     {right}
   </View>;
@@ -153,8 +153,9 @@ export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
   const bg = { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} aria-disabled={disabled} hitSlop={HIT}
-    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} aria-disabled={disabled}
+    accessibilityState={{ disabled: !!disabled }} style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow,
+      (pressed || disabled) && { opacity: disabled ? 0.5 : 0.7 }]}>
     <Ionicons name={icon} size={19} color={tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
 }
@@ -179,16 +180,16 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
 }) {
   const { align } = useCopy();
-  // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
-  return <Text maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  // Follow the user's OS text size. Layouts must grow and wrap instead of capping or clipping language.
+  return <Text numberOfLines={numberOfLines} selectable={selectable} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
 export function Section({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return <Row style={{ justifyContent: 'space-between', marginTop: 6, marginBottom: 10 }}>
     <Txt variant="h2" header>{title}</Txt>
-    {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={13}>
-      {/* label variant is ~18px tall; 13px slop each side brings the target to 44pt */}
+    {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction}
+      style={({ pressed }) => [styles.sectionAction, pressed && styles.pressed]}>
       <Txt variant="label" style={{ color: palette.olive }}>{action}</Txt>
     </Pressable>}
   </Row>;
@@ -223,14 +224,16 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // Press feedback: 3% scale over 120ms on the UI thread.
 export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
+  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; disabled?: boolean; selected?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
   return <Pressable style={containerStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
-    <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
+    accessibilityState={{ ...accessibilityState, disabled: !!disabled }} aria-disabled={disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked}
+    onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+    <Animated.View style={[motion.pressable, style, pressed && (reduced ? styles.pressed : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
 
@@ -249,9 +252,9 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   // Disabled keeps its shape and label on a paper fill with secondary text (5.6:1), not a 50% wash of the tone. A busy button
   // keeps its colours so the spinner reads as work in progress. Callers add a <Reason> under it saying why it waits.
   const off = !!disabled && !loading;
-  const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
+  const look = off ? { bg: palette.muted, fg: palette.secondary } : tone;
   const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
-    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
+    accessibilityState={{ busy: !!loading, disabled: !!disabled || !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
@@ -274,7 +277,8 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
     {items.map(item => {
       const on = item.key === value;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} aria-checked={on} aria-disabled={disabled} disabled={disabled}
-        onPress={() => onChange(item.key)} style={{ flex: 1 }} hitSlop={{ top: 4, bottom: 4 }}>
+        accessibilityState={{ checked: on, disabled: !!disabled }} onPress={() => onChange(item.key)} hitSlop={{ top: 4, bottom: 4 }}
+        style={({ pressed }) => [{ flex: 1 }, (pressed || disabled) && { opacity: disabled ? 0.5 : 0.72 }]}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
         </Animated.View>
@@ -287,14 +291,18 @@ export function Choices<K extends string>({ items, value, onChange, disabled }: 
 export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }: { value: number; min?: number; max?: number; onChange: (n: number) => void; label: string; disabled?: boolean }) {
   const { row, c } = useCopy();
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
+  const stepKey = (direction: number) => {
+    const off = !!disabled || (direction < 0 ? value <= min : value >= max);
+    return <Pressable accessibilityRole="button" accessibilityLabel={`${direction < 0 ? c.stepperDecrease : c.stepperIncrease} ${label}`}
+      onPress={() => step(direction)} disabled={off} aria-disabled={off} accessibilityState={{ disabled: off }}
+      style={({ pressed }) => [styles.stepperKey, off && styles.stepperKeyDisabled, pressed && !off && styles.pressed]}>
+      <Ionicons name={direction < 0 ? 'remove' : 'add'} size={18} color={off ? palette.faint : palette.ink} />
+    </Pressable>;
+  };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} style={styles.stepperKey}>
-      <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
-    </Pressable>
+    {stepKey(-1)}
     <Text accessibilityLabel={`${label}: ${value}`} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} style={styles.stepperKey}>
-      <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
-    </Pressable>
+    {stepKey(1)}
   </View>;
 }
 
@@ -327,8 +335,10 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
   const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
   return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
     {items.map(item => <Pressable key={item.key} accessibilityRole="radio" aria-checked={item.key === value} accessibilityLabel={item.label}
+      accessibilityState={{ checked: item.key === value, disabled: !!disabled }}
       onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
-      onPress={() => onChange(item.key)} disabled={disabled} aria-disabled={disabled} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
+      onPress={() => onChange(item.key)} disabled={disabled} aria-disabled={disabled} hitSlop={{ top: 5, bottom: 5 }}
+      style={({ pressed }) => [styles.chip, item.key === value && styles.chipOn, (pressed || disabled) && { opacity: disabled ? 0.5 : 0.72 }]}>
       <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
   </Rail>;
@@ -356,9 +366,9 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
   }, [focused, ref]);
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
-    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
+    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, disabled && styles.inputDisabled, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} accessibilityState={{ disabled: !!disabled }} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
@@ -377,8 +387,9 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
 }
 
 export function ErrorText({ children }: { children?: string }) {
+  const reduced = useReducedMotion();
   if (!children) return null;
-  return <Animated.View entering={FadeInDown.duration(200)}>
+  return <Animated.View entering={reduced ? undefined : FadeInDown.duration(200)}>
     <Text accessibilityRole="alert" style={styles.error}>{children}</Text>
   </Animated.View>;
 }
@@ -429,7 +440,7 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
-    <Text numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
+    <Text style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text style={styles.listValue}>{value}</Text>}
     {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
@@ -476,9 +487,9 @@ export function Empty({ icon, title, body, action }: { icon: IconName; title: st
 export function Stat({ label, value, tone = 'card', index = 0, detail }: { label: string; value: string; tone?: 'card' | 'olive' | 'clay' | 'muted'; index?: number; detail?: string }) {
   return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140 }}>
     <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12 }}>
-      <Txt variant="caption" numberOfLines={1}>{label}</Txt>
+      <Txt variant="caption">{label}</Txt>
       <Txt variant="h2" style={{ marginTop: 2 }}>{value}</Txt>
-      {!!detail && <Txt variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>{detail}</Txt>}
+      {!!detail && <Txt variant="caption" style={{ marginTop: 2 }}>{detail}</Txt>}
     </Card>
   </Appear>;
 }
@@ -487,7 +498,9 @@ export function Stat({ label, value, tone = 'card', index = 0, detail }: { label
 export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () => void }) {
   const { c } = useCopy();
   if (failed && onRetry) return <View style={{ paddingVertical: 16 }}><Button title={c.retry} icon="refresh" variant="soft" onPress={onRetry} /></View>;
-  return <View style={{ padding: 32 }}><ActivityIndicator color={palette.olive} /></View>;
+  return <View accessibilityRole="progressbar" accessibilityLabel={c.loading} accessibilityState={{ busy: true }} accessibilityLiveRegion="polite" style={{ padding: 32 }}>
+    <ActivityIndicator color={palette.olive} />
+  </View>;
 }
 
 // ---------- tabs ----------
@@ -495,24 +508,30 @@ export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () =>
 // Docked bar (Uber/Careem pattern): compact, label under icon, a lime pill marks the current tab.
 // Custom so tab order follows the in-app language (OS RTL flipping is off).
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { row } = useCopy();
+  const { row, c } = useCopy();
+  const hidden = (route: BottomTabBarProps['state']['routes'][number]) => StyleSheet.flatten(descriptors[route.key].options.tabBarItemStyle)?.display === 'none';
+  const hiddenFocused = !!state.routes[state.index] && hidden(state.routes[state.index]);
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
-      const focused = state.index === index;
+      if (hidden(route)) return null;
+      const actuallyFocused = state.index === index;
+      const focused = actuallyFocused || (hiddenFocused && route.name === 'more');
       const color = focused ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
-      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={focused}
+      const badge = options.tabBarBadge;
+      const accessibleLabel = badge ? fill(c.tabPending, { label, n: String(badge) }) : label;
+      const badgeContent = typeof badge === 'number' && badge > 99 ? '99+' : badge;
+      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={accessibleLabel} aria-selected={focused} accessibilityState={{ selected: focused }}
         onPress={() => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
-        }} style={styles.barItem}>
+          if (!actuallyFocused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
+        }} style={({ pressed }) => [styles.barItem, pressed && styles.pressed]}>
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
         <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
           {options.tabBarIcon?.({ focused, color, size: 21 })}
-          {!!options.tabBarBadge && <View style={styles.barBadge}><Text style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.barText, { color }, focused && { fontWeight: '800' }]}>{badge ? `${label} · ${badgeContent}` : label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;
@@ -529,11 +548,11 @@ const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
   choice: {
-    minHeight: 44, borderRadius: 12, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
+    minHeight: 48, borderRadius: 12, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
     borderWidth: 1.5, borderColor: 'transparent',
     transitionProperty: ['backgroundColor', 'borderColor'], transitionDuration: '160ms', transitionTimingFunction: EASE_OUT,
   },
-  choiceOn: { backgroundColor: palette.card, borderColor: palette.forest },
+  choiceOn: { backgroundColor: palette.olivePale, borderColor: palette.olive },
 });
 
 const styles = StyleSheet.create({
@@ -541,27 +560,31 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   logo: { backgroundColor: palette.forest, overflow: 'hidden' },
-  header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: 44 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: 48 },
+  iconButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  sectionAction: { minHeight: 48, minWidth: 48, justifyContent: 'center' },
+  pressed: { opacity: 0.72 },
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },
-  buttonSmall: { minHeight: 44, borderRadius: 22, paddingHorizontal: 14 },
+  buttonSmall: { minHeight: 48, borderRadius: 24, paddingHorizontal: 14 },
   outline: { borderWidth: 1, borderColor: palette.line },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
   choiceText: { color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3 },
-  stepperKey: { width: 44, height: 44, borderRadius: 10, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  stepperKey: { width: 48, height: 48, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  stepperKeyDisabled: { backgroundColor: palette.muted },
   stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontWeight: '800', color: palette.ink },
-  chip: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.line },
+  chip: { paddingHorizontal: 14, minHeight: 48, borderRadius: 24, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.line },
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
   chipText: { fontSize: 13, fontWeight: '700', color: palette.secondary },
   field: { marginBottom: 12 },
-  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.line, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.paper },
+  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.inputBorder, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.paper },
   inputFocused: { borderColor: palette.forest, backgroundColor: palette.card },
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
+  inputDisabled: { backgroundColor: palette.muted, opacity: 0.72 },
   fieldError: { flex: 1, color: palette.error, fontSize: 12, fontWeight: '700' },
-  input: { flex: 1, minHeight: 44, paddingVertical: 10, color: palette.ink, fontSize: 15 },
+  input: { flex: 1, minHeight: 48, paddingVertical: 10, color: palette.ink, fontSize: 15 },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
   badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800' },
@@ -577,7 +600,5 @@ const styles = StyleSheet.create({
   barRow: { maxWidth: 640, width: '100%', alignSelf: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 4 },
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  barText: { fontSize: 11, fontWeight: '600' },
-  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: palette.onFill, fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
+  barText: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
 });

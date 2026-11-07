@@ -24,6 +24,10 @@ External Claude `claude-haiku-5-5`, medium requested effort, opened **all 44 cat
 
 Pixel reviews establish visible findings only. They do not establish touch size, screen-reader behavior, contrast ratios, async behavior, or physical-device acceptance. Worker-reported items that can be fixtures or intentional scroll/map behavior remain hypotheses until verified.
 
+## Remediation logs
+
+- [Shared design system and navigation](shared-design-system-remediation.md): DS-01 through DS-08 implemented and checked with 17 shared regressions, bilingual browser navigation, and three independent visual rounds. Physical-device acceptance remains open.
+
 ## Route-to-packet map
 
 - Launch: `welcome`, `auth`, intro and phone recovery → Launch/customer; Account/support for shared phone widgets.
