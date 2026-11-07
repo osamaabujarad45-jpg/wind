@@ -8,7 +8,8 @@ import { basename, join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
-export const DECODER_SHA256 = '016b6254780445441542fd9466dd6dd7922f450a6eb26d8eb41b95b472f3a582';
+// The reviewed decoder bytes: upstream 0.5.1 (the release that fixes CVE-2026-118664), published as CommonJS.
+export const DECODER_SHA256 = '8413e292e900af1fa569a219401d58e170021a5b557afc768babfd02308df45d';
 const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
 const severities = ['info', 'low', 'moderate', 'high', 'critical'];
