@@ -31,7 +31,7 @@ Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL`
 
 ### Releasing an image
 
-1. Run the **Release image** workflow on `master` with a new tag: `gh workflow run release-image.yml -f tag=<tag>`. It builds in GitHub Actions and pushes to `windprodacr` with the `github-release` registry token, limited to reading and writing `wind-api`, so no build runs on the owner's PC.
+1. Run the **Release image** workflow on `master` with a new tag: `gh workflow run release-image.yml -f tag=<tag>`. It builds in GitHub Actions, so no build runs on the owner's PC, and pushes to `windprodacr` with the `github-release` registry token, limited to reading and writing `wind-api`. It needs read access to check whether the tag exists.
 2. Check CI passed on that commit. The workflow does not check for you, and it refuses a tag that already exists.
 3. Log the VM in with a short token and deploy. `/srv/deploy.sh` is the VM's copy of `infra/vm/deploy.sh` and rolls back by itself if the new image is unhealthy:
 
