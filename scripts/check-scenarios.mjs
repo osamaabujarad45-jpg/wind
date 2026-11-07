@@ -152,11 +152,16 @@ try {
     const page = await newPage(language), text = copy[language];
     await page.route('**/api/auth/options', route => route.fulfill({ json: { registrationOpen: true, emailReset } }));
     await page.route('**/api/phone/capabilities', route => route.fulfill({ json: { available: false, enabled: false } }));
+    const capabilities = page.waitForResponse('**/api/phone/capabilities');
     await page.goto(base + '/auth');
+    await capabilities;
     const warning = page.getByText(text.phone_recovery_unavailable, { exact: true });
-    await warning.waitFor();
-    assert.doesNotMatch(await warning.innerText(), /email|البريد/i, 'Do not suggest a recovery method that may be unavailable');
     await page.getByRole('link', { name: emailReset ? text.forgotPasswordEmail : text.forgotPassword, exact: true }).waitFor();
+    if (emailReset) assert.equal(await warning.count(), 0, 'A working email reset needs no note about phone codes');
+    else {
+      await warning.waitFor();
+      assert.doesNotMatch(await warning.innerText(), /email|البريد/i, 'Do not suggest a recovery method that may be unavailable');
+    }
   }
   pass('recovery guidance matches available methods in Arabic and English');
 
