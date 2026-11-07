@@ -81,10 +81,26 @@ try {
   const row = db.prepare('SELECT phone_verified_at, email_verified_at FROM users WHERE id = ?').get(created.user.id);
   assert.equal(row.phone_verified_at, null, 'a manually entered phone is never treated as verified');
   assert.ok(row.email_verified_at, 'the attested email can satisfy contact verification');
+  const challenge = await call('/me/delete/challenge', { token: created.token, body: {} });
+  const fresh = Math.floor(Date.now() / 1000);
+  const proof = claims => ({ idToken: token({ nonce: challenge.nonce, auth_time: fresh, ...claims }), nonce: challenge.nonce });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'another-rider' }), expect: 401 });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider', auth_time: undefined }), expect: 401 });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider', auth_time: fresh - 301 }), expect: 401 });
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider', auth_time: fresh - 10 }), expect: 401 });
+  const otherSession = await exchange({ oid: 'new-rider' });
+  await call('/me/delete', { token: otherSession.token, body: proof({ oid: 'new-rider' }), expect: 401 });
+  const expired = await call('/me/delete/challenge', { token: created.token, body: {} });
+  db.prepare('UPDATE entra_replay SET expires_at=? WHERE token_hash=?').run(Date.now() - 1,
+    createHash('sha256').update(`delete-challenge:${created.token}:${expired.nonce}`).digest('hex'));
+  await call('/me/delete', { token: created.token, body: { idToken: token({ oid: 'new-rider', nonce: expired.nonce, auth_time: fresh }), nonce: expired.nonce }, expect: 401 });
+  assert.notEqual(db.prepare('SELECT status FROM users WHERE id=?').get(created.user.id).status, 'blocked');
   await exchange({ oid: 'another-rider', email: 'other@example.com', email_verified: true },
     { phone: '0599300104', consent: true }, 403);
   await exchange({ oid: 'no-proof', email: 'unknown@example.com', email_verified: false },
     { phone: '0599300105', consent: true }, 400);
+  await call('/me/delete', { token: created.token, body: proof({ oid: 'new-rider' }) });
+  assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(created.user.id).status, 'blocked');
   console.log('Entra exchange: account linking, contact proof, and email-based registration passed');
 } finally {
   globalThis.fetch = realFetch;

@@ -7,7 +7,9 @@ import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
-import { Button, Empty, palette, useCopy } from '../ui';
+import { Button, Card, Empty, fill, palette, Screen, Txt, useCopy } from '../ui';
+import { city, orderCode } from '../model';
+import { statusText, useFormat } from '../parts';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -54,12 +56,25 @@ function IntroOverlay() {
 }
 
 function Routes() {
-  const { ready, offline, me, onboarded, refresh } = useSession();
-  const { c } = useCopy();
+  const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
+  const { c, language, rtl } = useCopy();
+  const { time } = useFormat();
   if (!ready) return null;
-  if (offline) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
+  const summary = !me || (offlineSummary && me.user.status === 'active' && me.user.id === offlineSummary.actorId && me.user.role === offlineSummary.role)
+    ? offlineSummary : null;
+  if (offline) return <Screen>
     <Empty icon="cloud-offline-outline" title={c.offline} body={c.offlineDesc} action={<Button title={c.retry} onPress={refresh} />} />
-  </View>;
+    {!!summary?.orders.length && <Card>
+      <Txt variant="h2" header>{c.offlineSavedTitle}</Txt>
+      <Txt>{c.offlineSavedWarning}</Txt>
+      <Txt variant="caption">{fill(c.offlineSavedAt, { time: time(summary.savedAt) })}</Txt>
+      {summary.orders.map(order => <View key={order.id} style={{ marginTop: 12 }}>
+        <Txt variant="title">{`${orderCode(order.id)}, ${c[order.service]}`}</Txt>
+        <Txt>{city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}</Txt>
+        <Txt variant="caption">{statusText(c, order, summary.role === 'driver')}</Txt>
+      </View>)}
+    </Card>}
+  </Screen>;
   const role = me?.user.role;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.
   return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>

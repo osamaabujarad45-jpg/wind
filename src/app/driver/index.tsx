@@ -1,16 +1,18 @@
 // Driver jobs, Uber Driver pattern: a presence card (never ready until the server confirms), then offer cards that lead with what the driver
 // earns, the route spine, what the job carries, and one accept button.
-import { useCallback, useRef, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, KeyboardAvoidingView, Linking, Platform, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { api, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
-import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order } from '../../model';
+import { api, ApiError, apiSessionRevision, useApi } from '../../api';
+import { canTake, cities, city, commissionOn, distanceKm, latinDigits, offerRange, type CityId, type Order } from '../../model';
 import { useDriverWork } from '../../driver-work';
+import { FreightDetails } from '../../freight-details';
+import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
-import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
+import { PendingDriverNotice, RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Header, Loading, palette, Press, Row, Screen, Txt, useCopy } from '../../ui';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 
@@ -24,20 +26,41 @@ export default function Jobs() {
   const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
   const cursors = pages.scope === pageScope ? pages.cursors : [];
   const cursor = cursors.at(-1);
-  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
+  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
   const badCursor = !!page?.nextCursor && (!/^\d{1,16}:\d{1,16}$/.test(page.nextCursor) || page.nextCursor === cursor);
   // Older APIs ignore `page=1` and return an array. Never present a repeated first page as a new page.
   const pagingUnavailable = (Array.isArray(data) && (!!cursor || data.length === 50)) || (!!data && !Array.isArray(data) && !page) || badCursor;
-  const jobs = Array.isArray(data) ? (cursor ? [] : data) : page?.jobs;
+  // Memoised: the effect below watches the jobs, and a fresh array every render made it run every render.
+  const jobs = useMemo(() => Array.isArray(data) ? (cursor ? [] : data) : page?.jobs, [data, cursor, page]);
   const work = useDriverWork();
+  const matching = useApi<{ eligibleForMatching: boolean }>(active && work.presenceState === 'online' ? '/driver/presence' : null, 8000);
   const { permission } = work;
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const focusRevision = useRef(0);
-  useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
+  const [now, setNow] = useState(Date.now);
+  // The second hand only matters for a live offer: ticking every second re-renders every card on the screen.
+  const hasDispatch = !!jobs?.some(o => o.dispatch);
+  useFocusEffect(useCallback(() => {
+    focusRevision.current++; setNow(Date.now());
+    if (!hasDispatch) return () => { focusRevision.current++; };
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => { focusRevision.current++; clearInterval(timer); };
+  }, [hasDispatch]));
   const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
+  const [offerTouched, setOfferTouched] = useState<number | null>(null); // the offer price is judged once the field is left, not on every digit
+  const expiredSaid = useRef(new Set<number>());
+  // An expired offer is silence on screen; say it once so a reader who cannot see the clock knows.
+  useEffect(() => {
+    for (const order of jobs ?? []) {
+      if (order.dispatch?.myOffer && dispatchAcceptance(order, now) === null && !expiredSaid.current.has(order.id)) {
+        expiredSaid.current.add(order.id);
+        AccessibilityInfo.announceForAccessibility(c.dispatchExpired);
+      }
+    }
+  }, [jobs, now, c.dispatchExpired]);
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
   const locating = work.tracking === 'starting';
@@ -46,7 +69,7 @@ export default function Jobs() {
   // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
   const blocked = (order: Order) => !canTake(carrying, order.service);
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
-  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : !work.known ? c.accept_wait_status
+  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
@@ -63,19 +86,32 @@ export default function Jobs() {
         setActionError(c.locationOff);
         return;
       }
-      work.update(await api<Order>(`/jobs/${order.id}/accept`, {}));
+      const lease = dispatchAcceptance(order, Date.now()); // tracking permission can outlive a short offer
+      if (lease === null) { setActionError(c.dispatchExpired); reload(); return; }
+      work.update(await api<Order>(`/jobs/${order.id}/accept`, { ...lease, ...capacityCommand(order) }));
       haptic.success();
       router.push(`/order/${order.id}`);
     } catch (e) {
+      if (!current()) return;
+      const failure = e instanceof ApiError ? e.offerFailure : undefined;
+      if (failure?.recovery === 'reconcile' || e instanceof ApiError && !e.status) {
+        try {
+          const fresh = await api<Order>(`/orders/${order.id}?capacityProtocol=1&recoveryProtocol=1`);
+          if (!current()) return;
+          if (fresh.driverId === me?.user.id && ['assigned','at_pickup','in_transit'].includes(fresh.status)) {
+            work.update(fresh); router.push(`/order/${fresh.id}`); return;
+          }
+        } catch { /* Keep the existing refusal/unknown outcome; never resend acceptance automatically. */ }
+      }
       haptic.error();
       setActionError(err(e));
-      reload();
+      await Promise.all([reload(), work.reload()]);
     } finally { setBusy(null); }
   }
 
   // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
   async function offer(order: Order, price: number) {
-    if (busy !== null || blocked(order) || !work.known) return;
+    if (busy !== null || blocked(order) || !work.known || order.dispatch) return;
     setBusy(order.id);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
@@ -89,11 +125,20 @@ export default function Jobs() {
         setActionError(c.locationOff);
         return;
       }
-      await api<Order>(`/jobs/${order.id}/offer`, { price });
+      await api<Order>(`/jobs/${order.id}/offer`, { price, ...capacityCommand(order) });
       haptic.success();
       setOffering(null);
       reload();
     } catch (e) { haptic.error(); setActionError(err(e)); reload(); } finally { setBusy(null); }
+  }
+
+  async function decline(order: Order) {
+    const lease = dispatchAcceptance(order, Date.now());
+    if (busy !== null || !lease || !('offerId' in lease)) return;
+    setBusy(order.id); setActionError('');
+    try { await api(`/offers/${lease.offerId}/decline`, {}); haptic.success(); await reload(); }
+    catch (e) { haptic.error(); setActionError(err(e)); reload(); }
+    finally { setBusy(null); }
   }
 
   // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
@@ -115,17 +160,17 @@ export default function Jobs() {
   if (!active) return <Screen onRefresh={refresh}>
     <VerifyEmailNudge />
     {/* Without a configured support line there is nothing to contact: promise the call-back admins are now alerted for (SPEC-pending-driver-help.md). */}
-    <Empty icon="shield-checkmark-outline" title={c.pendingTitle} body={SUPPORT_URL ? c.pendingDesc : fill(c.pendingCallBack, { phone: ltr(me?.user.phone ?? '') })}
-      action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
+    <PendingDriverNotice phone={me?.user.phone ?? ''} />
   </Screen>;
 
-  return <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
+  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Screen onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}>
     <Header title={c.jobs} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
     <VerifyEmailNudge />
 
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
     {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
-      <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
+      <Press accessibilityLabel={located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff} onPress={() => { void enableTracking(); }}>
         <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.clayPale }]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.clayInk} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.clayInk }}>
@@ -133,13 +178,17 @@ export default function Jobs() {
           </Txt>
         </Row>
       </Press>
-      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayInk }}>{c.backgroundTrackingWarn}</Txt>}
+      {/* Lime on forest is 10.8:1; the old clayInk on forest was 2.4:1 and unreadable. */}
+      {located && work.backgroundGranted === false && <Row gap={6} style={[styles.location, { marginTop: 8, backgroundColor: 'rgba(211,242,122,0.14)' }]}>
+        <Ionicons name="alert-circle" size={15} color={palette.lime} />
+        <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: palette.lime }}>{c.backgroundTrackingWarn}</Txt>
+      </Row>}
     </Card>}
 
     {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
     <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
       <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
-        requestsOn={false /* dispatch is not enabled: the server reports eligibleForMatching:false */}
+        requestsOn={work.presenceState === 'online' && matching.data?.eligibleForMatching === true}
         pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
         startDisabled={!work.known || assigned} startReason={!work.known ? c.presence_reason_status : assigned ? c.presence_reason_job : undefined}
         onConsentAndEnable={() => { void work.enablePresence(); }} onDisable={() => { void work.disablePresence(); }}
@@ -153,7 +202,8 @@ export default function Jobs() {
 
     <Txt variant="label" style={{ marginTop: 4 }}>{c.headingTo}</Txt>
     <FilterChips items={[{ key: 'any' as const, label: c.headingAny }, ...cities.map(x => ({ key: x.id, label: x[language] }))]}
-      value={me?.user.heading?.city ?? 'any'} disabled={headingBusy} onChange={key => { void head(key); }} />
+      value={me?.user.heading?.city ?? 'any'} disabled={headingBusy} onChange={key => { void head(key); }} label={c.headingTo} />
+    {headingBusy && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{c.wait_busy}</Txt>}
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
     {/* gap keeps the shortcut from reading as the first offer's header */}
@@ -177,9 +227,9 @@ export default function Jobs() {
               <ServiceIcon service={order.service} size={38} />
               <View style={{ flex: 1 }}>
                 <Txt variant="title">{c[order.service]}</Txt>
-                <Txt variant="caption">{/* same rule as OrderRow: only shared, the exception, is marked */}{order.shared ? `${c.shared} · ` : ''}{order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
+                <Txt variant="caption">{/* same rule as OrderRow: only shared, the exception, is marked */}{order.shared ? `${c.shared}, ` : ''}{order.pickupCity === order.dropoffCity ? c.sameCity : `${km} ${c.km}`}</Txt>
                 {order.customerStats && <Txt variant="caption">{order.customerStats.trips ? [order.customerStats.rating != null && fill(c.customerStars, { r: order.customerStats.rating }),
-                  fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(' · ') : c.newCustomer}</Txt>}
+                  fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(', ') : c.newCustomer}</Txt>}
               </View>
               <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
                 <Txt variant="micro">{c.earnLabel}</Txt>
@@ -195,6 +245,10 @@ export default function Jobs() {
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
             </Row>}
             <RouteLine from={city(order.pickupCity)[language]} to={city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
+            <FreightDetails order={order} />
+            {order.dispatch?.myOffer && <Txt variant="label" style={{ marginTop: 8 }}>
+              {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey) })}
+            </Txt>}
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
               <Txt variant="caption" numberOfLines={2} style={{ flex: 1 }}>{order.detail}</Txt>
@@ -203,25 +257,30 @@ export default function Jobs() {
               <Ionicons name="hourglass-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.yourOffer, { p: money(order.myOffer.price) })}</Txt>
             </Row>}
-            {offering?.id === order.id && order.recommendedPrice != null && (() => {
+            {!order.dispatch && offering?.id === order.id && order.recommendedPrice != null && (() => {
               const [lo, hi] = offerRange(order.recommendedPrice), n = Number(offering.text);
               const ok = Number.isInteger(n) && n >= lo && n <= hi;
               return <View style={{ marginTop: 12 }}>
-                <Field label={`${c.offerPrice} (₪)`} icon="cash-outline" keyboardType="number-pad" value={offering.text} maxLength={4}
+                <Field label={`${c.offerPrice} (₪)`} icon="cash-outline" keyboardType="number-pad" value={offering.text} maxLength={Math.max(4, String(hi).length)}
                   onChangeText={text => setOffering({ id: order.id, text: latinDigits(text).replace(/\D/g, '') })}
-                  error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
-                <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
-                <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
-                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
-                {!ok && <Reason>{fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Reason>}
+                  onBlur={() => setOfferTouched(order.id)}
+                  error={offerTouched === order.id && offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
+                <Txt variant="caption" style={{ marginBottom: 2 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })}</Txt>
+                <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
+                <Button title={ok ? fill(c.sendOffer, { p: money(n) }) : c.sendOfferPlain} icon="paper-plane-outline" variant="soft"
+                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known}
+                  reason={!ok ? fill(c.offerWhole, { lo: money(lo), hi: money(hi) }) : acceptReason(order) ?? undefined} />
+                <Button title={c.cancel} variant="ghost" size="sm" onPress={() => { setOffering(null); setOfferTouched(null); }} />
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
               <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
-                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={busy !== null || blocked(order) || !work.known} />
-              {order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
-                disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
-              {waiting && <Reason>{waiting}</Reason>}
+                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} reason={waiting ?? undefined} />
+              {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
+                reason={busy !== null ? c.wait_busy : c.dispatchExpired} onPress={() => decline(order)} />}
+              {!order.dispatch && order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
+                disabled={busy !== null || blocked(order) || !work.known} reason={acceptReason(order) ?? undefined}
+                onPress={() => { setOfferTouched(null); setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) }); }} />}
             </View>
           </Card>
         </View>;
@@ -231,7 +290,8 @@ export default function Jobs() {
     {page?.nextCursor && !badCursor && <Button title={c.jobsNextPage} variant="soft" onPress={() => {
       setPages({ scope: pageScope, cursors: [...cursors, page.nextCursor!] });
     }} />}
-  </Screen>;
+    </Screen>
+  </KeyboardAvoidingView>;
 }
 
 const styles = StyleSheet.create({

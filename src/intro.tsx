@@ -46,9 +46,10 @@ export function Intro() {
       <Animated.View style={[styles.words, !still && {
         animationName: { from: { opacity: 0, transform: [{ translateY: 14 }] }, to: { opacity: 1, transform: [{ translateY: 0 }] } },
         animationDuration: '460ms', animationDelay: '900ms', animationTimingFunction: EASE, animationFillMode: 'both',
-      }, still && { opacity: 0 }]}>
-        <Text style={styles.brand}>{c.brand}</Text>
-        <Text style={styles.tagline}>{c.tagline}</Text>
+      }]}>
+        {/* Reduced motion: the words are there from the first frame, they simply do not move. */}
+        <Text maxFontSizeMultiplier={1.35} style={styles.brand}>{c.brand}</Text>
+        <Text maxFontSizeMultiplier={1.35} style={styles.tagline}>{c.tagline}</Text>
       </Animated.View>
     </Animated.View>
   </View>;
@@ -59,6 +60,6 @@ const styles = StyleSheet.create({
   stage: { width: TILE, height: TILE },
   tile: { width: TILE, height: TILE, borderRadius: TILE * logoMark.radius, backgroundColor: palette.forest, overflow: 'hidden' },
   words: { position: 'absolute', top: TILE + 22, left: (TILE - 320) / 2, width: 320, alignItems: 'center', gap: 6 },
-  brand: { fontSize: 34, fontWeight: '900', color: palette.ink, textAlign: 'center' },
+  brand: { fontSize: 34, lineHeight: 50, fontWeight: '900', color: palette.ink, textAlign: 'center' },
   tagline: { fontSize: 14, lineHeight: 21, color: palette.secondary, textAlign: 'center', paddingHorizontal: 12 },
 });

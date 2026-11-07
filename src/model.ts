@@ -127,6 +127,8 @@ export function normalizeEmail(input: unknown): string | null {
 export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
 
 export type Order = {
+  journey?: import('./journey-contracts.ts').Journey;
+  recovery?: { schemaVersion: 1; version: number | null; assignmentEpoch: number | null };
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
@@ -152,6 +154,7 @@ export type Order = {
   dispatch?: { roundId: string; state: string; closeReason: string | null; offersIssued: number; deadlineAt: number; startedAt: number;
     myOffer?: { id: string; offerId: string; expiresAt: number; issuedAt: number; leaseNonce: string | null; pickupEtaSeconds: number; idleSeconds: number; idleCreditSeconds: number; rankScore: number; etaEstimated: boolean } | null } | null; // WP10 additive
   ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string } | null; // WP11 additive
+  measuredScope?: { requirementsRevision: number; grams: number; cm3: number; pieces: number; seats: number } | null;
   declaredScope?: { orderId: number; service: string; revision: number; itemCount: number | null; lengthMm: number | null; widthMm: number | null; heightMm: number | null;
     massGrams: number | null; volumeCm3: number | null; declaredValueMinor: number | null; equipment: string[]; crewCount: number | null;
     loadingAfter: number | null; loadingBefore: number | null; accessConstraints: string[]; pickupPromisedAfter: number | null;
@@ -161,7 +164,7 @@ export type DriverStats = { rating: number | null; priceRating: number | null; t
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
 export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
-  standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
+  eta?: import('./journey-contracts.ts').JourneyEta; standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;

@@ -30,19 +30,18 @@ export default function Receipt() {
   const lines: [string, string][] = [
     [c.receiptNo, ltr(orderCode(order.id))],
     [c.issued, time(order.updatedAt)],
-    [c.service, `${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`], // same rule as OrderRow: only shared, the exception, is marked
+    [c.service, `${c[order.service]}${order.shared ? `, ${c.shared}` : ''}`], // same rule as OrderRow: only shared, the exception, is marked
     [c.route, `${from} ${arrow} ${to}`],
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
-    ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
+    ...(order.driverName ? [[c.driver, [order.driverName, order.driverVehicle ? c[order.driverVehicle] : '', order.driverPlate ? ltr(order.driverPlate) : ''].filter(Boolean).join(', ')] as [string, string]] : []),
     ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
-    [c.payWith, c.cash],
-    [c.payment, c.paymentUnconfirmed],
+    [c.payWith, c.paymentUnconfirmed],
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
   async function share() {
-    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
+    const text = [`${c.brand} — ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
     try { await Share.share({ message: text }); } catch { /* dismissed or unsupported */ }
   }
 
@@ -77,7 +76,6 @@ export default function Receipt() {
         {role === 'admin' && order.commission != null && <Row style={styles.sub}>
           <Txt>{c.commission}</Txt><Txt variant="title">{money(order.commission)}</Txt>
         </Row>}
-        <Txt variant="caption" center style={{ marginTop: 16 }}>{c.thankYou}</Txt>
       </View>
     </Appear>
     {/* Web has no reliable share sheet; the page itself can be printed or screenshotted. */}

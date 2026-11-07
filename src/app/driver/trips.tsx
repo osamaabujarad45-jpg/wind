@@ -1,22 +1,26 @@
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { activeStatuses, city, runSheet } from '../../model';
-import { MoreOrders, OrderRow, useOrders } from '../../parts';
+import { MoreOrders, OrderRow, PendingDriverNotice, useOrders } from '../../parts';
+import { useSession } from '../../session';
 import { Button, Empty, ErrorText, fill, Header, Loading, palette, Screen, Txt, useCopy } from '../../ui';
 
 export default function Trips() {
   const { c, err, language } = useCopy();
+  const { me } = useSession();
   const { data, error, reload, more } = useOrders('/orders', 10_000);
+  const approved = me?.user.status === 'active';
   const active = (data ?? []).filter(o => activeStatuses.includes(o.status));
   const lastTrip = (data ?? []).filter(o => o.status === 'completed').sort((a, b) => b.updatedAt - a.updatedAt)[0];
   const past = (data ?? []).filter(o => !activeStatuses.includes(o.status) && o.id !== lastTrip?.id);
   return <Screen onRefresh={reload}>
     <Header title={c.trips} />
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
+    {/* An account still under review has no trips yet: say that, rather than "no jobs". */}
+    {!approved ? <PendingDriverNotice phone={me?.user.phone ?? ''} /> : !data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
       ? <Empty icon="navigate-outline" title={c.noTrips} body={c.noTripsDesc} action={<Button title={c.jobs} onPress={() => router.navigate('/driver')} />} />
       : <>
-        {active.length > 0 && <Txt variant="h2" style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
+        {active.length > 0 && <Txt variant="h2" header style={{ marginBottom: 12 }}>{c.activeTrips}</Txt>}
         {/* Run sheet (SPEC-run-sheet.md): pickups, then deliveries by city (biggest first), then returns.
             One trip needs no sheet: "deliver in X · 1" only repeated its card's route and status. */}
         {runSheet(active).map(group => <View key={`${group.stage}:${group.city}`} style={{ marginBottom: 4 }}>
@@ -26,10 +30,10 @@ export default function Trips() {
             status={active.length === 1 || !['assigned', 'in_transit', 'returning'].includes(order.status)} /* the group already says it; only at-pickup and on-hold stand out */ />)}
         </View>)}
         {lastTrip && <>
-          <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>
+          <Txt variant="h2" header style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>
           <OrderRow order={lastTrip} index={active.length} status={false} />{/* the heading already says completed */}
         </>}
-        {past.length > 0 && <Txt variant="h2" style={{ marginVertical: 12 }}>{c.history}</Txt>}
+        {past.length > 0 && <Txt variant="h2" header style={{ marginVertical: 12 }}>{c.history}</Txt>}
         {past.map((order, i) => <OrderRow key={order.id} order={order} index={i + active.length + (lastTrip ? 1 : 0)} />)}
         <MoreOrders more={more} />
       </>}

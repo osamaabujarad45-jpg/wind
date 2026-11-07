@@ -65,7 +65,7 @@ export default function Profile() {
         </Card>
       </Appear>
       <ErrorText>{error}</ErrorText>
-      {saved && !changed && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
+      {saved && !changed && <View accessibilityLiveRegion="polite"><Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt></View>}
       <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
     </Screen>
   </KeyboardAvoidingView>;
@@ -105,7 +105,7 @@ function EmailCard() {
       <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.clay} /></View>
     </Row>
     {emailVerifiedAt ? <Txt variant="caption" style={{ marginTop: 8 }}>{c.emailVerifiedNote}</Txt> : canVerify && <View style={{ marginTop: 12 }}>
-      <Txt variant="title" style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>
+      <Txt variant="title" header style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{sent ? fill(c.emailCodeSent, { email }) : fill(c.emailVerifyBody, { email })}</Txt>
       {/* sign-up already emailed a code, so the field comes first */}
       <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(next.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad"
@@ -117,7 +117,8 @@ function EmailCard() {
         ? <Button title={c.emailChange} icon="create-outline" variant="ghost" onPress={() => setChanging(email)} disabled={busy} reason={c.wait_busy} />
         : <View style={{ marginTop: 8 }}>
           <Field label={c.email} value={changing} onChangeText={setChanging} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} onSubmitEditing={change} />
-          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email} reason={c.email_unchanged} />
+          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email}
+            reason={!changing.trim() ? c.fieldRequired : c.email_unchanged} />
         </View>}
     </View>}
   </Card>;

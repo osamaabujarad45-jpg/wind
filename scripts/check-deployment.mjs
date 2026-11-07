@@ -18,7 +18,7 @@ async function get(path) {
   if (target.origin !== origin) throw new Error('Unexpected cross-origin URL');
   const response = await fetch(target, { signal: AbortSignal.timeout(15_000) });
   if (new URL(response.url).origin !== origin) throw new Error('Unexpected cross-origin redirect');
-  return { status: response.status, type: response.headers.get('content-type') ?? '', body: await response.text() };
+  return { status: response.status, type: response.headers.get('content-type') ?? '', cache: response.headers.get('cache-control'), body: await response.text() };
 }
 async function check(name, fn) {
   try { await fn(); } catch (error) { record(name, false, error instanceof Error ? error.message : 'Request failed'); }
@@ -48,6 +48,12 @@ await check('current map page', async () => {
   const expected = await readFile(new URL('../public/map.html', import.meta.url), 'utf8');
   const normalize = value => value.replace(/\r\n/g, '\n');
   record('current map page', response.status === 200 && normalize(response.body) === normalize(expected), `HTTP ${response.status}; compare with source`);
+});
+await check('versioned map page', async () => {
+  const response = await get('/map/v1/map.html');
+  const expected = await readFile(new URL('../public/map.html', import.meta.url), 'utf8');
+  record('versioned map page', response.status === 200 && response.body.replace(/\r\n/g, '\n') === expected.replace(/\r\n/g, '\n')
+    && response.cache === 'public, max-age=86400', `HTTP ${response.status}; bridge v1 bytes and cache lifetime`);
 });
 await check('web bundle API origin', async () => {
   const home = await get('/');

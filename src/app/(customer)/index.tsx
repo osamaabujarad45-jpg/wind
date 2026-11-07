@@ -31,7 +31,7 @@ export default function Home() {
         <Logo size={34} />
         <View style={{ flexShrink: 1 }}>
           <Txt variant="micro">{greet}</Txt>
-          <Txt variant="h2" numberOfLines={1}>{first}</Txt>
+          <Txt variant="h2" numberOfLines={2}>{first}</Txt>
         </View>
       </Row>
       <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
@@ -42,11 +42,11 @@ export default function Home() {
     <View style={[styles.search, { flexDirection: row }]}>
       <Press accessibilityLabel={c.whereTo} containerStyle={{ flex: 1 }} onPress={() => book({ service: 'parcel', pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
         <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-        <Text numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
+        <Text maxFontSizeMultiplier={1.35} numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
       </Press>
       <Press accessibilityLabel={c.later} onPress={() => book({ service: 'parcel', when: 'later' })} style={[styles.now, { flexDirection: row }]}>
         <Ionicons name="calendar-outline" size={15} color={palette.ink} />
-        <Text style={styles.nowText}>{c.later}</Text>
+        <Text maxFontSizeMultiplier={1.35} style={styles.nowText}>{c.later}</Text>
       </Press>
     </View>
 
@@ -76,8 +76,8 @@ export default function Home() {
           onPress={() => book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
           <View style={styles.clock}><Ionicons name="time-outline" size={17} color={palette.secondary} /></View>
           <View style={{ flex: 1 }}>
-            <Txt variant="title" numberOfLines={1}>{city(o.pickupCity)[language]} {rtl ? '←' : '→'} {city(o.dropoffCity)[language]}</Txt>
-            <Txt variant="caption" numberOfLines={1}>{c[o.service]} · {o.pickupNote}</Txt>
+            <Txt variant="title" numberOfLines={2}>{city(o.pickupCity)[language]} {rtl ? '←' : '→'} {city(o.dropoffCity)[language]}</Txt>
+            <Txt variant="caption" numberOfLines={2}>{`${c[o.service]}, ${o.pickupNote}`}</Txt>
           </View>
           <Ionicons name="refresh" size={17} color={palette.olive} />
         </Press>)}
@@ -87,8 +87,7 @@ export default function Home() {
     {/* One card left (Plus members): full width, not a half-empty rail. */}
     {me?.plan ? <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
       : <>
-        <Section title={c.waysToSave} />
-        <Rail gap={10} style={{ marginHorizontal: -16 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
+        <Rail gap={10} style={{ marginHorizontal: -16, marginTop: 10 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
           <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
           <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
             body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />
@@ -102,7 +101,7 @@ function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'c
   return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, wide && styles.wide, { backgroundColor: t[0] }]}>
     <Ionicons name={icon} size={20} color={t[1]} />
     <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>
-    <Txt variant="caption" numberOfLines={2} style={{ color: t[2], opacity: tone === 'forest' ? 1 : 0.8 }}>{body}</Txt>
+    <Txt variant="caption" style={{ color: t[2], opacity: tone === 'forest' ? 1 : 0.8 }}>{body}</Txt>
   </Press>;
 }
 
@@ -111,11 +110,11 @@ const styles = StyleSheet.create({
   // on the A53 until a scroll (reproduced 29 Oct 2026). The flex now sits on the pressable container;
   // minHeight still lets a large font scale grow the row instead of clipping it.
   search: { alignItems: 'center', gap: 4, minHeight: 56, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 14 },
-  searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 40 },
+  searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 44 },
   searchIcon: { width: 38, alignItems: 'center' },
-  searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },
-  now: { alignItems: 'center', gap: 5, minHeight: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
-  nowText: { fontSize: 13, fontWeight: '700', color: palette.ink },
+  searchText: { flex: 1, fontSize: 17, lineHeight: 25, fontWeight: '800', color: palette.ink },
+  now: { alignItems: 'center', gap: 5, minHeight: 44, paddingHorizontal: 12, borderRadius: 22, backgroundColor: palette.card },
+  nowText: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: palette.ink },
   tile: { flex: 1, alignItems: 'center', gap: 8, borderRadius: 16, backgroundColor: palette.card, paddingVertical: 12, paddingHorizontal: 6 },
   recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },
   clock: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },

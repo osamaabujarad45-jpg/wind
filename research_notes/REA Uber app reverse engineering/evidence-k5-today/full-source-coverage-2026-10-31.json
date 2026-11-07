@@ -1,0 +1,80 @@
+{
+ "captured": "2026-10-31",
+ "subject": "complete Java-source coverage run over the shipped package",
+ "input": {
+  "apk": "base.apk",
+  "sha256": "55663c738053f8f9e11bc30f414d693473de1272082db4d3edf95b1ad1c3e4a2",
+  "code_files_sliced": 23
+ },
+ "reader": {
+  "tool": "jadx 1.5.6 (release bundle from the project's own release page)",
+  "bundle_sha256": "545ea2be9c242511bc145755cf4bda2485ade42966e096f8b4d3da2a230e8974",
+  "flags": ["--no-res", "--no-inline-methods", "--no-inline-anonymous", "--no-inline-kotlin-lambda", "--no-debug-info"],
+  "note": "inlining disabled because the default inliner wedged indefinitely on generated classes (two runs, 53 % and 60 %, zero output for 13+ minutes)"
+ },
+ "runs": [
+  {
+   "host": "second machine (4 cores, 11.9 GB)",
+   "mode": "per-code-file slices, 2 in parallel, 3 GB heap each, 900 s cap per slice",
+   "slices_completed": 23,
+   "slices_total": 23,
+   "java_files": 206254,
+   "timeouts": 0
+  },
+  {
+   "host": "this machine (12 cores, 15.9 GB)",
+   "mode": "two sweeps of 11 and 12 slices, 2 in parallel each, 2 GB heap each",
+   "slices_completed": 23,
+   "slices_total": 23,
+   "java_files": 206254,
+   "note": "identical total and identical per-slice counts to the other host"
+  }
+ ],
+ "per_slice_java_files": {
+  "classes.dex": 4030, "classes2.dex": 11478, "classes3.dex": 9333, "classes4.dex": 11967,
+  "classes5.dex": 9952, "classes6.dex": 10564, "classes7.dex": 10794, "classes8.dex": 9672,
+  "classes9.dex": 8034, "classes10.dex": 7767, "classes11.dex": 8408, "classes12.dex": 9321,
+  "classes13.dex": 9644, "classes14.dex": 9552, "classes15.dex": 10848, "classes16.dex": 9992,
+  "classes17.dex": 10663, "classes18.dex": 8920, "classes19.dex": 10027, "classes20.dex": 10024,
+  "classes21.dex": 7621, "classes22.dex": 7638, "classes23.dex": 5
+ },
+ "coverage_measurement": {
+  "java_files": 206254,
+  "total_characters": 607981516,
+  "files_with_hard_failure_marker": 657,
+  "files_with_warning_marker": 42893,
+  "clean_share": 0.996815,
+  "hard_error_split": {
+   "first_party": 57,
+   "other": 600,
+   "first_party_samples": [
+    "com/uber/preludeapi/viewmodels/HubLargeCarouselViewModel.java",
+    "com/uber/nv_utils/keyvaluettlstore/KeyValueTTLStoreImpl.java",
+    "com/uber/order_selection/core/data/c.java",
+    "com/uber/pretripv2/PreTripV2Router.java"
+   ],
+   "other_concentration": "204 files in the Adyen 3-D Secure package (atd), 12 in androidx.*, the rest spread across obfuscated library packages"
+  },
+  "meaning": "a hard marker means the reader emitted the class but had to fall back for at least one member; it does not mean the class is absent. The class declaration and all successfully read members are still present in the file."
+ },
+ "cross_checks_against_bytecode_findings": {
+  "mapdisplay_flipr_available_map_providers": 4,
+  "ValidateAppForIPCUseCase": 15,
+  "initialMapProvider": 10,
+  "AppConfig": 43,
+  "metersPerPixelAtCoordinate": 11,
+  "MapProviderConfiguration": 9,
+  "MapProvider_enum_constants_observed_in_source": ["UBER", "GOOGLE", "UNKNOWN"],
+  "MapProvider_extra_field_observed": "FALLBACK_MAP_PROVIDER"
+ },
+ "reconciliation": {
+  "class_definitions": 288727,
+  "top_level_types": 195076,
+  "inner_types": 93651,
+  "explanation": "one source file per top-level type; inner types are emitted inside their outer class, so file count and definition count are different measures of the same code, not a discrepancy"
+ },
+ "artifacts_location": {
+  "second_host": "%USERPROFILE%\\smartstore-tools\\fastship-tools\\jadx-sweep\\out",
+  "this_host": "open code temp folder, sweepA/out and sweepB/out"
+ }
+}

@@ -35,6 +35,10 @@ try {
     option: 'small', shared: false, pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599310002', detail: 'Box', quotedPrice: 20 } });
 
   db.prepare("UPDATE orders SET service = 'freight' WHERE id = ?").run(order.id);
+  db.prepare('INSERT INTO order_offers(order_id,driver_id,price,created_at) VALUES(?,?,?,?)').run(order.id, truck.user.id, 20, Date.now());
+  assert.equal((await call(`/orders/${order.id}/offers/${truck.user.id}/accept`, { token: customer.token, body: {}, expect: 409 })).error,
+    'service_unavailable', 'a pre-existing offer cannot reactivate a disabled service');
+  assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(order.id).status, 'searching');
   assert.deepEqual(await call('/jobs', { token: truck.token }), []);
   await call(`/orders/${order.id}`, { token: truck.token, expect: 404 });
   db.prepare("UPDATE orders SET driver_id = ?, status = 'assigned' WHERE id = ?").run(truck.user.id, order.id);

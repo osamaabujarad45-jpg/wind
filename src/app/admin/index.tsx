@@ -8,7 +8,7 @@ import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
 import { useSession } from '../../session';
-import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Rail, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
@@ -53,15 +53,16 @@ export default function Dashboard() {
 
       <Appear index={9}>
         <Card>
-          <Txt variant="title" style={{ marginBottom: 10 }}>{c.allOrders}</Txt>
+          <Txt variant="title" header style={{ marginBottom: 10 }}>{c.allOrders}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
             {(['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning', 'completed', 'returned', 'cancelled'] as const).map(s =>
               // empty statuses say nothing; only the counts that exist show
-              data.statuses[s] ? <Badge key={s} status={s} label={`${c[s]} · ${data.statuses[s]}`} /> : null)}
+              data.statuses[s] ? <Badge key={s} status={s} label={`${c[s]}, ${data.statuses[s]}`} /> : null)}
           </Row>
-          <Txt variant="title" style={{ marginVertical: 10 }}>{c.users}</Txt>
+          {!Object.values(data.statuses).some(Boolean) && <Txt variant="caption">{c.noOrders}</Txt>}
+          <Txt variant="title" header style={{ marginVertical: 10 }}>{c.users}</Txt>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
-            {(['customer', 'driver', 'admin'] as const).map(r => <Badge key={r} tone={{ bg: palette.muted, fg: palette.ink }} label={`${c[r]} · ${data.users[r] ?? 0}`} />)}
+            {(['customer', 'driver', 'admin'] as const).map(r => <Badge key={r} tone={{ bg: palette.muted, fg: palette.ink }} label={`${c[r]}, ${data.users[r] ?? 0}`} />)}
           </Row>
         </Card>
       </Appear>
@@ -92,35 +93,43 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
   const pick = daily[selected];
 
   return <Card>
-    <Txt variant="title">{c.last14}</Txt>
-    <Row gap={14} style={{ marginVertical: 8 }}>
-      {([['commission', c.commissionRevenue], ['subscriptions', c.subscriptionRevenue]] as const).map(([key, label]) =>
-        <Row key={key} gap={6}><View style={[styles.swatch, { backgroundColor: SERIES[key] }]} /><Txt variant="caption">{label}</Txt></Row>)}
+    <Txt variant="title" header>{c.last14}</Txt>
+    <Row style={{ justifyContent: 'space-between', marginVertical: 8 }}>
+      <Row gap={14}>
+        {([['commission', c.commissionRevenue], ['subscriptions', c.subscriptionRevenue]] as const).map(([key, label]) =>
+          <Row key={key} gap={6}><View style={[styles.swatch, { backgroundColor: SERIES[key] }]} /><Txt variant="caption">{label}</Txt></Row>)}
+      </Row>
+      <Txt variant="caption" accessibilityLabel={fill(c.chartMaxLabel, { v: money(Math.round(max)) })}>{money(Math.round(max))} ↑</Txt>
     </Row>
-    <Txt variant="caption" style={{ color: palette.ink }}>
-      {day(pick.date)} · {c.commissionRevenue} {money(pick.commission)} · {c.subscriptionRevenue} {money(pick.subscriptions)}
-    </Txt>
-    <View style={styles.plot}>
-      <View style={[styles.grid, { top: 0 }]} />
-      <View style={[styles.bars, { flexDirection: row }]}>
-        {daily.map((d, i) => {
-          const total = d.commission + d.subscriptions;
-          return <Pressable key={d.date} style={styles.hit} onPress={() => setSelected(i)} hitSlop={4}
-            accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${money(d.commission)} + ${money(d.subscriptions)}`}>
-            <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === selected ? 1 : 0.75 },
-              !reduced && { animationName: GROW, animationDuration: '450ms', animationDelay: `${i * 25}ms`, animationTimingFunction: EASE_OUT, animationFillMode: 'backwards' }]}>
-              {d.subscriptions > 0 && <View style={[styles.segment, styles.top, { flex: d.subscriptions, backgroundColor: SERIES.subscriptions }]} />}
-              {d.commission > 0 && <View style={[styles.segment, !d.subscriptions && styles.top, { flex: d.commission, backgroundColor: SERIES.commission }]} />}
-            </Animated.View>
-          </Pressable>;
-        })}
+    {/* The day that is selected, one line per series with its own colour key: no run of dots to decode. */}
+    <Txt variant="title">{day(pick.date)}</Txt>
+    <Row gap={6} style={{ marginTop: 4 }}><View style={[styles.swatch, { backgroundColor: SERIES.commission }]} />
+      <Txt variant="caption" style={{ color: palette.ink }}>{`${c.commissionRevenue} ${money(pick.commission)}`}</Txt></Row>
+    <Row gap={6} style={{ marginTop: 2 }}><View style={[styles.swatch, { backgroundColor: SERIES.subscriptions }]} />
+      <Txt variant="caption" style={{ color: palette.ink }}>{`${c.subscriptionRevenue} ${money(pick.subscriptions)}`}</Txt></Row>
+    {/* Fourteen days do not fit a 360 dp phone: the plot scrolls sideways and every day keeps a 44pt tap target. */}
+    <Rail gap={0} style={{ marginTop: 10 }}>
+      <View style={styles.plot}>
+        <View style={[styles.grid, { top: 0 }]} />
+        <View style={styles.baseline} />
+        <View style={[styles.bars, { flexDirection: row }]}>
+          {daily.map((d, i) => {
+            const total = d.commission + d.subscriptions;
+            return <Pressable key={d.date} style={styles.hit} onPress={() => setSelected(i)}
+              accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${money(d.commission)} + ${money(d.subscriptions)}`}>
+              <View style={styles.barArea}>
+                <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === selected ? 1 : 0.75 },
+                  !reduced && { animationName: GROW, animationDuration: '450ms', animationDelay: `${i * 25}ms`, animationTimingFunction: EASE_OUT, animationFillMode: 'backwards' }]}>
+                  {d.subscriptions > 0 && <View style={[styles.segment, styles.top, { flex: d.subscriptions, backgroundColor: SERIES.subscriptions }]} />}
+                  {d.commission > 0 && <View style={[styles.segment, !d.subscriptions && styles.top, { flex: d.commission, backgroundColor: SERIES.commission }]} />}
+                </Animated.View>
+              </View>
+              <Txt variant="micro" center>{day(d.date)}</Txt>
+            </Pressable>;
+          })}
+        </View>
       </View>
-    </View>
-    <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-      <Txt variant="caption">{day(daily[0].date)}</Txt>
-      <Txt variant="caption">{money(Math.round(max))} ↑</Txt>
-      <Txt variant="caption">{day(daily[daily.length - 1].date)}</Txt>
-    </Row>
+    </Rail>
   </Card>;
 }
 
@@ -130,11 +139,13 @@ const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transfo
 const styles = StyleSheet.create({
   count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
-  plot: { height: 150, marginTop: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
-  grid: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: palette.muted },
-  bars: { flex: 1, alignItems: 'flex-end', gap: 4 },
-  hit: { flex: 1, height: '100%', justifyContent: 'flex-end' },
-  column: { gap: 2, transformOrigin: 'bottom' },
+  plot: { height: 166, position: 'relative' },
+  grid: { position: 'absolute', left: 0, right: 0, top: 0, height: 1, backgroundColor: palette.muted },
+  baseline: { position: 'absolute', left: 0, right: 0, bottom: 16, height: 1, backgroundColor: palette.line },
+  bars: { flex: 1, alignItems: 'flex-end' },
+  hit: { width: 48, alignItems: 'center', justifyContent: 'flex-end' },
+  barArea: { width: 24, height: 150, justifyContent: 'flex-end' },
+  column: { width: '100%', gap: 2, transformOrigin: 'bottom' },
   segment: { minHeight: 2 },
   top: { borderTopLeftRadius: 4, borderTopRightRadius: 4 },
 });

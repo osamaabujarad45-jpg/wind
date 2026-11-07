@@ -1,7 +1,7 @@
 // The API must boot from its packaged files without finding dependencies in the developer checkout.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -11,8 +11,7 @@ assert.equal(built.status, 0, built.stderr);
 const isolated = mkdtempSync(join(tmpdir(), 'wind-packaged-api-'));
 cpSync(join(root, '.expo/api-runtime/node_modules'), join(isolated, 'node_modules'), { recursive: true });
 cpSync(join(root, 'server'), join(isolated, 'server'), { recursive: true });
-mkdirSync(join(isolated, 'src'));
-for (const name of ['model.ts', 'map-math.ts']) cpSync(join(root, 'src', name), join(isolated, 'src', name));
+cpSync(join(root, '.expo/api-runtime/src'), join(isolated, 'src'), { recursive: true });
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).dependencies.pg;
 const env = { ...process.env, NODE_ENV: 'test', DB_PATH: join(isolated, 'synthetic.db') };
 for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGDATABASE', 'PGPASSWORD', 'WEB_ROOT', 'OSRM_URL']) delete env[key];
@@ -27,4 +26,9 @@ const boot = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PAC
       if(!r.ok||!(await r.json()).ok)throw new Error('Packaged API unhealthy');}
     finally{await shutdown();}`], { cwd: isolated, env, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
 assert.equal(boot.status, 0, boot.error?.message ?? boot.stderr);
+renameSync(join(isolated, 'src/model.ts'), join(isolated, 'src/model.missing'));
+const incomplete = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('./server/main.ts')"],
+  { cwd: isolated, env, encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+assert.notEqual(incomplete.status, 0, 'a missing packaged transitive source must prevent boot');
+assert.match(incomplete.stderr, /model\.ts/);
 console.log('Packaged API boots with locked pg dependencies outside the developer checkout');

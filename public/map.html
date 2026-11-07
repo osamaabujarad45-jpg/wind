@@ -14,7 +14,7 @@
   #pin[hidden] { display: none; }
   #pin svg { width: 100%; height: 100%; }
   #pin { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -42px 0 0 -22px; pointer-events: none; }
-  #recenter { position: absolute; bottom: 34px; right: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
+  #recenter { position: absolute; bottom: 34px; inset-inline-end: 10px; width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
 </style>
 </head>
@@ -28,12 +28,25 @@ let config;
 try { config = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch { send({ type: 'failed' }); throw new Error('bad config'); }
 // A missing/empty fragment used to throw on config.colors and leave a blank WebView; tell the app to fall back.
 if (!config || typeof config !== 'object') { send({ type: 'failed' }); throw new Error('bad config'); }
-const C = config.colors ?? { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
+const defaultColors = { forest: '#12342A', olive: '#34765A', clay: '#CB6845', blue: '#2F5E8C' }; // palette from src/ui.tsx
+// The public page can be opened with an arbitrary URL fragment. These values
+// reach SVG markup and CSS, so accept only the app's six-digit hex colors.
+const incomingColors = config.colors && typeof config.colors === 'object' && !Array.isArray(config.colors) ? config.colors : {};
+const C = Object.fromEntries(Object.entries(defaultColors).map(([key, fallback]) => [key,
+  typeof incomingColors[key] === 'string' && incomingColors[key].length === 7 && /^#[0-9a-f]{6}$/i.test(incomingColors[key]) ? incomingColors[key] : fallback]));
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_ZOOM = 15, FOLLOW_OFFSET = [0, -60];
 
 // Same helpers as src/map-math.ts (tests/map.test.mjs checks this copy against them).
 const rad = d => d * Math.PI / 180;
+const MERCATOR_LATITUDE_LIMIT = 85.05112878;
+function metersPerPixelAtCoordinate(latitude, zoom, density = 1) {
+  if (![latitude, zoom, density].every(Number.isFinite) || density <= 0) throw new RangeError('invalid_map_resolution');
+  const clamped = Math.max(-MERCATOR_LATITUDE_LIMIT, Math.min(MERCATOR_LATITUDE_LIMIT, latitude));
+  const resolution = Math.cos(rad(clamped)) * 2 * Math.PI * 6378137 / (2 ** zoom * 512 * density);
+  if (!Number.isFinite(resolution) || resolution <= 0) throw new RangeError('invalid_map_resolution');
+  return resolution;
+}
 function bearing(a, b) {
   const y = Math.sin(rad(b.longitude - a.longitude)) * Math.cos(rad(b.latitude));
   const x = Math.cos(rad(a.latitude)) * Math.sin(rad(b.latitude)) -
@@ -71,8 +84,10 @@ const labelField = language => language === 'ar'
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
 // End of helpers.
 
-const fail = () => send({ type: 'failed' });
-let timer = setTimeout(fail, 20000); // map never became usable: blocked or offline (tiles on slow mobile data take a while)
+let failed = false;
+const fail = () => { if (!failed) { failed = true; send({ type: 'failed' }); } };
+const readyTimeout = Number.isSafeInteger(config.readyTimeout) && config.readyTimeout >= 5000 && config.readyTimeout <= 30000 ? config.readyTimeout : 20000;
+let timer = setTimeout(fail, readyTimeout); // map never became usable: blocked or offline
 let ml;
 try { ml = await import('/vendor/maplibre-6.12.0/maplibre-gl.mjs'); }
 catch (e) { clearTimeout(timer); fail(); throw e; }
@@ -88,10 +103,10 @@ const map = new ml.Map({
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
-map.on('webglcontextlost', () => send({ type: 'failed' })); // a lost GPU context never draws again; the app retries
+map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
 const announceReady = () => {
-  if (!mapLoaded || !baseTileLoaded || announcedReady) return;
+  if (failed || !mapLoaded || !baseTileLoaded || announcedReady) return;
   announcedReady = true;
   clearTimeout(timer);
   document.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show');
@@ -104,9 +119,24 @@ map.on('sourcedata', e => {
 });
 map.once('load', () => { mapLoaded = true; announceReady(); });
 
-const state = { driver: null, road: null, approach: null, closed: [], focus: undefined };
+const state = { driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
-window.wind = update => { Object.assign(state, update); if (ready) draw(); fade(); };
+window.wind = update => {
+  if (failed) return;
+  Object.assign(state, update);
+  if (ready) {
+    if (pin && update.center) centerPin(update.center);
+    else draw();
+  }
+  fade();
+};
+function centerPin(point) {
+  if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)
+    || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180) return;
+  const current = map.getCenter();
+  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001)
+    map.jumpTo({ center: [point.longitude, point.latitude] });
+}
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
 const fade = () => {
@@ -140,12 +170,13 @@ function driverIcon(withArrow) {
   return el;
 }
 const halo = (meters, lat) => {
-  const base = meters / (78271.52 * Math.cos(lat * Math.PI / 180)); // MapLibre zoom levels use 512 px tiles
+  const base = meters / metersPerPixelAtCoordinate(lat, 0); // WebView map circles use CSS pixels, not physical screen pixels.
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
 const empty = { type: 'FeatureCollection', features: [] };
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
 const recenter = document.getElementById('recenter');
+document.documentElement.dir = config.language === 'ar' ? 'rtl' : 'ltr';
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
 recenter.style.color = C.blue;
 document.querySelector('#pin path').setAttribute('fill', C.clay);
@@ -160,7 +191,11 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   if (pin) {
     document.getElementById('pin').hidden = false;
     map.jumpTo({ center: [config.center.longitude, config.center.latitude], zoom: 16 });
+    if (state.center) centerPin(state.center);
+    map.on('dragstart', () => send({ type: 'gesture' }));
+    map.on('zoomstart', e => { if (e.originalEvent) send({ type: 'gesture' }); });
     map.on('moveend', () => { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); });
+    const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng });
   } else {
     new ml.Marker({ element: dot(C.olive) }).setLngLat([config.pickup.longitude, config.pickup.latitude]).addTo(map);
     new ml.Marker({ element: dot(C.clay, true) }).setLngLat([config.dropoff.longitude, config.dropoff.latitude]).addTo(map);

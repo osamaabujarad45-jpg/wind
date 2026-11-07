@@ -1,0 +1,78 @@
+method: Lwl2/b;.invoke
+0000: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Rider:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eef
+0002: const-string v0, "58186b33628f55167e7780822dc2bd324391fe2263b25e39fe9726889d7cca29310043fb7fb861b7eb02e4b4bc8fac1ce30f405f8ba9832aa41862fdb5a5019a" // string@0c92
+0004: const-string v1, "4a183902a134ca2055a1654c579d56454a0026d5fac509dbad3e506207d051fda717486479156db3981ab3de61a1e3d59052ea904b8663eb4e69507b5d4f6a6e" // string@0c69
+0006: invoke-static {v1, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0009: move-result-object v0
+000a: new-instance v2, Lnoc/l; // type@5685
+000c: invoke-direct {v2, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+000f: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Driver:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0ee6
+0011: const-string v0, "290a9384beecc6eabc15537301cbca1580b90e2288a6a37340a1f3b660f7036dc9126947bf3350cc8ff7f2b3acef6d8a5750e2aedf868fbdaa4291eb1ccd7849" // string@0c1c
+0013: invoke-static {v1, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0016: move-result-object v0
+0017: new-instance v3, Lnoc/l; // type@5685
+0019: invoke-direct {v3, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+001c: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Eats:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0ee7
+001e: const-string v0, "50034f853d8df877d1a37d4271fb8f90000753beadb402503c9e4795fc73560a00ac6e03fe0e547634e37c1a6fff6d6df8d89ec960300ec4c651258d4a457e95" // string@0c7c
+0020: const-string v4, "fa557db8cdd6469572dfe542315a91ab74bc71dd674094566c8c76965c1a2d2f0e8ebfc1eea2105c2e0e7d7f1bdf524826588a8527b8c43a73d1a80d079da7b0" // string@e3a2
+0022: invoke-static {v4, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0025: move-result-object v0
+0026: move-object v5, v4
+0027: new-instance v4, Lnoc/l; // type@5685
+0029: invoke-direct {v4, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+002c: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Postmates:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eed
+002e: const-string v0, "c19d54de2603177afed539b060beb71748392847afaaeed4a3a4699812c764a878f7b565942cce04618c967a1382f82f4e065c02a5df1cf09d9c50fd17f1471e" // string@cc07
+0030: const-string v6, "66eb8abbc33c4a616710f61dab6622acee3c612a3d7d6375a6b5165a71a6e2fed26c76993f49993a13ef63417e857599ef540cd6e97ee67768f2cb335efae54e" // string@0cbe
+0032: invoke-static {v0, v6}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0035: move-result-object v0
+0036: move-object v6, v5
+0037: new-instance v5, Lnoc/l; // type@5685
+0039: invoke-direct {v5, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+003c: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.EatsOrders:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0ee8
+003e: const/4 v0, #int 0 // #0
+003f: invoke-static {v6, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0042: move-result-object v6
+0043: move-object v7, v6
+0044: new-instance v6, Lnoc/l; // type@5685
+0046: invoke-direct {v6, v13, v7}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0049: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.RestaurantManager:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eee
+004b: const-string v7, "3b6f6df1e769d3de1de1d6e8af0d64afc0b3ad6812c99eebc7405ce5dcf86aee7a51272a2cc654e194f6c919b2fe0bd025c76fe8c687a58282697a99bdbfc915" // string@0c46
+004d: invoke-static {v7, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0050: move-result-object v7
+0051: move-object v8, v7
+0052: new-instance v7, Lnoc/l; // type@5685
+0054: invoke-direct {v7, v13, v8}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0057: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.UberLite:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0ef0
+0059: const-string v8, "ae71487a4c268a1e48e88813b2f81a9676d980e808dc12b2f95ce12f854468b74a1e3891c83fd55cb3b8512c3872b71127591dee93659d12b5308b1f9662cdb2" // string@c60e
+005b: invoke-static {v1, v8}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+005e: move-result-object v8
+005f: move-object v9, v8
+0060: new-instance v8, Lnoc/l; // type@5685
+0062: invoke-direct {v8, v13, v9}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0065: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Fleet:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0ee9
+0067: invoke-static {v1, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+006a: move-result-object v9
+006b: move-object v10, v9
+006c: new-instance v9, Lnoc/l; // type@5685
+006e: invoke-direct {v9, v13, v10}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0071: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Freight:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eea
+0073: invoke-static {v1, v0}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0076: move-result-object v0
+0077: new-instance v10, Lnoc/l; // type@5685
+0079: invoke-direct {v10, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+007c: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.InCarTablet:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eeb
+007e: invoke-static {v1, v1}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+0081: move-result-object v0
+0082: new-instance v11, Lnoc/l; // type@5685
+0084: invoke-direct {v11, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0087: sget-object v13, Lcom/uber/identity/ipcutils/model/AppConfig;.Passenger:Lcom/uber/identity/ipcutils/model/AppConfig; // field@0eec
+0089: invoke-static {v1, v1}, Lwl2/c$a;.a:(Ljava/lang/String;Ljava/lang/String;)Lpoc/d; // method@f4ea
+008c: move-result-object v0
+008d: new-instance v12, Lnoc/l; // type@5685
+008f: invoke-direct {v12, v13, v0}, Lnoc/l;.<init>:(Ljava/lang/Object;Ljava/lang/Object;)V // method@ccc6
+0092: filled-new-array/range {v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12}, [Lnoc/l; // type@7751
+0095: move-result-object v13
+0096: invoke-static {v13}, Lkotlin/collections/a;.f:([Lnoc/l;)Ljava/util/Map; // method@b814
+0099: move-result-object v13
+009a: return-object v13
+[instructions shown: 76]

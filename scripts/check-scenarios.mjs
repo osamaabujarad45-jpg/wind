@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { chromium } from 'playwright';
+import { runtimeRegistry } from '../src/runtime-config.ts';
 import { copy } from '../src/copy.ts';
 import { apiCaller } from '../tests/support/api.mjs';
 
@@ -22,7 +23,7 @@ process.env.WIND_IDENTITY_MODE = 'self-service';
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 if (!process.argv.includes('--no-build')) {
   // --clear: Metro's cache does not key on EXPO_PUBLIC_* values, so another build's API URL could be baked in.
-  const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--clear', '--output-dir', process.env.WEB_ROOT], {
+  const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--max-workers', '1', '--clear', '--output-dir', process.env.WEB_ROOT], {
     cwd: root, encoding: 'utf8', env: { ...process.env, EXPO_PUBLIC_API_URL: base, EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1' },
   });
   writeFileSync(join(output, 'build.log'), build.stdout + build.stderr);
@@ -42,6 +43,11 @@ const browser = await chromium.launch({ headless: true });
 const c = copy.en, password = 'Scenario_Local_2026';
 const pages = [], errors = [], checks = [], requests = [];
 let stage = 'setup';
+const apiRoutes = new Map();
+const apiRoute = pathname => {
+  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname}(?:[?].*)?$`));
+  return apiRoutes.get(pathname); // route/unroute share the same matcher identity
+};
 const button = (page, name) => page.getByRole('button', { name, exact: typeof name === 'string' });
 const field = (page, name) => page.getByLabel(name, { exact: true });
 async function until(read, predicate, message) {
@@ -114,7 +120,7 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     await field(page, c.recipientName).fill('QA Recipient');
   }
   if (scheduled) await page.getByRole('radio', { name: c.later, exact: true }).click();
-  if (lostResponse) await page.route('**/api/orders', async route => {
+  if (lostResponse) await page.route(apiRoute('/api/orders'), async route => {
     if (route.request().method() !== 'POST') return route.continue();
     await route.fetch(); // the server commits; only its response is lost
     await route.abort('connectionreset');
@@ -235,12 +241,16 @@ try {
   await field(driverPage, c.chatMessage).fill('I am at the entrance.');
   await button(driverPage, c.send).click();
   await customerPage.getByText('I am at the entrance.', { exact: true }).waitFor();
-  const shareResponse = customerPage.waitForResponse(r => r.url().endsWith(`/orders/${id}/share`) && r.request().method() === 'POST');
+  const shareResponse = customerPage.waitForResponse(r => new URL(r.url()).pathname.endsWith(`/orders/${id}/share`) && r.request().method() === 'POST');
   await button(customerPage, c.shareTracking).click();
   const share = await (await shareResponse).json();
   const recipient = await newPage();
   await recipient.goto(base + share.path);
   await recipient.locator('.maplibregl-marker').first().waitFor();
+  // Markers are created before basemap readiness; capture after the loading placeholder is removed.
+  await recipient.locator('.maplibregl-map').first().locator('..')
+    .locator('xpath=preceding-sibling::*[@aria-hidden="true"]').waitFor({ state: 'detached' });
+  assert.equal(await button(recipient, c.retry).count(), 0, 'Public tracking must load tiles without map fallback');
   const publicText = await recipient.locator('body').innerText();
   assert.ok(!publicText.includes('0599000701') && !publicText.includes('QA pickup:') && !publicText.includes('0599000707'));
   await recipient.screenshot({ path: join(output, 'recipient-tracking.png'), fullPage: true });
@@ -370,7 +380,7 @@ try {
   await swapRecipient.goto(base + swapShare.path);
   await swapRecipient.getByText(/^QA/).first().waitFor();
   await until(() => liveWatcherCount(swapId), n => n >= 2, 'Both live trackers did not subscribe');
-  await customerPage.route(`**/api/orders/${swapId}`, route => route.abort());
+  await customerPage.route(apiRoute(`/api/orders/${swapId}`), route => route.abort());
   await swapRecipient.route(`**/api/track/${swapShare.token}`, route => route.abort());
   await call(`/orders/${swapId}/release`, { token: driverToken, body: {} });
   await call(`/jobs/${swapId}/accept`, { token: replacement.token, body: {} });
@@ -378,7 +388,7 @@ try {
   await until(() => customerPage.getByText('QA Driver', { exact: true }).count(), n => n === 0, 'Old driver remained on the customer page after release');
   await until(() => swapRecipient.getByText(/^QA/).count(), n => n === 0, 'Old driver remained on the public page after release');
   assert.equal(await customerPage.locator('.driver-marker').count(), 0, 'Old map stays hidden when the snapshot refresh fails');
-  await customerPage.unroute(`**/api/orders/${swapId}`);
+  await customerPage.unroute(apiRoute(`/api/orders/${swapId}`));
   await swapRecipient.unroute(`**/api/track/${swapShare.token}`);
   await customerPage.getByText('Baker Driver', { exact: true }).waitFor({ timeout: 35_000 });
   await swapRecipient.getByText(/^Baker/).first().waitFor({ timeout: 35_000 });
@@ -410,7 +420,7 @@ try {
     }
     else { await freshSnapshots; await route.continue(); }
   };
-  await customerPage.route(`**/api/orders/${raceId}`, holdFirst(() => { if (customerIntercepted) return false; customerIntercepted = true; return true; },
+  await customerPage.route(apiRoute(`/api/orders/${raceId}`), holdFirst(() => { if (customerIntercepted) return false; customerIntercepted = true; return true; },
     () => { customerHeld = true; }, () => { customerReleased = true; }, true));
   await raceRecipient.route(`**/api/track/${raceShare.token}`, holdFirst(() => { if (recipientIntercepted) return false; recipientIntercepted = true; return true; },
     () => { recipientHeld = true; }, () => { recipientReleased = true; }));
@@ -425,7 +435,7 @@ try {
   customerPage.on('request', observePoll);
   unblock(); // an older 404 must not stop polling; the old public response must not overwrite the newer driver
   await until(() => customerReleased && recipientReleased, Boolean, 'Held snapshots did not finish');
-  await customerPage.unroute(`**/api/orders/${raceId}`);
+  await customerPage.unroute(apiRoute(`/api/orders/${raceId}`));
   await raceRecipient.unroute(`**/api/track/${raceShare.token}`);
   await customerPage.getByText('Baker Driver', { exact: true }).waitFor();
   await raceRecipient.getByText(/^Baker/).first().waitFor();
@@ -484,6 +494,8 @@ try {
   pass('late location permission cannot accept a job after a driver account switch');
 
   stage = 'map picker and recovery';
+  // Playwright's fixed location keeps its original timestamp until explicitly refreshed.
+  await customerPage.context().setGeolocation({ latitude: 31.9038, longitude: 35.2034, accuracy: 15 });
   await customerPage.goto(base + '/book?from=ramallah&to=nablus');
   await button(customerPage, c.pickupOnMap).click();
   const confirmPin = button(customerPage, c.confirmPin);
@@ -494,7 +506,7 @@ try {
   await customerPage.mouse.down();
   await customerPage.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 20, { steps: 10 });
   await customerPage.mouse.up();
-  const pinQuote = customerPage.waitForRequest(r => r.url().endsWith('/api/price') && r.postDataJSON()?.pickupPoint);
+  const pinQuote = customerPage.waitForRequest(r => new URL(r.url()).pathname === '/api/price' && r.postDataJSON()?.pickupPoint);
   await confirmPin.click();
   const chosen = (await pinQuote).postDataJSON().pickupPoint;
   assert.ok(Math.abs(chosen.latitude - 31.9038) + Math.abs(chosen.longitude - 35.2034) > 0.0001,
@@ -545,12 +557,13 @@ try {
     if (!route.request().url().includes('/styles/')) await tilesReady;
     await route.continue();
   });
-  await androidMap.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, padding: 40, recenter: copy.ar.recenter }))}`);
+  await androidMap.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, driver: { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 }, padding: 40, recenter: copy.ar.recenter }))}`);
   await androidMap.locator('.maplibregl-marker').nth(1).waitFor();
   const prematureReady = await androidMap.evaluate(() => window.mapMessages.some(m => m.type === 'ready'));
   releaseTiles();
   assert.equal(prematureReady, false, 'Android must not enable pin confirmation before its map tiles load');
   await androidMap.waitForFunction(() => window.mapMessages.some(m => m.type === 'ready'));
+  await androidMap.locator('.maplibregl-marker').nth(2).waitFor(); // initial fragment driver needs no host injection
   await androidMap.evaluate(driver => window.wind({ driver, focus: 'pickup' }), { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 });
   await androidMap.locator('.maplibregl-marker').nth(2).waitFor();
   await androidMap.evaluate(() => window.wind({ approach: [[35.2044, 31.9145], [35.2034, 31.9038]], stale: true }));
@@ -579,14 +592,14 @@ try {
 
   stage = 'map tile failure';
   const badTiles = await newPage();
-  await badTiles.addInitScript(() => {
+  await badTiles.addInitScript(({ readyTimeout }) => {
     window.mapMessages = [];
     window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
     const later = window.setTimeout;
-    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 20_000 ? 5_000 : ms, ...args);
-  });
+    window.setTimeout = (fn, ms, ...args) => later(fn, ms === readyTimeout ? 5_000 : ms, ...args);
+  }, { readyTimeout: runtimeRegistry.mapReadyTimeoutMs.default });
   await badTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
-  await badTiles.goto(`${base}/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
+  await badTiles.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'failed'), null, { timeout: 12_000 });
   assert.equal(await badTiles.evaluate(() => window.mapMessages.some(m => m.type === 'ready')), false,
@@ -594,10 +607,10 @@ try {
   pass('Android map reports failure when the style loads but basemap tiles fail');
 
   const webBadTiles = await newPage();
-  await webBadTiles.addInitScript(() => {
+  await webBadTiles.addInitScript(({ readyTimeout }) => {
     const later = window.setTimeout;
-    window.setTimeout = (fn, ms, ...args) => later(fn, ms === 25_000 ? 5_000 : ms, ...args);
-  });
+    window.setTimeout = (fn, ms, ...args) => later(fn, ms === readyTimeout ? 5_000 : ms, ...args);
+  }, { readyTimeout: runtimeRegistry.mapReadyTimeoutMs.default });
   await login(webBadTiles, '0599000701');
   await webBadTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
   await webBadTiles.goto(base + '/book?from=ramallah&to=nablus');
@@ -624,6 +637,10 @@ try {
   await until(() => customerPage.evaluate(() => document.documentElement.lang), lang => lang === 'ar', 'Arabic language did not apply');
   await customerPage.goto(base + `/order/${id}`);
   await button(customerPage, copy.ar.viewReceipt).waitFor();
+  await customerPage.getByLabel(copy.ar.brand, { exact: true }).waitFor({ state: 'hidden' });
+  await customerPage.locator('.maplibregl-map').first().locator('..')
+    .locator('xpath=preceding-sibling::*[@aria-hidden="true"]').waitFor({ state: 'detached' });
+  assert.equal(await button(customerPage, copy.ar.retry).count(), 0, 'Arabic order must load tiles without map fallback');
   await customerPage.screenshot({ path: join(output, 'arabic-completed.png'), fullPage: true });
   assert.deepEqual(errors, [], 'Unhandled browser errors');
   pass('driver earnings, admin mobile/tablet/desktop, Arabic order, zero unhandled browser errors');
