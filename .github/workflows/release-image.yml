@@ -28,10 +28,14 @@ jobs:
       - name: Refuse a tag that exists
         # The VM deploys and rolls back by tag, so overwriting one would change what a rollback runs.
         run: |
-          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+          if result=$(docker manifest inspect "$IMAGE" 2>&1); then
             echo "::error::$IMAGE already exists"
             exit 1
           fi
+          case "$result" in
+            *"no such manifest"*|*"manifest unknown"*) ;;
+            *) echo "::error::could not check $IMAGE: $result"; exit 1 ;;
+          esac
       - name: Build
         run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --build-arg EXPO_PUBLIC_API_URL=https://windapi236.swedencentral.cloudapp.azure.com --build-arg EXPO_PUBLIC_SUPPORT_WHATSAPP=972597127547 -t "$IMAGE" .
       - name: Push
