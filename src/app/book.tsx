@@ -346,10 +346,15 @@ function BookForm() {
 
   // An unknown answer becomes a real absence at the command's deadline: check again then, so Edit and Discard unlock by themselves.
   const settlesAt = pending && outcome?.state === 'unknown' ? pendingSettlesAt(pending) : null;
+  // A check that fails at the deadline (offline) keeps trying every 15 s until the answer is no longer unknown.
   useEffect(() => {
     if (!pending || settlesAt === null) return;
-    const timer = setTimeout(() => { void checkPending(pending); }, Math.max(0, settlesAt - Date.now()) + 1_000);
-    return () => clearTimeout(timer);
+    let again: ReturnType<typeof setInterval> | undefined;
+    const timer = setTimeout(() => {
+      void checkPending(pending);
+      again = setInterval(() => { void checkPending(pending); }, 15_000);
+    }, Math.max(0, settlesAt - Date.now()) + 1_000);
+    return () => { clearTimeout(timer); clearInterval(again); };
   }, [pending, settlesAt, checkPending]);
 
   // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.

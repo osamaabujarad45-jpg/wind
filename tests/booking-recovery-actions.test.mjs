@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { newBooking, pendingOutcome, pendingSettlesAt, readBooking } from '../src/booking.ts';
+import { noteServerDate } from '../src/api-clock.ts';
 
 const source = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const slice = (from, to) => {
@@ -21,7 +22,13 @@ const availability = slice('  async function retryAvailability() {', '  // Per-f
   assert.equal(pendingOutcome(null, command, settles - 1).state, 'unknown', 'still unknown just before the settle time');
   assert.equal(pendingOutcome(null, command, settles + 1).state, 'absent', 'a real absence just after it');
   assert.equal(pendingSettlesAt({}), null, 'a command without a deadline never claims a time');
-  assert.match(source, /setTimeout\(\(\) => \{ void checkPending\(pending\); \}, Math\.max\(0, settlesAt - Date\.now\(\)\) \+ 1_000\)/, 'the screen re-checks at the deadline');
+  assert.match(source, /\}, Math\.max\(0, settlesAt - Date\.now\(\)\) \+ 1_000\)/, 'the screen re-checks at the deadline');
+  assert.match(source, /again = setInterval\(\(\) => \{ void checkPending\(pending\); \}, 15_000\)/, 'and keeps re-checking while the answer stays unknown');
+  assert.match(source, /clearTimeout\(timer\); clearInterval\(again\);/, 'both timers stop with the screen');
+  // A skewed device clock: the deadline is server time, the timer runs on the device.
+  noteServerDate(new Date(Date.now() + 60_000).toUTCString(), Date.now());
+  assert.ok(Math.abs(pendingSettlesAt(command) - (settles - 60_000)) < 2_000, 'a device a minute behind the server unlocks a minute earlier on its own clock');
+  noteServerDate(new Date().toUTCString(), Date.now()); // back to no skew for the checks below
   assert.match(source, /fill\(c\.bookingRecoveryUntil, \{ t: time\(settlesAt\) \}\)/, 'the card says when Edit and Discard unlock');
 }
 const compile = text => ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
