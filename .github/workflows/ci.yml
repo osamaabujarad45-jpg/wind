@@ -37,8 +37,12 @@ jobs:
       - name: Install the pinned Bicep compiler
         run: |
           mkdir -p "$HOME/.local/bin"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$HOME/.local/bin/bicep" https://github.com/Azure/bicep/releases/download/v0.48.1/bicep-linux-x64
-          chmod +x "$HOME/.local/bin/bicep"
+          # nuget.org, not GitHub releases: the release CDN returned 502/503/504 to Actions for an hour on 8 Nov 2026.
+          # The pin is the binary inside Microsoft's package, so a substituted download fails the check.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/bicep.nupkg" https://www.nuget.org/api/v2/package/Azure.Bicep.CommandLine.linux-x64/0.48.1
+          unzip -q -o "$RUNNER_TEMP/bicep.nupkg" tools/bicep -d "$RUNNER_TEMP/bicep"
+          echo "b09ec25a9d376c1f8e33ede6ed22b587f915ad68488d5db77a6f9541748c7f6e  $RUNNER_TEMP/bicep/tools/bicep" | sha256sum --check
+          install -m 755 "$RUNNER_TEMP/bicep/tools/bicep" "$HOME/.local/bin/bicep"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/bicep" --version
       - run: npm run typecheck

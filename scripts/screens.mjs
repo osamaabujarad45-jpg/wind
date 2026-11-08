@@ -442,7 +442,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await offer('البيرة', 'طولكرم').waitFor();
   assert.equal(await offer('البيرة', 'طولكرم').isDisabled(), false);
   assert.equal(await page.getByRole('button', { name: copy.ar.sharingLocation, exact: true }).count(), 0);
-  await page.goto(`http://localhost:${WEB_PORT}/order/${searching.id}`, { waitUntil: 'networkidle' });
+  // An order screen holds a long-poll open, so network idle may never come; the click below waits for Accept itself.
+  await page.goto(`http://localhost:${WEB_PORT}/order/${searching.id}`, { waitUntil: 'load' });
   await page.getByRole('button', { name: copy.ar.accept, exact: true }).click();
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
   await page.goto(`http://localhost:${WEB_PORT}/driver/account`, { waitUntil: 'networkidle' });
