@@ -33,9 +33,15 @@ assert.ok(page.includes("map.on('click',"), 'a map tap is a non-drag way to move
 const click = segment("  map.on('click',", "  map.on('moveend',");
 const events = [], centres = [];
 runInNewContext(click, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }) }, pinning: () => true,
-  send: event => events.push(event.type), centerPin: point => centres.push(point) });
+  send: event => events.push(event.type), centerPin: point => { centres.push(point); return true; } });
 assert.deepEqual(events, ['gesture'], 'a manual tap cancels a late GPS result just like a drag');
 assert.equal(centres[0].latitude, 31.9);
+// A tap on the pin's own spot moves nothing and fires no moveend: the tap itself reports the centre, or Confirm waits forever.
+const still = [];
+runInNewContext(click, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }), getCenter: () => ({ lat: 31.9, lng: 35.2 }) },
+  pinning: () => true, send: event => still.push(event), centerPin: () => false });
+assert.deepEqual(still.map(event => event.type), ['gesture', 'center']);
+assert.equal(still[1].latitude, 31.9);
 assert.match(book, /side && \(rtl \? \{ left: SIDE_SHEET \} : \{ right: SIDE_SHEET \}\)/);
 assert.match(book, /side && \(rtl \? \{ left: SIDE_SHEET, right: 0 \} : \{ right: SIDE_SHEET \}\)/);
 assert.match(book, /<Button title=\{c.searchLabel\}[^\n]*setField\(pinFor\)[^\n]*setStep\('search'\)/, 'search stays reachable from pin placement, including a failed map');

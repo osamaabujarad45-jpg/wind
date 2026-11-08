@@ -113,6 +113,10 @@ export function pendingOutcome(receipt: unknown, command?: Pick<PendingBooking, 
   return command?.commandExpiresAt !== undefined && now > command.commandExpiresAt + SETTLED_AFTER_MS ? { state: 'absent' } : { state: 'unknown' };
 }
 
+/** When a missing receipt becomes a real absence, on this device's clock; null when the command has no deadline. */
+export const pendingSettlesAt = (command: Pick<PendingBooking, 'commandExpiresAt'>) =>
+  command.commandExpiresAt === undefined ? null : command.commandExpiresAt + SETTLED_AFTER_MS - serverOffset();
+
 /** Editing or discarding is only safe on a server-confirmed absence; present or unknown keep the frozen form. */
 export const pendingReleasable = (outcome: PendingOutcome | null) => outcome?.state === 'absent';
 

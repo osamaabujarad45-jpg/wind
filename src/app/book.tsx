@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, ApiError, apiSessionRevision, errorCode, storage, useApi } from '../api';
-import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
+import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pendingSettlesAt, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
 import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
 import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
@@ -290,7 +290,7 @@ function BookForm() {
       if (current() && !settled.current) setOutcome({ state: 'unknown' }); // a failed check never unlocks editing
     } finally {
       reading.current = false;
-      if (current()) setResolving(false);
+      if (alive.current) setResolving(false); // a same-account revision bump must not leave the form locked
     }
   }, [savedKey]);
 
@@ -343,6 +343,14 @@ function BookForm() {
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
   }, [savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, params.again, params.keep, storageAttempt]);
+
+  // An unknown answer becomes a real absence at the command's deadline: check again then, so Edit and Discard unlock by themselves.
+  const settlesAt = pending && outcome?.state === 'unknown' ? pendingSettlesAt(pending) : null;
+  useEffect(() => {
+    if (!pending || settlesAt === null) return;
+    const timer = setTimeout(() => { void checkPending(pending); }, Math.max(0, settlesAt - Date.now()) + 1_000);
+    return () => clearTimeout(timer);
+  }, [pending, settlesAt, checkPending]);
 
   // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
   useEffect(() => {
@@ -405,7 +413,7 @@ function BookForm() {
       if (!current()) return;
       setPromo({ ...r, price }); setPromoInput(''); haptic.success();
       AccessibilityInfo.announceForAccessibility(fill(c.promoApplied, { code: r.code, d: money(r.discount) }));
-    } catch (e) { if (current()) { haptic.error(); setPromo(null); setPromoError(err(e)); } } finally { if (current()) setChecking(false); }
+    } catch (e) { if (current()) { haptic.error(); setPromo(null); setPromoError(err(e)); } } finally { if (alive.current) setChecking(false); }
   }
 
   function switchService(next: Service) {
@@ -498,7 +506,7 @@ function BookForm() {
         api<Referral>('/me/referral').then(r => { if (current()) setCredits(r.credits); }).catch(() => undefined); // a used credit leaves the chip
       }
       if (!retrying && errorCode(e) === 'promo_changed' && applied) void applyPromo(applied.code); // show the new discount, customer confirms again
-    } finally { sending.current = false; if (current()) setBusy(false); }
+    } finally { sending.current = false; if (alive.current) setBusy(false); } // busy flags clear while mounted; only data writes are revision-gated
   }
 
   /** Drop a command the server has confirmed absent. Edit keeps the draft; discard leaves the form. */
@@ -592,7 +600,7 @@ function BookForm() {
         {pending && <Card tone="clay">
           <Txt variant="title">{c.bookingPending}</Txt>
           <Txt variant="caption">{c.bookingRetryHint}</Txt>
-          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
+          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : settlesAt !== null ? fill(c.bookingRecoveryUntil, { t: time(settlesAt) }) : c.bookingRecoveryUnknown}</Txt>
           {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
           <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
             <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={submitBlocked} />

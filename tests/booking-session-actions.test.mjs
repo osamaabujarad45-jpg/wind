@@ -38,7 +38,7 @@ globalThis.fetch = async (url, options) => {
 
 function screen(pending = null) {
   configureApi('booking-account-a', () => {});
-  const state = { pending, sent: [], writes: [], ui: [], navigation: [], answer: { id: 555 }, transport: null, storageGate: null,
+  const state = { pending, sent: [], writes: [], ui: [], flags: {}, navigation: [], answer: { id: 555 }, transport: null, storageGate: null,
     writeAt: 0, arrived: gate(), storageArrived: gate(), refreshArrived: gate(), refreshGate: null, responses: {}, requests: [], sheetOpen: false };
   active = state;
   const context = {
@@ -68,7 +68,9 @@ function screen(pending = null) {
     }, requote: () => state.ui.push('requote'),
     setPending: value => { state.pending = value; state.ui.push('pending'); },
   };
-  for (const name of ['Invalid', 'Busy', 'Error', 'Outcome', 'SheetOpen', 'Resolving', 'Promo', 'PromoError', 'PromoInput', 'Checking', 'Credits']) context[`set${name}`] = () => state.ui.push(name);
+  for (const name of ['Invalid', 'Error', 'Outcome', 'SheetOpen', 'Promo', 'PromoError', 'PromoInput', 'Credits']) context[`set${name}`] = () => state.ui.push(name);
+  // Busy flags are not data: they must clear while the form is mounted, even after the session revision moved.
+  for (const name of ['Busy', 'Resolving', 'Checking']) context[`set${name}`] = value => { state.flags[name] = value; };
   context.setSheetOpen = value => { state.sheetOpen = value; state.ui.push('SheetOpen'); };
   runInNewContext(compiled, context);
   return { state, context, ...context.actions };
@@ -115,6 +117,7 @@ try {
       const before = h.state.ui.length;
       wait.resolve(); await submitting;
       assert.equal(h.state.ui.length, before, 'late response cannot report success/error to another form');
+      if (change !== 'unmount') assert.equal(h.state.flags.Busy, false, 'a mounted form never stays busy after the revision moved');
       assert.equal(h.state.writes.length, 1, 'uncertain completion keeps the recovery record');
       assert.deepEqual(h.state.navigation, []);
     });

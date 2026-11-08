@@ -199,7 +199,9 @@ function centerPin(point, zoom) {
     const center = [point.longitude, point.latitude], camera = { center, ...(Number.isFinite(zoom) && { zoom }) };
     if (still() || !announcedReady) map.jumpTo(camera);
     else map.easeTo({ ...camera, duration: 350 });
+    return true;
   }
+  return false;
 }
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
@@ -333,7 +335,12 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   map.on('movestart', () => { if (pinning()) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
   map.on('dragstart', () => { if (pinning()) send({ type: 'gesture' }); else userMoved(); });
   map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) send({ type: 'gesture' }); else userMoved(); } });
-  map.on('click', e => { if (pinning()) { send({ type: 'gesture' }); centerPin({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); } });
+  map.on('click', e => {
+    if (!pinning()) return;
+    send({ type: 'gesture' });
+    // A tap on the pin's own spot moves nothing, so no moveend reports it: report the centre here or Confirm stays waiting.
+    if (!centerPin({ latitude: e.lngLat.lat, longitude: e.lngLat.lng })) { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); }
+  });
   map.on('moveend', () => {
     if (!pinning()) return;
     pinEl.classList.remove('lift');

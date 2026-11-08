@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
-import { newBooking, readBooking } from '../src/booking.ts';
+import { newBooking, pendingOutcome, pendingSettlesAt, readBooking } from '../src/booking.ts';
 
 const source = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const slice = (from, to) => {
@@ -13,6 +13,17 @@ const slice = (from, to) => {
 const restore = slice('  useEffect(() => {\n    let mounted = true;', 'storageAttempt]);');
 const retry = source.match(/^  const retryStorage = [^\n]+;/m)?.[0];
 const availability = slice('  async function retryAvailability() {', '  // Per-field problems');
+
+// A refused retry leaves the answer unknown until the command's deadline; the card names that time and re-checks by itself.
+{
+  const command = newBooking({ service: 'parcel' }, 1_000_000);
+  const settles = pendingSettlesAt(command);
+  assert.equal(pendingOutcome(null, command, settles - 1).state, 'unknown', 'still unknown just before the settle time');
+  assert.equal(pendingOutcome(null, command, settles + 1).state, 'absent', 'a real absence just after it');
+  assert.equal(pendingSettlesAt({}), null, 'a command without a deadline never claims a time');
+  assert.match(source, /setTimeout\(\(\) => \{ void checkPending\(pending\); \}, Math\.max\(0, settlesAt - Date\.now\(\)\) \+ 1_000\)/, 'the screen re-checks at the deadline');
+  assert.match(source, /fill\(c\.bookingRecoveryUntil, \{ t: time\(settlesAt\) \}\)/, 'the card says when Edit and Discard unlock');
+}
 const compile = text => ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const pending = newBooking({ service: 'parcel', option: 'small', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
   pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599123456', detail: 'Box', loadingHelp: false, shared: false, quotedPrice: 20 });
