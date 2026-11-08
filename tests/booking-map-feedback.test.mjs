@@ -48,7 +48,8 @@ assert.match(book, /<Button title=\{c.searchLabel\}[^\n]*setField\(pinFor\)[^\n]
 assert.match(book, /setSwapNotice\(fill\(c.swapDone/);
 assert.match(book, /<View accessibilityLiveRegion="polite"[^\n]*<Txt[^\n]*swapNotice/, 'swap feedback uses a native live-region host, not an unsupported Txt prop');
 assert.match(book, /!pending && routeChosen && !scopeInvalid && <Card style=\{\{ paddingVertical: 10, minHeight: 112 \}\}/, 'quote space survives loading, failure and success');
-assert.match(book, /quoting \? c.quote_calculating : quoteFailed \? c.quote_failed : smart \? money\(smart.price\)/, 'loading cannot display an old price');
+// The failure sentence lives once, under the Request button; the card keeps its space with a dash.
+assert.match(book, /quoting \? c.quote_calculating : quoteFailed \? '—' : smart \? money\(smart.price\)/, 'loading cannot display an old price');
 const ar = copy.slice(copy.indexOf('const ar = {'), copy.indexOf('const en: Copy = {'));
 assert.match(ar, /swapDone: '[^']*[\u0600-\u06ff]/);
 for (const file of ['../src/app/(customer)/index.tsx', '../src/app/order/[id].tsx', '../src/driver-map.tsx']) {
