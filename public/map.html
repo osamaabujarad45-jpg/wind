@@ -20,20 +20,21 @@
 <link rel="modulepreload" href="/vendor/maplibre-6.12.0/maplibre-gl-worker.mjs">
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <style>
-  :root { --inset-top: 0px; --inset-bottom: 0px; --inset-right: 0px; }
+  :root { --inset-top: 0px; --inset-bottom: 0px; --inset-left: 0px; --inset-right: 0px; }
   html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #EEEFEC; }
   /* The pin's point sits at the centre of the map area the app's chrome leaves visible. */
-  #pin { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
+  #pin { position: absolute; left: calc(50% + (var(--inset-left) - var(--inset-right)) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
     margin: -42px 0 0 -22px; pointer-events: none; transition: transform .16s ease-out; }
   #pin[hidden], #pin-base[hidden] { display: none; }
   #pin svg { width: 100%; height: 100%; }
   #pin.lift { transform: translateY(-12px); }
-  #pin-base { position: absolute; left: calc(50% - var(--inset-right) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
+  #pin-base { position: absolute; left: calc(50% + (var(--inset-left) - var(--inset-right)) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 10px; height: 4px; margin: -2px 0 0 -5px;
     border-radius: 50%; background: rgba(0,0,0,.35); pointer-events: none; }
   #recenter { position: absolute; bottom: calc(var(--inset-bottom) + 34px); right: calc(var(--inset-right) + 10px); width: 44px; height: 44px; border-radius: 22px; border: 0; background: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; align-items: center; justify-content: center; padding: 0; }
   .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: var(--inset-bottom); }
   .maplibregl-ctrl-bottom-right { right: var(--inset-right); }
+  .maplibregl-ctrl-bottom-left { left: var(--inset-left); }
   .stop { position: relative; }
   .stop-label { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: 150px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
     background: #fff; color: #12342A; font: 600 12px/18px system-ui, sans-serif; padding: 3px 10px; border-radius: 13px; box-shadow: 0 1px 6px rgba(0,0,0,.22); pointer-events: none; }
@@ -133,11 +134,12 @@ if (!firstPoints.every(validPoint)) { clearTimeout(timer); fail(); throw new Err
 const padding = config.padding ?? 0;
 // Stop labels hang over their markers and stand 150 px wide: keep room so they are not cut at the screen's edge.
 const fitPadding = () => { const side = state.labels ? Math.max(padding, 80) : padding, above = state.labels ? 34 : 0;
-  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side, right: side + (state.insets.right ?? 0) }; };
-const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: 0, right: state.insets.right ?? 0 });
+  return { top: state.insets.top + padding + above, bottom: state.insets.bottom + padding, left: side + (state.insets.left ?? 0), right: side + (state.insets.right ?? 0) }; };
+const freePadding = () => ({ top: state.insets.top, bottom: state.insets.bottom, left: state.insets.left ?? 0, right: state.insets.right ?? 0 });
 const insetCss = () => {
   document.documentElement.style.setProperty('--inset-top', `${state.insets.top}px`);
   document.documentElement.style.setProperty('--inset-bottom', `${state.insets.bottom}px`);
+  document.documentElement.style.setProperty('--inset-left', `${state.insets.left ?? 0}px`);
   document.documentElement.style.setProperty('--inset-right', `${state.insets.right ?? 0}px`);
 };
 insetCss();
@@ -151,6 +153,7 @@ const map = new ml.Map({
   // The WebView only receives touches the app's scroll view lets through; inside it the map owns them.
 });
 map.touchZoomRotate.disableRotation();
+map.getCanvas().setAttribute('aria-label', config.language === 'ar' ? 'الخريطة. استخدم مفاتيح الأسهم للتحريك أو اضغط على مكان لوضع الدبوس.' : 'Map. Use arrow keys to move, or tap a place to position the pin.');
 window.windMap = map; // the browser gates read the real camera
 map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
@@ -196,7 +199,9 @@ function centerPin(point, zoom) {
     const center = [point.longitude, point.latitude], camera = { center, ...(Number.isFinite(zoom) && { zoom }) };
     if (still() || !announcedReady) map.jumpTo(camera);
     else map.easeTo({ ...camera, duration: 350 });
+    return true;
   }
+  return false;
 }
 // Faded while the fix is old (lost signal): "last seen here", not live. The approach line goes with it: there is no
 // road left to follow, and a bright line would read as live.
@@ -242,7 +247,7 @@ const empty = { type: 'FeatureCollection', features: [] };
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || config.still;
 const recenter = document.getElementById('recenter');
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
-if (config.language === 'ar') { recenter.style.right = 'auto'; recenter.style.left = '10px'; } // mirrored like the app's useCopy().rtl
+if (config.language === 'ar') { recenter.style.right = 'auto'; recenter.style.left = 'calc(var(--inset-left) + 10px)'; } // mirrored like the app's useCopy().rtl
 recenter.style.color = C.blue;
 pinEl.querySelector('path').setAttribute('fill', C.clay);
 
@@ -330,6 +335,12 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   map.on('movestart', () => { if (pinning()) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
   map.on('dragstart', () => { if (pinning()) send({ type: 'gesture' }); else userMoved(); });
   map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) send({ type: 'gesture' }); else userMoved(); } });
+  map.on('click', e => {
+    if (!pinning()) return;
+    send({ type: 'gesture' });
+    // A tap on the pin's own spot moves nothing, so no moveend reports it: report the centre here or Confirm stays waiting.
+    if (!centerPin({ latitude: e.lngLat.lat, longitude: e.lngLat.lng })) { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); }
+  });
   map.on('moveend', () => {
     if (!pinning()) return;
     pinEl.classList.remove('lift');
@@ -353,7 +364,7 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   draw(); drawUser(); fade();
 });
 
-const followOffset = () => [-(state.insets.right ?? 0) / 2, (state.insets.top - state.insets.bottom) / 2 - 40];
+const followOffset = () => [((state.insets.left ?? 0) - (state.insets.right ?? 0)) / 2, (state.insets.top - state.insets.bottom) / 2 - 40];
 let drawnLines = '', drawnDriver = '', drawnClosed = '', framed = '', closedMarkers = [];
 // Live: driver, next stop and the road to it. Otherwise both pins and the whole road route (it can bend outside them).
 const framePoints = () => routeFramePoints(state);

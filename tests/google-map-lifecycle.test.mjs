@@ -20,6 +20,7 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false, preferences
   const host = element();
   host.injected = []; host.injectJavaScript = value => host.injected.push(value);
   host.regions = []; host.animateToRegion = value => host.regions.push(value);
+  host.fits = []; host.fitToCoordinates = (points, options) => host.fits.push({ points, options });
   const react = {
     useRef(value) { const i = cursor++; return slots[i] ??= { current: value }; },
     useState(value) { const i = cursor++; if (!slots[i]) slots[i] = { value: typeof value === 'function' ? value() : value };
@@ -57,7 +58,8 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false, preferences
     event: { clearInstanceListeners(map) { map.cleared = true; map.listeners.forEach(listener => listener.remove()); } },
   };
   const modules = { react, 'react-native': { View: 'View', Text: 'Text', Pressable: 'Pressable', Modal: 'Modal', ScrollView: 'ScrollView', useWindowDimensions: () => ({ height: 844 }),
-    Platform: { OS: 'web' }, StyleSheet: { create: value => value, absoluteFill: {} } },
+    AppState: { addEventListener: () => ({ remove() {} }) },
+    Platform: { OS: 'web' }, StyleSheet: { create: value => value, absoluteFill: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, './map-math': math, './route-preview': { __esModule: true, default: 'RoutePreview' },
     './ui': { Button: 'Button', Txt: 'Txt', palette: {}, shadow: {}, useCopy: () => ({ rtl: !!preferences.rtl, c: { retry: 'Retry', routeOnMap: 'Route map', pinHint: 'Move the map to select the pin', pinPositionFailed: 'Positioning failed', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
@@ -468,4 +470,50 @@ for (const times of [[10, 100, 600], [400, 600]]) {
   assert.equal(h.tree.type,'Google','old attempt cannot poison the retry');
   const latest=h.tree.props; h.unmount(); latest.onFail();
   failures.retryMapProviders();
+}
+
+{
+  const h = harness('route-map.native.tsx', false, { still: true });
+  const props = { pickup: first, dropoff: latest, driver: first, focus: 'dropoff', insets: { top: 80, bottom: 220, right: 340 } };
+  h.render(h.exports.TestRoute, props);
+  assert.deepEqual(plain(h.host.fits.at(-1)), { points: [first, latest], options: {
+    animated: false, edgePadding: { top: 152, bottom: 292, right: 412, left: 72 },
+  } });
+  h.render(undefined, { ...props, insets: { top: 80, bottom: 0, left: 340 } });
+  assert.deepEqual(plain(h.host.fits.at(-1).options.edgePadding), { top: 152, bottom: 72, right: 72, left: 412 },
+    'Apple route framing must reapply a left sheet inset without waiting for a new driver fix');
+  let current = { ...props, insets: { top: 80, bottom: 0, left: 340 } };
+  for (const side of ['top', 'bottom', 'left', 'right']) {
+    const count = h.host.fits.length;
+    current = { ...current, insets: { ...current.insets, [side]: (current.insets[side] ?? 0) + 10 } };
+    h.render(undefined, current);
+    assert.equal(h.host.fits.length, count + 1, `Apple framing responds to ${side} inset alone`);
+    assert.equal(h.host.fits.at(-1).options.edgePadding[side], 72 + current.insets[side]);
+  }
+  find(h.tree, 'MapView').onPanDrag(); h.render();
+  const count = h.host.fits.length;
+  h.render(undefined, { ...current, insets: {} });
+  assert.equal(h.host.fits.length, count, 'inset changes cannot undo the user camera gesture');
+  h.unmount();
+}
+
+for (const kind of ['route', 'pin']) for (const insets of [{ top: 80, bottom: 220 }, { top: 80, left: 340 }, { top: 80, right: 340 }, {}]) for (const fill of [false, true]) {
+  const failures = require('../src/map-failures.ts');
+  failures.retryMapProviders();
+  const h = harness('map-provider-boundary.tsx');
+  const map = kind === 'route' ? { pickup: first, dropoff: latest, pickupTitle: 'A', dropoffTitle: 'B' }
+    : { center: first, onChange() {} };
+  h.render(h.exports.MapProviderBoundary, { platform: 'web', [kind]: { ...map, height: 280, fill, insets }, google: 'Google', baseline: 'Baseline' });
+  h.tree.props.onFail(); h.render(); h.tree.props.onFail(); h.render();
+  const flatten = style => Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+  const frame = flatten(h.tree.props.style);
+  if (fill) assert.deepEqual(plain(frame), { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#E6ECE3' }, 'exhausted maps must still fill the screen');
+  else { assert.equal(frame.height, 280); assert.equal(frame.width, '100%'); }
+  const retry = find(h.tree, 'Pressable');
+  const look = flatten(retry.style);
+  assert.ok(look.minHeight >= 48 && look.minWidth >= 48, 'provider Retry must carry a 48dp box');
+  assert.deepEqual(plain(look.transform), [{ translateX: ((insets.left ?? 0) - (insets.right ?? 0)) / 2 }, { translateY: ((insets.top ?? 0) - (insets.bottom ?? 0)) / 2 }],
+    'provider Retry must stay in the inset-visible region for route and pin maps');
+  retry.onPress(); h.render(); assert.equal(h.tree.type, 'Google');
+  h.unmount(); failures.retryMapProviders();
 }

@@ -5,8 +5,8 @@ import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Linking, P
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { api, ApiError, errorCode, storage, useApi } from '../api';
-import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
+import { api, ApiError, apiSessionRevision, errorCode, storage, useApi } from '../api';
+import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pendingSettlesAt, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
 import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
 import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
@@ -76,6 +76,7 @@ function BookForm() {
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [swapNotice, setSwapNotice] = useState('');
   const [locationError, setLocationError] = useState('');
   useEffect(() => { if (locationError && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(locationError); }, [locationError]);
   const locationRequest = useRef<AbortController | null>(null);
@@ -90,6 +91,7 @@ function BookForm() {
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [ready, setReady] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<number | null>(null); // order-again source, for the caption
+  const [copyFailed, setCopyFailed] = useState(false);
   const [sameFrom, setSameFrom] = useState(false); // send another: only the pickup was copied
   const copied = useRef<string | null>(null); // copy once: a language switch re-runs the effect and must not undo edits
   // Now or a 30-minute slot in the next 7 days, at least an hour ahead (the server allows 30 minutes of slack).
@@ -108,7 +110,7 @@ function BookForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- slotBucket is the recompute trigger; slots read the real clock
   const slots = useMemo(() => scheduleSlots(), [slotBucket]);
   const chosen = slot !== null && slots.includes(slot) ? slot : slots[0] ?? null;
-  const scheduledFor = when === 'later' ? chosen : null;
+  const scheduledFor = pending ? pending.payload.scheduledFor ?? null : when === 'later' ? chosen : null;
   const wantsScope = service === 'freight' && me?.capabilities?.declaredScope === true;
   // An immediate load's window starts when its quote does: every re-quote (expiry, price change, retry) restarts it,
   // so the declared start is at most one quote lifetime old, not a half-hour bucket.
@@ -123,7 +125,15 @@ function BookForm() {
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
   const [storageAttempt, setStorageAttempt] = useState(0); // a failed read of the saved booking fails closed, and can be asked again
-  const retryStorage = () => { setError(''); setStorageAttempt(attempt => attempt + 1); };
+  const retryStorage = () => { setReady(false); setCopyFailed(false); setError(''); setStorageAttempt(attempt => attempt + 1); };
+  const [refreshingAvailability, setRefreshingAvailability] = useState(false);
+  async function retryAvailability() {
+    if (refreshingAvailability || busy || sending.current || pending) return;
+    setRefreshingAvailability(true); setError('');
+    try { await refresh(true); if (alive.current) requote(); }
+    catch (e) { if (alive.current) setError(err(e)); }
+    finally { if (alive.current) setRefreshingAvailability(false); }
+  }
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
   const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
@@ -205,12 +215,13 @@ function BookForm() {
   }, []);
 
   const applyPlace = (which: TripField, place: TripPlace) => {
+    locationRequest.current?.abort(); setLocating(false);
+    if (which === 'pickup') pickupTouched.current = true;
     if (!place.point) { // a town or a saved landmark: confirm the spot on the map, keeping its words
       setPinFor(which); setPinNote(place.note); setPinCenter(city(place.city)); setPinPoint(city(place.city)); setPinLabel(null); setStep('pin');
       return;
     }
     if (which === 'pickup') {
-      pickupTouched.current = true; locationRequest.current?.abort(); setLocating(false);
       setPickupCity(place.city); setPickupPoint(place.point); setPickupChosen(true); edit('pickupNote', setPickupNote)(place.note);
       if (dropoffChosen) setStep('trip'); else { setField('dropoff'); setStep('search'); }
     } else {
@@ -219,6 +230,8 @@ function BookForm() {
     }
   };
   const openPin = (which: TripField) => {
+    locationRequest.current?.abort(); setLocating(false);
+    if (which === 'pickup') pickupTouched.current = true;
     const chosen = which === 'pickup' ? (pickupChosen ? pickupPoint : null) : (dropoffChosen ? dropoffPoint : null);
     const start = chosen ?? here ?? (which === 'dropoff' && pickupChosen ? previewFrom : city(which === 'pickup' ? pickupCity : dropoffCity));
     const at = { latitude: start.latitude, longitude: start.longitude };
@@ -254,28 +267,30 @@ function BookForm() {
 
   // Read-only reconciliation uses the exact command receipt, never mutable order details.
   const checkPending = useCallback(async (command: PendingBooking) => {
-    if (reading.current || settled.current) return;
+    const revision = apiSessionRevision();
+    const current = () => alive.current && revision === apiSessionRevision();
+    if (!current() || reading.current || settled.current) return;
     reading.current = true;
     setResolving(true);
     try {
       const answer = pendingOutcome(await api<{ orderId: number | null }>(`/orders/commands/${encodeURIComponent(command.requestId)}`), command);
       const held = latest.current;
       // Only apply an answer about the attempt this screen still holds: a late reply must not act for another account.
-      if (!alive.current || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
+      if (!current() || settled.current || held?.requestId !== command.requestId || held?.attemptedAt !== command.attemptedAt) return;
       setOutcome(answer);
       if (answer.state === 'present') {
         settled.current = true;
         await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely re-finds this order
-        if (!alive.current) return;
+        if (!current()) return;
         latest.current = null;
         setPending(null);
         router.replace(`/order/${answer.orderId}`);
       }
     } catch {
-      if (alive.current && !settled.current) setOutcome({ state: 'unknown' }); // a failed check never unlocks editing
+      if (current() && !settled.current) setOutcome({ state: 'unknown' }); // a failed check never unlocks editing
     } finally {
       reading.current = false;
-      setResolving(false);
+      if (alive.current) setResolving(false); // a same-account revision bump must not leave the form locked
     }
   }, [savedKey]);
 
@@ -288,6 +303,7 @@ function BookForm() {
         catch { await storage.set(savedKey, null).catch(() => {}); } // an unreadable command must not lock the form forever
       }
       if (!mounted) return;
+      setCopyFailed(false);
       if (existing) {
         const p = existing.payload;
         latest.current = existing;
@@ -300,12 +316,12 @@ function BookForm() {
           setLoadingHours((p.declaredScope.loadingBefore - p.declaredScope.loadingAfter) / 3_600_000);
         }
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
-        if (p.scheduledFor) { setWhen('later'); setSlot(p.scheduledFor); } // a retried booking keeps its time
+        setWhen(p.scheduledFor ? 'later' : 'now'); setSlot(p.scheduledFor ?? null); // a retried booking keeps its time
         void checkPending(existing);
       } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         // Missing, foreign or offline: an empty form, and it says so rather than look like the old route was copied.
-        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => { if (mounted) setError(c.orderAgainFailed); return null; });
+        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => { if (mounted) { setCopyFailed(true); setError(c.orderAgainFailed); } return null; });
         if (!mounted) return;
         if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
           const p = pickupForm(old);
@@ -327,6 +343,19 @@ function BookForm() {
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
   }, [savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, params.again, params.keep, storageAttempt]);
+
+  // An unknown answer becomes a real absence at the command's deadline: check again then, so Edit and Discard unlock by themselves.
+  const settlesAt = pending && outcome?.state === 'unknown' ? pendingSettlesAt(pending) : null;
+  // A check that fails at the deadline (offline) keeps trying every 15 s until the answer is no longer unknown.
+  useEffect(() => {
+    if (!pending || settlesAt === null) return;
+    let again: ReturnType<typeof setInterval> | undefined;
+    const timer = setTimeout(() => {
+      void checkPending(pending);
+      again = setInterval(() => { void checkPending(pending); }, 15_000);
+    }, Math.max(0, settlesAt - Date.now()) + 1_000);
+    return () => { clearTimeout(timer); clearInterval(again); };
+  }, [pending, settlesAt, checkPending]);
 
   // Coming back to the app re-asks the read-only question, so an answer from before a commit is not kept forever.
   useEffect(() => {
@@ -377,14 +406,19 @@ function BookForm() {
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
     : promo && promo.price === price ? promo : null;
   const pay = price - (applied?.discount ?? 0);
+  const submitBlocked = !ready || locating || (!!pending && resolving) || (!pending && (quoting || quoteFailed || checking || !available));
+  const promoBlocked = locked || !routeChosen || scopeInvalid || quoting || quoteFailed;
   async function applyPromo(code: string) {
-    if (checking || !code.trim()) return;
+    const revision = apiSessionRevision();
+    const current = () => alive.current && revision === apiSessionRevision();
+    if (!current() || promoBlocked || checking || !code.trim()) return;
     setChecking(true); setPromoError('');
     try {
       const r = await api<{ code: string; discount: number }>('/promos/check', { code, price });
+      if (!current()) return;
       setPromo({ ...r, price }); setPromoInput(''); haptic.success();
       AccessibilityInfo.announceForAccessibility(fill(c.promoApplied, { code: r.code, d: money(r.discount) }));
-    } catch (e) { haptic.error(); setPromo(null); setPromoError(err(e)); } finally { setChecking(false); }
+    } catch (e) { if (current()) { haptic.error(); setPromo(null); setPromoError(err(e)); } } finally { if (alive.current) setChecking(false); }
   }
 
   function switchService(next: Service) {
@@ -393,15 +427,20 @@ function BookForm() {
     setOption(optionsFor(next)[0]);
     setLoadingHelp(false);
     setError('');
+    setSwapNotice('');
     setInvalid({});
   }
 
   async function submit() {
-    if (!ready || sending.current || (!available && !pending)) return;
+    if (!alive.current || submitBlocked || sending.current) return;
+    const revision = apiSessionRevision();
+    const current = () => alive.current && revision === apiSessionRevision();
     if (!pending && scopeInvalid) { setError(c.freightScopeInvalid); return; }
     if (!pending && !routeChosen) { setField(pickupChosen ? 'dropoff' : 'pickup'); setStep('search'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
-      haptic.error(); setSlot(null); setError(c.err_invalid_schedule); setSheetOpen(true); return;
+      const at = Date.now();
+      haptic.error(); setSlot(null); setSlotBucket({ bucket: Math.floor(at / (30 * 60_000)), at });
+      setError(c.err_invalid_schedule); setSheetOpen(true); return;
     }
     const problems = {
       pickupNote: pickupNote.trim() ? undefined : c.fieldRequired,
@@ -424,7 +463,8 @@ function BookForm() {
     sending.current = true;
     setBusy(true);
     setError('');
-    let saved = !!pending; // a pending command is already on the device
+    const retrying = !!pending;
+    let saved = retrying; // a pending command is already on the device
     try {
       // Retry keeps the stored identity and payload: the server's command idempotency makes a lost answer safe to repeat.
       const command = pending ? { ...pending, attemptedAt: Date.now() }
@@ -436,15 +476,19 @@ function BookForm() {
       setOutcome(null); // a new attempt invalidates the answer that arrived before it
       await storage.set(savedKey, JSON.stringify(command), true);
       saved = true;
+      if (!current()) return; // the saved command remains with its original account, never POSTed as the next one
       latest.current = command;
       setPending(command);
       const order = await api<Order>('/orders', orderRequest(command));
+      if (!current()) return;
       settled.current = true;
       latest.current = null;
       await storage.set(savedKey, null, true).catch(() => {}); // a retained successful command safely replays
+      if (!current()) return;
       haptic.success();
       router.replace(`/order/${order.id}`);
     } catch (e) {
+      if (!current()) return;
       haptic.error();
       setSheetOpen(true);
       // Once the command is persisted, a transport failure is "saved, awaiting connection" —
@@ -452,43 +496,46 @@ function BookForm() {
       if (!(e instanceof ApiError)) setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
       else {
         setError(err(e));
-        // A transport/5xx failure may have committed: keep the frozen form and same command for retry.
-        // 426 is an outdated app, not a refusal of this booking: keep it to replay after the update.
-        // An expired command may still have committed from an earlier, slower attempt: settle it by its receipt, never by clearing.
-        if (errorCode(e) === 'booking_command_expired' && latest.current) void checkPending(latest.current);
+        // A retry refusal says nothing about an earlier POST: only its receipt and deadline can settle it.
+        if ((retrying || errorCode(e) === 'booking_command_expired') && latest.current) void checkPending(latest.current);
         else if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
-          try { await storage.set(savedKey, null, true); latest.current = null; setPending(null); setOutcome(null); }
-          catch { setError(c.bookingStorageError); }
+          try { await storage.set(savedKey, null, true); if (!current()) return; latest.current = null; setPending(null); setOutcome(null); }
+          catch { if (current()) setError(c.bookingStorageError); }
         }
       }
-      if (errorCode(e) === 'price_changed') { await refresh(); requote(); } // new tariff or road state: customer confirms again
-      if (['quote_expired', 'quote_consumed', 'itinerary_changed', 'quote_not_found'].includes(errorCode(e) ?? '')) requote();
-      if (['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
+      if (!retrying && errorCode(e) === 'price_changed') { await refresh(); if (!current()) return; requote(); } // new tariff or road state: customer confirms again
+      if (!current()) return;
+      if (!retrying && ['quote_expired', 'quote_consumed', 'itinerary_changed', 'quote_not_found'].includes(errorCode(e) ?? '')) requote();
+      if (!retrying && ['invalid_promo', 'promo_used', 'invite_first_order_only'].includes(errorCode(e) ?? '')) {
         setPromo(null);
-        api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); // a used credit leaves the chip
+        api<Referral>('/me/referral').then(r => { if (current()) setCredits(r.credits); }).catch(() => undefined); // a used credit leaves the chip
       }
-      if (errorCode(e) === 'promo_changed' && applied) void applyPromo(applied.code); // show the new discount, customer confirms again
-    } finally { sending.current = false; setBusy(false); }
+      if (!retrying && errorCode(e) === 'promo_changed' && applied) void applyPromo(applied.code); // show the new discount, customer confirms again
+    } finally { sending.current = false; if (alive.current) setBusy(false); } // busy flags clear while mounted; only data writes are revision-gated
   }
 
   /** Drop a command the server has confirmed absent. Edit keeps the draft; discard leaves the form. */
   async function release(edit: boolean) {
-    if (!pending || busy || sending.current || !releasable) return;
+    const revision = apiSessionRevision();
+    const current = () => alive.current && revision === apiSessionRevision();
+    if (!current() || !pending || busy || sending.current || !releasable) return;
     haptic.tap();
     try {
       await storage.set(savedKey, null, true);
+      if (!current()) return;
       latest.current = null;
       setPending(null); setOutcome(null); setError('');
       if (!edit) router.replace('/');
-    } catch { setError(c.bookingStorageError); }
+    } catch { if (current()) setError(c.bookingStorageError); }
   }
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
   const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? (quoted?.error instanceof ApiError && quoted.error.status !== undefined && quoted.error.status >= 400 && quoted.error.status < 500 && ![401, 408, 429].includes(quoted.error.status) ? err(quoted.error) : c.quote_failed)
-    : !available && !pending ? c.serviceUnavailable : null;
+    : checking ? c.promo_checking : !available && !pending ? c.serviceUnavailable : null;
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
+  const promoReason = promoBlocked ? requestReason ?? lockedReason : undefined;
   const pickupTitle = !pickupChosen ? '' : located ? c.pickupHere : pickupNote.trim() || city(pickupCity)[language];
   const dropoffTitle = !dropoffChosen ? '' : dropoffNote.trim() || city(dropoffCity)[language];
   const estimate = (s: Service) => s === service ? (smart && !quoting ? smart.price : null)
@@ -498,24 +545,25 @@ function BookForm() {
     haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
     setPickupChosen(dropoffChosen); setDropoffChosen(pickupChosen); pickupTouched.current = true;
     setPickupNote(dropoffNote); setDropoffNote(pickupNote); setInvalid({ ...invalid, pickupNote: invalid.dropoffNote, dropoffNote: invalid.pickupNote });
+    setSwapNotice(fill(c.swapDone, { from: dropoffTitle, to: pickupTitle }));
   };
-  const edit_ = (which: TripField) => { if (locked) return; haptic.tap(); setField(which); setStep('search'); };
+  const edit_ = (which: TripField) => { if (locked) return; haptic.tap(); setSwapNotice(''); setField(which); setStep('search'); };
   const camera = step === 'pin' ? pinCenter ?? previewFrom : here ?? previewFrom;
   const side = useSideSheet();
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <View style={StyleSheet.absoluteFill} accessibilityElementsHidden={step === 'search'} importantForAccessibility={step === 'search' ? 'no-hide-descendants' : 'auto'} aria-hidden={step === 'search'}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
-      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && { right: SIDE_SHEET }) }} padding={40}
+      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
-      label={routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
+      label={step === 'pin' ? `${pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}. ${c.pinHint}` : routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
       onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { locationRequest.current?.abort(); if (pinFor === 'pickup') pickupTouched.current = true; setLocating(false); setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
       onReady={() => { setMapReady(true); setMapFailed(false); }} onFail={() => { setMapReady(false); setMapFailed(true); }} />
     </View>
 
-    {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && { right: SIDE_SHEET }]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
+    {step === 'trip' && <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topCard, shadow, { flexDirection: row }]}>
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
         <View style={{ flex: 1 }}>
@@ -547,18 +595,20 @@ function BookForm() {
           <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
         {mapFailed ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.pinUnavailable}</Txt>
           : <Button title={pinFor === 'pickup' ? c.confirmPickupSpot : c.confirmDropoffSpot} disabled={locating || !mapReady || pinMoving || !pinServed} reason={!mapReady ? c.pin_wait : undefined} onPress={confirmPinSpot} />}
+        <Button title={c.searchLabel} variant="ghost" onPress={() => { locationRequest.current?.abort(); setLocating(false); setField(pinFor); setStep('search'); }} />
       </SafeAreaView>
     </>}
 
     {step === 'trip' && <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setSheetPeek} scrollRef={scrollRef}
       header={<View style={{ paddingBottom: 8 }}>
+        {!!swapNotice && <View accessibilityLiveRegion="polite" style={{ marginBottom: 8 }}><Txt variant="caption">{swapNotice}</Txt></View>}
         {pending && <Card tone="clay">
           <Txt variant="title">{c.bookingPending}</Txt>
           <Txt variant="caption">{c.bookingRetryHint}</Txt>
-          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
+          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : settlesAt !== null ? fill(c.bookingRecoveryUntil, { t: time(settlesAt) }) : c.bookingRecoveryUnknown}</Txt>
           {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
           <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
-            <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
+            <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={submitBlocked} />
             <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
             <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
           </Row>
@@ -566,8 +616,10 @@ function BookForm() {
         </Card>}
         {!available && !pending && <Card tone="clay">
           <Txt variant="title">{c.serviceUnavailable}</Txt>
+          <Button title={c.retry} variant="soft" loading={refreshingAvailability} onPress={retryAvailability} />
           <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
         </Card>}
+        {copyFailed && !pending && <Button title={c.retry} variant="soft" onPress={retryStorage} />}
         {!ready && error && <Button title={c.retry} variant="soft" onPress={retryStorage} />}
         {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
         {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
@@ -585,7 +637,7 @@ function BookForm() {
           </Press>;
         })}
         {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>
-          <Row gap={8} style={{ minHeight: 40 }}>
+          <Row gap={8} style={{ minHeight: 48 }}>
             <Ionicons name="calendar-outline" size={16} color={palette.olive} />
             <Txt variant="label" style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(scheduledFor) })}</Txt>
           </Row>
@@ -593,7 +645,7 @@ function BookForm() {
       </View>}
       footer={pending ? undefined : <>
         <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
-          onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
+          onPress={submit} loading={busy} disabled={submitBlocked || scopeInvalid} />
         {requestReason && <Reason>{requestReason}</Reason>}
         {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
       </>}>
@@ -625,12 +677,12 @@ function BookForm() {
           </Row>
           : <>
             <Txt variant="label" style={{ marginBottom: 6 }}>{c.size}</Txt>
-            <Choices items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
+            <Choices label={c.size} items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
           </>}
         {service === 'freight' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.loadingHelp}</Txt>
-          <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} />
-          {wantsScope && !pending && <FreightScopeForm draft={freight} onChange={setFreight} disabled={locked} />}
+          <Choices label={c.loadingHelp} items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} />
+          {wantsScope && !pending && <FreightScopeForm draft={freight} onChange={setFreight} disabled={locked} invalid={scopeInvalid} />}
         </>}
       </Card>
 
@@ -641,7 +693,7 @@ function BookForm() {
           <Stepper label={c.freightWindowHours} value={loadingHours} min={1} max={8} onChange={setLoadingHours} disabled={locked} />
           <Txt variant="caption">{fill(c.freightWindow, { from: time(scheduledFor ?? slotBucket.at), to: time((scheduledFor ?? slotBucket.at) + loadingHours * 3_600_000) })}</Txt>
         </View>}
-        <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
+        <Choices label={c.whenTitle} items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending ? pending.payload.scheduledFor ? 'later' : 'now' : when}
           onChange={setWhen} disabled={locked} />
         {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>
           <SlotPicker slots={slots} value={chosen} onChange={setSlot} />
@@ -649,21 +701,21 @@ function BookForm() {
         </View>}
       </Card>
 
-      {smart && !pending && <Card style={{ paddingVertical: 10 }}>
+      {!pending && routeChosen && !scopeInvalid && <Card style={{ paddingVertical: 10, minHeight: 112 }}>
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>
-            <Txt variant="micro">{smart.standard ? c.standardParcel : c.recommendedPrice}</Txt>
-            <Txt variant="title">{quoting ? c.quote_calculating : money(smart.price)}</Txt>
+            <Txt variant="micro">{smart?.standard ? c.standardParcel : c.recommendedPrice}</Txt>
+            <Txt variant="title">{quoting ? c.quote_calculating : quoteFailed ? '—' : smart ? money(smart.price) : c.quote_calculating}</Txt>
           </View>
         </Row>
-        {smart.standard
+        {smart?.standard
           ? <Txt variant="caption" style={{ marginTop: 6 }}>{c.standardParcelHint}</Txt>
           : <>
             {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
             <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
           </>}
-        {smart.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
+        {smart?.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
       </Card>}
 
       <Card style={{ paddingVertical: 10 }}>
@@ -686,15 +738,15 @@ function BookForm() {
           </Row>
           : promo && !pending ? <Row gap={8}>
             <Txt variant="caption" style={{ flex: 1 }}>{c.promoRecheck}</Txt>
-            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked} reason={lockedReason} label={`${c.promoApply} ${promo.code}`} onPress={() => applyPromo(promo.code)} />
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={promoBlocked} reason={promoReason} label={`${c.promoApply} ${promo.code}`} onPress={() => applyPromo(promo.code)} />
           </Row>
           : !pending && (promoOpen ? <>
             <Field label={c.promoCode} icon="pricetag-outline" value={promoInput} onChangeText={v => { setPromoInput(v); setPromoError(''); }}
-              error={promoError} disabled={locked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
-            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={locked || !promoInput.trim()} reason={promoInput.trim() ? lockedReason : c.promo_need_code} onPress={() => applyPromo(promoInput)} />
+              error={promoError} disabled={promoBlocked || checking} maxLength={16} returnKeyType="go" onSubmitEditing={() => applyPromo(promoInput)} />
+            <Button title={c.promoApply} size="sm" variant="soft" loading={checking} disabled={promoBlocked || !promoInput.trim()} reason={promoInput.trim() ? promoReason : c.promo_need_code} onPress={() => applyPromo(promoInput)} />
           </> : <View style={{ flexDirection: row, flexWrap: 'wrap', gap: 8 }}>
             {/* Every credit the customer holds is offered: the first one alone hid the rest. */}
-            {price >= 2 && credits.map(credit => <Press key={credit.code} accessibilityLabel={fill(c.useCredit, { r: money(credit.amount), code: credit.code })} onPress={() => applyPromo(credit.code)} disabled={locked || checking}>
+            {price >= 2 && credits.map(credit => <Press key={credit.code} accessibilityLabel={fill(c.useCredit, { r: money(credit.amount), code: credit.code })} onPress={() => applyPromo(credit.code)} disabled={promoBlocked || checking}>
               <Row gap={6} style={styles.chip}><Ionicons name="gift-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{fill(c.useCredit, { r: money(credit.amount), code: credit.code })}</Txt></Row>
             </Press>)}
             <Press accessibilityLabel={c.promoAdd} onPress={() => setPromoOpen(true)} disabled={locked}>
@@ -713,7 +765,7 @@ function BookForm() {
     </MapSheet>}
 
     {step === 'search' && <TripSearch field={field} onField={setField} pickupText={pickupTitle} dropoffText={dropoffTitle} near={pickupChosen ? previewFrom : here} places={places}
-      locating={locating} locationError={locationError} notice={error} onRetry={!ready && error ? retryStorage : undefined} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
+      locating={locating} locationError={locationError} notice={error} onRetry={(!ready && error) || copyFailed ? retryStorage : undefined} onPick={applyPlace} onMap={openPin} onLocate={() => { void locate(); }}
       onForget={id => confirm(c.forgetPlaceConfirm, () => api<Places>(`/me/places/${id}`, undefined, 'DELETE').then(setPlaces).catch(e => setError(err(e))), c.forgetPlace, c.no)}
       onClose={() => { if (routeChosen) setStep('trip'); else if (router.canGoBack()) router.back(); else router.replace('/'); }} />}
   </View>;
@@ -741,7 +793,7 @@ function SavePlace({ city: placeCity, note, saved, onSave }: { city: CityId; not
 const styles = StyleSheet.create({
   service: { alignItems: 'center', gap: 12, minHeight: 58, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 6, borderWidth: 2, borderColor: 'transparent' },
   serviceOn: { backgroundColor: palette.card, borderColor: palette.forest },
-  chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 44 },
+  chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 48 },
   promo: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
   cash: { width: 36, height: 36, borderRadius: 11, backgroundColor: palette.olivePale, alignItems: 'center', justifyContent: 'center' },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },

@@ -41,9 +41,9 @@ export const palette = {
 // Soft lift instead of hairline borders. Small blur: large glows read as cheap on a phone.
 export const shadow: ViewStyle = { boxShadow: '0px 1px 2px rgba(14,31,25,0.06), 0px 4px 14px rgba(14,31,25,0.06)' };
 
-// Compact scale (Material 3 / Apple HIG): 14pt body, 36–46pt controls, every tap target ≥ 44pt through padding or hitSlop.
-export const size = { control: 46, small: 36, row: 52, radius: 16, gutter: 16 };
-const HIT = { top: 6, bottom: 6, left: 6, right: 6 };
+// Compact scale (Material 3 / Apple HIG): 14pt body, 36–48pt controls, every tap target ≥ 48dp in its own box.
+// A hitSlop only reaches over the control beside it, and the sibling on top takes the tap, so the box carries the target.
+export const size = { control: 48, small: 36, row: 52, radius: 16, gutter: 16 };
 
 const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 export type IconName = keyof typeof Ionicons.glyphMap;
@@ -153,7 +153,8 @@ export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
   const bg = { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} aria-disabled={disabled} hitSlop={HIT}
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
+    accessibilityState={{ disabled: !!disabled }}
     style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
     <Ionicons name={icon} size={19} color={tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
@@ -231,7 +232,7 @@ export function Press({ children, onPress, style, containerStyle, disabled, acce
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    aria-disabled={!!disabled} aria-busy={accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+    aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
@@ -252,7 +253,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   // keeps its colours so the spinner reads as work in progress. Callers add a <Reason> under it saying why it waits.
   const off = !!disabled && !loading;
   const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
-  const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false} hitSlop={small ? 2 : 1}
+  const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
     accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
@@ -270,14 +271,18 @@ export function Reason({ children }: { children: string }) {
   return <Txt variant="body" style={{ marginTop: 6 }}>{children}</Txt>;
 }
 
-export function Choices<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
+// A row of mutually exclusive options. `label` names the group for a screen reader (pass a translated word,
+// never an English literal); without it the group stays unnamed, as it was.
+export function Choices<K extends string>({ items, value, onChange, disabled, label }: {
+  items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string;
+}) {
   const { row } = useCopy();
   const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
-  return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup">
+  return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
       const on = item.key === value;
-      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} aria-checked={on} aria-disabled={disabled} disabled={disabled}
-        onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }} hitSlop={{ top: 4, bottom: 4 }}>
+      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: !!disabled }} disabled={disabled} aria-checked={on}
+        onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
         </Animated.View>
@@ -296,11 +301,13 @@ export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }:
   }, [value, label]);
   const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min} aria-disabled={disabled || value <= min} hitSlop={2} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min}
+      accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
     <Text accessibilityLabel={label} accessibilityValue={{ min, max, now: value, text: String(value) }} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max} aria-disabled={disabled || value >= max} hitSlop={2} style={styles.stepperKey}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max}
+      accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
   </View>;
@@ -329,24 +336,24 @@ export function Rail({ children, gap = 8, style, contentStyle, reveal }: { child
   </ScrollView>;
 }
 
-export function FilterChips<K extends string>({ items, value, onChange, disabled }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean }) {
+export function FilterChips<K extends string>({ items, value, onChange, disabled, label }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string }) {
   // The selected chip's box as laid out, so a rail that opens on a later choice (a driver's far heading, a reschedule slot)
   // shows it. A tap only recolours chips, so it never relays out and never scrolls.
   const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
-  return <Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
-    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" aria-checked={item.key === value} accessibilityLabel={item.label}
+  return <View accessibilityRole="radiogroup" accessibilityLabel={label}><Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
+    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value, disabled: !!disabled }} accessibilityLabel={item.label} aria-checked={item.key === value}
       onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
-      onPress={() => onChange(item.key)} disabled={disabled} aria-disabled={disabled} hitSlop={{ top: 5, bottom: 5 }} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
+      onPress={() => onChange(item.key)} disabled={disabled} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
       <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
-  </Rail>;
+  </Rail></View>;
 }
 
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
-export function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
+export function Field({ label, value, onChangeText, onBlur, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
-  onSubmitEditing?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
+  onSubmitEditing?: () => void; onBlur?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
   const { align, row } = useCopy();
   const inputAlign = keyboardType === 'phone-pad' || keyboardType === 'decimal-pad' || keyboardType === 'number-pad' || keyboardType === 'email-address' ? 'left' : align;
@@ -368,7 +375,7 @@ export function Field({ label, value, onChangeText, placeholder, multiline, keyb
       {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
       <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
-        onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
         autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
@@ -538,7 +545,7 @@ const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
   choice: {
-    minHeight: 44, borderRadius: 12, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
+    minHeight: 48, borderRadius: 12, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
     borderWidth: 1.5, borderColor: 'transparent',
     transitionProperty: ['backgroundColor', 'borderColor'], transitionDuration: '160ms', transitionTimingFunction: EASE_OUT,
   },
@@ -550,19 +557,19 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   logo: { backgroundColor: palette.forest, overflow: 'hidden' },
-  header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: 44 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: size.control },
+  iconButton: { width: size.control, height: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },
-  buttonSmall: { minHeight: 44, borderRadius: 22, paddingHorizontal: 14 },
+  buttonSmall: { minHeight: size.control, borderRadius: size.control / 2, paddingHorizontal: 14 },
   outline: { borderWidth: 1, borderColor: palette.line },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
   choiceText: { color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3 },
-  stepperKey: { width: 44, height: 44, borderRadius: 10, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  stepperKey: { width: size.control, height: size.control, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontWeight: '800', color: palette.ink },
-  chip: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.line },
+  chip: { paddingHorizontal: 14, minHeight: size.control, borderRadius: size.control / 2, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.line },
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
   chipText: { fontSize: 13, fontWeight: '700', color: palette.secondary },
   field: { marginBottom: 12 },
@@ -570,7 +577,7 @@ const styles = StyleSheet.create({
   inputFocused: { borderColor: palette.forest, backgroundColor: palette.card },
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
   fieldError: { flex: 1, color: palette.error, fontSize: 12, fontWeight: '700' },
-  input: { flex: 1, minHeight: 44, paddingVertical: 10, color: palette.ink, fontSize: 15 },
+  input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 15 },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
   badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800' },

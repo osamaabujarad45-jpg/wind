@@ -14,7 +14,7 @@ class ApiError extends Error { constructor(message, status) { super(message); th
 function session({ failKey, failure, token = 'saved-token', summary = null, platform = 'android', accounts = {} }) {
   const slots = [], timers = new Map(), values = new Map(), listeners = new Map(), calls = [];
   if (token) values.set('token', token);
-  let cursor = 0, effects = [], revision = 0, credential = null, actor = null, failedRead = failKey, failedWrite = null, pauseRemoval = null, pauseRecord = null, pausePresence = null, pauseTokenRemoval = null, pauseBeforeDelete = null, unauthorized = null, lockTail = Promise.resolve();
+  let cursor = 0, effects = [], revision = 0, credential = null, actor = null, failedRead = failKey, failedWrite = null, pauseRemoval = null, pauseRecord = null, pausePresence = null, pauseTokenRemoval = null, pauseBeforeDelete = null, pauseMe = null, meFailure = null, unauthorized = null, lockTail = Promise.resolve();
   const storage = {
     exclusive(run) { const next = lockTail.then(run); lockTail = next.catch(() => {}); return next; },
     async get(key, required = false) { if (key === failedRead && (platform !== 'web' || required)) throw new Error('keystore'); return values.get(key) ?? null; },
@@ -57,6 +57,8 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     'react-native': { Platform: { OS: platform }, AppState: { addEventListener: () => ({ remove() {} }) } },
     'expo-localization': { getLocales: () => [{ languageCode: 'en' }] }, 'expo-constants': { __esModule: true, default: { expoConfig: {} } },
     './api': { API_URL: 'http://localhost', ApiError, api: async path => { calls.push({ path, credential });
+      if (path === '/me' && pauseMe) { const held = pauseMe, requested = credential; pauseMe = null; held.started(); await held.promise; return accounts[requested]; }
+      if (path === '/me' && meFailure) throw meFailure;
       if (path === '/me' && accounts[credential]) return accounts[credential];
       if (path === '/runtime/configuration') return {};
       throw failure; }, errorCode: e => e instanceof ApiError ? e.message : 'server_error',
@@ -80,6 +82,8 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     recoveryRecords: () => [...values.keys()].filter(key => key.startsWith('wind.recovery.v1.') && !key.endsWith('.index')),
     failRead(key) { failedRead = key; },
     failWrite(key) { failedWrite = key; },
+    failMe(error) { meFailure = error; },
+    pauseMe(pending) { pauseMe = pending; },
     pausePresence(pending) { pausePresence = pending; },
     pauseRemoval(pending) { pauseRemoval = pending; },
     pauseRecord(pending) { pauseRecord = pending; },
@@ -129,6 +133,28 @@ const account = id => ({ user: { id, role: 'customer', status: 'active' }, plan:
 const settle = async () => { for (let i = 0; i < 10; i++) await flush(); };
 const gate = () => { let resolve, started; const promise = new Promise(r => { resolve = r; });
   const entered = new Promise(r => { started = r; }); return { promise, resolve, started, entered }; };
+
+{
+  const h = session({ accounts: { 'saved-token': account(1) } });
+  h.render(); await settle(); await h.seed('command', { order: 'pending' });
+  h.failMe(new ApiError('network'));
+  await h.render().refresh();
+  assert.equal(h.render().offline, false, 'background refresh must stay quiet under a loaded form');
+  await assert.rejects(h.render().refresh(true), /network/, 'explicit availability Retry must report failure');
+  assert.equal(h.render().me.user.id, 1);
+  assert.equal((await h.read('command')).order, 'pending');
+  h.close();
+}
+{
+  const h = session({ accounts: { 'saved-token': account(1) } });
+  h.render(); await settle();
+  const pending = gate(); h.pauseMe(pending);
+  const refreshing = h.render().refresh(true); await pending.entered;
+  await h.render().signIn({ ...account(2), token: 'new-token' });
+  pending.resolve(); await refreshing;
+  assert.equal(h.render().me.user.id, 2, 'late explicit refresh cannot restore the previous account');
+  h.close();
+}
 
 for (const platform of ['android', 'web']) {
   const h = session({ platform, token: null });

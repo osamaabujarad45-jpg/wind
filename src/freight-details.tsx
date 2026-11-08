@@ -1,19 +1,30 @@
+import { useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { FreightDraft } from './freight-scope';
+import { freightFieldProblem, type FreightDraft, type FreightFieldKey } from './freight-scope';
 import type { Order } from './model';
 import { useFormat } from './parts';
-import { Card, Field, fill, palette, Press, Row, Txt, useCopy } from './ui';
+import { Card, ErrorText, Field, fill, palette, Press, Row, Txt, useCopy } from './ui';
 
-export function FreightScopeForm({ draft, onChange, disabled }: { draft: FreightDraft; onChange: (draft: FreightDraft) => void; disabled: boolean }) {
+export function FreightScopeForm({ draft, onChange, disabled, invalid }: { draft: FreightDraft; onChange: (draft: FreightDraft) => void; disabled: boolean; invalid: boolean }) {
   const { c } = useCopy();
-  const fields = [ ['pieces', c.freightPieces], ['lengthCm', c.freightLength], ['widthCm', c.freightWidth], ['heightCm', c.freightHeight],
-    ['massKg', c.freightMass], ['crew', c.freightCrew], ['value', c.freightValue] ] as const;
+  // Validate on blur, not while the customer is still entering a number.
+  const [touched, setTouched] = useState<Partial<Record<FreightFieldKey, boolean>>>({});
+  const fields = [ ['pieces', c.freightPieces, c.freightPiecesInvalid], ['lengthCm', c.freightLength, c.freightDimensionInvalid],
+    ['widthCm', c.freightWidth, c.freightDimensionInvalid], ['heightCm', c.freightHeight, c.freightDimensionInvalid],
+    ['massKg', c.freightMass, c.freightMassInvalid], ['crew', c.freightCrew, c.freightCrewInvalid], ['value', c.freightValue, c.freightValueInvalid] ] as const;
   return <View style={{ gap: 10, marginTop: 12 }}>
     <Txt variant="title">{c.freightScopeTitle}</Txt>
     <Txt variant="caption">{c.freightScopeHint}</Txt>
-    {fields.map(([key, label]) => <Field key={key} label={label} value={draft[key]} keyboardType={key === 'pieces' || key === 'crew' ? 'number-pad' : 'decimal-pad'}
-      maxLength={16} disabled={disabled} onChangeText={text => onChange({ ...draft, [key]: text })} />)}
+    {fields.map(([key, label, message]) => {
+      const decimal = key !== 'pieces' && key !== 'crew';
+      const problem = touched[key] ? freightFieldProblem(draft, key) : null;
+      return <Field key={key} label={label} value={draft[key]} keyboardType={decimal ? 'decimal-pad' : 'number-pad'}
+        maxLength={16} disabled={disabled} error={problem === 'required' ? c.fieldRequired : problem === 'invalid' ? message : undefined}
+        onBlur={() => setTouched(previous => ({ ...previous, [key]: true }))}
+        onChangeText={text => { setTouched(previous => ({ ...previous, [key]: false })); onChange({ ...draft, [key]: text }); }} />;
+    })}
+    {invalid && fields.every(([key]) => freightFieldProblem(draft, key) === null) && <ErrorText>{c.freightScopeTooLarge}</ErrorText>}
     <Txt variant="label">{c.freightEquipment}</Txt>
     {([['straps', c.freightStraps], ['refrigeration', c.freightCold]] as const).map(([key, label]) => <Press key={key}
       accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked: draft.equipment.includes(key) }} disabled={disabled}

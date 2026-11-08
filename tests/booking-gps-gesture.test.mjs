@@ -31,6 +31,35 @@ await pending;
 assert.equal(cameraWrites, 0, 'a late GPS response cannot move the manual pin');
 console.log('Booking manual map gesture cancels pending location and fences a late fix');
 
+// Choosing manual placement is the intent change; it must not wait for the first map drag.
+const manual = source.slice(source.indexOf('  const applyPlace ='), source.indexOf('  const pinServed ='))
+  .replaceAll('which: TripField', 'which').replaceAll('place: TripPlace', 'place');
+for (const enter of ['openPin', 'town']) {
+  let reply, requestSignal, loading = false, adopted = 0;
+  const steps = [];
+  const pin = {
+    AbortController, locationRequest: { current: null }, pickupTouched: { current: false }, step: 'search', pinFor: 'pickup',
+    pickupLocation: next => { requestSignal = next; return new Promise(resolve => { reply = resolve; }); },
+    pickupChosen: true, dropoffChosen: true, pickupPoint: null, dropoffPoint: null, here: null,
+    pickupCity: 'ramallah', dropoffCity: 'nablus', previewFrom: { latitude: 31.9, longitude: 35.2 },
+    city: () => ({ latitude: 31.9, longitude: 35.2 }),
+    setLocating: value => { loading = value; }, setLocationError() {}, setPinFor() {}, setPinNote() {},
+    setPinCenter() {}, setPinPoint() {}, setPinLabel() {}, setStep: value => steps.push(value),
+    setHere() {}, rememberHere: async () => {}, setPickupNote() {}, setField() {}, adoptFix() { adopted++; },
+  };
+  runInNewContext(locate + manual + '\nglobalThis.locate = locate; globalThis.openPin = openPin; globalThis.applyPlace = applyPlace;', pin);
+  const locatingRequest = pin.locate();
+  if (enter === 'openPin') pin.openPin('pickup');
+  else pin.applyPlace('pickup', { city: 'ramallah', point: null, note: 'Manual landmark' });
+  assert.equal(requestSignal.aborted, true, `${enter}: entering manual placement cancels GPS before a drag`);
+  assert.equal(loading, false, `${enter}: manual placement releases GPS loading`);
+  assert.equal(pin.pickupTouched.current, true, `${enter}: quiet startup GPS cannot replace the manual pickup`);
+  reply({ city: 'ramallah', point: { latitude: 31.9, longitude: 35.2 }, accuracy: 10 });
+  await locatingRequest;
+  assert.equal(adopted, 0, `${enter}: the late GPS reply cannot replace the manual intent`);
+  assert.deepEqual(steps, ['pin'], `${enter}: the late GPS reply cannot dismiss the pin screen`);
+}
+
 // On the phone, a place picked with the keyboard up left it open over the map pin, hiding the confirm button.
 // Dismiss has to run before the step changes: once the search field is unmounted there is nothing left to blur.
 const search = readFileSync(new URL('../src/trip-search.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');

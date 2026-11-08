@@ -39,7 +39,7 @@ jobs:
       - run: npm ci
       - name: Install pinned Bicep CLI
         run: |
-          curl --fail --silent --show-error --location https://github.com/Azure/bicep/releases/download/v0.48.1/Azure.Bicep.CommandLine.linux-x64.0.48.1.nupkg -o "$RUNNER_TEMP/bicep.nupkg"
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 https://github.com/Azure/bicep/releases/download/v0.48.1/Azure.Bicep.CommandLine.linux-x64.0.48.1.nupkg -o "$RUNNER_TEMP/bicep.nupkg"
           echo 'f33848816dcaefa4a5e6cfc1453d8a4d759ce3988ebdf2a10e06dd834c219f31  bicep.nupkg' | (cd "$RUNNER_TEMP" && sha256sum --check)
           mkdir -p "$RUNNER_TEMP/tools"
           unzip -q "$RUNNER_TEMP/bicep.nupkg" tools/bicep -d "$RUNNER_TEMP/tools"
