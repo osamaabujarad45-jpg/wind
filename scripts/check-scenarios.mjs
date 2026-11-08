@@ -792,7 +792,8 @@ try {
     await pricePage.route(pricePath, route => route.fulfill({ status, json: { error: 'route_prohibited' } }));
     const response = pricePage.waitForResponse(r => new URL(r.url()).pathname === '/api/price' && r.status() === status);
     await button(pricePage, c.retry).click();
-    await pricePage.getByText(c.quote_failed, { exact: true }).waitFor({ state: 'hidden' });
+    // The response proves Retry asked again. A wait for the sentence to hide raced it: a click can outlast the
+    // 300 ms quote debounce plus a mocked reply, and the sentence was already back (seen at 429 on the test PC).
     await response;
     await pricePage.getByText(c.quote_failed, { exact: true }).waitFor();
     assert.equal(await button(pricePage, c.request).isDisabled(), true, `${status} must leave Request disabled`);
