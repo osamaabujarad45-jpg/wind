@@ -71,10 +71,10 @@ function transform(name) {
     replaceFixture(`UPDATE orders SET status = 'completed' WHERE driver_id = ? AND id <> ? AND status = 'assigned'`,
       `UPDATE orders SET status = 'completed', completed_at = updated_at WHERE driver_id = ? AND id <> ? AND status = 'assigned'`,
       'Bulk historical fixture completion supplies the required completed_at timestamp; HTTP assertions are unchanged.');
-    replaceFixture(`const done = db.prepare(\`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)`,
-      `const done = db.prepare(\`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at, completed_at)`,
+    replaceFixture(`const done = \`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)`,
+      `const done = \`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at, completed_at)`,
       'Historical inserts supply completed_at rather than violate the new database invariant.');
-    replaceFixture(`'completed', ?, 1, 1)\`);`, `'completed', ?, 1, 1, 1)\`);`, 'The synthetic history timestamp is the same fixed instant as created_at/updated_at.');
+    replaceFixture(`'completed', ?, 1, 1)\`;`, `'completed', ?, 1, 1, 1)\`;`, 'The synthetic history timestamp is the same fixed instant as created_at/updated_at.');
   }
   adaptations.set(name, notes);
   const source = ts.createSourceFile(original, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

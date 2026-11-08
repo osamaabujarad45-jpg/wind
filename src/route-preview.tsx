@@ -4,7 +4,7 @@ import type { Point } from './model';
 import { palette, useCopy } from './ui';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
-export type MapInsets = { top?: number; bottom?: number; right?: number };
+export type MapInsets = { top?: number; bottom?: number; left?: number; right?: number };
 export type UserDot = Point & { accuracy?: number | null };
 export type RouteMapProps = {
   pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;

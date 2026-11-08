@@ -48,9 +48,9 @@ export function SlotPicker({ slots, value, onChange }: { slots: number[]; value:
   const { c, language } = useCopy();
   const shownDay = dayKey(value);
   return <>
-    <FilterChips items={[...new Set(slots.map(dayKey))].map(key => ({ key, label: dayLabel(slots.find(s => dayKey(s) === key)!, language, c) }))} value={shownDay}
+    <FilterChips label={c.scheduleDay} items={[...new Set(slots.map(dayKey))].map(key => ({ key, label: dayLabel(slots.find(s => dayKey(s) === key)!, language, c) }))} value={shownDay}
       onChange={key => onChange(slots.find(s => dayKey(s) === key)!)} />
-    <FilterChips items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(value)}
+    <FilterChips label={c.scheduleTime} items={slots.filter(s => dayKey(s) === shownDay).map(s => ({ key: String(s), label: timeLabel(s, language) }))} value={String(value)}
       onChange={key => onChange(Number(key))} />
   </>;
 }
@@ -63,6 +63,7 @@ export function ServiceIcon({ service, size = 40 }: { service: Service; size?: n
 }
 
 // Pickup (olive dot) joined to drop-off (clay square): the route spine used on booking, trip and job screens.
+// The word that names each end comes from the copy dictionary in the reader's language, never a literal.
 export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
   from: string; to: string; fromNote?: string; toNote?: string; onFrom?: () => void; onTo?: () => void; ride?: boolean;
 }) {
@@ -74,7 +75,7 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
         {first && <View style={styles.spine} />}
       </View>
       <View style={{ flex: 1, paddingBottom: first ? 12 : 0 }}>
-        <Txt variant="micro">{label}</Txt>
+        <Txt variant="label">{label}</Txt>
         <Row gap={6}>
           <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>{place}</Txt>
           {onPress && <Ionicons name="chevron-down" size={15} color={palette.olive} />}
@@ -490,7 +491,7 @@ export function AccountScreen() {
 
 const styles = StyleSheet.create({
   link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
-  stop: { alignItems: 'stretch', gap: 10 },
+  stop: { alignItems: 'stretch', gap: 10, minHeight: 48 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },
   square: { width: 10, height: 10, borderRadius: 2, backgroundColor: palette.clay },

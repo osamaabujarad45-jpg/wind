@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ComponentType } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { effectiveMapProvider } from './map-provider';
 import { recordMapFailure, retryMapProviders } from './map-failures';
@@ -45,11 +45,17 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
       onMoving={() => { if (current()) callbacks.current?.onMoving?.(); }}
       onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
   }
-  return <View style={{ height: route?.height ?? pin?.height ?? 220, justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
+  const props = route ?? pin;
+  return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: '#E6ECE3' }]}>
     {route && <RoutePreview {...route} />}
-    <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}
-      style={{ minHeight: 44, padding: 12, alignSelf: 'center', backgroundColor: palette.card, borderRadius: 12 }}>
-      <Text>{c.retry}</Text>
-    </Pressable>
+    <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+      <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}
+        style={{ minHeight: 48, minWidth: 48, padding: 12, backgroundColor: palette.card, borderRadius: 12, transform: [
+          { translateX: ((props?.insets?.left ?? 0) - (props?.insets?.right ?? 0)) / 2 },
+          { translateY: ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
+        ] }}>
+        <Text>{c.retry}</Text>
+      </Pressable>
+    </View>
   </View>;
 }

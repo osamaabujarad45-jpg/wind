@@ -8,13 +8,15 @@ import { useReducedMotion } from './motion';
 import RoutePreview, { type MapInsets, type PinMapProps, type RouteMapProps, type UserDot } from './route-preview';
 import { palette, useCopy } from './ui';
 
+export type SceneMapInsets = MapInsets;
+
 export type SceneMapProps = {
   mode: 'browse' | 'pin' | 'route';
   center?: Point | null; zoom?: number;
   pickup?: Point | null; dropoff?: Point | null;
   driver?: RouteMapProps['driver']; road?: RouteMapProps['road']; approach?: RouteMapProps['approach']; closed?: RouteMapProps['closed'];
   focus?: RouteMapProps['focus']; stale?: boolean; follow?: boolean;
-  user?: UserDot | null; insets?: MapInsets; labels?: { pickup?: string; dropoff?: string } | null; eta?: string | null;
+  user?: UserDot | null; insets?: SceneMapInsets; labels?: { pickup?: string; dropoff?: string } | null; eta?: string | null;
   label?: string; height?: number; fill?: boolean;
   /** Margin kept around framed stops, in points. */
   padding?: number;
@@ -34,7 +36,10 @@ export function SceneMap(props: SceneMapProps) {
   if (failed) return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     {props.fallback ?? <View style={[StyleSheet.absoluteFill, { backgroundColor: MAP_GROUND }]} />}
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}><Text>{c.retry}</Text></Pressable>
+      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
+        { translateX: ((insets?.left ?? 0) - (insets?.right ?? 0)) / 2 },
+        { translateY: ((insets?.top ?? 0) - (insets?.bottom ?? 0)) / 2 },
+      ] }]}><Text>{c.retry}</Text></Pressable>
     </View>
   </View>;
   const liveDriver = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null;
@@ -72,5 +77,5 @@ export function BaselinePin({ center, onChange, onGesture, onMoving, onFail, onR
 
 const styles = StyleSheet.create({
   cover: { alignItems: 'center', justifyContent: 'center' },
-  retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
+  retry: { minWidth: 48, minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
