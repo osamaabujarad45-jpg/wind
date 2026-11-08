@@ -669,7 +669,8 @@ if (!only || only.includes('booking-narrow')) {
       localStorage.setItem('token', token);
     }, { token: layla.token, language });
     const page = await context.newPage();
-    await page.goto(`http://localhost:${WEB_PORT}${view.path}`, { waitUntil: 'networkidle' });
+    // A live order holds a long-poll open, so network idle may never come; the ready-button wait below decides.
+    await page.goto(`http://localhost:${WEB_PORT}${view.path}`, { waitUntil: 'load' });
     for (const name of view.open?.(t) ?? []) await page.getByRole('button', { name, exact: true }).or(page.getByRole('radio', { name, exact: true })).first().click();
     const ready = view.ready(t);
     const target = page.getByRole('button', typeof ready === 'string' ? { name: ready, exact: true } : { name: ready }).first();
