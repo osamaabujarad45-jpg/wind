@@ -76,7 +76,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
     <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }} onLayout={e => setRoom(Math.floor(e.nativeEvent.layout.height))}>
       <Animated.View style={[styles.sheet, sideStyle, { height: expanded, transform: [{ translateY: y }] }]}>
         <View {...pan.panHandlers} style={styles.handleArea}>
-          <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} accessibilityState={{ expanded: open }} style={styles.gripArea}>
+          <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} accessibilityState={{ expanded: open }} aria-expanded={open} style={styles.gripArea}>
             <View style={styles.grip} />
           </Pressable>
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>

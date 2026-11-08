@@ -692,8 +692,8 @@ function BookForm() {
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>
-             <Txt variant="micro">{smart?.standard ? c.standardParcel : c.recommendedPrice}</Txt>
-             <Txt variant="title">{quoting ? c.quote_calculating : quoteFailed ? c.quote_failed : smart ? money(smart.price) : c.quote_calculating}</Txt>
+            <Txt variant="micro">{smart?.standard ? c.standardParcel : c.recommendedPrice}</Txt>
+            <Txt variant="title">{quoting ? c.quote_calculating : quoteFailed ? c.quote_failed : smart ? money(smart.price) : c.quote_calculating}</Txt>
           </View>
         </Row>
         {smart?.standard

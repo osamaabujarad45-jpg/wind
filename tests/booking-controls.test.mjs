@@ -89,6 +89,9 @@ const picker = between(parts, 'export function SlotPicker', 'export function Ser
 for (const label of ['scheduleDay', 'scheduleTime']) assert.match(picker, new RegExp(`<FilterChips label=\\{c\\.${label}\\}`));
 assert.match(choices, /accessibilityState=\{\{ checked: on, disabled: !!disabled \}\}/, 'a choice reports its selected and disabled state');
 assert.match(chips, /accessibilityState=\{\{ checked: item\.key === value, disabled: !!disabled \}\}/, 'a chip reports its selected and disabled state');
+// react-native-web 0.21 drops accessibilityState: the browser only hears aria-checked.
+assert.match(choices, /aria-checked=\{on\}/, 'a choice is checked on the web too');
+assert.match(chips, /aria-checked=\{item\.key === value\}/, 'a chip is checked on the web too');
 assert.match(iconButton, /accessibilityState=\{\{ disabled: !!disabled \}\}/, 'an icon button reports its disabled state');
 assert.match(stepper, /accessibilityState=\{\{ disabled: disabled \|\| value <= min \}\}/, 'a stepper key reports its disabled state');
 assert.match(ui, /accessibilityState=\{\{ busy: !!loading \}\}/, 'a busy button says so');

@@ -281,7 +281,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
   return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
       const on = item.key === value;
-      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: !!disabled }} disabled={disabled}
+      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: !!disabled }} disabled={disabled} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
@@ -341,7 +341,7 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
   // shows it. A tap only recolours chips, so it never relays out and never scrolls.
   const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
   return <View accessibilityRole="radiogroup" accessibilityLabel={label}><Rail style={{ marginBottom: 10 }} contentStyle={{ paddingVertical: 4 }} reveal={box?.key === value ? box.layout : undefined}>
-    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value, disabled: !!disabled }} accessibilityLabel={item.label}
+    {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value, disabled: !!disabled }} accessibilityLabel={item.label} aria-checked={item.key === value}
       onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
       onPress={() => onChange(item.key)} disabled={disabled} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
       <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>

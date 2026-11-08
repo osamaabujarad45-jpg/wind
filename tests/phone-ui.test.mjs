@@ -96,7 +96,7 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   const sheet = readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8');
   assert.ok(Number(sheet.match(/const GRIP = (\d+)/)?.[1]) >= 48, 'the grip has a real 48dp target');
   assert.match(sheet, /gripArea: \{ height: GRIP/);
-  assert.match(sheet, /accessibilityState=\{\{ expanded: open \}\} style=\{styles\.gripArea\}/);
+  assert.match(sheet, /accessibilityState=\{\{ expanded: open \}\} aria-expanded=\{open\} style=\{styles\.gripArea\}/);
   const admin = readFileSync(new URL('../src/app/admin/index.tsx', import.meta.url), 'utf8');
   assert.match(admin, /\$\{c\.commissionRevenue\} \$\{money\(d\.commission\)\}, \$\{c\.subscriptionRevenue\} \$\{money\(d\.subscriptions\)\}/);
   assert.match(admin, /accessibilityState=\{\{ selected: i === selected \}\}/);
