@@ -22,6 +22,8 @@ Source files cited (all under `…\rea-full\resources\res\`):
 
 ## 1. COLOR ROLES — light + dark
 
+> **Scope note (9 Nov 2026):** the dark column is an observation record only. The canonical brief scopes day/night out (`REVIEW-2026-11-02-uber-full-stack-gap-analysis.md:156`); implement the light theme only. Dimensions quoted from the reference app throughout this document are observations of shape, not values to copy; choose Fastship's own.
+
 **OBSERVATION** — color roles are declared as theme **attributes** in `values\attrs.xml`
 (e.g. `attrs.xml:602 backgroundPrimary`, `attrs.xml:1860 contentPrimary`,
 `attrs.xml:1108-1114 brandGrey20/40/60/80`, `attrs.xml:2074 dividerHorizontal`,
@@ -504,14 +506,14 @@ target (`rgba(ink, 0.5)` light / `0.6` dark) in §1.3 / §7.
 Concrete values for the Fastship token object. It **imports** the existing `palette` and
 `size` from `src/ui.tsx` and **adds** a `theme` namespace — the existing exports
 (`palette`, `size`, `shadow`, `textVariants`, `Button`, `ListRow`, …) are untouched, so
-nothing breaks. Two new files: `src/design-tokens.ts` (the object) consumed optionally.
+nothing breaks. Two new files: `src/design-tokens.ts` (the object) consumed optionally. (Draft removed 9 Nov 2026, unused; recover from commit `b609229`.)
 
 The object mirrors Uber's two-tier structure (§1): **primitive roles** (`theme.light` /
 `theme.dark` color-role maps) + **scales** (`space`, `radius`, `elevation`, `type`,
 `control`, `button`, `listRow`, `bottomSheet`). All numbers come from §2-§6; all colors
 reference Fastship's `palette` (or rgba mixes of it) — no Uber hex is copied.
 
-See `src/design-tokens.ts` for the ready-to-import implementation. Summary of what it
+See `src/design-tokens.ts` at commit `b609229` for the draft implementation (removed 9 Nov 2026). Summary of what it
 exposes:
 
 - `theme.light` / `theme.dark` — color-role maps keyed by Fastship role names from §1.3

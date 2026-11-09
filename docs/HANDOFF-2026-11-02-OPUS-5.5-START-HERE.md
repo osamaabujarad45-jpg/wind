@@ -4,7 +4,9 @@
 
 This is the only project document needed to begin the next implementation pass. It is written from Fastship source and tests. Work in small, verified batches; inspect the current source before changing a claim below.
 
-The workspace is intentionally dirty. Preserve all existing changes. Do not reset, clean, bulk-stage, or overwrite files outside the selected batch. The research pack and this handoff are preserved by local commit `0ead4d1` and tag `fastship-study-2026-11-02`; no push or deployment has occurred.
+**Snapshot notice (9 Nov 2026):** this pack records the source tree as studied on 2 Nov 2026. `origin/master` has moved since (for example the map-ready deadline at `src/route-map.native.tsx:175` now reads `mapReadyMs()`), so every file:line anchor and count below and in the linked documents is a 2 Nov record; re-check it on current `origin/master` before acting. Branches cut from the old local `master` lineage lack `src/runtime-config.ts` and `tests/google-map-lifecycle.test.mjs`.
+
+The main checkout was dirty when this was written. Inspect `git status` and preserve changes you did not make. Do not reset, clean, bulk-stage, or overwrite files outside the selected batch. The research pack and this handoff are preserved by local commit `0ead4d1` and tag `fastship-study-2026-11-02` (the later tag `fastship-claude-handoff-2026-11-02` marks `992e70f`); as of 2 Nov 2026 no push or deployment had occurred.
 
 ## Session study
 
@@ -55,7 +57,7 @@ Use the physical Android phone for acceptance. iOS-only behavior needs an iOS de
 | Ready deadline setting | `src/runtime-config.ts` defines `mapReadyTimeoutMs`, while map implementations contain literals. | Use the existing setting consistently, including WebView configuration and test stubs. |
 | Route ETA | `src/api.ts` enables the current protocol and server route code emits ETA data. | Do not add duplicate protocol plumbing. Check expiry and display behavior only where a user-visible gap remains. |
 | Polling and live updates | Server credentials and cursor metadata exist; consumers must be checked before wiring. | Make this a separate contract batch with authorization, expiry, resume, and fallback tests. |
-| UI tokens | `src/ui.tsx` is live. The draft `src/design-tokens.ts` and `docs/rea-work/fastship-screens-2026-11-02.zip` were removed on 9 Nov 2026 (unused; recover from commit `b609229`). Older docs still mention them. | Reuse existing tokens. Screenshots live in `docs/screens/` (`npm run screens`). |
+| UI tokens | `src/ui.tsx` is live. The draft `src/design-tokens.ts` was removed on 9 Nov 2026 as unused; recover it from commit `b609229`. `docs/rea-work/fastship-screens-2026-11-02.zip` stays: it is the only committed copy of the 92 state captures of 26 Oct from the git-ignored `.screens/states-out/`. | Reuse existing tokens. Current screenshots live in `docs/screens/` (`npm run screens`). |
 
 ## Work order
 
@@ -70,9 +72,9 @@ Use the physical Android phone for acceptance. iOS-only behavior needs an iOS de
 
 ## Validation and release evidence
 
-The local study run reported passing client and server type checks, and lint with two existing dependency warnings in `src/google-map.native.tsx` and `src/route-map.native.tsx`. The map and billing gates passed. The lifecycle test reproduces the first task above.
+The local study run reported passing client and server type checks, and lint with two dependency warnings (2 Nov count) in `src/google-map.native.tsx` and `src/route-map.native.tsx`. The map and billing gates passed. The lifecycle test reproduces the first task above.
 
-K5 was reachable, but its test copy was not verified against this workspace. Before relying on remote results, create a source manifest for the selected revision. A full database-backed suite and current device acceptance remain required before release.
+Tests run on the remote test PC named in `AGENTS.md` and the owner's global rules, never on the owner's own PC. K5 was reachable, but its test copy was not verified against this workspace. Before relying on remote results, create a source manifest for the selected revision. A full database-backed suite and current device acceptance remain required before release.
 
 ## Preservation record
 

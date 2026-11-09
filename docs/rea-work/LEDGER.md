@@ -120,3 +120,15 @@ Found 4 Claude subagents of this thread paused on the 5-hour limit. Read all 4 c
 ## Closure review — 2026-11-02
 
 Created `docs/HANDOFF-2026-11-02-OPUS-5.5-START-HERE.md` as the reconciled entry point and `CLOSURE-INVENTORY.json` for artifact hashes. Corrected master RTL guidance, duplicate NEW-4/DEAD-1 classification, typed-error claim, blocked DeepSeek attribution; API-study correlation-ID absence claim; token-spec grabber inconsistency; and cancellation wording above. K5 existing-copy gates pass, lifecycle still fails at 183. Current local typechecks pass; lint has 0 errors/2 existing hook warnings. No app edits, commit, push, deployment, new device acceptance or exhaustive raw-source re-verification in closure. See handoff for scope and remaining work.
+
+## Review corrections — 2026-11-09
+
+Appended, not rewritten. A two-axis review of this pack (standards, spec) led to these changes:
+
+- Removed `src/design-tokens.ts` in `6935c93` (unused; it remains in `b609229`). This closes the open decision above: the draft is docs history, not app code. The same commit also removed `docs/rea-work/fastship-screens-2026-11-02.zip` on the wrong premise that it duplicated `docs/screens/`; it is the committed copy of the git-ignored `.screens/states-out/` captures and was restored unchanged (sha256 `d5a4773e…7274`).
+- START-HERE now carries a snapshot notice: anchors and counts are a 2 Nov record. `origin/master` at 9 Nov already reads `mapReadyMs()` at the NEW-4/DEAD-1 site.
+- MASTER now classes NEW-4/DEAD-1 as one defect, matching the knowledge map.
+- UI-layer study: removed the copied `400 ms` duration (three places). Token spec: dark column and source dimensions marked observation-only.
+- `CLAUDE.md`: restored pointers to the earlier handoffs.
+- Route census floor: at least 1,030 routes (1,030 and 1,046 above came from different counting methods).
+- Still partial, as disclosed above: the full database-backed suite was not run and no exhaustive raw-source re-verification was done at closure. Earlier sections of this ledger were edited in place before today; from here on entries are appended only.

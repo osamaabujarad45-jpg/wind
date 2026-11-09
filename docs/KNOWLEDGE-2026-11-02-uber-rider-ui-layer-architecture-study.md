@@ -409,9 +409,9 @@ Fonts: `@font/uber_move_text_medium`, `?attr/mediumFontPath` (Uber Move).
 `contact_panel_slide_up/down`, `details_list_slide_up/down`,
 `multi_checklist_slide_*`, `animate_sub_navigation_*`.
 
-Representative: `ub__fade_push_up_in.xml` = `<set duration=400>` → `translate
-fromYDelta=30%p toYDelta=0` + `alpha fromAlpha=0 toAlpha=1`. **[I]** The
-canonical "sheet content enters" animation — 30% slide-up + fade, 400 ms.
+Representative: `ub__fade_push_up_in.xml` = a slide-up translate plus an alpha
+fade-in (source values deliberately not recorded). **[I]** The
+canonical "sheet content enters" animation — slide-up + fade (pattern only; choose Fastship's own distance and duration).
 
 **`animator/`** (object/StateList animators) **[O]**: Material `m3_*`, `mtrl_*`
 + Uber custom: `active_raise.xml` (button-press raise), `header_elevation.xml`,
@@ -469,7 +469,7 @@ containers. `stateListAnimator` is the primary press/elevation motion vehicle.
    demand, each carrying an `analyticsId`. Receipts push this furthest — the
    receipt body is a **WebView** inside a collapsing toolbar.
 7. **Motion is restrained and Material-based.** Custom anims are mostly
-   `fade+push_up` 400 ms variants; no custom interpolators (Material 3
+   `fade+push_up` variants; no custom interpolators (Material 3
    `m3_sys_motion_easing_*`); StateList animators (`active_raise`,
    `header_elevation`) drive press and app-bar elevation; FAB→sheet
    transformations reuse Material specs.
@@ -492,7 +492,7 @@ containers. `stateListAnimator` is the primary press/elevation motion vehicle.
 | SDUI list-row with ~20 ViewStub slots + Barriers | **Adopt the slot idea, drastically reduce** | `<Row leadingImage title subtitle trailing Action>` (~6 slots); don't build the 20-slot machine. |
 | Receipt = WebView inside collapsing header | **Adopt for receipts only** | `react-native-webview` inside a `ScrollView` with an animated header. |
 | `active_raise` / `header_elevation` StateList animators | **Skip** | RN uses Reanimated `pressIn` scale 0.98 + shadow change; no StateList XML. |
-| `ub__fade_push_up_in` (400 ms, 30% slide + fade) | **Adopt** | One Reanimated preset `enterFromBottom` reused for sheet content, toasts, banners. |
+| `ub__fade_push_up_in` (slide + fade; own values) | **Adopt** | One Reanimated preset `enterFromBottom` reused for sheet content, toasts, banners. |
 | Material 3 motion easing (`m3_sys_motion_easing_*`) | **Adopt** | Use Easing.bezier(0.2,0,0,1) / (0.05,0,0.66,0.66) presets. |
 | XML `<transition>` (only 1 file) | **Skip** | RN has no equivalent; use Reanimated layout animations. |
 | RIB architecture (Router/Interactor/Builder per screen) | **Skip the framework, adopt the separation** | Expo Router files = screens; keep a `useScreenInteractor` hook (state/effect logic) separate from the view. |

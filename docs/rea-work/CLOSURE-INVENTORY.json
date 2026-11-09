@@ -126,8 +126,8 @@
     {
       "path": "src/design-tokens.ts",
       "group": "session-2026-11-02",
-      "note": "UNAPPROVED draft token layer; imported by nothing",
-      "preservation": "committed-local",
+      "note": "UNAPPROVED draft token layer; imported by nothing; removed 2026-11-09 in 6935c93, last present in b609229",
+      "preservation": "git-history",
       "sha256": "552813953fd23c96b6381d0862f22602e4bedfc379b05f4f754bdba840c76e49",
       "bytes": 14237
     },

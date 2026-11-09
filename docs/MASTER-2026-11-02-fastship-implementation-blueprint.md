@@ -32,7 +32,7 @@ Palestinian market. Three client surfaces share one backend:
 - **Order + receipt** — `src/app/order/[id].tsx`, `src/app/receipt/[id].tsx`.
 
 **Backend** — `server/main.ts` (hand-rolled `route('GET'|'POST','/api/...')`) +
-36 domain modules in `server/domain/` (dispatch, quotes, ride-lifecycle, realtime,
+36 domain modules (2 Nov count; re-count on current master) in `server/domain/` (dispatch, quotes, ride-lifecycle, realtime,
 google-routing, money, cash-ops, payments, phone-identity, entra, journey, ledger,
 presence, route-quality, …). **New money work uses integer minor units** (`money.ts`,
 `cashOwed` uses `BigInt` to avoid safe-integer overflow) — **but legacy orders still
@@ -102,7 +102,7 @@ These are confirmed against Fastship code. Full fixes + acceptance criteria are 
 | **NEW-3** [LOW] | heading animation truncates | `src/google-map.web.tsx:173,181-182` | Converge heading on the same completion condition as position, or snap at glide end. |
 | **BUG-2** [P] | iOS pin-confirm hang | `src/route-map.native.tsx:188`, `src/google-map.native.tsx:121`, **and the sheet's own strict compare** `src/pin-sheet.tsx:62` | Loosen tolerance `0.000001`→`~1e-4` in **both** the renderer **and** the sheet (the sheet also rejects a non-identical completion); always clear `pendingCenter`; add a positioning deadline. **[needs device]** |
 | **BUG-4** [P] | Android map cold-start needs server `map.html` | `src/route-map.android.tsx:17` | Serve `/map/v1/map.html` with long-lived cache headers. |
-| **NEW-4 / DEAD-1** [enhancement, duplicate] | hardcoded 20 s map-ready timeout (already covered by DEAD-1) | `src/route-map.native.tsx:175` | Extract the `20_000` ms ready-deadline to a named constant/config; consider a shorter value or a retry-with-backoff before failing to the retry button. Found by the resumed Haiku pass — verified in source. |
+| **NEW-4 / DEAD-1** [one defect, same item as DEAD-1] | hardcoded 20 s map-ready timeout (on `origin/master` at 9 Nov 2026 this site already reads `mapReadyMs()`) | `src/route-map.native.tsx:175` | Extract the `20_000` ms ready-deadline to a named constant/config; consider a shorter value or a retry-with-backoff before failing to the retry button. Found by the resumed Haiku pass — verified in source. |
 
 ---
 
@@ -142,8 +142,8 @@ matrix, list-row, bottom-sheet). Key verified values:
    `divider`, `icon`, `brand.*`, `intent.{error,success,warning}`, `state.{hover,pressed}`).
    **All colors come from Fastship's `palette`** (alpha overlays for shades) — never
    Uber brand hex. **Single light theme** — do NOT add a dark variant (the canonical
-   brief scopes day/night out). *(Note: the reference token file `src/design-tokens.ts`
-   includes a dark block — see the decision note in §13; use only its light theme.)*
+   brief scopes day/night out). *(Note: the draft token file `src/design-tokens.ts`
+   was removed 9 Nov 2026, unused; recover from commit `b609229`.)*
 4. **Type scale** — compress to ~12 roles you actually use: Display / H1–H6 / Label
    (L/D/S) / Body (L/M/S) / Paragraph (L/D/S). Weight lives in the font (≈300 light
    display / 400 regular / 500 medium / 700 bold — see the tokens doc's corrected note:
@@ -170,8 +170,8 @@ Label L·D·S/Body L·M·S/Paragraph L·D·S) onto Fastship's text components �
 wholesale 42-role migration. Also note its `letterSpacing` values are raw Android-style
 fractions and need conversion before use in RN (they are **not** drop-in).
 
-**Reference implementation available:** the extraction also produced a ready-to-import
-`src/design-tokens.ts` (opt-in `theme`/`space`/`radius`/`elevation`/`type`/`button`/
+**Reference implementation available:** the extraction also produced a draft
+`src/design-tokens.ts` (removed 9 Nov 2026, unused; recover from commit `b609229`; was opt-in `theme`/`space`/`radius`/`elevation`/`type`/`button`/
 `listRow`/`bottomSheet` namespaces that **extend, not modify**, `src/ui.tsx`; verified
 not to mutate `palette`/`size`). **Caveats if you adopt it:** (a) only the `light`
 theme (see §13 — dark is scoped out); (b) its button shape matrix is incomplete (only
@@ -389,7 +389,7 @@ quality, P1 = differentiator, P2 = later.
 - `SPEC-2026-11-02-fastship-per-screen-build-specs.md` — per-screen build specs
 - `BUILD-SPEC-2026-11-02-fastship-map-uber-patterns.md` — full map build spec
 - `competitive-architecture-uber-tokens.md` — full design-token numeric spec (color roles / type / spacing / elevation / button / list-row / bottom-sheet)
-- `../src/design-tokens.ts` — ready-to-import token layer (opt-in; **see §13 decision note**)
+- `../src/design-tokens.ts` — draft token layer, removed 9 Nov 2026, unused; recover from commit `b609229` (**see §13 decision note**)
 - `docs/rea-work/DECOMPILE-ACCESS.md` — how to look up raw decompile specifics
 - `docs/rea-work/LEDGER.md` — verification log
 

@@ -7,6 +7,8 @@ metadata:
 
 # REA → Gap Analysis → Handoff Knowledge
 
+> Reference copy only: it is not under `.claude/skills/`, so nothing loads it. Tool, model and host names below record the 2 Nov 2026 session, not requirements.
+
 A repeatable workflow for turning a shipped reference app's decompiled source into **verified, implementation-ready knowledge** for our own app — without tripping AI-provider safety flags and without violating the reference app's rights.
 
 Inspired by [claude-mem](https://github.com/thedotmack/claude-mem) (persistent memory: capture → compress → recall) and the [REA (`morluto/rea`)](https://github.com/morluto/rea) methodology (lawful static analysis, artifact-bound evidence, observation/inference/unknown).

@@ -78,7 +78,7 @@ never a bare MapView, and always keep the provider boundary intact.
 
 ## 4. Design-token knowledge (numbers — Fastship palette, not brand hex)
 
-Source: `competitive-architecture-uber-tokens.md` + the unapproved draft `src/design-tokens.ts`.
+Source: `competitive-architecture-uber-tokens.md` + the draft `src/design-tokens.ts` (removed 9 Nov 2026, unused; recover from commit `b609229`).
 
 - **Spacing** — 8 dp base grid, `0x…16x` (0, 4, 8, 12, 16, 24, 32, 40, 48, 56, 64, 96, 128).
   Two legacy off-grid values exist; ignore them.
@@ -95,7 +95,7 @@ Source: `competitive-architecture-uber-tokens.md` + the unapproved draft `src/de
 - **Color** — two-tier: primitive roles (light/dark) + a semantic layer mapping
   negative/positive/warning/brand onto them. The day/night entry parents the **light** block.
   Express everything as Fastship `palette` + `withAlpha` overlays — no third-party hex.
-- **`src/design-tokens.ts`** — opt-in draft. Before importing: light theme only; replace its 2
+- **`src/design-tokens.ts`** — removed 9 Nov 2026, unused; recover from commit `b609229`. If revived: light theme only; replace its 2
   literal hex values with `withAlpha(palette…)`; its grabber is 32×4 (change to 48×4);
   letterSpacing values need RN conversion. Adopt selectively via `src/ui.tsx`, never wholesale.
 
@@ -153,7 +153,7 @@ cross-checks, confirmed in `rea-work/LEDGER.md`.
 
 | Worker | Task | Delivered | Reliability |
 |---|---|---|---|
-| **GLM 5.2 (Baseten)** | Token system + per-screen specs + one verify pass | `competitive-architecture-uber-tokens.md`, `SPEC-…per-screen-build-specs.md`, `src/design-tokens.ts` | **High.** Its extraction claims were independently re-verified (0 false). The token module is an unapproved draft — review before use. |
+| **GLM 5.2 (Baseten)** | Token system + per-screen specs + one verify pass | `competitive-architecture-uber-tokens.md`, `SPEC-…per-screen-build-specs.md`, `src/design-tokens.ts` | **High.** Its extraction claims were independently re-verified (0 false). The token module was an unapproved draft; removed 9 Nov 2026 (in commit `b609229`). |
 | **Kimi K3 (AWS Bedrock)** | Map-pattern spec + one verify pass | `BUILD-SPEC-…map-uber-patterns.md`, pass-1 API study | **High on map** (0 false). Its pass-1 API study was **superseded** by the Sonnet pass-2 — prefer pass-2. |
 | **Sol (Codex) ×2** | Fastship-side review of handoff + master | 35 issues, all fixed in the docs | **High.** Verified every Fastship anchor with no drift; gates/typecheck pass. |
 | **Claude Sonnet 5.5 (claudeAgent, "6028")** | Pass-2 API/backend re-verification | Rewrote the API study: 14 corrections + the Fastship-side gap table | **Highest-value single pass.** Corrected pass-1 (e.g. text search is a gRPC call, not a REST route) and proved the realtime-client gap. Spot-check its census counts before citing a number. |

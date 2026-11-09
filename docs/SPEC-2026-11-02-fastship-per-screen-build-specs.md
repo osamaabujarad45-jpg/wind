@@ -105,7 +105,7 @@ Root `TextSearchV2View` → vertical `ULinearLayout` (`bg=?attr/backgroundPrimar
 ### 5. MOTION  [O] / [I]
 
 - Sheet slides via `design_bottom_sheet_slide_in.xml` / `_slide_out.xml` (Material default ~200 ms).
-- Content entering the sheet uses `ub__fade_push_up_in.xml` — `<set duration=400>` translate `fromYDelta=30%p→0` + `alpha 0→1`. **[I]** The canonical "sheet content enters" animation: 400 ms, 30% slide-up + fade.
+- Content entering the sheet uses `ub__fade_push_up_in.xml` — a slide-up translate plus alpha fade-in (source values not recorded here; choose Fastship's own). **[I]** The canonical "sheet content enters" animation: slide-up + fade (own values).
 
 ### Fastship implementation note  [I]
 
@@ -160,7 +160,7 @@ A `#loading_container` (`UFrameLayout`, `invisible`, `layout_gravity=bottom`, he
 ### 5. MOTION  [O] / [I]
 
 - `BaseHeader` carries `header_state=collapse` — collapses on scroll.
-- The confirm row slides up from the bottom — **[I]** uses the canonical `ub__fade_push_up_in.xml` (400 ms, 30% slide + fade).
+- The confirm row slides up from the bottom — **[I]** uses the canonical `ub__fade_push_up_in.xml` (slide + fade; own values).
 - Back arrow is a tap target; no explicit anim ref (uses `?selectableItemBackground`).
 
 ### Fastship implementation note  [I]
