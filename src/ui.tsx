@@ -33,7 +33,7 @@ export const palette = {
   line: '#E2E1D8',
   hair: '#ECEBE4',
   mapWash: '#E6ECE3', // map placeholder and failure ground, before tiles draw
-  dash: '#B4B3A8', // non-text marks that must show on paper, muted and white alike: disabled button edge, sheet grip
+  dash: '#B4B3A8', // non-text marks on paper, muted or white (1.7–2.1:1): disabled button edge, sheet grip
   muted: '#EAE8DF',
   error: '#A3392A',
   onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills

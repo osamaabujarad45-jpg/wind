@@ -202,7 +202,7 @@ export default function Jobs() {
           </Txt>
         </Row>
       </Press>
-      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read ~1.8:1 */}
+      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read 2.4:1 */}
     </Card>}
 
     {/* During a job presence is stopped (driver-work) and Go online can't be pressed; the card returns if it has something to say. */}
