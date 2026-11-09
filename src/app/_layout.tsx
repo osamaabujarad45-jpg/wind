@@ -21,7 +21,7 @@ SplashScreen.preventAutoHideAsync();
 if (Platform.OS === 'web') Font.loadAsync({
   'ReadexPro-Bold': require('../../assets/fonts/ReadexPro-Bold.ttf'),
   'ReadexPro-SemiBold': require('../../assets/fonts/ReadexPro-SemiBold.ttf'),
-}).catch(() => { /* headings fall back to the system font */ });
+}).catch(() => { /* headings fall back to the system font at regular weight: still the largest, darkest text on screen */ });
 
 export default function RootLayout() {
   return <SessionProvider>
