@@ -55,7 +55,7 @@ Use the physical Android phone for acceptance. iOS-only behavior needs an iOS de
 | Ready deadline setting | `src/runtime-config.ts` defines `mapReadyTimeoutMs`, while map implementations contain literals. | Use the existing setting consistently, including WebView configuration and test stubs. |
 | Route ETA | `src/api.ts` enables the current protocol and server route code emits ETA data. | Do not add duplicate protocol plumbing. Check expiry and display behavior only where a user-visible gap remains. |
 | Polling and live updates | Server credentials and cursor metadata exist; consumers must be checked before wiring. | Make this a separate contract batch with authorization, expiry, resume, and fallback tests. |
-| UI tokens | `src/ui.tsx` is live; `src/design-tokens.ts` is an unapproved draft. | Reuse existing tokens first. Import a small reviewed subset only when a selected screen needs it. |
+| UI tokens | `src/ui.tsx` is live. The draft `src/design-tokens.ts` and `docs/rea-work/fastship-screens-2026-11-02.zip` were removed on 9 Nov 2026 (unused; recover from commit `b609229`). Older docs still mention them. | Reuse existing tokens. Screenshots live in `docs/screens/` (`npm run screens`). |
 
 ## Work order
 
