@@ -131,7 +131,8 @@ export default function Home() {
           {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
             <Press accessibilityLabel={c[service]} onPress={() => book({ service })} style={[styles.tile, shadow, { flexDirection: row }]}>
               <ServiceIcon service={service} size={28} />
-              <Txt variant="label" numberOfLines={2} style={{ flexShrink: 1, fontSize: 12 }}>{c[service]}</Txt>
+              {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
+              <Txt variant="label" numberOfLines={2} style={{ flex: 1, fontSize: 12 }}>{c[service]}</Txt>
             </Press>
           </Appear>)}
         </Row>

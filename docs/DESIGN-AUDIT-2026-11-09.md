@@ -29,6 +29,7 @@ screenshot run has no OSRM, so missing route lines are expected (`route-map.nati
 | 4 | During an active job, Jobs still showed the presence card: "Offline", a disabled Go online, and "You have a job in progress…". Presence is stopped during a job anyway (`driver-work.tsx`), so the card was noise above the job. | The card is hidden while a job is assigned, unless it has an error or a pending change to show. | screens re-rendered (driver-jobs) |
 | 5 | Token drift: `#E6ECE3` written out 5 times for the map placeholder, the olive and clay marker hexes copied into two native map files, and the sheet grip set as a literal. | Added `palette.mapWash` and `palette.dash` (the grip moves from `#C9C8BE` to `#B4B3A8`, a little darker on purpose). The markers use `palette.olive` and `palette.clay`. | tsc, grep shows no literals left |
 | 6 | Order delivered: the heading said "Thanks for rating" while the price question under it was still open. | New copy key `thanksDriver` ("Thanks for rating your driver" / "شكراً لتقييم السائق") for the driver rating heading. The driver's rating of the customer keeps `thanks`. | tsc, screens re-rendered (order-done) |
+| 7 | Found only on the A53 (native): the Ride tile on Home read "مشوا", its last letter cut. Android measured the Arabic label narrower than it draws, and the label only had `flexShrink`. | The label takes `flex: 1`, so its box is the tile's free width, not the measured text width. | QA customer APK built from this tree, on the A53: "مشوار" in full |
 
 ## Open, needs an owner decision
 
