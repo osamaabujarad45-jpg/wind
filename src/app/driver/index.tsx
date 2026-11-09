@@ -192,19 +192,21 @@ export default function Jobs() {
     <MapSheet open={manualOpen ?? (!!jobs?.length || cursors.length > 0 || pagingUnavailable || !!error || !!work.error || !!actionError)} onOpenChange={setManualOpen} onPeek={setPeek} safeBottom={false} expandedRatio={0.78} onRefresh={async () => { await Promise.all([reload(), work.reload()]); }}
       header={<View style={{ paddingBottom: 10 }}>
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
-    {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
+    {/* Forest while sharing; a plain clay warning when off, not a clay pill boxed inside a dark card. */}
+    {assigned && work.known && <Card tone={located ? 'forest' : 'clay'} style={{ paddingVertical: 12 }}>
       <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
-        <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.clayPale }]}>
+        <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.card }]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.clayInk} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.clayInk }}>
             {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
         </Row>
       </Press>
-      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayInk }}>{c.backgroundTrackingWarn}</Txt>}
+      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read 2.4:1 */}
     </Card>}
 
-    {presenceOn ? <>
+    {/* During a job presence is stopped (driver-work) and Go online can't be pressed; the card returns if it has something to say. */}
+    {presenceOn && !(assigned && !work.presenceError && !work.presencePending) ? <>
       {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
       <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
         <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}

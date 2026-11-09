@@ -311,7 +311,7 @@ const bearingOf = (a: { latitude: number; longitude: number }, b: { latitude: nu
 
 const styles = StyleSheet.create({
   placeholder: { justifyContent: 'center' },
-  failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },
+  failure: { backgroundColor: palette.mapWash, justifyContent: 'center', alignItems: 'center' },
   recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
   retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },

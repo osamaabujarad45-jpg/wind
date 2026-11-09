@@ -32,6 +32,8 @@ export const palette = {
   bluePale: '#E6EDF6',
   line: '#E2E1D8',
   hair: '#ECEBE4',
+  mapWash: '#E6ECE3', // map placeholder and failure ground, before tiles draw
+  dash: '#B4B3A8', // non-text marks on paper, muted or white (1.7–2.1:1): disabled button edge, sheet grip
   muted: '#EAE8DF',
   error: '#A3392A',
   onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills
@@ -249,12 +251,14 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
   const small = s === 'sm';
-  // Disabled keeps its shape and label on a paper fill with secondary text (5.6:1), not a 50% wash of the tone. A busy button
-  // keeps its colours so the spinner reads as work in progress. Callers add a <Reason> under it saying why it waits.
+  // Disabled keeps its shape and label on a paper fill with secondary text (5.6:1), not a 50% wash of the tone. Its edge is
+  // dashed: a solid-bordered paper fill read the same as an enabled outline button (driver jobs, report form), and a flat
+  // muted fill vanished on muted cards. A busy button keeps its colours so the spinner reads as work in progress.
+  // Callers add a <Reason> under it saying why it waits.
   const off = !!disabled && !loading;
   const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
   const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
-    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, (off || variant === 'outline') && styles.outline,
+    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, off ? styles.buttonOff : variant === 'outline' && styles.outline,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
@@ -563,6 +567,7 @@ const styles = StyleSheet.create({
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },
   buttonSmall: { minHeight: size.control, borderRadius: size.control / 2, paddingHorizontal: 14 },
   outline: { borderWidth: 1, borderColor: palette.line },
+  buttonOff: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: palette.dash },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
   choiceText: { color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },

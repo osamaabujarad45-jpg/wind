@@ -67,7 +67,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
 }
 
 const styles = StyleSheet.create({
-  preview: { height: 156, backgroundColor: '#E6ECE3', overflow: 'hidden' },
+  preview: { height: 156, backgroundColor: palette.mapWash, overflow: 'hidden' },
   fill: { height: '100%' },
   road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },

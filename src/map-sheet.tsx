@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   sideLeft: { left: 0, right: 'auto', width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,
   gripArea: { height: GRIP, alignItems: 'center', justifyContent: 'center' },
-  grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#C9C8BE' },
+  grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: palette.dash },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 10, backgroundColor: palette.paper,
     borderTopWidth: 1, borderTopColor: palette.hair },
 });
