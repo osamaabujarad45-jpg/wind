@@ -48,6 +48,8 @@ export const sheetShadow: ViewStyle = { boxShadow: '0px -2px 16px rgba(14,31,25,
 // Compact scale (Material 3 / Apple HIG): 14pt body, 36–48pt controls, every tap target ≥ 48dp in its own box.
 // A hitSlop only reaches over the control beside it, and the sibling on top takes the tap, so the box carries the target.
 export const size = { control: 48, small: 36, row: 52, radius: 16, gutter: 16 };
+// Icon sizes: one scale, so glyphs keep the same rhythm across screens (odd 15/17/19 were snapped to it).
+export const iconSize = { xs: 14, sm: 16, md: 18, lg: 20, xl: 22 } as const;
 
 const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 export type IconName = keyof typeof Ionicons.glyphMap;
@@ -160,7 +162,7 @@ export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
     accessibilityState={{ disabled: !!disabled }}
     style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
-    <Ionicons name={icon} size={19} color={tone === 'forest' ? palette.lime : palette.ink} />
+    <Ionicons name={icon} size={iconSize.lg} color={tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
 }
 
@@ -382,7 +384,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
-      {icon && <Ionicons name={icon} size={17} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
+      {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
       <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
@@ -454,7 +456,7 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
   const { row, rtl, align, language } = useCopy();
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
-    <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={17} color={t.fg} /></View>
+    <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={iconSize.md} color={t.fg} /></View>
     <Text key={language} numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text style={styles.listValue}>{value}</Text>}
     {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}

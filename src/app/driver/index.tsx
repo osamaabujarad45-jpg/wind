@@ -16,7 +16,7 @@ import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-fl
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
+import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 
@@ -258,7 +258,7 @@ export default function Jobs() {
               </View>
             </Row>
             {order.discount > 0 && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
-              <Ionicons name="cash-outline" size={15} color={palette.olive} />
+              <Ionicons name="cash-outline" size={iconSize.sm} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.collectCash, { p: money(order.price - order.discount) })}</Txt>
             </Row>}
             {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>

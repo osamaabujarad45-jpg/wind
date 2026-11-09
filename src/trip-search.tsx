@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
 import { city, cities, servedCity, type CityId, type Places, type Point } from './model';
 import { searchPlaces, type MapHit } from './place-search';
-import { Button, ErrorText, haptic, IconButton, palette, Press, Txt, useCopy, type IconName } from './ui';
+import { Button, ErrorText, haptic, IconButton, iconSize, palette, Press, Txt, useCopy, type IconName } from './ui';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
 export type TripField = 'pickup' | 'dropoff';
@@ -20,7 +20,7 @@ function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title
   const { c, row, align } = useCopy();
   return <View style={[styles.rowWrap, { flexDirection: row }]}>
     <Press containerStyle={{ flex: 1 }} accessibilityLabel={detail ? `${title}, ${detail}` : title} onPress={onPress} style={[styles.row, { flexDirection: row }]}>
-      <View style={styles.rowIcon}><Ionicons name={icon} size={17} color={palette.secondary} /></View>
+      <View style={styles.rowIcon}><Ionicons name={icon} size={iconSize.md} color={palette.secondary} /></View>
       <View style={{ flex: 1 }}>
         <Txt variant="title" numberOfLines={1} style={{ textAlign: align }}>{title}</Txt>
         {!!detail && <Txt variant="micro" numberOfLines={1} style={{ textAlign: align }}>{detail}</Txt>}
@@ -93,7 +93,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
     </View>
     <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
       {field === 'pickup' && <Press accessibilityLabel={c.useLocation} onPress={onLocate} disabled={locating} style={[styles.row, styles.rowLine, { flexDirection: row }]}>
-        <View style={[styles.rowIcon, { backgroundColor: palette.olivePale }]}>{locating ? <ActivityIndicator size="small" color={palette.olive} /> : <Ionicons name="navigate" size={17} color={palette.olive} />}</View>
+        <View style={[styles.rowIcon, { backgroundColor: palette.olivePale }]}>{locating ? <ActivityIndicator size="small" color={palette.olive} /> : <Ionicons name="navigate" size={iconSize.md} color={palette.olive} />}</View>
         <Txt variant="title" style={{ flex: 1, textAlign: align }}>{locating ? c.locating : c.useLocation}</Txt>
       </Press>}
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8, textAlign: align }}>{locationError}</Txt>}
