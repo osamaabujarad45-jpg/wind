@@ -173,7 +173,8 @@ export default function Jobs() {
     <VerifyEmailNudge />
     {/* Without a configured support line there is nothing to contact: promise the call-back admins are now alerted for (SPEC-pending-driver-help.md). */}
     <Empty icon="shield-checkmark-outline" title={c.pendingTitle} body={SUPPORT_URL ? c.pendingDesc : fill(c.pendingCallBack, { phone: ltr(me?.user.phone ?? '') })}
-      action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
+      action={SUPPORT_URL ? <Button title={SUPPORT_URL.startsWith('https://wa.me/') ? c.whatsappSupport : c.support}
+        icon={SUPPORT_URL.startsWith('https://wa.me/') ? 'logo-whatsapp' : 'chatbubble-ellipses-outline'} variant="soft" onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />
   </Screen>;
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>

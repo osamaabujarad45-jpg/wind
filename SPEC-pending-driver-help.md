@@ -11,7 +11,7 @@ instruction cannot be followed.
 
 ## Design (client only)
 
-- With a support line configured: the same text plus «راسلنا على واتساب».
+- With a support line configured: «يتحقق فريق ويند من بياناتك قبل أول طلب. راسلنا لترتيب التحقق، ثم تظهر لك الطلبات هنا.» plus «راسلنا على واتساب» (or «تواصل مع الدعم» when the line is email or a web page). Updated 9 Nov 2026.
 - Without one: «وصل طلبك لفريق ويند. سنتصل بك على <phone> لترتيب التحقق، ثم تظهر لك الطلبات هنا.» Admins are now
   alerted on every driver signup (SPEC-driver-signup-alert.md), so the call-back is a promise the system supports.
 

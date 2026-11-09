@@ -362,7 +362,7 @@ export function PasswordCard() {
     <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password" />
     <Field label={c.newPassword} value={next} onChangeText={setNext} placeholder={c.passwordHint} secureTextEntry autoComplete="new-password" />
     <ErrorText>{error}</ErrorText>
-    <Row gap={8}>
+    <Row gap={8} style={{ alignItems: 'flex-start' }}>{/* a disabled Save carries its reason below; Cancel stays level with Save */}
       <View style={{ flex: 1 }}><Button title={c.save} onPress={() => { void save(); }} loading={busy} disabled={!current || next.length < 12 || next.length > 100} reason={c.password_rule} /></View>
       <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" onPress={() => setOpen(false)} /></View>
     </Row>
