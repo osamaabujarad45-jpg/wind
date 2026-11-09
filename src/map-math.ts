@@ -90,9 +90,14 @@ export function routeFramePoints({ pickup, dropoff, driver, focus, road, approac
 
 /** Map label expression for the app language (OpenMapTiles name fields). */
 // Arabic falls back to the Latin name before the local one, so places without an Arabic name are still readable.
+// The local name is the last resort, and is dropped when it is Hebrew script: neither the Arabic nor the English
+// app reader can use it (street names at driver zoom). Places stay labelled through name:ar / name:en / name:latin.
+// ponytail: letter probe, not a script test; a Hebrew name with none of these twelve letters would still show.
+const localName = ['let', 'n', ['to-string', ['get', 'name']],
+  ['case', ['any', ...[...'אבהוילמרתנשק'].map(letter => ['>=', ['index-of', letter, ['var', 'n']], 0])], '', ['var', 'n']]];
 export const labelField = (language: 'ar' | 'en') => language === 'ar'
-  ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]
-  : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
+  ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], localName]
+  : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], localName];
 
 /** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];

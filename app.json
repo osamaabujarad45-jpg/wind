@@ -46,7 +46,7 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ],
-      "expo-font",
+      ["expo-font", { "fonts": ["./assets/fonts/ReadexPro-Bold.ttf", "./assets/fonts/ReadexPro-SemiBold.ttf"] }],
       "expo-system-ui",
       [
         "expo-localization",

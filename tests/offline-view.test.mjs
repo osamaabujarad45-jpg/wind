@@ -13,7 +13,7 @@ const ui = { Button: 'Button', Card: 'Card', Empty: 'Empty', Txt: 'Txt', palette
 const modules = {
   react: { useSyncExternalStore: () => mustUpdate }, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   'react-native': { View: 'View', Platform: { OS: 'android' }, StyleSheet: { create: x => x, absoluteFill: {} } },
-  'expo-router': { Stack: { Protected: 'Protected', Screen: 'Route' } }, 'expo-status-bar': {}, 'expo-splash-screen': { preventAutoHideAsync() {} },
+  'expo-router': { Stack: { Protected: 'Protected', Screen: 'Route' } }, 'expo-status-bar': {}, 'expo-splash-screen': { preventAutoHideAsync() {} }, 'expo-font': { loadAsync: async () => {} },
   '../motion': {}, '../intro': {}, '../driver-work': {}, '../session': { useSession: () => session }, '../api': {}, '../api-client': {},
   '../model': model, '../parts': { useFormat: () => ({ time: () => 'saved-time' }) }, '../copy': copy, '../ui': ui,
 };

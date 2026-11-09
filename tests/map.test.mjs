@@ -180,7 +180,11 @@ try {
   // A single point still produces a usable box instead of a zero-size one.
   const [[w, s], [e, n]] = fitBounds([{ latitude: 32, longitude: 35 }]);
   assert.ok(e - w > 0.005 && n - s > 0.005);
-  assert.deepEqual(labelField('ar'), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+  assert.deepEqual(labelField('ar').slice(0, 4), ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin']]);
+  // The last resort is the local name unless it is Hebrew script (unreadable for both app languages).
+  const local = labelField('ar')[4];
+  assert.equal(local[0], 'let'); assert.deepEqual(local[2], ['to-string', ['get', 'name']]);
+  assert.ok(JSON.stringify(local).includes('"index-of","ו"') && JSON.stringify(local).includes('"index-of","י"'));
   assert.deepEqual(etaRange(10), [10, 15]);
   assert.equal(kmLabel(0.84), '0.8'); assert.equal(kmLabel(9.96), '10'); assert.equal(kmLabel(12.6), '13');
   // Live marker: glides for the fix gap (continuous motion), catches up quickly after a long gap, turns the short way.
@@ -225,7 +229,7 @@ assert.ok(backtracks([[35.2, 32.0], [35.21, 32.0], [35.22, 32.0], [35.21, 32.0],
 assert.ok(!backtracks([[35.2, 32.0], [35.201, 32.0], [35.2, 32.0001], [35.19, 32.0]]), '~190 m loop: a U-turn, not a spur');
 assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
-  assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
+  assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], labelField('ar')[4]]);
 
   // T06: renderer capability and route provenance (tasks/maps-contract.md).
   // Each platform selects the renderer family actually baked into its binary; an unknown platform still

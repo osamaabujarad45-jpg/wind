@@ -40,7 +40,7 @@ const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palett
   return (${literal(ui, 'const motion = css.create(')}); })()`);
 const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
   return (${literal(parts, 'const styles = StyleSheet.create(')}); })()`);
-const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
+const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const sheetShadow = {};
   return (${literal(book, 'const styles = StyleSheet.create(')}); })()`);
 const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
   return (${literal(search, 'const styles = StyleSheet.create(')}); })()`);

@@ -66,7 +66,7 @@ export default function Profile() {
         </Card>
       </Appear>
       <ErrorText>{error}</ErrorText>
-      {saved && !changed && <Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
+      {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
       <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
     </Screen>
   </KeyboardAvoidingView>;

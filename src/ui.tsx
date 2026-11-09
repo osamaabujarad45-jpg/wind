@@ -42,6 +42,8 @@ export const palette = {
 
 // Soft lift instead of hairline borders. Small blur: large glows read as cheap on a phone.
 export const shadow: ViewStyle = { boxShadow: '0px 1px 2px rgba(14,31,25,0.06), 0px 4px 14px rgba(14,31,25,0.06)' };
+// Bottom sheets over the map cast upward.
+export const sheetShadow: ViewStyle = { boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' };
 
 // Compact scale (Material 3 / Apple HIG): 14pt body, 36–48pt controls, every tap target ≥ 48dp in its own box.
 // A hitSlop only reaches over the control beside it, and the sibling on top takes the tap, so the box carries the target.
@@ -167,14 +169,17 @@ export function Row({ children, style, gap = 10 }: { children: React.ReactNode; 
   return <View style={[{ flexDirection: row, alignItems: 'center', gap }, style]}>{children}</View>;
 }
 
+// Headings are Readex Pro (Arabic and Latin drawn together; the Arabic extension of Lexend, made for quick reading).
+// One family per weight file, so no fontWeight: Android would fake-bold an already bold face. Body stays the system font.
+export const headingFont = { bold: 'ReadexPro-Bold', semibold: 'ReadexPro-SemiBold' } as const;
 const textVariants = {
-  h1: { fontSize: 21, lineHeight: 28, fontWeight: '800', color: palette.ink },
-  h2: { fontSize: 17, lineHeight: 24, fontWeight: '800', color: palette.ink },
+  h1: { fontSize: 21, lineHeight: 30, fontFamily: headingFont.bold, color: palette.ink },
+  h2: { fontSize: 17, lineHeight: 25, fontFamily: headingFont.semibold, color: palette.ink },
   title: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: palette.ink },
   body: { fontSize: 14, lineHeight: 21, color: palette.secondary },
   label: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.ink },
   caption: { fontSize: 12, lineHeight: 17, color: palette.secondary },
-  micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.faint },
+  micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>;
 
 export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header, accessibilityLabel }: {

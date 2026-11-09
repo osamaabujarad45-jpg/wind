@@ -20,7 +20,7 @@ import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
 import { FreightScopeForm } from '../freight-details';
-import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, sheetShadow, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const { me } = useSession();
@@ -801,5 +801,5 @@ const styles = StyleSheet.create({
   pinTop: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
   locate: { position: 'absolute' },
   pinPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
+    ...sheetShadow },
 });
