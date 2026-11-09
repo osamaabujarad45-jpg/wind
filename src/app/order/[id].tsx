@@ -27,7 +27,7 @@ import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, Loading, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -803,7 +803,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
         <View style={{ flex: 1 }}><Field label={c.chatMessage} value={draft} onChangeText={setDraft} maxLength={500} multiline disabled={busy} /></View>
         <Press accessibilityLabel={c.send} accessibilityState={{ busy }} disabled={busy || !draft.trim()} onPress={() => send(draft)} style={styles.send}>
           {busy ? <ActivityIndicator size="small" color={palette.lime} />
-            : <Ionicons name="send" size={19} color={palette.lime} style={rtl ? { transform: [{ scaleX: -1 }] } : undefined} />}
+            : <Ionicons name="send" size={iconSize.lg} color={palette.lime} style={rtl ? { transform: [{ scaleX: -1 }] } : undefined} />}
         </Press>
       </Row>
     </>}

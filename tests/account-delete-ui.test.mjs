@@ -32,7 +32,7 @@ function account({ linked = true } = {}) {
       return {}; }, apiSessionRevision: () => revision, errorCode: e => e.message },
     './push': { pushSupported: () => false }, './session': { useSession: () => ({ me: { user: { id: 1, role: 'customer', name: 'Test', phone: '0599000000' } }, forget: async () => { forgot++; }, signOut: async () => {}, language: 'en', setLanguage() {} }) },
     './entra-auth': { entraConfigured: true, prepareEntraRequest: async nonce => ({ nonce }), signInWithEntra: async () => new Promise(resolve => { resolveMicrosoft = resolve; }) },
-    './ui': { ...ui, palette: {}, tones: {}, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
+    './ui': { ...ui, palette: {}, tones: {}, iconSize: { xs: 14, sm: 16, md: 18, lg: 20, xl: 22 }, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
   };
   const context = { exports: {}, setInterval: fn => { refreshChallenge = fn; return 1; }, clearInterval: () => { refreshChallenge = null; }, require: name => { assert.ok(name in modules, name); return modules[name]; } };
   runInNewContext(source, context);

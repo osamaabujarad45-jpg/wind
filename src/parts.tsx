@@ -12,7 +12,7 @@ import { useSession } from './session';
 import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText } from './copy';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, iconSize, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
 
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
@@ -78,7 +78,7 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
         <Txt variant="label">{label}</Txt>
         <Row gap={6}>
           <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>{place}</Txt>
-          {onPress && <Ionicons name="chevron-down" size={15} color={palette.olive} />}
+          {onPress && <Ionicons name="chevron-down" size={iconSize.sm} color={palette.olive} />}
         </Row>
         {!!note && <Txt variant="caption" numberOfLines={2}>{note}</Txt>}
       </View>
@@ -452,7 +452,7 @@ export function AccountScreen() {
                 {user.role === 'driver' && !!user.trips && <Badge label={fill(c.tripsCount, { n: user.trips })} tone={tones.olive} />}
               </Row>
             </View>
-            <Ionicons name="create-outline" size={19} color={palette.olive} />
+            <Ionicons name="create-outline" size={iconSize.lg} color={palette.olive} />
           </Row>
         </Press>
       </Card>

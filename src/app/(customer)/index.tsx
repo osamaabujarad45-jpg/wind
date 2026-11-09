@@ -13,7 +13,7 @@ import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-locat
 import { SceneMap } from '../../scene-map';
 import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { Appear, ErrorText, fill, IconButton, ListGroup, Loading, Logo, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
+import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
 
 const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
 
@@ -70,12 +70,12 @@ export default function Home() {
       <ListGroup>
         {recent.map(o => <Press key={o.id} accessibilityLabel={`${c.request} ${city(o.pickupCity)[language]} ${city(o.dropoffCity)[language]}`}
           onPress={() => book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
-          <View style={styles.clock}><Ionicons name="time-outline" size={17} color={palette.secondary} /></View>
+          <View style={styles.clock}><Ionicons name="time-outline" size={iconSize.md} color={palette.secondary} /></View>
           <View style={{ flex: 1 }}>
             <Txt variant="title" numberOfLines={1}>{tripTitle(o, language, rtl)}</Txt>
             <Txt variant="caption" numberOfLines={1}>{c[o.service]} · {o.pickupNote}</Txt>
           </View>
-          <Ionicons name="refresh" size={17} color={palette.olive} />
+          <Ionicons name="refresh" size={iconSize.md} color={palette.olive} />
         </Press>)}
       </ListGroup>
     </>}
@@ -123,7 +123,7 @@ export default function Home() {
             <Text key={language} numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
           </Press>
           <Press accessibilityLabel={c.later} onPress={() => book({ service: firstService, when: 'later' })} style={[styles.now, { flexDirection: row }]}>
-            <Ionicons name="calendar-outline" size={15} color={palette.ink} />
+            <Ionicons name="calendar-outline" size={iconSize.sm} color={palette.ink} />
             <Text key={language} style={styles.nowText}>{c.later}</Text>
           </Press>
         </View>
