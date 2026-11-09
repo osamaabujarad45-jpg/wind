@@ -2,7 +2,7 @@
 
 ## Pilot launch — 7 November 2026 (read this first)
 
-Production: `wind-api:20261107-pilot4`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview; the version is in `app.json`, the build number is held by EAS (`appVersionSource: remote`), and `package.json`'s version is unrelated. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #6 merged with CI green. Running it: `docs/PILOT.md`.
+(Superseded 9 Nov: production is `wind-api:20261109-design` and Android 1.1.0 (24); see the top of CURRENT-WORK.md.) Production then: `wind-api:20261107-pilot4`, parcels only, West Bank road graph, Firebase alerts and password-reset email. Android: 1.1.0 (23), signed with the release key, built on EAS preview; the version is in `app.json`, the build number is held by EAS (`appVersionSource: remote`), and `package.json`'s version is unrelated. Repository: `osamaabujarad45-jpg/wind`, PRs #1 to #6 merged with CI green. Running it: `docs/PILOT.md`.
 
 **The old account:** the owner cannot sign in to `osama-2000236`, whose Actions refused every job, so the code moved. On this PC the GitHub credential username (`credential.https://github.com.username`) stays `osama-2000236` globally for other projects, and this repository's config sets `osamaabujarad45-jpg`; the commit author name is unaffected. The `legacy-origin` remote still points at the frozen repository: never push to it. For `gh` here use `GH_TOKEN=$(gh auth token --user osamaabujarad45-jpg)`. `origin` points at the new repository.
 
