@@ -13,8 +13,8 @@ screenshot run has no OSRM, so missing route lines are expected (`route-map.nati
   `clayInk` is the only clay used for text. Keep that rule.
 - **Type.** Wind uses only the system font, at weight 800 for `h1` and `h2`. That is legible in both scripts,
   but nothing in the type says "Wind". The next step that would do the most for the brand is one bilingual
-  family with real Arabic and Latin drawing, for headings only (IBM Plex Sans Arabic, or Noto Kufi Arabic
-  with its Latin). That is a brand decision with a bundle-size cost, so it is not made here.
+  family with real Arabic and Latin drawing, for headings only. Done in the second pass with Readex Pro
+  (fix 9), about 200 KB for two weights.
 - **Structure.** Cards are justified: each one is a separate object (an order, a trip, a setting group).
   Status badges carry real state, and the live dot only shows on live statuses. The map plus sheet is the
   right lead for a delivery app, and it is used the same way for customer, driver and order screens.
@@ -31,13 +31,18 @@ screenshot run has no OSRM, so missing route lines are expected (`route-map.nati
 | 6 | Order delivered: the heading said "Thanks for rating" while the price question under it was still open. | New copy key `thanksDriver` ("Thanks for rating your driver" / "شكراً لتقييم السائق") for the driver rating heading. The driver's rating of the customer keeps `thanks`. | tsc, screens re-rendered (order-done) |
 | 7 | Found only on the A53 (native): the Ride tile on Home read "مشوا", its last letter cut. Android measured the Arabic label narrower than it draws, and the label only had `flexShrink`. | The label takes `flex: 1`, so its box is the tile's free width, not the measured text width. | QA customer APK built from this tree, on the A53: "مشوار" in full |
 
-## Open, needs an owner decision
+## Second pass (same day): recommendations done, critique and accessibility passes
 
-1. **Map labels.** The base map shows settlement names (Psagot, Beit El, Ariel, Modi'in Illit) and Hebrew
-   street and POI labels at driver zoom (driver-order). For a West Bank audience this is a product and
-   brand call, not a styling one. Arabic mode already shows Arabic names; the open question is which
-   places get a label at all. Fix path: filter those label layers in the map style.
-2. **Brand typeface** (see Identity).
+| # | Issue | Change | Verified |
+|---|---|---|---|
+| 8 | Map labels: where a place has no Arabic, English or Latin name, the map fell back to its raw name, so Hebrew-only labels showed in both app languages (driver zoom). | `labelField` (`src/map-math.ts`, mirrored in `public/map.html`) keeps that last fallback only when it is not Hebrew script. | MapLibre's own expression engine: a Hebrew-only street → empty; an Arabic-only roundabout → kept; Jerusalem → القدس / Jerusalem. `tests/map.test.mjs` |
+| 9 | No brand typeface. | Headings (`h1`, `h2`) and the intro wordmark use **Readex Pro** Bold/SemiBold, the Arabic extension of Lexend: Arabic and Latin drawn together, rounded geometric strokes like the logo's wind trails. Native builds embed it (expo-font plugin), the web loads it during the intro. Body text stays on the system font. OFL licence in `assets/fonts/`. | screens re-rendered (AR and EN), phone APK |
+| 10 | Text below 4.5:1: `micro` captions in `faint` on muted and pale cards (4.1–4.3:1), trip-search placeholders that are the fields' only label (4.1:1 on the focused fill), "Name saved" in olive on a muted card (4.4:1). | `micro` and the placeholders use `secondary` (≥5.1:1 on every app fill); "Name saved" uses forest. | contrast computed for every text/fill pair the components use |
+| 11 | Drift pass (expo-design-system skill): the upward sheet shadow was written out in two files; the handover code, the one number a customer must read out, was system weight 900 while the rest of the brand moved to Readex. | `sheetShadow` token in `ui.tsx`; handover digits (order screen, welcome slide) use Readex Pro Bold. What is left outside `ui.tsx` is deliberate: the admin chart's two checked series colours and each map file's own ground colour. | tsc, lint, screens |
+
+Not changed, on purpose:
+- **Settlement place names stay.** The rollout runs West Bank, then Israel, then the airport, and checkpoint routes pass these places. Hiding places would break navigation there. Only labels nobody in the app can read (Hebrew-only) are gone.
+- **Admin → Users keeps its row actions.** Block and Delete already ask for confirmation. Folding them away would only reduce density in an operator console, and it would break the admin scenario scripts.
 
 ## Open, small, left as they are
 

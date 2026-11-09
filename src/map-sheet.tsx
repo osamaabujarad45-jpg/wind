@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from './motion';
-import { palette, useCopy } from './ui';
+import { palette, sheetShadow, useCopy } from './ui';
 
 const GRIP = 48;
 const nativeDriver = Platform.OS !== 'web';
@@ -96,7 +96,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
 
 const styles = StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
+    ...sheetShadow },
   side: { left: 'auto', right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
   sideLeft: { left: 0, right: 'auto', width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,

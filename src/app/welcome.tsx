@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
 import { InstallLink } from '../install-link';
-import { Button, fill, haptic, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
+import { Button, fill, haptic, headingFont, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
 
 const SLIDES = 3;
 
@@ -129,6 +129,6 @@ const styles = StyleSheet.create({
   saveText: { color: palette.onFill, fontSize: 16, fontWeight: '900' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.line, alignItems: 'center', justifyContent: 'center' },
-  code: { fontSize: 28, fontWeight: '900', color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },
+  code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },
   end: { position: 'absolute', width: 14, height: 14, borderRadius: 7 },
 });

@@ -3,7 +3,7 @@
 // a gust blows through the three trails, the pin drops onto its spot, then the tile rises and the name appears.
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from './motion';
-import { logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, palette, useCopy } from './ui';
+import { headingFont, logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, palette, useCopy } from './ui';
 
 export const INTRO_MS = 1600;
 export const TILE = 120; // keep equal to expo-splash-screen "imageWidth" in app.json
@@ -59,6 +59,6 @@ const styles = StyleSheet.create({
   stage: { width: TILE, height: TILE },
   tile: { width: TILE, height: TILE, borderRadius: TILE * logoMark.radius, backgroundColor: palette.forest, overflow: 'hidden' },
   words: { position: 'absolute', top: TILE + 22, left: (TILE - 320) / 2, width: 320, alignItems: 'center', gap: 6 },
-  brand: { fontSize: 34, fontWeight: '900', color: palette.ink, textAlign: 'center' },
+  brand: { fontSize: 34, lineHeight: 46, fontFamily: headingFont.bold, color: palette.ink, textAlign: 'center' }, // the wordmark face
   tagline: { fontSize: 14, lineHeight: 21, color: palette.secondary, textAlign: 'center', paddingHorizontal: 12 },
 });

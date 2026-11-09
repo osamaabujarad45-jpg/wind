@@ -3,6 +3,7 @@ import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Font from 'expo-font';
 import Animated, { useReducedMotion } from '../motion';
 import { Intro, INTRO_MS } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
@@ -16,6 +17,11 @@ import { statusText } from '../copy';
 import type { OfflineSummary } from '../offline-summary';
 
 SplashScreen.preventAutoHideAsync();
+// Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them while the intro plays.
+if (Platform.OS === 'web') Font.loadAsync({
+  'ReadexPro-Bold': require('../../assets/fonts/ReadexPro-Bold.ttf'),
+  'ReadexPro-SemiBold': require('../../assets/fonts/ReadexPro-SemiBold.ttf'),
+}).catch(() => { /* headings fall back to the system font at regular weight: still the largest, darkest text on screen */ });
 
 export default function RootLayout() {
   return <SessionProvider>

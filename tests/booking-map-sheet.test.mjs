@@ -51,7 +51,7 @@ function renderer(file, rtl = false) {
     'react-native': native,
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
     './motion': { useReducedMotion: () => true },
-    './ui': { palette: { paper: 'paper', olive: 'olive', card: 'card', hair: 'hair' }, useCopy: () => ({ c: copy, rtl: state.rtl, language: state.language }) },
+    './ui': { palette: { paper: 'paper', olive: 'olive', card: 'card', hair: 'hair' }, sheetShadow: { boxShadow: 'sheet' }, useCopy: () => ({ c: copy, rtl: state.rtl, language: state.language }) },
     './map-page': { MAP_GROUND: 'ground', MapPage: 'MapPage' },
     './route-preview': { default: 'RoutePreview' },
   };
