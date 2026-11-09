@@ -238,7 +238,7 @@ export function PhoneCard() {
     {!form && !shown && <View style={{ marginTop: 10 }}>
       <Button title={c.phone_change} icon="create-outline" variant="ghost" onPress={() => { setActive(null); setForm({ phone: '', password: '' }); setError(''); }}
         // The verify button just above already gives the same reason when both are blocked by one cause: say it once.
-        disabled={!!changeBlock || busy} reason={!isVerified && changeBlock && changeBlock === blockKey ? undefined : reason(changeBlock) ?? c.wait_busy} />
+        disabled={!!changeBlock || busy} reason={!isVerified && !busy && changeBlock && changeBlock === blockKey ? undefined : reason(changeBlock) ?? c.wait_busy} />
     </View>}
 
     {form && !shown && <View style={{ marginTop: 12 }}>
