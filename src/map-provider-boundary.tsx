@@ -46,7 +46,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
       onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
   }
   const props = route ?? pin;
-  return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: '#E6ECE3' }]}>
+  return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: palette.mapWash }]}>
     {route && <RoutePreview {...route} />}
     <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}

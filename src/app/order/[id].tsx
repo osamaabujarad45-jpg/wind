@@ -839,7 +839,7 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
 function RateDriver({ order, onRate }: { order: Order; onRate: (body: { rating: number } | { priceRating: number }) => void }) {
   const { c } = useCopy();
   return <Card tone="olive" style={{ marginTop: 4 }}>
-    <Txt variant="title" center>{order.rating ? c.thanks : c.rateDriver}</Txt>
+    <Txt variant="title" center>{order.rating ? c.thanksDriver : c.rateDriver}</Txt>
     <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
       {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.rateDriver} on={n <= (order.rating ?? 0)} disabled={!!order.rating} onPress={() => onRate({ rating: n })} />)}
     </Row>

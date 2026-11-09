@@ -83,8 +83,8 @@ function AppleRouteMap(props: RouteMapProps) {
     onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
-    <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
-    <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
+    <Marker coordinate={pickup} title={pickupTitle} pinColor={palette.olive} />
+    <Marker coordinate={dropoff} title={dropoffTitle} pinColor={palette.clay} />
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name="remove-circle" size={24} color={palette.error} />
     </Marker>)}
@@ -175,7 +175,7 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
     const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, mapReadyMs());
     return () => clearTimeout(timer);
   }, [ready, attempt]);
-  if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
+  if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.mapWash }}>
     <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>
     </Pressable>
