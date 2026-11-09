@@ -46,5 +46,7 @@ screenshot run has no OSRM, so missing route lines are expected (`route-map.nati
   change, so this goes with item 1.
 - Trip search looks the same for parcel and ride (book-parcel and book-ride are pixel-identical). The service
   is chosen on the next step, so this is consistent, but the search gives no hint of what is being booked.
+- Home: "Items & parcels" wraps to two lines in its service tile while the other two fit on one. Tiles are
+  equal width by design. Three content-width tiles do not fit at 390pt.
 - Screenshots of map screens are captured at full scroll height (3,000+ px), which stretches the map and
   makes the framing look wrong in the PNGs. On the phone the map fills one viewport.
