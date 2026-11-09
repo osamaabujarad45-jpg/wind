@@ -1,6 +1,7 @@
 # Wind design audit, 9 Nov 2026
 
-Scope: every screen in `docs/screens/` (Arabic and English) on origin/master 92b1cd2, read against `src/ui.tsx`
+Scope: every screen in `docs/screens/` (Arabic and English), starting from origin/master 92b1cd2; later passes ran on each
+following master up to ac531d8 (fixes 1–15, PRs #12–#17). Read against `src/ui.tsx`
 (palette, type, controls) and the screen code. Map screens are judged on layout and chrome only. The seeded
 screenshot run has no OSRM, so missing route lines are expected (`route-map.native.tsx`: lines follow roads only).
 
