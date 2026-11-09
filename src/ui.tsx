@@ -272,7 +272,8 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     </View>
     {trailing && <Text style={[styles.buttonText, { color: variant === 'primary' && !off ? palette.lime : look.fg }]}>{trailing}</Text>}
   </Press>;
-  return off && reason ? <View>{press}<Reason>{reason}</Reason></View> : press;
+  // The gap under the reason ties it to this button, not to a control stacked below (phone-code screens).
+  return off && reason ? <View style={{ marginBottom: 6 }}>{press}<Reason>{reason}</Reason></View> : press;
 }
 
 // Why a control is waiting, in one plain sentence under it (design §10). Text, not a tooltip, so it reads without a long press.
