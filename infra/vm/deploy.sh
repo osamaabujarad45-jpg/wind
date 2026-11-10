@@ -3,7 +3,7 @@
 # The tag only names the release and its rollback container. The image is pulled and run by digest, and its revision
 # label must be the gated commit, so a tag that moved after the release was checked cannot change what runs.
 # Takes a verified backup, starts the new image beside a named rollback container, and goes back by itself if the new
-# one does not start or is not ready in 60 s. The database and routing graph stay on the host. Going back restores the
+# one does not start or is not ready after 30 checks (one to two and a half minutes). The database and routing graph stay on the host. Going back restores the
 # code only: migrations are additive, and the backup is there if one ever is not.
 set -eu
 die() { echo "$1" >&2; exit 2; }
@@ -14,6 +14,9 @@ case "$tag" in ''|*[!A-Za-z0-9._-]*) die "bad image tag" ;; esac
 case "$digest" in sha256:*) hex "${digest#sha256:}" 64 || die "digest must be sha256:<64 hex>" ;; *) die "digest must be sha256:<64 hex>" ;; esac
 hex "$revision" 40 || die "revision must be the full 40-hex commit"
 image=windprodacr.azurecr.io/wind-api@$digest
+old=wind-api-pre-$tag
+# A tag deployed before still owns its rollback container: replacing it would lose the way back.
+if docker inspect "$old" >/dev/null 2>&1; then die "$old exists: $tag was already deployed"; fi
 docker pull "$image"
 built=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
 if [ "$built" != "$revision" ]; then
@@ -22,10 +25,8 @@ if [ "$built" != "$revision" ]; then
 fi
 id=$(docker image inspect --format '{{.Id}}' "$image")
 /srv/wind-backup.sh
-old=wind-api-pre-$tag
-docker rm -f "$old" 2>/dev/null || true
 docker stop wind-api
-docker rename wind-api "$old"
+docker rename wind-api "$old" || { docker start wind-api; exit 1; }
 start() {
   docker run -d --name wind-api --restart unless-stopped --network windnet -p 127.0.0.1:4000:4000 \
     --env-file /srv/wind-api.env -v /srv/wind-data:/data --log-opt max-size=20m --log-opt max-file=5 \

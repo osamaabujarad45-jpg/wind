@@ -15,6 +15,8 @@ stub('docker', `echo "docker $*" >> "$CALLS"
 case "$1 $2" in
   "image inspect") case "$*" in *revision*) echo "$FAKE_REVISION" ;; *) echo sha256:pulled ;; esac ;;
   "inspect --format") echo "\${FAKE_RUNNING:-sha256:pulled}" ;;
+  "inspect wind-api-pre-"*) exit "\${FAKE_OLD_EXISTS:-1}" ;;
+  "rename wind-api") exit "\${FAKE_RENAME_STATUS:-0}" ;;
   "run -d") exit "\${FAKE_RUN_STATUS:-0}" ;;
 esac`);
 stub('curl', 'exit "${FAKE_READY:-0}"');
@@ -37,10 +39,10 @@ try {
   // The gated release: pulled and run by digest, never by tag, with the backup taken before the old container stops.
   let r = deploy([tag, digest, revision]);
   assert.equal(r.status, 0, r.err);
-  assert.equal(r.calls[0], `docker pull ${image}`);
+  assert.equal(r.calls[1], `docker pull ${image}`);
   assert.ok(r.calls.find(c => c.startsWith('docker run -d'))?.endsWith(` ${image}`), 'runs the digest');
   assert.ok(!r.calls.some(c => c.includes(`wind-api:${tag}`)), 'the tag is never pulled or run');
-  assert.ok(r.calls.indexOf('backup') < r.calls.indexOf('docker stop wind-api'), 'backup before the switch');
+  assert.ok(r.calls.includes('backup') && r.calls.indexOf('backup') < r.calls.indexOf('docker stop wind-api'), 'backup before the switch');
   assert.ok(r.calls.includes(`docker rename wind-api wind-api-pre-${tag}`));
 
   // A tag moved to another build: the digest's revision is not the gated commit, and nothing on the VM is touched.
@@ -58,6 +60,16 @@ try {
     assert.equal(r.status, 2, `refused: ${JSON.stringify(args)}`);
     assert.deepEqual(r.calls, []);
   }
+
+  // A tag that already has a rollback container is refused before anything is pulled or stopped.
+  r = deploy([tag, digest, revision], { FAKE_OLD_EXISTS: '0' });
+  assert.equal(r.status, 2); assert.match(r.err, /already deployed/);
+  assert.deepEqual(r.calls, [`docker inspect wind-api-pre-${tag}`]);
+  // The old container stopped but could not be set aside: it is started again, and nothing new runs.
+  r = deploy([tag, digest, revision], { FAKE_RENAME_STATUS: '1' });
+  assert.equal(r.status, 1);
+  assert.equal(r.calls.at(-1), 'docker start wind-api');
+  assert.ok(!r.calls.some(c => c.startsWith('docker run')));
 
   // Going back: the new container is removed and the old one is renamed back and started.
   const wentBack = calls => { const tail = calls.slice(-3);
