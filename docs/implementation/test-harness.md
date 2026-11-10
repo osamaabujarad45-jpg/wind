@@ -7,7 +7,7 @@ suite registrations and a fixed-delay push race. Applies to `tests/` and `script
 
 | Command | Selects | Needs |
 | --- | --- | --- |
-| `npm test` | `scripts/run-tests.mjs`: one child per registered suite, first failure exits | SQLite and temp dirs; no PostgreSQL |
+| `npm test` | `scripts/run-tests.mjs`: one child per registered suite, first failure exits | SQLite, temp dirs and loopback PostgreSQL with PostGIS; subscription-migration and database-logging suites connect through `WIND_TEST_DATABASE_URL` |
 | `npm run test:contracts` | the same runner with `--filter=contracts` (the two frozen contract suites) | as `npm test` |
 | `npm run test:persistence` | `scripts/check-persistence.mjs`, then `scripts/check-postgres-legacy.mjs` | the isolated PostgreSQL on `127.0.0.1:55473` |
 | `test:scenarios`, `test:readiness`, `test:location`, `test:android-browser` | Playwright journeys | port 4188, the shared web export |
@@ -15,6 +15,11 @@ suite registrations and a fixed-delay push race. Applies to `tests/` and `script
 
 `npm test` is the only list of suites. `test:contracts` is a filter over it, not a second
 registration, so the two gates cannot drift apart.
+
+Use an isolated PostgreSQL instance and port per session (`AGENTS.md`). The examples below describe
+the older shared local setup, not permission to use or stop another session's database. Set
+`WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:<your-port>/fastship_test`; see
+`local-database.md`. CI supplies PostgreSQL 18 / PostGIS 3.6 to both integration and persistence jobs.
 
 ## Selection discipline
 
