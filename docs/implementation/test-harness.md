@@ -7,7 +7,7 @@ suite registrations and a fixed-delay push race. Applies to `tests/` and `script
 
 | Command | Selects | Needs |
 | --- | --- | --- |
-| `npm test` | `scripts/run-tests.mjs`: one child per registered suite, first failure exits | SQLite, temp dirs and loopback PostgreSQL with PostGIS; `phone-provider.mjs` uses `WIND_TEST_DATABASE_URL` |
+| `npm test` | `scripts/run-tests.mjs`: one child per registered suite, first failure exits | SQLite, temp dirs and loopback PostgreSQL with PostGIS; subscription-migration and database-logging suites connect through `WIND_TEST_DATABASE_URL` |
 | `npm run test:contracts` | the same runner with `--filter=contracts` (the two frozen contract suites) | as `npm test` |
 | `npm run test:persistence` | `scripts/check-persistence.mjs`, then `scripts/check-postgres-legacy.mjs` | the isolated PostgreSQL on `127.0.0.1:55473` |
 | `test:scenarios`, `test:readiness`, `test:location`, `test:android-browser` | Playwright journeys | port 4188, the shared web export |
