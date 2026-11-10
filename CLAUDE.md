@@ -1,6 +1,6 @@
 @AGENTS.md
 
-Latest handoffs: `docs/HANDOFF-2026-10-31-maps-real-data.md` (real map data, OSM place search, pilot readiness) and `docs/HANDOFF-2026-10-30-phone-acceptance.md` (A53 acceptance, CI repairs, decoder advisory, k5 isolation). Earlier: `docs/HANDOFF-2026-10-21-deploy.md`, `docs/HANDOFF-2026-09-29-uber-careem-redesign.md`, `docs/HANDOFF-2026-09-28-brand-and-screens.md`.
+Maps work: start at `docs/HANDOFF-2026-11-10-MAPS-FOR-ASTRA-6.md` (how the maps work at `1cd0de8`, what is unproven, ranked work queue). Latest handoffs: `docs/HANDOFF-2026-10-31-maps-real-data.md` (real map data, OSM place search, pilot readiness) and `docs/HANDOFF-2026-10-30-phone-acceptance.md` (A53 acceptance, CI repairs, decoder advisory, k5 isolation). Earlier: `docs/HANDOFF-2026-10-21-deploy.md`, `docs/HANDOFF-2026-09-29-uber-careem-redesign.md`, `docs/HANDOFF-2026-09-28-brand-and-screens.md`.
 
 ## Seeing the app
 
