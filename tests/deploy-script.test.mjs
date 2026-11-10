@@ -19,7 +19,8 @@ case "$1 $2" in
   "rename wind-api") exit "\${FAKE_RENAME_STATUS:-0}" ;;
   "run -d") exit "\${FAKE_RUN_STATUS:-0}" ;;
 esac`);
-stub('curl', 'exit "${FAKE_READY:-0}"');
+// Not ready for the first FAKE_NOT_READY tries; every try is counted.
+stub('curl', 'n=$(($(cat "$CALLS.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$CALLS.n"; [ "$n" -gt "${FAKE_NOT_READY:-0}" ]');
 stub('sleep', 'exit 0');
 stub('backup', 'echo backup >> "$CALLS"');
 const source = readFileSync(new URL('../infra/vm/deploy.sh', import.meta.url), 'utf8');
@@ -29,10 +30,11 @@ writeFileSync(join(dir, 'deploy.sh'), source.replace('/srv/wind-backup.sh', join
 const tag = '20261110-test', digest = `sha256:${'a'.repeat(64)}`, revision = 'b'.repeat(40);
 const image = `windprodacr.azurecr.io/wind-api@${digest}`;
 const deploy = (args, env = {}) => {
-  rmSync(log, { force: true });
+  rmSync(log, { force: true }); rmSync(`${log}.n`, { force: true });
   const run = spawnSync('sh', [join(dir, 'deploy.sh'), ...args], { encoding: 'utf8',
     env: { PATH: `${dir}:${process.env.PATH}`, CALLS: log, FAKE_REVISION: revision, ...env } });
-  return { status: run.status, err: run.stderr, calls: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] };
+  return { status: run.status, err: run.stderr, calls: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [],
+    tries: existsSync(`${log}.n`) ? Number(readFileSync(`${log}.n`, 'utf8')) : 0 };
 };
 
 try {
@@ -74,8 +76,13 @@ try {
   // Going back: the new container is removed and the old one is renamed back and started.
   const wentBack = calls => { const tail = calls.slice(-3);
     assert.deepEqual(tail, ['docker rm -f wind-api', `docker rename wind-api-pre-${tag} wind-api`, 'docker start wind-api']); };
-  r = deploy([tag, digest, revision], { FAKE_READY: '22' });
+  r = deploy([tag, digest, revision], { FAKE_NOT_READY: '99' });
   assert.equal(r.status, 1); assert.match(r.err, /not ready/); wentBack(r.calls);
+  assert.equal(r.tries, 30, 'it keeps asking before giving up');
+  // A slow start is waited for, not rolled back.
+  r = deploy([tag, digest, revision], { FAKE_NOT_READY: '2' });
+  assert.equal(r.status, 0, r.err); assert.equal(r.tries, 3);
+  assert.ok(!r.calls.includes('docker rm -f wind-api'));
   r = deploy([tag, digest, revision], { FAKE_RUN_STATUS: '125' });
   assert.equal(r.status, 1); assert.match(r.err, /did not start/); wentBack(r.calls);
   r = deploy([tag, digest, revision], { FAKE_RUNNING: 'sha256:other' });

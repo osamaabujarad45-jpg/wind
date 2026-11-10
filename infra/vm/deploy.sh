@@ -5,6 +5,7 @@
 # Takes a verified backup, starts the new image beside a named rollback container, and goes back by itself if the new
 # one does not start or is not ready after 30 checks (one to two and a half minutes). The database and routing graph stay on the host. Going back restores the
 # code only: migrations are additive, and the backup is there if one ever is not.
+# ponytail: nothing locks this; run one deploy at a time (add flock if deploys are ever automated).
 set -eu
 die() { echo "$1" >&2; exit 2; }
 hex() { case "$1" in ''|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq "$2" ]; }
