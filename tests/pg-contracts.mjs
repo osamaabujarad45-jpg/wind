@@ -305,8 +305,8 @@ try {
     // WP08: price now returns quote metadata (quoteId, expires, minor units, versions, ETA band) on Postgres;
     // the frozen SQLite fixture does not have those, so strip them for the Postgres comparison.
     const cleanObserved = JSON.parse(JSON.stringify(observed));
-    // Destination change is SQLite-only (the route returns destination_unavailable
-    // on Postgres); the frozen fixture is SQLite. Compare the shared contract.
+    // Destination-change routes follow table availability on either backend, but canChangeDestination is
+    // still sent only on SQLite (server/main.ts); exclude it from the frozen SQLite fixture's comparison.
     const expectedContracts = JSON.parse(JSON.stringify(read('fixtures.json')));
     for (const ex of [...cleanObserved.exchanges, ...expectedContracts.exchanges])
       if (ex.response && typeof ex.response === 'object') delete ex.response.canChangeDestination;

@@ -4,17 +4,19 @@ You are the lead. Your job is to take Wind from a 50-user parcel pilot to a fini
 
 Read `docs/HANDOFF-2026-11-10-MAPS-FOR-ASTRA-6.md` next. It holds the map internals and the maps work queue; this file does not repeat them. The owner's later decision (§2.3) replaces that handoff's no-deploy instruction for routine, fully gated releases only.
 
-Labels used here: **[source]** means read in `origin/master` at `5da18ec` on 10 Nov 2026. **[ran]** means executed, with command, exit code and where. **[carried]** means taken from earlier handoffs or session notes and not re-checked; verify before relying on it. **[decided]** means the owner chose it on 10 Nov 2026.
+**Lead change, 10 November:** at the owner's instruction Claude Fable 5.2 (Claude Code) took over from Astra 6. "You" below is whoever leads now; Astra 6 is available as a pool worker (`gpt-pool/gpt-6-astra`).
+
+Labels used here: **[source]** means read in `origin/master` at `5da18ec` on 10 Nov 2026 unless another SHA is named. **[ran]** means executed, with command, exit code and where. **[carried]** means taken from earlier handoffs or session notes and not re-checked; verify before relying on it. **[decided]** means the owner chose it on 10 Nov 2026. Later Phase 0 evidence and recommendations are in the [baseline](PLAN-2026-11-10-BASELINE.md), [execution ledger](PLAN-2026-11-10-OPEN-ITEMS.md) and [cost model](operations/cost-model.md).
 
 ## 1. Where things stand
 
-- **Live [carried]:** image `wind-api:20261109-design` on one Azure VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, SQLite at `/srv/wind-data/wind.db`. Android 1.1.0 (24), sideloaded APK. Parcels only. Run-book: `docs/PILOT.md`.
+- **Live [ran, read-only]:** healthy SQLite, image `wind-api:20261109-design` on Azure VM `wind-vm` (`windapi236.swedencentral.cloudapp.azure.com`), revision `ac531d810af9825f03ece4f1cdfbfa68bd55df03`, digest `sha256:de7a7ff4b7d3f53343ff0c3f7ba4dfd75960fa9a55eee9c44a217ac8f01b455e`. OSRM, backup and all four installed script hashes verified; see baseline. Android 1.1.0 (24) distribution remains **[carried]**, distinct from installed QA packages. Parcels only. Run-book: `docs/PILOT.md`.
 - **Code [source]:** Expo/React Native client (`src/`, 107 files, 26 routes under `src/app/`), Node server (`server/main.ts`, 3,678 physical lines, plus 39 modules in `server/domain/`), SQLite live and a PostgreSQL schema gated from production. At `5da18ec`, `npm test` registers 129 suites (120 `*.test.mjs` entries); `tests/` contains 189 `.mjs` files, including 122 `*.test.mjs`. Counts move: report the runner's actual count with commit and date, not a fixed target.
 - **Tests need PostgreSQL [source]:** full `npm test` connects to loopback PostgreSQL through suites including `subscription-migration.test.mjs` and `database-logging.test.mjs`. `phone-provider.mjs` validates a PostgreSQL URL but uses a SQLite API fixture. Follow `docs/implementation/test-harness.md` and `docs/implementation/local-database.md`.
 - **Database gate [source]:** `server/db/runtime.ts` allows PostgreSQL only in tests (lines 20–23) or on the staging path (`WIND_POSTGRES_STAGING=1`, non-loopback host, `sslmode=verify-full`, lines 11–18). Dispatch, presence and the money ledger are PostgreSQL-only; production uses the jobs board **[carried]**. Dispatch and boarding also have test-only activation gates **[source]**: a database cutover alone activates neither.
 - **Infra as code [source]:** `infra/main.bicep` (Container Apps, PostgreSQL version `'16'` at line 170, `enableWorkloads = false` at line 11) is preparation and is not live. `infra/vm/` holds the real deploy, backup, restore and watchdog scripts. Installed VM copies must be compared before claiming that the repo's checks protect production.
 - **Known pilot limits [source]** `docs/PILOT.md`: email and phone are unverified at signup; nothing alerts the owner when the server is down beyond an hourly GitHub check (`.github/workflows/uptime.yml`, cron `17 * * * *`); TalkBack never tried by a person; no legal review; routes know nothing of permits or gates.
-- **Progress [ran, test PC, 10 Nov]:** `npm run typecheck`, `npm run lint` and `npm test` exited 0 on source `5da18ec`; the runner reported **129 suites passed**. Isolated PostgreSQL 18.3 and PostGIS 3.6 setup passed. Logs: `D:\wind-plan-20261110-astra\logs` on `DESKTOP-S2JKMK5`. Remaining Phase 0 gates and roadmap implementation are pending; this is not release readiness.
+- **Progress [ran, test PC, 10 Nov]:** `npm run typecheck`, `npm run lint` and `npm test` exited 0 on source `5da18ec`; **129 suites passed** with isolated PostgreSQL 18.3 / PostGIS 3.6. Six browser suites including corrected Arabic/English Tulkarm passed; 96 screenshots inspected. Application inputs match candidate `f6fd6f…`; CI passed on that merge SHA. Final physical-Chrome runner passed all five checks with fresh lint/typechecks after keyboard/viewport diagnosis; failures remain archived. Verified-source customer/driver APKs built and installed; native keyboard-visible acceptance remains open. Logs: `D:\wind-plan-20261110-astra\logs` on `DESKTOP-S2JKMK5`. This is not release readiness.
 
 ## 2. What the owner decided [decided]
 
@@ -23,6 +25,7 @@ Labels used here: **[source]** means read in `origin/master` at `5da18ec` on 10 
 3. **Deploys:** you deploy by yourself once the applicable gates in §6 are green, and report afterwards. This supersedes the older maps no-deploy rule for routine releases only. You still ask before a production database migration, any paid resource, switching a service on, or deleting data.
 4. **Database:** PostgreSQL cutover happens before the public launch.
 5. **Team:** Claude Opus 5.5 Native Pool at `max` as plan author, and Claude Haiku 5.5 Pool at `xhigh` as reviewer, are approved alongside the original roster. The owner resumed the failed Haiku review using Kimi; credit the completed review to Kimi.
+6. **Ordinary choices:** the owner delegated recommendations to the lead. Selected planning path: managed General Purpose PostgreSQL `Standard_D2ds_v5`, PostgreSQL 18 rehearsal, existing signed APK distribution, owner as alert recipient and existing tile-provider monitoring first. Verified costs and remaining prerequisites are in the cost model. This does not supply credentials, contracts, legal/field evidence or the specific authorizations in §6.
 
 ## 3. Rules you do not break
 
@@ -59,8 +62,8 @@ Discover the model IDs and supported effort settings, then probe each with a bou
 | A, verifies | GPT 6.1 Sol | Tests, race conditions, independent diagnosis of a hard bug, a second design opinion | — | Strong. Small setup mistakes in its own tests |
 | B, narrow review | Kimi K3.1 Pro | One precise question about a diff under 100 lines, text only | Large diffs (hits the token rate limit), images (fails on PNG) | Best reviewer when the diff is small |
 | B, review | Claude Haiku 5.5 Pool, `xhigh` | Bounded or whole-diff review against a checklist | Sole verdict on money, auth, migration, dispatch, deploy or deletion | Seven real whole-diff findings, including restore data loss (`docs/HANDOFF-2026-11-05-NEXT-LEAD.md:83`). Nov 10 Pool attempts failed on quota; Kimi completed that review |
-| C, verdicts | Step 5 Preview, Mistral Large 4 | A second-vendor verdict on a narrow server diff; a checklist audit | Anything urgent (both are slow); wide diffs | Sound at top effort. Step gave one wrong finding at medium |
-| C, bulk reading | GLM 5.3 Flash | Inventories, flow traces, Arabic and English copy consistency, cross-checking docs against code. Read-only | Code that will merge | Unproven here. Calibrate first |
+| C, verdicts | Step 5 Preview, Mistral Large 4 | A second-vendor verdict on a narrow server diff; a checklist audit | Anything urgent (both are slow); wide diffs | Mistral plan corrections integrated. Step correctly identified importer settings/freeze but proposed unsafe re-import recovery and an insufficient tag check; verify every verdict |
+| C, bulk reading | GLM 5.3 Flash | Inventories, flow traces, Arabic and English copy consistency, cross-checking docs against code. Read-only | Code that will merge | Calibration completed: misclassified nine executable suites; requested high effort was not established. Full factual verification required |
 
 Opus and Haiku count as one vendor for the two-vendor review rule.
 
@@ -140,8 +143,8 @@ Phases run in sequence; Phase 2 may run alongside Phase 1 after Phase 0. Follow 
 
 - Verify production read-only: image tag, digest and revision; `/srv/wind-api.env` keys present (names only, including `WIND_TRUST_PROXY` and `WIND_PUSH_SUBJECT`); `wind-osrm` health; last nightly Blob backup and age; uptime workflow.
 - Compare installed VM backup/restore scripts with `infra/vm/` by hash or diff. Record drift before relying on the repo's integrity checks as production protection.
-- Run the whole ladder G0–G5 on current `master` and record the baseline, including flakes. G0–G1 passed on `5da18ec` (§1); the remaining baseline is pending.
-- Probe the roster (§4).
+- Run the whole ladder G0–G5 on current `master` and record the baseline, including flakes. Current results and application-input equivalence are in the baseline; physical Chrome passes and native G5 remains unresolved.
+- Preserve completed roster probes/reviews (§4 and ledger). Recover unavailable independent-review tools before the next review; do not repeat completed calibration as unfinished work.
 - Audit both clouds: Azure remaining credit, quotas and resources in the production resource group (`wind-prod` **[carried]**); AWS project plan (`aws freetier get-account-plan-state --profile osama`), selected Region `eu-north-1`, existing resources. Load current AWS guidance first; confirm Region in AWS Settings > View all projects > Overview > Additional Info > Region, or check `~/.aws/config`. Write a cost sheet.
 - Build **one open-items ledger** from: `docs/CURRENT-WORK.md`, `docs/HANDOFF-2026-11-05-NEXT-LEAD.md`, `docs/PILOT.md` "Known limits", `docs/DESIGN-AUDIT-2026-11-09.md` "Open", the maps handoff queue, and `docs/operations/*.md`. Each row: item, evidence, severity, phase, owner decision needed or not.
 - Include VM script drift and stale test-harness guidance in the ledger. **Exit:** complete baseline report and ledger committed in a docs-only PR, with factual documentation corrected. No application release from Phase 0.
@@ -172,16 +175,16 @@ The reference is the pattern, not the code: server-owned state machines, immutab
 
 This is the highest-risk phase. You write the runbook; two vendors review it; the owner approves spend, production migration and the cutover window.
 
-1. **Price it first.** Managed PostgreSQL Flexible Server against PostgreSQL in a container on the VM, with backups and restore time for each. The student credit is small **[carried]** `docs/operations/cost-model.md`. Owner approves.
-2. **Staging.** Bring up staging from `infra/main.bicep`. Resolve the version mismatch: the template says PostgreSQL 16, every local test ran on 18. Confirm PostGIS.
+1. **Price it first.** The cost model compares managed PostgreSQL with separate/shared VM hosting. Azure PAYG and zero inspected credit are **[ran]**; selected GP compute/storage is USD 140.89/month at the documented quantities, not a complete budget. Complete workload, backup, restore and external-provider costs; obtain spend approval.
+2. **Staging.** PostgreSQL 18 is the selected rehearsal target; the template still says 16. Verify Azure PostGIS/version compatibility, quota and deployability before editing/provisioning `infra/main.bicep`. Regional capability listings and local tests alone do not prove those gates.
 3. **Lift the runtime gate** in `server/db/runtime.ts` only with a reviewed production path that keeps `sslmode=verify-full`.
 4. **Prepare the production importer, then rehearse it three times.** `server/migrate.ts:255–263` independently restricts its CLI to `NODE_ENV=test`, loopback and an isolated schema; lifting the runtime gate does not lift this restriction. Implement and two-vendor-review the exact production import path, including verified TLS, explicit destination/schema and write-freeze checks; never bypass it using test flags. Rehearse that path from production copies with row counts, money totals, open orders and sessions in each parity report. Document intentional `NON_LEGACY_TABLES` exclusions.
 5. **Restore drill** on PostgreSQL, timed.
 6. **Deploy the worker** (`server/worker.ts`) alongside the API.
-7. **Test every capability after full staging migration.** `destinationAvailable` in `server/domain/destination-change.ts:62–67` checks table existence; there is no PostgreSQL-specific exclusion to lift. Exercise each client feature end to end and record any 409 or other failure with its actual cause.
-8. **Cutover runbook:** first implement and two-vendor-review backend-aware deploy/rollback. Today's `infra/vm/deploy.sh` restarts the old container with its original environment; it must not restart a SQLite container after PostgreSQL writes. Prove this with a staging drill that writes to PostgreSQL then fails readiness. Then freeze writes, final backup to both clouds, import, verify, switch, smoke, unfreeze. Define the first production PostgreSQL write as the rollback boundary, including smoke-test or worker writes:
-   - **Before any PostgreSQL write:** return to the prior image and untouched SQLite file.
-   - **After any PostgreSQL write:** freeze writes and recover forward on PostgreSQL. Returning to SQLite loses post-cutover data unless every write is reconciled. A backend reversal requires a two-vendor-reviewed reconciliation and owner approval before execution (`docs/operations/deploy.md`). Image rollback must retain the PostgreSQL backend and compatible schema.
+7. **Test every capability after full staging migration.** `destinationAvailable` in `server/domain/destination-change.ts:62–67` checks table existence, but `server/main.ts:306` still sends `canChangeDestination` only on SQLite, so the client shows the change as unavailable on PostgreSQL: lift that with a PostgreSQL test (ledger row 46). Exercise each client feature end to end and record any 409 or other failure with its actual cause.
+8. **Cutover runbook:** first implement and two-vendor-review backend-aware deploy/rollback. Today's `infra/vm/deploy.sh` restarts the old container with its original environment; it must not restart stale SQLite after PostgreSQL becomes authoritative. Prove this with a staging drill that writes to PostgreSQL then fails readiness. Continuously stop every SQLite writer, take final backups to both clouds, import, reconcile, switch, smoke and reopen. `--freeze-writes` releases its SQLite lock after snapshot creation, before import; it is not this continuous freeze. Distinguish controlled schema/import setup from the first **new authoritative** PostgreSQL write:
+   - **Before any new authoritative PostgreSQL write:** a return to the prior image/SQLite is allowed only while SQLite remains the authoritative, unchanged/frozen copy and image/schema/data compatibility is proved. The controlled import itself writes PostgreSQL and does not mean live traffic was accepted.
+   - **At or after a new authoritative PostgreSQL write:** freeze writes and recover forward on PostgreSQL. Sign-in/session writes, smoke tests and worker activity count; classify uncertain writes conservatively. Never re-import stale SQLite over PostgreSQL history. A backend reversal requires complete, two-vendor-reviewed reconciliation and owner approval (`docs/operations/deploy.md`). Image rollback retains PostgreSQL and a compatible schema.
 - Dispatch and boarding remain off after cutover; activation belongs to Phase 5.
 - **Exit:** production on PostgreSQL, a full two-role trip on the phone, money totals equal to the pre-cutover figures, restore proven.
 
@@ -189,7 +192,7 @@ This is the highest-risk phase. You write the runbook; two vendors review it; th
 
 - **Identity:** verified email (needs a sending domain from the owner) and verified phone (needs an SMS provider contract; the server already knows `ooredoo_communication` and `acs`, `server/domain/phone-provider.ts` **[source]**).
 - **Updates:** the forced-upgrade gate works only if the app was built with `EXPO_PUBLIC_UPDATE_URL`; set `WIND_MIN_CLIENT_BUILD` only after that (`docs/operations/deploy.md`).
-- **Distribution:** Play Store or APK link is the owner's call.
+- **Distribution:** use the existing signed APK path initially; prove HTTPS update URL and install-over-old before enforcing a minimum build.
 - **Legal, pricing, support:** owner decisions in §10.
 - **Staged opening:** 50 → 200 → open. Each step has a go/no-go list: ladder green, no open severity-1 item, backups restored this week, alert tested this week, support reachable.
 - **Exit:** strangers can sign up, order, track and receive, and the owner is told within minutes when something breaks.
@@ -215,31 +218,32 @@ Freight; digital payments through a PMA-licensed provider; Israel (new OSRM grap
 
 ## 9. Cloud use
 
-- **Azure runs the app:** VM today, registry `windprodacr`, Blob for nightly backups, PostgreSQL after Phase 3. `infra/vm/wind-backup.sh` checks integrity before upload **[source]**; installed copies remain unchecked until Phase 0 compares them.
+- **Azure runs the app:** VM today, registry `windprodacr`, Blob for nightly backups, PostgreSQL after Phase 3. `infra/vm/wind-backup.sh` checks integrity before upload; all four installed script hashes match the candidate **[ran, Phase 0]**. A successful backup upload is not a new restore drill.
 - **AWS is the safety net [decided]:** an off-site encrypted copy of each backup in S3 (versioning on, a lifecycle rule, a credential on the VM that can only write new objects); an outside uptime check that notifies a person; static hosting for the APK through S3 and CloudFront.
 - **AWS constraints:** selected Region `eu-north-1`, profile `osama`; no cross-Region replication, Lambda@Edge or StackSets. CloudFront is global; its required global WAF/CloudWatch Logs dependencies may use `us-east-1`. Inventory those exceptions in both Regions. Check the project plan and service availability in current AWS guidance. Ask before paid resources, and whether to keep or remove created resources.
 - Budget alerts only notify; they do not stop spend. Set hard ceilings where the service has them.
 
-## 10. Decisions only the owner can make
+## 10. External prerequisites and retained authorizations
 
-Keep this list current and bring it in batches, each with your recommendation and cost.
+Ordinary choices follow §2.6; do not repeat a preference interview. Keep this list current,
+with costs and evidence for the credentials, physical/legal readiness and specific authorizations still needed.
 
 | Decision | Blocks | Your default until answered |
 |---|---|---|
 | Sending domain for email | Verified email, Phase 4 | Keep pilot among known people |
 | SMS provider and contract | Verified phone, Phase 4 | Same |
-| PostgreSQL spend and hosting option | Phase 3 | Do not provision |
+| PostgreSQL spend | Phase 3 | GP D2ds_v5 selected for planning; complete budget/quota, then obtain provisioning authorization |
 | Production migration and cutover window | Phase 3 | Do not cut over |
 | Backend reversal after PostgreSQL writes | Phase 3 rollback | Freeze and recover forward |
 | Paid AWS resources | Phase 1 safety net | Do not create |
 | Production smoke-test account; deletion of it or its orders | Post-deploy checks | Reuse an owner-approved labelled account; delete nothing |
-| Tile hosting: keep public host, self-host, or add a fallback | Maps item 3 | Add monitoring only |
-| Which roads drivers may use (routes can cross the Green Line today) | Rides, routing profile | Do not change routing |
+| Tile-provider terms/capacity evidence | Maps item 3 | Existing host monitoring first; no paid fallback selected |
+| Which roads drivers may use (historical sandbox crossing; production unproved) | Rides, routing profile | Obtain actual driver/permit/operating-area evidence |
 | Production activation of dispatch and boarding | Phase 5 | Keep off |
 | Flat ₪20 parcel price on long trips | Courier supply | Do not change |
-| Play Store or APK link | Phase 4 | APK link |
+| Signed APK URL and install-over-old evidence | Phase 4 | Existing APK distribution selected |
 | Legal review | Public launch | Do not open to strangers |
-| Backup retention; who is alerted when the server is down | Phase 1 | Keep all backups; alert the owner |
+| Backup retention and recovery objectives | Phase 1 | Preserve backups pending timed drill/policy; owner selected as alert recipient, delivery still needs proof |
 | Spoken alternative to map-only pin adjustment | Accessibility | Search results only |
 
 ## 11. How you report

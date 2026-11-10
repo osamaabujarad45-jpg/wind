@@ -8,16 +8,15 @@ suite registrations and a fixed-delay push race. Applies to `tests/` and `script
 | Command | Selects | Needs |
 | --- | --- | --- |
 | `npm test` | `scripts/run-tests.mjs`: one child per registered suite, first failure exits | SQLite, temp dirs and loopback PostgreSQL with PostGIS; subscription-migration and database-logging suites connect through `WIND_TEST_DATABASE_URL` |
-| `npm run test:contracts` | the same runner with `--filter=contracts` (the two frozen contract suites) | as `npm test` |
-| `npm run test:persistence` | `scripts/check-persistence.mjs`, then `scripts/check-postgres-legacy.mjs` | the isolated PostgreSQL on `127.0.0.1:55473` |
+| `npm run test:contracts` | the same runner with `--filter=contracts` (the four registered suites whose names contain `contracts`) | as `npm test` |
+| `npm run test:persistence` | `scripts/check-persistence.mjs`, then `scripts/check-postgres-legacy.mjs` | this session's isolated loopback PostgreSQL, selected with `WIND_TEST_DATABASE_URL` |
 | `test:scenarios`, `test:readiness`, `test:location`, `test:android-browser` | Playwright journeys | port 4188, the shared web export |
 | `phone:server`, `phone:web`, `phone:check` | phone sandbox | port 4191, the attached SM-A5360 |
 
 `npm test` is the only list of suites. `test:contracts` is a filter over it, not a second
 registration, so the two gates cannot drift apart.
 
-Use an isolated PostgreSQL instance and port per session (`AGENTS.md`). The examples below describe
-the older shared local setup, not permission to use or stop another session's database. Set
+Use an isolated PostgreSQL instance, data directory and port per session (master plan §3 rule 9). Set
 `WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:<your-port>/fastship_test`; see
 `local-database.md`. CI supplies PostgreSQL 18 / PostGIS 3.6 to both integration and persistence jobs.
 
@@ -57,34 +56,26 @@ guard regex refuses any other name, and the database `fastship_test` and the `pu
 never touched. Suites outside this fixture manage their own schemas; do not add a shared
 "drop everything" helper.
 
-## Shared resources: serialize these
+## Resource ownership and serialization
 
-The local PostgreSQL is shared across worktrees and the browser gates share one port and one build
-directory. These resources are process-exclusive:
+Each session owns its source/export directory and PostgreSQL instance. Within that session,
+serialize gates that reuse ports or output directories. Check the machine's listeners before
+starting a fixed-port server; a busy port is not permission to stop another session.
 
 - **Port 4188** — `test:scenarios`, `test:readiness`, `test:location` and `test:android-browser` all
   bind `127.0.0.1:4188`. Never run two of them at once. `test:scenarios` also exports the shared
   bundle to `.expo/location-review-web` with `--clear`; the other three reuse it. Run
   `test:scenarios` first (or export manually), and do not export while another gate is serving it.
 - **Port 4191** — `npm run phone:server` binds `127.0.0.1:4191`; `phone:web` builds against it and
-  `phone:check` runs `adb reverse tcp:4191 tcp:4191`. One phone sandbox per machine.
-- **Port 55473** — the single local PostgreSQL. Run one `test:persistence` at a time, including
-  filtered runs and the legacy harness. Take the machine-wide lock first:
-
-  ```pwsh
-  $lock = 'C:\Users\osama\AppData\Local\Temp\opencode\wind-pg-lock'
-  $got = $false
-  for ($i = 0; $i -lt 240; $i++) {
-    if (New-Item -ItemType Directory -Path $lock -ErrorAction SilentlyContinue) { $got = $true; break }
-    Start-Sleep 5
-  }
-  if (-not $got) { throw 'pg lock timeout' }
-  npm run test:persistence
-  Remove-Item -Recurse -Force $lock
-  ```
-
-  Keep `WIND_TEST_DATABASE_URL` on `127.0.0.1`/`localhost` and the `fastship_test` database; the
-  legacy fixture rejects anything else.
+  `phone:check` runs `adb reverse tcp:4191 tcp:4191`. One phone sandbox per machine. When the
+  sandbox is on the test PC, SSH-forward it to the local port before applying the phone reverse.
+- **PostgreSQL** — choose an unused loopback port and a new data directory. `55473` in older
+  examples belongs to the historical shared setup; it is not a session allocation. The November 10
+  Astra baseline owns `D:\wind-plan-20261110-astra` and port `55493` on `DESKTOP-S2JKMK5`.
+  Set `WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:<your-port>/fastship_test`.
+  Run one persistence gate at a time against that instance. Start/stop only your own cluster;
+  schema isolation does not make stopping a shared database safe. Keep the URL on loopback and
+  the database named `fastship_test`; the legacy fixture rejects other targets.
 - **`.expo/` output dirs** — `test:scenarios` (`.expo/location-review-web`, `.expo/scenarios`),
   `test:readiness` (`.expo/readiness`), `phone:web` (`.expo/phone-qa/web`), `test:access`
   (`.expo/access-regression-web`), `test:jobs-ui` (`.expo/jobs-pages-web`), the CI export
@@ -93,8 +84,21 @@ directory. These resources are process-exclusive:
 
 ## Evidence rules
 
+For `test:android-browser` on the test PC with the phone attached locally, reserve local and
+remote port `4188` plus CDP port `9228`. From the PC the phone is attached to, forward local `4188` to the test PC's `4188`
+(`ssh -L 4188:127.0.0.1:4188`), reverse the
+phone's `4188` to local `4188`, forward local `9228` to `chrome_devtools_remote`, then SSH-reverse
+local `9228` to the test PC's `9228` (`ssh -R 9228:127.0.0.1:9228`). Open Chrome's unique
+`http://localhost:4188/auth?phoneCheck=<id>` URL with the harness-bound device command. Set
+`WIND_ANDROID_BROWSER_TARGET` to that exact URL when running `npm run test:android-browser`
+remotely; the runner navigates to it after starting its API and closes only that test tab.
+Inspect existing listeners and forward mappings first; never replace another session's mapping.
+The default local runner still launches through `adb`; agent sessions use the explicit target
+and their supported device launcher. Neither path clears Chrome's profile.
+
 - Run each gate as its own command and stop on the first failure.
-- A local run is reported as "local worktree fallback". Only the `k5` SSH run is remote evidence;
-  never present local output as remote.
+- A local run is reported as "local worktree fallback". Remote evidence names the actual SSH
+  machine, session directory, source SHA, command and exit code (`DESKTOP-S2JKMK5` for the
+  November 10 baseline). An alias alone is not evidence of where a command ran.
 - Phone acceptance uses the attached SM-A5360 only, never an emulator or simulator. Keep its backend
   on `adb reverse` and do not clear its Chrome profile.
