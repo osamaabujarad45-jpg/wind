@@ -6,7 +6,12 @@ export { noteServerDate, serverOffset } from './api-clock.ts';
 export class ApiError extends Error {
   readonly status?: number;
   readonly offerFailure?: import('./journey-contracts.ts').OfferFailure;
-  constructor(message: string, status?: number, failure?: import('./journey-contracts.ts').OfferFailure) { super(message); this.status = status; this.offerFailure = failure; }
+  /** The server's log id for a failure it recorded; shown to the person so support can find the request. */
+  readonly reference?: string;
+  constructor(message: string, status?: number, failure?: import('./journey-contracts.ts').OfferFailure, reference?: unknown) {
+    super(message); this.status = status; this.offerFailure = failure;
+    if (typeof reference === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(reference)) this.reference = reference;
+  }
 }
 
 /** app.json version as major·10000 + minor·100 + patch; tests keep the two equal. The server gates on it (426). */
@@ -71,7 +76,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
       const valid = failure?.schemaVersion === 1 && ['accept','decline'].includes(failure.verb)
         && failure.code === data?.error && ['invalid','authentication','unavailable','conflict','transient'].includes(failure.category)
         && ['review','sign_in','stop','refresh','reconcile'].includes(failure.recovery);
-      throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined);
+      throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined, data?.reference);
     }
     try { validateApiResponse(url, data, method ?? (body ? 'POST' : 'GET'), receivedAt + serverOffset()); }
     catch { throw new ApiError('invalid_response', 502); }
