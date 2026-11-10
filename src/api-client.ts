@@ -7,10 +7,10 @@ export class ApiError extends Error {
   readonly status?: number;
   readonly offerFailure?: import('./journey-contracts.ts').OfferFailure;
   /** The server's log id for a failure it recorded; shown to the person so support can find the request. */
-  readonly requestId?: string;
-  constructor(message: string, status?: number, failure?: import('./journey-contracts.ts').OfferFailure, requestId?: unknown) {
+  readonly reference?: string;
+  constructor(message: string, status?: number, failure?: import('./journey-contracts.ts').OfferFailure, reference?: unknown) {
     super(message); this.status = status; this.offerFailure = failure;
-    if (typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId)) this.requestId = requestId;
+    if (typeof reference === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(reference)) this.reference = reference;
   }
 }
 
@@ -76,7 +76,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
       const valid = failure?.schemaVersion === 1 && ['accept','decline'].includes(failure.verb)
         && failure.code === data?.error && ['invalid','authentication','unavailable','conflict','transient'].includes(failure.category)
         && ['review','sign_in','stop','refresh','reconcile'].includes(failure.recovery);
-      throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined, data?.requestId);
+      throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined, data?.reference);
     }
     try { validateApiResponse(url, data, method ?? (body ? 'POST' : 'GET'), receivedAt + serverOffset()); }
     catch { throw new ApiError('invalid_response', 502); }

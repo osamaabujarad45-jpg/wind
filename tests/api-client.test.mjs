@@ -28,10 +28,10 @@ try {
     await assert.rejects(request('https://test.invalid/api/me'), e => e instanceof ApiError && e.status === 502 && e.message === 'server_error');
   }
   // A logged server failure carries its id; anything not shaped like one is never shown to the person.
-  const requestId = '0b5e2d6a-8f3c-4c1e-9a7d-2f4b6c8e0a1c';
-  for (const [sent, kept] of [[requestId, requestId], ['<b>x</b>', undefined], [7, undefined]]) {
-    globalThis.fetch = () => new Response(JSON.stringify({ error: 'server_error', requestId: sent }), { status: 500 });
-    await assert.rejects(request('https://test.invalid/api/me'), e => e instanceof ApiError && e.status === 500 && e.requestId === kept);
+  const reference = '0b5e2d6a-8f3c-4c1e-9a7d-2f4b6c8e0a1c';
+  for (const [sent, kept] of [[reference, reference], ['<b>x</b>', undefined], ['-'.repeat(36), undefined], [7, undefined]]) {
+    globalThis.fetch = () => new Response(JSON.stringify({ error: 'server_error', reference: sent }), { status: 500 });
+    await assert.rejects(request('https://test.invalid/api/me'), e => e instanceof ApiError && e.status === 500 && e.reference === kept);
   }
 
   globalThis.fetch = () => new Promise(resolve => { finish = resolve; });

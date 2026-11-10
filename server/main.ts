@@ -3551,8 +3551,9 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     if (verb && failedUrl.searchParams.get('journeyProtocol') === '1') payload = { error: code, offerFailure: offerFailure(verb, code, status) };
     if (status >= 500 && !(error instanceof HttpError && ['route_unavailable', 'email_unavailable'].includes(error.message))) {
       logServerError('http_request_failed', error, { correlationId, httpStatus: status });
-      // The same id reaches the person, so a report to support finds this log line.
-      payload = { ...(payload as object), requestId: correlationId };
+      // An unexpected failure tells the person its log id, so a report to support finds this line.
+      // Deliberate refusals (unavailable, draining) keep their plain body.
+      if (!(error instanceof HttpError)) payload = { ...(payload as object), reference: correlationId };
     }
   }
   if (status === 429 || status === 503) res.setHeader('Retry-After', '60');

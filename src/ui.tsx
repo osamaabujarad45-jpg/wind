@@ -64,7 +64,7 @@ export function useCopy() {
     err: (error: unknown) => {
       const text = copy[language][`err_${typeof error === 'string' ? error : errorCode(error)}` as CopyKey] ?? copy[language].err_generic;
       // A failure the server logged carries its id: the first eight characters are enough for support to find it.
-      return error instanceof ApiError && error.requestId ? `${text} ${copy[language].errorRef} ${ltr(error.requestId.slice(0, 8))}` : text;
+      return error instanceof ApiError && error.reference ? `${text} ${copy[language].errorRef} ${ltr(error.reference.slice(0, 8))}` : text;
     },
     money: (n: number) => `${n < 0 ? '−' : ''}${copy[language].nis} ${Number.isInteger(n) ? Math.abs(n) : Math.abs(n).toFixed(2)}`,
   };
