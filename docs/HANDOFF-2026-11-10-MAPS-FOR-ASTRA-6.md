@@ -6,11 +6,11 @@ This file is self-contained. Everything marked **[source]** was read by the auth
 
 ## 1. Read this before touching anything
 
-1. **Branch from `origin/master`, never from local `master`.** Local `master` (`b609229`) is an old docs-only lineage, 221 commits behind. It has no `src/runtime-config.ts`, no `src/scene-map.tsx`, no map tests. A new worktree or a delegated worker with worktree isolation starts from that old lineage by default. Check with `git merge-base --is-ancestor origin/master HEAD` before you write a line.
+1. **Branch from `origin/master`, never from local `master`.** Local `master` (`b609229`) is an old lineage, 221 commits behind; its own commits are docs only. Its code predates the map rewrite: it has no `src/runtime-config.ts`, no `src/scene-map.tsx` and no `tests/google-map-lifecycle.test.mjs`, and its `tests/map.test.mjs` is an older file. A new worktree or a delegated worker with worktree isolation starts from that old lineage by default. Check with `git merge-base --is-ancestor origin/master HEAD` before you write a line.
 2. **The 2 Nov Uber study pack is not on `origin/master` on purpose.** It lives on local `master`, on `claude/ponytail-review-8c424d` and on `origin/backup/handoff-docs-full-20261103`, all on that old lineage. Read it there if you need it (§7); do not build on those branches.
-3. **A merge is not a deploy.** Production runs a tagged image on an Azure VM. Android has no over-the-air updates: any change to client code, including `src/` map hosts, reaches Android users only with a new APK. A change to `public/map.html` alone reaches Android with a server deploy, because the WebView loads the page from the API (see §2). **[source]** `src/map-page.native.tsx:10`.
+3. **A merge is not a deploy.** Production runs a tagged image on an Azure VM. Android has no over-the-air updates (**[source]** no `expo-updates` in `package.json`, no `updates` block in `app.json`; the `eas update` line in `AGENTS.md` is generic Expo guidance, not this app's setup): any change to client code, including `src/` map hosts, reaches Android users only with a new APK. A change to `public/map.html` alone reaches Android with a server deploy, because the WebView loads the page from the API (see §2). **[source]** `src/map-page.native.tsx:10`.
 4. **Do not deploy, migrate or change production settings without the owner's go-ahead.** Commit, push and PR are covered for work the owner asked for; deploys are not.
-5. **Tests and heavy builds run on the test PC, not on the owner's PC.** Host `DESKTOP-S2JKMK5` over SSH (user `pc gaming`; the `k5` alias in `AGENTS.md` is the same class of machine and the project's own runner notes are in `docs/HANDOFF-2026-10-30-phone-acceptance.md`). One folder and one PostgreSQL port per session; never write into, start or stop another session's folder or port. If the host does not answer, wait and re-probe. Never fall back to the owner's PC. **[carried]**
+5. **Tests and heavy builds run on the test PC, not on the owner's PC.** Host `DESKTOP-S2JKMK5` over SSH (user `pc gaming`, host-key checking on with `-o HostKeyAlias=desktop-s2jkmk5.local`; if host-key verification fails, stop and ask. The `k5` alias in `AGENTS.md` is the same class of machine and the project's own runner notes are in `docs/HANDOFF-2026-10-30-phone-acceptance.md`). One folder and one PostgreSQL port per session; never write into, start or stop another session's folder or port. If the host does not answer, wait and re-probe. Never fall back to the owner's PC. **[carried]**
 6. **Never use an emulator.** UI acceptance is on the physical Android phone `SM-A5360` (adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask. **[source]** `AGENTS.md:45`.
 7. **Repository:** `origin` is `osamaabujarad45-jpg/wind`. `legacy-origin` is frozen; never push to it. For `gh`, use `GH_TOKEN=$(gh auth token --user osamaabujarad45-jpg)`. **[carried]**
 8. **Docs to read next, on `origin/master`:** `docs/CURRENT-WORK.md` (top), `docs/HANDOFF-2026-11-05-NEXT-LEAD.md` (top section), `docs/PILOT.md`, `docs/HANDOFF-2026-10-31-maps-real-data.md`, `SPEC-android-map.md`, `SPEC-live-map.md`, `SPEC-checkpoint-routing.md`, `SPEC-routing-eta.md`. Your own earlier plan is `tasks/MAPS-GPS-HANDOFF-PLAN-2026-11-01.md`; its implementation record is `reports/maps-gps-handoff-implementation-2026-11-01.md`.
@@ -21,7 +21,7 @@ This file is self-contained. Everything marked **[source]** was read by the auth
 
 | Platform | Renderer | Host file | Notes |
 |---|---|---|---|
-| Android | MapLibre in a WebView | `src/map-page.native.tsx` | Loads `${API_URL}/map/v1/map.html`. No Google key in the baseline APK. |
+| Android | MapLibre in a WebView | `src/map-page.native.tsx`, entered through `src/route-map.android.tsx` | Loads `${API_URL}/map/v1/map.html`. No Google key in the baseline APK. The comment at the top of `public/map.html` still names the old entry files. |
 | Web (and iPhone home-screen app) | MapLibre in a same-origin iframe | `src/map-page.tsx` | Loads `/map.html`. Browser gates reach it with `page.frameLocator('iframe[title="map"]')`; `window.windMap` is the live camera. |
 | iOS native | Apple Maps via `react-native-maps` | `src/route-map.native.tsx` | A separate renderer, not `map.html`. Not part of the pilot. Leave it alone unless asked. |
 
@@ -68,7 +68,7 @@ A Google renderer exists behind a build-time key and a user opt-in (`src/google-
 | Navigating driver's own route | exact position (5 decimals) with heading, steps on | `src/road.tsx:87` |
 | Leave-the-line reroute | 50 m moved, 30 s since anchor, more than 40 m off the kept line | `src/road.tsx:80` |
 | Fix counts as fresh | under 30 s | `src/road.tsx:102` |
-| ETA shown as a range | `[m, round(m × 1.3) + 2]` | `etaRange`, `src/map-math.ts` |
+| ETA shown as a range | server band: `ceil` to minutes, then `round(× 1.3) + 2` | `etaProjection`, `server/domain/journey.ts:12`; shown via `src/road.tsx:122`. `etaRange` in `src/map-math.ts` is only the fallback when a reply has no `eta` |
 | Next maneuver | passed within 15 m, uses the line and heading | `src/nav-steps.ts:11,18` |
 
 `src/api.ts` appends `journeyProtocol=1` to `/orders`, `/jobs`, `/offers`, `/route`, `/price` and `/admin/orders`. Test matchers must compare `pathname`, not the full URL. **[carried]**
@@ -79,7 +79,7 @@ A Google renderer exists behind a build-time key and a user opt-in (`src/google-
 - OSRM runs as container `wind-osrm` on the VM with a West Bank graph. The first thing to check when "maps show no real data" is `OSRM_URL` and that container; an admin can read `GET /api/admin/routing`.
 - Production database is SQLite. Driver presence and dispatch are PostgreSQL-only, so the jobs board is the driver flow.
 - On 31 Oct the provider comparison kept OpenStreetMap data: Nominatim found 18 of 19 West Bank places within 1.5 km, Azure Maps 8, Amazon Location 4. Do not switch provider to "fix" maps.
-- A53 baseline, 31 Oct: panning in the WebView at 117 fps on a 120 Hz screen; order screen with map costs about +133 MB app memory plus an 81 MB renderer; cold open about 2.5 s to tiles on a local backend.
+- A53 baseline, 31 Oct (from session notes; not recorded in any tracked doc, so re-measure before quoting): panning in the WebView at 117 fps on a 120 Hz screen; order screen with map costs about +133 MB app memory plus an 81 MB renderer; cold open about 2.5 s to tiles on a local backend.
 
 ## 3. What is proven and what is not
 
@@ -93,7 +93,7 @@ A Google renderer exists behind a build-time key and a user opt-in (`src/google-
 - TalkBack on any map screen.
 - Anything on iOS native.
 
-**What automated gates cover:** CI runs typecheck, lint, `npm test` and `test:persistence` only. The browser suites are not in CI: `test:tulkarm` (needs an OSRM tunnel), `test:scenarios`, `test:location`, `test:jobs-ui`, `test:access`, `test:readiness`, `test:android-browser`. Three of them went stale unnoticed during the map rewrite, and one was hiding a real bug. Run them yourself after any map change. **[carried]**
+**What automated gates cover [source]** `.github/workflows/ci.yml`: typecheck, lint, `npm test`, `check:audit`, a release `expo export` for all platforms, a pinned Bicep compile, `test:persistence`, and a release-image build that is not pushed. No browser suite runs in CI: `test:tulkarm` (needs an OSRM tunnel), `test:scenarios`, `test:location`, `test:jobs-ui`, `test:access`, `test:readiness`, `test:android-browser`. Three of them went stale unnoticed during the map rewrite, and one was hiding a real bug. Run them yourself after any map change. **[carried]**
 
 **What only the phone catches [carried]:** the keyboard covering a sheet, a turn banner computed from straight-line distance, a route starting from a grid cell instead of the car, a Cancel button under the navigation bar, slow indoor GPS. None of these showed in a browser.
 
@@ -105,7 +105,7 @@ Each item says what is known, what is a guess, and what "done" means. Measure be
 
 - **Known [carried]:** on the phone, tapping Confirm right after picking a place sometimes did nothing. Never explained. The next-lead handoff cites `public/map.html:329` and `:197`; those line numbers are stale.
 - **Known [source]:** `map.on('movestart')` sends `moving` for every move in pin mode, including the page's own 350 ms `easeTo` in `centerPin` (`public/map.html:340`, `:206`). On the booking screen `moving` sets `pinMoving`, which disables Confirm until the next `center` message clears it (`src/app/book.tsx:561–562`, `:597`). The bridge also drops a `center` that does not match the centre it is waiting for (`src/map-bridge.ts`, `receive`). `src/pin-sheet.tsx` does not listen to `moving`; it has its own `positioning` guard.
-- **Guess:** a tap during that 350 ms ease lands on a disabled button. A second thing to rule out: a dropped `center` leaving `pinMoving` set longer than the ease. The other candidate, the keyboard window still closing, was removed by a later change.
+- **Guess:** a tap during that 350 ms ease lands on a disabled button. A second thing to rule out: a dropped `center` leaving `pinMoving` set longer than the ease. The other candidate, the keyboard window still closing, is reported gone because search now dismisses the keyboard before leaving (**[carried]** `docs/HANDOFF-2026-11-05-NEXT-LEAD.md`, "The missed confirm press").
 - **Do:** reproduce first. Pick a place, tap Confirm at once, 20 times, count misses, on the phone. If the guess holds, the smallest fix is to send `moving` only for user-originated moves (`e.originalEvent`, as `zoomstart` already does on line 342) or to jump instead of ease when the move came from a search pick.
 - **Done:** 0 misses in 20 on the phone, `tests/booking-map-sheet.test.mjs` and `tests/map.test.mjs` green, and a test that fails without the fix.
 
@@ -113,7 +113,7 @@ Each item says what is known, what is a guess, and what "done" means. Measure be
 
 - **Known [source]:** a cold map needs `maplibre-gl.mjs` (597 kB), `maplibre-gl-shared.mjs` (517 kB), the worker (19 kB), the RTL text plugin (133 kB, lazy), `map.html` (33 kB), then the style, glyphs, sprite and tiles from OpenFreeMap. Sizes are uncompressed; the server sends brotli. Vendor files are `immutable` for a week; `/map/v1/map.html` is cached for a day; `/map.html` is `no-cache`.
 - **Not known:** time to first tile and to `ready` on 3G, how often the 20 s deadline fires, what the user sees meanwhile.
-- **Do:** measure on the A53 with Chrome DevTools throttling over `adb forward` (Slow 3G and a 400 kbit/s profile), cold and warm, in Nablus, Ramallah and Jenin. Record time to `drawing`, to `ready`, and bytes. Only then decide. Candidates, cheapest first: confirm brotli and caching actually hit in the WebView; trim the style to the layers `restyle()` keeps; preload the style JSON; a lower `maxZoom` on first frame.
+- **Do:** measure on the A53 with Chrome DevTools throttling (DevTools over `adb forward`; the phone's test backend stays on `adb reverse`, `AGENTS.md:47`; Slow 3G and a 400 kbit/s profile), cold and warm, in Nablus, Ramallah and Jenin. Record time to `drawing`, to `ready`, and bytes. Only then decide. Candidates, cheapest first: confirm brotli and caching actually hit in the WebView; trim the style to the layers `restyle()` keeps; preload the style JSON; a lower `maxZoom` on first frame.
 - **Done:** a table of numbers in the PR, a stated budget, and a browser gate that fails when the cold page weight grows past it.
 
 ### 3. The tile host is a single point of failure (needs an owner decision)
@@ -125,13 +125,13 @@ Each item says what is known, what is a guess, and what "done" means. Measure be
 
 ### 4. Keep the car on the road
 
-- **Known [source]:** the marker is drawn at the raw fix. `nearLine` and `fromDriver` already exist in `src/map-math.ts` and in the page.
+- **Known [source]:** the marker is drawn at the raw fix. `nearLine` and `fromDriver` exist in `src/map-math.ts` only; the page has no copy (the host trims the line with `fromDriver` before sending it, `src/road.tsx:122`). A projection inside the page needs a new helper added to the mirrored block (`public/map.html:70–120`) and to the check in `tests/map.test.mjs`.
 - **Do:** when the fix is within about 40 m of the approach line, draw the marker at its projection on the line; further off, draw the raw fix (that is when the driver really left the route). Client-side only, no new OSRM calls. Keep the accuracy halo at the true accuracy.
 - **Done:** a unit test on the projection, and on the phone the car no longer drifts through buildings on a straight street. Check it does not hide a real wrong turn.
 
 ### 5. Make the ETA honest with pilot data
 
-- **Known [source]:** the range is a fixed formula, `×1.3 + 2`. Earlier work marks uncalibrated estimates as accuracy `unknown`. **[carried]** With gates that often close, a static ETA can be badly wrong.
+- **Known [source]:** the range is a fixed formula, `×1.3 + 2` on whole minutes, applied on the server (`etaProjection`, `server/domain/journey.ts:12`). Earlier work marks uncalibrated estimates as accuracy `unknown`. **[carried]** With gates that often close, a static ETA can be badly wrong.
 - **Do:** from finished pilot orders, compare promised minutes with actual. This needs enough real trips; if there are too few, say so and stop. Do not invent a calibration.
 - **Done:** a short report with the sample size, and a formula change only if the data supports one.
 
