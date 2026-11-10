@@ -5,7 +5,7 @@ PostgreSQL Flexible Server point-in-time restore and Blob recovery are infrastru
 1. Declare incident and freeze new writes/dispatch through the approved application control; keep custody and finance access staffed.
 2. Select a restore point from the incident timeline and create a separate server using the documented Azure PostgreSQL restore procedure: <https://learn.microsoft.com/azure/postgresql/backup-restore/how-to-restore-server-portal>.
 3. Keep ingress closed. Verify TLS, private DNS/network path, PostGIS required extensions, schema/migration state, and least-privilege operator access.
-4. Run the repository's reviewed reconciliation/import checks against the restored server and compare domain counts, balanced ledgers, active assignments/custody, returns, idempotency, event/outbox continuity, and Blob object references.
+4. Run reviewed, read-only reconciliation against the restored server and compare domain counts, balanced ledgers, active assignments/custody, returns, idempotency, event/outbox continuity, and Blob object references. Never use SQLite re-import to repair a PostgreSQL server that accepted newer authoritative writes.
 5. Test API/worker behavior against the restored copy without real provider calls. Verify no fallback to stale SQLite.
 6. Obtain owner approval for a controlled recovery cutover. Preserve the source server read-only for investigation under the approved retention policy.
 
@@ -13,16 +13,17 @@ PostgreSQL Flexible Server point-in-time restore and Blob recovery are infrastru
 
 The repository rehearses the SQLite→PostgreSQL import continuously: `tests/pg-import.mjs` takes a consistent SQLite snapshot, imports it into an isolated PostgreSQL schema (`server/migrate.ts`), reconciles counts, money totals, open custody and rounding exceptions exactly, then proves `pg_dump`/`pg_restore` restore plus API parity over HTTP; `tests/pg-migration-lock.mjs` proves the migration CLI waits through a concurrent advisory lock and stays retry-safe. A real rehearsal adds the authorized live snapshot and the operator record above — the automated rehearsal alone is not cutover approval.
 
-Two reconciliation duties belong to the rehearsal before the payments gate opens (T28/T50 carry-forward):
+The rehearsal has these cutover and payment-reconciliation duties (T28/T50 carry-forward):
 
 - **Pre-T28 `rejected` refund rows are not retro-reserved.** Any refund row written `rejected` under the old contract must be reconciled against the provider's own statements before the payments capability is enabled on the imported data; the provider, not the legacy row, decides whether that money moved.
-- **Rollback after new PostgreSQL writes never points back at stale SQLite.** Once the API writes to PostgreSQL, the SQLite file is an archival copy only: recovery follows step 2-6 against PostgreSQL backups, and the imported SQLite snapshot is never re-promoted (the runtime has no production SQLite fallback branch).
+- **Continuously freeze all SQLite writers through final import and switch.** The CLI's `--freeze-writes` releases its lock after snapshot creation, before import; it cannot provide this operational freeze. The current importer is test-only and loopback-only, so a reviewed production importer is still required.
+- **Rollback after new authoritative PostgreSQL writes never points back at stale SQLite.** Controlled schema/import setup is distinct from new authoritative writes, including sessions, smoke tests and workers. Before that boundary, return to SQLite only if it remains authoritative, continuously frozen and image/schema compatible. After it, recover forward through PostgreSQL backups and reconciliation; never re-promote or re-import stale SQLite. `runtimePersistence` does not automatically fail over a configured PostgreSQL connection, but today's deploy script can restart the old SQLite container with its old environment. Backend-aware rollback and a post-write readiness-failure drill must close that gap before cutover.
 
 ## Production VM (SQLite), what runs today
 
 `infra/vm/wind-backup.sh` runs nightly at 03:10 UTC: `VACUUM INTO` a consistent copy, integrity check, gzip, upload to private Azure Blob with a write-only SAS, then touch `/srv/wind-data/backups/last-ok`. 14 days stay on the VM. So at most about a day of orders can be lost until the owner sets a stricter objective. If `last-ok` is over 26 hours old the API pushes one alert a day to admins and the dashboard says so until a backup succeeds.
 
-Update the script on the VM with any image that has this alert (`sudo cp infra/vm/wind-backup.sh /srv/wind-backup.sh`), or the dashboard reports a stale backup that is not stale.
+The 10 November read-only inventory confirmed all four installed scripts match `infra/vm/`, including the backup integrity/`last-ok` behavior. Update installed scripts alongside future reviewed changes; an old backup script could otherwise cause false stale-backup alerts. The latest inspected Blob copy was `wind-20261110T031001Z.db.gz` (10,320 bytes). This is backup evidence, not a fresh restore drill.
 
 To restore, on the VM or a replacement. If any account was blocked or deleted since the copy, run `sudo docker stop caddy` first, because a blocked person could otherwise sign in as soon as the API is up:
 
@@ -41,7 +42,7 @@ az storage blob list --subscription "Azure subscription 1" --account-name windpr
 az storage blob download --subscription "Azure subscription 1" --account-name windprodstore --container-name wind-backups --auth-mode key -n wind-<stamp>.db.gz -f wind-<stamp>.db.gz
 ```
 
-The default `az` subscription is the disabled student one, so name the subscription. These files are not in any backup and must be recreated on a new VM: `/srv/wind-api.env` (`DB_PATH WIND_IDENTITY_MODE NODE_ENV WEB_ROOT TZ WIND_ENABLED_SERVICES HOST PORT SUPPORT_CONTACT OSRM_URL WIND_TRUST_PROXY WIND_PUSH_SUBJECT WIND_EXPO_PUSH_ENABLED`, values in `docs/operations/deploy.md` and `.env.example`, plus the secrets `WIND_FIREBASE_API_KEY` and `WIND_FIREBASE_SERVICE_ACCOUNT`: make a new key in Firebase rather than looking for a copy), `/srv/wind-backup.env` (a new write-only SAS), `/srv/Caddyfile`, and `/etc/cron.d/wind`. The OSRM graph at `/srv/osrm` is rebuilt with `infra/osrm/build-west-bank.sh`, not restored. `deploy.sh` and `wind-restore.sh` both expect a `wind-api` container, so on a new VM first start one by hand with the `docker run` line from `infra/vm/deploy.sh`. **Not rehearsed:** this replacement path was never run end to end.
+Name the verified subscription explicitly (`9b3ca69d-0c12-40c8-8a47-11aec6a73840`, Azure subscription 1); a CLI default can change between sessions. These files are not in any backup and must be recreated on a new VM: `/srv/wind-api.env` (`DB_PATH WIND_IDENTITY_MODE NODE_ENV WEB_ROOT TZ WIND_ENABLED_SERVICES HOST PORT SUPPORT_CONTACT OSRM_URL WIND_TRUST_PROXY WIND_PUSH_SUBJECT WIND_EXPO_PUSH_ENABLED`, values in `docs/operations/deploy.md` and `.env.example`, plus the secrets `WIND_FIREBASE_API_KEY` and `WIND_FIREBASE_SERVICE_ACCOUNT`: make a new key in Firebase rather than looking for a copy), `/srv/wind-backup.env` (a new write-only SAS), `/srv/Caddyfile`, and `/etc/cron.d/wind`. The OSRM graph at `/srv/osrm` is rebuilt with `infra/osrm/build-west-bank.sh`, not restored. `deploy.sh` and `wind-restore.sh` both expect a `wind-api` container, so on a new VM first start one by hand with the `docker run` line from `infra/vm/deploy.sh`. **Not rehearsed:** this replacement path was never run end to end.
 
 The four-hourly copies on the owner's PC (`scripts/backup-azure.ps1`) are a second source, encrypted to that Windows account. `-VerifyLatest` needs the VM, so it is no help when the VM is gone. To unwrap one offline:
 

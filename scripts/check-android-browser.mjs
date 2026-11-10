@@ -2,6 +2,8 @@
 // adb reverse tcp:4188 tcp:4188
 // adb forward tcp:9228 localabstract:chrome_devtools_remote
 // Run after npm run test:scenarios (reuses its local web export).
+// For a remote runner, open a unique /auth?phoneCheck=<id> tab with the device tool,
+// then set WIND_ANDROID_BROWSER_TARGET to that exact localhost:4188 URL.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -10,6 +12,8 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { copy } from '../src/copy.ts';
 const base = 'http://localhost:4188', output = resolve('.expo/scenarios');
+const openedTarget = process.env.WIND_ANDROID_BROWSER_TARGET || undefined; // an empty value means unset
+if (openedTarget) assert.match(openedTarget, /^http:\/\/localhost:4188\/auth\?phoneCheck=[A-Za-z0-9-]+$/, 'Use a unique local phoneCheck tab');
 mkdirSync(output, { recursive: true });
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-phone-')), 'phone.db');
 process.env.WEB_ROOT = resolve('.expo/location-review-web');
@@ -23,10 +27,12 @@ const errors = [], mapFailures = [], checks = [];
 try {
   // A CDP-created background tab may not render while Android has another app
   // foregrounded. Open our own URL through the OS, then attach to that exact tab.
-  const target = base + `/auth?phoneCheck=${Date.now()}`;
-  const launch = spawnSync('adb', ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', target, '-p', 'com.android.chrome'], { encoding: 'utf8' });
-  assert.equal(launch.status, 0, launch.stderr);
-  console.log('Opened local test tab on Android');
+  const target = openedTarget ?? base + `/auth?phoneCheck=${Date.now()}`;
+  if (!openedTarget) {
+    const launch = spawnSync('adb', ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', target, '-p', 'com.android.chrome'], { encoding: 'utf8' });
+    assert.equal(launch.status, 0, launch.stderr);
+  }
+  console.log(`Attaching to local Android test tab: ${target}`);
   // adb can accept the forward before Chrome has created its debugging socket.
   // Wait for an actual version reply so a cold Chrome start does not fail with socket hang up.
   const cdp = 'http://127.0.0.1:9228';
@@ -42,6 +48,15 @@ try {
   assert.ok(cdpReady, 'Android Chrome debugging endpoint did not become ready within 15 seconds; check the adb forward');
   browser = await chromium.connectOverCDP(cdp, { timeout: 30_000 });
   page = browser.contexts()[0].pages().find(p => p.url() === target);
+  // Chrome retains the requested URL in target metadata when Playwright sees chrome-error://.
+  if (!page && openedTarget) {
+    for (const candidate of browser.contexts()[0].pages()) {
+      const session = await candidate.context().newCDPSession(candidate);
+      const { targetInfo } = await session.send('Target.getTargetInfo');
+      await session.detach();
+      if (targetInfo.url === target) { page = candidate; break; }
+    }
+  }
   assert.ok(page, 'Android did not open the local test tab');
   page.setDefaultTimeout(30_000);
   await page.bringToFront();
@@ -54,6 +69,8 @@ try {
     if (response.url().startsWith('https://tiles.openfreemap.org/') && response.status() >= 400) mapFailures.push(`HTTP ${response.status()}`);
   });
   await page.waitForLoadState('domcontentloaded');
+  // A pre-opened tab may have reached Chrome's error page before this server started.
+  if (openedTarget) await page.goto(target);
   console.log('Connected to Android page');
   await page.evaluate(() => { localStorage.setItem('language', 'en'); localStorage.setItem('onboarded', '1'); localStorage.removeItem('token'); });
   await page.reload();
@@ -74,8 +91,12 @@ try {
   await page.frameLocator('iframe[title="map"]').last().locator('.maplibregl-marker').first().waitFor();
   await page.screenshot({ path: join(output, 'a53-booking-map.png') });
   checks.push('physical GPU renders web map and exact pickup picker');
+  await page.getByRole('button', { name: c.sheetExpand, exact: true }).click();
   for (const [label, value] of [[c.pickupNote, 'Phone test pickup'], [c.dropoffNote, 'Phone test destination'], [c.parcelDetail, 'Documents']])
     await page.getByLabel(label, { exact: true }).fill(value);
+  // Dismiss the keyboard before CDP clicks: a shifted visual viewport hits the sheet handle instead.
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.waitForFunction(() => visualViewport.height >= innerHeight - 1 && Math.abs(visualViewport.offsetTop) < 1);
   await page.getByRole('button', { name: /^Request/ }).click();
   await page.waitForURL(/\/order\/\d+$/);
   await page.getByText(c.findingTitle, { exact: true }).waitFor();

@@ -137,8 +137,13 @@ try {
   await page.waitForTimeout(2200);
   await shot(page, '4b-landscape');
   const inFrame = page.frames().find(f => f.url().includes('/map.html'));
-  const stops = await inFrame.evaluate(() => [...document.querySelectorAll('.stop')].map(e => { const r = e.getBoundingClientRect(); return [r.x, r.y]; }));
-  assert.ok(stops.length === 2 && stops.every(([x, y]) => x > 0 && x < 844 - 340 && y > 0 && y < 390), `the stops sit beside the sheet: ${JSON.stringify(stops)}`);
+  // A stop's name label hangs outside the dot's own box: a visible one must clear the sheet too.
+  const stops = await inFrame.evaluate(() => [...document.querySelectorAll('.stop')].map(e => {
+    const r = [e, ...e.querySelectorAll('.stop-label:not([hidden])')].map(n => n.getBoundingClientRect());
+    return { left: Math.min(...r.map(b => b.left)), right: Math.max(...r.map(b => b.right)), top: Math.min(...r.map(b => b.top)), bottom: Math.max(...r.map(b => b.bottom)) };
+  }));
+  const mapLeft = language === 'ar' ? 340 : 0, mapRight = language === 'ar' ? 844 : 844 - 340;
+  assert.ok(stops.length === 2 && stops.every(r => r.left > mapLeft && r.right < mapRight && r.top > 0 && r.bottom < 390), `the stops sit beside the sheet: ${JSON.stringify(stops)}`);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(800);
   ok('a sideways phone keeps the whole trip on screen');

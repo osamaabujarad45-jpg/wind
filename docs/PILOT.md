@@ -23,7 +23,7 @@ iPhone users can use the web app at <https://windapi236.swedencentral.cloudapp.a
 1. The courier registers in the app and chooses to work as a driver.
 2. Open **Users** in admin, check who they are, and approve them. Nobody takes jobs until approved.
 3. Tell them: keep location on, allow background location, and do not force-close the app while on a job.
-4. Routes stay inside the West Bank but know nothing of permits, gates or checkpoints. The courier decides the road. Drive times are optimistic.
+4. Routes are not a guarantee of permitted roads or a West Bank boundary. A sandbox route crossed the Green Line. Routing avoids checkpoints reported closed, but does not establish permits or current gate access. The courier must confirm the usable road; drive times are uncalibrated estimates.
 
 ## Every day
 
@@ -41,15 +41,15 @@ Watch for: the flat ₪20 on long trips, password-reset email landing in spam, a
 
 | Problem | Do this |
 |---|---|
-| Forgot password | "Forgot password" on sign-in sends a link. Check spam. Otherwise reset from admin **Users**. |
+| Forgot password | Follow the recovery option actually shown on sign-in. Email recovery requires a configured provider; check spam when a link was requested. Otherwise contact support for an identity-checked admin reset. |
 | Courier blocked while carrying a parcel | Phone them: they are not told. |
 | Customer cannot be blocked | They have an open order. Cancel it or wait for delivery. |
-| Server down | Nothing alerts you yet. See `docs/operations/restore.md`. |
+| Server down | The hourly GitHub Uptime workflow checks readiness; notification receipt and a minutes-level alert are not yet proven. See `docs/operations/restore.md`. |
 
 ## Known limits of this pilot
 
 - Phone numbers and email are not verified at signup, so a mistyped email can lose an account to whoever owns that address. Only invite people you know.
 - TalkBack has never been tried by a person.
 - The Firebase project is named `wind-development` and is used for production alerts.
-- Rides and freight are off. To turn them on, set `WIND_ENABLED_SERVICES=parcel,ride,freight` in `/srv/wind-api.env` and redeploy. They have only been tested in Chrome on the phone, with simulated GPS.
+- Rides and freight are off. Public parcels and PostgreSQL cutover precede rides. Service configuration alone does not enable dispatch/presence or boarding: those have separate runtime gates and require reviewed activation plus owner authorization. Simulated-GPS Chrome journeys do not establish native or road acceptance. Freight remains later scope.
 - Only the owner's legal review can say whether this may run commercially; none has been done.

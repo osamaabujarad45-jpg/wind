@@ -1,6 +1,6 @@
 # Azure deployment preparation
 
-This is IaC preparation, not an authorization or a production readiness claim. The repository runtime still restricts PostgreSQL to `NODE_ENV=test`, `WIND_POSTGRES_TEST_ONLY=1`, and loopback. Cloud API/worker activation is therefore blocked. Templates default `enableWorkloads=false`; do not override it until root-reviewed runtime cutover, compatible migration, restore, concurrency, security, region/quota, cost, provider, and operating gates are evidenced. A successful Bicep build or what-if is not deployment approval.
+This is IaC preparation, not an authorization or a production readiness claim. `server/db/runtime.ts` permits PostgreSQL through an isolated test path (`NODE_ENV=test`, `WIND_POSTGRES_TEST_ONLY=1`, loopback), or a staging path (`WIND_POSTGRES_STAGING=1`, non-loopback host, `sslmode=verify-full`, fixed `wp16_staging` schema). Neither is a reviewed production cutover path. Templates default `enableWorkloads=false`; keep that default until runtime, migration, restore, concurrency, security, region/quota, cost, provider and operating gates are evidenced. A successful Bicep build or what-if is not deployment approval.
 
 ## Local validation
 
@@ -16,7 +16,7 @@ The validation script compiles/lints the template and builds all three parameter
 
 ## Production VM, what actually runs today
 
-Production is one VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, with SQLite at `/srv/wind-data/wind.db`. The Container Apps template below is staging preparation and is not live. `infra/vm/deploy.sh` starts the new image and rolls back by itself if it does not become ready.
+The production endpoint uses one VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, with SQLite at `/srv/wind-data/wind.db`. Read-only verification on 10 November found image `wind-api:20261109-design`, digest `sha256:de7a7ff4b7d3f53343ff0c3f7ba4dfd75960fa9a55eee9c44a217ac8f01b455e`, revision `ac531d810af9825f03ece4f1cdfbfa68bd55df03`, and readiness schema 3. The template below is staging preparation. An older, separate Container App named `wind-api` also exists in `wind-prod`; do not mistake it for this endpoint or delete it based on the template's status.
 
 `/srv/wind-api.env` must hold these before starting an image that has the boot checks, or the deploy rolls back with the reason in its log:
 
@@ -25,15 +25,17 @@ WIND_TRUST_PROXY=1   # Caddy is the proxy; without this every user shares one pe
 WIND_PUSH_SUBJECT=https://windapi236.swedencentral.cloudapp.azure.com
 ```
 
-Both are set on the VM. Also copy `infra/vm/wind-backup.sh` and `infra/vm/wind-restore.sh` to `/srv/` then: the VM's backup script still lacks the `last-ok` marker, so without it the new image reports a stale backup that is not stale.
+Both key names were present in the running VM container on 10 November; values were not printed. All four installed scripts (`deploy.sh`, `wind-backup.sh`, `wind-restore.sh`, `wind-watchdog.sh`) matched candidate `f6fd6fff85fe3fa76bf57a90ed9201567f9e73b3` by SHA256. The backup marker and the 03:10:01 UTC Blob backup were present. The older claim that the installed backup script lacks `last-ok` is superseded. Recompare hashes before installing future script changes.
 
 Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL` (https, the store page or APK link) in the EAS environment. Otherwise the update screen on a refused build offers only support.
 
 ### Releasing an image
 
-1. Run the **Release image** workflow on `master` with a new tag: `gh workflow run release-image.yml -f tag=<tag>`. It builds in GitHub Actions, so no build runs on the owner's PC, and pushes to `windprodacr` with the `github-release` registry token, limited to reading and writing `wind-api`. It needs read access to check whether the tag exists.
-2. Check CI passed on that commit. The workflow does not check for you, and it refuses a tag that already exists.
-3. Log the VM in with a short token and deploy. `/srv/deploy.sh` is the VM's copy of `infra/vm/deploy.sh` and rolls back by itself if the new image is unhealthy:
+**Before the next application release:** implement, independently review with two vendors, test and install digest-pinned deployment. The current script pulls and runs a mutable tag and restarts the old container with its original environment on readiness failure. Separate tag checks cannot close that race; the current rollback is not safe across a database-backend cutover.
+
+1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
+2. Record the successful workflow URL, its exact `headSha`, pushed digest and matching `org.opencontainers.image.revision`. If any source differs, gate that source before release. Build in GitHub Actions.
+3. Use the reviewed replacement script's digest/revision arguments after short-lived registry login. It must pull and run the immutable `@sha256:...` reference and verify revision **before** switching. The snippet below records the existing tag-only interface for diagnosis, not the next-release procedure:
 
 ```sh
 az acr login --name windprodacr --expose-token --output tsv --query accessToken   | ssh windadmin@<vm> 'sudo docker login windprodacr.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin'
@@ -75,7 +77,7 @@ Build and publish images from one reviewed source revision; pin each image by di
 
 ## Rollout and rollback gates
 
-Keep `enableWorkloads=false` until the PostgreSQL test-only runtime gate has been removed through an independently reviewed, tested migration, one-writer cutover. API liveness is `/api/health`; readiness is `/api/ready` for essential DB/migration state only. Do not make DB health depend on SMS, push, or routing provider availability. API max replicas stays one until WP10 approves scaling. Worker has no HTTP health probe and uses `server/worker.ts` only after root verifies the packaged entrypoint. OSRM graph must be versioned, durable, capacity-sized and priced; no ephemeral graph is acceptable.
+Keep `enableWorkloads=false` until the intended staging or production activation has passed its independent review and applicable migration/one-writer gates. Staging access is already implemented; production access is not. API liveness is `/api/health`; readiness is `/api/ready` for essential DB/migration state only. Do not make DB health depend on SMS, push, or routing provider availability. API max replicas stays one until WP10 approves scaling. Worker has no HTTP health probe and uses `server/worker.ts` only after root verifies the packaged entrypoint. OSRM graph must be versioned, durable, capacity-sized and priced; no ephemeral graph is acceptable.
 
 Current local persistence evidence used PostgreSQL 18; this template selects Flexible Server PostgreSQL 16. Treat major-version and PostGIS compatibility as an explicit migration/driver test gate. Verify schema import, extensions, locks, transaction behavior, query semantics and restore against the selected Azure major version before enabling workloads. Local PostgreSQL 18 success does not establish PostgreSQL 16 compatibility.
 
@@ -94,7 +96,11 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–30 under `MIGRATION_LOCK`. `/api/ready` must then report schema 30. This is owner-run, never CI, and must not run concurrently with another migration. Validate restored fresh infrastructure before accepting live writes. If rollback follows PostgreSQL writes, do not point at stale SQLite: close writes and repair forward or use an independently tested reconciliation. Never delete custody, money, event, evidence, or outbox history to make rollback easier.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–30 under `MIGRATION_LOCK`. `/api/ready` must then report schema 30. This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
+
+`server/migrate.ts` separately restricts its import CLI to test mode, loopback and an isolated schema. Its `--freeze-writes` holds the SQLite lock only while taking the snapshot, releasing it before import. Production needs a reviewed importer and a continuously enforced freeze of every SQLite writer.
+
+**Cutover boundary:** schema creation and controlled import write PostgreSQL, but do not by themselves make it authoritative. Returning to SQLite is allowed only while SQLite is still authoritative, continuously frozen, and compatible with the prior image, with no new authoritative PostgreSQL writes. Once sign-in/session creation, smoke tests, workers or other new business writes make PostgreSQL authoritative, freeze and recover forward there. Never restart a stale SQLite-backed container or re-import the old SQLite snapshot over that history. Image rollback must retain a compatible PostgreSQL backend/schema; backend reversal needs reconciled writes, two-vendor review and owner authorization. Prove the boundary in a staging readiness-failure drill after a new PostgreSQL write.
 
 ## Microsoft API references pinned by this template
 
