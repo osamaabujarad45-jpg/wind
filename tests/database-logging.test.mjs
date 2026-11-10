@@ -43,9 +43,13 @@ try {
   const response = await fetch(`${api.base}/me`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'Synthetic changed name' }) });
   assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: 'server_error' });
+  const failure = await response.json();
+  assert.deepEqual(Object.keys(failure), ['error', 'requestId']);
+  assert.equal(failure.error, 'server_error');
+  assert.match(failure.requestId, /^[a-f0-9-]{36}$/);
   await new Promise(resolve => setTimeout(resolve, 30));
   const diagnostics = api.diagnostics();
+  assert.ok(diagnostics.includes(`"correlationId":"${failure.requestId}"`), 'the id the person sees finds the log line');
   assert.ok(diagnostics.includes('P0001'), 'the internal failure retains a useful safe SQLSTATE');
   for (const privateValue of [marker, phone, 'handover=3841', 'private-hash', token])
     assert.ok(!diagnostics.includes(privateValue), 'database diagnostics must not disclose private row/message values');
