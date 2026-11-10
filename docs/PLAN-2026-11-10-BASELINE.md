@@ -127,8 +127,9 @@ the artifact/provenance manifests; both `adb install -r` operations returned **S
 Artifacts: `%LOCALAPPDATA%\Temp\opencode\wind-phone-verified-20261110`.
 SCP's wildcard also matched a log directory and returned `not a regular file`; all required
 files arrived and were individually verified, so no build or install was repeated. The native
-two-role journey with keyboard visible at handover remains pending. A browser pass cannot
-replace this gate.
+two-role journey with keyboard visible at handover was still pending when this baseline was
+written; it ran later on 10 November (driver side, two parcels delivered with the keyboard open;
+native booking not re-run). See `CURRENT-WORK.md`.
 
 ## Production read-only verification
 
@@ -187,7 +188,7 @@ phone runner), so the script hashes above describe the runs, not the committed f
 ## Findings and next acceptance
 
 1. Physical-Chrome diagnosis and final runner are complete; preserve both failed and passed evidence.
-2. Provenance-verified replacements are installed; finish native two-role parcel acceptance.
+2. Provenance-verified replacements are installed; native handover acceptance ran later on 10 November (`CURRENT-WORK.md`). Native booking with a visible keyboard is still to re-run.
 3. Screenshots show Help promising email recovery even when sign-in offers support-only
    recovery; `src/app/help.tsx` unconditionally uses `c.a_password`. Ledger row 48 owns the fix.
 4. Tall map captures and missing road fixtures remain screenshot-quality findings.

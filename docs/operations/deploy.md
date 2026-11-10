@@ -16,6 +16,8 @@ The validation script compiles/lints the template and builds all three parameter
 
 ## Production VM, what actually runs today
 
+**Since 15:29 UTC on 10 November 2026** production runs `wind-api:20261110-help-ref`, digest `sha256:56d4df474a2e74a2f87f654caa98385eb273d99ce7335d5ca6c67be3ff7b6cdd`, revision `bd51d592eb55cc6b7bad26b55d20be444db1fc47`, readiness schema 3, deployed by digest. The next paragraphs are the read-only verification taken earlier that day, before this release: the image they name is now the rollback container, and `deploy.sh` on the VM was replaced the same day (see Releasing an image). The three other installed scripts are unchanged from that verification.
+
 The production endpoint uses one VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, with SQLite at `/srv/wind-data/wind.db`. Read-only verification on 10 November found image `wind-api:20261109-design`, digest `sha256:de7a7ff4b7d3f53343ff0c3f7ba4dfd75960fa9a55eee9c44a217ac8f01b455e`, revision `ac531d810af9825f03ece4f1cdfbfa68bd55df03`, and readiness schema 3. The template below is staging preparation. An older, separate Container App named `wind-api` also exists in `wind-prod`; do not mistake it for this endpoint or delete it based on the template's status.
 
 `/srv/wind-api.env` must hold these before starting an image that has the boot checks, or the deploy rolls back with the reason in its log:
@@ -35,7 +37,7 @@ Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL`
 
 1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
 2. Record the successful workflow URL, its exact `headSha`, pushed digest and matching `org.opencontainers.image.revision`. If any source differs, gate that source before release. Build in GitHub Actions.
-3. Log the VM in with a short-lived token and deploy with the tag, digest and revision from step 2. The workflow summary prints this exact command:
+3. Log the VM in with a short-lived token and deploy with the tag, digest and revision from step 2. The workflow summary prints the `sudo /srv/deploy.sh …` line with the tag, digest and SHA filled in; run it through this wrapper:
 
 ```sh
 az acr login --name windprodacr --expose-token --output tsv --query accessToken   | ssh windadmin@<vm> 'sudo docker login windprodacr.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin'
