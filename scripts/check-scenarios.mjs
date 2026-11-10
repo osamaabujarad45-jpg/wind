@@ -162,6 +162,10 @@ try {
       await warning.waitFor();
       assert.doesNotMatch(await warning.innerText(), /email|البريد/i, 'Do not suggest a recovery method that may be unavailable');
     }
+    // Help gives the same answer as sign-in: the email path only where the server can send one.
+    await page.goto(base + '/help?topic=password');
+    await page.getByText(emailReset ? text.a_password : text.a_password_support, { exact: true }).waitFor();
+    if (!emailReset) assert.equal(await page.getByText(text.a_password, { exact: true }).count(), 0, 'Help does not promise an email the server cannot send');
   }
   pass('recovery guidance matches available methods in Arabic and English');
 

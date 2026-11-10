@@ -1,11 +1,11 @@
 // Help & support: FAQ, contact, privacy. Open to everyone, signed in or not (store requirement).
 // /help?topic=password opens that answer directly (linked from "Forgot password?" on sign-in).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { PRIVACY_URL, SUPPORT_URL } from '../api';
+import { api, PRIVACY_URL, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
 import { InstallLink } from '../install-link';
 import { useSession } from '../session';
@@ -23,6 +23,13 @@ export default function Help() {
   // A topic the reader may not see (the driver question for a customer) opens nothing.
   const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) && (shown as readonly Topic[]).includes(topic as Topic) ? topic as Topic : null);
   const orderRef = typeof order === 'string' && /^W-\d+$/.test(order) ? order : undefined;
+  // The email answer is only true where the server can send a reset; until it says so, give the support path, which always works.
+  const [emailReset, setEmailReset] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void api<{ emailReset?: boolean; emailResetLink?: boolean }>('/auth/options').then(o => { if (active) setEmailReset(!!o.emailReset || !!o.emailResetLink); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   return <Screen>
     <Header title={c.help} back />
@@ -57,7 +64,7 @@ export default function Help() {
             </Row>
           </Pressable>
           {expanded && <Animated.View entering={FadeIn.duration(220)} style={{ paddingBottom: 14 }}>
-            <Txt>{c[`a_${key}`]}</Txt>
+            <Txt>{key === 'password' && !emailReset ? c.a_password_support : c[`a_${key}`]}</Txt>
           </Animated.View>}
         </Animated.View>;
       })}
