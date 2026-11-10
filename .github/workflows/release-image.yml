@@ -41,7 +41,15 @@ jobs:
       - name: Push
         run: |
           docker push "$IMAGE"
-          echo "$IMAGE from $GITHUB_SHA: $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")" >> "$GITHUB_STEP_SUMMARY"
+          # The digest this registry holds for the image: exactly one entry for this repository, whatever the list order.
+          digest=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" | grep "^${IMAGE%:*}@sha256:" || true)
+          if [ "$(echo "$digest" | grep -c .)" != 1 ]; then
+            echo "::error::expected one pushed digest for ${IMAGE%:*}, found: ${digest:-none}"
+            exit 1
+          fi
+          echo "$IMAGE from $GITHUB_SHA: $digest" >> "$GITHUB_STEP_SUMMARY"
+          # The VM runs the digest, not the tag: docs/operations/deploy.md.
+          echo "Deploy: sudo /srv/deploy.sh ${IMAGE##*:} ${digest##*@} $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Log out
         if: always()
         run: docker logout windprodacr.azurecr.io

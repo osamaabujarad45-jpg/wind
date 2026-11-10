@@ -31,15 +31,15 @@ Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL`
 
 ### Releasing an image
 
-**Before the next application release:** implement, independently review with two vendors, test and install digest-pinned deployment. The current script pulls and runs a mutable tag and restarts the old container with its original environment on readiness failure. Separate tag checks cannot close that race; the current rollback is not safe across a database-backend cutover.
+`infra/vm/deploy.sh` takes the tag, the pushed digest and the source revision. It pulls and runs the image by digest and refuses one whose `org.opencontainers.image.revision` label is not that revision, before the backup or the switch, so a tag moved after the release was checked cannot change what runs. The tag only names the rollback container, and a tag that already has one is refused. `tests/deploy-script.test.mjs` runs the script against a moved tag in CI. **Before the next application release, install it on the VM:** copy it to `/srv/deploy.sh` and compare SHA256 with the repository file; until then the VM still has the tag-only script. Its rollback restarts the old container with its original environment, which is not safe across a database-backend cutover (master plan Phase 3).
 
 1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
 2. Record the successful workflow URL, its exact `headSha`, pushed digest and matching `org.opencontainers.image.revision`. If any source differs, gate that source before release. Build in GitHub Actions.
-3. Use the reviewed replacement script's digest/revision arguments after short-lived registry login. It must pull and run the immutable `@sha256:...` reference and verify revision **before** switching. The snippet below records the existing tag-only interface for diagnosis, not the next-release procedure:
+3. Log the VM in with a short-lived token and deploy with the tag, digest and revision from step 2. The workflow summary prints this exact command:
 
 ```sh
 az acr login --name windprodacr --expose-token --output tsv --query accessToken   | ssh windadmin@<vm> 'sudo docker login windprodacr.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin'
-ssh windadmin@<vm> 'sudo /srv/deploy.sh <tag>; sudo docker logout windprodacr.azurecr.io'
+ssh windadmin@<vm> 'sudo /srv/deploy.sh <tag> sha256:<digest> <full source SHA>; sudo docker logout windprodacr.azurecr.io'
 ```
 
 The **Uptime** workflow checks `/api/ready` hourly from outside the VM. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
