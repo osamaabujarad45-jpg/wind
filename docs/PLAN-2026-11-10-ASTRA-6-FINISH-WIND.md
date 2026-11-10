@@ -41,7 +41,7 @@ These exist because each one already cost time or nearly lost data in this repo.
 11. **Before deleting or replacing anything, find out what it really is.** A file that looks like a duplicate may be the only committed copy.
 12. **Repository:** `origin` is `osamaabujarad45-jpg/wind`. Never push to `legacy-origin`. Secrets never enter the repo, a prompt to a sub-agent, or a log.
 13. **Expo changes every SDK.** Read the versioned docs for the `expo` major in `package.json` before touching an Expo or React Native API (`AGENTS.md`).
-14. **Never switch a model, pool or effort silently.** Report unavailable or rate-limited models. Substitute only an owner-approved model; otherwise ask.
+14. **Monitor, retry and fail over under `AGENTS.md`'s agent-recovery rule.** The owner authorizes history-backed provider/model replacements; report every switch, preserve checkpoints and keep the original acceptance bar.
 
 ## 4. Your team and how to split the work
 
@@ -69,7 +69,7 @@ Opus and Haiku count as one vendor for the two-vendor review rule.
 - **Risk picks the tier, size picks the split.** Money, auth, migrations, dispatch and deploy scripts: you write or you integrate by hand, Terra or Sol assists, two vendors review. UI copy, screenshots, inventories: tier C can do the first pass.
 - **Split by file ownership.** Two workers never edit the same file in one batch. Server and client slices of one feature go to different workers with the contract written first.
 - **Calibrate an unproven model** on a task whose answer you already know before giving it real work.
-- **When a pool is rate-limited**, narrow the diff first, then use an approved substitute and name it in the report (§3 rule 14). Continue independent work.
+- **When a pool is rate-limited or a worker stalls**, apply the bounded retries and automatic provider/model failover in `AGENTS.md` (§3 rule 14). Continue independent work.
 - **Reviews of screenshots** go to a model that reads images. Kimi does not.
 
 ### The brief every worker gets
