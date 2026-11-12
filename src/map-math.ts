@@ -142,17 +142,43 @@ export function backtracks(line: [number, number][], loop = 300, within = 25): b
   return false;
 }
 
-/** The road line from the driver's point on: the part behind them is dropped, so the line starts under the car. */
-export function fromDriver(line: [number, number][], p: Point): [number, number][] {
-  if (line.length < 2) return line;
+/** Project `p` onto `line` ([lng, lat][]) when within `metres`; further off, keep the raw fix so wrong turns show. */
+export function onRoad(p: Point, line?: [number, number][] | null, metres = 40): Point {
+  if (!line?.length) return { latitude: p.latitude, longitude: p.longitude };
   const kx = 111_320 * Math.cos(rad(p.latitude)), ky = 110_540;
-  let best = Infinity, next = 1;
+  if (line.length === 1) {
+    return Math.hypot((line[0][0] - p.longitude) * kx, (line[0][1] - p.latitude) * ky) <= metres
+      ? { latitude: line[0][1], longitude: line[0][0] } : { latitude: p.latitude, longitude: p.longitude };
+  }
+  let best = Infinity, longitude = p.longitude, latitude = p.latitude;
   for (let i = 1; i < line.length; i++) {
     const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
     const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
     const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
     const d = Math.hypot(ax + t * dx, ay + t * dy);
-    if (d < best) { best = d; next = t === 0 ? i - 1 : i; } // before a segment's start: keep that vertex, it is ahead
+    if (d < best) { best = d; longitude = line[i - 1][0] + t * (line[i][0] - line[i - 1][0]); latitude = line[i - 1][1] + t * (line[i][1] - line[i - 1][1]); }
   }
-  return [[p.longitude, p.latitude], ...line.slice(next)];
+  return best <= metres ? { latitude, longitude } : { latitude: p.latitude, longitude: p.longitude };
+}
+
+/** The road line from the driver's point on: snapped within `snapMetres` and vertices behind dropped, so the line starts under the car. */
+export function fromDriver(line: [number, number][], p: Point, snapMetres = 40): [number, number][] {
+  if (line.length < 2) return line;
+  const kx = 111_320 * Math.cos(rad(p.latitude)), ky = 110_540;
+  let best = Infinity, next = 1, startLng = p.longitude, startLat = p.latitude;
+  for (let i = 1; i < line.length; i++) {
+    const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
+    const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
+    const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) {
+      best = d; next = t === 0 ? i - 1 : i;
+      startLng = line[i - 1][0] + t * (line[i][0] - line[i - 1][0]);
+      startLat = line[i - 1][1] + t * (line[i][1] - line[i - 1][1]);
+    } // before a segment's start: keep that vertex, it is ahead
+  }
+  const head: [number, number] = best <= snapMetres ? [startLng, startLat] : [p.longitude, p.latitude];
+  const rest = line.slice(next);
+  // Drop the duplicate only while two points remain: at the last vertex the line must still be a LineString.
+  return rest.length > 1 && rest[0][0] === head[0] && rest[0][1] === head[1] ? rest : [head, ...rest];
 }

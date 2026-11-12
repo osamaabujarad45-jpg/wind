@@ -200,6 +200,13 @@ await check('the aggregate volume is still rejected', () => {
   assert.ok(freight.freightScope({ ...complete, pieces: '2', lengthCm: '300', widthCm: '300', heightCm: '200' }, Date.now(), 2), 'the same size in two pieces fits');
 });
 
+await check('the loading window shown is the window declared and priced', async () => {
+  // Review 8 Nov: the caption read slotBucket.at while the declared scope started at max(slotBucket.at, quotedAt).
+  const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+  assert.match(book, /freightScope\(freight, windowStart, loadingHours\)/, 'the declared scope starts at windowStart');
+  assert.match(book, /from: time\(windowStart\), to: time\(windowStart \+ loadingHours/, 'the caption shows the same start');
+});
+
 if (failures.length) {
   console.error(`\n${failures.length} freight field check(s) FAIL on this checkout:`);
   for (const f of failures) console.error('  - ' + f);

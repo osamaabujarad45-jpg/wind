@@ -5,13 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Point } from './model';
 import { pickupErrorKey } from './customer-location';
 import { PinMap } from './route-map';
-import { Button, palette, Txt, useCopy } from './ui';
+import { Button, palette, sheetShadow, Txt, useCopy } from './ui';
 import { useReducedMotion } from './motion';
 import { mapReadyMs } from './runtime-config';
 
 // Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
-export default function PinSheet({ title, hint, start, onClose, onConfirm, onLocate, autoLocate = false }: {
-  title: string; hint?: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void;
+export default function PinSheet({ title, hint, unavailable, start, onClose, onConfirm, onLocate, autoLocate = false }: {
+  title: string; hint?: string; unavailable?: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void;
   onLocate?: (signal: AbortSignal, canRequest: boolean) => Promise<Point>; autoLocate?: boolean;
 }) {
   const { c } = useCopy();
@@ -64,11 +64,11 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
   const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
   return <Modal visible transparent animationType={still ? 'none' : 'slide'} onRequestClose={onClose}>
     <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
-    <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
+    <SafeAreaView edges={['bottom']} style={[styles.sheet, sheetShadow, { maxHeight: '92%' }]} accessibilityViewIsModal>
       <ScrollView style={{ flexShrink: 1 }}>
       <View style={styles.grip} />
       <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
-      <Txt variant="caption" style={{ marginBottom: 10 }}>{hint ?? c.pinHint}</Txt>
+      <Txt variant="caption" style={{ marginBottom: 10 }}>{hint ?? c.pinSheetHint}</Txt>
       <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
         <PinMap center={point} onChange={next => {
           const target = cameraTarget.current;
@@ -85,7 +85,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
       {!!locationError && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 12 }}>{locationError}</Txt></View>}
       {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
         <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
-      {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c.pinUnavailable}</Txt>
+      {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{unavailable ?? c.pinSheetUnavailable}</Txt>
         : <Button title={c.confirmPin} icon="checkmark" disabled={!ready || locating || positioning || !selected} reason={locating ? c.locating : !selected ? c.locationChooseOnMap : c.pin_wait} onPress={() => { if (ready && !locating && !positioning && selected) onConfirm(point); }} />}
       <Button title={c.cancel} variant="ghost" onPress={onClose} />
       </ScrollView>
@@ -94,7 +94,7 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
 }
 
 const styles = StyleSheet.create({
-  shade: { flex: 1, backgroundColor: '#0E1F1966' },
+  shade: { flex: 1, backgroundColor: palette.shade },
   sheet: { backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.line, marginBottom: 12 },
+  grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.dash, marginBottom: 12 },
 });

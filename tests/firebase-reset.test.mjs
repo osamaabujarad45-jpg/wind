@@ -107,8 +107,11 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(calls.length, 0, 'unknown account contacts no provider');
     users.set(uid, { localId: uid, email: 'user1@example.test', password: 'discarded' });
+    users.set('foreign-1', { localId: 'foreign-1', email: 'user1@example.test', password: 'theirs' }); // not ours: a reset must never delete it (strict review 8 Nov)
     assert.deepEqual(await reset('0599700001'), { ok: true });
     await waitFor(() => pending(id));
+    assert.ok(users.has('foreign-1') && !calls.some(c => c.action === 'accounts:delete' && c.body.localId === 'foreign-1'), 'only wind- accounts are deleted');
+    users.delete('foreign-1');
     assert.deepEqual(calls.filter(c => c.action !== 'token').map(c => c.action), ['accounts:lookup', 'accounts:delete', 'accounts', 'accounts:sendOobCode']);
     assert.equal(calls.find(c => c.action === 'accounts').body.localId, uid);
     assert.ok(calls.find(c => c.action === 'accounts').body.password.length >= 32);

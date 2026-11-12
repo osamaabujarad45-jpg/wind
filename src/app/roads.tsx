@@ -94,7 +94,7 @@ export default function Roads() {
         onPress={() => send('add', '/admin/roads', { name: draft.name.trim(), cities: draft.cities, ...(draft.point && { point: draft.point }) })
           .then(ok => ok && setDraft({ name: '', cities: [] }))} />
     </Card>}
-    {pinFor && <PinSheet title={c.roadPinTitle} hint={c.roadPinHint} start={pinFor.start} onClose={() => setPinFor(null)} onConfirm={async point => {
+    {pinFor && <PinSheet title={c.roadPinTitle} hint={c.roadPinHint} unavailable={c.roadPinUnavailable} start={pinFor.start} onClose={() => setPinFor(null)} onConfirm={async point => {
       const target = pinFor.id;
       setPinFor(null);
       if (target === 'draft') setDraft(d => ({ ...d, point }));

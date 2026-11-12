@@ -30,18 +30,55 @@ for (const selector of ['#pin {', '#pin-base {']) {
 }
 assert.ok(page.includes("recenter.style.left = 'calc(var(--inset-left) + 10px)'"));
 assert.ok(page.includes("map.on('click',"), 'a map tap is a non-drag way to move the pin');
+const movestart = segment("  map.on('movestart',", "  map.on('dragstart',");
+{
+  const moved = [], lifted = [];
+  let onMoveStart;
+  runInNewContext(movestart, {
+    map: { on: (_, handler) => { onMoveStart = handler; } },
+    pinning: () => true,
+    pinEl: { classList: { add: cls => lifted.push(cls) } },
+    send: event => moved.push(event.type),
+  });
+  onMoveStart({}); // programmatic search/locate jump: must not lift the pin or disable Confirm
+  assert.deepEqual(moved, [], 'programmatic camera positioning must not emit moving or disable Confirm');
+  assert.deepEqual(lifted, []);
+  onMoveStart({ originalEvent: { type: 'touchmove' } });
+  assert.deepEqual(moved, ['moving'], 'a user drag/pinch emits moving until moveend settles');
+  assert.deepEqual(lifted, ['lift']);
+}
+const centerPinFn = segment('function centerPin(', '// Faded while');
+{
+  const jumps = [], eases = [];
+  const ctx = {
+    validPoint: p => !!p,
+    still: () => false,
+    announcedReady: true,
+    map: { getCenter: () => ({ lat: 31.9, lng: 35.2 }), getZoom: () => 15, jumpTo: c => jumps.push(c), easeTo: c => eases.push(c) },
+  };
+  runInNewContext(`${centerPinFn} globalThis.centerPin = centerPin;`, ctx);
+  assert.equal(ctx.centerPin({ latitude: 32.2211, longitude: 35.2544 }, 15), true);
+  assert.equal(jumps.length, 1, 'place pick / locate jumps directly without a 350 ms ease window');
+  assert.equal(eases.length, 0);
+  assert.equal(ctx.centerPin({ latitude: 32.2211, longitude: 35.2544 }, 15, true), true);
+  assert.equal(eases.length, 1, 'explicit map tap still eases smoothly after reporting the tapped point');
+}
 const click = segment("  map.on('click',", "  map.on('moveend',");
 const events = [], centres = [];
-runInNewContext(click, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }) }, pinning: () => true,
-  send: event => events.push(event.type), centerPin: point => { centres.push(point); return true; } });
-assert.deepEqual(events, ['gesture'], 'a manual tap cancels a late GPS result just like a drag');
-assert.equal(centres[0].latitude, 31.9);
-// A tap on the pin's own spot moves nothing and fires no moveend: the tap itself reports the centre, or Confirm waits forever.
+runInNewContext(`let pinDragged = false;\n${click}`, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }) }, pinning: () => true,
+  send: event => events.push(event), centerPin: (point, _zoom, animate) => { centres.push({ point, animate }); return true; } });
+assert.deepEqual(events.map(e => e.type), ['gesture', 'center'], 'a manual tap cancels GPS and immediately reports the tapped coordinate');
+assert.equal(events[1].latitude, 31.9);
+assert.equal(centres[0].point.latitude, 31.9);
+assert.equal(centres[0].animate, true);
+// A tap on the pin's own spot moves nothing and fires no moveend: the tap itself already reported the centre.
 const still = [];
-runInNewContext(click, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }), getCenter: () => ({ lat: 31.9, lng: 35.2 }) },
+runInNewContext(`let pinDragged = false;\n${click}`, { map: { on: (_, handler) => handler({ lngLat: { lat: 31.9, lng: 35.2 } }) },
   pinning: () => true, send: event => still.push(event), centerPin: () => false });
 assert.deepEqual(still.map(event => event.type), ['gesture', 'center']);
 assert.equal(still[1].latitude, 31.9);
+assert.match(book, /if \(step === 'pin'\) \{ setPinCenter\(result\.point\); setPinPoint\(result\.point\); setPinMoving\(false\); \}/,
+  'locating on the pin step updates pinPoint immediately');
 assert.match(book, /side && \(rtl \? \{ left: SIDE_SHEET \} : \{ right: SIDE_SHEET \}\)/);
 assert.match(book, /side && \(rtl \? \{ left: SIDE_SHEET, right: 0 \} : \{ right: SIDE_SHEET \}\)/);
 assert.match(book, /<Button title=\{c.searchLabel\}[^\n]*setField\(pinFor\)[^\n]*setStep\('search'\)/, 'search stays reachable from pin placement, including a failed map');

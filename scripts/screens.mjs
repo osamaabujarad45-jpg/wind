@@ -11,7 +11,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative } from 'node:path';
@@ -32,6 +32,61 @@ for (const key of ['WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRE
 // Synthetic screenshots also cover gated legacy services; production defaults stay parcel-only.
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+// Deterministic West Bank road fixture (recorded OSRM highway geometries, with curved fallback) so every route map draws real road lines offline.
+const recordedRoutes = JSON.parse(readFileSync(join(root, 'scripts', 'screens-routes.json'), 'utf8'));
+function syntheticRoad([lng1, lat1], [lng2, lat2]) {
+  const dx = lng2 - lng1, dy = lat2 - lat1, span = Math.hypot(dx, dy);
+  if (span < 0.0002) return [[lng1, lat1], [lng2, lat2]];
+  const nx = -dy / span, ny = dx / span, steps = 16, coords = [];
+  const sign = ((Math.round((lat1 + lng1) * 1000) % 2) === 0 ? 1 : -1);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const bend = sign * span * (0.09 * Math.sin(Math.PI * t) + 0.035 * Math.sin(2 * Math.PI * t));
+    coords.push([Number((lng1 + dx * t + nx * bend).toFixed(5)), Number((lat1 + dy * t + ny * bend).toFixed(5))]);
+  }
+  return coords;
+}
+const osrm = createServer((req, res) => {
+  const pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
+  const raw = pathname.split('/driving/')[1] ?? '';
+  const waypoints = raw.split(';').map(pair => pair.split(',').map(Number)).filter(p => p.length === 2 && p.every(Number.isFinite));
+  if (waypoints.length < 2) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code: 'InvalidQuery' })); return; }
+  const lookupKey = waypoints.map(([lng, lat]) => `${lng.toFixed(4)},${lat.toFixed(4)}`).join(';');
+  const recorded = recordedRoutes[lookupKey];
+  let coordinates, distance, duration;
+  if (recorded) {
+    ({ coordinates, distance, duration } = recorded);
+  } else {
+    coordinates = [];
+    for (let i = 1; i < waypoints.length; i++) {
+      const seg = syntheticRoad(waypoints[i - 1], waypoints[i]);
+      coordinates.push(...(i === 1 ? seg : seg.slice(1)));
+    }
+    const kx = 111_320 * Math.cos(waypoints[0][1] * Math.PI / 180), ky = 110_540;
+    let metres = 0;
+    for (let i = 1; i < coordinates.length; i++)
+      metres += Math.hypot((coordinates[i][0] - coordinates[i - 1][0]) * kx, (coordinates[i][1] - coordinates[i - 1][1]) * ky);
+    distance = Math.max(400, Math.round(metres * 1.12));
+    duration = Math.max(90, Math.round(distance / 13.5));
+  }
+  const mid = coordinates[Math.min(coordinates.length - 1, Math.max(1, Math.floor(coordinates.length * 0.15)))];
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    code: 'Ok',
+    routes: [{
+      distance,
+      duration,
+      geometry: { type: 'LineString', coordinates },
+      legs: [{ steps: [
+        { maneuver: { type: 'depart', location: coordinates[0] }, name: 'طريق وادي النار' },
+        { maneuver: { type: 'turn', modifier: 'left', location: mid }, name: 'شارع المهد' },
+        { maneuver: { type: 'arrive', location: coordinates.at(-1) }, name: '' },
+      ] }],
+    }],
+  }));
+});
+await new Promise(resolve => osrm.listen(0, '127.0.0.1', resolve));
+process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}`;
 const { db, server, promote } = await import('../server/main.ts');
 const { quote, defaultSettings } = await import('../src/model.ts');
 const { scheduleSlots } = await import('../src/booking.ts');
@@ -103,7 +158,7 @@ await call(`/orders/${completed.id}/rate`, layla.token, { rating: 5 });
 await call(`/jobs/${inTransit.id}/accept`, ahmad.token, {});
 await call(`/orders/${inTransit.id}/advance`, ahmad.token, {});
 await call(`/orders/${inTransit.id}/advance`, ahmad.token, {});
-await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
+await call('/location', ahmad.token, { latitude: 31.7420, longitude: 35.2837, heading: 235 });
 
 // A separate driver carries one parcel with locked code attempts for the admin recovery flow.
 const recoveryDriver = await register('0599000006', 'يوسف عودة', { role: 'driver', vehicle: 'van' });
@@ -204,6 +259,41 @@ const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDr
 const { chromium } = await import('playwright');
 const browser = await chromium.launch(process.env.SCREENS_CHROMIUM ? { executablePath: process.env.SCREENS_CHROMIUM } : {});
 const shots = [];
+// Wait for any visible map iframe to finish drawing the route the app sent it.
+async function waitForMaps(targetPage, where = 'map') {
+  for (const frame of targetPage.frames().filter(f => f.url().includes('/map.html'))) {
+    await frame.waitForFunction(() => {
+      const m = window.windMap;
+      if (!m?.loaded()) return false;
+      // A finished order shows its two stops without a route: require the line only when the app sent one.
+      return !(window.windState?.road?.length >= 2) || m.getSource('road')?.serialize()?.data?.geometry?.type === 'LineString';
+    }, null, { timeout: 12_000 }).catch(() => { throw new Error(`${where}: the app sent a route but the line never drew`); });
+  }
+  if (targetPage.frames().some(f => f.url().includes('/map.html'))) await targetPage.waitForTimeout(450);
+}
+// A map screen is evidence only once the basemap has drawn; a blank map background is a failed capture, not a screenshot.
+async function mapsReady(page, where) {
+  // A map can mount after the fixed waits: look again after a short pause and wait for any frame not yet checked.
+  const checked = new Set();
+  for (let round = 0; round < 3; round++) {
+    const frames = page.frames().filter(f => new URL(f.url(), 'http://x').pathname.endsWith('/map.html') && !checked.has(f));
+    if (!frames.length && round) break;
+    for (const frame of frames) {
+      checked.add(frame);
+      // areTilesLoaded() counts errored tiles as loaded; require a real basemap tile and no error in this camera generation.
+      const drawn = () => frame.waitForFunction(() => window.windBaseTile === true && window.windTileFailed === false && window.windMap?.loaded() && window.windMap.areTilesLoaded(), null, { timeout: 30_000 });
+      // One reload for a slow or busy tile server; a map that still has no basemap fails the run rather than shipping a blank screenshot.
+      await drawn().catch(async () => { await frame.evaluate(() => location.reload()).catch(() => {}); await drawn(); })
+        .catch(() => { throw new Error(`${where}: map tiles never loaded (offline, blocked or slow tile server)`); });
+    }
+    await page.waitForTimeout(500);
+  }
+  // A tile reload drops the route, and a tile can fail during the settle: the road and every frame's tiles are checked last, just before capture.
+  await waitForMaps(page, where);
+  for (const frame of page.frames().filter(f => new URL(f.url(), 'http://x').pathname.endsWith('/map.html')))
+    await frame.waitForFunction(() => window.windBaseTile === true && window.windTileFailed === false && window.windMap?.areTilesLoaded(), null, { timeout: 10_000 })
+      .catch(() => { throw new Error(`${where}: map tiles failed or changed after they were checked`); });
+}
 
 for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
@@ -237,7 +327,7 @@ for (const language of ['ar', 'en']) {
     }
 
     // The server drops a driver fix after 120 s; send a fresh one so the live screen never depends on run time.
-    if (screen.fix) await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
+    if (screen.fix) await call('/location', ahmad.token, { latitude: 31.7420, longitude: 35.2837, heading: 235 });
     await page.goto(base + screen.route, { waitUntil: 'load' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
@@ -246,11 +336,15 @@ for (const language of ['ar', 'en']) {
       await page.waitForTimeout(700);
     }
     if (screen.motion) await page.waitForTimeout(900); // mid-ripple
-    // Grow the viewport to the scroll content so long screens are captured whole (tab bar stays at the bottom).
-    const extra = await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
+    await waitForMaps(page, `${screen.id} ${language}`);
+    // Full-screen map+sheet screens stay at one phone viewport (as on the device); card/form screens grow to their full scroll height.
+    const fullScreenMap = await page.evaluate(() => [...document.querySelectorAll('iframe[title="map"]')]
+      .some(f => f.getBoundingClientRect().height >= innerHeight - 8));
+    const extra = fullScreenMap ? 0 : await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
       .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
       .map(d => d.scrollHeight - d.clientHeight)));
     if (extra) { await page.setViewportSize({ width: phone.width, height: Math.min(phone.height + extra, 2600) }); await page.waitForTimeout(400); }
+    await mapsReady(page, `${screen.id} ${language}`);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
@@ -475,9 +569,10 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
     const page = await context.newPage();
     await setup?.(page);
     await page.goto(base + screen.route, { waitUntil: 'load' });
-    await page.waitForTimeout(2500); // intro + first data load
+    await page.waitForTimeout(3200); // intro + first data load
     await run?.(page);
     await page.waitForTimeout(800);
+    await mapsReady(page, `${screen.id} ${language}`);
     mkdirSync(join(outDir, language), { recursive: true });
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
@@ -675,6 +770,10 @@ if (!only || only.includes('booking-narrow')) {
     const ready = view.ready(t);
     const target = page.getByRole('button', typeof ready === 'string' ? { name: ready, exact: true } : { name: ready }).first();
     await target.waitFor({ timeout: 15000 }).catch(async error => { await page.screenshot({ path: join(narrowDir, `debug-${view.id}-${language}.png`) }); throw error; });
+    // The Request button exists from first paint; the evidence must show a price, not "calculating".
+    await page.getByText(t.quote_calculating, { exact: true }).first().waitFor({ state: 'hidden', timeout: 15000 });
+    assert.equal(await page.getByText(t.quote_failed, { exact: true }).count(), 0, `${where}: the price failed, not a screenshot of a quoted form`);
+    if (view.id.startsWith('book-')) assert.notEqual(await target.getAttribute('aria-disabled'), 'true', `${where}: Request is disabled by a specific quote or scope error`);
     if (scale !== 1) {
       await page.evaluate(factor => {
         for (const element of document.querySelectorAll('body *')) {
@@ -684,6 +783,7 @@ if (!only || only.includes('booking-narrow')) {
       }, scale);
       await page.waitForTimeout(400);
     }
+    await mapsReady(page, where);
     await page.screenshot({ path: join(narrowDir, `${view.id}-${language}-${scale === 1 ? '100' : '130'}.png`) });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 0, `${where}: horizontal overflow ${overflow}px`);
@@ -708,6 +808,7 @@ await browser.close();
 await Promise.all([
   new Promise(resolve => server.close(resolve)),
   new Promise(resolve => web.close(resolve)),
+  new Promise(resolve => osrm.close(resolve)),
 ]);
 db.close();
 rmSync(dbDir, { recursive: true, force: true });

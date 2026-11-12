@@ -42,8 +42,11 @@ swap() {
   mv "$work/wind.db" "$data/wind.db" && chmod 600 "$data/wind.db" && docker start "$name" >/dev/null
 }
 rm -f "/run/wind-watchdog/$name" # strikes from before this downtime must not restart the container in the middle of the swap
+# Ctrl-C or a dropped SSH session after this point must not leave the service down with the old database parked aside.
+trap 'docker stop "$name" >/dev/null 2>&1 || true; put_back' INT TERM HUP
 docker stop "$name" >/dev/null
 swap || put_back
+trap - INT TERM HUP # the restored copy is live now: an interrupt during the readiness wait must not undo it
 for _ in $(seq 1 30); do
   if docker exec "$name" node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null; then
     echo "restored $copy; what was there is at $kept"

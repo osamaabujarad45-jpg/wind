@@ -289,8 +289,10 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
-  // T33: the pending destination card follows the capability, not the dialect.
-  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && destinationEligible(r) && await destinationAvailable(persistence)
+  // T33: destination-change visibility and pending card follow the capability, not the dialect.
+  // One capability probe per request, not per order in a list.
+  const canChangeDest = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await persistence.memo('destinationAvailable', () => destinationAvailable(persistence));
+  const destinationChange = canChangeDest && destinationEligible(r)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -303,7 +305,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     pickupContact: partyPhones ? r.pickup_contact ?? r.contact : null,
     recipientName: owner || assigned ? r.recipient_name ?? '' : '', recipientPhone: partyPhones ? r.recipient_phone ?? null : null,
     price: r.price, commission: r.commission ?? null, status: r.status,
-    ...(persistence.backend === 'sqlite' && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
+    ...(canChangeDest && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
     ...(destinationChange && { destinationChange }),
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
@@ -1486,7 +1488,7 @@ route('POST', '/api/price', async ({ user, body }) => {
 const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
 const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 86_400_000, 3_600_000); // 24 h
 
-async function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
+async function createOrder(user: User, body: Row, smart?: { price: number; km: number }, authorize?: () => Promise<User>) {
   // T21: the cap check and the insert share the caller's write transaction — every booking path enters
   // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
   // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
@@ -1593,6 +1595,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const dropoff = effDropoffPoint;
     const recipientName = effRecipientName;
     const recipientPhone = effRecipientPhone;
+    if (authorize) user = await authorize();
     const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
     recipient_name, recipient_phone, quote_id)
@@ -1655,6 +1658,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   }
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  if (authorize) user = await authorize();
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
     recipient_name, recipient_phone)
@@ -1692,8 +1696,14 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     if (persistence.backend !== 'postgres' || !(await quotesAvailable(persistence))) fail(409, 'quotes_unavailable');
   }
   // Routing yields to logout and administrator changes. Recheck authority before any booking write.
-  const authorize = async () => {
-    const current = (await authenticate(req)) ?? fail(401, 'unauthorized');
+  const authorize = async (lock = false) => {
+    if (lock && persistence.backend === 'postgres') {
+      // Match revocation's user -> session order; keep authority stable through the insert and commit.
+      await one('SELECT id FROM users WHERE id=? FOR SHARE', user.id);
+      const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+      await one('SELECT token_hash FROM sessions WHERE user_id=? AND token_hash=? FOR SHARE', user.id, sha(token));
+    }
+    const current = (await authenticate(req, false)) ?? fail(401, 'unauthorized');
     need(current, 'customer');
     needActive(current);
     return current;
@@ -1702,7 +1712,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     const recommended = input.quoteId ? undefined : await smart();
     user = (await authorize());
     (await persistence.exec('BEGIN IMMEDIATE'));
-    try { const order = (await createOrder(user, input, recommended)); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+    try { const order = (await createOrder(user, input, recommended, () => authorize(true))); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   }
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   // A command can commit only until its own deadline, so a missing receipt after it is a real absence.
@@ -1713,8 +1723,10 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   const hash = payloadHash(input);
   const replay = async () => {
     const existing = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
-    if (existing && existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
-    return existing ? (await getOrder(existing.order_id, user)) : null;
+    if (!existing) return null;
+    user = await authorize(); // A stored receipt does not preserve revoked access to its private result.
+    if (existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
+    return (await getOrder(existing.order_id, user));
   };
   const done = (await replay()); // a retried command returns its order even if today's price moved
   if (done) return done;
@@ -1722,20 +1734,24 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   const recommended = input.quoteId ? undefined : await smart();
   user = (await authorize());
   (await persistence.exec('BEGIN IMMEDIATE'));
+  let order: Order;
   try {
     const raced = (await replay()); // the same command may have committed while routing was awaited
     if (raced) { (await persistence.exec('ROLLBACK')); return raced; }
     if (expired()) fail(409, 'booking_command_expired');
-    const order = (await createOrder(user, input, recommended));
+    order = (await createOrder(user, input, recommended, () => authorize(true)));
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
-    (await persistence.exec('COMMIT'));
-    return order;
   } catch (error) {
     (await persistence.exec('ROLLBACK'));
-    // A concurrent retry can commit this key while we wait on it; answer with the winner.
-    if ((error as { code?: string }).code === '23505') { const won = (await replay()); if (won) return won; }
+    // The winner can consume the quote or fill the searching cap before we reach the unique insert.
+    user = await authorize();
+    const won = await replay();
+    if (won) return won;
     throw error;
   }
+  // Commit uncertainty is never an idempotent replay: preserve the unexpected-500 support reference.
+  (await persistence.exec('COMMIT'));
+  return order;
 });
 
 registerBookingReceiptRoutes(route, { need, fail, uuid, one });
@@ -1791,16 +1807,24 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
   }
   const user = await partnerUser(); // its one-time placeholder KDF must precede the transaction
   // Same short atomic boundary the HTTP envelope used, including the partner_api audit purpose.
+  let bookingFailed = false;
   try {
     return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
       const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
-      const order = (await createOrder(user, { ...input, service: 'parcel' }));
-      (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
+      await persistence.exec('BEGIN IMMEDIATE'); // SQLite also needs the order and its reference to commit together.
+      let order: Order;
+      try {
+        order = (await createOrder(user, { ...input, service: 'parcel' }));
+        (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
+      } catch (error) { bookingFailed = true; await persistence.exec('ROLLBACK'); throw error; }
+      // A real SQLite COMMIT failure is not a booking race; leave bookingFailed false.
+      await persistence.exec('COMMIT');
       return order;
     });
   } catch (error) {
-    // A concurrent retry of this reference won the insert; map both callers to its order.
-    if ((error as { code?: string }).code !== '23505') throw error;
+    // Replay only callback failures: an outer commit failure has an unknown outcome and keeps its 500 reference.
+    if (!bookingFailed) throw error;
+    // A concurrent retry can fill the searching cap before we reach the unique insert.
     const winner = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
     if (!winner) throw error;
     if (winner.payload_hash !== hash) fail(409, 'idempotency_conflict');
@@ -3146,6 +3170,10 @@ const editUser: Handler = async ({ user, params, body }) => {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     // Re-checked inside the write transaction: a job accepted after the reads above must not be stranded by this edit.
+    if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', target.id);
+    // Every decision below came from the read before the lock: another admin's block or approval in between must not be silently reverted.
+    const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
+    if (Object.keys(locked).some(key => (locked[key] ?? null) !== (target[key] ?? null))) fail(409, 'user_changed');
     if (identityOrRoleChange &&
       (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
     if (roleChanged && target.role === 'driver') (await cashSettled(target.id));

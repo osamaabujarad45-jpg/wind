@@ -76,6 +76,7 @@ function BookForm() {
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const fixMarked = useRef(false); // the banner is the fix-marked one, whatever the language
   const [swapNotice, setSwapNotice] = useState('');
   const [locationError, setLocationError] = useState('');
   useEffect(() => { if (locationError && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(locationError); }, [locationError]);
@@ -115,8 +116,9 @@ function BookForm() {
   // An immediate load's window starts when its quote does: every re-quote (expiry, price change, retry) restarts it,
   // so the declared start is at most one quote lifetime old, not a half-hour bucket.
   const [quotedAt, setQuotedAt] = useState(() => Date.now());
-  const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, scheduledFor ?? Math.max(slotBucket.at, quotedAt), loadingHours) : undefined),
-    [pending?.payload.declaredScope, wantsScope, freight, scheduledFor, slotBucket.at, quotedAt, loadingHours]);
+  const windowStart = scheduledFor ?? Math.max(slotBucket.at, quotedAt); // shown and declared alike
+  const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, windowStart, loadingHours) : undefined),
+    [pending?.payload.declaredScope, wantsScope, freight, windowStart, loadingHours]);
   const scopeInvalid = wantsScope && declaredScope === null;
   const sending = useRef(false);
   const savedKey = pendingKey(me!.user.id);
@@ -143,7 +145,13 @@ function BookForm() {
   const [promoError, setPromoError] = useState('');
   const [checking, setChecking] = useState(false);
   const [credits, setCredits] = useState<Referral['credits']>([]);
-  const edit = (key: keyof typeof invalid, set: (v: string) => void) => (v: string) => { set(v); if (invalid[key]) setInvalid({ ...invalid, [key]: undefined }); };
+  const edit = (key: keyof typeof invalid, set: (v: string) => void) => (v: string) => {
+    set(v);
+    if (!invalid[key]) return;
+    const next = { ...invalid, [key]: undefined };
+    setInvalid(next);
+    if (fixMarked.current && !Object.values(next).some(Boolean)) { fixMarked.current = false; setError(''); } // the header banner goes with the last marked field (A53, 8 Nov)
+  };
   // Saved and recent places: landmarks are the address here, so reuse them instead of retyping.
   const isCustomer = me?.user.role === 'customer';
   const [places, setPlaces] = useState<Places>({ saved: [], recent: [] });
@@ -181,7 +189,7 @@ function BookForm() {
       const result = await pickupLocation(request.signal);
       if (request.signal.aborted) return;
       setHere({ ...result.point, accuracy: result.accuracy }); void rememberHere(result.point);
-      if (step === 'pin') setPinCenter(result.point); // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
+      if (step === 'pin') { setPinCenter(result.point); setPinPoint(result.point); setPinMoving(false); } // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
       if (step !== 'pin' || pinFor === 'pickup') { pickupTouched.current = true; setPickupNote(''); adoptFix(result); }
       if (step === 'search') { setField('dropoff'); if (dropoffChosen) setStep('trip'); }
     } catch (e) {
@@ -453,7 +461,7 @@ function BookForm() {
       haptic.error();
       setInvalid(problems);
       if (error === c.fixMarked && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(c.fixMarked); // the same text again changes nothing for ErrorText to announce
-      setError(c.fixMarked);
+      setError(c.fixMarked); fixMarked.current = true;
       setSheetOpen(true);
       // The details sit near the top; the contact field is right above the button.
       if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone) scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -462,7 +470,7 @@ function BookForm() {
     setInvalid({});
     sending.current = true;
     setBusy(true);
-    setError('');
+    setError(''); fixMarked.current = false; // any later error is not the fix-marked banner
     const retrying = !!pending;
     let saved = retrying; // a pending command is already on the device
     try {
@@ -493,15 +501,18 @@ function BookForm() {
       setSheetOpen(true);
       // Once the command is persisted, a transport failure is "saved, awaiting connection" —
       // the pending card below is already on screen. A failed write never claims it was saved.
-      if (!(e instanceof ApiError)) setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
-      else {
+      // A lost connection is ApiError('network'); a plain Error is a failed storage write.
+      if (!(e instanceof ApiError) || errorCode(e) === 'network') {
+        setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
+        if (saved && latest.current) void checkPending(latest.current); // an unknown answer arms the deadline re-check
+      } else {
         setError(err(e));
-        // A retry refusal says nothing about an earlier POST: only its receipt and deadline can settle it.
-        if ((retrying || errorCode(e) === 'booking_command_expired') && latest.current) void checkPending(latest.current);
-        else if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict') {
+        if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict'
+          && !retrying && errorCode(e) !== 'booking_command_expired') {
           try { await storage.set(savedKey, null, true); if (!current()) return; latest.current = null; setPending(null); setOutcome(null); }
           catch { if (current()) setError(c.bookingStorageError); }
-        }
+        // Anything else may have committed (a retry refusal says nothing about an earlier POST): only the receipt and deadline settle it.
+        } else if (latest.current) void checkPending(latest.current);
       }
       if (!retrying && errorCode(e) === 'price_changed') { await refresh(); if (!current()) return; requote(); } // new tariff or road state: customer confirms again
       if (!current()) return;
@@ -605,7 +616,7 @@ function BookForm() {
         {pending && <Card tone="clay">
           <Txt variant="title">{c.bookingPending}</Txt>
           <Txt variant="caption">{c.bookingRetryHint}</Txt>
-          <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : settlesAt !== null ? fill(c.bookingRecoveryUntil, { t: time(settlesAt) }) : c.bookingRecoveryUnknown}</Txt>
+          <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : settlesAt !== null ? fill(c.bookingRecoveryUntil, { t: time(settlesAt) }) : c.bookingRecoveryUnknown}</Txt></View>
           {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
           <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
             <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={submitBlocked} />
@@ -614,6 +625,8 @@ function BookForm() {
           </Row>
           {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
         </Card>}
+        {/* In the header, not after the last field: a refused retry or offline save must read beside its card (review 8 Nov). */}
+        <ErrorText>{error}</ErrorText>
         {!available && !pending && <Card tone="clay">
           <Txt variant="title">{c.serviceUnavailable}</Txt>
           <Button title={c.retry} variant="soft" loading={refreshingAvailability} onPress={retryAvailability} />
@@ -691,7 +704,7 @@ function BookForm() {
         {wantsScope && !pending && <View style={{ gap: 8, marginBottom: 10 }}>
           <Txt variant="label">{c.freightWindowHours}</Txt>
           <Stepper label={c.freightWindowHours} value={loadingHours} min={1} max={8} onChange={setLoadingHours} disabled={locked} />
-          <Txt variant="caption">{fill(c.freightWindow, { from: time(scheduledFor ?? slotBucket.at), to: time((scheduledFor ?? slotBucket.at) + loadingHours * 3_600_000) })}</Txt>
+          <Txt variant="caption">{fill(c.freightWindow, { from: time(windowStart), to: time(windowStart + loadingHours * 3_600_000) })}</Txt>
         </View>}
         <Choices label={c.whenTitle} items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending ? pending.payload.scheduledFor ? 'later' : 'now' : when}
           onChange={setWhen} disabled={locked} />
@@ -713,7 +726,7 @@ function BookForm() {
           ? <Txt variant="caption" style={{ marginTop: 6 }}>{c.standardParcelHint}</Txt>
           : <>
             {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
-            <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
+            {!quoteFailed && <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>}
           </>}
         {smart?.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
       </Card>}
@@ -761,7 +774,6 @@ function BookForm() {
         <Field label={c.contact} icon="call-outline" value={contact} onChangeText={edit('contact', setContact)} placeholder={c.phoneHint} keyboardType="phone-pad" autoComplete="tel" error={invalid.contact} disabled={locked} maxLength={32}
           onSubmitEditing={submit} />
       </Card>
-      <ErrorText>{error}</ErrorText>
     </MapSheet>}
 
     {step === 'search' && <TripSearch field={field} onField={setField} pickupText={pickupTitle} dropoffText={dropoffTitle} near={pickupChosen ? previewFrom : here} places={places}

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
 import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, resolveMapProvider, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
@@ -206,10 +206,18 @@ try {
   assert.deepEqual([far.frame(4_000).now.latitude, far.frame(4_000).now.longitude], [32.2, 35.2], 'a km-scale jump (new driver) snaps, never glides across the city');
   const still = glider(A); still.fix(A, 1_000, true); still.fix({ ...C, heading: 0 }, 4_000, true);
   assert.deepEqual(still.frame(4_000), { now: { ...C, rotation: 0 }, done: true }, 'reduced motion lands at once');
-  // Approach line starts under the car: points behind the driver are dropped.
+  // Approach line starts under the car: snapped within 40 m so GPS drift stays on the street, raw beyond 40 m on wrong turns, points behind dropped.
   const way = [[35.2, 32], [35.21, 32], [35.22, 32], [35.23, 32]];
-  assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32.0001], [35.22, 32], [35.23, 32]]);
+  assert.deepEqual(onRoad({ latitude: 32.00018, longitude: 35.215 }, way), { latitude: 32, longitude: 35.215 }, '~20 m north snaps onto the straight street');
+  assert.deepEqual(onRoad({ latitude: 32.0005, longitude: 35.215 }, way), { latitude: 32.0005, longitude: 35.215 }, '~55 m off-route wrong turn keeps the raw fix');
+  assert.deepEqual(onRoad({ latitude: 32.0001, longitude: 35.2 }, [[35.2, 32]]), { latitude: 32, longitude: 35.2 }, 'single-point line within 40 m snaps');
+  assert.deepEqual(onRoad({ latitude: 32.001, longitude: 35.2 }, [[35.2, 32]]), { latitude: 32.001, longitude: 35.2 }, 'single-point line beyond 40 m keeps raw');
+  assert.deepEqual(onRoad({ latitude: 32.00018, longitude: 35.215 }, null), { latitude: 32.00018, longitude: 35.215 });
+  assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32], [35.22, 32], [35.23, 32]]);
+  assert.deepEqual(fromDriver(way, { latitude: 32.0005, longitude: 35.215 }), [[35.215, 32.0005], [35.22, 32], [35.23, 32]], 'wrong turn keeps raw start');
   assert.deepEqual(fromDriver(way, { latitude: 32, longitude: 35.199 }), [[35.199, 32], ...way], 'before the start: nothing dropped');
+  for (const end of [{ latitude: 32, longitude: 35.23 }, { latitude: 32.0001, longitude: 35.2301 }])
+    assert.ok(fromDriver(way, end).length >= 2, 'at or past the destination the approach stays a two-point LineString');
   // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
   const kept = { stop: 'o1:32,35', route: 'kept' };
   assert.equal(shownApproach('fresh', false, kept, 'o1:32,35'), 'fresh');
@@ -325,6 +333,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
     assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
+    // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
+    { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+      const bookHeader = book.slice(book.indexOf('header={<View style={{ paddingBottom: 8 }}>'), book.indexOf('footer={pending ? undefined'));
+      assert.equal(book.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'the booking error is shown once');
+      assert.ok(bookHeader.includes('<ErrorText>{error}</ErrorText>'), 'in the sheet header');
+      assert.ok(book.includes("if (fixMarked.current && !Object.values(next).some(Boolean)) { fixMarked.current = false; setError(''); }") && book.includes('setError(c.fixMarked); fixMarked.current = true;'), 'and the fix-marked banner clears with the last marked field'); }
+    // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
+    assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
+    assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
     assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
@@ -352,7 +369,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
   // Android: the page labels its own map, so the WebView is not wrapped in an accessible group that would hide Recenter.
   const androidMap = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8'), mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
-  assert.ok(!androidMap.includes('accessible={!!label}') && readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8').includes('label={`${c.routeOnMap}'), 'the route label travels in the page update');
+  const sceneMap = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
+  assert.ok(!androidMap.includes('accessible={!!label}') && sceneMap.includes('label={`${c.routeOnMap}'), 'the route label travels in the page update');
+  assert.ok(sceneMap.includes("${rtl ? '←' : '→'}"), 'the baseline route arrow follows the selected language direction');
   assert.ok(mapPage.includes('right: calc(var(--inset-right) + 10px)') && mapPage.includes('.maplibregl-ctrl-bottom-right { right: var(--inset-right)'), 'map controls clear a side sheet, or recenter is unreachable under it');
   const appleSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
   assert.ok(appleSource.includes('!props.follow && stop') && appleSource.includes('fitToCoordinates([driver, stop]'), 'iOS frames the car with its next stop for anyone not driving');
@@ -387,7 +406,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
   const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
-  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn };`)();
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, onRoad, routeFramePoints, turn };`)();
+  assert.deepEqual(copy.onRoad({ latitude: 32.0002, longitude: 35.215 }, way), onRoad({ latitude: 32.0002, longitude: 35.215 }, way), 'map.html and map-math agree on road projection');
+  assert.deepEqual(copy.onRoad({ latitude: 32.0005, longitude: 35.215 }, way), onRoad({ latitude: 32.0005, longitude: 35.215 }, way), 'map.html and map-math agree on wrong-turn threshold');
+  assert.ok(page.includes("map.addLayer({ id: 'stop-guard', type: 'symbol'") && page.includes("map.getSource('stop-guard')?.setData("), 'stop markers reserve collision space over base place labels');
+  // Maps Item 2: raw first-party cold-map weight ceiling (map.html + vendored MapLibre + RTL text plugin <= 1.45 MB uncompressed).
+  const coldRawBytes = ['../public/map.html', '../public/vendor/mapbox-gl-rtl-text.js',
+    ...['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'].map(f => `../public/vendor/maplibre-${version}/${f}`)]
+    .reduce((sum, relPath) => sum + readFileSync(new URL(relPath, import.meta.url)).byteLength, 0);
+  assert.ok(coldRawBytes <= 1_450_000, `Cold map raw assets (${coldRawBytes} B) exceeded 1,450,000 B budget`);
   assert.ok(Math.abs(metersPerPixelAtCoordinate(0, 15, 2.8125) - 0.85) < 0.005, 'study A53 physical-pixel fixture at equator');
   assert.ok(Math.abs(metersPerPixelAtCoordinate(25, 15, 2.8125) - 0.77) < 0.005, 'study latitude/density fixture');
   assert.equal(metersPerPixelAtCoordinate(32, 16), metersPerPixelAtCoordinate(32, 15) / 2, 'one zoom level halves resolution');

@@ -44,8 +44,8 @@ const pages = [], errors = [], checks = [], requests = [];
 let stage = 'setup';
 const apiRoutes = new Map();
 const apiRoute = pathname => {
-  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname}(?:[?].*)?$`));
-  return apiRoutes.get(pathname); // route/unroute share the same matcher identity
+  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname.replaceAll('*', '[^/?]+')}(?:[?].*)?$`));
+  return apiRoutes.get(pathname); // route/unroute share the same matcher identity; `*` is one path segment
 };
 const button = (page, name) => page.getByRole('button', { name, exact: typeof name === 'string' });
 const field = (page, name) => page.getByLabel(name, { exact: true });
@@ -126,11 +126,17 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     await field(page, c.recipientName).fill('QA Recipient');
   }
   if (scheduled) await page.getByRole('radio', { name: c.later, exact: true }).click();
-  if (lostResponse) await page.route(apiRoute('/api/orders'), async route => {
-    if (route.request().method() !== 'POST') return route.continue();
-    await route.fetch(); // the server commits; only its response is lost
-    await route.abort('connectionreset');
-  }, { times: 1 });
+  if (lostResponse) {
+    const loseResponse = async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await page.unroute(apiRoute('/api/orders'), loseResponse);
+      await route.fetch(); // the server commits; only its response is lost
+      await route.abort('connectionreset');
+    };
+    await page.route(apiRoute('/api/orders'), loseResponse);
+    // Keep the first automatic reconciliation unknown so reload cannot race its successful navigation.
+    await page.route(apiRoute('/api/orders/commands/*'), route => route.fulfill({ status: 503, json: { error: 'temporarily_unavailable' } }), { times: 1 });
+  }
   await button(page, new RegExp(`^${scheduled ? c.scheduleRequest : c.request}`)).click();
   if (lostResponse) {
     await page.getByText(c.bookingPending, { exact: true }).waitFor();
@@ -138,7 +144,16 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     // T19 recovery: the read-only reconciliation finds the committed order on its own and navigates to it —
     // no second booking is created and no manual retry is needed for a confirmed-present command.
   }
-  await page.waitForURL(/\/order\/\d+$/);
+  await page.waitForURL(/\/order\/\d+$/).catch(async error => {
+    const diagnostic = await page.evaluate(() => {
+      const stored = {};
+      for (const [key, value] of Object.entries(localStorage)) if (key.startsWith('booking.')) stored[key] = value;
+      return { url: location.href, text: document.body.innerText, storage: stored };
+    });
+    console.error('Booking recovery diagnostic', diagnostic);
+    console.error('Booking recovery rows', db.prepare('SELECT o.id, o.status, c.request_id FROM orders o LEFT JOIN order_commands c ON c.order_id = o.id ORDER BY o.id').all());
+    throw error;
+  });
   return Number(new URL(page.url()).pathname.split('/').pop());
 }
 async function advance(page, id, current, next, code) {
@@ -697,18 +712,106 @@ try {
     return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 40)) < 20;
   });
   await new Promise(resolve => setTimeout(resolve, 1300));
-  await androidMap.evaluate(() => window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } }));
-  await androidMap.waitForFunction(() => {
-    const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
-    return halo && marker.lat > 31.91455 && marker.lat < 31.91545
-      && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015;
-  });
+  // Every drawn frame of the glide, not one lucky mid-glide poll (a loaded machine can skip straight to the end): the halo sits on the marker.
+  const glide = await androidMap.evaluate(() => new Promise(resolve => {
+    window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } });
+    const end = performance.now() + 7000, frames = []; // a glide lasts the gap between fixes, up to 6 s (glideMs)
+    const sample = () => {
+      const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
+      frames.push({ lat: marker.lat, lng: marker.lng, aligned: !!halo && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015 });
+      if (performance.now() < end) requestAnimationFrame(sample); else resolve(frames);
+    };
+    requestAnimationFrame(sample);
+  }));
+  assert.ok(glide.every(f => f.aligned), `accuracy halo left the marker on ${glide.filter(f => !f.aligned).length} of ${glide.length} frames`);
+  assert.ok(Math.abs(glide.at(-1).lat - 31.9155) < 0.00002 && Math.abs(glide.at(-1).lng - 35.2054) < 0.00002, `marker reached the new fix: ${JSON.stringify(glide.at(-1))}`);
   pass('Android accuracy halo follows the moving marker while the approach line is active');
   await androidMap.waitForLoadState('networkidle');
+  // Maps Item 4 & Item 6 live WebGL checks: stop-guard covers both route stops, nearby GPS snaps onto the road with true halo, and a >40 m wrong turn stays raw.
+  const guardCount = await androidMap.evaluate(() => window.testMap.getSource('stop-guard').serialize().data.features?.length ?? 0);
+  assert.equal(guardCount, 2, 'Both route stops reserve collision space above base city/town labels');
+  await androidMap.evaluate(() => {
+    window.wind({
+      approach: [[35.2034, 31.9100], [35.2134, 31.9100]],
+      driver: { latitude: 31.91018, longitude: 35.2084, accuracy: 22, heading: 90 },
+      stale: false,
+    });
+  });
+  await androidMap.waitForFunction(() => {
+    const m = window.testMarker.getLngLat();
+    return Math.abs(m.lng - 35.2084) < 0.00005 && Math.abs(m.lat - 31.9100) < 0.00005;
+  });
+  const trueHaloRadius = await androidMap.evaluate(() => window.testMap.getPaintProperty('accuracy', 'circle-radius'));
+  assert.equal(Array.isArray(trueHaloRadius) && trueHaloRadius[0] === 'interpolate', true, 'Accuracy halo retains true radius expression while car projects onto road');
+  await androidMap.evaluate(() => {
+    window.wind({ driver: { latitude: 31.91065, longitude: 35.2084, accuracy: 22, heading: 0 } }); // ~72 m north: real wrong turn
+  });
+  await androidMap.waitForFunction(() => Math.abs(window.testMarker.getLngLat().lat - 31.91065) < 0.00005);
+  pass('Android car marker snaps within 40 m of approach road with true accuracy halo and preserves real wrong turns');
   await androidMap.screenshot({ path: join(output, 'android-map-bridge.png') });
   await androidMap.evaluate(() => window.wind({ driver: null }));
   await until(() => androidMap.locator('.maplibregl-marker').count(), n => n === 2, 'Android bridge did not remove ended GPS');
   pass('Android map waits for tiles, restores stale approach, recenters immediately, and updates driver marker');
+
+  stage = 'cold map weight budget and warm HTTP cache';
+  // Maps Item 2: enforce cold Brotli wire ceiling (<= 330 KB first-party, measured 276,316 B on SM-A5360) and zero-wire warm cache reuse.
+  const budgetCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const budgetPage = await budgetCtx.newPage();
+  await budgetPage.addInitScript(() => {
+    window.mapMessages = [];
+    window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
+  });
+  const budgetCdp = await budgetCtx.newCDPSession(budgetPage);
+  await budgetCdp.send('Network.enable');
+  const measureFirstPartyMap = async cacheDisabled => {
+    const seen = new Map();
+    const onResp = p => {
+      if (p.response.url.startsWith(base)) {
+        seen.set(p.requestId, {
+          path: new URL(p.response.url).pathname,
+          encoding: p.response.headers['content-encoding'] || p.response.headers['Content-Encoding'] || 'none',
+          fromCache: !!(p.response.fromDiskCache || p.response.fromMemoryCache || p.response.status === 304),
+          bytes: 0,
+        });
+      }
+    };
+    const done = new Set();
+    const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; done.add(p.requestId); };
+    const onFail = p => done.add(p.requestId);
+    budgetCdp.on('Network.responseReceived', onResp);
+    budgetCdp.on('Network.loadingFinished', onFin);
+    budgetCdp.on('Network.loadingFailed', onFail);
+    try {
+      await budgetCdp.send('Network.setCacheDisabled', { cacheDisabled });
+      await budgetPage.goto('about:blank');
+      await budgetPage.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'browse', language: 'ar', center: pickup }))}`);
+      await budgetPage.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
+      // A request still waiting for headers at the cutoff would be missed: let the page go quiet first.
+      // (The worker script reports on the worker's own target, not this page session; it is ~5 KB of the budget.)
+      await budgetPage.waitForLoadState('networkidle', { timeout: 20_000 })
+        .catch(() => { throw new Error('map page never went network-idle: a request still pending would be missing from the wire budget'); });
+      // Bytes land on loadingFinished: an asset still downloading at the cutoff would count as 0 B.
+      for (const until = Date.now() + 10_000; [...seen.keys()].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
+      assert.ok([...seen.keys()].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${JSON.stringify([...seen].filter(([id]) => !done.has(id)).map(([, r]) => r.path))}`);
+      return [...seen.values()];
+    } finally {
+      budgetCdp.off('Network.responseReceived', onResp);
+      budgetCdp.off('Network.loadingFinished', onFin);
+      budgetCdp.off('Network.loadingFailed', onFail);
+    }
+  };
+  const coldAssets = await measureFirstPartyMap(true);
+  const coldWire = coldAssets.reduce((sum, a) => sum + a.bytes, 0);
+  assert.ok(coldAssets.length >= 5, `Expected map.html + MapLibre modules on cold open, saw ${coldAssets.length}`);
+  assert.ok(coldAssets.every(a => a.encoding === 'br'), `Every first-party map asset must be Brotli-compressed: ${JSON.stringify(coldAssets)}`);
+  assert.ok(coldWire > 0 && coldWire <= 330_000, `First-party cold map wire weight ${coldWire} B exceeded 330,000 B budget`);
+  const warmAssets = await measureFirstPartyMap(false);
+  const warmAssetsSecond = await measureFirstPartyMap(false);
+  void warmAssets;
+  const warmWire = warmAssetsSecond.reduce((sum, a) => sum + a.bytes, 0);
+  assert.equal(warmWire, 0, `Warm map open must hit HTTP cache with 0 first-party wire bytes, saw ${warmWire} B: ${JSON.stringify(warmAssetsSecond)}`);
+  await budgetCtx.close();
+  pass(`cold map Brotli wire weight (${coldWire} B <= 330,000 B budget) and 0 B warm cache reuse verified`);
 
   stage = 'map tile failure';
   const badTiles = await newPage();
