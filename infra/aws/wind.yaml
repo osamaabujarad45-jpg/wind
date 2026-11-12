@@ -30,6 +30,9 @@ Parameters:
   GitHubRepo:
     Type: String
     Default: osamaabujarad45-jpg/wind
+  GitHubSubjectPrefix:
+    Type: String
+    Default: repo:osamaabujarad45-jpg@296114043/wind@1448798846
   CreateGitHubOidcProvider:
     Type: String
     Default: 'true'
@@ -218,7 +221,9 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/master
+                # The repository uses GitHub's immutable subjects (owner and repository ids), so a rename or a re-created
+                # repository of the same name cannot assume this role. Read with GET /repos/{repo}/actions/oidc/customization/sub.
+                token.actions.githubusercontent.com:sub: !Sub ${GitHubSubjectPrefix}:ref:refs/heads/master
                 token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepo}/.github/workflows/release-image.yml@refs/heads/master
       Policies:
         - PolicyName: push-wind-api
