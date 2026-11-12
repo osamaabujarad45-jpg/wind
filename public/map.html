@@ -186,6 +186,8 @@ window.windTileFailed = false;
 const nextTiles = () => { window.windBaseTile = false; window.windTileFailed = false; };
 map.on('movestart', nextTiles);
 map.on('resize', nextTiles);
+// A move inside already-loaded tiles emits no new tile event: once the map is idle with every tile settled, the basemap is drawn again.
+map.on('idle', () => { if (baseTileLoaded && map.areTilesLoaded()) window.windBaseTile = true; });
 const announceReady = () => {
   if (failed || !mapLoaded || !baseTileLoaded || announcedReady) return;
   announcedReady = true;
@@ -374,7 +376,7 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   map.addLayer({ id: 'stop-guard', type: 'symbol', source: 'stop-guard',
     layout: { 'icon-image': 'stop-guard', 'icon-anchor': 'bottom', 'icon-offset': [0, 9], 'icon-allow-overlap': true } });
   // Only user gestures lift the pin and pause Confirm; programmatic search/locate moves land at a known point.
-  map.on('movestart', e => { if (pinning() && e.originalEvent) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
+  map.on('movestart', e => { if (pinning() && e.originalEvent) { pinDragged = true; pinEl.classList.add('lift'); send({ type: 'moving' }); } }); // keyboard pans too
   map.on('dragstart', () => { if (pinning()) { pinDragged = true; send({ type: 'gesture' }); } else userMoved(); });
   map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) { pinDragged = true; send({ type: 'gesture' }); } else userMoved(); } });
   map.on('click', e => {

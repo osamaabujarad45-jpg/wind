@@ -44,8 +44,8 @@ const pages = [], errors = [], checks = [], requests = [];
 let stage = 'setup';
 const apiRoutes = new Map();
 const apiRoute = pathname => {
-  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname}(?:[?].*)?$`));
-  return apiRoutes.get(pathname); // route/unroute share the same matcher identity
+  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname.replaceAll('*', '[^/?]+')}(?:[?].*)?$`));
+  return apiRoutes.get(pathname); // route/unroute share the same matcher identity; `*` is one path segment
 };
 const button = (page, name) => page.getByRole('button', { name, exact: typeof name === 'string' });
 const field = (page, name) => page.getByLabel(name, { exact: true });

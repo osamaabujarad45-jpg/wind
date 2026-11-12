@@ -44,8 +44,8 @@ const pages = [], errors = [], checks = [], requests = [];
 let stage = 'setup';
 const apiRoutes = new Map();
 const apiRoute = pathname => {
-  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname}(?:[?].*)?$`));
-  return apiRoutes.get(pathname); // route/unroute share the same matcher identity
+  if (!apiRoutes.has(pathname)) apiRoutes.set(pathname, new RegExp(`${pathname.replaceAll('*', '[^/?]+')}(?:[?].*)?$`));
+  return apiRoutes.get(pathname); // route/unroute share the same matcher identity; `*` is one path segment
 };
 const button = (page, name) => page.getByRole('button', { name, exact: typeof name === 'string' });
 const field = (page, name) => page.getByLabel(name, { exact: true });
@@ -768,19 +768,26 @@ try {
         });
       }
     };
-    const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; };
+    const done = new Set();
+    const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; done.add(p.requestId); };
+    const onFail = p => done.add(p.requestId);
     budgetCdp.on('Network.responseReceived', onResp);
     budgetCdp.on('Network.loadingFinished', onFin);
+    budgetCdp.on('Network.loadingFailed', onFail);
     try {
       await budgetCdp.send('Network.setCacheDisabled', { cacheDisabled });
       await budgetPage.goto('about:blank');
       await budgetPage.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'browse', language: 'ar', center: pickup }))}`);
       await budgetPage.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
       await new Promise(r => setTimeout(r, 250));
+      // Bytes land on loadingFinished: an asset still downloading at the cutoff would count as 0 B.
+      for (const until = Date.now() + 10_000; [...seen.keys()].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
+      assert.ok([...seen.keys()].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${JSON.stringify([...seen].filter(([id]) => !done.has(id)).map(([, r]) => r.path))}`);
       return [...seen.values()];
     } finally {
       budgetCdp.off('Network.responseReceived', onResp);
       budgetCdp.off('Network.loadingFinished', onFin);
+      budgetCdp.off('Network.loadingFailed', onFail);
     }
   };
   const coldAssets = await measureFirstPartyMap(true);

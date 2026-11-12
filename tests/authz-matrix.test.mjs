@@ -78,6 +78,7 @@ try {
   assert.ok(adminEndpoints.length >= 25, `Expected admin route surface, saw ${adminEndpoints.length}`);
   const assertRefused = async (res, additive, detail) => {
     if (res.status === 403) return;
+    // SQLite answers additive routes at the capability gate; their role checks run on PostgreSQL in tests/pg-contracts.mjs.
     if (additive && res.status === 409) {
       const payload = await res.json();
       assert.match(String(payload?.error ?? ''), /_unavailable$/, `${detail}: 409 on SQLite must be a capability gate, got ${JSON.stringify(payload)}`);
@@ -107,6 +108,16 @@ try {
     });
     assert.ok([401, 403].includes(blockedRes.status), `blocked token refused on ${ep.method} ${ep.path}, got ${blockedRes.status}`);
   }
+
+  // A blocked customer is refused on its own customer routes too, not only where its role already fails.
+  const ordersBefore = db.prepare('SELECT COUNT(*) AS n FROM orders').get().n;
+  for (const [method, path, body] of [['GET', '/orders'], ['POST', '/orders', { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) }], ['POST', '/price', orderInput]]) {
+    const res = await fetch(`${base}${path}`, {
+      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${blockedUser.token}` }, ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    assert.ok([401, 403].includes(res.status), `blocked customer refused on ${method} ${path}, got ${res.status}`);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM orders').get().n, ordersBefore, 'a blocked customer books nothing');
 
   // 3. Every driver-only route refuses customers; active-driver work routes refuse unapproved pending drivers.
   const driverOnly = [

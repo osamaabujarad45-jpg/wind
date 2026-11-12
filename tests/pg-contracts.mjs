@@ -110,6 +110,16 @@ try {
   await promote(phones[0]);
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
+  // Additive admin and driver routes enforce their roles here, where no SQLite capability gate answers first (authz-matrix covers SQLite).
+  for (const endpoint of read('additive-endpoints.json').modules.flatMap(m => m.endpoints)) {
+    const admin_ = /^\/api\/(admin|opencode)/.test(endpoint.path), driver_ = endpoint.path.startsWith('/api/driver/');
+    if (!admin_ && !driver_) continue;
+    const path = endpoint.path.replace(/^\/api/, '').replace(/:\w+/g, '999999999').replaceAll('([^/]+)', '00000000-0000-4000-8000-000000000001');
+    const actors_ = admin_ ? [['customer', customer], ['driver', driver]] : [['customer', customer]];
+    for (const [label, actor] of actors_)
+      await call(path, { method: endpoint.method, token: actor.token, ...(['POST', 'PATCH', 'PUT'].includes(endpoint.method) ? { body: {} } : {}), expect: 403 })
+        .catch(error => { throw new Error(`${label} must get 403 on PostgreSQL ${endpoint.method} ${endpoint.path}: ${error.message}`); });
+  }
   const session = await exchange('customer-session', 'customer', '/me', { token: customer.token });
   assert.deepEqual(session.capabilities.enabledServices, ['parcel']);
   assert.equal(session.capabilities.pooling, false);

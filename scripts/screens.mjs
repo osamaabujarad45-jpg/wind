@@ -260,14 +260,14 @@ const { chromium } = await import('playwright');
 const browser = await chromium.launch(process.env.SCREENS_CHROMIUM ? { executablePath: process.env.SCREENS_CHROMIUM } : {});
 const shots = [];
 // Wait for any visible map iframe to finish loading its route geometry (a route map with two stops needs the road line).
-async function waitForMaps(targetPage) {
+async function waitForMaps(targetPage, where = 'map') {
   for (const frame of targetPage.frames().filter(f => f.url().includes('/map.html'))) {
     await frame.waitForFunction(() => {
       const m = window.windMap;
       if (!m?.loaded()) return false;
       const hasStops = document.querySelectorAll('.stop').length >= 2;
       return !hasStops || m.getSource('road')?.serialize()?.data?.geometry?.type === 'LineString';
-    }, null, { timeout: 12_000 }).catch(() => {});
+    }, null, { timeout: 12_000 }).catch(() => { throw new Error(`${where}: route line never drew between the two stops`); });
   }
   if (targetPage.frames().some(f => f.url().includes('/map.html'))) await targetPage.waitForTimeout(450);
 }
@@ -288,6 +288,11 @@ async function mapsReady(page, where) {
     }
     await page.waitForTimeout(500);
   }
+  // A tile reload drops the route, and a tile can fail during the settle: the road and every frame's tiles are checked last, just before capture.
+  await waitForMaps(page, where);
+  for (const frame of page.frames().filter(f => new URL(f.url(), 'http://x').pathname === '/map.html'))
+    await frame.waitForFunction(() => window.windBaseTile === true && window.windTileFailed === false && window.windMap?.areTilesLoaded(), null, { timeout: 10_000 })
+      .catch(() => { throw new Error(`${where}: map tiles failed or changed after they were checked`); });
 }
 
 for (const language of ['ar', 'en']) {
@@ -331,7 +336,7 @@ for (const language of ['ar', 'en']) {
       await page.waitForTimeout(700);
     }
     if (screen.motion) await page.waitForTimeout(900); // mid-ripple
-    await waitForMaps(page);
+    await waitForMaps(page, `${screen.id} ${language}`);
     // Full-screen map+sheet screens stay at one phone viewport (as on the device); card/form screens grow to their full scroll height.
     const fullScreenMap = await page.evaluate(() => [...document.querySelectorAll('iframe[title="map"]')]
       .some(f => f.getBoundingClientRect().height >= innerHeight - 8));
@@ -339,7 +344,6 @@ for (const language of ['ar', 'en']) {
       .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
       .map(d => d.scrollHeight - d.clientHeight)));
     if (extra) { await page.setViewportSize({ width: phone.width, height: Math.min(phone.height + extra, 2600) }); await page.waitForTimeout(400); }
-    await waitForMaps(page);
     await mapsReady(page, `${screen.id} ${language}`);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
@@ -568,7 +572,6 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
     await page.waitForTimeout(3200); // intro + first data load
     await run?.(page);
     await page.waitForTimeout(800);
-    await waitForMaps(page);
     await mapsReady(page, `${screen.id} ${language}`);
     mkdirSync(join(outDir, language), { recursive: true });
     const file = join(outDir, language, `${screen.id}.png`);

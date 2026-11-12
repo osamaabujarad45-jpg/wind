@@ -179,5 +179,6 @@ export function fromDriver(line: [number, number][], p: Point, snapMetres = 40):
   }
   const head: [number, number] = best <= snapMetres ? [startLng, startLat] : [p.longitude, p.latitude];
   const rest = line.slice(next);
-  return rest.length && rest[0][0] === head[0] && rest[0][1] === head[1] ? rest : [head, ...rest];
+  // Drop the duplicate only while two points remain: at the last vertex the line must still be a LineString.
+  return rest.length > 1 && rest[0][0] === head[0] && rest[0][1] === head[1] ? rest : [head, ...rest];
 }

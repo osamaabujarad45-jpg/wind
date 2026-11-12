@@ -216,6 +216,8 @@ try {
   assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32], [35.22, 32], [35.23, 32]]);
   assert.deepEqual(fromDriver(way, { latitude: 32.0005, longitude: 35.215 }), [[35.215, 32.0005], [35.22, 32], [35.23, 32]], 'wrong turn keeps raw start');
   assert.deepEqual(fromDriver(way, { latitude: 32, longitude: 35.199 }), [[35.199, 32], ...way], 'before the start: nothing dropped');
+  for (const end of [{ latitude: 32, longitude: 35.23 }, { latitude: 32.0001, longitude: 35.2301 }])
+    assert.ok(fromDriver(way, end).length >= 2, 'at or past the destination the approach stays a two-point LineString');
   // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
   const kept = { stop: 'o1:32,35', route: 'kept' };
   assert.equal(shownApproach('fresh', false, kept, 'o1:32,35'), 'fresh');
