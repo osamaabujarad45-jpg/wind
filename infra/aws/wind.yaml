@@ -32,6 +32,7 @@ Parameters:
     Default: osamaabujarad45-jpg/wind
   GitHubSubjectPrefix:
     Type: String
+    Description: OIDC sub prefix of GitHubRepo (immutable ids). Change together with GitHubRepo.
     Default: repo:osamaabujarad45-jpg@296114043/wind@1448798846
   CreateGitHubOidcProvider:
     Type: String
@@ -221,8 +222,9 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # The repository uses GitHub's immutable subjects (owner and repository ids), so a rename or a re-created
-                # repository of the same name cannot assume this role. Read with GET /repos/{repo}/actions/oidc/customization/sub.
+                # The repository uses GitHub's immutable subjects (owner and repository ids), so a re-created repository of the
+                # same name cannot assume this role. A rename keeps the ids but breaks job_workflow_ref below: update GitHubRepo.
+                # Read the prefix with GET /repos/{repo}/actions/oidc/customization/sub.
                 token.actions.githubusercontent.com:sub: !Sub ${GitHubSubjectPrefix}:ref:refs/heads/master
                 token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepo}/.github/workflows/release-image.yml@refs/heads/master
       Policies:
