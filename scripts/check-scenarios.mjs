@@ -768,11 +768,9 @@ try {
         });
       }
     };
-    const done = new Set(), sent = new Map();
-    const onSend = p => { if (p.request.url.startsWith(base)) sent.set(p.requestId, new URL(p.request.url).pathname); }; // a request still waiting for headers counts too
+    const done = new Set();
     const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; done.add(p.requestId); };
     const onFail = p => done.add(p.requestId);
-    budgetCdp.on('Network.requestWillBeSent', onSend);
     budgetCdp.on('Network.responseReceived', onResp);
     budgetCdp.on('Network.loadingFinished', onFin);
     budgetCdp.on('Network.loadingFailed', onFail);
@@ -781,16 +779,17 @@ try {
       await budgetPage.goto('about:blank');
       await budgetPage.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'browse', language: 'ar', center: pickup }))}`);
       await budgetPage.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
-      await new Promise(r => setTimeout(r, 250));
+      // A request still waiting for headers at the cutoff would be missed: let the page go quiet first.
+      // (The worker script reports on the worker's own target, not this page session; it is ~5 KB of the budget.)
+      await budgetPage.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
       // Bytes land on loadingFinished: an asset still downloading at the cutoff would count as 0 B.
-      for (const until = Date.now() + 10_000; [...sent.keys()].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
-      assert.ok([...sent.keys()].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${JSON.stringify([...sent].filter(([id]) => !done.has(id)).map(([, path]) => path))}`);
+      for (const until = Date.now() + 10_000; [...seen.keys()].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
+      assert.ok([...seen.keys()].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${JSON.stringify([...seen].filter(([id]) => !done.has(id)).map(([, r]) => r.path))}`);
       return [...seen.values()];
     } finally {
       budgetCdp.off('Network.responseReceived', onResp);
       budgetCdp.off('Network.loadingFinished', onFin);
       budgetCdp.off('Network.loadingFailed', onFail);
-      budgetCdp.off('Network.requestWillBeSent', onSend);
     }
   };
   const coldAssets = await measureFirstPartyMap(true);
