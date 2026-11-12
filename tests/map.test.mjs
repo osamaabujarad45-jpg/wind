@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
 import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, resolveMapProvider, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
@@ -206,9 +206,15 @@ try {
   assert.deepEqual([far.frame(4_000).now.latitude, far.frame(4_000).now.longitude], [32.2, 35.2], 'a km-scale jump (new driver) snaps, never glides across the city');
   const still = glider(A); still.fix(A, 1_000, true); still.fix({ ...C, heading: 0 }, 4_000, true);
   assert.deepEqual(still.frame(4_000), { now: { ...C, rotation: 0 }, done: true }, 'reduced motion lands at once');
-  // Approach line starts under the car: points behind the driver are dropped.
+  // Approach line starts under the car: snapped within 40 m so GPS drift stays on the street, raw beyond 40 m on wrong turns, points behind dropped.
   const way = [[35.2, 32], [35.21, 32], [35.22, 32], [35.23, 32]];
-  assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32.0001], [35.22, 32], [35.23, 32]]);
+  assert.deepEqual(onRoad({ latitude: 32.00018, longitude: 35.215 }, way), { latitude: 32, longitude: 35.215 }, '~20 m north snaps onto the straight street');
+  assert.deepEqual(onRoad({ latitude: 32.0005, longitude: 35.215 }, way), { latitude: 32.0005, longitude: 35.215 }, '~55 m off-route wrong turn keeps the raw fix');
+  assert.deepEqual(onRoad({ latitude: 32.0001, longitude: 35.2 }, [[35.2, 32]]), { latitude: 32, longitude: 35.2 }, 'single-point line within 40 m snaps');
+  assert.deepEqual(onRoad({ latitude: 32.001, longitude: 35.2 }, [[35.2, 32]]), { latitude: 32.001, longitude: 35.2 }, 'single-point line beyond 40 m keeps raw');
+  assert.deepEqual(onRoad({ latitude: 32.00018, longitude: 35.215 }, null), { latitude: 32.00018, longitude: 35.215 });
+  assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32], [35.22, 32], [35.23, 32]]);
+  assert.deepEqual(fromDriver(way, { latitude: 32.0005, longitude: 35.215 }), [[35.215, 32.0005], [35.22, 32], [35.23, 32]], 'wrong turn keeps raw start');
   assert.deepEqual(fromDriver(way, { latitude: 32, longitude: 35.199 }), [[35.199, 32], ...way], 'before the start: nothing dropped');
   // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
   const kept = { stop: 'o1:32,35', route: 'kept' };
@@ -398,7 +404,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.equal(page.match(/\/vendor\/maplibre-[\d.]+\//g).filter(p => p !== `/vendor/maplibre-${version}/`).length, 0, `map.html must point at /vendor/maplibre-${version}`);
   const helpers = page.slice(page.indexOf('// Same helpers'), page.indexOf('// End of helpers.'));
-  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, routeFramePoints, turn };`)();
+  const copy = new Function(`${helpers}; return { bearing, ease, fitBounds, glideMs, labelField, metersPerPixelAtCoordinate, onRoad, routeFramePoints, turn };`)();
+  assert.deepEqual(copy.onRoad({ latitude: 32.0002, longitude: 35.215 }, way), onRoad({ latitude: 32.0002, longitude: 35.215 }, way), 'map.html and map-math agree on road projection');
+  assert.deepEqual(copy.onRoad({ latitude: 32.0005, longitude: 35.215 }, way), onRoad({ latitude: 32.0005, longitude: 35.215 }, way), 'map.html and map-math agree on wrong-turn threshold');
+  assert.ok(page.includes("map.addLayer({ id: 'stop-guard', type: 'symbol'") && page.includes("map.getSource('stop-guard')?.setData("), 'stop markers reserve collision space over base place labels');
+  // Maps Item 2: raw first-party cold-map weight ceiling (map.html + vendored MapLibre + RTL text plugin <= 1.45 MB uncompressed).
+  const coldRawBytes = ['../public/map.html', '../public/vendor/mapbox-gl-rtl-text.js',
+    ...['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'].map(f => `../public/vendor/maplibre-${version}/${f}`)]
+    .reduce((sum, relPath) => sum + readFileSync(new URL(relPath, import.meta.url)).byteLength, 0);
+  assert.ok(coldRawBytes <= 1_450_000, `Cold map raw assets (${coldRawBytes} B) exceeded 1,450,000 B budget`);
   assert.ok(Math.abs(metersPerPixelAtCoordinate(0, 15, 2.8125) - 0.85) < 0.005, 'study A53 physical-pixel fixture at equator');
   assert.ok(Math.abs(metersPerPixelAtCoordinate(25, 15, 2.8125) - 0.77) < 0.005, 'study latitude/density fixture');
   assert.equal(metersPerPixelAtCoordinate(32, 16), metersPerPixelAtCoordinate(32, 15) / 2, 'one zoom level halves resolution');

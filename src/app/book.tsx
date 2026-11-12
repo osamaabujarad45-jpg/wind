@@ -189,7 +189,7 @@ function BookForm() {
       const result = await pickupLocation(request.signal);
       if (request.signal.aborted) return;
       setHere({ ...result.point, accuracy: result.accuracy }); void rememberHere(result.point);
-      if (step === 'pin') setPinCenter(result.point); // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
+      if (step === 'pin') { setPinCenter(result.point); setPinPoint(result.point); setPinMoving(false); } // a place the customer still has to confirm; on a destination pin it says nothing about the pickup
       if (step !== 'pin' || pinFor === 'pickup') { pickupTouched.current = true; setPickupNote(''); adoptFix(result); }
       if (step === 'search') { setField('dropoff'); if (dropoffChosen) setStep('trip'); }
     } catch (e) {

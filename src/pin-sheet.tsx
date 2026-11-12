@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Point } from './model';
 import { pickupErrorKey } from './customer-location';
 import { PinMap } from './route-map';
-import { Button, palette, Txt, useCopy } from './ui';
+import { Button, palette, sheetShadow, Txt, useCopy } from './ui';
 import { useReducedMotion } from './motion';
 import { mapReadyMs } from './runtime-config';
 
@@ -64,7 +64,7 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
   const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
   return <Modal visible transparent animationType={still ? 'none' : 'slide'} onRequestClose={onClose}>
     <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
-    <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
+    <SafeAreaView edges={['bottom']} style={[styles.sheet, sheetShadow, { maxHeight: '92%' }]} accessibilityViewIsModal>
       <ScrollView style={{ flexShrink: 1 }}>
       <View style={styles.grip} />
       <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
@@ -94,7 +94,7 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
 }
 
 const styles = StyleSheet.create({
-  shade: { flex: 1, backgroundColor: '#0E1F1966' },
+  shade: { flex: 1, backgroundColor: palette.shade },
   sheet: { backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.line, marginBottom: 12 },
+  grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.dash, marginBottom: 12 },
 });

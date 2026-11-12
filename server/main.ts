@@ -289,8 +289,9 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
-  // T33: the pending destination card follows the capability, not the dialect.
-  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && destinationEligible(r) && await destinationAvailable(persistence)
+  // T33: destination-change visibility and pending card follow the capability, not the dialect.
+  const canChangeDest = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence);
+  const destinationChange = canChangeDest && destinationEligible(r)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
@@ -303,7 +304,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     pickupContact: partyPhones ? r.pickup_contact ?? r.contact : null,
     recipientName: owner || assigned ? r.recipient_name ?? '' : '', recipientPhone: partyPhones ? r.recipient_phone ?? null : null,
     price: r.price, commission: r.commission ?? null, status: r.status,
-    ...(persistence.backend === 'sqlite' && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
+    ...(canChangeDest && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
     ...(destinationChange && { destinationChange }),
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,

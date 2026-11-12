@@ -720,10 +720,81 @@ try {
   });
   pass('Android accuracy halo follows the moving marker while the approach line is active');
   await androidMap.waitForLoadState('networkidle');
+  // Maps Item 4 & Item 6 live WebGL checks: stop-guard covers both route stops, nearby GPS snaps onto the road with true halo, and a >40 m wrong turn stays raw.
+  const guardCount = await androidMap.evaluate(() => window.testMap.getSource('stop-guard').serialize().data.features?.length ?? 0);
+  assert.equal(guardCount, 2, 'Both route stops reserve collision space above base city/town labels');
+  await androidMap.evaluate(() => {
+    window.wind({
+      approach: [[35.2034, 31.9100], [35.2134, 31.9100]],
+      driver: { latitude: 31.91018, longitude: 35.2084, accuracy: 22, heading: 90 },
+      stale: false,
+    });
+  });
+  await androidMap.waitForFunction(() => {
+    const m = window.testMarker.getLngLat();
+    return Math.abs(m.lng - 35.2084) < 0.00005 && Math.abs(m.lat - 31.9100) < 0.00005;
+  });
+  const trueHaloRadius = await androidMap.evaluate(() => window.testMap.getPaintProperty('accuracy', 'circle-radius'));
+  assert.equal(Array.isArray(trueHaloRadius) && trueHaloRadius[0] === 'interpolate', true, 'Accuracy halo retains true radius expression while car projects onto road');
+  await androidMap.evaluate(() => {
+    window.wind({ driver: { latitude: 31.91065, longitude: 35.2084, accuracy: 22, heading: 0 } }); // ~72 m north: real wrong turn
+  });
+  await androidMap.waitForFunction(() => Math.abs(window.testMarker.getLngLat().lat - 31.91065) < 0.00005);
+  pass('Android car marker snaps within 40 m of approach road with true accuracy halo and preserves real wrong turns');
   await androidMap.screenshot({ path: join(output, 'android-map-bridge.png') });
   await androidMap.evaluate(() => window.wind({ driver: null }));
   await until(() => androidMap.locator('.maplibregl-marker').count(), n => n === 2, 'Android bridge did not remove ended GPS');
   pass('Android map waits for tiles, restores stale approach, recenters immediately, and updates driver marker');
+
+  stage = 'cold map weight budget and warm HTTP cache';
+  // Maps Item 2: enforce cold Brotli wire ceiling (<= 330 KB first-party, measured 276,316 B on SM-A5360) and zero-wire warm cache reuse.
+  const budgetCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const budgetPage = await budgetCtx.newPage();
+  await budgetPage.addInitScript(() => {
+    window.mapMessages = [];
+    window.ReactNativeWebView = { postMessage: json => window.mapMessages.push(JSON.parse(json)) };
+  });
+  const budgetCdp = await budgetCtx.newCDPSession(budgetPage);
+  await budgetCdp.send('Network.enable');
+  const measureFirstPartyMap = async cacheDisabled => {
+    const seen = new Map();
+    const onResp = p => {
+      if (p.response.url.startsWith(base)) {
+        seen.set(p.requestId, {
+          path: new URL(p.response.url).pathname,
+          encoding: p.response.headers['content-encoding'] || p.response.headers['Content-Encoding'] || 'none',
+          fromCache: !!(p.response.fromDiskCache || p.response.fromMemoryCache || p.response.status === 304),
+          bytes: 0,
+        });
+      }
+    };
+    const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; };
+    budgetCdp.on('Network.responseReceived', onResp);
+    budgetCdp.on('Network.loadingFinished', onFin);
+    try {
+      await budgetCdp.send('Network.setCacheDisabled', { cacheDisabled });
+      await budgetPage.goto('about:blank');
+      await budgetPage.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'browse', language: 'ar', center: pickup }))}`);
+      await budgetPage.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
+      await new Promise(r => setTimeout(r, 250));
+      return [...seen.values()];
+    } finally {
+      budgetCdp.off('Network.responseReceived', onResp);
+      budgetCdp.off('Network.loadingFinished', onFin);
+    }
+  };
+  const coldAssets = await measureFirstPartyMap(true);
+  const coldWire = coldAssets.reduce((sum, a) => sum + a.bytes, 0);
+  assert.ok(coldAssets.length >= 5, `Expected map.html + MapLibre modules on cold open, saw ${coldAssets.length}`);
+  assert.ok(coldAssets.every(a => a.encoding === 'br'), `Every first-party map asset must be Brotli-compressed: ${JSON.stringify(coldAssets)}`);
+  assert.ok(coldWire > 0 && coldWire <= 330_000, `First-party cold map wire weight ${coldWire} B exceeded 330,000 B budget`);
+  const warmAssets = await measureFirstPartyMap(false);
+  const warmAssetsSecond = await measureFirstPartyMap(false);
+  void warmAssets;
+  const warmWire = warmAssetsSecond.reduce((sum, a) => sum + a.bytes, 0);
+  assert.equal(warmWire, 0, `Warm map open must hit HTTP cache with 0 first-party wire bytes, saw ${warmWire} B: ${JSON.stringify(warmAssetsSecond)}`);
+  await budgetCtx.close();
+  pass(`cold map Brotli wire weight (${coldWire} B <= 330,000 B budget) and 0 B warm cache reuse verified`);
 
   stage = 'map tile failure';
   const badTiles = await newPage();

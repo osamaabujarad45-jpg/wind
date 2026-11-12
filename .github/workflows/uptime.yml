@@ -17,3 +17,9 @@ jobs:
     steps:
       - name: Production answers
         run: curl --fail --silent --show-error --max-time 15 --retry 3 --retry-delay 30 --retry-all-errors https://windapi236.swedencentral.cloudapp.azure.com/api/ready
+      - name: Map vector tile host answers
+        run: |
+          style=$(curl --fail --silent --show-error --max-time 15 --retry 3 --retry-delay 15 --retry-all-errors https://tiles.openfreemap.org/styles/liberty)
+          tilejson_url=$(printf '%s' "$style" | jq -er '.sources.openmaptiles.url')
+          tilejson=$(curl --fail --silent --show-error --max-time 15 --retry 3 --retry-delay 15 --retry-all-errors "$tilejson_url")
+          printf '%s' "$tilejson" | jq -er '.tiles[0]' > /dev/null

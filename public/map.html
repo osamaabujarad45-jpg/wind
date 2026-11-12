@@ -117,6 +117,23 @@ const localName = ['let', 'n', ['to-string', ['get', 'name']],
 const labelField = language => language === 'ar'
   ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], localName]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], localName];
+function onRoad(p, line, metres = 40) {
+  if (!line?.length) return { latitude: p.latitude, longitude: p.longitude };
+  const kx = 111320 * Math.cos(rad(p.latitude)), ky = 110540;
+  if (line.length === 1) {
+    return Math.hypot((line[0][0] - p.longitude) * kx, (line[0][1] - p.latitude) * ky) <= metres
+      ? { latitude: line[0][1], longitude: line[0][0] } : { latitude: p.latitude, longitude: p.longitude };
+  }
+  let best = Infinity, longitude = p.longitude, latitude = p.latitude;
+  for (let i = 1; i < line.length; i++) {
+    const ax = (line[i - 1][0] - p.longitude) * kx, ay = (line[i - 1][1] - p.latitude) * ky;
+    const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * ky;
+    const t = dx || dy ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) { best = d; longitude = line[i - 1][0] + t * (line[i][0] - line[i - 1][0]); latitude = line[i - 1][1] + t * (line[i][1] - line[i - 1][1]); }
+  }
+  return best <= metres ? { latitude, longitude } : { latitude: p.latitude, longitude: p.longitude };
+}
 // End of helpers.
 
 let failed = false;
@@ -187,7 +204,7 @@ map.once('load', () => { mapLoaded = true; announceReady(); });
 
 const mapEl = document.getElementById('map');
 const pinEl = document.getElementById('pin'), pinBase = document.getElementById('pin-base');
-let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0, userMarker, drawnMode = '';
+let ready = false, moved = false, pinDragged = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0, userMarker, drawnMode = '';
 window.wind = update => {
   if (failed) return;
   // The map is one labelled image for screen readers; Recenter sits outside it and stays reachable.
@@ -195,10 +212,11 @@ window.wind = update => {
   const refit_ = 'insets' in update && JSON.stringify(update.insets) !== JSON.stringify(state.insets);
   Object.assign(state, update);
   if (update.insets) { state.insets = { top: 0, bottom: 0, ...update.insets }; insetCss(); }
+  if (free() && update.center) pinDragged = false;
   if (ready) {
     applyMode();
     // The pin and the camera's centre must agree on where the visible middle is, or the pin points at the wrong place.
-    if (refit_ && free()) map.setPadding(freePadding());
+    if (refit_ && free()) { map.setPadding(freePadding()); if (pinning() && !pinDragged && state.center) centerPin(state.center); }
     if (free() && update.center) centerPin(update.center, update.zoom);
     else if (refit_ && !free()) { framed = ''; }
     draw(refit_);
@@ -206,12 +224,12 @@ window.wind = update => {
   }
   fade();
 };
-function centerPin(point, zoom) {
+function centerPin(point, zoom, animate = false) {
   if (!validPoint(point)) return;
   const current = map.getCenter();
-  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001) {
+  if (Math.abs(current.lat - point.latitude) + Math.abs(current.lng - point.longitude) > 0.000001 || (Number.isFinite(zoom) && Math.abs(map.getZoom() - zoom) > 0.01)) {
     const center = [point.longitude, point.latitude], camera = { center, ...(Number.isFinite(zoom) && { zoom }) };
-    if (still() || !announcedReady) map.jumpTo(camera);
+    if (!animate || still() || !announcedReady) map.jumpTo(camera);
     else map.easeTo({ ...camera, duration: 350 });
     return true;
   }
@@ -296,6 +314,9 @@ const placeStop = (existing, point, color, square) => {
 function drawStops() {
   startMarker = placeStop(startMarker, state.pickup, C.forest, false);
   endMarker = placeStop(endMarker, state.dropoff, C.forest, true);
+  // Reserve the stop markers and their chips in WebGL collision space so base city/town labels do not repeat underneath.
+  map.getSource('stop-guard')?.setData({ type: 'FeatureCollection', features: [state.pickup, state.dropoff]
+    .filter(validPoint).map(p => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] } })) });
   // The next stop carries the minutes; both carry their names when the app sends them.
   const etaAt = state.driver && state.focus === 'pickup' ? startMarker : endMarker;
   for (const [stop, text] of [[startMarker, state.labels?.pickup], [endMarker, state.labels?.dropoff]]) {
@@ -313,10 +334,11 @@ function applyMode() {
   pinEl.hidden = pinBase.hidden = !pinning();
   canvasLabel();
   if (free()) {
+    pinDragged = false;
     // Trip layers stay but hold nothing; the camera returns to the place being pinned.
     startMarker?.remove(); endMarker?.remove(); startMarker = endMarker = undefined;
     closedMarkers.forEach(m => m.remove()); closedMarkers = [];
-    for (const id of ['road', 'road-casing-source', 'approach']) map.getSource(id)?.setData(empty);
+    for (const id of ['road', 'road-casing-source', 'approach', 'stop-guard']) map.getSource(id)?.setData(empty);
     drawnLines = ''; drawnClosed = ''; framed = '';
     recenter.style.display = 'none';
     map.setPadding(freePadding());
@@ -347,14 +369,22 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   map.addSource('user-accuracy', { type: 'geojson', data: empty });
   map.addLayer({ id: 'user-accuracy', type: 'circle', source: 'user-accuracy', paint: { 'circle-color': '#2F6FED', 'circle-opacity': 0.12,
     'circle-stroke-color': '#2F6FED', 'circle-stroke-opacity': 0.25, 'circle-stroke-width': 1 } });
-  map.on('movestart', () => { if (pinning()) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
-  map.on('dragstart', () => { if (pinning()) send({ type: 'gesture' }); else userMoved(); });
-  map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) send({ type: 'gesture' }); else userMoved(); } });
+  map.addImage('stop-guard', { width: 96, height: 46, data: new Uint8Array(96 * 46 * 4) });
+  map.addSource('stop-guard', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'stop-guard', type: 'symbol', source: 'stop-guard',
+    layout: { 'icon-image': 'stop-guard', 'icon-anchor': 'bottom', 'icon-offset': [0, 9], 'icon-allow-overlap': true } });
+  // Only user gestures lift the pin and pause Confirm; programmatic search/locate moves land at a known point.
+  map.on('movestart', e => { if (pinning() && e.originalEvent) { pinEl.classList.add('lift'); send({ type: 'moving' }); } });
+  map.on('dragstart', () => { if (pinning()) { pinDragged = true; send({ type: 'gesture' }); } else userMoved(); });
+  map.on('zoomstart', e => { if (e.originalEvent) { if (pinning()) { pinDragged = true; send({ type: 'gesture' }); } else userMoved(); } });
   map.on('click', e => {
     if (!pinning()) return;
+    pinDragged = true;
     send({ type: 'gesture' });
-    // A tap on the pin's own spot moves nothing, so no moveend reports it: report the centre here or Confirm stays waiting.
-    if (!centerPin({ latitude: e.lngLat.lat, longitude: e.lngLat.lng })) { const p = map.getCenter(); send({ type: 'center', latitude: p.lat, longitude: p.lng }); }
+    // Report the tapped coordinate at once so Confirm never waits on the 350 ms camera ease or a zero-distance tap.
+    const point = { latitude: e.lngLat.lat, longitude: e.lngLat.lng };
+    send({ type: 'center', ...point });
+    centerPin(point, undefined, true);
   });
   map.on('moveend', () => {
     if (!pinning()) return;
@@ -433,7 +463,8 @@ function drawUser() {
 }
 function drawDriver() {
   const driver = !free() ? state.driver : null;
-  const key = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${state.focus}` : '';
+  const target = driver ? (!state.stale && state.approach?.length ? onRoad(driver, state.approach) : { latitude: driver.latitude, longitude: driver.longitude }) : null;
+  const key = driver ? `${driver.latitude},${driver.longitude},${target.latitude},${target.longitude},${driver.heading},${driver.accuracy},${state.focus}` : '';
   if (key === drawnDriver) return;
   drawnDriver = key;
   const source = map.getSource('accuracy');
@@ -444,8 +475,7 @@ function drawDriver() {
     return;
   }
   // Glide to each new fix over the gap between fixes (still moving when the next lands), turn smoothly,
-  // and keep the approach line starting under the marker.
-  const target = { latitude: driver.latitude, longitude: driver.longitude };
+  // and keep the approach line starting under the marker. Within 40 m of the approach line, stay on the road.
   const from = shown;
   const moving = from && Math.abs(from.latitude - target.latitude) + Math.abs(from.longitude - target.longitude) > 0.0001;
   const rotation = driver.heading ?? (moving ? bearing(from, target) : null);
