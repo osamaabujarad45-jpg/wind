@@ -5,7 +5,7 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { api, PRIVACY_URL, SUPPORT_URL } from '../api';
+import { api, privacyUrl, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
 import { InstallLink } from '../install-link';
 import { useSession } from '../session';
@@ -16,7 +16,7 @@ type Topic = typeof topics[number];
 
 export default function Help() {
   const { topic, order } = useLocalSearchParams<{ topic?: string; order?: string }>();
-  const { c } = useCopy();
+  const { c, language } = useCopy();
   const { me } = useSession();
   // a customer's own account is never a driver's (each role signs up apart), so 'when is a driver account activated' was not their question
   const shown = me?.user.role === 'customer' ? topics.filter(t => t !== 'driver') : topics;
@@ -70,7 +70,7 @@ export default function Help() {
       })}
     </Card>
 
-    <Button title={c.privacy} icon="shield-checkmark-outline" variant="soft" onPress={() => Linking.openURL(PRIVACY_URL)} />
+    <Button title={c.privacy} icon="shield-checkmark-outline" variant="soft" onPress={() => Linking.openURL(privacyUrl(language))} />
     <InstallLink />
   </Screen>;
 }

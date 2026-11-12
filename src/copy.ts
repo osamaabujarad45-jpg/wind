@@ -1,4 +1,4 @@
-import type { Order } from './model';
+import { bookedAhead, type Order } from './model.ts';
 
 const ar = {
   rideBoardingRotate: 'تغيير رمز الركوب وفتح التحقق',
@@ -356,6 +356,7 @@ const ar = {
   err_places_full: 'وصلت إلى 10 أماكن. احذف مكاناً من قائمة البحث أولاً.',
   // order
   searching: 'نبحث عن سائق',
+  searching_booked: 'محجوز مسبقاً', // booked ahead, before drivers see it (statusText)
   requested: 'الطلب',
   driverAssigned: 'قبل السائق',
   assigned: 'السائق في الطريق للاستلام',
@@ -1004,6 +1005,9 @@ const ar = {
   err_driver_command_pending: 'لم يتأكد إجراؤك الأخير بعد. تحقق من اتصالك وحاول مرة أخرى.',
   parcelPickupFar: 'أنت على بُعد {km} كم من نقطة الاستلام.',
   parcelPickupFarConfirm: 'أنت على بُعد {km} كم من نقطة الاستلام. هل تريد المتابعة رغم ذلك؟',
+  // a city-level pickup has no pin: the distance is to the city centre, said as such
+  parcelPickupFarCity: 'أنت على بُعد {km} كم من مركز {city}.',
+  parcelPickupFarCityConfirm: 'أنت على بُعد {km} كم من مركز {city}. هل تريد المتابعة رغم ذلك؟',
   err_too_many_attempts: 'محاولات كثيرة. حاول بعد 10 دقائق.',
   err_blocked: 'تم إيقاف هذا الحساب. تواصل مع الدعم.',
   err_pending_approval: 'حسابك قيد المراجعة.',
@@ -1462,6 +1466,7 @@ const en: Copy = {
   place_other: 'Other place',
   err_places_full: 'You have 10 places. Delete one from the search list first.',
   searching: 'Finding a driver',
+  searching_booked: 'Scheduled', // booked ahead, before drivers see it (statusText); the card's time reads "Scheduled {t}" too
   requested: 'Requested',
   driverAssigned: 'Driver assigned',
   assigned: 'Driver heading to pickup',
@@ -2091,6 +2096,8 @@ const en: Copy = {
   err_driver_command_pending: 'Your last action is not confirmed yet. Check your connection and try again.',
   parcelPickupFar: 'You are {km} km from the pickup.',
   parcelPickupFarConfirm: 'You are {km} km from the pickup. Continue anyway?',
+  parcelPickupFarCity: 'You are {km} km from the centre of {city}.',
+  parcelPickupFarCityConfirm: 'You are {km} km from the centre of {city}. Continue anyway?',
   err_too_many_attempts: 'Too many attempts. Try again in 10 minutes.',
   err_blocked: 'This account is suspended. Contact support.',
   err_pending_approval: 'Your account is under review.',
@@ -2202,7 +2209,8 @@ export function fill(template: string, values: Record<string, string | number>) 
 }
 
 // A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>, driver = false) => {
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null }, driver = false, now = Date.now()) => {
+  if (bookedAhead(o, now)) return c.searching_booked;
   const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
   return (driver && k[`driver_${o.status}${ride}`]) || (ride && k[`${o.status}${ride}`]) || c[o.status];
 };

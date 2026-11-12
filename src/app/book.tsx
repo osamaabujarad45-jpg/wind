@@ -638,15 +638,15 @@ function BookForm() {
         {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
         {services.filter(s => enabledServices.includes(s)).map(s => {
-          const on = s === service, value = estimate(s);
-          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={value !== null ? `${c[s]}, ${money(value)}` : c[s]} onPress={() => switchService(s)}
+          const on = s === service, value = estimate(s), approx = on || s === 'parcel' ? '' : '≈ '; // TalkBack hears the estimate mark too
+          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={value !== null ? `${c[s]}, ${approx}${money(value)}` : c[s]} onPress={() => switchService(s)}
             style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
             <ServiceIcon service={s} size={36} />
             <View style={{ flex: 1 }}>
               <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
               {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${fill(c.minutesShort, { m: minutes })}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
             </View>
-            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${on || s === 'parcel' ? '' : '≈ '}${money(value)}`}</Txt>}
+            {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${approx}${money(value)}`}</Txt>}
           </Press>;
         })}
         {scheduledFor !== null && <Press accessibilityLabel={`${c.whenTitle}: ${time(scheduledFor)}`} onPress={() => setSheetOpen(true)}>

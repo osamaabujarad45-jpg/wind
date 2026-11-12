@@ -490,9 +490,9 @@ console.log('Phone UI rules passed');
   assert.ok(sheet.includes('c.pinSheetHint') && sheet.includes('c.pinSheetUnavailable'));
   assert.ok(readFileSync(new URL('../src/app/roads.tsx', import.meta.url), 'utf8').includes('unavailable={c.roadPinUnavailable}'), 'roads has no landmark field: its own failure text');
 }
-{ // Home's "current order" shows a live trip before a newer booked-ahead search (A53, 8 Nov).
+{ // Home's "current order": a live trip, then a search running now, then a booking for later (A53, 8 and 12 Nov).
   const home = readFileSync(new URL('../src/app/(customer)/index.tsx', import.meta.url), 'utf8');
-  assert.ok(home.includes('.sort((a, b) => Number(activeStatuses.includes(b.status)) - Number(activeStatuses.includes(a.status)))'), 'live trips sort first');
+  assert.ok(home.includes('.sort((a, b) => currentRank(b) - currentRank(a))'), 'live trips sort first (currentRank, tested in presentation.test.mjs)');
 }
 { // A live trip named the customer twice for the driver: sheet header and body card (A53, 8 Nov).
   const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');

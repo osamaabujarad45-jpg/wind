@@ -9,7 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -140,6 +140,8 @@ export default function OrderScreen() {
   const arrivalKm = mine && rideAction === 'arrive' ? arrivalDistanceKm(order.pickupPoint, order.driverLocation, now) : null;
   const arrivalFar = arrivalKm !== null && arrivalKm * 1000 > RIDE_ARRIVAL_RADIUS_METERS;
   const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
+  const farFill = (pinned: string, cityLevel: string) => parcelFarKm === null ? '' // no pin: the distance is to the city centre
+    : order.pickupPoint ? fill(pinned, { km: kmLabel(parcelFarKm) }) : fill(cityLevel, { km: kmLabel(parcelFarKm), city: from[language] });
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
@@ -230,7 +232,7 @@ export default function OrderScreen() {
 
   const location = locationState(order.driverLocation, now);
   const age = location?.ageSeconds ?? 0;
-  const later = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 ? order.scheduledFor : 0; // booked ahead: the time
+  const later = bookedAhead(order, now) ? order.scheduledFor! : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
   // The booked time stays in the closed sheet until pickup, including the last 30 minutes while drivers already see it.
   const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor ? order.scheduledFor : 0;
@@ -364,7 +366,7 @@ export default function OrderScreen() {
     {order.scheduledFor && (order.status === 'assigned' || order.status === 'at_pickup') && <Card tone="olive" style={{ paddingVertical: 10 }}>
       <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>
     </Card>}
-    {order.status === 'searching' && order.scheduledFor && now >= order.scheduledFor - 30 * 60_000 && <Txt variant="caption" center>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>}
+    {order.status === 'searching' && order.scheduledFor && !bookedAhead(order, now) && <Txt variant="caption" center>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>}
     {order.status === 'cancelled' && order.exceptionReason && <Card tone="clay" style={{ paddingVertical: 12 }}>
       {/* only a failed pickup cancels with a reason; the status card is gone once cancelled */}
       <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.clayInk} />
@@ -618,7 +620,7 @@ export default function OrderScreen() {
           <Txt variant="title" numberOfLines={1}>{orderCode(order.id)}</Txt>
           <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>
         </View>
-        {!finding && !activeStatuses.includes(order.status) ? <Badge label={c[order.status]} status={order.status} /> : null}
+        {!finding && !activeStatuses.includes(order.status) ? <Badge label={statusText(c, order, mine, now)} status={order.status} /> : null}
       </View>}
     </SafeAreaView>
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
@@ -672,14 +674,14 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
-        {parcelFarKm !== null && <Txt variant="caption">{fill(c.parcelPickupFar, { km: kmLabel(parcelFarKm) })}</Txt>}
+        {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
           reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
-            : parcelFarKm !== null ? confirm(fill(c.parcelPickupFarConfirm, { km: kmLabel(parcelFarKm) }), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
+            : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
@@ -693,7 +695,7 @@ export default function OrderScreen() {
   </View>;
   return <Screen onRefresh={reload}>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={statusText(c, order, mine, now)} status={order.status} />} />
     {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {body}

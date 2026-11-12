@@ -447,11 +447,20 @@ try {
   await advance(driverPage, returnId, 'assigned', 'at_pickup');
   assert.ok(prompts.some(text => text.includes(c.parcelPickupFarConfirm.split('{km}')[1])), `the far pickup must ask first: ${JSON.stringify(prompts)}`);
   await driverPage.unroute(farPath);
+  // Near: the real order is city-level (no pin), and the courier is where this page's GPS is, in Ramallah. A fresh fix
+  // replaces the far one above, which the screen would otherwise keep; city-level and far is asked too (A53, 12 Nov).
+  await driverPage.route(farPath, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), pickupPoint: null, driverLocation: { latitude: 31.9049, longitude: 35.2047, updatedAt: Date.now(), ageSeconds: 0 } } });
+  });
   prompts.length = 0;
   await driverPage.getByText(new RegExp(c.parcelPickupFar.replace('{km}', '[\\d.,]+'))).waitFor({ state: 'hidden' });
+  await driverPage.getByText(new RegExp(c.parcelPickupFarCity.replace('{km}', '[\\d.,]+').replace('{city}', '.+'))).waitFor({ state: 'hidden' });
   await advance(driverPage, returnId, 'at_pickup', 'in_transit');
   assert.deepEqual(prompts, [], 'near or unknown, the courier is not asked');
   pass('a courier far from the pickup is warned and asked, and can still continue');
+  await driverPage.unroute(farPath);
   await button(driverPage, c.sheetExpand).click(); // the problem form is on the open sheet, as for a real driver
   await field(driverPage, c.problemNote).fill('Recipient absent after contact attempts.');
   await button(driverPage, c.reportProblem).click();

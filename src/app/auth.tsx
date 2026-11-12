@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, useReducedMotion } from '../motion';
 import { router } from 'expo-router';
-import { api, PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '../api';
+import { api, privacyUrl, SUPPORT_URL, TERMS_URL } from '../api';
 import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
 import { HelpLinks } from '../parts';
 import { InstallLink } from '../install-link';
@@ -238,7 +238,7 @@ export default function Auth() {
               </Row>
             </Press>
             <Row gap={16} style={{ justifyContent: 'center', marginBottom: 8 }}>
-              <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(PRIVACY_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(privacyUrl(language))}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
               <Press accessibilityRole="link" accessibilityLabel={c.terms} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}

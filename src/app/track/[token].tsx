@@ -13,7 +13,7 @@ import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
 import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
-type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number;
+type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number; scheduledFor?: number | null;
   driver: { firstName: string; vehicle: Vehicle | null; ref: string } | null;
   driverLocation: { latitude: number; longitude: number; updatedAt: number; ageSeconds?: number; heading?: number | null } | null };
 

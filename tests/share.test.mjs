@@ -48,8 +48,10 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders WHERE share_token_hash = ?').get(first.token).n, 0); // stored hashed
 
   const searching = await call(`/track/${first.token}`);
+  // scheduledFor: the booked pickup time, so the recipient's page says "Scheduled" like the sender's (12 Nov); no person data.
   assert.deepEqual(Object.keys(searching).sort(),
-    ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'service', 'status', 'updatedAt'].sort());
+    ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'scheduledFor', 'service', 'status', 'updatedAt'].sort());
+  assert.equal(searching.scheduledFor, null, 'an order for now has no booked time');
   assert.equal(searching.status, 'searching');
   assert.equal(searching.driver, null);
 
@@ -62,7 +64,7 @@ try {
   const live = await call(`/track/${second.token}`);
   assert.equal(live.status, 'assigned');
   assert.deepEqual(Object.keys(live).sort(),
-    ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'service', 'status', 'updatedAt'].sort());
+    ['driver', 'driverLocation', 'dropoffCity', 'orderCode', 'pickupCity', 'scheduledFor', 'service', 'status', 'updatedAt'].sort());
   const { ref, ...shownDriver } = live.driver;
   assert.deepEqual(shownDriver, { firstName: 'Sami', vehicle: 'van' });
   assert.match(ref, /^[a-f0-9]{12}$/); // opaque per link, never the driver id
