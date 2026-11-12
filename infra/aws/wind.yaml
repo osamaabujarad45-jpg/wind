@@ -1,0 +1,247 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Wind production on AWS (eu-north-1): one EC2 host running the same Docker setup as the old Azure VM
+  (wind-api, wind-osrm, Caddy), behind CloudFront for a stable HTTPS name without our own domain.
+  docs/operations/aws-migration-study.md explains every choice. One stack: review once, delete once.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: A public subnet of VpcId (route to an internet gateway).
+  InstanceType:
+    Type: String
+    Default: t3.small # amd64: the OSRM image is amd64 only. 2 GiB; the Azure VM ran everything in 1 GiB.
+  AmiId:
+    # Pinned on purpose: a changing AMI replaces the host, and the live database is on its disk. Ubuntu 24.04 amd64,
+    # resolved 12 Nov 2026 from /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id.
+    # The OS patches itself in place (unattended-upgrades); change this only together with a planned host move.
+    Type: AWS::EC2::Image::Id
+    Default: ami-084df9e6ad4622caf
+  EdgeSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Sent by CloudFront as X-Wind-Edge; Caddy refuses requests without it, so other distributions cannot reach the host.
+  CloudFrontPrefixList:
+    Type: String
+    Description: Id of the managed prefix list com.amazonaws.global.cloudfront.origin-facing in this Region.
+  GitHubRepo:
+    Type: String
+    Default: osamaabujarad45-jpg/wind
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  MakeOidc: !Equals [!Ref CreateGitHubOidcProvider, 'true']
+
+Resources:
+  Images:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: wind-api
+      ImageTagMutability: IMMUTABLE # a tag names a release and its rollback container: it must never move
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EncryptionConfiguration: { EncryptionType: AES256 }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 200 images: a rollback or a restore onto a new host needs older digests","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":200},"action":{"type":"expire"}}]}'
+
+  Backups:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain # holds every account's data: deleting the stack must not delete the backups
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub wind-backups-${AWS::AccountId}
+      VersioningConfiguration: { Status: Enabled } # the server can write but an overwrite never loses a copy
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      # ponytail: no expiry rule; retention is an owner decision (ledger row 8). Copies are ~10 KB each.
+
+  BackupsTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Backups
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Backups.Arn, !Sub '${Backups.Arn}/*']
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } }
+
+  HostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore] # shell through Session Manager, no SSH port
+      Policies:
+        - PolicyName: wind-host
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource: !GetAtt Images.Arn
+              - Effect: Allow # write-only: a compromised host can add copies but cannot read, list or delete them
+                Action: s3:PutObject
+                Resource: !Sub '${Backups.Arn}/*'
+
+  HostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref HostRole] }
+
+  HostSecurity:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Wind host - HTTPS from CloudFront only, HTTP for certificate renewal and redirect
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, SourcePrefixListId: !Ref CloudFrontPrefixList, Description: CloudFront to Caddy }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: Lets Encrypt HTTP-01 and redirect only }
+
+  Host:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Retain # the live database is on this disk
+    UpdateReplacePolicy: Retain
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref HostProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref HostSecurity]
+      MetadataOptions: { HttpTokens: required, HttpPutResponseHopLimit: 1 } # IMDSv2; containers cannot reach the role
+      Monitoring: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs: { VolumeSize: 30, VolumeType: gp3, Encrypted: true, DeleteOnTermination: false }
+      Tags: [{ Key: Name, Value: wind-host }]
+      UserData:
+        Fn::Base64: |
+          #!/bin/sh
+          # First boot only: Docker, the AWS CLI and swap. Everything Wind-specific is installed by the operator over Session Manager.
+          set -eu
+          fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          apt-get update -qq
+          apt-get install -y -qq docker.io unzip sqlite3 >/dev/null
+          curl -fsSL -o /tmp/awscli.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+          unzip -q /tmp/awscli.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscli.zip
+          systemctl enable --now docker
+          timedatectl set-timezone UTC
+
+  HostAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Host
+      Tags: [{ Key: Name, Value: wind-host }]
+
+  Edge:
+    Type: AWS::CloudFront::Distribution
+    DeletionPolicy: Retain # its cloudfront.net name is built into every installed APK
+    UpdateReplacePolicy: Retain
+    Properties:
+      DistributionConfig:
+        Comment: Wind API and web app
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        IPV6Enabled: false # per-address limits key on one address; IPv6 would give each phone a whole /64 to rotate through
+        Origins:
+          - Id: wind-host
+            # sslip.io answers <a-b-c-d>.sslip.io with a.b.c.d, so Caddy can hold a real certificate for the Elastic IP.
+            # Only CloudFront resolves this name: if it ever fails, change the origin here; no app rebuild.
+            DomainName: !Join ['', [!Join ['-', !Split ['.', !Ref HostAddress]], '.sslip.io']]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+              OriginReadTimeout: 60 # the live feed long-polls for 12 s
+              OriginKeepaliveTimeout: 60
+            OriginCustomHeaders:
+              - HeaderName: X-Wind-Edge
+                HeaderValue: !Ref EdgeSecret
+        DefaultCacheBehavior:
+          TargetOriginId: wind-host
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: false # the API compresses its own responses; CachingDisabled would not compress anyway
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+        # Never replay one caller's error to another: the default caches errors for 10 seconds.
+        CustomErrorResponses:
+          - { ErrorCode: 400, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 403, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 404, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 405, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 414, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 416, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 500, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 501, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 502, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 503, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 504, ErrorCachingMinTTL: 0 }
+
+  GitHubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  ReleaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: wind-release-image
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/master
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepo}/.github/workflows/release-image.yml@refs/heads/master
+      Policies:
+        - PolicyName: push-wind-api
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:BatchGetImage, ecr:DescribeImages]
+                Resource: !GetAtt Images.Arn
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${Edge.DomainName}
+  OriginName:
+    Value: !Join ['', [!Join ['-', !Split ['.', !Ref HostAddress]], '.sslip.io']]
+  InstanceId:
+    Value: !Ref Host
+  Registry:
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/wind-api
+  BackupBucket:
+    Value: !Ref Backups
+  ReleaseRoleArn:
+    Value: !GetAtt ReleaseRole.Arn

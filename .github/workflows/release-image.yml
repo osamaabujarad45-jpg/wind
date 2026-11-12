@@ -1,11 +1,13 @@
 name: Release image
 
-# Builds and pushes the API image. Deploying it stays a separate step on the VM: see docs/operations/deploy.md.
+# Builds and pushes the API image to Amazon ECR. Deploying it stays a separate step on the host: see docs/operations/deploy.md.
+# No stored cloud secret: GitHub's OIDC token assumes the wind-release-image role (infra/aws/wind.yaml), which only master
+# can assume and which may only push to the wind-api repository.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Image tag, for example 20261107-pilot4
+        description: Image tag, for example 20261113-aws1
         required: true
 
 permissions:
@@ -15,29 +17,41 @@ jobs:
   image:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # only this job may ask GitHub for the token the AWS role trusts
     timeout-minutes: 30
     env:
-      IMAGE: windprodacr.azurecr.io/wind-api:${{ inputs.tag }}
+      REGISTRY: 083712835043.dkr.ecr.eu-north-1.amazonaws.com
+      IMAGE: 083712835043.dkr.ecr.eu-north-1.amazonaws.com/wind-api:${{ inputs.tag }}
+      WIND_API_URL: ${{ vars.WIND_API_URL }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Log in
+      - name: Check the tag and the public address
         env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: printf '%s' "$ACR_PASSWORD" | docker login windprodacr.azurecr.io -u "$ACR_USERNAME" --password-stdin
-      - name: Refuse a tag that exists
-        # The VM deploys and rolls back by tag, so overwriting one would change what a rollback runs.
+          TAG: ${{ inputs.tag }}
         run: |
-          if result=$(docker manifest inspect "$IMAGE" 2>&1); then
+          case "$TAG" in ''|*[!A-Za-z0-9._-]*) echo "::error::bad image tag"; exit 1 ;; esac
+          case "$WIND_API_URL" in https://*) ;; *) echo "::error::repository variable WIND_API_URL must be the https address"; exit 1 ;; esac
+      - name: Log in
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::083712835043:role/wind-release-image
+          aws-region: eu-north-1
+      - run: aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+      - name: Refuse a tag that exists
+        # The host deploys and rolls back by tag, so overwriting one would change what a rollback runs. ECR also refuses
+        # (immutable tags); checking first fails before a 10-minute build.
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if aws ecr describe-images --repository-name wind-api --image-ids imageTag="$TAG" >/dev/null 2>err.txt; then
             echo "::error::$IMAGE already exists"
             exit 1
           fi
-          case "$result" in
-            *"no such manifest"*|*"manifest unknown"*) ;;
-            *) echo "::error::could not check $IMAGE: $result"; exit 1 ;;
-          esac
+          grep -q ImageNotFoundException err.txt || { echo "::error::could not check $IMAGE: $(cat err.txt)"; exit 1; }
       - name: Build
-        run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --build-arg EXPO_PUBLIC_API_URL=https://windapi236.swedencentral.cloudapp.azure.com --build-arg EXPO_PUBLIC_SUPPORT_WHATSAPP=972597127547 -t "$IMAGE" .
+        run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --build-arg EXPO_PUBLIC_API_URL="$WIND_API_URL" --build-arg EXPO_PUBLIC_SUPPORT_WHATSAPP=972597127547 -t "$IMAGE" .
       - name: Push
         run: |
           docker push "$IMAGE"
@@ -48,8 +62,8 @@ jobs:
             exit 1
           fi
           echo "$IMAGE from $GITHUB_SHA: $digest" >> "$GITHUB_STEP_SUMMARY"
-          # The VM runs the digest, not the tag: docs/operations/deploy.md.
+          # The host runs the digest, not the tag: docs/operations/deploy.md.
           echo "Deploy: sudo /srv/deploy.sh ${IMAGE##*:} ${digest##*@} $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Log out
         if: always()
-        run: docker logout windprodacr.azurecr.io
+        run: docker logout "$REGISTRY"

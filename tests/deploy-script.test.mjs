@@ -18,17 +18,20 @@ case "$1 $2" in
   "inspect wind-api-pre-"*) exit "\${FAKE_OLD_EXISTS:-1}" ;;
   "rename wind-api") exit "\${FAKE_RENAME_STATUS:-0}" ;;
   "run -d") exit "\${FAKE_RUN_STATUS:-0}" ;;
+  "pull "*) exit "\${FAKE_PULL_STATUS:-0}" ;;
 esac`);
 // Not ready for the first FAKE_NOT_READY tries; every try is counted.
 stub('curl', 'n=$(($(cat "$CALLS.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$CALLS.n"; [ "$n" -gt "${FAKE_NOT_READY:-0}" ]');
 stub('sleep', 'exit 0');
+stub('aws', 'echo "aws $*" >> "$CALLS"; [ -z "$FAKE_AWS_FAIL" ] || exit 1; echo token');
 stub('backup', 'echo backup >> "$CALLS"');
 const source = readFileSync(new URL('../infra/vm/deploy.sh', import.meta.url), 'utf8');
 assert.equal(source.split('/srv/wind-backup.sh').length, 2, 'the script calls the backup exactly once');
 writeFileSync(join(dir, 'deploy.sh'), source.replace('/srv/wind-backup.sh', join(dir, 'backup')));
 
 const tag = '20261110-test', digest = `sha256:${'a'.repeat(64)}`, revision = 'b'.repeat(40);
-const image = `windprodacr.azurecr.io/wind-api@${digest}`;
+const registry = '083712835043.dkr.ecr.eu-north-1.amazonaws.com';
+const image = `${registry}/wind-api@${digest}`;
 const deploy = (args, env = {}) => {
   rmSync(log, { force: true }); rmSync(`${log}.n`, { force: true });
   const run = spawnSync('sh', [join(dir, 'deploy.sh'), ...args], { encoding: 'utf8',
@@ -41,7 +44,8 @@ try {
   // The gated release: pulled and run by digest, never by tag, with the backup taken before the old container stops.
   let r = deploy([tag, digest, revision]);
   assert.equal(r.status, 0, r.err);
-  assert.equal(r.calls[1], `docker pull ${image}`);
+  assert.deepEqual(r.calls.slice(1, 5), ['aws ecr get-login-password --region eu-north-1',
+    `docker login --username AWS --password-stdin ${registry}`, `docker pull ${image}`, `docker logout ${registry}`]);
   assert.ok(r.calls.find(c => c.startsWith('docker run -d'))?.endsWith(` ${image}`), 'runs the digest');
   assert.ok(!r.calls.some(c => c.includes(`wind-api:${tag}`)), 'the tag is never pulled or run');
   assert.ok(r.calls.includes('backup') && r.calls.indexOf('backup') < r.calls.indexOf('docker stop wind-api'), 'backup before the switch');
@@ -87,5 +91,13 @@ try {
   assert.equal(r.status, 1); assert.match(r.err, /did not start/); wentBack(r.calls);
   r = deploy([tag, digest, revision], { FAKE_RUNNING: 'sha256:other' });
   assert.equal(r.status, 1); assert.match(r.err, /running image is not/); wentBack(r.calls);
+  // The registry login: a failed token stops before anything is pulled; a failed pull still drops the login.
+  r = deploy([tag, digest, revision], { FAKE_AWS_FAIL: '1' });
+  assert.notEqual(r.status, 0);
+  assert.ok(!r.calls.some(c => c.startsWith('docker pull') || c.startsWith('docker login')), `no login or pull: ${r.calls}`);
+  r = deploy([tag, digest, revision], { FAKE_PULL_STATUS: '1' });
+  assert.notEqual(r.status, 0);
+  assert.equal(r.calls.at(-1), `docker logout ${registry}`, 'the 12-hour login is dropped when the pull fails');
+  assert.ok(!r.calls.some(c => /backup|docker (stop|rename|run)/.test(c)));
   console.log('deploy-script: ok');
 } finally { rmSync(dir, { recursive: true, force: true }); }

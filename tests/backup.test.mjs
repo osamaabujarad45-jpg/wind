@@ -70,9 +70,9 @@ try {
 
   // The script moves the marker only after its upload, so a failed off-VM copy also goes stale.
   const script = readFileSync(new URL('../infra/vm/wind-backup.sh', import.meta.url), 'utf8');
-  assert.ok(script.indexOf('curl -fsS') > 0 && script.indexOf('curl -fsS') < script.indexOf('touch "$dir/last-ok"'), 'marker after upload');
+  assert.ok(script.indexOf('aws s3 cp') > 0 && script.indexOf('aws s3 cp') < script.indexOf('touch "$dir/last-ok"'), 'marker after upload');
   assert.match(script, /^set -eu/m, 'and a failed upload stops the script before it');
-  assert.ok(script.indexOf('chmod 600') > script.indexOf('gzip -9') && script.indexOf('chmod 600') < script.indexOf('curl -fsS'), 'copies are private before anything else runs');
+  assert.ok(script.indexOf('chmod 600') > script.indexOf('gzip -9') && script.indexOf('chmod 600') < script.indexOf('aws s3 cp'), 'copies are private before anything else runs');
   assert.ok(script.indexOf('trap ') > 0 && script.indexOf('trap ') < script.indexOf('VACUUM INTO'), 'a failed run leaves no uncompressed copy');
 
   // Restore: the nightly copy, unzipped into place, runs the service with its accounts and orders.

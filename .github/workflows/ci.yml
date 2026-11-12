@@ -52,7 +52,7 @@ jobs:
       - name: Export release bundles for Android, iOS and web
         run: npx expo export --platform all --output-dir .expo/ci-release
         env:
-          EXPO_PUBLIC_API_URL: https://windapi236.swedencentral.cloudapp.azure.com
+          EXPO_PUBLIC_API_URL: ${{ vars.WIND_API_URL }}
           WIND_RELEASE: '1'
           WIND_LOCAL_TEST: '0'
           NODE_ENV: production
@@ -101,4 +101,6 @@ jobs:
       - name: Build the release image without pushing it
         # app.config.js rejects reserved hosts (.invalid, .test, .example) for release builds, so CI builds
         # against the public production origin; the image is never pushed.
-        run: docker build --build-arg EXPO_PUBLIC_API_URL=https://windapi236.swedencentral.cloudapp.azure.com -t wind:ci .
+        run: docker build --build-arg EXPO_PUBLIC_API_URL="$WIND_API_URL" -t wind:ci .
+        env:
+          WIND_API_URL: ${{ vars.WIND_API_URL }}

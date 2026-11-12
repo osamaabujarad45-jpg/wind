@@ -14,37 +14,36 @@ node tests/azure-infra.test.mjs
 
 The validation script compiles/lints the template and builds all three parameter examples with a fixed compile-only placeholder. It does not read operator secrets. The test checks compiled ingress/probe ports against the packaged API, the polling worker's minimum replica, and the separate graph-storage foundation. It has no deployment command, Azure login, or authenticated provider call.
 
-## Production VM, what actually runs today
+## Production host on AWS, what runs today
 
-**Since 15:29 UTC on 10 November 2026** production runs `wind-api:20261110-help-ref`, digest `sha256:56d4df474a2e74a2f87f654caa98385eb273d99ce7335d5ca6c67be3ff7b6cdd`, revision `bd51d592eb55cc6b7bad26b55d20be444db1fc47`, readiness schema 3, deployed by digest. The next paragraphs are the read-only verification taken earlier that day, before this release: the image they name is now the rollback container, and `deploy.sh` on the VM was replaced the same day (see Releasing an image). The three other installed scripts are unchanged from that verification.
+**Since 12 November 2026** production runs on AWS account `083712835043`, Region `eu-north-1`, from the CloudFormation stack `wind` (`infra/aws/wind.yaml`; why: `docs/operations/aws-migration-study.md`). Azure stopped the old VM over billing and then disabled the subscription; the Azure resources are left untouched until the owner deletes them.
 
-The production endpoint uses one VM (`windapi236.swedencentral.cloudapp.azure.com`) running `wind-api`, `wind-osrm` and Caddy in Docker, with SQLite at `/srv/wind-data/wind.db`. Read-only verification on 10 November found image `wind-api:20261109-design`, digest `sha256:de7a7ff4b7d3f53343ff0c3f7ba4dfd75960fa9a55eee9c44a217ac8f01b455e`, revision `ac531d810af9825f03ece4f1cdfbfa68bd55df03`, and readiness schema 3. The template below is staging preparation. An older, separate Container App named `wind-api` also exists in `wind-prod`; do not mistake it for this endpoint or delete it based on the template's status.
-
-`/srv/wind-api.env` must hold these before starting an image that has the boot checks, or the deploy rolls back with the reason in its log:
+- **Public address:** `https://dlvxzw3gj596d.cloudfront.net` (CloudFront). It is AWS-owned and stays the same when the host is replaced, so the app does not need a rebuild for a host move. It lasts only as long as that distribution: the stack keeps it (and the host and the backup bucket) on `delete-stack` (`DeletionPolicy: Retain`); deleting it by hand breaks every installed APK. An owned domain removes this dependency. It is the repository variable `WIND_API_URL`, read by CI, the release workflow and Uptime. Before ever changing it, remember that every installed APK has the address built in.
+- **Host:** EC2 `t3.small` `wind-host` with an Elastic IP, Ubuntu 24.04 from a pinned AMI (a changed AMI would replace the host and its database; the OS patches itself in place), 30 GiB encrypted gp3 that survives instance deletion (a replacement would need it attached and mounted by hand), 2 GiB swap. Preview every stack update as a change set and refuse any that replaces `Host` or `Edge`. Docker runs `wind-api`, `wind-osrm` and `caddy` on the `windnet` network, SQLite at `/srv/wind-data/wind.db`, as on Azure.
+- **TLS:** CloudFront to the host is HTTPS. Caddy (`infra/vm/Caddyfile`, at `/srv/Caddyfile`) holds a Let's Encrypt certificate for the host's sslip.io name (stack output `OriginName`). The security group admits 443 only from CloudFront's origin-facing prefix list, and 80 only for certificate checks and redirects. That list serves every CloudFront distribution, so ours also sends `X-Wind-Edge` (the stack's `EdgeSecret`, kept in `/srv/caddy.env` as `WIND_EDGE_SECRET`) and Caddy answers 403 without it. IPv6 is off at the edge, so per-address limits see one address per caller, and errors are never cached at the edge. Caddy passes CloudFront's `X-Forwarded-For` through unchanged, so the API's per-address limits key on the caller (`server/domain/client-address.ts` takes the last entry, which CloudFront writes).
+- **Shell:** Systems Manager Session Manager or `aws ssm send-command` with the `wind` CLI profile. There is no SSH port and no key.
+- **Credentials:** none stored on the host. Its instance role may pull `wind-api` from ECR, add objects to `wind-backups-083712835043`, and take Systems Manager sessions (`AmazonSSMManagedInstanceCore`). GitHub assumes `wind-release-image` through OIDC only from `release-image.yml` on `master`.
+- **Settings:** `/srv/wind-api.env` (root, 0600) holds the same keys as before, with `WIND_PUSH_SUBJECT=https://dlvxzw3gj596d.cloudfront.net`, `OSRM_URL=http://wind-osrm:5000` and `WIND_TRUST_PROXY=1`. The Firebase admin key was re-issued on 12 November (the old one stayed on the Azure disk).
+- **Cron:** `infra/vm/wind.cron` at `/etc/cron.d/wind`: nightly backup 03:10 UTC, watchdog every minute.
+- **Caddy:** started once by hand; its certificate lives in the `caddy_data` volume (keep it: sslip.io is not on the Public Suffix List, so Let's Encrypt's weekly limit is shared with every sslip.io user and a re-issue can be refused):
 
 ```sh
-WIND_TRUST_PROXY=1   # Caddy is the proxy; without this every user shares one per-address limit
-WIND_PUSH_SUBJECT=https://windapi236.swedencentral.cloudapp.azure.com
+docker run -d --name caddy --restart unless-stopped --network windnet -p 80:80 -p 443:443   -e WIND_ORIGIN=<OriginName> --env-file /srv/caddy.env -v /srv/Caddyfile:/etc/caddy/Caddyfile:ro   -v caddy_data:/data -v caddy_config:/config --log-opt max-size=20m --log-opt max-file=3 caddy:2.10.2-alpine
 ```
-
-Both key names were present in the running VM container on 10 November; values were not printed. All four installed scripts (`deploy.sh`, `wind-backup.sh`, `wind-restore.sh`, `wind-watchdog.sh`) matched candidate `f6fd6fff85fe3fa76bf57a90ed9201567f9e73b3` by SHA256. The backup marker and the 03:10:01 UTC Blob backup were present. The older claim that the installed backup script lacks `last-ok` is superseded. Recompare hashes before installing future script changes.
-
-Before ever setting `WIND_MIN_CLIENT_BUILD`, build with `EXPO_PUBLIC_UPDATE_URL` (https, the store page or APK link) in the EAS environment. Otherwise the update screen on a refused build offers only support.
 
 ### Releasing an image
 
-`infra/vm/deploy.sh` takes the tag, the pushed digest and the source revision. It pulls and runs the image by digest and refuses one whose `org.opencontainers.image.revision` label is not that revision, before the backup or the switch, so a tag moved after the release was checked cannot change what runs. The tag only names the rollback container, and a tag that already has one is refused. `tests/deploy-script.test.mjs` runs the script against a moved tag in CI. **Installed on the VM on 10 November 2026** (SHA256 `f191527929cd7c3865da6c329f27f1de065a0a6b74aae781d2509823495664da`, equal to the repository file; the tag-only script is kept as `/srv/deploy.sh.pre-20261110`). On the VM it refused a correct digest with a wrong revision before touching the container, then deployed `20261110-help-ref`. After any change to `infra/vm/deploy.sh`, copy it to `/srv/deploy.sh` and compare SHA256 again before releasing. Its rollback restarts the old container with its original environment, which is not safe across a database-backend cutover (master plan Phase 3).
+`infra/vm/deploy.sh` takes the tag, the pushed digest and the source revision. It logs in to ECR with the host role, pulls and runs the image by digest, and refuses one whose `org.opencontainers.image.revision` label is not that revision, before the backup or the switch. The tag only names the rollback container, and a tag that already has one is refused; ECR tags are immutable too. `tests/deploy-script.test.mjs` runs the script against a moved tag in CI. After any change to `infra/vm/deploy.sh`, copy it to `/srv/deploy.sh` and compare SHA256 again before releasing. Its rollback restarts the old container with its original environment, which is not safe across a database-backend cutover (master plan Phase 3).
 
 1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
-2. Record the successful workflow URL, its exact `headSha`, pushed digest and matching `org.opencontainers.image.revision`. If any source differs, gate that source before release. Build in GitHub Actions.
-3. Log the VM in with a short-lived token and deploy with the tag, digest and revision from step 2. The workflow summary prints the `sudo /srv/deploy.sh …` line with the tag, digest and SHA filled in; run it through this wrapper:
+2. Record the workflow URL, its exact `headSha`, the pushed digest and the matching revision label.
+3. Run the `sudo /srv/deploy.sh …` line from the workflow summary on the host, through Session Manager or `aws ssm send-command --document-name AWS-RunShellScript`.
 
-```sh
-az acr login --name windprodacr --expose-token --output tsv --query accessToken   | ssh windadmin@<vm> 'sudo docker login windprodacr.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin'
-ssh windadmin@<vm> 'sudo /srv/deploy.sh <tag> sha256:<digest> <full source SHA>; sudo docker logout windprodacr.azurecr.io'
-```
+The **Uptime** workflow checks `$WIND_API_URL/api/ready` hourly from outside AWS. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
 
-The **Uptime** workflow checks `/api/ready` hourly from outside the VM. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
+### The Azure VM (history, until 12 November 2026)
+
+Production ran on Azure VM `wind-vm` (rg `wind-prod`, Sweden Central, `windapi236.swedencentral.cloudapp.azure.com`), image registry `windprodacr`, backups in Blob `windprodstore/wind-backups`. The last image there was `wind-api:20261110-help-ref` (`sha256:56d4df47…6cdd`, revision `bd51d592`). An extra, unused Container App also named `wind-api` cost about USD 3 a day. Delete all of it only with the owner's approval, after AWS has run well for two weeks.
 
 ### Firebase (done 7 November 2026, project `wind-development`)
 
