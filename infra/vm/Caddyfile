@@ -1,9 +1,18 @@
 # /srv/Caddyfile on the host. WIND_ORIGIN is the host's sslip.io name (stack output OriginName): Caddy holds a real
 # certificate for it, and CloudFront is its only client on 443 (security group), port 80 only answers certificate checks.
+# WIND_EDGE_SECRET is the stack's EdgeSecret: any CloudFront distribution may reach port 443, only ours sends this header.
 {$WIND_ORIGIN} {
-	reverse_proxy wind-api:4000 {
-		# CloudFront appends the caller's address to X-Forwarded-For. Pass that header through untouched (Caddy would
-		# otherwise replace it with CloudFront's own address): the API keys its per-address limits on the last entry.
-		header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+	@edge header X-Wind-Edge {$WIND_EDGE_SECRET}
+	handle @edge {
+		reverse_proxy wind-api:4000 {
+			# CloudFront appends the caller's address to X-Forwarded-For. Pass that header through untouched (Caddy would
+			# otherwise replace it with CloudFront's own address): the API keys its per-address limits on the last entry.
+			header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+			header_up -X-Wind-Edge
+			transport http {
+				keepalive 4s # below Node's 5 s keepAliveTimeout, so Caddy never reuses a socket the API just closed
+			}
+		}
 	}
+	respond 403
 }

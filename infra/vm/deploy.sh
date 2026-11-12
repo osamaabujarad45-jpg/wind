@@ -19,10 +19,13 @@ image=$registry/wind-api@$digest
 old=wind-api-pre-$tag
 # A tag deployed before still owns its rollback container: replacing it would lose the way back.
 if docker inspect "$old" >/dev/null 2>&1; then die "$old exists: $tag was already deployed"; fi
-# The host role may only pull this repository; the login lasts 12 hours and is dropped at once.
-aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin "$registry" >/dev/null
+# The host role may only pull this repository. The login lasts 12 hours, so it is dropped however the pull ends.
+token=$(aws ecr get-login-password --region eu-north-1)
+trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT
+printf '%s' "$token" | docker login --username AWS --password-stdin "$registry" >/dev/null
 docker pull "$image"
 docker logout "$registry" >/dev/null
+trap - EXIT
 built=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
 if [ "$built" != "$revision" ]; then
   echo "image $digest was built from '$built', not $revision: not deploying" >&2

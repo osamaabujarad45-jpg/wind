@@ -15,9 +15,9 @@ The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`. Its onl
 The workspace targets Android 1.0.13 / code 17 and Expo SDK 57; the signed preview
 (code 16) is installed on the connected A53 and was tested there, including native
 background tracking against this branch's API. On 29 October the candidate API
-image and corrected web bundle were deployed to
-`https://windapi236.swedencentral.cloudapp.azure.com`; the Android and web apps
-now share that origin and `check:deployment` passes. The release is still not
+image and corrected web bundle were deployed to the Azure VM (production moved to AWS,
+`https://dlvxzw3gj596d.cloudfront.net`, on 12 November: `docs/operations/deploy.md`); the Android and web apps
+share one origin and `check:deployment` passes. The release is still not
 public; see the [29 October readiness report](reports/release-readiness-2026-10-29.md).
 Email codes (Cloudflare Email Service) need a sending domain first. The live-tracking
 pass of 22 October (plausible GPS yardstick, driver identity in the live push,

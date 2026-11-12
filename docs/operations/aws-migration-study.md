@@ -14,7 +14,7 @@ Author: Claude Opus 5.5 (lead). Research only: no cloud resource was created, ch
 | Azure cost, 1–10 Nov | USD 36.34, of which **USD 29.45 is an unused extra Container App `wind-api`**; the VM, disk, IP, registry and storage together were USD 6.89 | `docs/operations/cost-model.md` |
 | Azure Maps account `wind-maps` | Exists, not referenced by `server/`, `src/` or `public/` | grep |
 | API address | `windapi236.swedencentral.cloudapp.azure.com` — an **Azure-owned** name, baked into every APK, the web build, CI, Uptime and the push subject | `release-image.yml`, `app.config.js`, `src/api.ts` |
-| AWS account `366754056464` | CLI session **expired**; plan state not readable (`GetAccountPlanState` returned "Missing data" this morning). Last known: Free plan, USD 120 credit, ends 2027-04-30 | `aws sts`, `docs/operations/aws-credits.md` (branch `claude/aws-credits-92c2ce`) |
+| AWS account `366754056464` (the earlier evaluation account; production went to `083712835043`, the owner's management account, chosen at login) | CLI session **expired**; plan state not readable (`GetAccountPlanState` returned "Missing data" this morning). Last known: Free plan, USD 120 credit, ends 2027-04-30 | `aws sts`, `docs/operations/aws-credits.md` (branch `claude/aws-credits-92c2ce`) |
 | AWS Region | `eu-north-1` (Stockholm) only | owner's AWS settings |
 
 **The outage is a payment problem, not a platform problem.** AWS also bills a card. If the card that failed on Azure is the card used for AWS, the same outage can happen on AWS.
@@ -84,7 +84,7 @@ One CloudFormation stack in `eu-north-1` (one review, one delete):
 - Security group: 80 and 443 open; **no 22** (Session Manager instead).
 - IAM instance role: ECR pull on `wind-api`, `s3:PutObject` on the backup bucket only, SSM core.
 - ECR repository `wind-api`, immutable tags, scan on push.
-- S3 bucket `wind-backups-366754056464`: versioned, all public access blocked, SSE-S3. Retention rule left to the owner (row 8).
+- S3 bucket `wind-backups-<account>` (built as `wind-backups-083712835043`): versioned, all public access blocked, SSE-S3. Retention rule left to the owner (row 8).
 - GitHub OIDC provider + role usable only by `osamaabujarad45-jpg/wind` on `master`, allowed to push to `wind-api` only. Removes the stored `ACR_USERNAME`/`ACR_PASSWORD` secrets.
 
 Repository changes (one PR, reviewed per the PR rule):

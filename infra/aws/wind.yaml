@@ -14,8 +14,16 @@ Parameters:
     Type: String
     Default: t3.small # amd64: the OSRM image is amd64 only. 2 GiB; the Azure VM ran everything in 1 GiB.
   AmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    # Pinned on purpose: a changing AMI replaces the host, and the live database is on its disk. Ubuntu 24.04 amd64,
+    # resolved 12 Nov 2026 from /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id.
+    # The OS patches itself in place (unattended-upgrades); change this only together with a planned host move.
+    Type: AWS::EC2::Image::Id
+    Default: ami-084df9e6ad4622caf
+  EdgeSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Sent by CloudFront as X-Wind-Edge; Caddy refuses requests without it, so other distributions cannot reach the host.
   CloudFrontPrefixList:
     Type: String
     Description: Id of the managed prefix list com.amazonaws.global.cloudfront.origin-facing in this Region.
@@ -39,7 +47,7 @@ Resources:
       ImageScanningConfiguration: { ScanOnPush: true }
       EncryptionConfiguration: { EncryptionType: AES256 }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 30 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 200 images: a rollback or a restore onto a new host needs older digests","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":200},"action":{"type":"expire"}}]}'
 
   Backups:
     Type: AWS::S3::Bucket
@@ -109,6 +117,8 @@ Resources:
 
   Host:
     Type: AWS::EC2::Instance
+    DeletionPolicy: Retain # the live database is on this disk
+    UpdateReplacePolicy: Retain
     Properties:
       ImageId: !Ref AmiId
       InstanceType: !Ref InstanceType
@@ -143,13 +153,15 @@ Resources:
 
   Edge:
     Type: AWS::CloudFront::Distribution
+    DeletionPolicy: Retain # its cloudfront.net name is built into every installed APK
+    UpdateReplacePolicy: Retain
     Properties:
       DistributionConfig:
         Comment: Wind API and web app
         Enabled: true
         HttpVersion: http2and3
         PriceClass: PriceClass_100
-        IPV6Enabled: true
+        IPV6Enabled: false # per-address limits key on one address; IPv6 would give each phone a whole /64 to rotate through
         Origins:
           - Id: wind-host
             # sslip.io answers <a-b-c-d>.sslip.io with a.b.c.d, so Caddy can hold a real certificate for the Elastic IP.
@@ -160,6 +172,9 @@ Resources:
               OriginSSLProtocols: [TLSv1.2]
               OriginReadTimeout: 60 # the live feed long-polls for 12 s
               OriginKeepaliveTimeout: 60
+            OriginCustomHeaders:
+              - HeaderName: X-Wind-Edge
+                HeaderValue: !Ref EdgeSecret
         DefaultCacheBehavior:
           TargetOriginId: wind-host
           ViewerProtocolPolicy: redirect-to-https
@@ -168,6 +183,19 @@ Resources:
           Compress: false # the API compresses its own responses; CachingDisabled would not compress anyway
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
           OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+        # Never replay one caller's error to another: the default caches errors for 10 seconds.
+        CustomErrorResponses:
+          - { ErrorCode: 400, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 403, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 404, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 405, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 414, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 416, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 500, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 501, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 502, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 503, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 504, ErrorCachingMinTTL: 0 }
 
   GitHubOidc:
     Type: AWS::IAM::OIDCProvider
@@ -191,6 +219,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/master
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepo}/.github/workflows/release-image.yml@refs/heads/master
       Policies:
         - PolicyName: push-wind-api
           PolicyDocument:

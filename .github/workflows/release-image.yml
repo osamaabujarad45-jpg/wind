@@ -12,12 +12,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   image:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # only this job may ask GitHub for the token the AWS role trusts
     timeout-minutes: 30
     env:
       REGISTRY: 083712835043.dkr.ecr.eu-north-1.amazonaws.com
