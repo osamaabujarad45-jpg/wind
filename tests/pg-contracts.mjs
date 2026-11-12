@@ -111,6 +111,12 @@ try {
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
   // Additive admin and driver routes enforce their roles here, where no SQLite capability gate answers first (authz-matrix covers SQLite).
+  let roleRefusals = 0;
+  const ask = async (endpoint, path, token) => {
+    const res = await fetch(`${base}${path}`, { method: endpoint.method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      ...(['POST', 'PATCH', 'PUT'].includes(endpoint.method) ? { body: '{}' } : {}) });
+    return { status: res.status, error: String((await res.json().catch(() => ({}))).error) };
+  };
   for (const endpoint of read('additive-endpoints.json').modules.flatMap(m => m.endpoints)) {
     const admin_ = /^\/api\/(admin|opencode)/.test(endpoint.path), driver_ = endpoint.path.startsWith('/api/driver/');
     if (!admin_ && !driver_) continue;
@@ -118,14 +124,16 @@ try {
     const actors_ = admin_ ? [['customer', customer], ['driver', driver]] : [['customer', customer]];
     for (const [label, actor] of actors_)
     {
-      const res = await fetch(`${base}${path}`, { method: endpoint.method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${actor.token}` },
-        ...(['POST', 'PATCH', 'PUT'].includes(endpoint.method) ? { body: '{}' } : {}) });
-      const answer = await res.json().catch(() => ({}));
-      // 403, or a capability gate for a module this schema has not migrated: either way nothing privileged ran.
-      assert.ok(res.status === 403 || (res.status === 409 && /_unavailable$/.test(String(answer.error))),
-        `${label} must be refused on PostgreSQL ${endpoint.method} ${endpoint.path}, got ${res.status} ${JSON.stringify(answer)}`);
+      const answer = await ask(endpoint, path, actor.token);
+      if (answer.status === 403) { roleRefusals++; continue; }
+      // A module this schema has not migrated answers its capability gate first. Only accept that when an admin gets the very same
+      // answer, so it is the module's gate and not a role-dependent result.
+      const control = admin_ ? await ask(endpoint, path, admin.token) : null;
+      assert.ok(answer.status === 409 && /_unavailable$/.test(answer.error) && (!control || (control.status === 409 && control.error === answer.error)),
+        `${label} must be refused on PostgreSQL ${endpoint.method} ${endpoint.path}, got ${answer.status} ${answer.error} (admin: ${JSON.stringify(control)})`);
     }
   }
+  assert.ok(roleRefusals > 0, 'at least the migrated additive modules prove their role check with a 403');
   const session = await exchange('customer-session', 'customer', '/me', { token: customer.token });
   assert.deepEqual(session.capabilities.enabledServices, ['parcel']);
   assert.equal(session.capabilities.pooling, false);

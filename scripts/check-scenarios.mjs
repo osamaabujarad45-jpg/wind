@@ -718,13 +718,13 @@ try {
     const end = performance.now() + 7000, frames = []; // a glide lasts the gap between fixes, up to 6 s (glideMs)
     const sample = () => {
       const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
-      frames.push({ lat: marker.lat, aligned: !!halo && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015 });
+      frames.push({ lat: marker.lat, lng: marker.lng, aligned: !!halo && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015 });
       if (performance.now() < end) requestAnimationFrame(sample); else resolve(frames);
     };
     requestAnimationFrame(sample);
   }));
   assert.ok(glide.every(f => f.aligned), `accuracy halo left the marker on ${glide.filter(f => !f.aligned).length} of ${glide.length} frames`);
-  assert.ok(Math.abs(glide.at(-1).lat - 31.9155) < 0.00002, `marker reached the new fix: ${glide.at(-1).lat}`);
+  assert.ok(Math.abs(glide.at(-1).lat - 31.9155) < 0.00002 && Math.abs(glide.at(-1).lng - 35.2054) < 0.00002, `marker reached the new fix: ${JSON.stringify(glide.at(-1))}`);
   pass('Android accuracy halo follows the moving marker while the approach line is active');
   await androidMap.waitForLoadState('networkidle');
   // Maps Item 4 & Item 6 live WebGL checks: stop-guard covers both route stops, nearby GPS snaps onto the road with true halo, and a >40 m wrong turn stays raw.
