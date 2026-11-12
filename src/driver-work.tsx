@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
-import { api, apiSessionRevision, errorCode } from './api';
+import { api, ApiError, apiSessionRevision, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 import { activeGpsTestEnabled, backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
@@ -16,7 +16,7 @@ import { boundedPermission } from './location-permission-timeout';
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
   permission: ReturnType<typeof Location.useForegroundPermissions>[0]; requestPermission: ReturnType<typeof Location.useForegroundPermissions>[1]; prepareTracking: () => Promise<boolean>;
-  presenceState: PresenceState | 'permission_denied'; presencePending:boolean; presenceError?:string; presenceConsentAccepted:boolean;
+  presenceState: PresenceState | 'permission_denied'; presencePending:boolean; presenceError?:string|ApiError; presenceConsentAccepted:boolean;
   enablePresence:()=>Promise<void>; disablePresence:()=>Promise<void>; backgroundGranted: boolean | null; requestBackgroundTracking:()=>Promise<boolean> };
 const Context = createContext<Work | null>(null);
 
@@ -47,7 +47,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'> }>();
   const [presenceResult,setPresenceResult]=useState<{actor:number|null;revision:number;state:PresenceState|'permission_denied'}>();
   const [bgResult, setBgResult] = useState<{ actor: number | null; granted: boolean } | null>(null);
-  const [presenceError,setPresenceError]=useState<string>();
+  const [presenceError,setPresenceError]=useState<string|ApiError>();
   const [presencePending,setPresencePending]=useState(false);
   const [presenceConsentAccepted,setPresenceConsentAccepted]=useState(false);
   const presenceGeneration=useRef(0),presenceRunning=useRef(false);

@@ -9,7 +9,7 @@ export type PresenceIO = {
   read:()=>Promise<PresenceRecord|null>; write:(record:PresenceRecord|null)=>Promise<void>;
   token:()=>Promise<string|null>; scope:(token:string)=>Promise<string>; deviceId:()=>Promise<string>; uuid:()=>string;
   request:(path:string,token:string,body?:Record<string,unknown>)=>Promise<Reply>; now:()=>number; monotonic?:()=>number;
-  every:(fn:()=>void,ms:number)=>unknown; cancel:(timer:unknown)=>void; state:(state:PresenceState)=>void; error?:(code:string|null)=>void;
+  every:(fn:()=>void,ms:number)=>unknown; cancel:(timer:unknown)=>void; state:(state:PresenceState)=>void; error?:(code:string|null,reference?:unknown)=>void;
 };
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,7 +28,7 @@ export function createPresenceController(io:PresenceIO) {
   const invalidate=(state:PresenceState='offline')=>{generation++;active=null;lastAttemptMonotonic=undefined;lastAcceptedMonotonic=undefined;cancelTimer();io.state(state);};
   const report=(reply:Reply)=>{
     const code=reply.status===0?'network':typeof reply.body?.error==='string'&&/^[a-z_]{1,80}$/.test(reply.body.error)?reply.body.error:'server_error';
-    io.error?.(code);return code;
+    io.error?.(code,reply.body?.reference);return code;
   };
   const id=()=>{const value=io.uuid();if(!uuid.test(value))throw new Error('invalid_device_id');return value.toLowerCase();};
   const same=async(token:string,epoch:number)=>epoch===generation && await io.token()===token;
