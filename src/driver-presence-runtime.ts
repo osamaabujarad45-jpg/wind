@@ -11,7 +11,12 @@ let current:PresenceState='offline';
 let currentError:string|ApiError|null=null;
 const emit=(state:PresenceState)=>{current=state;for(const listener of listeners)listener(state);};
 // A logged server failure keeps its reference so the driver card can show it, as request() does.
-const emitError=(error:string|null,reference?:unknown)=>{currentError=error && reference!==undefined?new ApiError(error,undefined,undefined,reference):error;for(const listener of errorListeners)listener(currentError);};
+const emitError=(error:string|null,reference?:unknown)=>{
+  const ref=typeof reference==='string'?reference:undefined;
+  const same=currentError instanceof ApiError?currentError.message===error&&currentError.reference===ref:currentError===error&&!ref;
+  if(!same)currentError=error&&ref?new ApiError(error,undefined,undefined,ref):error; // same failure keeps one object: no re-render per heartbeat
+  for(const listener of errorListeners)listener(currentError);
+};
 const get=async(key:string)=>{try{return await storage.get(key,true);}catch{throw new ApiError('storage_unavailable');}};
 const put=async(key:string,value:string|null)=>{try{await storage.set(key,value,true);}catch{throw new ApiError('storage_unavailable');}};
 async function read():Promise<PresenceRecord|null> {
