@@ -1,0 +1,9 @@
+# /srv/Caddyfile on the host. WIND_ORIGIN is the host's sslip.io name (stack output OriginName): Caddy holds a real
+# certificate for it, and CloudFront is its only client on 443 (security group), port 80 only answers certificate checks.
+{$WIND_ORIGIN} {
+	reverse_proxy wind-api:4000 {
+		# CloudFront appends the caller's address to X-Forwarded-For. Pass that header through untouched (Caddy would
+		# otherwise replace it with CloudFront's own address): the API keys its per-address limits on the last entry.
+		header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+	}
+}

@@ -1,0 +1,4 @@
+# /etc/cron.d/wind on the host (root:root 0644). PATH includes /usr/local/bin for the AWS CLI the backup uploads with.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+10 3 * * * root /srv/wind-backup.sh >> /var/log/wind-backup.log 2>&1
+* * * * * root /srv/wind-watchdog.sh

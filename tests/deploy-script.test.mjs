@@ -22,13 +22,15 @@ esac`);
 // Not ready for the first FAKE_NOT_READY tries; every try is counted.
 stub('curl', 'n=$(($(cat "$CALLS.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$CALLS.n"; [ "$n" -gt "${FAKE_NOT_READY:-0}" ]');
 stub('sleep', 'exit 0');
+stub('aws', 'echo "aws $*" >> "$CALLS"; echo token');
 stub('backup', 'echo backup >> "$CALLS"');
 const source = readFileSync(new URL('../infra/vm/deploy.sh', import.meta.url), 'utf8');
 assert.equal(source.split('/srv/wind-backup.sh').length, 2, 'the script calls the backup exactly once');
 writeFileSync(join(dir, 'deploy.sh'), source.replace('/srv/wind-backup.sh', join(dir, 'backup')));
 
 const tag = '20261110-test', digest = `sha256:${'a'.repeat(64)}`, revision = 'b'.repeat(40);
-const image = `windprodacr.azurecr.io/wind-api@${digest}`;
+const registry = '083712835043.dkr.ecr.eu-north-1.amazonaws.com';
+const image = `${registry}/wind-api@${digest}`;
 const deploy = (args, env = {}) => {
   rmSync(log, { force: true }); rmSync(`${log}.n`, { force: true });
   const run = spawnSync('sh', [join(dir, 'deploy.sh'), ...args], { encoding: 'utf8',
@@ -41,7 +43,8 @@ try {
   // The gated release: pulled and run by digest, never by tag, with the backup taken before the old container stops.
   let r = deploy([tag, digest, revision]);
   assert.equal(r.status, 0, r.err);
-  assert.equal(r.calls[1], `docker pull ${image}`);
+  assert.deepEqual(r.calls.slice(1, 5), ['aws ecr get-login-password --region eu-north-1',
+    `docker login --username AWS --password-stdin ${registry}`, `docker pull ${image}`, `docker logout ${registry}`]);
   assert.ok(r.calls.find(c => c.startsWith('docker run -d'))?.endsWith(` ${image}`), 'runs the digest');
   assert.ok(!r.calls.some(c => c.includes(`wind-api:${tag}`)), 'the tag is never pulled or run');
   assert.ok(r.calls.includes('backup') && r.calls.indexOf('backup') < r.calls.indexOf('docker stop wind-api'), 'backup before the switch');

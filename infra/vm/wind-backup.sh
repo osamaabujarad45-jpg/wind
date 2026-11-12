@@ -1,8 +1,7 @@
 #!/bin/sh
 # Nightly on the VM (/etc/cron.d/wind): a consistent copy of the live SQLite database, 14 days kept on disk and one copy off
-# the VM in private Azure Blob storage. /srv/wind-backup.env (root, 0600) holds BLOB_URL, the container URL with a write-only SAS.
+# the host in the private, versioned S3 bucket. The host role may only add objects there: it cannot read, list or delete them.
 set -eu
-. /srv/wind-backup.env
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 dir=/srv/wind-data/backups
 trap 'rm -f "$dir/wind-$stamp.db"' EXIT # a failed run must not leave an uncompressed copy that nothing ever deletes
@@ -17,7 +16,7 @@ docker exec wind-api node --disable-warning=ExperimentalWarning -e "
 "
 gzip -9 "$dir/wind-$stamp.db"
 chmod 600 "$dir"/wind-*.db.gz # as private as the live database; these hold the same accounts
-printf 'url = "%s"\n' "$(echo "$BLOB_URL" | sed "s#?#/wind-$stamp.db.gz?#")" | curl -fsS --retry 3 -K - -X PUT -H 'x-ms-blob-type: BlockBlob' --data-binary "@$dir/wind-$stamp.db.gz" -o /dev/null # -K: the SAS stays off the process list
+aws s3 cp --only-show-errors "$dir/wind-$stamp.db.gz" "s3://wind-backups-083712835043/wind-$stamp.db.gz"
 # The API alerts admins when this marker goes stale, so it moves only after the off-VM copy succeeded.
 touch "$dir/last-ok"
 find "$dir" -name 'wind-*.db.gz' -mtime +14 -delete
