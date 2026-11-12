@@ -6,11 +6,12 @@ import { createPresenceController, type PresenceRecord, type PresenceState } fro
 const CONTEXT='wind.presence.context';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const listeners=new Set<(state:PresenceState)=>void>();
-const errorListeners=new Set<(error:string|null)=>void>();
+const errorListeners=new Set<(error:string|ApiError|null)=>void>();
 let current:PresenceState='offline';
-let currentError:string|null=null;
+let currentError:string|ApiError|null=null;
 const emit=(state:PresenceState)=>{current=state;for(const listener of listeners)listener(state);};
-const emitError=(error:string|null)=>{currentError=error;for(const listener of errorListeners)listener(error);};
+// A logged server failure keeps its reference so the driver card can show it, as request() does.
+const emitError=(error:string|null,reference?:unknown)=>{currentError=error && reference!==undefined?new ApiError(error,undefined,undefined,reference):error;for(const listener of errorListeners)listener(currentError);};
 const get=async(key:string)=>{try{return await storage.get(key,true);}catch{throw new ApiError('storage_unavailable');}};
 const put=async(key:string,value:string|null)=>{try{await storage.set(key,value,true);}catch{throw new ApiError('storage_unavailable');}};
 async function read():Promise<PresenceRecord|null> {
@@ -50,7 +51,7 @@ export const suspendPresence=controller.suspend;
 export const markPresenceReconnecting=controller.markReconnecting;
 export const presenceState=()=>current;
 export function subscribePresence(listener:(state:PresenceState)=>void) {listeners.add(listener);listener(current);return ()=>{listeners.delete(listener);};}
-export function subscribePresenceError(listener:(error:string|null)=>void) {errorListeners.add(listener);listener(currentError);return ()=>{errorListeners.delete(listener);};}
+export function subscribePresenceError(listener:(error:string|ApiError|null)=>void) {errorListeners.add(listener);listener(currentError);return ()=>{errorListeners.delete(listener);};}
 
 /** No old session is resumed on launch; discard records belonging to another account. */
 export async function validatePresenceContextOnLaunch() {

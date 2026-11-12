@@ -54,7 +54,10 @@ export class Persistence {
   constructor(options: PersistenceOptions) {
     for (const value of [options.poolSize, options.acquireTimeoutMs, options.statementTimeoutMs, options.lockTimeoutMs])
       if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new Error('Database bounds must be positive safe integers');
-    this.acquireTimeout = options.acquireTimeoutMs ?? 1_000;
+    // ponytail: a slow Windows test host (each PG connection is a new process, scanned by Defender) can need more than
+    // the 1 s connect budget. Only the test-PC gate runner sets this; production never does and keeps 1 s.
+    const testBudget = Number(process.env.WIND_TEST_DB_ACQUIRE_MS ?? '');
+    this.acquireTimeout = options.acquireTimeoutMs ?? (Number.isSafeInteger(testBudget) && testBudget >= 1 ? testBudget : 1_000);
     this.sqlite = options.sqlite;
     this.backend = options.connectionString ? 'postgres' : 'sqlite';
     if (this.backend === 'sqlite' && !this.sqlite) throw new Error('SQLite connection required');

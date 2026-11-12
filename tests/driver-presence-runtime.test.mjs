@@ -4,7 +4,7 @@ import { registerHooks } from 'node:module';
 const state={store:new Map(),calls:[],id:0};globalThis.__presenceRuntimeTest=state;
 const originalFetch=globalThis.fetch;
 const modules={
-  './api':`const n=globalThis.__presenceRuntimeTest;export const API_URL='https://example.test';export class ApiError extends Error{};
+  './api':`const n=globalThis.__presenceRuntimeTest;export const API_URL='https://example.test';export class ApiError extends Error{constructor(m,s,f,r){super(m);this.reference=r;}};
     export const storage={get:async(key)=>n.store.get(key)??null,set:async(key,value)=>{if(value===null)n.store.delete(key);else n.store.set(key,value);}};`,
   './phone/client':`import { createHash } from 'node:crypto';const n=globalThis.__presenceRuntimeTest;
     export const keyValue={};export const digest=async(value)=>createHash('sha256').update(value).digest('hex');
@@ -32,6 +32,11 @@ try {
   assert.equal(await runtime.startPresence(true),true);assert.equal(state.calls.filter(x=>x.url.endsWith('/online')).length,1);
   const stored=state.store.get('wind.presence.context');assert.ok(stored&&!stored.includes('synthetic-account'),'stored envelope contains no bearer token');
   assert.equal(await runtime.deliverPresenceFix({timestamp:Date.now(),coords:{latitude:31.9,longitude:35.2,accuracy:10}}),true);
+  const seen=[];const unsubscribe=runtime.subscribePresenceError(value=>seen.push(value));
+  const fetchOk=globalThis.fetch;const reference='0123abcd-0000-4000-8000-000000000002';
+  globalThis.fetch=async()=>new Response(JSON.stringify({error:'server_error',reference}),{status:500,headers:{'Content-Type':'application/json'}});
+  assert.equal(await runtime.heartbeatPresence(),false);globalThis.fetch=fetchOk;unsubscribe();
+  const failure=seen.findLast(value=>value);assert.equal(failure?.message,'server_error');assert.equal(failure?.reference,reference,'a logged 5xx keeps its reference for the driver card');
   state.store.delete('token');assert.equal(await runtime.stopPresence(),false);assert.equal(state.store.has('wind.presence.context'),false);
   console.log('WP07 presence runtime: cold-launch cleanup, account binding, secure envelope and logout passed');
 } finally {globalThis.fetch=originalFetch;hooks.deregister();delete globalThis.__presenceRuntimeTest;}

@@ -6,13 +6,13 @@ let counter=0;
 const uuid=()=>`00000000-0000-4000-8000-${String(++counter).padStart(12,'0')}`;
 function harness() {
   let record=null,token='synthetic-token',now=1_000_000,mono=1_000_000,failWrite=false,handler;
-  const deviceId=uuid(),calls=[],states=[],errors=[],timers=[];
+  const deviceId=uuid(),calls=[],states=[],errors=[],references=[],timers=[];
   const io={read:async()=>record&&structuredClone(record),write:async value=>{if(failWrite)throw new Error('storage unavailable');record=value&&structuredClone(value);},
     token:async()=>token,scope:async value=>`scope:${value}`,deviceId:async()=>deviceId,uuid,now:()=>now,monotonic:()=>mono,
-    every:(fn,ms)=>{const timer={fn,ms,active:true};timers.push(timer);return timer;},cancel:timer=>{timer.active=false;},state:value=>states.push(value),error:value=>errors.push(value),
+    every:(fn,ms)=>{const timer={fn,ms,active:true};timers.push(timer);return timer;},cancel:timer=>{timer.active=false;},state:value=>states.push(value),error:(value,reference)=>{errors.push(value);references.push(reference);},
     request:async(path,auth,body)=>{calls.push({path,auth,body});return handler?handler(path,body):path==='/driver/presence'?{status:200,body:{state:'offline'}}:path.endsWith('/online')?{status:200,body:{sessionId:uuid(),leaseUntil:now+60000}}:
       path.endsWith('/heartbeat')?{status:200,body:{leaseUntil:now+60000}}:{status:200,body:{ok:true,accepted:true}};}};
-  return {io,calls,states,errors,timers,record:()=>record,setRecord:value=>{record=value;},setToken:value=>{token=value;},
+  return {io,calls,states,errors,references,timers,record:()=>record,setRecord:value=>{record=value;},setToken:value=>{token=value;},
     setNow:value=>{now=value;mono=value;},setClock:(wall,monotonic)=>{now=wall;mono=monotonic;},setFailWrite:value=>{failWrite=value;},setHandler:value=>{handler=value;}};
 }
 const fix=(timestamp,speed=0,accuracy=10)=>({timestamp,coords:{latitude:31.9,longitude:35.2,speed,accuracy}});
@@ -131,6 +131,12 @@ const fix=(timestamp,speed=0,accuracy=10)=>({timestamp,coords:{latitude:31.9,lon
   const h=harness(),p=createPresenceController(h.io);
   h.setHandler(path=>path==='/driver/presence'?{status:200,body:{state:'offline'}}:{status:409,body:{error:'presence_device_in_use'}});
   assert.equal(await p.startPresence(true),false);assert.equal(h.errors.at(-1),'presence_device_in_use','server refusal reaches the host');
+}
+{
+  // Ledger row 45: a logged server failure hands its reference to the host so the driver card can show it.
+  const h=harness(),p=createPresenceController(h.io),reference='0123abcd-0000-4000-8000-000000000001';
+  h.setHandler(()=>({status:500,body:{error:'server_error',reference}}));
+  assert.equal(await p.startPresence(true),false);assert.deepEqual(h.references.at(-1),reference,'reference reaches the host');
 }
 {
   const h=harness(),p=createPresenceController(h.io);h.setHandler(()=>({status:200,body:{}}));
