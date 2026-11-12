@@ -204,6 +204,24 @@ const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDr
 const { chromium } = await import('playwright');
 const browser = await chromium.launch(process.env.SCREENS_CHROMIUM ? { executablePath: process.env.SCREENS_CHROMIUM } : {});
 const shots = [];
+// A map screen is evidence only once the basemap has drawn; a blank map background is a failed capture, not a screenshot.
+async function mapsReady(page, where) {
+  // A map can mount after the fixed waits: look again after a short pause and wait for any frame not yet checked.
+  const checked = new Set();
+  for (let round = 0; round < 3; round++) {
+    const frames = page.frames().filter(f => new URL(f.url(), 'http://x').pathname === '/map.html' && !checked.has(f));
+    if (!frames.length && round) break;
+    for (const frame of frames) {
+      checked.add(frame);
+      // areTilesLoaded() counts errored tiles as loaded; require a real basemap tile and no error in this camera generation.
+      const drawn = () => frame.waitForFunction(() => window.windBaseTile === true && window.windTileFailed === false && window.windMap?.loaded() && window.windMap.areTilesLoaded(), null, { timeout: 30_000 });
+      // One reload for a slow or busy tile server; a map that still has no basemap fails the run rather than shipping a blank screenshot.
+      await drawn().catch(async () => { await frame.evaluate(() => location.reload()).catch(() => {}); await drawn(); })
+        .catch(() => { throw new Error(`${where}: map tiles never loaded (offline, blocked or slow tile server)`); });
+    }
+    await page.waitForTimeout(500);
+  }
+}
 
 for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
@@ -251,6 +269,7 @@ for (const language of ['ar', 'en']) {
       .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
       .map(d => d.scrollHeight - d.clientHeight)));
     if (extra) { await page.setViewportSize({ width: phone.width, height: Math.min(phone.height + extra, 2600) }); await page.waitForTimeout(400); }
+    await mapsReady(page, `${screen.id} ${language}`);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
@@ -478,6 +497,7 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
     await page.waitForTimeout(2500); // intro + first data load
     await run?.(page);
     await page.waitForTimeout(800);
+    await mapsReady(page, `${screen.id} ${language}`);
     mkdirSync(join(outDir, language), { recursive: true });
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
@@ -675,6 +695,10 @@ if (!only || only.includes('booking-narrow')) {
     const ready = view.ready(t);
     const target = page.getByRole('button', typeof ready === 'string' ? { name: ready, exact: true } : { name: ready }).first();
     await target.waitFor({ timeout: 15000 }).catch(async error => { await page.screenshot({ path: join(narrowDir, `debug-${view.id}-${language}.png`) }); throw error; });
+    // The Request button exists from first paint; the evidence must show a price, not "calculating".
+    await page.getByText(t.quote_calculating, { exact: true }).first().waitFor({ state: 'hidden', timeout: 15000 });
+    assert.equal(await page.getByText(t.quote_failed, { exact: true }).count(), 0, `${where}: the price failed, not a screenshot of a quoted form`);
+    if (view.id.startsWith('book-')) assert.notEqual(await target.getAttribute('aria-disabled'), 'true', `${where}: Request is disabled by a specific quote or scope error`);
     if (scale !== 1) {
       await page.evaluate(factor => {
         for (const element of document.querySelectorAll('body *')) {
@@ -684,6 +708,7 @@ if (!only || only.includes('booking-narrow')) {
       }, scale);
       await page.waitForTimeout(400);
     }
+    await mapsReady(page, where);
     await page.screenshot({ path: join(narrowDir, `${view.id}-${language}-${scale === 1 ? '100' : '130'}.png`) });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 0, `${where}: horizontal overflow ${overflow}px`);

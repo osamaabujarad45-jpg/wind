@@ -86,6 +86,21 @@ try {
   const plain = await Promise.all([call('/orders', { token: customer.token, body: fresh }), call('/orders', { token: customer.token, body: fresh })]);
   assert.notEqual(plain[0].id, plain[1].id);
   for (const extra of plain) await call(`/orders/${extra.id}/cancel`, { token: customer.token, body: {} });
+  const commitOutcomeFailure = async work => {
+    const exec = persistence.exec;
+    persistence.exec = async (...args) => {
+      const result = await exec.apply(persistence, args);
+      if (args[0] === 'COMMIT') throw new Error('synthetic post-commit outcome failure');
+      return result;
+    };
+    try { return await work(); } finally { persistence.exec = exec; }
+  };
+  const commitRequestId = randomUUID();
+  const uncertain = await commitOutcomeFailure(() => call('/orders', { token: customer.token, body: { ...fresh, requestId: commitRequestId }, expect: 500 }));
+  assert.equal(uncertain.error, 'server_error');
+  assert.match(uncertain.reference, /^[0-9a-f-]{36}$/);
+  const committedReceipt = await call(`/orders/commands/${commitRequestId}`, { token: customer.token });
+  await call(`/orders/${committedReceipt.orderId}/cancel`, { token: customer.token, body: {} });
 
   // Souqna's server can book once and safely retry; the partner key never grants access to ordinary orders.
   const partnerKey = process.env.SOUQ_PARTNER_KEY;
@@ -101,8 +116,24 @@ try {
   assert.equal((await call('/partner/orders', { partnerKey, body: Object.fromEntries(Object.entries(delivery).reverse()) })).id, partnerOrder.id);
   await call('/partner/orders', { partnerKey, body: { ...delivery, pickupNote: 'changed' }, expect: 409 });
   const partnerRace = { ...delivery, externalRef: 'listing:buyer:race' };
+  const partnerCount = () => db.prepare("SELECT count(*) n FROM orders WHERE customer_id=(SELECT id FROM users WHERE phone='partner:souq')").get().n;
+  const beforePartnerRace = partnerCount();
   const partnerRaced = await Promise.all(Array.from({ length: 4 }, () => call('/partner/orders', { partnerKey, body: partnerRace })));
   assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
+  assert.equal(partnerCount(), beforePartnerRace + 1, 'partner retries must not leave unreferenced orders');
+  db.exec("CREATE TRIGGER fail_partner_reference BEFORE INSERT ON partner_orders WHEN NEW.external_ref='reference-failure' BEGIN SELECT RAISE(ABORT, 'synthetic reference failure'); END");
+  try {
+    const failure = await call('/partner/orders', { partnerKey, body: { ...delivery, externalRef: 'reference-failure' }, expect: 500 });
+    assert.equal(failure.error, 'server_error');
+    assert.match(failure.reference, /^[0-9a-f-]{36}$/, 'unexpected failures keep their support correlation reference');
+    assert.equal(partnerCount(), beforePartnerRace + 1, 'reference failure must roll back the order');
+  } finally { db.exec('DROP TRIGGER fail_partner_reference'); }
+  const partnerCommitRef = 'commit-outcome-failure';
+  const partnerUncertain = await commitOutcomeFailure(() => call('/partner/orders', { partnerKey, body: { ...delivery, externalRef: partnerCommitRef }, expect: 500 }));
+  assert.equal(partnerUncertain.error, 'server_error');
+  assert.match(partnerUncertain.reference, /^[0-9a-f-]{36}$/);
+  const partnerCommitted = await call(`/partner/orders/by-reference?externalRef=${partnerCommitRef}`, { partnerKey });
+  await call(`/partner/orders/${partnerCommitted.id}/cancel`, { partnerKey, body: {} });
   await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
   await call(`/partner/orders/${order.id}`, { partnerKey, expect: 404 });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}`, { partnerKey })).status, 'searching');

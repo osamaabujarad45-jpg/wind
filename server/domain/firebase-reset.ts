@@ -43,7 +43,8 @@ export function createFirebaseReset() {
     async deleteUser(userId: number) { await admin(':delete', { localId: `wind-${userId}` }); },
     async send(userId: number, email: string, language: string) {
       const found = await admin(':lookup', { email: [email] });
-      for (const user of found.users ?? []) if (user.localId) await admin(':delete', { localId: user.localId });
+      // Only Wind's own reset users: an account made outside this scheme is never destroyed by someone typing its email; create then fails closed.
+      for (const user of found.users ?? []) if (user.localId?.startsWith('wind-')) await admin(':delete', { localId: user.localId });
       const localId = `wind-${userId}`;
       const created = await admin(`?key=${encodeURIComponent(apiKey!)}`, { localId, email, password: randomBytes(32).toString('base64url') });
       if (created.localId !== localId) throw new Error('firebase_create_failed');

@@ -463,3 +463,38 @@ console.log('Phone UI rules passed');
   assert.match(prepare, /const backFromSheet = async \(\) => \{[\s\S]*?revision = lifecycleRef\.current\.revision;[\s\S]*?\};/, 'and re-reading it moves the revision current() compares');
   assert.match(work, /if\(lifecycleRef\.current\.revision!==askedAt\)ticket=presenceStartGuard\.snapshot\(\)/, 'going online survives the same sheet');
 }
+{ // Order actions: a second tap before React re-renders must not send accept/cancel/arrive twice (review 8 Nov).
+  const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+  assert.match(order, /if \(!order \|\| busy \|\| acting\.current.*return;\s*acting\.current = true;/, 'act() claims a ref synchronously');
+  assert.match(order, /finally \{ acting\.current = false; setBusy\(null\); \}/, 'and releases it when done');
+}
+{ // Recovery 409s reload the order once in act()'s catch; a reload before the throw made the driver wait two round trips (Step review 8 Nov).
+  const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+  const recovery = order.slice(order.indexOf("if (result.state === 'previous')"), order.indexOf("if (result.state === 'conflict')"));
+  assert.ok(recovery.length > 0 && !recovery.includes('await reload()'), 'no reload before a recovery throw');
+}
+{ // Touch targets on the order screen and map controls are at least 48 dp (review 8 Nov: chat, stars, Recenter, native Retry were 44-46).
+  const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+  const map = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  const apple = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
+  assert.match(order, /accessibilityLabel=\{`\$\{label\} \$\{n\}\/5`\}.*minWidth: 48, minHeight: 48/, 'rating stars');
+  assert.match(order, /send: \{ width: 48, height: 48/, 'chat Send');
+  assert.match(order, /quick: \{ minHeight: 48/, 'quick replies');
+  assert.match(map, /#recenter \{[^}]*width: 48px; height: 48px/, 'web/Android Recenter');
+  assert.match(apple, /recenter: \{[^}]*width: 48, height: 48/, 'Apple Recenter');
+  assert.match(apple, /retry: \{ minWidth: 48, minHeight: 48/, 'Apple map Retry');
+}
+{ // The pin modal has no search control: its hint and failure text must not send the user to one (review 8 Nov).
+  const sheet = readFileSync(new URL('../src/pin-sheet.tsx', import.meta.url), 'utf8');
+  assert.ok(!sheet.includes('c.pinHint') && !sheet.includes('c.pinUnavailable'), 'PinSheet uses its own copy');
+  assert.ok(sheet.includes('c.pinSheetHint') && sheet.includes('c.pinSheetUnavailable'));
+  assert.ok(readFileSync(new URL('../src/app/roads.tsx', import.meta.url), 'utf8').includes('unavailable={c.roadPinUnavailable}'), 'roads has no landmark field: its own failure text');
+}
+{ // Home's "current order" shows a live trip before a newer booked-ahead search (A53, 8 Nov).
+  const home = readFileSync(new URL('../src/app/(customer)/index.tsx', import.meta.url), 'utf8');
+  assert.ok(home.includes('.sort((a, b) => Number(activeStatuses.includes(b.status)) - Number(activeStatuses.includes(a.status)))'), 'live trips sort first');
+}
+{ // A live trip named the customer twice for the driver: sheet header and body card (A53, 8 Nov).
+  const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
+  assert.ok(order.includes("{(isAdmin || !live) && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}"), 'body card skips the customer over the live map');
+}

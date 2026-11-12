@@ -79,6 +79,7 @@ export default function OrderScreen() {
     if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
+  const acting = useRef(false); // two taps before a re-render both saw busy === null; accept, cancel and arrive carry no request id
   const focusRevision = useRef(0);
   useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
   const [actionError, setActionError] = useState('');
@@ -148,7 +149,8 @@ export default function OrderScreen() {
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
-    if (!order || busy || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
+    if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
+    acting.current = true;
     setBusy(key);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
@@ -161,11 +163,11 @@ export default function OrderScreen() {
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
           const earlier = result.previous;
-          if ('order' in earlier && earlier.order) { setData(earlier.order); work.update(earlier.order); } else await reload();
-          throw new ApiError('driver_command_previous', 409);
+          if ('order' in earlier && earlier.order) { setData(earlier.order); work.update(earlier.order); }
+          throw new ApiError('driver_command_previous', 409); // the catch below reloads once for every recovery 4xx
         }
         if (result.state === 'other_order') throw new ApiError('driver_command_other_order', 409);
-        if (result.state === 'other_settled') { await reload(); throw new ApiError(result.notice, 409); }
+        if (result.state === 'other_settled') throw new ApiError(result.notice, 409); // reloaded once by the catch, not twice
         if (result.state === 'conflict') throw new ApiError('order_changed', 409);
         if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);
         if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);
@@ -223,13 +225,15 @@ export default function OrderScreen() {
       if (key === 'problem' && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) problemAttempt.current = null;
       haptic.error();
       setActionError(err(e));
-    } finally { setBusy(null); }
+    } finally { acting.current = false; setBusy(null); }
   }
 
   const location = locationState(order.driverLocation, now);
   const age = location?.ageSeconds ?? 0;
   const later = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 ? order.scheduledFor : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
+  // The booked time stays in the closed sheet until pickup, including the last 30 minutes while drivers already see it.
+  const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor ? order.scheduledFor : 0;
 
   const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
   const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
@@ -284,7 +288,7 @@ export default function OrderScreen() {
       <Row gap={10}>
         <Ionicons name="calendar-outline" size={24} color={palette.olive} />
         <View style={{ flex: 1 }}>
-          <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>
+          {!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}{/* over the map the sheet header already says it */}
           <Txt variant="caption">{c.scheduledHint}</Txt>
         </View>
       </Row>
@@ -403,13 +407,15 @@ export default function OrderScreen() {
       </Card>
     </Appear> : null}
 
-    {(isAdmin || (mine && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) && order.contact ? <Appear index={3}>
+    {/* Over the live map the sheet header already names the customer: only the extra contacts stay here (A53, 8 Nov). */}
+    {(isAdmin || (mine && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) && order.contact
+      && (isAdmin || !live || (order.pickupContact && order.pickupContact !== order.contact) || !!order.recipientPhone) ? <Appear index={3}>
       <Card>
-        <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />
-        {order.pickupContact && order.pickupContact !== order.contact && <View style={styles.divider}>
+        {(isAdmin || !live) && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
+        {order.pickupContact && order.pickupContact !== order.contact && <View style={(isAdmin || !live) && styles.divider}>
           <Person title={c.pickupContact} name={order.pickupContact} phone={order.pickupContact} />
         </View>}
-        {!!order.recipientPhone && <View style={styles.divider}>
+        {!!order.recipientPhone && <View style={(isAdmin || !live || (order.pickupContact && order.pickupContact !== order.contact)) && styles.divider}>
           <Person title={c.recipient} name={order.recipientName || order.recipientPhone} phone={order.recipientPhone} />
         </View>}
       </Card>
@@ -621,6 +627,11 @@ export default function OrderScreen() {
     <ErrorText>{actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {codeAtDoor && <View style={{ paddingBottom: 8 }}>{codes}</View>}
+    {/* Booked ahead is neither finding nor active: without this the closed sheet is a bare grip. */}
+    {!!booked && <Row gap={8} style={{ marginBottom: 4 }}>
+      <Ionicons name="calendar-outline" size={18} color={palette.olive} />
+      <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
+    </Row>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={serviceMeta[order.service].color} size={64}>
         <ServiceIcon service={order.service} size={28} />
@@ -862,7 +873,7 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 }
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
     <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.clay} />
   </Pressable>;
 }
@@ -880,6 +891,6 @@ const styles = StyleSheet.create({
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
-  send: { width: 46, height: 46, borderRadius: 23, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
-  quick: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 22, backgroundColor: palette.olivePale },
+  send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
+  quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
 });

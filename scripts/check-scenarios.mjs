@@ -126,11 +126,17 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     await field(page, c.recipientName).fill('QA Recipient');
   }
   if (scheduled) await page.getByRole('radio', { name: c.later, exact: true }).click();
-  if (lostResponse) await page.route(apiRoute('/api/orders'), async route => {
-    if (route.request().method() !== 'POST') return route.continue();
-    await route.fetch(); // the server commits; only its response is lost
-    await route.abort('connectionreset');
-  }, { times: 1 });
+  if (lostResponse) {
+    const loseResponse = async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await page.unroute(apiRoute('/api/orders'), loseResponse);
+      await route.fetch(); // the server commits; only its response is lost
+      await route.abort('connectionreset');
+    };
+    await page.route(apiRoute('/api/orders'), loseResponse);
+    // Keep the first automatic reconciliation unknown so reload cannot race its successful navigation.
+    await page.route(apiRoute('/api/orders/commands/*'), route => route.fulfill({ status: 503, json: { error: 'temporarily_unavailable' } }), { times: 1 });
+  }
   await button(page, new RegExp(`^${scheduled ? c.scheduleRequest : c.request}`)).click();
   if (lostResponse) {
     await page.getByText(c.bookingPending, { exact: true }).waitFor();
@@ -138,7 +144,16 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     // T19 recovery: the read-only reconciliation finds the committed order on its own and navigates to it —
     // no second booking is created and no manual retry is needed for a confirmed-present command.
   }
-  await page.waitForURL(/\/order\/\d+$/);
+  await page.waitForURL(/\/order\/\d+$/).catch(async error => {
+    const diagnostic = await page.evaluate(() => {
+      const stored = {};
+      for (const [key, value] of Object.entries(localStorage)) if (key.startsWith('booking.')) stored[key] = value;
+      return { url: location.href, text: document.body.innerText, storage: stored };
+    });
+    console.error('Booking recovery diagnostic', diagnostic);
+    console.error('Booking recovery rows', db.prepare('SELECT o.id, o.status, c.request_id FROM orders o LEFT JOIN order_commands c ON c.order_id = o.id ORDER BY o.id').all());
+    throw error;
+  });
   return Number(new URL(page.url()).pathname.split('/').pop());
 }
 async function advance(page, id, current, next, code) {

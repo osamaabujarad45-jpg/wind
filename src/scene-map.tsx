@@ -61,11 +61,11 @@ export function SceneMap(props: SceneMapProps) {
 
 /** A trip with the road, the driver and the stops. Pickup/dropoff can become exact after the first render. */
 export function BaselineRoute(props: RouteMapProps) {
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const { pickup, dropoff, driver } = props;
   return <SceneMap mode="route" pickup={pickup} dropoff={dropoff} driver={driver} road={props.road} approach={props.approach} closed={props.closed} focus={props.focus}
     stale={props.stale} follow={props.follow} height={props.height} fill={props.fill} insets={props.insets} user={props.user} eta={props.eta} labels={props.stopLabels} padding={props.padding}
-    label={`${c.routeOnMap}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} onFail={props.onFail}
+    label={`${c.routeOnMap}: ${props.pickupTitle} ${rtl ? '←' : '→'} ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} onFail={props.onFail}
     fallback={<RoutePreview {...props} />} />;
 }
 
