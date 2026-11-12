@@ -188,6 +188,24 @@ try {
       assert.equal(Number((await pg.database.one('SELECT count(*) n FROM orders WHERE customer_id=?', owner.user.id)).n), 1);
     } finally { await lock.query('ROLLBACK'); }
   });
+  await check('an admin edit read before another admin blocked the user fails instead of unblocking them', async () => {
+    const target = await customer();
+    await lock.query('BEGIN');
+    try {
+      await lock.query(`SELECT id FROM "${pg.schema}".users WHERE id=$1 FOR UPDATE`, [target.user.id]);
+      const stale = call(`/admin/users/${target.user.id}`, { token: admin.token, body: { name: 'Renamed from a stale form' }, expect: 409 });
+      const deadline = Date.now() + 4000;
+      while (!Number((await pg.database.one("SELECT count(*) n FROM pg_locks WHERE locktype='transactionid' AND NOT granted")).n)) {
+        assert.ok(Date.now() < deadline, 'The edit must reach the user row lock');
+        await delay(10);
+      }
+      await lock.query(`UPDATE "${pg.schema}".users SET status='blocked' WHERE id=$1`, [target.user.id]);
+      await lock.query('COMMIT');
+      assert.equal((await bounded(stale, 'stale admin edit')).error, 'user_changed');
+      const after = await pg.database.one('SELECT status, name FROM users WHERE id=?', target.user.id);
+      assert.deepEqual([after.status, after.name], ['blocked', 'Race fixture'], 'the block stands and the stale rename is not applied');
+    } finally { await lock.query('ROLLBACK'); }
+  });
   assert.equal(failures.length, 0, `${failures.length} booking race regressions failed`);
 } finally {
   routeGate?.release.resolve();

@@ -768,8 +768,8 @@ try {
         });
       }
     };
-    const done = new Set(), sent = new Set();
-    const onSend = p => { if (p.request.url.startsWith(base)) sent.add(p.requestId); }; // a request still waiting for headers counts too
+    const done = new Set(), sent = new Map();
+    const onSend = p => { if (p.request.url.startsWith(base)) sent.set(p.requestId, new URL(p.request.url).pathname); }; // a request still waiting for headers counts too
     const onFin = p => { const r = seen.get(p.requestId); if (r) r.bytes = p.encodedDataLength || 0; done.add(p.requestId); };
     const onFail = p => done.add(p.requestId);
     budgetCdp.on('Network.requestWillBeSent', onSend);
@@ -783,8 +783,8 @@ try {
       await budgetPage.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
       await new Promise(r => setTimeout(r, 250));
       // Bytes land on loadingFinished: an asset still downloading at the cutoff would count as 0 B.
-      for (const until = Date.now() + 10_000; [...sent].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
-      assert.ok([...sent].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${[...sent].filter(id => !done.has(id)).length}`);
+      for (const until = Date.now() + 10_000; [...sent.keys()].some(id => !done.has(id)) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
+      assert.ok([...sent.keys()].every(id => done.has(id)), `first-party map requests still downloading after 10 s: ${JSON.stringify([...sent].filter(([id]) => !done.has(id)).map(([, path]) => path))}`);
       return [...seen.values()];
     } finally {
       budgetCdp.off('Network.responseReceived', onResp);

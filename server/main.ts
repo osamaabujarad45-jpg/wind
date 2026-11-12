@@ -290,7 +290,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
   // T33: destination-change visibility and pending card follow the capability, not the dialect.
-  const canChangeDest = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence);
+  // One capability probe per request, not per order in a list.
+  const canChangeDest = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await persistence.memo('destinationAvailable', () => destinationAvailable(persistence));
   const destinationChange = canChangeDest && destinationEligible(r)
     ? await pendingDestination(persistence, r) : null;
   return {
@@ -3170,6 +3171,9 @@ const editUser: Handler = async ({ user, params, body }) => {
   try {
     // Re-checked inside the write transaction: a job accepted after the reads above must not be stranded by this edit.
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', target.id);
+    // Every decision below came from the read before the lock: another admin's block or approval in between must not be silently reverted.
+    const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
+    if (Object.keys(locked).some(key => (locked[key] ?? null) !== (target[key] ?? null))) fail(409, 'user_changed');
     if (identityOrRoleChange &&
       (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
     if (roleChanged && target.role === 'driver') (await cashSettled(target.id));
