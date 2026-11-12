@@ -11,7 +11,8 @@ export { ApiError, apiSessionRevision, configureApi, errorCode, invalidateApiSes
 // Dev: the API runs next to Metro on port 4000 (npm run server). Production: EXPO_PUBLIC_API_URL.
 const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? `http://${devHost ?? 'localhost'}:4000`).replace(/\/+$/, '');
-export const PRIVACY_URL = `${API_URL}/privacy`;
+// One bilingual page, English first: Arabic readers land on their own section instead of scrolling past the English (A53, 12 Nov).
+export const privacyUrl = (language: string) => `${API_URL}/privacy${language === 'ar' ? '#ar' : ''}`;
 export const TERMS_URL = `${API_URL}/terms`;
 // Support WhatsApp in international digits, e.g. 970599123456. Unset: support buttons are hidden.
 const supportNumber = process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP?.replace(/\D/g, '');

@@ -1,4 +1,4 @@
-import { crowKm, type Order, type Point } from './model.ts';
+import { city, crowKm, SERVICE_KM, type Order, type Point } from './model.ts';
 import { serverOffset } from './api-client.ts';
 import { locationState } from './location-state.ts';
 import { deadlineSeconds } from './api-clock.ts';
@@ -36,10 +36,13 @@ export function arrivalDistanceKm(pickup: Point | null | undefined, fix: Order['
 export const PARCEL_PICKUP_FAR_KM = 1;
 
 /** How far a courier is from a parcel's pickup while marking it arrived or collected, or null when near or unknown. A warning, never a block: GPS can be wrong. */
-export function parcelPickupFarKm(order: Pick<Order, 'service' | 'status' | 'pickupPoint' | 'driverLocation'>, now: number) {
+export function parcelPickupFarKm(order: Pick<Order, 'service' | 'status' | 'pickupPoint' | 'pickupCity' | 'driverLocation'>, now: number) {
   if (order.service === 'ride' || !['assigned', 'at_pickup'].includes(order.status)) return null;
-  const distance = arrivalDistanceKm(order.pickupPoint, order.driverLocation, now);
-  return distance !== null && distance > PARCEL_PICKUP_FAR_KM ? distance : null;
+  // A city-level pickup (no pin) may be anywhere in that city's service zone: only beyond it is the courier surely not there.
+  // Without this a courier 77 km away marked one arrived unasked (A53, 12 Nov).
+  const pinned = !!order.pickupPoint, limit = pinned ? PARCEL_PICKUP_FAR_KM : SERVICE_KM;
+  const distance = arrivalDistanceKm(order.pickupPoint ?? (order.pickupCity ? city(order.pickupCity) : null), order.driverLocation, now);
+  return distance !== null && distance > limit ? distance : null;
 }
 
 /** An expired/missing lease cannot silently become a legacy accept command. */

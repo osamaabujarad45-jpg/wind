@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { api, apiSessionRevision, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
+import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
@@ -392,7 +392,7 @@ export function VerifyEmailNudge() {
 
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
-  const { c } = useCopy();
+  const { c, language } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
     {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
       <Txt variant="caption" style={styles.link}>{c.help}</Txt>
@@ -400,7 +400,7 @@ export function HelpLinks({ help = true, privacy = true }: { help?: boolean; pri
     {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => Linking.openURL(SUPPORT_URL!)}>
       <Txt variant="caption" style={styles.link}>{c.support}</Txt>
     </Press>}
-    {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => Linking.openURL(PRIVACY_URL)}>
+    {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => Linking.openURL(privacyUrl(language))}>
       <Txt variant="caption" style={styles.link}>{c.privacy}</Txt>
     </Press>}
   </Row>;
@@ -469,7 +469,7 @@ export function AccountScreen() {
       <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
       {/* support lives one tap in: Help leads with it, so a second row here only splits the same door */}
-      <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(PRIVACY_URL)} />
+      <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(privacyUrl(language))} />
     </ListGroup>
     <ErrorText>{deleteError}</ErrorText>
     <ListGroup>

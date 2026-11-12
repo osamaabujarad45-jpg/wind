@@ -1,4 +1,4 @@
-import type { Order } from './model';
+import { bookedAhead, type Order } from './model.ts';
 
 const ar = {
   rideBoardingRotate: 'تغيير رمز الركوب وفتح التحقق',
@@ -356,6 +356,7 @@ const ar = {
   err_places_full: 'وصلت إلى 10 أماكن. احذف مكاناً من قائمة البحث أولاً.',
   // order
   searching: 'نبحث عن سائق',
+  searching_booked: 'محجوز مسبقاً', // booked ahead, before drivers see it (statusText)
   requested: 'الطلب',
   driverAssigned: 'قبل السائق',
   assigned: 'السائق في الطريق للاستلام',
@@ -1462,6 +1463,7 @@ const en: Copy = {
   place_other: 'Other place',
   err_places_full: 'You have 10 places. Delete one from the search list first.',
   searching: 'Finding a driver',
+  searching_booked: 'Booked ahead', // booked ahead, before drivers see it (statusText)
   requested: 'Requested',
   driverAssigned: 'Driver assigned',
   assigned: 'Driver heading to pickup',
@@ -2202,7 +2204,8 @@ export function fill(template: string, values: Record<string, string | number>) 
 }
 
 // A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'>, driver = false) => {
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null }, driver = false, now = Date.now()) => {
+  if (bookedAhead(o, now)) return c.searching_booked;
   const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
   return (driver && k[`driver_${o.status}${ride}`]) || (ride && k[`${o.status}${ride}`]) || c[o.status];
 };

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Wind API: Node 24 HTTP server with owned async SQLite/PostgreSQL persistence.
-// Run: node server/main.ts Â· Make an admin: node server/main.ts promote 0599XXXXXX
+// Run: node server/main.ts · Make an admin: node server/main.ts promote 0599XXXXXX
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { initializeSqlite } from './db/sqlite-schema.ts';

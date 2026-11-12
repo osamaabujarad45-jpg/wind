@@ -391,6 +391,7 @@ try {
   assert.equal(privacy.status, 200);
   const privacyHtml = await privacy.text();
   assert.match(privacyHtml, /Delete your account/);
+  assert.match(privacyHtml, /<section id="ar" lang="ar"/, 'the app opens /privacy#ar for Arabic readers (privacyUrl)');
   assert.match(privacyHtml, /Synthetic &lt;support&gt; &amp; &quot;contact&quot;/);
   const deletion = await fetch(base.replace('/api', '/account-deletion'));
   assert.equal(deletion.status, 200);

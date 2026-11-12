@@ -185,6 +185,11 @@ for (const c of [copy.ar, copy.en]) {
   assert.equal(statusText(c, ride('in_transit'), true), c.in_transit_ride);
   assert.equal(statusText(c, parcel('in_transit'), true), c.in_transit);
   assert.equal(statusText(c, parcel('returning'), true), c.returning);
+  // Booked a day ahead: nobody is looking for a driver until 30 minutes before (A53, 12 Nov).
+  const at = 1_800_000_000_000, booked = { service: 'parcel', status: 'searching', scheduledFor: at };
+  assert.equal(statusText(c, booked, false, at - 31 * 60_000), c.searching_booked);
+  assert.equal(statusText(c, booked, false, at - 30 * 60_000), c.searching, 'drivers see it from 30 minutes before');
+  assert.equal(statusText(c, { ...booked, scheduledFor: null }, false, at), c.searching);
 }
 assert.ok(!statusText(copy.ar, { service: 'parcel', status: 'assigned' }, true).includes('السائق'), 'a driver never reads "the driver" about themself');
 // The safety card preselects 'other': it leads the chips so it is on screen when the card opens.

@@ -8,7 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useApi } from '../../api';
 import { pickupErrorKey } from '../../customer-location';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
-import { activeStatuses, city, defaultSettings, services, type Order, type Point, type Service } from '../../model';
+import { activeStatuses, bookedAhead, city, defaultSettings, services, type Order, type Point, type Service } from '../../model';
 import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-location';
 import { SceneMap } from '../../scene-map';
 import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
@@ -22,9 +22,10 @@ export default function Home() {
   const { c, row, rtl, language } = useCopy();
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
-  // A trip with a driver on the way comes first: a newer booked-ahead search hid it behind "See all" (A53, 8 Nov). Stable sort keeps newest first.
-  const active = orders.filter(o => o.status === 'searching' || activeStatuses.includes(o.status))
-    .sort((a, b) => Number(activeStatuses.includes(b.status)) - Number(activeStatuses.includes(a.status)));
+  // A trip with a driver on the way comes first, then a search running now, then a booking for later: a newer booked-ahead
+  // order hid both behind "See all" (A53, 8 and 12 Nov). Stable sort keeps newest first within each.
+  const rank = (o: Order) => activeStatuses.includes(o.status) ? 2 : bookedAhead(o) ? 0 : 1;
+  const active = orders.filter(o => o.status === 'searching' || activeStatuses.includes(o.status)).sort((a, b) => rank(b) - rank(a));
   // Latest distinct routes, newest first: the "book again" list. Only finished trips, as Amazon's "Buy it again"
   // skips what is still on its way; an in-flight route already shows above it.
   const done = orders.filter(o => !active.includes(o));
