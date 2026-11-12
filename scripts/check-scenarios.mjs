@@ -712,12 +712,19 @@ try {
     return Math.abs(p.x - innerWidth / 2) < 20 && Math.abs(p.y - (innerHeight / 2 - 40)) < 20;
   });
   await new Promise(resolve => setTimeout(resolve, 1300));
-  await androidMap.evaluate(() => window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } }));
-  await androidMap.waitForFunction(() => {
-    const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
-    return halo && marker.lat > 31.91455 && marker.lat < 31.91545
-      && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015;
-  });
+  // Every drawn frame of the glide, not one lucky mid-glide poll (a loaded machine can skip straight to the end): the halo sits on the marker.
+  const glide = await androidMap.evaluate(() => new Promise(resolve => {
+    window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } });
+    const end = performance.now() + 2500, frames = [];
+    const sample = () => {
+      const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
+      frames.push({ lat: marker.lat, aligned: !!halo && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015 });
+      if (performance.now() < end) requestAnimationFrame(sample); else resolve(frames);
+    };
+    requestAnimationFrame(sample);
+  }));
+  assert.ok(glide.every(f => f.aligned), `accuracy halo left the marker on ${glide.filter(f => !f.aligned).length} of ${glide.length} frames`);
+  assert.ok(Math.abs(glide.at(-1).lat - 31.9155) < 0.00002, `marker reached the new fix: ${glide.at(-1).lat}`);
   pass('Android accuracy halo follows the moving marker while the approach line is active');
   await androidMap.waitForLoadState('networkidle');
   // Maps Item 4 & Item 6 live WebGL checks: stop-guard covers both route stops, nearby GPS snaps onto the road with true halo, and a >40 m wrong turn stays raw.
