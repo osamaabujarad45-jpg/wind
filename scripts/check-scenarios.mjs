@@ -715,7 +715,7 @@ try {
   // Every drawn frame of the glide, not one lucky mid-glide poll (a loaded machine can skip straight to the end): the halo sits on the marker.
   const glide = await androidMap.evaluate(() => new Promise(resolve => {
     window.wind({ driver: { latitude: 31.9155, longitude: 35.2054, accuracy: 10, heading: 90 } });
-    const end = performance.now() + 2500, frames = [];
+    const end = performance.now() + 7000, frames = []; // a glide lasts the gap between fixes, up to 6 s (glideMs)
     const sample = () => {
       const marker = window.testMarker.getLngLat(), halo = window.testMap.getSource('accuracy').serialize().data.geometry?.coordinates;
       frames.push({ lat: marker.lat, aligned: !!halo && Math.abs(marker.lat - halo[1]) < 0.00015 && Math.abs(marker.lng - halo[0]) < 0.00015 });
