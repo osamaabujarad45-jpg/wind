@@ -180,6 +180,7 @@ const canvasLabel = () => map.getCanvas().setAttribute('aria-label', !pinning() 
   : config.language === 'ar' ? 'الخريطة. حرّكها أو اضغط على مكان لوضع الدبوس.' : 'Map. Move it or tap a place to position the pin.');
 canvasLabel();
 window.windMap = map; // the browser gates read the real camera
+window.windState = state; // and what the app sent (screens.mjs: a route is required only when the app gave one)
 map.on('webglcontextlost', fail); // a lost GPU context never draws again; the app retries
 let mapLoaded = false, baseTileLoaded = false, announcedReady = false;
 window.windTileFailed = false;

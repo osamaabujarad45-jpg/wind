@@ -259,15 +259,15 @@ const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDr
 const { chromium } = await import('playwright');
 const browser = await chromium.launch(process.env.SCREENS_CHROMIUM ? { executablePath: process.env.SCREENS_CHROMIUM } : {});
 const shots = [];
-// Wait for any visible map iframe to finish loading its route geometry (a route map with two stops needs the road line).
+// Wait for any visible map iframe to finish drawing the route the app sent it.
 async function waitForMaps(targetPage, where = 'map') {
   for (const frame of targetPage.frames().filter(f => f.url().includes('/map.html'))) {
     await frame.waitForFunction(() => {
       const m = window.windMap;
       if (!m?.loaded()) return false;
-      const hasStops = document.querySelectorAll('.stop').length >= 2;
-      return !hasStops || m.getSource('road')?.serialize()?.data?.geometry?.type === 'LineString';
-    }, null, { timeout: 12_000 }).catch(() => { throw new Error(`${where}: route line never drew between the two stops`); });
+      // A finished order shows its two stops without a route: require the line only when the app sent one.
+      return !(window.windState?.road?.length >= 2) || m.getSource('road')?.serialize()?.data?.geometry?.type === 'LineString';
+    }, null, { timeout: 12_000 }).catch(() => { throw new Error(`${where}: the app sent a route but the line never drew`); });
   }
   if (targetPage.frames().some(f => f.url().includes('/map.html'))) await targetPage.waitForTimeout(450);
 }
