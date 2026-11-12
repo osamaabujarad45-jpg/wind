@@ -1005,6 +1005,9 @@ const ar = {
   err_driver_command_pending: 'لم يتأكد إجراؤك الأخير بعد. تحقق من اتصالك وحاول مرة أخرى.',
   parcelPickupFar: 'أنت على بُعد {km} كم من نقطة الاستلام.',
   parcelPickupFarConfirm: 'أنت على بُعد {km} كم من نقطة الاستلام. هل تريد المتابعة رغم ذلك؟',
+  // a city-level pickup has no pin: the distance is to the city centre, said as such
+  parcelPickupFarCity: 'أنت على بُعد {km} كم من مركز {city}.',
+  parcelPickupFarCityConfirm: 'أنت على بُعد {km} كم من مركز {city}. هل تريد المتابعة رغم ذلك؟',
   err_too_many_attempts: 'محاولات كثيرة. حاول بعد 10 دقائق.',
   err_blocked: 'تم إيقاف هذا الحساب. تواصل مع الدعم.',
   err_pending_approval: 'حسابك قيد المراجعة.',
@@ -1463,7 +1466,7 @@ const en: Copy = {
   place_other: 'Other place',
   err_places_full: 'You have 10 places. Delete one from the search list first.',
   searching: 'Finding a driver',
-  searching_booked: 'Booked ahead', // booked ahead, before drivers see it (statusText)
+  searching_booked: 'Scheduled', // booked ahead, before drivers see it (statusText); the card's time reads "Scheduled {t}" too
   requested: 'Requested',
   driverAssigned: 'Driver assigned',
   assigned: 'Driver heading to pickup',
@@ -2093,6 +2096,8 @@ const en: Copy = {
   err_driver_command_pending: 'Your last action is not confirmed yet. Check your connection and try again.',
   parcelPickupFar: 'You are {km} km from the pickup.',
   parcelPickupFarConfirm: 'You are {km} km from the pickup. Continue anyway?',
+  parcelPickupFarCity: 'You are {km} km from the centre of {city}.',
+  parcelPickupFarCityConfirm: 'You are {km} km from the centre of {city}. Continue anyway?',
   err_too_many_attempts: 'Too many attempts. Try again in 10 minutes.',
   err_blocked: 'This account is suspended. Contact support.',
   err_pending_approval: 'Your account is under review.',

@@ -29,9 +29,13 @@ const tulkarmFix = { latitude: 32.3125, longitude: 35.048, updatedAt: now, ageSe
 assert.ok(parcelPickupFarKm({ ...cityOrder, driverLocation: tulkarmFix }, now) > SERVICE_KM, 'a courier in Tulkarm is not at a Ramallah pickup');
 assert.equal(parcelPickupFarKm({ ...cityOrder, driverLocation: { ...tulkarmFix, latitude: ramallah.latitude + 0.1, longitude: ramallah.longitude } }, now), null, '11 km out is still inside the city zone');
 assert.ok(SERVICE_KM > PARCEL_PICKUP_FAR_KM);
+const northOf = km => ({ ...tulkarmFix, latitude: ramallah.latitude + km / 111.195, longitude: ramallah.longitude }); // crowKm's earth radius
+assert.equal(parcelPickupFarKm({ ...cityOrder, driverLocation: northOf(SERVICE_KM - 0.05) }, now), null, 'just inside the city zone');
+assert.ok(parcelPickupFarKm({ ...cityOrder, driverLocation: northOf(SERVICE_KM + 0.05) }, now) > SERVICE_KM, 'just outside the city zone');
 for (const status of ['searching', 'in_transit', 'completed', 'cancelled'])
   assert.equal(parcelPickupFarKm({ ...order, status }, now), null, `${status} excluded`);
-for (const language of ['ar', 'en']) for (const key of ['parcelPickupFar', 'parcelPickupFarConfirm']) {
+for (const language of ['ar', 'en']) for (const key of ['parcelPickupFar', 'parcelPickupFarConfirm', 'parcelPickupFarCity', 'parcelPickupFarCityConfirm']) {
+  if (key.includes('City')) assert.ok(copy[language][key]?.includes('{city}'), `${language} ${key} names the city it measured from`);
   assert.ok(copy[language][key]?.trim(), `${language} ${key} exists`);
   assert.ok(copy[language][key].includes('{km}'), `${language} ${key} includes distance`);
 }

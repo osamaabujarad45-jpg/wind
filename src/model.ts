@@ -54,9 +54,12 @@ export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 
 export const activeStatuses: OrderStatus[] = ['assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
 // Both end states the driver is paid for: delivered, or handed back to the sender.
 export const finishedStatuses: OrderStatus[] = ['completed', 'returned'];
-// Drivers see a booked-ahead order 30 minutes before its time (server job_alerted_at): until then nobody is looking for one.
+// Drivers see a booked-ahead order 30 minutes before its time (server RELEASE_BEFORE): until then nobody is looking for one.
 export const bookedAhead = (o: { status: OrderStatus; scheduledFor?: number | null }, now = Date.now()) =>
   o.status === 'searching' && !!o.scheduledFor && now < o.scheduledFor - 30 * 60_000;
+// Home's "current order": a trip with a driver, then a search running now, then a booking for later (A53, 8 and 12 Nov).
+export const currentRank = (o: { status: OrderStatus; scheduledFor?: number | null }, now = Date.now()) =>
+  activeStatuses.includes(o.status) ? 2 : bookedAhead(o, now) ? 0 : 1;
 export const isOpen = (o: Pick<Order, 'status'>) => o.status === 'searching' || activeStatuses.includes(o.status);
 /** Ended orders per orders-list page (GET /orders, then ?before=<oldest ended id>); open work only comes on the first page. */
 export const HISTORY_PAGE = 200;

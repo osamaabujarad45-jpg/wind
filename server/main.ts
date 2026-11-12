@@ -1094,7 +1094,7 @@ async function promoFor(user: User, input: unknown, price: number) {
     (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_promo_use:' || ? || ':' || ?, 0))", p.id, user.id));
   if ((await one(`${promoUses} AND pr.customer_id = ?`, p.id, user.id))!.n > 0 || (await one(promoUses, p.id))!.n >= p.max_uses
     || (p.first_order_only && (await one("SELECT id FROM orders WHERE customer_id = ? AND status <> 'cancelled'", user.id)))) fail(409, 'promo_used');
-  if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below â‚ª1, so nothing would be discounted
+  if (price < 2) fail(409, 'promo_not_applicable'); // the fare never drops below ₪1, so nothing would be discounted
   return { id: p.id as number, referrerId: null, code, discount: Math.min(p.amount, price - 1) };
 }
 route('POST', '/api/promos/check', async ({ user, body }) => {
@@ -1106,7 +1106,7 @@ route('POST', '/api/promos/check', async ({ user, body }) => {
   const { code, discount } = (await promoFor(user, body.code, price));
   return { code, discount };
 });
-// Personal codes: invite codes (Wâ€¦) and inviter rewards (Râ€¦) share the promo namespace.
+// Personal codes: invite codes (W…) and inviter rewards (R…) share the promo namespace.
 const REFERRAL_REWARD = 10;
 // ponytail: flat cap against farming with throwaway accounts; per-phone verification is the real fix once SMS exists.
 const REFERRAL_REWARDS_PER_30_DAYS = 5;
@@ -1118,7 +1118,7 @@ async function freshCode(prefix: string, length: number) {
     if (!(await codeTaken(code))) return code;
   }
 }
-/** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (Râ€¦) and goodwill credits (Câ€¦). */
+/** A one-use code only `ownerId` can apply, valid 90 days: invite rewards (R…) and goodwill credits (C…). */
 async function ownedCode(prefix: string, ownerId: number, amount: number, createdBy: number, now: number) {
   const promoId = Number((await run('INSERT INTO promo_codes (code, amount, max_uses, expires_at, first_order_only, created_by, created_at) VALUES (?, ?, 1, ?, 0, ?, ?)',
     (await freshCode(prefix, 7)), amount, now + 90 * DAY, createdBy, now)).lastInsertRowid);
@@ -1369,7 +1369,7 @@ function bookedPoint(p: unknown, id: CityId) {
 }
 
 // Smart recommended price (SPEC-driver-offers.md): the checkpoint-aware road route the map draws, plus Wind's own live
-// road reports (/api/roads). Without routing, straight km Ã— 1.3 at 50 km/h.
+// road reports (/api/roads). Without routing, straight km × 1.3 at 50 km/h.
 async function recommend(user: User, b: Row) {
   const service = services.includes(b.service) ? b.service as Service : fail(400, 'invalid_service');
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
@@ -1974,7 +1974,7 @@ route('POST', '/api/orders/:id/rate', async ({ user, params, body }) => {
 });
 
 // Trip sharing: the customer hands a rotating link to a recipient who has no account. Only the token's hash is
-// stored, and the public view is an explicit allowlist â€” no phones, notes, codes, price or customer identity.
+// stored, and the public view is an explicit allowlist — no phones, notes, codes, price or customer identity.
 const SHARE_GRACE = DAY; // a finished trip's final status stays readable for a day
 async function shareOrder(id: number, customerId: number) {
   const r = (await one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', id, customerId)) ?? fail(404, 'not_found');
@@ -2012,7 +2012,7 @@ async function trackView(token: string) {
   const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   return { orderId: r.id, driverId: r.driver_id as number | null, row: r, view: {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
-    updatedAt: r.updated_at,
+    updatedAt: r.updated_at, scheduledFor: r.scheduled_for ?? null, // the recipient's page says booked ahead, as the sender's does
     driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
       ref: createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}`).digest('hex').slice(0, 12) } : null, // opaque per link: tells a reassignment apart, names no one
     driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
@@ -2379,7 +2379,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    // A promo or credit never discounts more than the fare minus â‚ª1 (as at booking).
+    // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
     await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id); // T33: both backends bind the rate snapshot
@@ -2810,7 +2810,7 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
 }
 
 // Best road route (SPEC-checkpoint-routing.md): OSRM's fastest (car profile, multi-level Dijkstra), unless it crosses a
-// checkpoint drivers report closed â€” then the fastest alternative or forced detour that stays clear of every closed one.
+// checkpoint drivers report closed — then the fastest alternative or forced detour that stays clear of every closed one.
 // A known driver heading is a bearing hint so the route starts the way the car moves. Full geometry: simplified lines
 // cut corners through buildings at street zoom.
 // The closed checkpoints a route must go around; one request reads the road state once and passes it on.
@@ -2849,7 +2849,7 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         const usable = (r: OsrmRoute) => !crossed(r).length && !backtracks(r.line); // no out-and-back to a dead-end via point
         let options = routes.filter(usable);
         if (!options.length) {
-          // Perpendicular to the route at the first blocking checkpoint, 1â€“8 km to either side.
+          // Perpendicular to the route at the first blocking checkpoint, 1–8 km to either side.
           const c = blocked[0].point, gap = (p: [number, number]) => Math.hypot(p[0] - c.longitude, p[1] - c.latitude);
           const i = fastest.line.reduce((best, p, k) => gap(p) < gap(fastest.line[best]) ? k : best, 0); // route point nearest the checkpoint
           const p1 = fastest.line[Math.max(0, i - 3)], p2 = fastest.line[Math.min(fastest.line.length - 1, i + 3)];

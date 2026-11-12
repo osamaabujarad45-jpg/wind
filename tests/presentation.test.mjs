@@ -4,7 +4,7 @@ import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pic
 import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from '../src/location-state.ts';
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
-import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
+import { currentRank, isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, RIDE_ARRIVAL_FIX_MAX_AGE_MS, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../src/ride-flow.ts';
 import { RIDE_ARRIVAL_FIX_MAX_AGE_MS as serverArrivalFixAge, RIDE_ARRIVAL_RADIUS_METERS as serverArrivalRadius } from '../server/domain/ride-lifecycle.ts';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../src/freight-scope.ts';
@@ -186,6 +186,7 @@ for (const c of [copy.ar, copy.en]) {
   assert.equal(statusText(c, parcel('in_transit'), true), c.in_transit);
   assert.equal(statusText(c, parcel('returning'), true), c.returning);
   // Booked a day ahead: nobody is looking for a driver until 30 minutes before (A53, 12 Nov).
+  assert.ok(typeof c.searching_booked === 'string' && c.searching_booked && c.searching_booked !== c.searching, 'a real, distinct label');
   const at = 1_800_000_000_000, booked = { service: 'parcel', status: 'searching', scheduledFor: at };
   assert.equal(statusText(c, booked, false, at - 31 * 60_000), c.searching_booked);
   assert.equal(statusText(c, booked, false, at - 30 * 60_000), c.searching, 'drivers see it from 30 minutes before');
@@ -194,4 +195,9 @@ for (const c of [copy.ar, copy.en]) {
 assert.ok(!statusText(copy.ar, { service: 'parcel', status: 'assigned' }, true).includes('السائق'), 'a driver never reads "the driver" about themself');
 // The safety card preselects 'other': it leads the chips so it is on screen when the card opens.
 assert.equal(safetyKinds[0], 'other');
+{ // Home's current order: trip with a driver, then a search now, then a booking for later; stable within a rank.
+  const at = 1_800_000_000_000, now = at - 3_600_000;
+  const orders = [{ id: 3, status: 'searching', scheduledFor: at }, { id: 2, status: 'searching', scheduledFor: null }, { id: 1, status: 'assigned', scheduledFor: null }, { id: 0, status: 'searching', scheduledFor: now + 60_000 }];
+  assert.deepEqual(orders.sort((a, b) => currentRank(b, now) - currentRank(a, now)).map(o => o.id), [1, 2, 0, 3]);
+}
 console.log('Status perspective and safety default checks passed');
