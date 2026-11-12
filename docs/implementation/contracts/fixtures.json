@@ -3362,6 +3362,7 @@
         "pickupCity": "ramallah",
         "dropoffCity": "nablus",
         "updatedAt": "<server-timestamp>",
+        "scheduledFor": null,
         "driver": null,
         "driverLocation": null
       }
