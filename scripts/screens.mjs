@@ -276,7 +276,7 @@ async function mapsReady(page, where) {
   // A map can mount after the fixed waits: look again after a short pause and wait for any frame not yet checked.
   const checked = new Set();
   for (let round = 0; round < 3; round++) {
-    const frames = page.frames().filter(f => new URL(f.url(), 'http://x').pathname === '/map.html' && !checked.has(f));
+    const frames = page.frames().filter(f => new URL(f.url(), 'http://x').pathname.endsWith('/map.html') && !checked.has(f));
     if (!frames.length && round) break;
     for (const frame of frames) {
       checked.add(frame);
@@ -290,7 +290,7 @@ async function mapsReady(page, where) {
   }
   // A tile reload drops the route, and a tile can fail during the settle: the road and every frame's tiles are checked last, just before capture.
   await waitForMaps(page, where);
-  for (const frame of page.frames().filter(f => new URL(f.url(), 'http://x').pathname === '/map.html'))
+  for (const frame of page.frames().filter(f => new URL(f.url(), 'http://x').pathname.endsWith('/map.html')))
     await frame.waitForFunction(() => window.windBaseTile === true && window.windTileFailed === false && window.windMap?.areTilesLoaded(), null, { timeout: 10_000 })
       .catch(() => { throw new Error(`${where}: map tiles failed or changed after they were checked`); });
 }
