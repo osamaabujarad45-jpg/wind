@@ -193,9 +193,10 @@ try {
     await lock.query('BEGIN');
     try {
       await lock.query(`SELECT id FROM "${pg.schema}".users WHERE id=$1 FOR UPDATE`, [target.user.id]);
+      const holder = (await lock.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
       const stale = call(`/admin/users/${target.user.id}`, { token: admin.token, body: { name: 'Renamed from a stale form' }, expect: 409 });
       const deadline = Date.now() + 4000;
-      while (!Number((await pg.database.one("SELECT count(*) n FROM pg_locks WHERE locktype='transactionid' AND NOT granted")).n)) {
+      while (!Number((await pg.database.one('SELECT count(*) n FROM pg_stat_activity WHERE ?::int = ANY(pg_blocking_pids(pid))', holder)).n)) {
         assert.ok(Date.now() < deadline, 'The edit must reach the user row lock');
         await delay(10);
       }
