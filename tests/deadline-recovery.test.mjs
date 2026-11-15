@@ -95,4 +95,7 @@ assert.ok(ignores.includes('/android') && ignores.includes('/ios'), 'the top-lev
 assert.ok(!['android', 'ios', 'android/', 'ios/'].some(entry => ignores.includes(entry)), 'local module native source is uploaded');
 let easIgnore = null; try { easIgnore = readFileSync(new URL('../.easignore', import.meta.url), 'utf8'); } catch { /* none: .gitignore governs */ }
 assert.equal(easIgnore, null, 'no .easignore overrides .gitignore');
+// The phone QA build copies an allow-list of inputs; without modules/ the receiver is declared but its class is missing.
+assert.match(readFileSync(new URL('../scripts/build-phone-tests.ps1', import.meta.url), 'utf8'), /foreach \(\$phoneFolder in @\([^)]*'modules'/,
+  'phone QA builds include the local native module');
 console.log('Deadline recovery: real persisted expiry, duplicate/cancel/logout fences, foreground authority and CNG broadcast registration passed');

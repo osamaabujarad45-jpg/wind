@@ -61,7 +61,7 @@ New-Item -ItemType Directory -Path $phoneLogs -Force | Out-Null
 foreach ($phoneFile in @('package.json', 'package-lock.json', 'app.json', 'app.config.js', 'index.js', 'tsconfig.json')) {
   Copy-Item -LiteralPath (Join-Path $phoneSource $phoneFile) -Destination (Join-Path $phoneBuild $phoneFile) -Force
 }
-foreach ($phoneFolder in @('src', 'assets', 'plugins', 'vendor', 'public')) {
+foreach ($phoneFolder in @('src', 'assets', 'plugins', 'modules', 'vendor', 'public')) {
   $phoneTarget = [IO.Path]::GetFullPath((Join-Path $phoneBuild $phoneFolder))
   if (!$phoneTarget.StartsWith($phoneBuild + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe build input target.' }
   if (Test-Path -LiteralPath $phoneTarget) {
