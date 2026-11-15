@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { BottomTabBarHeightContext, type BottomTabBarProps } from 'expo-router/js-tabs';
+import { linesFor, maxScale } from './text-scale';
 import { copy, fill, type CopyKey } from './copy';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
@@ -189,19 +190,26 @@ const textVariants = {
   micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>;
 
-// X-01: OS text scale stays on up to Android's largest step (2.0). Layouts use minHeight/wrap so they grow with it.
-// Only fixed-size chrome (tab labels, badge counts, map labels) keeps a lower cap, set where it is used.
-export const maxScale = 2;
-// numberOfLines clips important text; past the old 1.35 cap let it wrap instead (rows are minHeight/flexShrink).
-export function useLines(n?: number) { const { fontScale } = useWindowDimensions(); return fontScale > 1.35 ? undefined : n; }
+export { maxScale };
+export function useLines(n?: number) { return linesFor(n, useWindowDimensions().fontScale); }
 
-export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header, accessibilityLabel }: {
+// Sheet footer (MapSheet renders it outside the scroll body). Capped at 45% of the window and scrollable past that, so at 200%
+// text the advance button is reached by scrolling the footer instead of being cut off.
+export function BoundedFooter({ children }: { children: React.ReactNode }) {
+  const { height } = useWindowDimensions();
+  return <ScrollView style={{ maxHeight: height * 0.45, flexGrow: 0 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>;
+}
+
+export function Txt({ children, variant = 'body', style, center, numberOfLines, clamp, selectable, header, accessibilityLabel }: {
   children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
+  /** Line cap kept at every text scale, for chrome that must not swallow the map (the driving banner). */
+  clamp?: number;
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
   accessibilityLabel?: string;
 }) {
   const { align, language } = useCopy();
-  const lines = useLines(numberOfLines);
+  const scaled = useLines(numberOfLines);
+  const lines = clamp ?? scaled;
   // T42/X-01: OS text scaling stays on up to maxScale; line heights scale with it and containers use minHeight.
   // Keyed by language: Android kept the Arabic width after an in-app switch and clipped "Your current order".
   return <Text key={language} textBreakStrategy="simple" maxFontSizeMultiplier={maxScale} numberOfLines={lines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
@@ -397,11 +405,11 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
-        autoCapitalize="none" style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
           the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
           font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
@@ -550,7 +558,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
         <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
           {options.tabBarIcon?.({ focused, color, size: 21 })}
-          {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
+          {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} /* the badge sits over the icon in a fixed-width tab slot */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
         <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar and must stay one line */ style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
       </Pressable>;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
-import { palette, useCopy } from './ui';
+import { maxScale, palette, useCopy } from './ui';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
 export type MapInsets = { top?: number; bottom?: number; left?: number; right?: number };
@@ -53,14 +53,14 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
     <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
-    {!plain && <Text style={styles.diagram}>{c.routeDiagram}</Text>}
+    {!plain && <Text maxFontSizeMultiplier={maxScale} style={styles.diagram}>{c.routeDiagram}</Text>}
     {w > 0 && <>
       <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
       <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       {!plain && <>
         <Text key={`pickup-${language}`} maxFontSizeMultiplier={1.3} /* map label in a fixed 120px slot */ numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text key={`dropoff-${language}`} maxFontSizeMultiplier={1.3} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+        <Text key={`dropoff-${language}`} maxFontSizeMultiplier={1.3} /* map label in a fixed 120px slot */ numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
       </>}
     </>}
   </View>;

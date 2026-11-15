@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { farJump, fitBounds, glideMs, routeFramePoints, turn } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { mapReadyMs } from './runtime-config';
-import { palette, shadow, useCopy } from './ui';
+import { maxScale, palette, shadow, useCopy } from './ui';
 import { loadGoogleMaps } from './google-maps-loader';
 
 // Referrer-restricted browser key: public by design, worthless off the licensed origins; the server's own
@@ -211,7 +211,7 @@ export default function RouteMap(props: RouteMapProps) {
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-        <Text>{c.retry}</Text>
+        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
       </Pressable>
     </View>}
     {ready && !failed && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
@@ -287,7 +287,7 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
     </View>
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-        <Text>{c.retry}</Text>
+        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
       </Pressable>
     </View>}
   </View>;
