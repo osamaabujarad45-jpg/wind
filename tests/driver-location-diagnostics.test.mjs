@@ -50,16 +50,30 @@ assert.deepEqual(Object.keys(accepted).sort(), ['foregroundService', 'lastAccept
 assert.ok(!JSON.stringify(accepted).includes('private-token'));
 let language = 'en';
 const jsx = (type, props) => ({ type, props });
-const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, './ui': { Card: 'Card', Txt: 'Txt', useCopy: () => ({ language, c: copy[language] }) } };
+const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx },
+  'react-native': { Pressable: 'Pressable' }, './ui': { Card: 'Card', Row: 'Row', Txt: 'Txt', palette: { olive: '#000' }, useCopy: () => ({ language, c: copy[language] }) } };
 const contextForCard = { exports: {}, require: name => { assert.ok(name in modules, `unexpected support side effect: ${name}`); return modules[name]; } };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/driver-support-card.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText, contextForCard);
 for (language of ['ar', 'en']) {
-  const card = contextForCard.exports.DriverSupportCard({ diagnostics: accepted });
+  // The screen owns the open state (the card remounts on lifecycle ticks); the card renders it and reports taps.
+  let open = false;
+  const render = () => contextForCard.exports.DriverSupportCard({ diagnostics: accepted, open, onToggle: () => { open = !open; } });
+  const closed = render();
+  const [heading, hidden] = closed.props.children;
+  const [title, toggle] = heading.props.children;
+  assert.equal(title.props.header, true, 'the title stays a heading outside the button');
+  assert.equal(toggle.type, 'Pressable');
+  assert.equal(toggle.props.accessibilityState.expanded, false);
+  assert.equal(hidden, false, 'collapsed by default: the job list is not pushed down by support facts');
+  toggle.props.onPress();
+  const card = render();
   assert.equal(card.type, 'Card');
-  const [title, rows] = card.props.children;
-  assert.equal(title.props.header, true);
+  const [header, rows] = card.props.children;
+  assert.equal(header.props.children[1].props.accessibilityState.expanded, true, 'a tap opens it');
+  header.props.children[1].props.onPress();
+  assert.equal(render().props.children[1], false, 'a second tap closes it');
   assert.equal(rows.length, 6, 'all six support facts remain visible in both languages');
   assert.ok(rows.every(row => row.props.numberOfLines === undefined), 'support facts are never clipped to one line');
   assert.match(rows[4].props.children.join(''), language === 'ar' ? /غير معروف/ : /Unknown/);
