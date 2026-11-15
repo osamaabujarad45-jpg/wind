@@ -5,10 +5,12 @@ import { createDeadlineReconciler } from '../src/deadline-recovery.ts';
 import { createProtectedRecovery } from '../src/protected-recovery.ts';
 
 let revision = 1, active = true, reads = 0, reconciles = 0, acknowledgements = 0, release;
-let wake = { scope: 'a'.repeat(64), id: 'wake-1' };
+// As in pendingRecoveryWake: a wake is only visible to the session (revision) whose scope it carries.
+let wake = { scope: 'a'.repeat(64), id: 'wake-1' }, wakeOwner = 1;
 let pause;
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 const check = createDeadlineReconciler({ revision: () => revision, active: () => active,
-  read: async () => { reads++; return wake; },
+  read: async () => { reads++; return wakeOwner === revision ? wake : null; },
   reconcile: async () => { reconciles++; if (pause) await pause; },
   acknowledge: async snapshot => { if (snapshot === wake) { acknowledgements++; wake = null; } },
 });
@@ -17,14 +19,37 @@ const first = check();
 assert.equal(check(), first, 'duplicate broadcasts share the same foreground reconciliation');
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reconciles, 1);
-revision++; release(); await first;
+revision++; release(); await first; await settle(); // the duplicate trigger's extra pass runs under the new session
 assert.equal(acknowledgements, 0, 'logout/session change cannot acknowledge another actor wake');
+assert.equal(reconciles, 1, 'the new session does not reconcile the old session wake');
 assert.ok(wake, 'pending wake survives a cancelled foreground attempt');
+const readsBefore = reads;
+wakeOwner = revision; // the new session gets its own pending wake
 active = false; await check();
-assert.equal(reads, 1, 'background delivery never performs foreground recovery');
+assert.equal(reads, readsBefore, 'background delivery never performs foreground recovery');
 active = true; pause = null; await check();
 assert.equal(acknowledgements, 1);
 await check(); assert.equal(reconciles, 2, 'acknowledged duplicate does not reconcile again');
+
+{
+  let passes = 0, hold, go, session = 1;
+  const scopeOf = () => (session === 1 ? 'a' : 'b').repeat(64);
+  const seen = [];
+  const run = createDeadlineReconciler({ revision: () => session, active: () => true,
+    read: async () => ({ scope: scopeOf(), id: `wake-${session}` }),
+    reconcile: async () => { passes++; if (hold) await hold; },
+    acknowledge: async w => { seen.push(w.id); },
+  });
+  hold = new Promise(resolve => { go = resolve; });
+  const firstRun = run();
+  await new Promise(resolve => setImmediate(resolve));
+  session = 2; hold = null; run(); // sign-in to another session while the first pass is still reconciling
+  go(); await firstRun;
+  for (let i = 0; i < 5 && passes < 2; i++) await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(passes, 2, 'a trigger during a run gets its own pass afterwards');
+  assert.deepEqual(seen, ['wake-2'], 'the old pass never acknowledges for the new session; the new pass does');
+}
 
 let fail = true;
 const failed = createDeadlineReconciler({ revision: () => revision, active: () => true,
@@ -84,7 +109,7 @@ assert.equal(twice.manifest.application[0].receiver.length, 1, 'CNG plugin is id
 const receiver = twice.manifest.application[0].receiver[0];
 assert.equal(receiver.$['android:exported'], 'false');
 assert.deepEqual(receiver['intent-filter'][0].action.map(item => item.$['android:name'].split('.').at(-1)),
-  ['BOOT_COMPLETED', 'USER_UNLOCKED', 'TIME_SET', 'TIMEZONE_CHANGED', 'MY_PACKAGE_REPLACED']);
+  ['BOOT_COMPLETED', 'TIME_SET', 'TIMEZONE_CHANGED', 'MY_PACKAGE_REPLACED']);
 assert.equal(twice.manifest['uses-permission'].length, 1);
 assert.equal(twice.manifest['uses-permission'][0].$['android:name'], 'android.permission.RECEIVE_BOOT_COMPLETED');
 assert.ok(readFileSync(new URL('../app.config.js', import.meta.url), 'utf8').includes('./plugins/with-deadline-wake'));

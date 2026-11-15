@@ -93,8 +93,11 @@ internal object DeadlineStore {
 
   @Synchronized fun put(context: Context, scope: String, slot: String, identity: Long, lifetime: Long) {
     check(unlocked(context))
-    rearm(context, DeadlinePolicy.put(read(context), scope, slot, identity, lifetime,
-      System.currentTimeMillis(), SystemClock.elapsedRealtime(), boot(context)), false)
+    val current = read(context)
+    val next = DeadlinePolicy.put(current, scope, slot, identity, lifetime,
+      System.currentTimeMillis(), SystemClock.elapsedRealtime(), boot(context))
+    if (next == current) return // every record read re-arms its own expiry; nothing changed, so no write
+    rearm(context, next, false)
   }
   @Synchronized fun cancel(context: Context, scope: String, slot: String) {
     rearm(context, DeadlinePolicy.cancel(read(context), scope, slot), false)
@@ -119,12 +122,18 @@ internal object DeadlineStore {
 
 class DeadlineWakeReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action !in setOf(DeadlineStore.ACTION, Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_USER_UNLOCKED,
+    // USER_UNLOCKED is an implicit broadcast that manifest receivers do not get; BOOT_COMPLETED arrives after unlock.
+    if (intent.action !in setOf(DeadlineStore.ACTION, Intent.ACTION_BOOT_COMPLETED,
         Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_MY_PACKAGE_REPLACED)) return
     // Never start tracking, presence, network requests, services or command replay from a receiver.
-    try { DeadlineStore.receive(context, intent) } catch (error: Exception) {
-      android.util.Log.w("DeadlineWake", "Deadline re-arm unavailable", error)
-    }
+    // File and binder work stays off the main thread; goAsync keeps the process alive until it finishes.
+    val result = goAsync()
+    val app = context.applicationContext
+    Thread {
+      try { DeadlineStore.receive(app, intent) } catch (error: Exception) {
+        android.util.Log.w("DeadlineWake", "Deadline re-arm unavailable", error)
+      } finally { result.finish() }
+    }.start()
   }
 }
 

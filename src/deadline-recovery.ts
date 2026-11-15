@@ -10,9 +10,9 @@ type IO = {
 
 /** Coalesce duplicate wakes; only an active, unchanged session can acknowledge fresh reads. */
 export function createDeadlineReconciler(io: IO) {
-  let running: Promise<void> | null = null;
-  return () => {
-    if (running) return running;
+  let running: Promise<void> | null = null, again = false;
+  const run = (): Promise<void> => {
+    if (running) { again = true; return running; } // a wake during a run (clock change, new session) gets its own pass
     const revision = io.revision();
     const valid = () => io.active() && revision === io.revision();
     running = (async () => {
@@ -21,7 +21,11 @@ export function createDeadlineReconciler(io: IO) {
       if (!wake || !valid()) return;
       await io.reconcile();
       if (valid()) await io.acknowledge(wake);
-    })().finally(() => { running = null; });
+    })().finally(() => {
+      running = null;
+      if (again) { again = false; void run().catch(() => {}); }
+    });
     return running;
   };
+  return run;
 }

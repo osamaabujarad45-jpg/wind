@@ -64,6 +64,8 @@ export function createProtectedRecovery(io: IO) {
           throw new Error('recovery_record_unavailable', { cause: error });
         }
         // Re-opening an older install arms its original expiry, never a fresh lifetime.
+        guard(revision);
+        if (!await same(token)) throw new Error('session_changed');
         const remaining = envelope.expiresAt - io.now();
         if (remaining > 0) await deadline(scope, slot, envelope.expiresAt, remaining);
         guard(revision);
@@ -99,7 +101,11 @@ export function createProtectedRecovery(io: IO) {
       if (await io.credential() !== ended) return;
       try {
         const scope = await namespace(ended); for (const slot of slots) await io.write(key(slot, scope), null);
-      } finally { await io.clearDeadlines?.().catch(() => {}); } // native wake metadata belongs to the ended session only
+      } finally {
+        // Only reached for the session that ended. If another sign-in already took over, its first record replaces the
+        // native state (a new scope starts fresh) and a stale wake never matches its scope, so nothing leaks across.
+        await io.clearDeadlines?.().catch(() => {});
+      }
     }); },
   };
 }

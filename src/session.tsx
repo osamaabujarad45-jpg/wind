@@ -178,14 +178,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // A14: an Android alarm, reboot, unlock, clock or timezone change only asks this foreground session to re-read the
   // account and drop the saved summary. It never replays a command, sends a write or revives an assignment.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || phoneTest) return; // phone-test refresh signs in again; those builds keep plain foreground recovery
     const reconcile = createDeadlineReconciler({
       revision: apiSessionRevision, active: () => AppState.currentState === 'active' && !!apiSessionCredential(),
       read: pendingRecoveryWake, acknowledge: acknowledgeRecoveryWake,
-      reconcile: async () => {
-        setOfflineSummary(null); // a clock change must not keep a private summary past its deadline
-        await refresh(true); // throws on failure, so the wake stays pending for the next foreground
-      },
+      // Success clears the saved summary and re-reads the account; a failure throws, so the wake stays pending.
+      reconcile: () => refresh(true),
     });
     const check = () => { void reconcile().catch(() => {}); };
     check();

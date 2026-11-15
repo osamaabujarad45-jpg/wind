@@ -14,10 +14,13 @@ const base64 = (text: string) => btoa(encodeURIComponent(text).replace(/%([0-9A-
 const bytesFromBase64 = (text: string) => Uint8Array.from(atob(text), ch => ch.charCodeAt(0));
 const fromBase64 = (text: string) => decodeURIComponent(Array.from(atob(text), ch => `%${ch.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
 
+// One formula for the record namespace and the native wake scope: if they drifted, wakes would never match.
+const recoveryNamespace = (token: string) => digestStringAsync(CryptoDigestAlgorithm.SHA256, `wind-recovery-slot-v1:${token}`);
+
 export const recoveryStorage = createProtectedRecovery({
   read: key => storage.get(key, true), write: (key, value) => storage.set(key, value, true),
   credential: async () => apiSessionCredential(), currentCredential: async token => await storage.get('token', true) === token,
-  namespace: token => digestStringAsync(CryptoDigestAlgorithm.SHA256, `wind-recovery-slot-v1:${token}`),
+  namespace: token => recoveryNamespace(token),
   revision: apiSessionRevision, now: () => Date.now() + serverOffset(),
   deadline: deadlineWake.update, clearDeadlines: deadlineWake.clear,
   seal: async (plaintext, token, slot) => {
@@ -33,7 +36,7 @@ export async function pendingRecoveryWake() {
   if (!token) return null;
   const wake = await deadlineWake.pending();
   if (!wake || revision !== apiSessionRevision() || await storage.get('token', true) !== token) return null;
-  const scope = await digestStringAsync(CryptoDigestAlgorithm.SHA256, `wind-recovery-slot-v1:${token}`);
+  const scope = await recoveryNamespace(token);
   return revision === apiSessionRevision() && wake.scope === scope ? wake : null;
 }
 
