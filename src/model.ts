@@ -94,6 +94,9 @@ export const defaultSettings = {
   commission: 0.15, proCommission: 0.05,
   plusPrice: 29, proPrice: 99,
   perMinute: 0.25, nightExtra: 0.2, // smart price (SPEC-driver-offers.md): extra minutes, night share
+  // Most a driver may owe Wind in cash commission, counting jobs in hand; past it, no new job until a handover.
+  // ₪150 is about 50 standard parcels, a busy week. Sources checked 15 Nov 2026: docs/REA/2026-11-15-competitor-apps-vs-wind.md.
+  driverCashCap: 150,
 };
 export type Settings = typeof defaultSettings;
 export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
@@ -107,7 +110,7 @@ export const settingCeilings: Record<keyof Settings, number> = {
   parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100,
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
-  plusPrice: 1000, proPrice: 2000,
+  plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
 };
 // Returns the offending key, or null when every value is storable. `Number.isFinite`
 // rejects the NaN an empty or non-numeric field produces; `<= 0` rejects the 0 that a

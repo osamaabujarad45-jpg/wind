@@ -40,3 +40,23 @@ owner decision on the driver cash cap. Feature-count parity is not the release t
   maps, whitelist their five package/SHA-1 pairs (`LEDGER.md`). Wind itself does not use that key.
 - **Cash cap:** decide whether drivers holding more than ₪1,000 (or another amount) of uncollected cash are blocked from
   new cash jobs. If yes, it is a small change plus a two-vendor review.
+
+## Driver cash cap: how others do it (checked 15 November 2026), and what Wind applied
+
+The owner asked for this item to be researched and applied. Public help pages, read through an Exa search the same day:
+
+| Service | Rule | Source |
+|---|---|---|
+| Wolt (couriers) | Cash belongs to Wolt and must be handed over at least weekly **or before €200**, otherwise the courier cannot go online | <https://www.wolt.team/cash-orders> |
+| Cedar GO (COD-first) | Max cash in hand **USD 100**; settle before taking more COD jobs that would pass it | <https://cedargo.app/help-center-post/driver-cash-collection-limits> |
+| Upzaar | Counts cash held **plus cash still to collect on the current job**; a cash order is offered only if it fits; shows "Left before limit" and a "Cash limit reached" banner | <https://www.upzaar.com/help/drivers/cash-limit/> |
+| KOHME | Amber warning first, then a red "Cash limit reached" block until the payment is approved; also limits how long cash is held | <https://kohme.delivery/en/help/riders/d-cash-warning-and-block/> |
+| Bolt Food | Separates Balance, Debt (cash owed to Bolt) and Cash in hand | <https://bolt.eu/en/food/courier/guide/how-cash-works-at-bolt-food/> |
+| Careem | Captains: "If you go over the limit, you'll get cash blocked" (app copy, `research_notes/REA-2026-11-13-reference-apps/CAREEM.md` §10.2); customers with a negative balance cannot book, or pay it on the next trip | <https://help.careem.com/hc/en-us/articles/360001609447-How-does-an-account-get-blocked-or-suspended> |
+
+**Applied (PR #34):**
+- Wind's driver keeps the fare and owes Wind the commission, so the cap counts what the driver owes plus the commission on jobs in hand and on the new job (the Upzaar rule, on Wind's money).
+- The default is ₪150 (`settings.driverCashCap`), about 50 standard parcels at 15%, so roughly a busy week, in line with Wolt's weekly rule. Admins can change it under Settings → Cash limit.
+- Every way a driver gets work checks it: the board, dispatch offers, the driver's own price offer, and a customer accepting that offer.
+- Only a confirmed handover makes room. The driver's cash card shows what is left, or that the limit is reached.
+- Not applied: a time limit on held cash (KOHME, Wolt weekly). Add it if handovers drift past a week in the pilot.
