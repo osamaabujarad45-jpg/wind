@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import ts from 'typescript';
+import * as notice from '../src/phone/notice.ts'; // pure, so the real one runs
 import { createProtectedRecovery } from '../src/protected-recovery.ts';
 
 const source = ts.transpileModule(readFileSync(new URL('../src/session.tsx', import.meta.url), 'utf8'),
@@ -69,7 +70,7 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     './runtime-config': { resetRuntime() {}, configureRuntime() {}, effectiveRuntime: () => ({ values: { offlineMaxAgeMs: 60_000 } }) }, './client-diagnostics': { clientDiagnostics: { record() {}, clear() {} } },
     './diagnostic-client': { startDiagnosticDelivery: () => () => {} }, './phone-test': { phoneTestConfig: () => null },
     './push': { disablePush: noop, dropLocalPush: noop }, './native-push': { registerNativePush: noop, unregisterNativePush: noop },
-    './copy': { copy: { ar: { sessionEndedNotice: 'ended' }, en: { sessionEndedNotice: 'ended' } } }, './phone/notice': { setAuthNotice: noop },
+    './copy': { copy: { ar: { sessionEndedNotice: 'ended' }, en: { sessionEndedNotice: 'ended' } } }, './phone/notice': notice,
     './background-location': { stopBackgroundLocation: noop }, './driver-presence-runtime': { stopPresence: async () => { if (pausePresence) { pausePresence.started(); await pausePresence.promise; } }, validatePresenceContextOnLaunch: noop },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; }, Date,
@@ -142,6 +143,7 @@ const gate = () => { let resolve, started; const promise = new Promise(r => { re
   await h.render().refresh();
   assert.equal(h.render().offline, false, 'background refresh must stay quiet under a loaded form');
   await assert.rejects(h.render().refresh(true), /network/, 'explicit availability Retry must report failure');
+  assert.equal(notice.takeAuthNotice(), null, 'a network failure is not a session end');
   assert.equal(h.render().me.user.id, 1);
   assert.equal((await h.read('command')).order, 'pending');
   h.close();
@@ -215,7 +217,9 @@ for (const platform of ['android', 'web']) {
   h.render(); await settle();
   await h.seed('command', { order: 'pending' });
   await h.seed('summary', { order: 'shown' });
+  notice.setAuthNotice('stale');
   await h.render().signOut();
+  assert.equal(notice.takeAuthNotice(), null, 'a normal sign-out drops a pending notice');
   assert.equal(h.stored('token'), null);
   assert.equal(h.credential(), null);
   assert.equal(h.render().me, null);
@@ -323,6 +327,8 @@ for (const platform of ['android', 'web']) {
   h.render(); await settle();
   await h.seed('command', { order: 'pending' });
   h.expireSession(); await settle();
+  assert.equal(notice.takeAuthNotice(), 'ended', `${platform}: a 401 leaves the sign-in notice, once`);
+  assert.equal(notice.takeAuthNotice(), null);
   assert.equal(h.render().me, null, `${platform}: a 401 ends the session on screen`);
   assert.equal(h.credential(), null);
   assert.equal(h.stored('token'), null);

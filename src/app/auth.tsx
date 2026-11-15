@@ -50,11 +50,12 @@ export default function Auth() {
   const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
   const [entraPrepareFailed, setEntraPrepareFailed] = useState(false);
   const [entraTry, setEntraTry] = useState(0);
-  const [error, setError] = useState('');
+  const [error, setErrorText] = useState('');
+  const setError = (text: string) => { setBlocked(false); setErrorText(text); }; // every message but a blocked one drops the support button
   const showError = (e: unknown) => {
     const isBlocked = errorCode(e) === 'blocked';
+    setErrorText(isBlocked && !SUPPORT_URL ? c.err_blocked_nosupport : err(e));
     setBlocked(isBlocked);
-    setError(isBlocked && !SUPPORT_URL ? c.err_blocked_nosupport : err(e));
   };
   // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);

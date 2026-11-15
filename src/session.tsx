@@ -7,7 +7,7 @@ import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-cl
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
 import { recoveryStorage } from './recovery-storage';
 import { copy } from './copy';
-import { setAuthNotice } from './phone/notice';
+import { setAuthNotice, takeAuthNotice } from './phone/notice';
 import type { OfflineSummary } from './offline-summary';
 import { retryMapProviders } from './map-failures';
 import { configureRuntime, effectiveRuntime, resetRuntime } from './runtime-config';
@@ -235,6 +235,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void registerNativePush(language);
     },
     signOut: async () => {
+      takeAuthNotice(); // a normal sign-out never shows a leftover session-ended message
       const endedCredential = apiSessionCredential();
       invalidateApiSessionActions();
       const revision = apiSessionRevision();
