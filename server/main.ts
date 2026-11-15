@@ -3401,8 +3401,13 @@ route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => 
   }));
 });
 
-route('POST', '/api/admin/settings', async ({ user, body }) => {
+route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } }) => {
   need(user, 'admin');
+  // `expected` is the value each changed key had when this admin's review was built. If the stored value has moved
+  // since, another admin saved first: refuse, so a review is never written over a change it did not show.
+  // Clients that predate it send no `expected` and keep the old behaviour.
+  if (expected !== undefined && (!expected || typeof expected !== 'object' || Array.isArray(expected))) fail(400, 'invalid_setting');
+  for (const key of Object.keys(expected ?? {})) if (!(key in body)) fail(400, 'invalid_setting');
   for (const [key, value] of Object.entries(body)) {
     const n = Number(value);
     if (!(key in defaultSettings) || !Number.isFinite(n) || n < 0 || (fractionSettings.includes(key as keyof Settings) && n >= 1)) fail(400, 'invalid_setting');
@@ -3416,6 +3421,7 @@ route('POST', '/api/admin/settings', async ({ user, body }) => {
     // Serialize saves before the snapshot, including keys that have no stored row yet.
     if (persistence.backend === 'postgres') await one("SELECT pg_advisory_xact_lock(hashtextextended('wind:admin_settings',0))");
     const previous = await settings();
+    for (const [key, value] of Object.entries(expected ?? {})) if (previous[key as keyof Settings] !== Number(value)) fail(409, 'settings_changed');
     const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => previous[key as keyof Settings] !== Number(value))
       .map(([key, value]) => [key, { old: previous[key as keyof Settings], new: Number(value) }]));
     for (const [key, value] of Object.entries(body)) (await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, Number(value)));

@@ -43,7 +43,10 @@ function screen(file, language, { data = {}, me = {} } = {}) {
       return { ...me, settings: { ...serverSettings } };
     }
     if (path === '/admin/settings') {
-      serverSettings = { ...serverSettings, ...body };
+      // The server's compare-and-set: refuse, before anything is written, if a reviewed value has moved.
+      const { expected = {}, ...writes } = body;
+      if (Object.entries(expected).some(([key, value]) => serverSettings[key] !== value)) throw new ApiError('settings_changed');
+      serverSettings = { ...serverSettings, ...writes };
       if (holding) { holding = false; await new Promise(resolve => { releaseHeld = resolve; }); }
       if (lost) throw new Error('network');
       return { ...serverSettings };
@@ -135,7 +138,7 @@ for (const language of ['ar', 'en']) {
     assert.equal(review.yesLabel, c.save);
     assert.equal(review.noLabel, c.cancel);
     review.yes(); await flush();
-    assert.deepEqual(config.calls, [{ path: '/admin/settings', body: { parcelPrice: 12 }, method: 'POST' }], 'one POST carrying only the reviewed key');
+    assert.deepEqual(config.calls, [{ path: '/admin/settings', body: { parcelPrice: 12, expected: { parcelPrice: 10 } }, method: 'POST' }], 'one POST carrying only the reviewed key');
     assert.equal(config.server().parcelPrice, 12);
     assert.ok(shows(config.render(), c.saved));
   }
@@ -156,7 +159,7 @@ for (const language of ['ar', 'en']) {
     await tap(config, c.save);
     config.concurrentServerEdit({ commission: 0.2 });
     config.dialogs[0].yes(); await flush();
-    assert.deepEqual(config.calls[0].body, { parcelPrice: 12 }, 'only the reviewed key is sent');
+    assert.deepEqual(config.calls[0].body, { parcelPrice: 12, expected: { parcelPrice: 10 } }, 'only the reviewed key is sent');
     assert.equal(config.server().commission, 0.2, 'the concurrent commission edit survives');
     assert.equal(field(config.render(), c.set_commission).value, '0.2', 'the form takes the server state from the reply');
   }
@@ -172,6 +175,26 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
+  }
+
+  // Same setting changed by another admin after this form opened: the server refuses the reviewed write, nothing is
+  // overwritten, and the next review starts from the server's current value.
+  {
+    const config = screen('settings', language, { me: { settings: settingsBase } });
+    config.concurrentServerEdit({ parcelPrice: 15 });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 12, expected: { parcelPrice: 10 } });
+    assert.equal(config.server().parcelPrice, 15, 'refused: the other admin change is not overwritten');
+    assert.ok(shows(config.render(), 'settings_changed'), 'the refusal is shown');
+    assert.ok(!shows(config.render(), c.saved));
+    await tap(config, c.save);
+    assert.equal(config.calls.at(-1).path, '/me', 'the next review is built from the server value');
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 15 ₪ → 12 ₪` }));
+    config.dialogs.at(-1).yes(); await flush();
+    assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 12, expected: { parcelPrice: 15 } });
+    assert.equal(config.server().parcelPrice, 12);
   }
 
   // Once a save is confirmed, a later save with no new edits does not re-send the old value over another admin's change.
@@ -225,7 +248,7 @@ for (const language of ['ar', 'en']) {
     assert.ok(!shows(config.render(), c.saved), 'no "Saved" before the reversal is written');
     config.dialogs[1].yes(); await flush();
     assert.equal(config.server().parcelPrice, 10, 'the confirmed reversal reaches the server');
-    assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).map(call => call.body), [{ parcelPrice: 12 }, { parcelPrice: 10 }]);
+    assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).map(call => call.body), [{ parcelPrice: 12, expected: { parcelPrice: 10 } }, { parcelPrice: 10, expected: { parcelPrice: 12 } }]);
   }
 
   // A lost reply, then another admin edits a field this admin did not touch: the next save sends only the
@@ -241,7 +264,7 @@ for (const language of ['ar', 'en']) {
     await tap(config, c.save);
     assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 14 ₪` }), 'only the edited field is reviewed');
     config.dialogs.at(-1).yes(); await flush();
-    assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).at(-1).body, { parcelPrice: 14 }, 'the untouched commission is not sent');
+    assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).at(-1).body, { parcelPrice: 14, expected: { parcelPrice: 12 } }, 'the untouched commission is not sent');
     assert.equal(config.server().commission, 0.2, 'the other admin commission survives');
   }
 

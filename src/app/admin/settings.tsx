@@ -34,7 +34,9 @@ export default function AdminSettings() {
   const [bad, setBad] = useState(''); // the setting the server would refuse: its own field says so
 
   // The write carries exactly the keys the admin reviewed, so a concurrent edit to any other key survives.
-  async function commit(patch: Record<string, number>) {
+  // `expected` is the value each of those keys had in the review: the server refuses the write if another admin
+  // has changed one of them since, so a review never overwrites a change it did not show.
+  async function commit(patch: Record<string, number>, expected: Record<string, number>) {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -42,7 +44,7 @@ export default function AdminSettings() {
     setMessage('');
     try {
       // The reply is the server's settings after this write: it becomes the comparison baseline.
-      const saved = await api<Settings>('/admin/settings', patch, 'POST');
+      const saved = await api<Settings>('/admin/settings', { ...patch, expected }, 'POST');
       setBaseline(saved);
       setValues(toText(saved));
       setTouched({});
@@ -96,7 +98,8 @@ export default function AdminSettings() {
     const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : `${value} ₪`;
     const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
     const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
-    confirm(fill(c.settingsReview, { changes: changes.join('\n') }), () => void commit(patch), c.save, c.cancel);
+    const expected = Object.fromEntries(keys.map(key => [key, before[key]]));
+    confirm(fill(c.settingsReview, { changes: changes.join('\n') }), () => void commit(patch, expected), c.save, c.cancel);
   }
 
   return <Screen>

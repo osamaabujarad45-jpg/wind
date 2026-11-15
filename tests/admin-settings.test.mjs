@@ -69,7 +69,21 @@ try {
   await call('/admin/settings', { token, body: { parcelPrice: 500 } });
   assert.equal((await saved()).parcelPrice, 500);
 
-  console.log('admin settings: refuses 0 and over-ceiling values by name, valid values save');
+  // Compare-and-set: a save built on a value another admin already changed is refused and writes nothing.
+  assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 25, expected: { parcelPrice: 20 } }, expect: 409 })).error, 'settings_changed');
+  assert.equal((await saved()).parcelPrice, 500);
+  // The reviewed value still matching, the same write goes through and carries only its own key.
+  await call('/admin/settings', { token, body: { parcelPrice: 25, expected: { parcelPrice: 500 } } });
+  assert.deepEqual([(await saved()).parcelPrice, (await saved()).commission], [25, 0.2]);
+  // `expected` must name keys the write sets, and must be an object.
+  assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 30, expected: { commission: 0.2 } }, expect: 400 })).error, 'invalid_setting');
+  assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 30, expected: 5 }, expect: 400 })).error, 'invalid_setting');
+  assert.equal((await saved()).parcelPrice, 25);
+  // A client that sends no `expected` keeps the old behaviour.
+  await call('/admin/settings', { token, body: { parcelPrice: 26 } });
+  assert.equal((await saved()).parcelPrice, 26);
+
+  console.log('admin settings: refuses 0 and over-ceiling values by name, valid values save, stale reviews are refused');
 } finally {
   await shutdown();
   rmSync(dir, { recursive: true, force: true });
