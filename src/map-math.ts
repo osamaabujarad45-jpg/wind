@@ -99,6 +99,13 @@ export const labelField = (language: 'ar' | 'en') => language === 'ar'
   ? ['coalesce', ['get', 'name:ar'], ['get', 'name:en'], ['get', 'name:latin'], localName]
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], localName];
 
+/** "Less than N minutes" wording for a short estimate: N from the upper bound (3, 5 or 10), else null. Missing, negative or non-finite input gets no bucket. */
+export const etaBucket = (hiMinutes: number | null | undefined): 3 | 5 | 10 | null =>
+  hiMinutes == null || !Number.isFinite(hiMinutes) || hiMinutes < 0 ? null : hiMinutes < 3 ? 3 : hiMinutes < 5 ? 5 : hiMinutes < 10 ? 10 : null;
+
+/** Arrival, not a range: at most a minute away and no checkpoint delay. The header chip, map label and EtaLine all read this rule. */
+export const arrivingNow = (loMinutes: number, slow: boolean) => loMinutes <= 1 && !slow;
+
 /** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
 

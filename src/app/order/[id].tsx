@@ -11,13 +11,13 @@ import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } 
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
-import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, parcelPickupFarKm, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
-import { kmLabel } from '../../map-math';
+import { arrivingNow, kmLabel } from '../../map-math';
 import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
@@ -123,6 +123,9 @@ export default function OrderScreen() {
   const role = me.user.role;
   const isCustomer = role === 'customer', isDriver = role === 'driver', isAdmin = role === 'admin';
   const mine = isDriver && order.driverId === me.user.id;
+  const toPickup = ['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine;
+  // Header chip and map label: the same words as EtaLine (arrival first, then the shared short wording).
+  const etaChip = ([lo, hi]: [number, number]) => arrivingNow(lo, alerts.length > 0) ? (toPickup ? c.arrivingPickup : c.arrivingDropoff) : etaShort(c, [lo, hi], alerts.length > 0);
   const cancelled = order.status === 'cancelled';
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
@@ -342,7 +345,7 @@ export default function OrderScreen() {
         </Row>}
         {live && eta && location && !location.stale && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           {/* "the driver arrives" is for the other parties; the driver reads the neutral arrival line */}
-          <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine} />
+          <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={toPickup} />
         </View>}
         {live && order.sharedRun && location && !location.stale && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
@@ -607,7 +610,7 @@ export default function OrderScreen() {
   if (live) return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
       driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
-      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` }) : null}
+      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? etaChip(eta) : null}
       stopLabels={{ pickup: order.pickupNote || from[language], dropoff: order.dropoffNote || to[language] }} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       {maneuver ? <View accessibilityLiveRegion="polite" style={[styles.nav, { flexDirection: row }]}>
@@ -658,7 +661,7 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             <Pulse color={serviceMeta[order.service].color} size={8} />
             <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="title" style={{ color: palette.olive }}>{fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` })}</Txt>}
+            {eta && location && !location.stale && <Txt variant="title" numberOfLines={1} style={{ color: palette.olive }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
