@@ -24,7 +24,7 @@ if (testVariant) {
   if (sandbox ? !!testRole || process.env.WIND_TEST_IDENTIFIER || process.env.WIND_TEST_PASSWORD : !['customer', 'driver', 'admin'].includes(testRole)) {
     throw new Error(sandbox ? 'The ordinary sandbox variant carries no role or credentials.' : 'Phone test roles require an explicitly local debug build.');
   }
-  if (process.env.WIND_LOCAL_TEST !== '1' || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
+  if (process.env.WIND_LOCAL_TEST !== '1' || process.env.EAS_BUILD || !['', '0', undefined].includes(process.env.WIND_RELEASE)) {
     throw new Error('Phone test roles require an explicitly local debug build.');
   }
   let testUrl;
@@ -75,7 +75,8 @@ module.exports = ({ config }) => ({
   }),
   extra: { ...config.extra, ...(phoneTest && { phoneTest }), googleMaps },
   plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications',
-    ['react-native-maps', { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
+    // A test variant never carries a Google key, even when one is in the environment.
+    ['react-native-maps', testVariant ? {} : { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
     './plugins/with-release-guard',
     ...(testVariant ? ['./plugins/with-phone-test'] : [])],
 });

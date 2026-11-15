@@ -73,7 +73,7 @@ foreach ($phoneFolder in @('src', 'assets', 'plugins', 'vendor', 'public')) {
 
 $phoneEnvNames = @('ANDROID_HOME', 'ANDROID_SDK_ROOT', 'JAVA_HOME', 'CI', 'NODE_ENV', 'EXPO_PUBLIC_API_URL',
   'WIND_LOCAL_TEST', 'WIND_TEST_ROLE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_TEST_SANDBOX', 'WIND_RELEASE', 'EAS_BUILD',
-  'GOOGLE_MAPS_API_KEY', 'EXPO_NO_GIT_STATUS', 'GRADLE_USER_HOME', 'CMAKE_OBJECT_PATH_MAX')
+  'GOOGLE_MAPS_API_KEY', 'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'EXPO_NO_GIT_STATUS', 'GRADLE_USER_HOME', 'CMAKE_OBJECT_PATH_MAX')
 $phoneSavedEnv = @{}
 foreach ($phoneEnvName in $phoneEnvNames) { $phoneSavedEnv[$phoneEnvName] = [Environment]::GetEnvironmentVariable($phoneEnvName, 'Process') }
 $phoneArtifactsPath = Join-Path $phoneOutput 'artifacts.json'
@@ -95,7 +95,7 @@ try {
   $env:CMAKE_OBJECT_PATH_MAX = '250'
   $env:EXPO_PUBLIC_API_URL = [string]$phoneProvision.apiUrl
   $env:WIND_LOCAL_TEST = '1'
-  Remove-Item Env:WIND_RELEASE, Env:EAS_BUILD, Env:GOOGLE_MAPS_API_KEY -ErrorAction SilentlyContinue
+  Remove-Item Env:WIND_RELEASE, Env:EAS_BUILD, Env:GOOGLE_MAPS_API_KEY, Env:GOOGLE_MAPS_ANDROID_KEY, Env:GOOGLE_MAPS_IOS_KEY -ErrorAction SilentlyContinue
   Push-Location -LiteralPath $phoneBuild
   try {
     $phoneLockHash = (Get-FileHash -LiteralPath (Join-Path $phoneBuild 'package-lock.json') -Algorithm SHA256).Hash

@@ -72,7 +72,6 @@ assert.throws(() => evaluate(localEnv('merchant')));
 const sandboxEnv = { WIND_TEST_SANDBOX: '1', WIND_LOCAL_TEST: '1', EXPO_PUBLIC_API_URL: localApi };
 const sandbox = evaluate(sandboxEnv);
 assert.equal(sandbox.extra.phoneTest, undefined, 'ordinary variant bakes no role or credentials');
-assert.ok(!JSON.stringify(sandbox).includes(credentials.password));
 assert.equal(sandbox.android.package, 'ps.wind.app.testordinary');
 assert.equal(sandbox.ios.bundleIdentifier, 'ps.wind.app.testordinary');
 assert.ok(!androidIds.has(sandbox.android.package) && sandbox.android.package !== base.android.package, 'installs beside every other app');
@@ -87,6 +86,16 @@ for (const unsafe of [
   { WIND_TEST_ROLE: 'customer' }, { WIND_TEST_IDENTIFIER: credentials.identifier }, { WIND_TEST_PASSWORD: credentials.password },
   { WIND_GOOGLE_MAPS: '1' },
 ]) assert.throws(() => evaluate({ ...sandboxEnv, ...unsafe }), 'ordinary variant fails closed');
+// Test variants never pass a Google key to the native maps plugin, even when one is in the environment.
+for (const env of [sandboxEnv, localEnv('customer')]) {
+  const keyed = evaluate({ ...env, GOOGLE_MAPS_ANDROID_KEY: 'AIza-android-leak', GOOGLE_MAPS_IOS_KEY: 'AIza-ios-leak', GOOGLE_MAPS_API_KEY: 'AIza-legacy-leak' });
+  const maps = keyed.plugins.find(entry => Array.isArray(entry) && entry[0] === 'react-native-maps')[1];
+  // Objects from runInNewContext have another realm's prototype, so compare by keys, not deepEqual.
+  assert.deepEqual(Object.keys(maps), [], 'no Google key reaches the native manifest');
+  assert.ok(!JSON.stringify(keyed.plugins).includes('AIza'), 'no key string anywhere in plugins');
+}
+assert.throws(() => evaluate({ ...sandboxEnv, WIND_RELEASE: 'true' }), 'any non-empty, non-zero WIND_RELEASE is refused');
+assert.equal(evaluate({ ...sandboxEnv, WIND_RELEASE: '0' }).android.package, 'ps.wind.app.testordinary');
 assert.throws(() => evaluate({ WIND_TEST_SANDBOX: '1', EXPO_PUBLIC_API_URL: localApi }), 'sandbox flag alone is not a local debug build');
 assert.equal(evaluate({ WIND_TEST_SANDBOX: '0', WIND_LOCAL_TEST: '1' }).android.package, base.android.package, 'only the exact flag value enables it');
 

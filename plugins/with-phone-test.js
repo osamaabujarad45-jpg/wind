@@ -10,12 +10,13 @@ module.exports = config => {
   const role = sandbox ? 'ordinary' : process.env.WIND_TEST_ROLE;
   if (!role) return config;
   if ((sandbox ? !!process.env.WIND_TEST_ROLE : !['customer', 'driver', 'admin'].includes(role)) || process.env.WIND_LOCAL_TEST !== '1'
-      || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
+      || process.env.EAS_BUILD || !['', '0', undefined].includes(process.env.WIND_RELEASE)
+      || (sandbox && (process.env.WIND_TEST_IDENTIFIER || process.env.WIND_TEST_PASSWORD))) {
     throw new Error('Phone test builds require a valid WIND_TEST_ROLE and WIND_LOCAL_TEST=1, outside EAS/release builds.');
   }
   let api;
   try { api = new URL(process.env.EXPO_PUBLIC_API_URL); } catch { /* rejected below */ }
-  if (!api || api.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(api.hostname)
+  if (api?.origin !== 'http://127.0.0.1:4191' || api.pathname !== '/'
       || api.username || api.password || api.search || api.hash) {
     throw new Error('Phone test builds require a loopback HTTP API forwarded over USB.');
   }
