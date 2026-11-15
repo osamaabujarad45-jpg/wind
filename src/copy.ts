@@ -1122,6 +1122,13 @@ const ar = {
   chartMax: 'الأعلى',
   openOrder: 'فتح الطلب',
   noSubscriptions: 'لا توجد طلبات اشتراك',
+  // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  sharedLocationUse: 'استخدم هذا الموقع المشارك',
+  sharedLocationNoLink: 'تعذّر قراءة هذا الرابط. الصق رابط خرائط Google كاملاً أو الإحداثيات.',
+  sharedLocationRange: 'هذه الإحداثيات خارج النطاق.',
+  sharedLocationOutside: 'هذه النقطة خارج منطقة الخدمة.',
+  sharedLocationShortCode: 'أضف اسم المدينة بعد الرمز القصير، مثل: CWC8+R9 رام الله، أو الصق الرمز الكامل.',
+  sharedLocationBadCode: 'رمز Plus Code هذا غير صالح.',
 };
 
 export type CopyKey = keyof typeof ar;
@@ -2224,6 +2231,13 @@ const en: Copy = {
   chartMax: 'Max',
   openOrder: 'Open order',
   noSubscriptions: 'No plan requests',
+  // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  sharedLocationUse: 'Use this shared location',
+  sharedLocationNoLink: 'Could not read this link. Paste the full Google Maps link or the coordinates.',
+  sharedLocationRange: 'These coordinates are out of range.',
+  sharedLocationOutside: 'This point is outside the served area.',
+  sharedLocationShortCode: 'Add the town after a short Plus Code, e.g. "CWC8+R9 Ramallah", or paste the full code.',
+  sharedLocationBadCode: 'This Plus Code is not valid.',
 };
 
 export const copy = { ar: ar as Copy, en };

@@ -35,6 +35,7 @@ import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
+import { registerPlaceLinkRoutes } from './domain/place-link.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
@@ -2917,6 +2918,7 @@ route('GET', '/api/route', async ({ user, query }) => {
 // Map search (real OpenStreetMap places, server/domain/place-search.ts).
 registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('place-search', id) }, process.env.GEOCODER_URL || undefined);
 registerPlaceIndexRoutes(route, { fail, limit, limitKey: id => identityKey('place-suggest', id) });
+registerPlaceLinkRoutes(route, { fail, limit, limitKey: id => identityKey('place-link', id) });
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
 // module; fares, feasibility and checkpoint policy keep reading the OSRM route, so it never sets money.

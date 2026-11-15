@@ -33,7 +33,7 @@ console.log('Booking manual map gesture cancels pending location and fences a la
 
 // Choosing manual placement is the intent change; it must not wait for the first map drag.
 const manual = source.slice(source.indexOf('  const applyPlace ='), source.indexOf('  const pinServed ='))
-  .replaceAll('which: TripField', 'which').replaceAll('place: TripPlace', 'place');
+  .replaceAll('which: TripField', 'which').replaceAll('place: TripPlace', 'place').replaceAll('shared?: Point', 'shared');
 for (const enter of ['openPin', 'town']) {
   let reply, requestSignal, loading = false, adopted = 0;
   const steps = [];

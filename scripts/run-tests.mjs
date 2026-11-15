@@ -15,6 +15,8 @@ const suites = [
   "client-diagnostics.test.mjs",
   "driver-recovery-api.test.mjs",
   "model.test.mjs",
+  "shared-location.test.mjs",
+  "place-link.test.mjs",
   "presentation.test.mjs",
   "driver-presence-card.test.mjs",
   "driver-presence.test.mjs",
