@@ -1,7 +1,7 @@
 import { deadlineMilliseconds, serverOffset } from '../api-clock';
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Keyboard, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -61,6 +61,14 @@ function BookForm() {
   const [pinZoom, setPinZoom] = useState(15);
   const [pinTyped, setPinTyped] = useState('');
   const [pinTypedError, setPinTypedError] = useState('');
+  // The pin panel sits on the map's bottom edge; the window does not resize under it (A53, 1.1.1 QA), so the keyboard would
+  // cover the coordinate field and its Move button. Lift the panel and the map buttons by the keyboard's height instead.
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', e => setKeyboardInset(e.endCoordinates.height));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardInset(0));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
   const [pinMoving, setPinMoving] = useState(false);
   const [pinLabel, setPinLabel] = useState<{ name: string; detail: string } | null>(null);
   const [pinNote, setPinNote] = useState(''); // a saved landmark keeps its words while its spot is confirmed
@@ -619,12 +627,12 @@ function BookForm() {
       <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.pinTop}>
         <View style={{ flexDirection: row }}><IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} onPress={() => setStep(routeChosen ? 'trip' : 'search')} /></View>
       </SafeAreaView>
-      <View style={[styles.locate, rtl ? { left: 16 } : { right: 16 }, { bottom: pinPanel + 14 }]}>
+      <View style={[styles.locate, rtl ? { left: 16 } : { right: 16 }, { bottom: pinPanel + keyboardInset + 14 }]}>
         <IconButton icon={locating ? 'hourglass-outline' : 'locate'} label={c.useLocation} disabled={locating} onPress={() => { void locate(); }} />
         <IconButton icon="add" label={c.pinZoomIn} disabled={!mapReady || pinZoom >= 18} onPress={() => { if (pinPoint) setPinCenter(pinPoint); setPinZoom(z => Math.min(18, z + 1)); }} />
         <IconButton icon="remove" label={c.pinZoomOut} disabled={!mapReady || pinZoom <= 8} onPress={() => { if (pinPoint) setPinCenter(pinPoint); setPinZoom(z => Math.max(8, z - 1)); }} />
       </View>
-      <SafeAreaView edges={['bottom']} style={styles.pinPanel} onLayout={e => setPinPanel(Math.ceil(e.nativeEvent.layout.height))}>
+      <SafeAreaView edges={keyboardInset ? [] : ['bottom']} style={[styles.pinPanel, { bottom: keyboardInset }]} onLayout={e => setPinPanel(Math.ceil(e.nativeEvent.layout.height))}>
         <Txt variant="micro">{pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}</Txt>
         <View accessibilityLiveRegion="polite" style={{ minHeight: 50, justifyContent: 'center', marginBottom: 8 }}>
           {pinMoving ? <ActivityIndicator color={palette.olive} style={{ alignSelf: rtl ? 'flex-end' : 'flex-start' }} />
