@@ -1169,9 +1169,15 @@ const ar = {
   err_partner_unavailable: 'خدمة الشريك غير متاحة حالياً.',
   err_pooling_unavailable: 'الطلبات المجمّعة غير متاحة حالياً.',
   err_route_unavailable: 'تعذّر حساب الطريق. حاول مرة أخرى.',
+  err_search_unavailable: 'البحث مشغول الآن. حاول بعد قليل.',
+  err_maps_unavailable: 'خدمة الخرائط غير متاحة الآن. حاول بعد قليل.',
+  err_cod_unavailable: 'الدفع عند الاستلام غير متاح لهذا الطلب في حالته الحالية.',
+  err_receipt_unavailable: 'الإيصال غير متاح لهذا الطلب بعد.',
+  err_custody_unavailable: 'لا يمكن تسجيل التسليم لهذا الطلب في حالته الحالية.',
   err_unauthorized: 'انتهت الجلسة. سجّل الدخول من جديد.',
   err_unavailable: 'الخدمة غير متاحة مؤقتاً. حاول بعد قليل.',
   err_generic: 'حدث خطأ. حاول مرة أخرى.',
+  err_feature_unavailable: 'هذه الميزة غير متاحة في هذه المرحلة من ويند.',
   errorRef: 'رقم البلاغ:',
   err_approval_required: 'إسقاط الدين يتطلب موافقة مالية معتمدة من شخص آخر قبل التسجيل.',
   err_approval_unsupported: 'إسقاط الدين يحتاج موافقة مسجّلة، ونظام الموافقات غير متاح في هذه النسخة.',
@@ -2367,9 +2373,15 @@ const en: Copy = {
   err_partner_unavailable: 'The partner service is not available right now.',
   err_pooling_unavailable: 'Shared runs are not available right now.',
   err_route_unavailable: 'The road route could not be calculated. Try again.',
+  err_search_unavailable: 'Search is busy right now. Try again in a moment.',
+  err_maps_unavailable: 'The map service is not available right now. Try again in a moment.',
+  err_cod_unavailable: 'Cash on delivery is not available for this order in its current state.',
+  err_receipt_unavailable: 'The receipt is not available for this order yet.',
+  err_custody_unavailable: 'Handover cannot be recorded for this order in its current state.',
   err_unauthorized: 'Your session ended. Sign in again.',
   err_unavailable: 'The service is temporarily unavailable. Try again shortly.',
   err_generic: 'Something went wrong. Try again.',
+  err_feature_unavailable: 'This feature is not available in this stage of Wind.',
   errorRef: 'Reference:',
   err_approval_required: 'Forgiving debt requires an approved finance request decided by someone else.',
   err_approval_unsupported: 'Debt forgiveness needs an approved request, and approvals are unavailable on this setup.',
@@ -2419,6 +2431,12 @@ const en: Copy = {
 };
 
 export const copy = { ar: ar as Copy, en };
+
+/** The message for an API error code. Fable SCOPE: a capability the pilot keeps switched off (409 *_unavailable) reads as
+ *  "not available in this stage", never as a fault; any other unknown code is the generic retry message. */
+export function errorText(language: keyof typeof copy, code: string): string {
+  return copy[language][`err_${code}` as CopyKey] ?? (code.endsWith('_unavailable') ? copy[language].err_feature_unavailable : copy[language].err_generic);
+}
 
 export function fill(template: string, values: Record<string, string | number>) {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
