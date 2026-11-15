@@ -95,10 +95,12 @@ const streetPoint = (row: Row, near: Point | null): Point => {
 export function suggestPlaces(query: string, lang: Lang, near: Point | null, limit = 8): SuggestHit[] {
   const whole = foldPlace(query), terms = whole.split(' ').filter(Boolean).map(stripAl), wholeKey = nameKey(whole);
   if (!terms.length) return [];
+  // A lone article is optional ("el bireh" finds "Albireh"), unless it is all that was typed.
+  const words = terms.filter(term => !ARTICLES.has(term)), required = words.length ? words : terms;
   const scored: { row: Row; point: Point; score: number }[] = [];
   for (const row of index().rows) {
     let exactWord = 0, ok = true;
-    for (const term of terms) {
+    for (const term of required) {
       let hit = false;
       // An article on its own ("al", "el", "ال") is not a word that tells places apart: it never earns the exact-word bonus.
       for (const token of row.tokens) if (token.startsWith(term)) { hit = true; if (token === term && !ARTICLES.has(term)) exactWord++; break; }
