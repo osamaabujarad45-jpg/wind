@@ -69,6 +69,7 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     './runtime-config': { resetRuntime() {}, configureRuntime() {}, effectiveRuntime: () => ({ values: { offlineMaxAgeMs: 60_000 } }) }, './client-diagnostics': { clientDiagnostics: { record() {}, clear() {} } },
     './diagnostic-client': { startDiagnosticDelivery: () => () => {} }, './phone-test': { phoneTestConfig: () => null },
     './push': { disablePush: noop, dropLocalPush: noop }, './native-push': { registerNativePush: noop, unregisterNativePush: noop },
+    './copy': { copy: { ar: { sessionEndedNotice: 'ended' }, en: { sessionEndedNotice: 'ended' } } }, './phone/notice': { setAuthNotice: noop },
     './background-location': { stopBackgroundLocation: noop }, './driver-presence-runtime': { stopPresence: async () => { if (pausePresence) { pausePresence.started(); await pausePresence.promise; } }, validatePresenceContextOnLaunch: noop },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; }, Date,
