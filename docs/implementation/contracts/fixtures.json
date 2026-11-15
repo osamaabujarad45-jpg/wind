@@ -1013,7 +1013,8 @@
           "plusPrice": 29,
           "proPrice": 99,
           "perMinute": 0.25,
-          "nightExtra": 0.2
+          "nightExtra": 0.2,
+          "driverCashCap": 150
         },
         "capabilities": {
           "enabledServices": [
@@ -2899,6 +2900,8 @@
         "discountsCents": 0,
         "remittedCents": 0,
         "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 600,
         "entries": []
       }
     },
@@ -2938,6 +2941,8 @@
         "discountsCents": 0,
         "remittedCents": 0,
         "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 600,
         "entries": [
           {
             "id": 1,
@@ -2985,6 +2990,8 @@
         "discountsCents": 0,
         "remittedCents": 600,
         "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 0,
         "entries": [
           {
             "id": 1,
