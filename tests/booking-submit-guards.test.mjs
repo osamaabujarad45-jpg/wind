@@ -43,7 +43,7 @@ function harness(overrides = {}) {
   const state = {
     ready: true, available: true, pending: null, busy: false, locating: false, quoting: false, quoteFailed: false,
     checking: false, resolving: false, scopeInvalid: false, routeChosen: true, pickupChosen: true, scheduledFor: null,
-    service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
+    service: 'parcel', priority: 'standard', sameDayOpen: true, pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
     pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Fragile box', contact: '0599123456', recipientPhone: '', recipientName: '',
     option: 'small', loadingHelp: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
     ...overrides,
@@ -68,7 +68,7 @@ function harness(overrides = {}) {
     Platform: { OS: 'web' }, AccessibilityInfo: { announceForAccessibility() {} },
     fill: template => template, money: value => `${value}NIS`, err: e => (typeof e === 'string' ? e : e?.message ?? String(e)),
     c: new Proxy({}, { get: (_t, key) => String(key) }),
-    setError: () => {}, setField: () => {}, setStep: () => {}, setSlot: () => {}, setSheetOpen: () => {}, setInvalid: () => {},
+    setError: () => {}, setField: () => {}, setPriority: () => {}, setStep: () => {}, setSlot: () => {}, setSheetOpen: () => {}, setInvalid: () => {},
     setBusy: () => {}, setOutcome: () => {}, setPromoInput: () => {}, setPromoError: () => {}, setCredits: () => {},
     setPending: value => { state.pending = value; }, setPromo: v => { calls.setPromo.push(structuredClone(v)); },
     setChecking: v => { calls.setChecking.push(v); state.checking = v; },
@@ -102,6 +102,14 @@ await check('submit while a send is in flight does nothing', async () => { const
 await check('submit before the form is ready does nothing', async () => { const h = harness({ ready: false }); await h.submit(); noWrites(h); });
 await check('submit for an unavailable service without pending does nothing', async () => { const h = harness({ available: false }); await h.submit(); noWrites(h); });
 
+await check('same-day submit after the cutoff: zero storage writes, zero POSTs', async () => { const h = harness({ priority: 'same_day', sameDayOpen: false }); await h.submit(); noWrites(h); });
+await check('same-day submit before the cutoff stores and posts the attribute', async () => {
+  const h = harness({ priority: 'same_day' });
+  await h.submit();
+  const stored = readBooking(h.calls.writes[0].value);
+  assert.equal(stored.payload.priority, 'same_day');
+  assert.deepEqual(h.calls.posts, [{ path: '/orders', body: orderRequest(stored) }]);
+});
 // Legitimate valid submission.
 await check('valid submission: command stored, POST /orders with its exact wire body, slot cleared, navigates', async () => {
   const h = harness();

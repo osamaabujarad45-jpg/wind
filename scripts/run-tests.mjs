@@ -77,6 +77,7 @@ const suites = [
   "booking-submit-guards.test.mjs",
   "booking-session-actions.test.mjs",
   "booking-retry-receipt.test.mjs",
+  "parcel-priority.test.mjs",
   "booking-recovery-actions.test.mjs",
   "booking-schedule-restore.test.mjs",
   "booking-freight-fields.test.mjs",

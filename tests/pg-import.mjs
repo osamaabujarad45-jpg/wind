@@ -67,15 +67,34 @@ sqlite.prepare('INSERT OR IGNORE INTO order_offers(order_id,driver_id,price,crea
 sqlite.prepare('UPDATE orders SET price=20.005,commission=1.005 WHERE id=?').run(order);
 const nullableCommission=sqlite.prepare("SELECT id FROM orders WHERE status IN ('completed','returned') AND id<>? ORDER BY id LIMIT 1").get(order).id;
 sqlite.prepare('UPDATE orders SET commission=NULL,discount=1 WHERE id=?').run(nullableCommission);
+// A12: parcel priority and its terminal cutoff refusal must cross the cutover with the order record they describe.
+const priorityOrder = sqlite.prepare("SELECT id FROM orders WHERE service='parcel' ORDER BY id LIMIT 1").get().id;
+sqlite.prepare("UPDATE orders SET priority='same_day' WHERE id=?").run(priorityOrder);
+sqlite.prepare("INSERT INTO order_command_rejections(user_id,request_id,payload_hash,error,created_at) VALUES(?,'00000000-0000-4000-8000-000000000001','synthetic-rejection','priority_cutoff',?)").run(user, now);
 sqlite.close();
 const snapshot = await snapshotSqlite(source,join(dir,'snapshot.sqlite'),true);
 const {schema,database}=await freshPostgres('import');
 let restored, sqliteApi, pgApi, restoredApi;
 try {
+  // A pre-A12 SQLite v3 snapshot has no priority column and no rejection table: it imports, and every order reads as standard.
+  const legacySnapshot=structuredClone(snapshot);
+  legacySnapshot.tables=legacySnapshot.tables.filter(table=>table.name!=='order_command_rejections');
+  delete legacySnapshot.rows.order_command_rejections;
+  const legacyOrders=legacySnapshot.tables.find(table=>table.name==='orders');
+  legacyOrders.columns=legacyOrders.columns.filter(column=>column.name!=='priority');
+  for(const row of legacySnapshot.rows.orders) delete row.priority;
+  const legacy=await freshPostgres('legacy');
+  try{
+    const legacyReport=await importSnapshot(legacySnapshot,legacy.database,legacy.schema,join(dir,'legacy-report.json'));
+    assert.equal(legacyReport.ok,true,JSON.stringify(legacyReport.errors));
+    assert.equal((await legacy.database.one("SELECT count(*) AS n FROM orders WHERE priority<>'standard'")).n,0,'pre-priority snapshots default every order to standard');
+  } finally { await legacy.database.close(); }
   const report=await importSnapshot(snapshot,database,schema,join(dir,'report.json'));
   assert.equal(report.ok,true,JSON.stringify(report.errors));
   assert.ok(report.rounding.some(r=>r.column==='price'));
   assert.equal(report.reconciliation.mismatches.length,0);
+  assert.equal((await database.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','current snapshot retains parcel priority');
+  assert.equal((await database.one("SELECT error FROM order_command_rejections WHERE request_id='00000000-0000-4000-8000-000000000001'")).error,'priority_cutoff','terminal refusal survives import');
   assert.ok(report.reconciliation.tables.every(t=>t.sourceRows>0),'every legacy table has nonempty import evidence');
   const redemptions=report.reconciliation.tables.find(t=>t.table==='promo_redemptions');
   assert.deepEqual(redemptions.keyColumns,['order_id'],'PK-less table uses its non-null unique natural key');
@@ -142,6 +161,7 @@ try {
   execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:30_000,stdio:'pipe'});
   const afterRestore=await reconcile(snapshot,restored);
   assert.equal(afterRestore.ok,true,JSON.stringify(afterRestore.mismatches));
+  assert.equal((await restored.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','dump/restore retains parcel priority');
   assert.deepEqual(afterRestore.financial,report.reconciliation.financial);
   assert.equal(afterRestore.tables.find(t=>t.table==='promo_redemptions').targetRows,2,'restore retains distinct PK-less redemptions');
   writeFileSync(join(dir,'restore-report.json'),JSON.stringify({schema,database:freshDatabase,...afterRestore},null,2));

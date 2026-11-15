@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
+import { priorityIdentity } from './priority.ts';
 type Failure = Error & { status: number };
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -15,7 +16,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
-  const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input }))).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
   await db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `${user.id}:${commandId}`);
   const saved = await db.one('SELECT * FROM command_results WHERE actor_id=? AND command_id=?', user.id, commandId);
   if (saved) {

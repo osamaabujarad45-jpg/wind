@@ -41,6 +41,7 @@ import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-re
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
+import { bookingPriority, checkPriorityCutoff, priorityIdentity } from './domain/priority.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { accessSync, constants, createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
@@ -307,6 +308,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
+    ...(r.service === 'parcel' && { priority: r.priority ?? 'standard' }),
     pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     pickupPoint: (owner || assigned) && r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null,
     dropoffPoint: (owner || assigned) && r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null,
@@ -643,7 +645,7 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 30 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))) fail(503, 'unavailable');
+      if (schema < 31 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 31'))) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -1387,6 +1389,7 @@ async function recommend(user: User, b: Row) {
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
+  const priority = bookingPriority(service, b.priority, fail);
   const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
   let trip: RoadRoute | null = null;
@@ -1402,7 +1405,7 @@ async function recommend(user: User, b: Row) {
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice((await settings()), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
     plus: (await activePlan(user.id)) === 'plus' });
-  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', line: trip?.line ?? null, at };
+  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', ...(service === 'parcel' && { priority }), line: trip?.line ?? null, at };
 }
 route('POST', '/api/price', async ({ user, body }) => {
   need(user, 'customer');
@@ -1410,6 +1413,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   (await limit(identityKey('price', user.id), 120, 10 * 60_000));
   apartPins(body.pickupPoint, body.dropoffPoint); // a booking only: a trip under way may head back to its pickup
   const base = (await recommend(user, body));
+  checkPriorityCutoff(base.priority ?? 'standard', fail);
   if (!(await quotesAvailable(persistence))) return base;
   const service = body.service as Service;
   const option = String(body.option);
@@ -1438,6 +1442,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   const input = {
     customerId: user.id,
     service,
+    priority: base.priority ?? 'standard',
     pickupCity: body.pickupCity,
     dropoffCity: body.dropoffCity,
     pickupLat: pickupPin?.latitude ?? null,
@@ -1587,6 +1592,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const service = quoted.service as Service;
     if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
     if (Number(quoted.shared) === 1) fail(409, 'pooling_unavailable');
+    const priority = bookingPriority(quoted.service, body.priority, fail);
+    if (priority !== (quoted.priority ?? 'standard')) fail(409, 'itinerary_changed');
     const price = Number(quoted.price_minor) / 100;
     const nowTs = Date.now();
     const promo = body.promoCode == null ? null : (await promoFor(user, body.promoCode, price));
@@ -1607,18 +1614,19 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const dropoff = effDropoffPoint;
     const recipientName = effRecipientName;
     const recipientPhone = effRecipientPhone;
+    checkPriorityCutoff(priority, fail); // re-judged at the write: a route wait may have crossed noon
     if (authorize) user = await authorize();
     const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
-    recipient_name, recipient_phone, quote_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)`,
+    recipient_name, recipient_phone, quote_id, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?)`,
     user.id, service, Number(quoted.shared), quoted.pickup_city, quoted.dropoff_city,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     effPickupNote, effDropoffNote, contact,
     pickupContact ?? contact,
     effDetail,
     quoted.option as string, Number(quoted.loading_help), price, service === 'ride' ? null : String(randomInt(1000, 10000)), nowTs, nowTs, scheduledFor, promo?.discount ?? null,
-    service === 'parcel' ? null : price, null, recipientName, recipientPhone, quoteId)).lastInsertRowid);
+    service === 'parcel' ? null : price, null, recipientName, recipientPhone, quoteId, priority)).lastInsertRowid);
     if (promo?.id) (await run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, nowTs));
     else if (promo) (await run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, nowTs));
@@ -1654,6 +1662,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     : service === 'ride' ? fail(400, 'invalid_input') : normalizePhone(String(body.recipientPhone)) ?? fail(400, 'invalid_phone');
   const recipientName = recipientPhone ? text(body.recipientName ?? '', 60, false) : '';
   // Smart orders arrive with their recommendation; Souq and apps before 1.0.8 keep the fixed tariff.
+  const priority = bookingPriority(service, body.priority, fail);
   const price = recommended ?? quote((await settings()), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
     plus: (await activePlan(user.id)) === 'plus' });
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
@@ -1670,18 +1679,19 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   }
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  checkPriorityCutoff(priority, fail);
   if (authorize) user = await authorize();
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
-    recipient_name, recipient_phone)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    recipient_name, recipient_phone, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
     option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
-    recommended ?? null, smart?.km ?? null, recipientName, recipientPhone)).lastInsertRowid); // the km the price used, shown on the driver's job card
+    recommended ?? null, smart?.km ?? null, recipientName, recipientPhone, priority)).lastInsertRowid); // the km the price used, shown on the driver's job card
   if (body.declaredScope !== undefined && body.declaredScope !== null) {
     if (!(await scopeAvailable(persistence))) fail(409, 'scope_unavailable');
     await saveDeclaredScope(persistence, fail, id, service, validateDeclaredScope(service, body.declaredScope, fail));
@@ -1732,11 +1742,17 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   if (commandExpiresAt !== undefined && (!Number.isSafeInteger(commandExpiresAt) || (commandExpiresAt as number) > Date.now() + BOOKING_COMMAND_TTL_MS + 60_000)) // a minute of device clock skew
     fail(400, 'invalid_command_deadline');
   const expired = () => commandExpiresAt !== undefined && Date.now() > (commandExpiresAt as number);
-  const hash = payloadHash(input);
+  const hash = payloadHash(priorityIdentity(input)); // omitted and explicit standard are the same command
   const replay = async () => {
+    // Authority comes first: the promo limiter can wait past revocation, and even an absent receipt must not reach routing or expiry.
+    user = await authorize();
     const existing = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
-    if (!existing) return null;
-    user = await authorize(); // A stored receipt does not preserve revoked access to its private result.
+    if (!existing) {
+      // A12: a cutoff refusal is terminal for its key; the same key cannot succeed later because the clock moved.
+      const rejected = (await one('SELECT payload_hash, error FROM order_command_rejections WHERE user_id = ? AND request_id = ?', user.id, requestId));
+      if (rejected) fail(409, rejected.payload_hash === hash ? rejected.error : 'idempotency_conflict');
+      return null;
+    }
     if (existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
     return (await getOrder(existing.order_id, user));
   };
@@ -1757,6 +1773,14 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     (await persistence.exec('ROLLBACK'));
     // The winner can consume the quote or fill the searching cap before we reach the unique insert.
     user = await authorize();
+    if ((error as { message?: string }).message === 'priority_cutoff') {
+      (await persistence.exec('BEGIN IMMEDIATE'));
+      try {
+        const winner = await one('SELECT order_id FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId);
+        if (!winner) (await run('INSERT INTO order_command_rejections (user_id, request_id, payload_hash, error, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id, request_id) DO NOTHING', user.id, requestId, hash, 'priority_cutoff', Date.now()));
+        (await persistence.exec('COMMIT'));
+      } catch (recordError) { (await persistence.exec('ROLLBACK')); throw recordError; }
+    }
     const won = await replay();
     if (won) return won;
     throw error;
@@ -1800,7 +1824,9 @@ route('POST', '/api/partner/quotes', async ({ req, body }) => {
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity) || !['small', 'medium', 'large'].includes(String(body.option))) fail(400, 'invalid_input');
   // Optional pins are refused here, before the seller agrees, rather than at booking where the buyer can no longer fix them.
   bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity); apartPins(body.pickupPoint, body.dropoffPoint);
-  return { currency: 'ILS', price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
+  const priority = bookingPriority('parcel', body.priority, fail);
+  checkPriorityCutoff(priority, fail);
+  return { currency: 'ILS', priority, price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
     option: body.option, shared: body.shared === true }) };
 }, true);
 
@@ -1808,11 +1834,12 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
   partner(req);
   const ref = text(body.externalRef, 150);
   if (!Number.isSafeInteger(body.quotedPrice) || body.quotedPrice < 1) fail(400, 'invalid_input');
-  const hash = payloadHash(body);
+  const identity = priorityIdentity(body); // a stored omitted-priority hash still matches an explicit standard
+  const hash = payloadHash(identity);
   const existing = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
   if (existing) {
     if (existing.payload_hash !== hash) {
-      if (existing.payload_hash !== sha(JSON.stringify(body))) fail(409, 'idempotency_conflict');
+      if (existing.payload_hash !== sha(JSON.stringify(identity))) fail(409, 'idempotency_conflict');
       (await run('UPDATE partner_orders SET payload_hash = ? WHERE external_ref = ?', hash, ref));
     }
     return (await getOrder(existing.order_id, (await partnerUser())));

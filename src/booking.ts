@@ -1,4 +1,4 @@
-import { isCity, optionsFor, services, type CityId, type Order, type Point, type Role, type Service } from './model.ts';
+import { isCity, optionsFor, services, validParcelPriority, type CityId, type Order, type ParcelPriority, type Point, type Role, type Service } from './model.ts';
 import { validFreightScope, type FreightScope } from './freight-scope.ts';
 import { newRequestId } from './command-id.ts';
 import { serverOffset } from './api-clock.ts';
@@ -18,6 +18,7 @@ export type BookingPayload = {
   promoCode?: string; expectedDiscount?: number;
   recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
+  priority?: ParcelPriority; // A12: parcels only; absent is standard
 };
 export type PendingBooking = {
   requestId: string; payload: BookingPayload;
@@ -64,6 +65,7 @@ export function againForm(order: Order) {
     recipientName: order.recipientName ?? '', recipientPhone: order.recipientPhone ?? '',
     option: optionsFor(order.service).includes(order.option) ? order.option : optionsFor(order.service)[0],
     loadingHelp: order.loadingHelp,
+    ...(order.service === 'parcel' && { priority: order.priority ?? 'standard' }),
   };
 }
 
@@ -87,6 +89,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
     || (p.promoCode !== undefined && (typeof p.promoCode !== 'string' || !Number.isInteger(p.expectedDiscount)))
     || ['recipientName', 'recipientPhone'].some(key => p[key as 'recipientName'] !== undefined && typeof p[key as 'recipientName'] !== 'string')
     || (p.pricing !== undefined && p.pricing !== 'smart')
+    || !validParcelPriority(p.service, p.priority)
     || (p.quoteId !== undefined && !uuid.test(p.quoteId))
     || (p.declaredScope !== undefined && (p.service !== 'freight' || !validFreightScope(p.declaredScope)))
     || (booking.sentAt !== undefined && !Number.isFinite(booking.sentAt))

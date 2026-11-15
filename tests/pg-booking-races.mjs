@@ -113,6 +113,28 @@ try {
       assert.equal(Number((await pg.database.one('SELECT count(*) n FROM orders WHERE customer_id=?', owner.user.id)).n), 0);
       assert.equal(Number((await pg.database.one('SELECT count(*) n FROM order_commands WHERE user_id=?', owner.user.id)).n), 0);
     });
+  // A promo limiter that waits past logout must not let a revoked session reach expiry or routing: the replay authorizes first.
+  await check('promo limiter wait cannot reveal command expiry to a revoked session', async () => {
+    const owner = await customer();
+    const limiterKey = `promo:${createHash('sha256').update(String(owner.user.id)).digest('hex')}`;
+    await pg.database.run('INSERT INTO request_limits(key,count,until) VALUES(?,0,?) ON CONFLICT(key) DO UPDATE SET count=0,until=excluded.until', limiterKey, Date.now() + 3600_000);
+    await lock.query('BEGIN');
+    let booking;
+    try {
+      assert.equal((await lock.query('SELECT key FROM request_limits WHERE key=$1 FOR UPDATE', [limiterKey])).rowCount, 1);
+      booking = post({ ...input(owner.user), quotedPrice: 20, promoCode: 'SYNTHETIC-NOT-A-CODE', expectedDiscount: 0, requestId: randomUUID(), commandExpiresAt: Date.now() - 1000 }, owner.token);
+      const deadline = Date.now() + 4000;
+      while (Number((await pg.database.one("SELECT count(*) n FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%request_limits%'")).n) < 1) {
+        assert.ok(Date.now() < deadline, 'Barrier timeout: promo limiter waiter');
+        await delay(10);
+      }
+      await call('/auth/logout', { token: owner.token, body: {} });
+    } finally { await lock.query('COMMIT'); }
+    const result = await booking;
+    assert.equal(result.status, 401, JSON.stringify(result));
+    assert.equal(Number((await pg.database.one('SELECT count(*) n FROM orders WHERE customer_id=?', owner.user.id)).n), 0);
+    assert.equal(Number((await pg.database.one('SELECT count(*) n FROM order_commands WHERE user_id=?', owner.user.id)).n), 0);
+  });
   await check('partner same reference replays winner at searching cap', async () => {
     const headers = { 'Content-Type': 'application/json', 'X-Partner-Key': process.env.SOUQ_PARTNER_KEY };
     const partnerPost = async body => {

@@ -291,14 +291,14 @@ export function Reason({ children }: { children: string }) {
 // A row of mutually exclusive options. `label` names the group for a screen reader (pass a translated word,
 // never an English literal); without it the group stays unnamed, as it was.
 export function Choices<K extends string>({ items, value, onChange, disabled, label }: {
-  items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string;
+  items: { key: K; label: string; disabled?: boolean }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string;
 }) {
   const { row } = useCopy();
   const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
   return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
-      const on = item.key === value;
-      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: !!disabled }} disabled={disabled} aria-checked={on}
+      const on = item.key === value, off = !!disabled || !!item.disabled;
+      return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
           <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>

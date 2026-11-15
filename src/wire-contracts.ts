@@ -1,4 +1,4 @@
-import { isCity, services, type Order, type PriceQuote } from './model.ts';
+import { isCity, parcelPriorities, services, validParcelPriority, type Order, type PriceQuote } from './model.ts';
 import { readRuntimeConfiguration } from './runtime-config.ts';
 import type { DriverReceipt } from './driver-command.ts';
 import type { Journey, JourneyEta } from './journey-contracts.ts';
@@ -48,6 +48,7 @@ export function readDriverReceipt(value: unknown): DriverReceipt {
 
 export function readOrder(value: unknown): Order {
   requireContract(object(value)); const o = value as RecordValue;
+  requireContract(validParcelPriority(o.service, o.priority));
   requireContract(integer(o.id,1) && services.includes(o.service) && statuses.includes(o.status) && isCity(o.pickupCity) && isCity(o.dropoffCity)
     && finite(o.price) && integer(o.createdAt) && integer(o.updatedAt) && typeof o.pickupNote === 'string' && typeof o.dropoffNote === 'string');
   for (const id of [o.customerId,o.driverId]) requireContract(id === null || integer(id,1));
@@ -83,6 +84,7 @@ export function readOrder(value: unknown): Order {
 export function readPriceQuote(value: unknown): PriceQuote {
   requireContract(object(value)); const q = value as RecordValue;
   requireContract(finite(q.price) && finite(q.km) && finite(q.minutes) && finite(q.delayMinutes) && typeof q.estimated === 'boolean');
+  requireContract(q.priority === undefined || parcelPriorities.includes(q.priority));
   if (q.quoteId !== undefined) requireContract(uuid(q.quoteId) && integer(q.quoteExpiresAt) && q.currency === 'ILS' && integer(q.priceMinor) && (q.commissionMinor === null || integer(q.commissionMinor)));
   for (const key of ['slow','closed','avoids']) requireContract(Array.isArray(q[key]) && q[key].every((item: unknown) => typeof item === 'string'));
   if (q.eta !== undefined) readEta(q.eta);
