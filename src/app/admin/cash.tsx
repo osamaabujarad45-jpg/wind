@@ -16,7 +16,9 @@ export default function AdminCash() {
   const { date } = useFormat();
   const { data, error, reload } = useApi<Balance[]>('/admin/cash', 15_000);
   const { data: pending, reload: reloadPending } = useApi<PendingEntry[]>('/admin/cash/pending', 15_000);
-  const [open, setOpen] = useState<{ id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string } | null>(null);
+  // `uncertain`: the last send failed, so the server may already hold it (A-01: a lost acknowledgement). The same request id
+  // replays that entry instead of booking it twice; an edit makes it a new entry with a new id.
+  const [open, setOpen] = useState<{ id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string; uncertain?: boolean } | null>(null);
   const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -47,7 +49,7 @@ export default function AdminCash() {
       haptic.success();
       if (entry.reference) setMessage(fill(c.cashRecorded, { r: entry.reference }));
       setOpen(null); reload(); reloadPending();
-    } catch (e) { fail(err(e)); } finally { inFlight.current = false; setBusy(false); }
+    } catch (e) { fail(err(e)); setOpen(o => o && { ...o, uncertain: true }); reload(); reloadPending(); } finally { inFlight.current = false; setBusy(false); }
   }
 
   // T25: the resolution is deliberate (a confirmation dialog), names a reason and an optional evidence
@@ -85,14 +87,19 @@ export default function AdminCash() {
           </Row>
           {open?.id === row.driverId ? <View style={{ marginTop: 12 }}>
             <Field label={open.kind === 'remittance' ? c.cashAmount : c.cashAdjustAmount} value={open.amount} keyboardType="decimal-pad" disabled={busy}
-              onChangeText={amount => setOpen({ ...open, amount })} />
+              onChangeText={amount => setOpen({ ...open, amount, uncertain: false, requestId: open.uncertain ? newRequestId() : open.requestId })} />
             <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500} disabled={busy}
-              onChangeText={note => setOpen({ ...open, note })} />
+              onChangeText={note => setOpen({ ...open, note, uncertain: false, requestId: open.uncertain ? newRequestId() : open.requestId })} />
             <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind === 'adjustment' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}
               onPress={() => confirm(fill(open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
                 () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />
+            {open.uncertain && <>
+              {/* The amount check above counts this entry's own pending copy, so the retry is the one way to settle it. */}
+              <Txt variant="caption" style={{ marginTop: 8 }}>{c.cashUncertain}</Txt>
+              <Button title={c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy} reason={c.wait_busy} onPress={() => void submit()} />
+            </>}
             <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={row.owedCents - row.pendingCents <= 0} reason={c.cash_none_owed}

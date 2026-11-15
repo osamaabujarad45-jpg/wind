@@ -71,6 +71,7 @@ function screen(file, language, { data = {}, me = {} } = {}) {
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
     '../../phone/flow': { codeInput: raw => raw },
+    '../../booking': { newRequestId: () => `request-${calls.length}-${Math.random().toString(16).slice(2, 8)}` },
     '../../ui': ui,
     'expo-router': { router: {} },
   };
@@ -360,3 +361,24 @@ for (const language of ['ar', 'en']) {
   }
 }
 console.log('Admin settings and role-change review contracts passed');
+
+// A-01 (A53, bcc0c97): a remittance whose reply was lost cannot be re-recorded through the amount check (its own pending
+// copy fills the room), so the form offers the same receipt again: same request id, which the server replays, never twice.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const view = screen('cash', language, { data: { '/admin/cash': [{ driverId: 7, name: 'Driver', phone: '0599000102', owedCents: 100, pendingCents: 0, lastRemittanceAt: null }], '/admin/cash/pending': [] } });
+  await tap(view, c.cashRecord); // opens the form
+  view.loseNextCall();
+  await tap(view, c.cashRecord); // the form's record button asks for review
+  view.dialogs.at(-1).yes(); await flush();
+  const first = view.calls.at(-1);
+  assert.equal(first.path, '/admin/cash/remittance');
+  assert.ok(shows(view.render(), c.cashUncertain), `${language}: a lost reply says the receipt may be recorded`);
+  await tap(view, c.cashRetrySame); await flush();
+  const second = view.calls.at(-1);
+  assert.equal(second.path, '/admin/cash/remittance');
+  assert.equal(second.body.requestId, first.body.requestId, `${language}: the retry replays the same request id`);
+  assert.equal(second.body.amountCents, first.body.amountCents);
+  assert.ok(!shows(view.render(), c.cashUncertain), `${language}: a confirmed retry closes the form`);
+}
+console.log('Admin cash lost-acknowledgement retry replays the same receipt');
