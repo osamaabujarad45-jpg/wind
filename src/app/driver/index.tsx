@@ -35,6 +35,8 @@ export default function Jobs() {
   // Set only while the driver is online or on a job (DriverMap): how far each pickup is, for this answer only.
   const [here, setHere] = useState<Point | null>(null);
   const [peek, setPeek] = useState(0);
+  // Held here, not in the card: the card remounts on every lifecycle tick or failed poll and must stay open during a support call.
+  const [supportOpen, setSupportOpen] = useState(false);
   const presenceOn = me?.capabilities?.driverPresence !== false;
   const [locateOn, setLocateOn] = useState(false); // their own tap: GPS for the dot and pickup distances, for this visit to the screen only
   const locateRequest = useRef<AbortController | null>(null);
@@ -206,7 +208,7 @@ export default function Jobs() {
       </Press>
       {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read 2.4:1 */}
     </Card>}
-    {assigned && work.known && <DriverSupportCard diagnostics={work.diagnostics} />}
+    {assigned && work.known && <DriverSupportCard diagnostics={work.diagnostics} open={supportOpen} onToggle={() => setSupportOpen(value => !value)} />}
 
     {/* During a job presence is stopped (driver-work) and Go online can't be pressed; the card returns if it has something to say. */}
     {presenceOn && !(assigned && !work.presenceError && !work.presencePending) ? <>
