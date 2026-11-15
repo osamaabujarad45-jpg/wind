@@ -26,10 +26,14 @@ export const foldPlace = (text: string) => text.toLowerCase().replace(DIACRITICS
   .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 // "ال" is optional when people type: مستشفى finds المستشفى and the reverse.
 const stripAl = (token: string) => token.startsWith('ال') && token.length > 3 ? token.slice(2) : token;
+// OSM often glues the Latin article on ("Albireh", "Elbireh"): index the bare word too, so "bireh" finds the city.
+const stripLatinAl = (token: string) => /^(al|el)[a-z]{3,}$/.test(token) ? token.slice(2) : token;
 const tokensOf = (text: string) => foldPlace(text).split(' ').filter(Boolean).flatMap(token => {
-  const bare = stripAl(token);
+  const bare = stripLatinAl(stripAl(token));
   return bare === token ? [token] : [token, bare];
 });
+/** One spelling for a whole name: "al bireh", "Al-Bireh", "Albireh" and "bireh" are the same place name. */
+const nameKey = (name: string) => stripLatinAl(stripAl(name.replace(/ /g, '')));
 
 const BUCKET = 0.01; // about a kilometre
 const bucketKey = (lat: number, lng: number) => `${Math.floor(lat / BUCKET)}:${Math.floor(lng / BUCKET)}`;
@@ -88,7 +92,7 @@ const streetPoint = (row: Row, near: Point | null): Point => {
 };
 
 export function suggestPlaces(query: string, lang: Lang, near: Point | null, limit = 8): SuggestHit[] {
-  const whole = foldPlace(query), terms = whole.split(' ').filter(Boolean).map(stripAl);
+  const whole = foldPlace(query), terms = whole.split(' ').filter(Boolean).map(stripAl), wholeKey = nameKey(whole);
   if (!terms.length) return [];
   const scored: { row: Row; point: Point; score: number }[] = [];
   for (const row of index().rows) {
@@ -103,8 +107,8 @@ export function suggestPlaces(query: string, lang: Lang, near: Point | null, lim
     const km = near ? crowKm(near, point) : 0;
     // Closeness decides most ties: the Manara you mean is the one in your town. A town itself may be far away.
     const distance = row.kind === 'town' ? Math.min(km, 40) * 0.2 : Math.min(km, 60) * 0.8;
-    const names = row.folded.split(' | ');
-    const score = (names.includes(whole) ? 60 : names.some(name => name.startsWith(whole)) ? 30 : 0) + exactWord * 6 - row.rank * 5 - distance;
+    const names = row.folded.split(' | ').filter(Boolean).map(nameKey);
+    const score = (names.includes(wholeKey) ? 60 : names.some(name => name.startsWith(wholeKey)) ? 30 : 0) + exactWord * 6 - row.rank * 5 - distance;
     scored.push({ row, point, score });
   }
   scored.sort((a, b) => b.score - a.score);
