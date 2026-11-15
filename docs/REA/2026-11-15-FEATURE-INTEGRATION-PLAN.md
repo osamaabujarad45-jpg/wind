@@ -1,6 +1,6 @@
 # Wind feature-integration master plan — 15 November 2026
 
-Baseline: `origin/master` 7748234 (worktree `C:\w\wind-plan`). Production: Azure VM `wind-vm`, **SQLite**, `WIND_ENABLED_SERVICES=parcel`
+Baseline: `origin/master` 7748234 (worktree `C:\w\wind-plan`). Master has since moved past it: PR #35 (expo patch versions) and PR #36 (admin exact cash, bcc0c97) are MERGED, and PR #34 (driver cash cap) is already inside 7748234 (merged). In review (open): #38 (admin subscriptions review), #39 (WP-06 large text), #40 (WP-03 blocked account told at sign-in). Production: Azure VM `wind-vm`, **SQLite**, `WIND_ENABLED_SERVICES=parcel`
 (`docs/operations/deploy.md` "Production host on Azure"; `server/domain/eligibility.ts:58`). Cash only. Ride and freight code exists and is off.
 Companion page: `docs/REA/2026-11-15-competitor-apps-vs-wind.md` (mechanism table). This page widens it to every feature, adds a mock/demo audit and
 the work packages. Nothing here was run; every "Wind has it" claim was read in code at the cited line. `[inferred]` marks a judgement, not a read.
@@ -17,7 +17,7 @@ the work packages. Nothing here was run; every "Wind has it" claim was read in c
 
 **Status.** DONE (file:line), PARTIAL (what is missing), MISSING, N/A (reason).
 
-**Count (section A, 132 features):** DONE 78 · PARTIAL 23 · MISSING 18 · N/A 12 · IN PROGRESS 1. By priority: P0 26 · P1 42 · P2 33 · P3 19 · none (N/A) 12.
+**Count (section A, 131 features; C-16 and P-02 merged):** DONE 79 · PARTIAL 25 · MISSING 15 · N/A 12 · IN PROGRESS 0. By priority: P0 26 · P1 42 · P2 32 · P3 19 · none (N/A) 12.
 
 **Cross-cutting fact that changes many rows (read once).** Eleven modules answer "unavailable" unless the database is PostgreSQL, and production is SQLite:
 `commands.ts:11`, `dispatch.ts:41`, `eligibility.ts:33`, `events.ts:35`, `ledger.ts:15`, `presence.ts:27`, `quotes.ts:9`, `resource-scope.ts:30`, `ride-lifecycle.ts:25`, `payments.ts` (gate), `private-objects.ts` (gate). Anything below marked "PG-only" is not live in the pilot. The dialect cutover is an owner decision outside this plan (ATL §23.1); packages say when they depend on it.
@@ -47,7 +47,7 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | C-13 | Favourite recipients | R-SH F-01 (`create-parcel/edit-favourite-recipient`, `recipient/`) | Saved recipients list | MISSING | `saved_recipients` table, picker in booking | P3 |
 | C-14 | Order again / send another | D-SQ `orders/repeat-last` (R-SQ F-14); R-SH | One tap copy of last order | DONE `src/booking.ts:56,71`, `src/app/order/[id].tsx:552-555`, `src/app/book.tsx:332` | none | P1 |
 | C-15 | Parcel size/service options | D-SH §2; R-UB `connect_checkout_delivery_item_size_details` | Size tier changes the price | PARTIAL: `optionsFor` `src/model.ts:84`, `parcelFare :222`; no weight, no declared value | Declared value only if COD or cover is built (P-02) | P3 |
-| C-16 | Order types Pay / Buy / Return / Replace (send+collect) | R-SH F-03; D-SH §2 | Parcel flagged as payment parcel; recipient pays | MISSING for goods collection: `payments.ts:198-201` PG-only and answers 409 in prod; return exists only after a failed delivery (`server/main.ts:2450-2459`) | Owner decision (is goods-COD in scope); then WP-16 | P2 |
+| C-16 | Goods COD (Pay / Buy / Return / Replace): collect from recipient, remit to sender, resolve | R-SH F-03/F-04; D-SH §2; R-SQ F-03 | Parcel flagged as payment parcel; expected, collected, remitted states | PARTIAL, dead in prod: server code `server/domain/payments.ts:158-190,198-201` is PG-only and answers 409 on SQLite; no booking field or client screen; return exists only after a failed delivery (`server/main.ts:2450-2459`) | Owner decision (is goods-COD in scope); then SQLite port and client (WP-16) | P2 |
 | C-17 | Outside-service-area message | D-UB §3 (`no_captains`); R-UB `connect_delivery_radius_error_message` | Typed rejection | DONE `src/app/book.tsx` `c.pinOutsideArea`, `src/model.ts:203` | none | P1 |
 | C-18 | Quote shown before confirm; quote usable once; create is idempotent | D-UB §3; FM §7; D-HA §3 | Server prices; stable client request id; no create retry | DONE `server/main.ts:1395,1515` (`quote_consumed`), `:1685` | none | P0 |
 | C-19 | Promo code at the payment step | R-HA §5 (coupons at payment); R-CA PROMO strings | Code applied before confirm | DONE `src/app/book.tsx:754`, `server/main.ts:1100,1155-1166` | none | P2 |
@@ -68,13 +68,13 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | T-06 | Public share-tracking link, no login | D-UB §4 (share summary); R-SQ | Tokenised page | DONE `server/main.ts:1986-1999`, `src/app/track/[token].tsx` | none | P1 |
 | T-07 | Call the driver / customer | R-HA §4 ("تواصل مع السائق"); D-HA §5 | `tel:` action | DONE `src/app/order/[id].tsx:838`; number masking N/A (needs a telecom contract) | none | P1 |
 | T-08 | In-app chat anchored to the order | R-SQ F-12; ATL §18 | Messages on the order | DONE `server/main.ts:2130-2135`, `src/app/order/[id].tsx:816` | none | P2 |
-| T-09 | Canned replies and message hiding by admin | R-SQ F-12 | Quick replies; `redact` | MISSING (`order_messages` plain) | List of replies in own words; admin redact route | P3 |
+| T-09 | Canned replies and message hiding by admin | R-SQ F-12 | Quick replies; `redact` | PARTIAL: quick replies exist (`src/app/order/[id].tsx:753` defines `quickReplies`, `:810` renders and sends them); missing only the admin redact (`order_messages` plain) | Admin redact route | P3 |
 | T-10 | Cancel before pickup, driver told | all five demos | Cancel only in early states | DONE `server/main.ts:1910-1925` | none | P0 |
 | T-11 | Cancel/no-show fee | R-SH (`same_day_cannot_revert_parcel`); R-CA arrears | Fee or arrears after assignment | N/A: no in-app way to collect a customer debt (see D-section); ATL X4 | Owner decision after P-04 | — |
 | T-12 | Change destination with the driver's consent | D-UB (change leg); SPEC-change-destination | Propose, driver accepts, fare recomputed | DONE `server/domain/destination-change.ts`, `src/destination-change.tsx`, `src/app/order/[id].tsx:16` | none | P1 |
 | T-13 | Rate driver (stars + price) and rate customer | D-UB `rate.tsx`; R-HA §4 | Rating by order id | DONE `server/main.ts:1942`, `src/app/order/[id].tsx:855`, `server/domain/statistics.ts:7` | none | P1 |
 | T-14 | Tip | D-UB `rate.tsx` (`tipCents`) | Amount stored with rating | N/A: cash-only; an in-app tip would be unrecorded cash. Drivers may be tipped by hand | none | — |
-| T-15 | Itemised receipt, cancelled = no charge | D-UB `receipt.tsx` | Per-trip receipt | DONE `src/app/receipt/[id].tsx` (cancelled never shows earnings `:20`), `server/domain/booking-receipts.ts` | none | P1 |
+| T-15 | Itemised receipt, cancelled = no charge | D-UB `receipt.tsx` | Per-trip receipt | DONE `src/app/receipt/[id].tsx` (cancelled never shows earnings `:21`), `server/domain/booking-receipts.ts` | none | P1 |
 | T-16 | Order history, resume the active order | D-UB `activity.tsx`; D-HA `orders.tsx` | Server history; separate empty states | DONE `src/app/(customer)/orders.tsx`, `src/model.ts:65` (`HISTORY_PAGE`), `src/offline-recovery.ts` | none | P1 |
 | T-17 | Report a problem and get a credit | R-SQ F-13; D-SQ admin review | Dispute, admin decision | DONE `server/main.ts:2024-2062`, `src/app/order/[id].tsx:584` | none | P1 |
 | T-18 | Safety report with emergency call | D-UB §2 (`tel:100`) | Dialer + report | DONE `server/main.ts:2071-2100`, `src/app/order/[id].tsx:711-735` | none | P1 |
@@ -93,7 +93,7 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | ID | Feature | Competitor / source | How | Wind status | Real, no mock needs | Pri |
 |---|---|---|---|---|---|---|
 | D-01 | Driver signup, vehicle, plate, pending approval | R-CA §10; D-SQ §3 shift validation | Admin approves before work | DONE `src/app/auth.tsx`, `server/main.ts:645,3266`, `src/app/driver/index.tsx:175` | none | P0 |
-| D-02 | Driver told when blocked, approved, unblocked | R-SQ F-13 (`ACCESS_BLOCKED`); R-CA | Push + reason | MISSING: PILOT.md "Courier blocked while carrying a parcel: phone them: they are not told" | Push kind + screen text; auth-adjacent | P1 |
+| D-02 | Driver told when blocked, approved, unblocked | R-SQ F-13 (`ACCESS_BLOCKED`); R-CA | Push + reason | PARTIAL: approval pushes exist (`server/main.ts:3261` in `editUser`; `:3283` in the approve route, `queuePush 'approved'`). Gap is the block path: `:3252` writes `COURIER_BLOCKED`, `:3258-3259` push only to customers; the blocked driver gets no push, no role-change notice, no blocked message at sign-in (PILOT.md "they are not told") | Block/role-change push kind + a blocked message at sign-in; auth-adjacent | P1 |
 | D-03 | Identity verification by the admin | R-SQ F-13 (OTP, seller verification) | Admin checks and records | DONE `server/main.ts:3341-3357` | none | P1 |
 | D-04 | Licence/insurance document upload with expiry | R-CA (docs) [inferred]; D-SQ vehicle validation | Upload + review | MISSING; storage PG-only (`private-objects.ts`) | Object storage + dialect: BLOCKED-EXTERNAL | P3 |
 | D-05 | Online/offline with location-health | R-SQ F-11 (`location-health`); R-HD §2.5 | Presence, battery, permission | PARTIAL: `presence.ts:27` PG-only so SQLite pilot has no presence; job-time GPS only (`server/main.ts:2612`); client `src/driver-presence*.ts` waits for it (`server/main.ts:534-537`) | Either PG cutover or an SQLite presence table | P2 |
@@ -120,7 +120,7 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | D-26 | Acceptance-rate gating, rejection limits | R-CA §10.3; R-HD §2.2 | Penalty for declining | N/A: R-CA §10.4 advises against for a pilot | — | — |
 | D-27 | Pickup/delivery photo proof | R-CA (`_AddDeliveryPhoto`) | Photo at the door | MISSING; storage PG-only | Object storage: BLOCKED-EXTERNAL | P3 |
 | D-28 | Custody scans, hub in/out, driver-to-driver transfer | R-SQ F-04/F-05; D-SH §4 | Scan chain | N/A: point-to-point courier, no hubs (gap page) | — | — |
-| D-29 | Sees no customer code or other customers' data | R-SQ F-04 | Role-scoped payloads | DONE: handover code only to owner (`server/main.ts:2450-2451` check), role-scoped `getOrder :392` | none | P0 |
+| D-29 | Sees no customer code or other customers' data | R-SQ F-04 | Role-scoped payloads | DONE: handover code only to owner (`server/main.ts:310`, `handoverCode: owner ? ... : null`), role-scoped `getOrder :392` | none | P0 |
 | D-30 | Driver signup alert to admin | SPEC-driver-signup-alert | Push to admins | DONE `server/main.ts:504,673` (`queuePush(adminIds,'attention')` on driver registration) | none | P2 |
 
 ### A4. Admin and merchant
@@ -131,16 +131,16 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | A-02 | Users: search, approve, block, edit, delete | R-SQ F-13; D-SQ §6 | Admin console | DONE `server/main.ts:3166-3315`, `src/app/admin/users.tsx` | none | P0 |
 | A-03 | Password reset with identity attestation | R-SQ F-13 (reset) | Admin writes what they checked | DONE `server/main.ts:3297-3357`, `src/app/admin/users.tsx` (`c.resetAttestation`) | none | P1 |
 | A-04 | Orders: cancel, resolve exception, proof reset | R-SQ F-07/F-08 | Admin escape hatches | DONE `server/main.ts:1910,2500,3114`, `src/app/admin/orders.tsx` | none | P0 |
-| A-05 | Manual dispatch: admin assigns or reassigns a driver | R-SQ F-14 (`/admin/dispatch/assign`); D-SQ admin role | Admin picks the driver | MISSING: no admin assign route (route list `server/main.ts:1864-2530`); PILOT.md watches "orders stuck searching" with no remedy | Route that reuses cash-cap, load and eligibility guards (WP-02) | P1 |
+| A-05 | Manual dispatch: admin assigns or reassigns a driver | R-SQ F-14 (`/admin/dispatch/assign`); D-SQ admin role | Admin picks the driver | MISSING: no admin assign route (route list `server/main.ts:1864-2530`). The only nearby route is `POST /api/orders/:id/dispatch/retry` (`server/domain/dispatch.ts:371`), which re-runs dispatch and is PostgreSQL-only (gate `dispatch.ts:41`); PILOT.md watches "orders stuck searching" with no remedy in the pilot | Route that reuses cash-cap, load and eligibility guards (WP-02) | P1 |
 | A-06 | Fleet view: drivers online, last fix | R-SQ F-14 (`/admin/fleet`) | Map/list | PARTIAL: per-order driver location (`src/app/admin/orders.tsx` `c.openLocation`); no fleet list | Needs presence (D-05) or last `driver_locations` row | P2 |
 | A-07 | Disputes and incidents queues with credit | R-SQ F-12/F-13 | Admin resolves with reason | DONE `server/main.ts:2035-2062,2090-2120`, `src/app/admin/orders.tsx` | none | P1 |
 | A-08 | Cash: record handover, adjust, resolve pending | R-SQ F-06; D-SQ §4 | Append-only, admin-only count | DONE `server/main.ts:3038-3094`, `src/app/admin/cash.tsx` | none | P0 |
-| A-09 | Exact-decimal cash amount parsing in admin | — | Integer cents from text | IN PROGRESS (separate change, not in this plan) | — | P1 |
+| A-09 | Exact-decimal cash amount parsing in admin | — | Integer cents from text | DONE (PR #36, bcc0c97, merged) | none | P1 |
 | A-10 | Audit log viewer | R-SQ F-06 (`GET /admin/audit`) | Read-only event list | MISSING: `security_events` is written throughout (`server/main.ts:2453,2477,3238`), no read route | `GET /api/admin/audit` + screen (WP-13) | P2 |
 | A-11 | Settings: prices, commission, cap | R-SQ (admin zones/fees); D-SH §4 | Server-held numbers | DONE `server/main.ts:3392`, `src/app/admin/settings.tsx`, `src/model.ts:89-125` | Owner confirms the numbers (B-11) | P0 |
 | A-12 | Promo and referral admin | R-HA §5 | Create/deactivate | DONE `server/main.ts:1155-1166`, `src/app/admin/settings.tsx` | none | P2 |
 | A-13 | Plus/Pro subscriptions, manual activation | R-CA (Plus); D-CA | Plan request, admin activates | DONE `server/main.ts:3097-3113,3357-3392`, `src/app/admin/subscriptions.tsx`; payment is by contacting support (`src/copy.ts:311`), by design | none | P2 |
-| A-14 | Road/checkpoint status reports | Palestinian-specific (R-PAL) | Crowd + admin | DONE `server/main.ts:2173-2240`, `src/app/roads.tsx` | Field-verify seed list `:2205-2216` (B-07) | P1 |
+| A-14 | Road/checkpoint status reports | Palestinian-specific (R-PAL) | Crowd + admin | DONE `server/main.ts:2173-2240`, `src/app/roads.tsx` | Field-verify seed list `:2204-2215` (B-07) | P1 |
 | A-15 | Partner API (Souq) | R-SQ; D-SQ | Keyed external orders | DONE `server/main.ts:1779-1860` (`SOUQ_PARTNER_KEY`) | Partner key issued | P2 |
 | A-16 | Merchant console: shop creates orders, sees status, COD remit | R-SQ F-14 (packing, catalogue); R-SH F-12 | Shop-side app | MISSING | Owner decision on a merchant segment; partner API (A-15) is the base | P3 |
 | A-17 | Support tickets with comments/history | R-SH F-01 (`tickets/*`) | Ticketing | N/A: disputes (T-17) + WhatsApp support (`src/api.ts:19-21`) cover pilot volume (ATL S10) | — | — |
@@ -151,7 +151,6 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | ID | Feature | Competitor / source | How | Wind status | Real, no mock needs | Pri |
 |---|---|---|---|---|---|---|
 | P-01 | Cash only, stated before booking | R-UB §4.7; R-CA §5; R-HA §4 | "Cash only" label | DONE `src/copy.ts:605` (`youPayCash`), `src/app/book.tsx` (`c.payWith`, `c.cash`), welcome `c.cash` | none | P0 |
-| P-02 | Goods COD: collect, remit to sender, resolve | R-SH F-03/F-04; R-SQ F-03 | Expected, collected, remitted states | PARTIAL, dead in prod: `server/domain/payments.ts:158-190,198-201` PG-only | Owner decision + SQLite port (WP-16) | P2 |
 | P-03 | Append-only cash entries | R-SQ F-06 | Triggers/no edits | DONE `server/db/sqlite-schema.ts:60,128-132` | none | P0 |
 | P-04 | Balanced double-entry journals | R-CA §10.1; R-SQ F-06 | Debits=credits | PARTIAL: `postOrderJournals` is called (`server/main.ts:2464`) but `ledger.ts:15` is PG-only | PG cutover (owner) | P3 |
 | P-05 | Commission and discount visible in the total | D-SH §4; R-HA §5 | Itemised | DONE `src/app/receipt/[id].tsx` (`c.commission`, `c.promoDiscount`), `server/main.ts:2459` | none | P1 |
@@ -174,7 +173,7 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | M-04 | Place search over Palestine (AR/EN) | R-HA §4 (Places); D-UB `search.tsx` | Search + recents | DONE `server/domain/place-index.ts`, `place-search.ts`, `server/data/places-ps.json.gz`, `src/trip-search.tsx` ("bireh" fixed, #32) | none | P0 |
 | M-05 | Pin label (reverse) | D-UB §4 | Name under the pin | DONE `src/pin-sheet.tsx`, `src/app/book.tsx:58` | none | P2 |
 | S-01 | Phone + password sign-up/in, Arabic and English | R-SQ F-13 | Account | DONE `server/main.ts:645,689`, `src/app/auth.tsx` | none | P0 |
-| S-02 | Verified phone (SMS code) | R-SQ F-13 (`auth/otp/*`); R-CA | OTP | PARTIAL: built (`server/domain/phone-identity.ts`, `phone-provider.ts`, `src/phone/*`, `src/phone-card.tsx`) but off (`WIND_PHONE_ENABLED`, `phone-provider.ts:46-50`) | SMS provider contract, sender id, approved prefixes, daily budget, evidence ref: BLOCKED-EXTERNAL | P0 |
+| S-02 | Verified phone (SMS code) | R-SQ F-13 (`auth/otp/*`); R-CA | OTP | PARTIAL: built (`server/domain/phone-identity.ts`, `phone-provider.ts`, `src/phone/*`, `src/phone-card.tsx`) but off (env reads `phone-provider.ts:10-34`; `WIND_PHONE_ENABLED` gate `:34`, production refusal `:10`) | SMS provider contract, sender id, approved prefixes, daily budget, evidence ref: BLOCKED-EXTERNAL | P0 |
 | S-03 | Verified email, reset by email | R-SQ F-13 | Code by email | PARTIAL: `server/main.ts:753` (`emailReady`), `:829-905`; sending needs a domain | Sending domain on Cloudflare (or other): BLOCKED-EXTERNAL | P1 |
 | S-04 | Delete account in app and on a public page | R-SQ F-13 (`deletion-request`) | Request + page | DONE `server/main.ts:1012`, `server/account-deletion.html`, `src/parts.tsx:417-429` (delete card) | none | P0 |
 | S-05 | Privacy and terms pages | R-SH §12 | Bilingual page | DONE `server/privacy.html`, `server/terms.html`, `src/api.ts:13-14`; legal review not done (PILOT.md) | Owner's legal review: BLOCKED-EXTERNAL | P1 |
@@ -185,7 +184,7 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 | S-10 | Reduced motion | — | Respect system | DONE `src/motion.tsx`, `src/intro.tsx` | none | P2 |
 | S-11 | Onboarding | D-HA; R-HA | Intro slides | DONE `src/app/welcome.tsx` | none | P2 |
 | S-12 | Release hardening: no backup, no cleartext, no ad ids, no keys in repo | D-* plugins; ATL S5-S8 | Manifest | DONE `app.json:19` (`allowBackup:false`), `app.config.js:54-58` (HTTPS/retired host refusal) | none | P0 |
-| S-13 | Role from server session, not a client toggle | FM §8 | Server auth | DONE `server/main.ts:414` and session policy | none | P0 |
+| S-13 | Role from server session, not a client toggle | FM §8 | Server auth | DONE session policy; `server/main.ts:413-415` (`needActive`) gates pending/blocked status and driver approval, role checks are `need` at `:412` | none | P0 |
 | S-14 | Install link for iPhone/web | R-SQ (PWA) | Web app | DONE `public/install.html`, `src/install-link.tsx` | none | P2 |
 | S-15 | Operational alerting, restore drill | ATL §22 | Alarms | PARTIAL: hourly GitHub uptime, per-minute VM watchdog and 03:10 UTC backup (`docs/operations/deploy.md` "Cron"); no alert-delivery proof (PILOT.md "Server down") | Owner's contact route + a delivered test alert + restore drill: BLOCKED-EXTERNAL | P0 |
 | S-16 | Driver-facing ride boarding PIN, ride tiers | D-UB, R-CA | Ride | N/A while ride is off; code in `ride-lifecycle.ts` (PG-only) | Ride activation review (section D) | — |
@@ -195,22 +194,23 @@ Columns: **ID** · feature · competitor(s) and source · how they do it · **Wi
 ## B. Mock/demo audit of production code (`src/`, `server/`, no tests)
 
 A grep for mock, fixture, sample, dummy, fake, demo, TODO, stub, lorem, example.com found no placeholder screens, no hardcoded fake users or orders, and no stubbed UI.
-Real data is real: `server/data/places-ps.json.gz` (OSM index), pilot checkpoints (`server/main.ts:2205-2216`). What it did find:
+Real data is real: `server/data/places-ps.json.gz` (OSM index), pilot checkpoints (`server/main.ts:2204-2215`). What it did find:
 
 | # | file:line | Finding | Kind | Needed |
 |---|---|---|---|---|
 | B-01 | `server/domain/opencode.ts:1-102`, `server/main.ts:56,598-600`, `server/db/sqlite-schema.ts:204` | A developer-agent job runner (spawns a CLI) is registered in the production API. It refuses in production (`opencode.ts:25`) so it is a dead admin surface, not a mock | Dev tool in prod bundle | Remove from the production entry point (WP-21) |
 | B-02 | `server/domain/payments.ts:19-33,192-201` | `FakePaymentsProvider` ships in the bundle; `/api/orders/:id/payments*` and `/cod*` routes are registered and answer 409 `payments_unavailable` on SQLite/prod. No client screen calls them | Test fake + unwired feature | Move the fake to a test-only module; decide COD (WP-16) or unregister routes (WP-21) |
 | B-03 | `server/domain/private-objects.ts:37-44,154` | `fakeObjectScanner` and `InMemoryObjectStore` ship in the bundle; routes dead (no store configured, PG-only) | Test fake + unwired feature | Same as B-02; real store is BLOCKED-EXTERNAL |
-| B-04 | `server/domain/ledger.ts:12-13` | `PROJECTED_CASH_CAP_MINOR = 100000` (₪1,000) and `cashCapActivated: false` contradict the live cap `src/model.ts:98` (₪150, `server/main.ts:3000`). `ledgerConfig` is not used outside the file | Stale constant, two numbers | Delete or derive from settings (WP-21) |
+| B-04 | `server/domain/ledger.ts:12-13`, `server/domain/eligibility.ts:21` | `PROJECTED_CASH_CAP_MINOR = 100000` (₪1,000) and `cashCapActivated: false` contradict the live cap `src/model.ts:98` (₪150, `server/main.ts:3000`); `eligibility.ts:21` holds a second copy (`projectedCashCapMinor: 100000`). Tests depend on them: `tests/activation-gates.mjs:2,8` imports `ledgerConfig` and asserts the values; `tests/ledger.mjs:64` builds a `Ledger` with the literal 100000 | Stale constant, two numbers | Delete or derive from settings (WP-21) |
 | B-05 | `commands.ts:11, dispatch.ts:41, eligibility.ts:33, events.ts:35, ledger.ts:15, presence.ts:27, quotes.ts:9, resource-scope.ts:30, ride-lifecycle.ts:25` | Code paths that never run in the pilot (SQLite). Client code that depends on them: `src/driver-presence*.ts`, `src/ride-flow.ts`, `src/freight-details.tsx`, `src/phone/*` | Features not wired in prod | Owner dialect decision; until then label them in `docs/SYSTEM.md` as "off in production" |
 | B-06 | `server/main.ts:1772-1776` | Partner customer is hardcoded as `partner:souq` / name "سوقنا" | Hardcoded partner | Parameterise by partner key when a second partner exists (A-15); leave for now |
-| B-07 | `server/main.ts:2205-2217,3720` | 14 checkpoint coordinates seeded by CLI only | Real data, unverified in the field | Owner/driver confirms each point before invite |
+| B-07 | `server/main.ts:2204-2215,3720` | 11 checkpoint coordinates (array `:2204-2215`) seeded by CLI only | Real data, unverified in the field | Owner/driver confirms each point before invite |
 | B-08 | `server/main.ts:1249` | Push reads the send ticket only; stale tokens are never pruned (comment says add receipts when the pilot shows stale tokens) | Documented stub | N-04, P3 |
 | B-09 | `src/model.ts:89-100` | Defaults `rideBase 15`, `ridePerKm 1.1`, `freight*`, `plusPrice 29`, `proPrice 99`, `nightExtra`, `perMinute` are guesses [inferred] (only `parcelPrice 20` and `driverCashCap 150` have owner/source). Admin-editable | Placeholder numbers | Owner confirms or sets under Settings before each service is switched on |
-| B-10 | `src/model.ts:227,247,263` and 35 other `ponytail:` comments (`grep -c` = 38) | Deliberate shortcuts with a stated ceiling (e.g. `server/main.ts:758` same-process rate limit; `:1932` parcel reschedule ignores time) | Known ceilings | Keep a ledger; not work items by themselves |
+| B-10 | `src/model.ts:227,247,263` and 35 other `ponytail:` comments (`grep -c` = 38) | Deliberate shortcuts with a stated ceiling (e.g. `:1929` parcel reschedule ignores time; note `server/main.ts:758` is a `// shortcut:` fencing tag, not a `ponytail:` comment) | Known ceilings | Keep a ledger; not work items by themselves |
 | B-11 | `src/copy.ts:311` | Subscription "contact support to pay" is a manual step, no receipt | Manual process | Acceptable for cash; record in `docs/PILOT.md` |
 | B-12 | `app.config.js:19-33`, `src/phone-test.ts`, `plugins/with-phone-test.js` | Test credentials baked into a debug APK | Guarded: loopback `127.0.0.1:4191` only, refused for EAS/release | No change; WP-07 adds an ordinary-sign-in variant |
+| B-13 | `server/domain/google-routing.ts:16,220` (`upstreamOrigin` option), module imported in production at `server/main.ts:35` | A test-only seam ("Tests only: point the fixed path at a fake node:http fixture") ships in the production module; `server/main.ts:2911` does not pass it, so nothing a client sends reaches it | Test seam in prod bundle | Keep, or move the seam behind a test-only factory; no behaviour change |
 
 No screen shows invented data (checked every route under `src/app/**`). The only "sample" strings are input placeholders (`WELCOME…` promo, `0599123456` phone example).
 
@@ -250,14 +250,14 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 | WP-18 | Admin fleet list / last-seen | P2 | admin | D-05 or last fix |
 | WP-19 | Remove dead dev/test surface from production | P2 | hygiene | none |
 | WP-20 | P3 backlog (compact) | P3 | mixed | various |
-| IN PROGRESS | Admin cash exact-decimal parsing (A-09); expo-doctor patch versions | — | elsewhere | — |
+| DONE | Admin cash exact-decimal parsing (A-09, PR #36); expo-doctor patch versions (PR #35) | — | merged elsewhere | — |
 
 ### Detail
 
 **WP-01 Door-time amount collected + typed variance. P1, 2V (money).**
 - Goal: the driver confirms the cash actually received at delivery; a difference against what was due needs a reason. Evidence for disputes and for the cap. (D-15; R-SQ F-03; D-SH `CollectPanel`.)
 - Files: `server/db/sqlite-schema.ts` (two nullable columns on `orders`: `collected_cents`, `variance_reason`, added by the existing `ALTER` loop at `:135`); new `server/domain/door-cash.ts`; one line in `server/main.ts` at `advanceOrder :2440-2468` (accept the two fields only when `next==='completed'`); `src/model.ts` (type + `varianceReasons`); `src/app/order/[id].tsx` (amount step before the code step, driver only); `src/copy.ts` (ar+en block); `src/wire-contracts.ts`.
-- Server: amount is integer cents (`money.ts`); reject negative or non-integer; due = `price - discount` (as shown at `src/app/driver/index.tsx:262`); difference ≠ 0 requires a reason in the list, else `400 invalid_input`; store with the same transaction as the status change; replay-safe through `order_actions` (`:2536`).
+- Server: amount is integer cents (`server/domain/money.ts`); reject negative or non-integer; due = `price - discount` (as shown at `src/app/driver/index.tsx:262`); difference ≠ 0 requires a reason in the list, else `400 invalid_input`; store with the same transaction as the status change; replay-safe through `order_actions` (`:2536`).
 - Client: numeric field with Latin/Arabic digits (`latinDigits` `src/model.ts:272`); the confirm button states the reason it waits (`ui.tsx:286`).
 - Tests: `tests/` cash suite (`cash.test.mjs`) new cases: exact amount, short, over, missing reason, replay, wrong role; contract fixtures recorded.
 - Acceptance: completed order stores amount and reason; admin order view shows both; no change to commission, journals or cap maths; existing orders unaffected (nullable).
@@ -271,16 +271,16 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 - Acceptance: assignment cannot bypass any rule a driver accept enforces.
 
 **WP-03 Driver told when blocked or approved. P1, 2V (auth).**
-- Goal: push + screen text on block, unblock, approve, role change (D-02; PILOT.md gap). Not told while carrying a parcel today.
-- Files: `server/main.ts` (`editUser :3166-3264`, approve `:3266`) one `queuePush` per transition; `server/push.ts` kind names; `src/native-push.ts`/`src/push.ts` handling; `src/copy.ts` (`err_blocked` exists `:1016`); driver screen `src/app/driver/index.tsx:175` reasons.
+- Goal: tell the driver on block and role change (push), and show a blocked message at sign-in (D-02; PILOT.md gap). Approval pushes already exist (`server/main.ts:3261`, `:3283`). PR #40 is open for the sign-in message.
+- Files: `server/main.ts` (`editUser` from `:3175`, block path `:3252-3259`; approve route `:3266`) one `queuePush` on the block and role-change transitions; `server/push.ts` kind names; `src/native-push.ts`/`src/push.ts` handling; `src/copy.ts` (`err_blocked` exists `:1016`); driver screen `src/app/driver/index.tsx:175` reasons.
 - Tests: transition → push queued once; no push for no-op edits.
 - Acceptance: a blocked driver sees why and whom to call; a block never strands a carried parcel silently (the existing `blockCarrying` warning stays).
 
 **WP-04 Verified phone sign-up activation. P0, 2V (auth), BLOCKED-EXTERNAL.**
 - Goal: turn the built phone flow on safely. (S-02.)
-- Obtain from the owner: SMS provider contract (Ooredoo or ACS), sender id, approved prefixes, daily message and budget limits, evidence reference (`phone-provider.ts:46-50` lists the exact variables), HMAC key.
+- Obtain from the owner: SMS provider contract (Ooredoo or ACS), sender id, approved prefixes, daily message and budget limits, evidence reference (`phone-provider.ts:10-34` reads the exact variables), HMAC key.
 - Files: none to build; `docs/operations/` runbook, `.env`-key list in `docs/implementation/contracts/config.json`; verification tests on the test PC with the provider's sandbox; physical run on the A53 (`src/phone/*`, `src/phone-card.tsx`).
-- Acceptance: a number cannot register twice, a wrong code locks out, budget cap stops sends, test providers refused in production (`phone-provider.ts:14-18`).
+- Acceptance: a number cannot register twice, a wrong code locks out, budget cap stops sends, test providers refused in production (`phone-provider.ts:10-11`).
 
 **WP-05 Email delivery. P1, 2V (auth), BLOCKED-EXTERNAL.**
 - Goal: verified email and reset by email work in production (S-03).
@@ -289,14 +289,14 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 - Acceptance: reset link and code arrive; unverified email can no longer take over an account (PILOT.md "known limits").
 
 **WP-06 X-01 large text. P1.**
-- Goal: Android font scale 130% and 200% do not clip or hide controls. Handoff `docs/HANDOFF-2026-11-05-NEXT-LEAD.md:179` says rework fixed-height layouts before raising the cap; `Button` labels are raw `Text` with no cap.
+- Goal: Android font scale 130% and 200% do not clip or hide controls. Retain the 1.35 cap and rework fixed-height layouts before raising it (source: `docs/HANDOFF-2026-11-13-FABLE-5.2-FINAL-VERIFIED-CUTOFF.md` Batch 4.4, which is not on `origin/master`, so this is [inferred]; `docs/HANDOFF-2026-11-05-NEXT-LEAD.md:179` only records that `Button` labels have no cap). Now PR #39; `Button` labels are raw `Text` with no cap.
 - Files: `src/ui.tsx` (`Txt :200`, `Button`, `IconButton`), `src/parts.tsx`, fixed `height`/`numberOfLines` sites in `src/app/book.tsx`, `src/app/order/[id].tsx`, `src/app/driver/index.tsx`, `src/pin-sheet.tsx`, `src/map-sheet.tsx`; `scripts/screens.mjs` (`booking-narrow` scales fonts without line height, so add line height).
 - Method: grep `height:` and `numberOfLines`; convert to `minHeight`/wrap; then raise `maxFontSizeMultiplier` from 1.35 to the tested value and cap `Button` the same way.
 - Acceptance: screenshots at 360 px, 130% and 200%, ar+en, no clipped button; then A53 with Android font scale set (needs the phone; `Needs the phone` list in the handoff).
 - Note: touches many UI files; schedule it after WP-01/02/09/11/14/17 merge, to avoid conflicts.
 
 **WP-07 Ordinary-sign-in sandbox test variant. P1, test infra.**
-- Goal: build the phone test APK against the loopback sandbox but let a person sign in through the normal sign-in screen (today `scripts/build-phone-tests.ps1:48-50` bakes synthetic credentials and `src/session.tsx:112-116` signs in automatically, so the real sign-in path is never exercised).
+- Goal: build the phone test APK against the loopback sandbox but let a person sign in through the normal sign-in screen (today `scripts/build-phone-tests.ps1` bakes synthetic credentials (env names `:70`, set at `:107-109`) and `src/session.tsx:112-116` signs in automatically, so the real sign-in path is never exercised).
 - Files: `scripts/build-phone-tests.ps1` (new `-SignIn Ordinary` switch: skip the `WIND_TEST_ROLE/IDENTIFIER/PASSWORD` block, keep `WIND_LOCAL_TEST=1` and the loopback `EXPO_PUBLIC_API_URL`); `app.config.js:19-33` (new `WIND_TEST_SANDBOX=1` accepted without a role, loopback origin enforced, still refused under `EAS_BUILD`/`WIND_RELEASE`, and it must enable `plugins/with-phone-test` at `:75` so the debug network-security file permits `127.0.0.1`); `plugins/with-phone-test.js`; `scripts/check-phone-tests.mjs` and the `tests/phone-test*` suite; `scripts/phone-test-server.mjs`/`phone-test-state.mjs` to print the provisioned identifier and password for the human to type; `docs/implementation/test-harness.md` one paragraph.
 - Acceptance: variant APK contains no credentials (assert in the check script), refuses a non-loopback URL, shows the sign-in screen; the scripted variant still signs in automatically.
 
@@ -338,7 +338,7 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 - Acceptance: row sums equal the existing today/week/all cards for the same period.
 
 **WP-16 Goods COD on SQLite. P2, 2V (money), owner decision first.**
-- Decision needed: will senders ask the driver to collect the goods price (Shiply "Pay", C-16/P-02)? If no, mark D and stop (and do WP-19 to unregister the routes).
+- Decision needed: will senders ask the driver to collect the goods price (Shiply "Pay", C-16; was also listed as P-02)? If no, mark D and stop (and do WP-19 to unregister the routes).
 - PR 1: `server/db/sqlite-schema.ts` (`merchant_cod`, `merchant_cod_events`, append-only triggers like `:128-132`), port `server/domain/payments.ts:158-190` to the SQLite dialect behind a new `server/domain/cod.ts`, cash cap counts goods held (extend `cashExposureCents` `server/main.ts:2991`).
 - PR 2: booking field "collect from recipient", driver collect step (reuses WP-01's amount and variance), admin remit/resolve in `src/app/admin/cash.tsx`, receipts.
 - Acceptance: collected goods money never mixes with commission maths; remit needs a payout reference; cap counts goods held.
@@ -352,8 +352,8 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 - Acceptance: stale > 2 minutes shown as stale, never as a position.
 
 **WP-19 Remove dead dev/test surface from production. P2.**
-- Files: `server/domain/opencode.ts` + `server/main.ts:56,598-600` (B-01), `server/domain/payments.ts:19-33,192` and `private-objects.ts:37-44,154` (move fakes to `tests/` helpers; B-02/B-03), `server/domain/ledger.ts:12-13` (B-04), `docs/SYSTEM.md` label list (B-05).
-- Acceptance: production `/api/opencode*` returns 404; tests still pass using the relocated fakes; no behaviour change for users.
+- Files: `server/domain/opencode.ts` + `server/main.ts:56,598-600` (B-01), `server/domain/payments.ts:19-33,192` and `private-objects.ts:37-44,154` (move fakes to `tests/` helpers; B-02/B-03), `server/domain/ledger.ts:12-13` and `server/domain/eligibility.ts:21` (B-04), `docs/SYSTEM.md` label list (B-05).
+- Acceptance: production `/api/opencode*` returns 404; tests still pass using the relocated fakes; the cap change also updates `tests/activation-gates.mjs:2,8` and `tests/ledger.mjs:64`; no behaviour change for users.
 
 **WP-20 P3 backlog (each its own later PR; compact).**
 
@@ -362,7 +362,6 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 | Saved recipients (C-13) | `server/db/sqlite-schema.ts`, `server/main.ts` places area, `src/app/book.tsx` | |
 | Handoff hint chips (T-24) | `src/app/book.tsx`, order note | |
 | QR proof (T-21) | proof code path `server/main.ts:2450`, camera permission | needs camera permission review |
-| Canned replies (T-09) | `server/main.ts:2130`, `src/app/order/[id].tsx:816` | |
 | Delivery windows + capacity (C-10), zone fees (C-09) | new tables, `src/app/book.tsx` | owner policy |
 | Edit order before dispatch (T-25) | `server/main.ts` new PATCH | |
 | Battery/permission health (D-25) | `server/main.ts:2612` body, admin order | |
