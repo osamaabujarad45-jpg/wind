@@ -2357,6 +2357,7 @@ route('POST', '/api/jobs/:id/offer', async ({ user, params, body }) => {
   if (!canTake((await activeLoad(user.id)), order.service)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
+  await guardCashCap(user.id, body.price, await driverRate(user.id));
   // A driver changing their own live offer does not ring the customer again; a first or renewed one does.
   if (!(await one('SELECT 1 FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', order.id, user.id, Date.now() - OFFER_TTL)))
     await queuePush([(await one('SELECT customer_id FROM orders WHERE id = ?', order.id))!.customer_id as number], 'offer', order.id);
@@ -2381,6 +2382,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+    await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
@@ -2965,14 +2967,16 @@ route('GET', '/api/driver/earnings', async ({ user }) => {
 
 // Cash settlement: drivers collect every fare in cash and owe Wind the commission snapshot of each finished job.
 // The ledger is append-only; a handover counts only after the driver confirms it (two-person check).
+const cashSum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
+const cashMinor = (column: 'commission' | 'discount') => persistence.backend === 'postgres' ? `${column}_minor` : `CAST(ROUND(${column} * 100) AS INTEGER)`;
+// The four inputs of cashOwed, as columns of one row per driver `u`.
+const owedColumns = () => `COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+    COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
+    ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
 async function cashBalances(where: string, ...params: SQLInputValue[]) {
-  const sum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
-  const minor = (column: 'commission' | 'discount') => persistence.backend === 'postgres' ? `${column}_minor` : `CAST(ROUND(${column} * 100) AS INTEGER)`;
   return (await all(`SELECT u.id, u.name, u.phone,
-    COALESCE((SELECT SUM(${minor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
-    COALESCE((SELECT SUM(${minor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
-    ${sum("kind = 'adjustment'")} adjustments, ${sum("kind = 'remittance' AND status = 'confirmed'")} remitted,
-    ${sum("kind = 'remittance' AND status = 'pending'")} pending,
+    ${owedColumns()},
+    ${cashSum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
     FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params))
     .map(r => ({ driverId: r.id as number, name: r.name as string, phone: r.phone as string,
@@ -2983,14 +2987,17 @@ async function cashBalances(where: string, ...params: SQLInputValue[]) {
 // What a driver would owe Wind if every job in hand finished now: the settled balance plus the commission on active jobs.
 // The cash cap (settings.driverCashCap) is checked against this at accept, as Wolt, Careem and Cedar GO cap courier cash.
 async function cashExposureCents(driverId: number) {
-  const owed = (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0;
-  const commission = persistence.backend === 'postgres' ? 'commission_minor' : 'CAST(ROUND(commission * 100) AS INTEGER)';
-  const active = (await one(`SELECT COALESCE(SUM(${commission}), 0) AS cents FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId))!;
-  return owed + Number(active.cents);
+  // One statement, so PostgreSQL reads owed and in-hand from one snapshot: a job finishing between two reads cannot vanish from both.
+  const r = (await one(`SELECT ${owedColumns()},
+    COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${activeSql})), 0) active
+    FROM users u WHERE u.id = ?`, driverId));
+  return r ? cashOwed(r.commission, r.discounts, r.adjustments, r.remitted) + Number(r.active) : 0;
 }
-async function guardCashCap(driverId: number, price: number, rate: number) {
+const driverRate = async (driverId: number) => (await activePlan(driverId)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+/** Refuses work that would take a driver past settings.driverCashCap; `code` is what the caller is told. */
+async function guardCashCap(driverId: number, price: number, rate: number, code = 'cash_cap_exceeded') {
   const cap = Math.round((await settings()).driverCashCap * 100);
-  if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) > cap) fail(409, 'cash_cap_exceeded');
+  if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) > cap) fail(409, code);
 }
 // A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
 async function cashSettled(userId: number) {
@@ -3502,12 +3509,16 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const customerOffer = /^\/api\/orders\/(\d+)\/offers\/(\d+)\/accept$/.exec(url.pathname);
       if (req.method === 'POST' && driverWork) {
         need(user!, 'driver'); needActive(user!);
-        await getOrder(Number(driverWork[1]), user!);
+        const work = await getOrder(Number(driverWork[1]), user!);
+        // Before eligibility.guard writes reservations: a cash-cap refusal must leave nothing behind (the handler checks again).
+        if (driverWork[2] === 'accept' && body.offerId === undefined && body.leaseNonce === undefined) await guardCashCap(user!.id, work.price, await driverRate(user!.id));
         if (body.offerId === undefined && body.leaseNonce === undefined) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
         const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
         if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
+        const offer = await one('SELECT price FROM order_offers WHERE order_id=? AND driver_id=?', Number(customerOffer[1]), Number(customerOffer[2]));
+        if (offer) await guardCashCap(Number(customerOffer[2]), Number(offer.price), await driverRate(Number(customerOffer[2])), 'offer_expired');
         await eligibility.guard(Number(customerOffer[2]), Number(customerOffer[1]), 'offer_accept', body.capacityProtocol, undefined, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && url.pathname === '/api/orders' && body.capacityProtocol !== undefined) {
         // An installed booking may be measured by an operator; it cannot assert its own verified load.
