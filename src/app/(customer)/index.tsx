@@ -37,6 +37,7 @@ export default function Home() {
   const [locationNote, setLocationNote] = useState('');
   const [open, setOpen] = useState(false);
   const [peek, setPeek] = useState(0);
+  const [topBar, setTopBar] = useState(0); // the greeting row's measured height: the camera keeps clear of it at any text size
   const side = useSideSheet();
   // A map behind another screen holds a GPU context and its tiles for nothing: a low-end phone needs that memory.
   const [focused, setFocused] = useState(true);
@@ -92,8 +93,8 @@ export default function Home() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* The map is the screen, the way a ride app opens: you, where you are. Everything else sits on the sheet over it. */}
-    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: 60, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={c.home} />}
-    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]}>
+    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={c.home} />}
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
         <View style={[styles.hello, shadow, { flexDirection: row }]}>
           <Logo size={30} />
