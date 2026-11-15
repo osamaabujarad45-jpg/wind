@@ -12,7 +12,7 @@ const defaultSettings = { ...standard, parcelPrice: 49 };
 const dir = mkdtempSync(join(tmpdir(), 'wind-admin-assign-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote, db } = await import('../server/main.ts');
+const { shutdown, server, promote, db, eligibility } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const call = apiCaller(() => base);
@@ -53,6 +53,7 @@ try {
   // ---- the list says who may take it, and why not ----
   const list = await call(`/admin/orders/${a.id}/assignable-drivers`, { token: admin.token });
   const byId = Object.fromEntries(list.map(d => [d.id, d]));
+  assert.ok(list.every(d => d.advisory === true), 'the list is advisory: the measured guard runs on assign, not on this read');
   assert.ok(byId[d1.user.id].eligible && byId[d2.user.id].eligible);
   assert.equal(byId[truck.user.id].reason, 'wrong_vehicle');
   assert.ok(!byId[blocked.user.id] && !byId[pending.user.id], 'blocked and unapproved accounts are not offered');
@@ -66,6 +67,41 @@ try {
   await call('/admin/settings', { token: admin.token, body: { driverCashCap: 150 } });
   assert.equal((await call(`/orders/${a.id}`, { token: customer.token })).status, 'searching', 'a refusal leaves the order searching');
   assert.equal(rows(a.id).length, 0);
+
+  // ---- the measured eligibility guard is consulted on every assign; its refusal rolls the whole assign back ----
+  // SQLite has no measured schema, so the guard here is a seam: it records each call and can refuse with a chosen code.
+  const guarded = await book();
+  const guardCalls = [];
+  const measuredGuard = eligibility.guard.bind(eligibility);
+  let refuseWith = null;
+  eligibility.guard = async (...args) => { guardCalls.push(args); if (refuseWith) eligibility.fail(409, refuseWith); return measuredGuard(...args); };
+  try {
+    refuseWith = 'route_not_permitted';
+    assert.equal((await assign(guarded, d2.user.id, {}, 409)).error, 'route_not_permitted');
+    assert.deepEqual(guardCalls.at(-1).slice(0, 3), [d2.user.id, guarded.id, 'accept'], 'the guard is asked for the accept check of this driver and order');
+    assert.equal((await call(`/orders/${guarded.id}`, { token: customer.token })).status, 'searching', 'a guard refusal leaves the order searching');
+    assert.equal(rows(guarded.id).length, 0, 'a guard refusal writes no audit row');
+    refuseWith = null;
+    await assign(guarded, d2.user.id);
+    assert.equal(rows(guarded.id).length, 1);
+    // A reassign reaches the guard's "already taken" refusal only for a measured order; it is reported as unsupported, not as taken.
+    refuseWith = 'already_taken';
+    assert.equal((await assign(guarded, d1.user.id, { expectedStatus: 'assigned', expectedDriverId: d2.user.id }, 409)).error, 'measured_reassign_unsupported');
+    assert.equal((await call(`/orders/${guarded.id}`, { token: customer.token })).driverId, d2.user.id, 'a refused reassign keeps the driver');
+    refuseWith = null;
+    // A driver who released the order cannot take it back from the admin list either.
+    await call(`/orders/${guarded.id}/release`, { token: d2.token, body: {} });
+    assert.equal((await assign(guarded, d2.user.id, {}, 409)).error, 'driver_released_order');
+  } finally {
+    eligibility.guard = measuredGuard;
+  }
+
+  // ---- a scheduled parcel reaches drivers only inside the release window (30 minutes before pickup) ----
+  const later = await call('/orders', { token: customer.token, body: { ...input, scheduledFor: Date.now() + 2 * 3_600_000, quotedPrice: quote(defaultSettings, input) } });
+  assert.equal((await assign(later, d1.user.id, {}, 409)).error, 'not_released_yet');
+  assert.equal((await call(`/admin/orders/${later.id}/assignable-drivers`, { token: admin.token })).find(d => d.id === d1.user.id).reason, 'not_released_yet');
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 10 * 60_000, later.id);
+  assert.equal((await assign(later, d1.user.id)).driverId, d1.user.id, 'inside the window the order can be assigned');
 
   // ---- assign from searching ----
   const assigned = await assign(a, d1.user.id, { requestId: randomUUID(), expectedStatus: 'searching' });
