@@ -73,7 +73,7 @@ starting a fixed-port server; a busy port is not permission to stop another sess
   `ps.wind.app.testordinary` (`WIND_TEST_SANDBOX=1`): same loopback-only sandbox and Debug network policy,
   refused for EAS, release and public URLs, but no role and no bundled credentials, so the normal sign-in and
   sign-up screens show. `phone:server` prints the provisioned identifiers and passwords to type;
-  `phone-check ordinary` asserts the sign-in screen, and the build asserts the APK config holds no credential.
+  `node scripts/check-phone-tests.mjs ordinary` asserts the sign-in screen, and the build asserts the APK config holds no credential.
 - **PostgreSQL** — choose an unused loopback port and a new data directory. `55473` in older
   examples belongs to the historical shared setup; it is not a session allocation. The November 10
   Astra baseline owns `D:\wind-plan-20261110-astra` and port `55493` on `DESKTOP-S2JKMK5`.

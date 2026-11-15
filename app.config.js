@@ -31,7 +31,7 @@ if (testVariant) {
   try { testUrl = new URL(apiUrl); } catch { /* rejected below */ }
   if (testUrl?.origin !== 'http://127.0.0.1:4191' || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
     || testUrl.username || testUrl.password
-    || (!sandbox && (!/^05[69]d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '') || (process.env.WIND_TEST_PASSWORD ?? '').length < 24))) {
+    || (!sandbox && (!/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '') || (process.env.WIND_TEST_PASSWORD ?? '').length < 24))) {
     throw new Error('Phone tests require the isolated loopback API and provisioned synthetic credentials.');
   }
   if (!sandbox) phoneTest = { role: testRole, identifier: process.env.WIND_TEST_IDENTIFIER, password: process.env.WIND_TEST_PASSWORD };
