@@ -1,5 +1,6 @@
 # Install a best-effort workstation backup for the Azure VM. The task runs only
 # in the current interactive Windows account because the backup uses its DPAPI key.
+param([Parameter(Mandatory = $true)][string]$TargetHost) # e.g. windadmin@<host>; there is no default host
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'Windows Task Scheduler is required.' }
@@ -9,7 +10,7 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
 }
 $backupScript = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot 'backup-azure.ps1')).Path
 $shell = (Get-Process -Id $PID).Path
-$arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "' + $backupScript + '"'
+$arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "' + $backupScript + '" -TargetHost "' + $TargetHost + '"'
 $action = New-ScheduledTaskAction -Execute $shell -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddHours(4)) `
     -RepetitionInterval (New-TimeSpan -Hours 4) -RepetitionDuration (New-TimeSpan -Days 3650)

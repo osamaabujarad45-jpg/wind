@@ -1,5 +1,6 @@
 param(
-    [string]$TargetHost = 'windadmin@windapp-ps.swedencentral.cloudapp.azure.com',
+    # The 15 November Docker host; the 16 November host has no container (its own backup.sh, docs/operations/deploy.md).
+    [Parameter(Mandatory = $true)][string]$TargetHost,
     [string]$IdentityFile = "$env:USERPROFILE\.ssh\wind-azure",
     [string]$ContainerName = 'wind-api',
     [string]$OutputDirectory = "$env:LOCALAPPDATA\SouqWindPrivate\backups",
