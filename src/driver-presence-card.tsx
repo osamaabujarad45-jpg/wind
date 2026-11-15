@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CopyKey } from './copy';
-import { Appear, Button, Card, IconName, palette, Row, tones, Txt, useCopy } from './ui';
+import { Appear, Button, Card, IconName, maxScale, palette, Row, tones, Txt, useCopy } from './ui';
 
 // The server accepts only consentVersion 1; the consent text in copy.ts is version 1.
 export const PRESENCE_CONSENT_VERSION = 1;
@@ -76,7 +76,7 @@ export function DriverPresenceCard({ state, consentAccepted = false, requestsOn 
         </View>
       </Row>
     </View>
-    {!!error && <Text accessibilityRole="alert" style={[styles.error, { textAlign: align }]}>{error}</Text>}
+    {!!error && <Text maxFontSizeMultiplier={maxScale} accessibilityRole="alert" style={[styles.error, { textAlign: align }]}>{error}</Text>}
 
     {consenting && state === 'offline' ? <Appear style={styles.consent}>
       <Txt variant="h2">{c.presence_consent_title}</Txt>
@@ -117,7 +117,7 @@ export function BackgroundLocationAction({ onRequest }: { onRequest: () => Promi
       <Button title={c.presence_bg_action} icon="location-outline" variant="outline" loading={asking} onPress={() => { void ask(); }} />
     </View>
     {/* Polite: the answer is announced once the OS decision is known. */}
-    {result && <View accessibilityLiveRegion="polite"><Text style={[styles.result, { textAlign: align }]}>{result === 'granted' ? c.presence_bg_granted : c.presence_bg_not_on}</Text></View>}
+    {result && <View accessibilityLiveRegion="polite"><Text maxFontSizeMultiplier={maxScale} style={[styles.result, { textAlign: align }]}>{result === 'granted' ? c.presence_bg_granted : c.presence_bg_not_on}</Text></View>}
   </Card>;
 }
 

@@ -6,6 +6,7 @@ import { readdirSync } from 'node:fs';
 const suites = [
   "journey-contracts.test.mjs",
   "runtime-config.test.mjs",
+  "large-text.test.mjs",
   "driver-command.test.mjs",
   "protected-recovery.test.mjs",
   "offline-snapshot.test.mjs",
@@ -49,6 +50,7 @@ const suites = [
   "parcel-pickup-far.test.mjs",
   "courier-block.test.mjs",
   "cash.test.mjs",
+  "admin-assign.test.mjs",
   "share.test.mjs",
   "map.test.mjs",
   "shutdown-keepalive.test.mjs",
@@ -114,6 +116,7 @@ const suites = [
   "background-registration.test.mjs",
   "phone-test.test.mjs",
   "phone-test-build.test.mjs",
+  "check-test-apk.test.mjs",
   "phone-test-state.test.mjs",
   "phone-ui.test.mjs",
   "contracts-money.test.mjs",

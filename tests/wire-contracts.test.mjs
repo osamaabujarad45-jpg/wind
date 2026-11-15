@@ -6,7 +6,11 @@ const order = { id: 1, customerId: 2, driverId: null, service: 'parcel', status:
   price: 20, createdAt: 1, updatedAt: 1, pickupNote: '', dropoffNote: '' };
 assert.deepEqual(readOrder({ ...order, futureAdditiveField: true }).futureAdditiveField, true);
 for (const changes of [{ status: 'teleported' },{ price: NaN },{ driverId: -1 },{ pickupCity: 'unknown' },{ recovery: { schemaVersion: 2, version: 1, assignmentEpoch: 0 } },
-  { ride: { arrivedAt: null, graceUntil: null, boardingRequired: true, boardingLocked: false, boardingCode: 'private-text' } }]) assert.throws(() => readOrder({ ...order, ...changes }), /invalid_response/);
+  { ride: { arrivedAt: null, graceUntil: null, boardingRequired: true, boardingLocked: false, boardingCode: 'private-text' } },
+  // A11 door cash shown to the driver and admins: integer cents, and a reason that is null or on the approved list.
+  { collected: { cents: 4900 } }, { collected: { cents: 4900, reason: 'tip' } }, { collected: { cents: 4900.5, reason: null } }, { collected: { cents: '4900', reason: null } }]) assert.throws(() => readOrder({ ...order, ...changes }), /invalid_response/);
+assert.deepEqual(readOrder({ ...order, collected: { cents: 4400, reason: 'PARTIAL_PAYMENT' } }).collected, { cents: 4400, reason: 'PARTIAL_PAYMENT' });
+assert.deepEqual(readOrder({ ...order, collected: { cents: 4900, reason: null } }).collected, { cents: 4900, reason: null });
 assert.throws(() => readOrder({ ...order, dispatch: { roundId: randomUUID(), state: 'unknown', deadlineAt: 1 } }));
 assert.equal(readOrder({ ...order, dispatch: { roundId: randomUUID(), state: 'matched', deadlineAt: 1 } }).dispatch.state, 'matched', 'the actual server matched state stays valid after acceptance');
 assert.equal(readDriverReceipt({ schemaVersion: 1, orderId: 1, requestId: randomUUID(), state: 'unknown' }).state, 'unknown');

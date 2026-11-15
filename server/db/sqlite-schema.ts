@@ -136,13 +136,19 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER'], ['picked_up_at', 'INTEGER'], ['commission_rate', 'REAL']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER'], ['picked_up_at', 'INTEGER'], ['commission_rate', 'REAL'], ['collected_cents', 'INTEGER'], ['variance_reason', 'TEXT'], ['door_expected_cents', 'INTEGER'], ['door_collected_by', 'INTEGER REFERENCES users(id)'], ['door_request_id', 'TEXT']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
     if (column === 'job_alerted_at') db.prepare('UPDATE orders SET job_alerted_at = ? WHERE scheduled_for IS NOT NULL AND scheduled_for <= ?').run(Date.now(), Date.now() + 30 * 60_000);
   }
 }
+// A11 door cash: the five door columns are one immutable fact once collected_cents is set. Created after the ALTERs above,
+// because the columns do not exist in a database older than this build. Same rule as postgres-door-cash.sql.
+db.exec(`CREATE TRIGGER IF NOT EXISTS orders_door_cash_write_once BEFORE UPDATE OF collected_cents, variance_reason, door_expected_cents, door_collected_by, door_request_id ON orders
+  WHEN OLD.collected_cents IS NOT NULL AND (NEW.collected_cents IS NOT OLD.collected_cents OR NEW.variance_reason IS NOT OLD.variance_reason
+    OR NEW.door_expected_cents IS NOT OLD.door_expected_cents OR NEW.door_collected_by IS NOT OLD.door_collected_by OR NEW.door_request_id IS NOT OLD.door_request_id)
+  BEGIN SELECT RAISE(ABORT, 'door cash is write-once'); END;`);
 // Covering indexes: driver and customer stats run on every driver request, so they read the index, never the rows.
 // A table older than the rating column (it only ever lived in development) keeps the plain indexes.
 if ((db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'rating'))

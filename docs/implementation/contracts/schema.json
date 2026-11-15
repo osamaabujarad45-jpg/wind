@@ -202,12 +202,6 @@
     },
     {
       "type": "table",
-      "name": "order_command_rejections",
-      "tableName": "order_command_rejections",
-      "sql": "CREATE TABLE order_command_rejections (\n  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,\n  error TEXT NOT NULL CHECK (error IN ('priority_cutoff')), created_at INTEGER NOT NULL, PRIMARY KEY(user_id, request_id))"
-    },
-    {
-      "type": "table",
       "name": "order_commands",
       "tableName": "order_commands",
       "sql": "CREATE TABLE order_commands (\n  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,\n  order_id INTEGER NOT NULL REFERENCES orders(id), PRIMARY KEY(user_id, request_id))"
@@ -240,7 +234,7 @@
       "type": "table",
       "name": "orders",
       "tableName": "orders",
-      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
+      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, collected_cents INTEGER, variance_reason TEXT, door_expected_cents INTEGER, door_collected_by INTEGER REFERENCES users(id), door_request_id TEXT)"
     },
     {
       "type": "table",
@@ -288,7 +282,7 @@
       "type": "table",
       "name": "quotes",
       "tableName": "quotes",
-      "sql": "CREATE TABLE quotes (\n  id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),\n  pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,\n  pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, shared INTEGER NOT NULL, scheduled_for INTEGER,\n  currency TEXT NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'), price_minor INTEGER NOT NULL, discount_minor INTEGER, commission_minor INTEGER,\n  tariff_snapshot TEXT NOT NULL, tariff_basis_points TEXT NOT NULL, tariff_version TEXT NOT NULL,\n  graph_version TEXT, profile_version TEXT, restriction_version TEXT, provider_version TEXT,\n  eta_min_seconds INTEGER NOT NULL, eta_max_seconds INTEGER NOT NULL,\n  feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,\n  itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id), priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
+      "sql": "CREATE TABLE quotes (\n  id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),\n  pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,\n  pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, shared INTEGER NOT NULL, scheduled_for INTEGER,\n  currency TEXT NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'), price_minor INTEGER NOT NULL, discount_minor INTEGER, commission_minor INTEGER,\n  tariff_snapshot TEXT NOT NULL, tariff_basis_points TEXT NOT NULL, tariff_version TEXT NOT NULL,\n  graph_version TEXT, profile_version TEXT, restriction_version TEXT, provider_version TEXT,\n  eta_min_seconds INTEGER NOT NULL, eta_max_seconds INTEGER NOT NULL,\n  feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,\n  itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id))"
     },
     {
       "type": "table",
@@ -373,6 +367,12 @@
       "name": "cash_entries_no_edit",
       "tableName": "cash_entries",
       "sql": "CREATE TRIGGER cash_entries_no_edit BEFORE UPDATE ON cash_entries\n  WHEN OLD.status <> 'pending' OR NEW.amount_cents <> OLD.amount_cents OR NEW.driver_id <> OLD.driver_id OR NEW.kind <> OLD.kind\n  BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "orders_door_cash_write_once",
+      "tableName": "orders",
+      "sql": "CREATE TRIGGER orders_door_cash_write_once BEFORE UPDATE OF collected_cents, variance_reason, door_expected_cents, door_collected_by, door_request_id ON orders\n  WHEN OLD.collected_cents IS NOT NULL AND (NEW.collected_cents IS NOT OLD.collected_cents OR NEW.variance_reason IS NOT OLD.variance_reason\n    OR NEW.door_expected_cents IS NOT OLD.door_expected_cents OR NEW.door_collected_by IS NOT OLD.door_collected_by OR NEW.door_request_id IS NOT OLD.door_request_id)\n  BEGIN SELECT RAISE(ABORT, 'door cash is write-once'); END"
     }
   ],
   "tables": [
@@ -1270,63 +1270,6 @@
       ]
     },
     {
-      "name": "order_command_rejections",
-      "columns": [
-        {
-          "cid": 0,
-          "name": "user_id",
-          "type": "INTEGER",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 1
-        },
-        {
-          "cid": 1,
-          "name": "request_id",
-          "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 2
-        },
-        {
-          "cid": 2,
-          "name": "payload_hash",
-          "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 3,
-          "name": "error",
-          "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 4,
-          "name": "created_at",
-          "type": "INTEGER",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 0
-        }
-      ],
-      "foreignKeys": [
-        {
-          "id": 0,
-          "seq": 0,
-          "table": "users",
-          "from": "user_id",
-          "to": "id",
-          "on_update": "NO ACTION",
-          "on_delete": "NO ACTION",
-          "match": "NONE"
-        }
-      ]
-    },
-    {
       "name": "order_commands",
       "columns": [
         {
@@ -2064,16 +2007,58 @@
         },
         {
           "cid": 42,
-          "name": "priority",
+          "name": "collected_cents",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 43,
+          "name": "variance_reason",
           "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": "'standard'",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 44,
+          "name": "door_expected_cents",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 45,
+          "name": "door_collected_by",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 46,
+          "name": "door_request_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
           "pk": 0
         }
       ],
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "door_collected_by",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "users",
           "from": "driver_id",
@@ -2083,7 +2068,7 @@
           "match": "NONE"
         },
         {
-          "id": 1,
+          "id": 2,
           "seq": 0,
           "table": "users",
           "from": "customer_id",
@@ -2793,14 +2778,6 @@
           "type": "INTEGER",
           "notnull": 0,
           "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 42,
-          "name": "priority",
-          "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": "'standard'",
           "pk": 0
         }
       ],

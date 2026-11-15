@@ -36,6 +36,9 @@ import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-r
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { doorCash } from './domain/door-cash.ts';
+import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
+import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
@@ -327,6 +330,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
+    ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
@@ -538,7 +543,7 @@ const routes: [string, RegExp, Handler, boolean?][] = [];
 const route = (method: string, path: string, handler: Handler, isPublic = false) =>
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
-const eligibility = new Eligibility(persistence, fail);
+export const eligibility = new Eligibility(persistence, fail); // exported for the admin-assign test seam
 registerEligibilityRoutes(route, eligibility, async (order, action) => {
   if (action === 'confirm_return') await postOrderJournals(order.id);
   await queuePush([order.driver_id], 'decided', order.id);
@@ -645,7 +650,8 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 31 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 31'))) fail(503, 'unavailable');
+      if (schema < 32 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))
+        || !(await one('SELECT version FROM schema_migrations WHERE version = 31')) || !(await one('SELECT version FROM schema_migrations WHERE version = 32'))) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -1195,7 +1201,7 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
-  | 'destination_request' | 'destination_accepted' | 'destination_declined';
+  | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned'; // WP-02
 // T37: the subject is read at send time and must be configured (no obsolete host default).
 const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -2329,7 +2335,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   needActive(user);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-  const freshDriver = (await one('SELECT role, status, vehicle FROM users WHERE id = ?', user.id));
+  const freshDriver = (await one('SELECT id, role, status, vehicle, approved_at FROM users WHERE id = ?', user.id));
   if (!freshDriver || freshDriver.role !== 'driver' || freshDriver.status !== 'active') fail(403, 'blocked');
   user.vehicle = freshDriver!.vehicle;
   if (body.offerId !== undefined || body.leaseNonce !== undefined) {
@@ -2361,14 +2367,14 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', Number(params[0]));
   }
   const order = (await getOrder(Number(params[0]), user));
-  if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
-  if (!servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
   const carrying = (await activeLoad(user.id));
-  if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
   if (order.status !== 'searching') fail(409, 'already_taken'); // say so before any cash message; the UPDATE below still decides
-  await guardCashCap(user.id, order.price, rate);
+  // The driver checks shared with the admin assign (driver-refusal.ts). Parcels stack up to PARCEL_LOAD; rides and freight are exclusive.
+  const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE },
+    { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor }, freshDriver!, rate);
+  if (refused) fail(409, refused);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
@@ -2476,12 +2482,13 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   return { ok: true };
 });
 
-async function advanceOrder(user: User, id: number, body: Row) {
+async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
   const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  if ((next !== 'completed' || r.service !== 'parcel') && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: parcel delivery fee only
   (await safetyFree(r.id));
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
@@ -2496,8 +2503,13 @@ async function advanceOrder(user: User, id: number, body: Row) {
       fail(400, 'wrong_code');
     }
     const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
-      next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
+    const door = next === 'completed' ? doorCash(r.price, r.discount, body, fail) : null;
+    // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
+    // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
+    if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
+      door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
+      next, r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
+      door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
@@ -2572,7 +2584,7 @@ route('POST', '/api/orders/:id/advance', async ({ user, params, body }) => {
 });
 
 // Lost acknowledgements replay the stored outcome instead of applying a driver command twice.
-async function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) {
+async function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row, requestId: string) => Promise<Order>) {
   const { requestId, ...input } = body;
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   if (!activeStatuses.includes(input.expectedStatus)) fail(400, 'invalid_status');
@@ -2599,7 +2611,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
             || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
             || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
         }
-        result = (await apply(user, id, input));
+        result = (await apply(user, id, input, requestId));
       }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
@@ -3050,6 +3062,10 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
+// WP-02: admin assign / reassign, through the same guards as the driver accept.
+registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
+  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
+  permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, eligibility, measured: () => measuredCapability(persistence) });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');

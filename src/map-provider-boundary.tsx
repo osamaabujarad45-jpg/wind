@@ -5,7 +5,7 @@ import { effectiveMapProvider } from './map-provider';
 import { recordMapFailure, retryMapProviders } from './map-failures';
 import { currentMapMode, useMapMode } from './map-mode';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
-import { palette, useCopy } from './ui';
+import { maxScale, palette, useCopy } from './ui';
 
 /** One owner for provider attempts: each attempt mounts the Google or the platform's baseline map fresh, and
  * renderers never retry or revive a failed policy attempt. Pass route or pin; google/baseline draw that kind. */
@@ -54,7 +54,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
           { translateX: ((props?.insets?.left ?? 0) - (props?.insets?.right ?? 0)) / 2 },
           { translateY: ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
         ] }}>
-        <Text>{c.retry}</Text>
+        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
