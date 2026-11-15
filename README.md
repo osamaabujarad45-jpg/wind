@@ -17,7 +17,7 @@ The workspace targets Android 1.0.13 / code 17 and Expo SDK 57; the signed previ
 background tracking against this branch's API. On 29 October the candidate API
 image and corrected web bundle were deployed to the Azure VM (production moved to AWS on 12 November, to a new Azure subscription on 15 November, and on 16 November to
 `https://4.223.118.16.sslip.io` on a student Azure subscription: `docs/operations/deploy.md`); the Android and web apps
-share one origin and `check:deployment` passes. The release is still not
+share one origin; `check:deployment` passed against `https://4.223.118.16.sslip.io` on 16 November. The release is still not
 public; see the [29 October readiness report](reports/release-readiness-2026-10-29.md).
 Email codes (Cloudflare Email Service) need a sending domain first. The live-tracking
 pass of 22 October (plausible GPS yardstick, driver identity in the live push,

@@ -147,7 +147,7 @@ try {
         process.env.EXPO_PUBLIC_API_URL = `https://${host}`;
         assert.throws(build, /retired API host/, host);
       }
-      process.env.EXPO_PUBLIC_API_URL = 'https://windapp-ps.swedencentral.cloudapp.azure.com';
+      process.env.EXPO_PUBLIC_API_URL = 'https://4.223.118.16.sslip.io';
       assert.doesNotThrow(build, 'the current production address builds');
     } finally {
       for (const [key, value] of Object.entries({ WIND_TEST_ROLE: savedRelease.role, WIND_RELEASE: savedRelease.release, WIND_LOCAL_TEST: savedRelease.local, EXPO_PUBLIC_API_URL: savedRelease.url })) {

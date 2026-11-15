@@ -16,7 +16,7 @@ Send the APK link with this message. Android asks to allow installing from this 
 > الدفع نقدًا للسائق. أعطِ السائق رمز التسليم عند الاستلام فقط.
 > لأي ملاحظة: «حسابي» ← «المساعدة والدعم» ← «أرسل رأيك في التطبيق». رأيك يهمنا جدًا.
 
-iPhone users can use the web app at <https://windapp-ps.swedencentral.cloudapp.azure.com> in the browser. Closed-app alerts there depend on the browser.
+iPhone users can use the web app at <https://4.223.118.16.sslip.io> in the browser (from 16 November 2026; anyone who added the old address to the home screen must add the new one). Closed-app alerts there depend on the browser.
 
 ## Couriers
 
