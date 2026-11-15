@@ -8,6 +8,9 @@ import { createProtectedRecovery, type RecoverySlot } from './protected-recovery
 const encryptionKey = async (token: string, slot: RecoverySlot) => AESEncryptionKey.import(
   await digestStringAsync(CryptoDigestAlgorithm.SHA256, `wind-recovery-aes-v1:${slot}:${token}`), 'hex');
 const base64 = (text: string) => btoa(encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16))));
+// expo-crypto's Android fromCombined rejects a base64 string ("Value is a string, expected an Object") although its types
+// allow one, so every saved record failed to open on the phone (C-01). Bytes work on every platform.
+const bytesFromBase64 = (text: string) => Uint8Array.from(atob(text), ch => ch.charCodeAt(0));
 const fromBase64 = (text: string) => decodeURIComponent(Array.from(atob(text), ch => `%${ch.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
 
 export const recoveryStorage = createProtectedRecovery({
@@ -19,5 +22,5 @@ export const recoveryStorage = createProtectedRecovery({
     const sealed = await aesEncryptAsync(base64(plaintext), await encryptionKey(token, slot));
     return sealed.combined('base64');
   },
-  open: async (ciphertext, token, slot) => fromBase64(await aesDecryptAsync(AESSealedData.fromCombined(ciphertext), await encryptionKey(token, slot), { output: 'base64' })),
+  open: async (ciphertext, token, slot) => fromBase64(await aesDecryptAsync(AESSealedData.fromCombined(bytesFromBase64(ciphertext)), await encryptionKey(token, slot), { output: 'base64' })),
 });

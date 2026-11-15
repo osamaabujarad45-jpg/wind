@@ -164,7 +164,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         configureApi(token, expired);
         // The saved read-only summary appears only if the account cannot be reached (refresh clears it on success),
         // so an online launch never flashes the offline screen.
-        if (!phoneTest) setOfflineSummary(await savedOfflineSummary().catch(error => { console.warn(`wind.offline-summary.read: ${(error as Error)?.message ?? 'unknown'} / ${((error as Error)?.cause as Error)?.message ?? 'no cause'}`); return null; }));
+        if (!phoneTest) setOfflineSummary(await savedOfflineSummary().catch(error => { console.warn(`wind.offline-summary.read: ${(error as Error)?.message ?? 'unknown'} / ${((error as Error)?.cause as Error)?.name ?? 'no cause'}`); return null; }));
         await refresh();
       }
       setReady(true);
