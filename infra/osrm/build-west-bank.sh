@@ -4,8 +4,10 @@
 # The boundary is the outer ring of OpenStreetMap relation 1803010; that relation alone is Area C, and 1613659 is Areas A and B. It knows nothing of permits, gates or checkpoints inside the West Bank.
 # Needs swap on a 1 GB VM; the caps keep it from starving the live containers. fallocate -l 3G /swap-wb && mkswap /swap-wb && swapon /swap-wb, then remove it.
 # Reproducible (Fable GEO-01): the downloaded extract is kept as $out/source.osm.pbf and BUILD-MANIFEST records its checksum and
-# OSM replication timestamp, the boundary, the image digest and every graph file's checksum. Rebuilding from the same source
-# (third argument) must give the same graph checksums; compare the two manifests. Geometry never proves a road is legal to drive.
+# OSM replication timestamp, the boundary, the image digest and every graph file's checksum. OSRM's threaded build is not
+# byte-identical (15 Nov 2026: same source, two builds, different graph_sha256), so reproducibility means identical routes:
+# rebuild from the same source (third argument), serve both and compare distance, duration and geometry for fixed pairs.
+# Geometry never proves a road is legal to drive.
 set -eu
 boundary=$1
 out=${2:-/srv/osrm-wb}
