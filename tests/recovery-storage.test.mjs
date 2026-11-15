@@ -50,11 +50,13 @@ const crypto = {
 const store = new Map();
 const token = 'session-token-for-recovery-test-0123456789';
 const protectedRecovery = load('protected-recovery.ts', {});
-const { recoveryStorage } = load('recovery-storage.ts', {
+let nativeWake = null; const acknowledged = [];
+const { recoveryStorage, pendingRecoveryWake, acknowledgeRecoveryWake } = load('recovery-storage.ts', {
   'expo-crypto': crypto,
   './storage': { storage: { get: async key => store.get(key) ?? null, set: async (key, value) => { value === null ? store.delete(key) : store.set(key, value); } } },
   './api-client': { apiSessionCredential: () => token, apiSessionRevision: () => 1, serverOffset: () => 0 },
   './protected-recovery': protectedRecovery,
+  './deadline-wake': { deadlineWake: { update: async () => {}, clear: async () => {}, pending: async () => nativeWake, acknowledge: async wake => { acknowledged.push(wake.id); } } },
 });
 store.set('token', token);
 
@@ -63,6 +65,19 @@ const summary = { schemaVersion: 1, actorId: 7, role: 'customer', savedAt: Date.
 await recoveryStorage.write('summary', summary, 6 * 60 * 60_000);
 assert.ok([...store.keys()].some(key => key.endsWith('.summary')), 'the summary is stored');
 assert.deepEqual(await recoveryStorage.read('summary'), summary, 'a saved summary opens again with the Android fromCombined behaviour');
+
+// A14: a native wake is only handed to the session whose record namespace it carries.
+const ownScope = createHash('sha256').update(`wind-recovery-slot-v1:${token}`).digest('hex');
+nativeWake = { scope: 'b'.repeat(64), id: 'other-session' };
+assert.equal(await pendingRecoveryWake(), null, 'another session\'s wake is never returned');
+await acknowledgeRecoveryWake(nativeWake);
+assert.deepEqual(acknowledged, [], 'nor acknowledged');
+nativeWake = { scope: ownScope, id: 'own' };
+assert.deepEqual(await pendingRecoveryWake(), nativeWake);
+await acknowledgeRecoveryWake({ scope: ownScope, id: 'stale' });
+assert.deepEqual(acknowledged, [], 'a stale id is not acknowledged');
+await acknowledgeRecoveryWake(nativeWake);
+assert.deepEqual(acknowledged, ['own']);
 // Arabic text survives the base64/UTF-8 round trip.
 await recoveryStorage.write('command', { note: 'السائق عند الباب' }, 15 * 60_000);
 assert.deepEqual(await recoveryStorage.read('command'), { note: 'السائق عند الباب' });

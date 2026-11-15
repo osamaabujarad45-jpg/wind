@@ -77,6 +77,6 @@ module.exports = ({ config }) => ({
   plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications',
     // A test variant never carries a Google key, even when one is in the environment.
     ['react-native-maps', testVariant ? {} : { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
-    './plugins/with-release-guard',
+    './plugins/with-release-guard', './plugins/with-deadline-wake',
     ...(testVariant ? ['./plugins/with-phone-test'] : [])],
 });
