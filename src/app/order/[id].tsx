@@ -10,7 +10,7 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, exceptionNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -509,9 +509,11 @@ export default function OrderScreen() {
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
+      {order.exceptionReason && <Txt variant="caption" style={{ marginBottom: 8 }}>
+        {fill(c.suggestedNext, { a: exceptionNextAction[order.exceptionReason] === 'return' ? c.returnToSender : c.reattempt })}</Txt>}
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
-          variant={action === 'reattempt' ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
+          variant={action === (order.exceptionReason ? exceptionNextAction[order.exceptionReason] : 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}

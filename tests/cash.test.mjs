@@ -127,7 +127,10 @@ try {
   let supportReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   supportReturn = await call(`/jobs/${supportReturn.id}/accept`, { token: driver.token, body: {} });
   supportReturn = await advance(driver.token, await advance(driver.token, supportReturn));
-  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  // An unknown failure type is refused; the new typed ones are accepted (PROD-06).
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'lost_in_space' }, expect: 400 });
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  assert.equal((await call(`/orders/${supportReturn.id}`, { token: driver.token })).exceptionReason, 'access_blocked');
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
   const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Sender confirmed receipt by phone' } });
   assert.equal(confirmedReturn.commission, 7.35, 'support-confirmed returns record the same commission as code-confirmed returns');
