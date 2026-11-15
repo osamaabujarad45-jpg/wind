@@ -6,6 +6,8 @@ import { api, API_URL, ApiError, configureApi, errorCode, invalidateApiSessionAc
 import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-client';
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
 import { recoveryStorage } from './recovery-storage';
+import { copy } from './copy';
+import { setAuthNotice, takeAuthNotice } from './phone/notice';
 import type { OfflineSummary } from './offline-summary';
 import { retryMapProviders } from './map-failures';
 import { configureRuntime, effectiveRuntime, resetRuntime } from './runtime-config';
@@ -101,7 +103,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const dead = apiSessionCredential();
     await forget().catch(() => { if (dead === apiSessionCredential()) endLocally(); });
   }, [forget, endLocally]);
-  const expired = useCallback(() => { void ended(); }, [ended]);
+  const languageRef = useRef(language);
+  useEffect(() => { languageRef.current = language; }, [language]);
+  // The 401 carries no reason (it must not tell a stolen token whose account it was); sign-in does, once the password is right.
+  const expired = useCallback(() => { setAuthNotice(copy[languageRef.current].sessionEndedNotice); void ended(); }, [ended]);
 
   const refresh = useCallback(async (reportFailure = false) => {
     const revision = apiSessionRevision();
@@ -230,6 +235,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void registerNativePush(language);
     },
     signOut: async () => {
+      takeAuthNotice(); // a normal sign-out never shows a leftover session-ended message
       const endedCredential = apiSessionCredential();
       invalidateApiSessionActions();
       const revision = apiSessionRevision();
