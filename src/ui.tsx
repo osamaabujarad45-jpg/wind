@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
-  AccessibilityInfo, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  AccessibilityInfo, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
   type ColorValue, type LayoutRectangle, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -189,15 +189,22 @@ const textVariants = {
   micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>;
 
+// X-01: OS text scale stays on up to Android's largest step (2.0). Layouts use minHeight/wrap so they grow with it.
+// Only fixed-size chrome (tab labels, badge counts, map labels) keeps a lower cap, set where it is used.
+export const maxScale = 2;
+// numberOfLines clips important text; past the old 1.35 cap let it wrap instead (rows are minHeight/flexShrink).
+export function useLines(n?: number) { const { fontScale } = useWindowDimensions(); return fontScale > 1.35 ? undefined : n; }
+
 export function Txt({ children, variant = 'body', style, center, numberOfLines, selectable, header, accessibilityLabel }: {
   children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
   accessibilityLabel?: string;
 }) {
   const { align, language } = useCopy();
-  // T42: OS text scaling stays on, capped so large Arabic/English text grows without clipping the fixed line heights.
+  const lines = useLines(numberOfLines);
+  // T42/X-01: OS text scaling stays on up to maxScale; line heights scale with it and containers use minHeight.
   // Keyed by language: Android kept the Arabic width after an in-app switch and clipped "Your current order".
-  return <Text key={language} textBreakStrategy="simple" maxFontSizeMultiplier={1.35} numberOfLines={numberOfLines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
+  return <Text key={language} textBreakStrategy="simple" maxFontSizeMultiplier={maxScale} numberOfLines={lines} selectable={selectable} accessibilityLabel={accessibilityLabel} accessibilityRole={header ? 'header' : undefined} style={[textVariants[variant], { textAlign: center ? 'center' : align }, style]}>{children}</Text>;
 }
 
 // Section heading with an optional trailing link ("See all").
@@ -231,7 +238,7 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
     style={{ width: s, height: s, borderRadius: s / 2, backgroundColor: t[0], alignItems: 'center', justifyContent: 'center' }}>
     {/* A contact known only by phone number gets a person, not its first digit. */}
     {/^[+\d٠-٩]/.test(name.trim()) ? <Ionicons name="person" size={s * 0.45} color={t[1]} />
-      : <Text style={{ color: t[1], fontSize: s * 0.42, fontWeight: '800' }}>{name.trim().slice(0, 1) || '•'}</Text>}
+      : <Text allowFontScaling={false} style={{ color: t[1], fontSize: s * 0.42, fontWeight: '800' }}>{name.trim().slice(0, 1) || '•'}</Text>}
   </View>;
 }
 
@@ -275,9 +282,9 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
         style={row === 'row-reverse' && /^(arrow-(forward|back)|send)/.test(icon) ? { transform: [{ scaleX: -1 }] } : undefined} /* point the way Arabic reads */ />}
-      <Text style={[styles.buttonText, small && { fontSize: 13 }, { color: look.fg, flexShrink: 1 }]}>{title}</Text>
+      <Text maxFontSizeMultiplier={maxScale} style={[styles.buttonText, small && { fontSize: 13 }, { color: look.fg, flexShrink: 1 }]}>{title}</Text>
     </View>
-    {trailing && <Text style={[styles.buttonText, { color: variant === 'primary' && !off ? palette.lime : look.fg }]}>{trailing}</Text>}
+    {trailing && <Text maxFontSizeMultiplier={maxScale} style={[styles.buttonText, { color: variant === 'primary' && !off ? palette.lime : look.fg }]}>{trailing}</Text>}
   </Press>;
   // The gap under the reason ties it to this button, not to a control stacked below (phone-code screens).
   return off && reason ? <View style={{ marginBottom: 6 }}>{press}<Reason>{reason}</Reason></View> : press;
@@ -301,7 +308,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: !!disabled }} disabled={disabled} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
-          <Text style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
+          <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
     })}
@@ -322,7 +329,7 @@ export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }:
       accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
-    <Text accessibilityLabel={label} accessibilityValue={{ min, max, now: value, text: String(value) }} style={styles.stepperValue}>{value}</Text>
+    <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityValue={{ min, max, now: value, text: String(value) }} style={styles.stepperValue}>{value}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max}
       accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
@@ -361,7 +368,7 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
     {items.map(item => <Pressable key={item.key} accessibilityRole="radio" accessibilityState={{ checked: item.key === value, disabled: !!disabled }} accessibilityLabel={item.label} aria-checked={item.key === value}
       onLayout={e => { if (item.key === value) setBox({ key: item.key, layout: e.nativeEvent.layout }); }}
       onPress={() => onChange(item.key)} disabled={disabled} style={[styles.chip, item.key === value && styles.chipOn, disabled && { opacity: 0.5 }]}>
-      <Text style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
+      <Text maxFontSizeMultiplier={maxScale} style={[styles.chipText, item.key === value && { color: palette.onFill }]}>{item.label}</Text>
     </Pressable>)}
   </Rail></View>;
 }
@@ -403,7 +410,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
     </View>
     {!!error && <Row gap={5} style={{ marginTop: 5 }}>
       <Ionicons name="alert-circle" size={14} color={palette.error} />
-      <Text accessibilityLiveRegion="polite" style={styles.fieldError}>{error}</Text>
+      <Text maxFontSizeMultiplier={maxScale} accessibilityLiveRegion="polite" style={styles.fieldError}>{error}</Text>
     </Row>}
   </View>;
 }
@@ -412,7 +419,7 @@ export function ErrorText({ children }: { children?: string }) {
   useEffect(() => { if (children && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(children); }, [children]);
   if (!children) return null;
   return <Animated.View entering={FadeInDown.duration(200)}>
-    <Text accessibilityRole="alert" style={styles.error}>{children}</Text>
+    <Text maxFontSizeMultiplier={maxScale} accessibilityRole="alert" style={styles.error}>{children}</Text>
   </Animated.View>;
 }
 
@@ -437,7 +444,7 @@ export function Badge({ label, status, tone, icon }: { label: string; status?: O
   return <View style={[styles.badge, { backgroundColor: t.bg, flexDirection: row }]}>
     {status && live.includes(status) && <Pulse color={t.fg} size={6} />}
     {icon && <Ionicons name={icon} size={12} color={t.fg} />}
-    <Text style={[styles.badgeText, { color: t.fg }]}>{label}</Text>
+    <Text maxFontSizeMultiplier={maxScale} style={[styles.badgeText, { color: t.fg }]}>{label}</Text>
   </View>;
 }
 
@@ -462,8 +469,8 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={iconSize.md} color={t.fg} /></View>
-    <Text key={language} numberOfLines={1} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
-    {!!value && <Text style={styles.listValue}>{value}</Text>}
+    <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={useLines(1)} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
+    {!!value && <Text maxFontSizeMultiplier={maxScale} style={styles.listValue}>{value}</Text>}
     {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
 }
@@ -543,9 +550,9 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
         <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
           {options.tabBarIcon?.({ focused, color, size: 21 })}
-          {!!options.tabBarBadge && <View style={styles.barBadge}><Text style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
+          {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar and must stay one line */ style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;
@@ -612,6 +619,6 @@ const styles = StyleSheet.create({
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   barText: { fontSize: 11, fontWeight: '600' },
-  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   barBadgeText: { color: palette.onFill, fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

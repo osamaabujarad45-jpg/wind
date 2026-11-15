@@ -59,8 +59,8 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
       <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       {!plain && <>
-        <Text key={`pickup-${language}`} numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text key={`dropoff-${language}`} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+        <Text key={`pickup-${language}`} maxFontSizeMultiplier={1.3} /* map label in a fixed 120px slot */ numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
+        <Text key={`dropoff-${language}`} maxFontSizeMultiplier={1.3} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
       </>}
     </>}
   </View>;

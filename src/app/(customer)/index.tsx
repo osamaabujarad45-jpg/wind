@@ -13,7 +13,7 @@ import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-locat
 import { SceneMap } from '../../scene-map';
 import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
-import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, type IconName } from '../../ui';
+import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, maxScale, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, useLines, type IconName } from '../../ui';
 
 const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
 
@@ -121,11 +121,11 @@ export default function Home() {
         <View style={[styles.search, { flexDirection: row }]}>
           <Press accessibilityLabel={c.whereTo} containerStyle={{ flex: 1 }} onPress={() => book({ service: firstService, pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
             <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-            <Text key={language} numberOfLines={1} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
+            <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={useLines(1)} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
           </Press>
           <Press accessibilityLabel={c.later} onPress={() => book({ service: firstService, when: 'later' })} style={[styles.now, { flexDirection: row }]}>
             <Ionicons name="calendar-outline" size={iconSize.sm} color={palette.ink} />
-            <Text key={language} style={styles.nowText}>{c.later}</Text>
+            <Text key={language} maxFontSizeMultiplier={maxScale} style={styles.nowText}>{c.later}</Text>
           </Press>
         </View>
         <Row gap={8} style={{ alignItems: 'stretch' }}>

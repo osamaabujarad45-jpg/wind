@@ -250,7 +250,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.handoverHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
-            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.handoverCode.split('').map((d, i) => <Text key={i} maxFontSizeMultiplier={1.5} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>
       </Card>
@@ -264,7 +264,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.returnHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
-            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.returnCode.split('').map((d, i) => <Text key={i} maxFontSizeMultiplier={1.5} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>
       </Card>
@@ -888,8 +888,8 @@ const styles = StyleSheet.create({
   progress: { gap: 4 },
   segment: { flex: 1, height: 5, borderRadius: 3, backgroundColor: palette.muted },
   divider: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
-  code: { gap: 4 },
-  digit: { width: 30, height: 40, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', lineHeight: 40, fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, overflow: 'hidden' },
+  code: { gap: 4, flexWrap: 'wrap' },
+  digit: { minWidth: 30, minHeight: 40, paddingHorizontal: 2, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', textAlignVertical: 'center', fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, overflow: 'hidden' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles

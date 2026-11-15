@@ -715,7 +715,9 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       await page.evaluate(factor => {
         for (const element of document.querySelectorAll('body *')) {
           if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
-          element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * factor}px`;
+          const computed = getComputedStyle(element); // line height scales too, as Android's font scale does
+          element.style.fontSize = `${parseFloat(computed.fontSize) * factor}px`;
+          if (computed.lineHeight !== 'normal') element.style.lineHeight = `${parseFloat(computed.lineHeight) * factor}px`;
         }
       }, scale);
       await page.waitForTimeout(400);
@@ -778,7 +780,9 @@ if (!only || only.includes('booking-narrow')) {
       await page.evaluate(factor => {
         for (const element of document.querySelectorAll('body *')) {
           if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
-          element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * factor}px`;
+          const computed = getComputedStyle(element); // line height scales too, as Android's font scale does
+          element.style.fontSize = `${parseFloat(computed.fontSize) * factor}px`;
+          if (computed.lineHeight !== 'normal') element.style.lineHeight = `${parseFloat(computed.lineHeight) * factor}px`;
         }
       }, scale);
       await page.waitForTimeout(400);
