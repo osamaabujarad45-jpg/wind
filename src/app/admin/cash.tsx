@@ -63,7 +63,7 @@ export default function AdminCash() {
     } catch (e) { fail(err(e)); } finally { setBusy(false); }
   }
 
-  return <Screen onRefresh={reload} scrollRef={list}>
+  return <Screen onRefresh={() => { setMessage(''); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     <ErrorText>{failure || (error && err(error))}</ErrorText>
