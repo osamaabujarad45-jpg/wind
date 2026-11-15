@@ -187,9 +187,9 @@ try {
   otherCash = await call('/driver/cash', { token: other.token });
   assert.equal(otherCash.exposureCents, startExposure + 735, 'finishing moves the commission from in hand to owed, not away');
   await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {}, expect: 409 });
-  const handover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: other.user.id, amountCents: otherCash.owedCents } });
+  const capHandover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: other.user.id, amountCents: otherCash.owedCents } });
   await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {}, expect: 409 }); // pending: only a confirmed handover counts
-  await call(`/driver/cash/${handover.id}/confirm`, { token: other.token, body: { decision: 'confirm' } });
+  await call(`/driver/cash/${capHandover.id}/confirm`, { token: other.token, body: { decision: 'confirm' } });
   assert.equal((await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {} })).status, 'assigned', 'after the handover the driver works again');
 
   console.log('cash: ok');
