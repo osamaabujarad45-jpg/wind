@@ -16,20 +16,25 @@ const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 // Side-by-side USB test apps use disposable accounts on a loopback-only API.
 // These credentials must never be bundled in an EAS/store build or sent to a public server.
 const testRole = process.env.WIND_TEST_ROLE;
+// WIND_TEST_SANDBOX=1 is the same sandbox with ORDINARY sign-in: no role, no bundled credentials, own package id.
+const sandbox = process.env.WIND_TEST_SANDBOX === '1';
+const testVariant = sandbox ? 'ordinary' : testRole;
 let phoneTest;
-if (testRole) {
-  if (!['customer', 'driver', 'admin'].includes(testRole)
-    || process.env.WIND_LOCAL_TEST !== '1' || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
+if (testVariant) {
+  if (sandbox ? !!testRole || process.env.WIND_TEST_IDENTIFIER || process.env.WIND_TEST_PASSWORD : !['customer', 'driver', 'admin'].includes(testRole)) {
+    throw new Error(sandbox ? 'The ordinary sandbox variant carries no role or credentials.' : 'Phone test roles require an explicitly local debug build.');
+  }
+  if (process.env.WIND_LOCAL_TEST !== '1' || process.env.EAS_BUILD || !['', '0', undefined].includes(process.env.WIND_RELEASE)) {
     throw new Error('Phone test roles require an explicitly local debug build.');
   }
   let testUrl;
   try { testUrl = new URL(apiUrl); } catch { /* rejected below */ }
   if (testUrl?.origin !== 'http://127.0.0.1:4191' || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
-    || testUrl.username || testUrl.password || !/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '')
-    || (process.env.WIND_TEST_PASSWORD ?? '').length < 24) {
+    || testUrl.username || testUrl.password
+    || (!sandbox && (!/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '') || (process.env.WIND_TEST_PASSWORD ?? '').length < 24))) {
     throw new Error('Phone tests require the isolated loopback API and provisioned synthetic credentials.');
   }
-  phoneTest = { role: testRole, identifier: process.env.WIND_TEST_IDENTIFIER, password: process.env.WIND_TEST_PASSWORD };
+  if (!sandbox) phoneTest = { role: testRole, identifier: process.env.WIND_TEST_IDENTIFIER, password: process.env.WIND_TEST_PASSWORD };
 }
 const release = !!process.env.EAS_BUILD || process.env.WIND_RELEASE === '1'
   || (process.env.NODE_ENV === 'production' && process.env.WIND_LOCAL_TEST !== '1');
@@ -37,7 +42,7 @@ const release = !!process.env.EAS_BUILD || process.env.WIND_RELEASE === '1'
 // and the release signing certificate) — an EAS build failing after assembly would be a wasted outward run.
 const googleMaps = { android: !!googleAndroidKey, ios: !!googleIosKey, web: !!googleBrowserKey };
 if (process.env.WIND_GOOGLE_MAPS === '1') {
-  if (testRole) throw new Error('Phone test apps stay on the baseline map: Google renderers are a store-build capability.');
+  if (testVariant) throw new Error('Phone test apps stay on the baseline map: Google renderers are a store-build capability.');
   const platform = process.env.EAS_BUILD_PLATFORM ?? process.env.WIND_BUILD_PLATFORM ?? null;
   const missing = (platform === 'android' ? ['android'] : platform === 'ios' ? ['ios'] : ['android', 'ios'])
     .filter(p => !googleMaps[p]);
@@ -61,16 +66,17 @@ if (release) {
 
 module.exports = ({ config }) => ({
   ...config,
-  ...(googleServicesFile && !phoneTest && { android: { ...config.android, googleServicesFile } }),
-  ...(phoneTest && {
-    name: `Wind ${testRole[0].toUpperCase() + testRole.slice(1)} Test`,
-    scheme: `wind-test-${testRole}`,
-    android: { ...config.android, package: `ps.wind.app.test${testRole}` },
-    ios: { ...config.ios, bundleIdentifier: `ps.wind.app.test${testRole}` },
+  ...(googleServicesFile && !testVariant && { android: { ...config.android, googleServicesFile } }),
+  ...(testVariant && {
+    name: `Wind ${testVariant[0].toUpperCase() + testVariant.slice(1)} Test`,
+    scheme: `wind-test-${testVariant}`,
+    android: { ...config.android, package: `ps.wind.app.test${testVariant}` },
+    ios: { ...config.ios, bundleIdentifier: `ps.wind.app.test${testVariant}` },
   }),
   extra: { ...config.extra, ...(phoneTest && { phoneTest }), googleMaps },
   plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications',
-    ['react-native-maps', { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
+    // A test variant never carries a Google key, even when one is in the environment.
+    ['react-native-maps', testVariant ? {} : { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
     './plugins/with-release-guard',
-    ...(phoneTest ? ['./plugins/with-phone-test'] : [])],
+    ...(testVariant ? ['./plugins/with-phone-test'] : [])],
 });

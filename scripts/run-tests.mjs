@@ -114,6 +114,7 @@ const suites = [
   "background-registration.test.mjs",
   "phone-test.test.mjs",
   "phone-test-build.test.mjs",
+  "check-test-apk.test.mjs",
   "phone-test-state.test.mjs",
   "phone-ui.test.mjs",
   "contracts-money.test.mjs",

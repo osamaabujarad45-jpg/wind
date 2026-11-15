@@ -69,6 +69,14 @@ starting a fixed-port server; a busy port is not permission to stop another sess
 - **Port 4191** — `npm run phone:server` binds `127.0.0.1:4191`; `phone:web` builds against it and
   `phone:check` runs `adb reverse tcp:4191 tcp:4191`. One phone sandbox per machine. When the
   sandbox is on the test PC, SSH-forward it to the local port before applying the phone reverse.
+  **Ordinary sign-in app (acceptance C-01):** `build-phone-tests.ps1 -SignIn Ordinary` builds
+  `ps.wind.app.testordinary` (`WIND_TEST_SANDBOX=1`): same loopback-only sandbox and Debug network policy,
+  refused for EAS, release and public URLs, but no role and no bundled credentials, so the normal sign-in and
+  sign-up screens show. `phone:server` prints the provisioned identifiers to type, and the passwords only on a terminal; when
+  its output is captured (`start-phone-tests.ps1` writes `server.log`) it names `.expo/phone-qa/provision.json` instead;
+  `node scripts/check-phone-tests.mjs ordinary` asserts the sign-in screen. The build runs `scripts/check-test-apk.mjs`, which
+  scans every APK entry for each provisioned identifier, password and token (UTF-8 and UTF-16LE) and refuses an empty
+  scan; `tests/check-test-apk.test.mjs` tests the scanner in CI. Its log names the entry, never the secret.
 - **PostgreSQL** — choose an unused loopback port and a new data directory. `55473` in older
   examples belongs to the historical shared setup; it is not a session allocation. The November 10
   Astra baseline owns `D:\wind-plan-20261110-astra` and port `55493` on `DESKTOP-S2JKMK5`.
