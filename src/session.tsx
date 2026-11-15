@@ -5,7 +5,9 @@ import Constants from 'expo-constants';
 import { api, API_URL, ApiError, configureApi, errorCode, invalidateApiSessionActions, storage } from './api';
 import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-client';
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
-import { recoveryStorage } from './recovery-storage';
+import { acknowledgeRecoveryWake, pendingRecoveryWake, recoveryStorage } from './recovery-storage';
+import { deadlineWake } from './deadline-wake';
+import { createDeadlineReconciler } from './deadline-recovery';
 import { copy } from './copy';
 import { setAuthNotice, takeAuthNotice } from './phone/notice';
 import type { OfflineSummary } from './offline-summary';
@@ -156,6 +158,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         storage.get('token').catch(() => null), storage.get('language').catch(() => null), storage.get('onboarded').catch(() => null),
       ]);
       if (saved === 'ar' || saved === 'en') setLanguageState(saved);
+      // No session on this device: no recovery record can exist, so no native deadline may outlive it (A14).
+      if (!token && !phoneTest) await deadlineWake.clear().catch(() => {});
       // Anyone who ever signed in on this device has seen the app; only a fresh install gets the welcome slides.
       setOnboarded(!!phoneTest || seen === '1' || !!token);
       if (phoneTest || token) {
@@ -170,6 +174,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
     })();
   }, [expired, refresh]);
+
+  // A14: an Android alarm, reboot, unlock, clock or timezone change only asks this foreground session to re-read the
+  // account and drop the saved summary. It never replays a command, sends a write or revives an assignment.
+  useEffect(() => {
+    if (!ready) return;
+    const reconcile = createDeadlineReconciler({
+      revision: apiSessionRevision, active: () => AppState.currentState === 'active' && !!apiSessionCredential(),
+      read: pendingRecoveryWake, acknowledge: acknowledgeRecoveryWake,
+      reconcile: async () => {
+        setOfflineSummary(null); // a clock change must not keep a private summary past its deadline
+        await refresh(true); // throws on failure, so the wake stays pending for the next foreground
+      },
+    });
+    const check = () => { void reconcile().catch(() => {}); };
+    check();
+    const wake = deadlineWake.subscribe(check);
+    const active = AppState.addEventListener('change', state => { if (state === 'active') check(); });
+    return () => { wake?.remove(); active.remove(); };
+  }, [ready, refresh]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;

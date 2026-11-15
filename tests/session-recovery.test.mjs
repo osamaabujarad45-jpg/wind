@@ -66,7 +66,10 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
       configureApi(next, onUnauthorized) { if (credential !== next) revision++; credential = next; unauthorized = onUnauthorized; }, invalidateApiSessionActions() { revision++; }, storage },
     './api-client': { apiSessionCredential: () => credential, apiSessionRevision: () => revision, serverOffset: () => 0 },
     './offline-recovery': { configureRecoveryActor(next) { if (actor && next !== actor) revision++; actor = next; }, savedOfflineSummary: async () => summary },
-    './recovery-storage': { recoveryStorage: recovery }, './map-failures': { retryMapProviders() {} },
+    './recovery-storage': { recoveryStorage: recovery, pendingRecoveryWake: async () => null, acknowledgeRecoveryWake: async () => {} },
+    // A14 wake handling has its own suite (deadline-recovery); here no native wake is ever pending.
+    './deadline-wake': { deadlineWake: { clear: async () => {}, subscribe: () => ({ remove() {} }) } },
+    './deadline-recovery': { createDeadlineReconciler: () => async () => {} }, './map-failures': { retryMapProviders() {} },
     './runtime-config': { resetRuntime() {}, configureRuntime() {}, effectiveRuntime: () => ({ values: { offlineMaxAgeMs: 60_000 } }) }, './client-diagnostics': { clientDiagnostics: { record() {}, clear() {} } },
     './diagnostic-client': { startDiagnosticDelivery: () => () => {} }, './phone-test': { phoneTestConfig: () => null },
     './push': { disablePush: noop, dropLocalPush: noop }, './native-push': { registerNativePush: noop, unregisterNativePush: noop },

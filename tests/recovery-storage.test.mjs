@@ -55,6 +55,7 @@ const { recoveryStorage } = load('recovery-storage.ts', {
   './storage': { storage: { get: async key => store.get(key) ?? null, set: async (key, value) => { value === null ? store.delete(key) : store.set(key, value); } } },
   './api-client': { apiSessionCredential: () => token, apiSessionRevision: () => 1, serverOffset: () => 0 },
   './protected-recovery': protectedRecovery,
+  './deadline-wake': { deadlineWake: { update: async () => {}, clear: async () => {}, pending: async () => null, acknowledge: async () => {} } },
 });
 store.set('token', token);
 
