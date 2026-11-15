@@ -25,6 +25,9 @@ export class LinkError extends Error {
 }
 
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+// Hosts the server will actually contact. google.<cc> links are still read when they carry a point, but never fetched:
+// not every two-letter google.<cc> domain is Google's, and its DNS could point anywhere.
+const FETCH_HOSTS = new Set(['maps.app.goo.gl', 'goo.gl', 'google.com', 'www.google.com', 'maps.google.com']);
 const refuse = (code: 'invalid_input' | 'link_not_resolved'): never => { throw new LinkError(code); };
 
 // A Maps or short link on an allowlisted host, or refuse. The first hop is the caller's input; every later hop is a redirect target.
@@ -47,6 +50,7 @@ export async function resolveSharedLink(input: string, options: { send?: LinkSen
     if (read && 'point' in read) return read.point;
     // A URL that names a point outside the served area is refused; one with no point at all is followed.
     if (read && 'error' in read && read.error !== 'bad_link') refuse('link_not_resolved');
+    if (!FETCH_HOSTS.has(current.hostname)) refuse('link_not_resolved');
     const res = await send(current.href, { redirect: 'manual', signal, headers: { 'User-Agent': 'Wind/1.0 (delivery app; small pilot)' } })
       .catch(() => refuse('link_not_resolved'));
     try { await res.body?.cancel(); } catch { /* nothing left to drain */ }

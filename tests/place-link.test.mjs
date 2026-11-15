@@ -46,6 +46,16 @@ const refusal = (promise, code = 'link_not_resolved') => assert.rejects(promise,
   assert.deepEqual(calls, [SHORT]);
 }
 // So is a redirect to plain http on an allowed host, and to a Google page that is not a map.
+// A google.<cc> link with no point is never fetched: those domains are not all Google's.
+{
+  const { send, calls } = script([redirect('https://www.google.ps/maps/place/Somewhere')]);
+  await refusal(resolveSharedLink(SHORT, { send }));
+  assert.deepEqual(calls, [SHORT], 'the google.ps hop is refused before any request');
+  const direct = script([]);
+  await assert.rejects(resolveSharedLink('https://www.google.ps/maps/place/Somewhere', { send: direct.send }));
+  assert.equal(direct.calls.length, 0);
+  assert.deepEqual(await resolveSharedLink('https://www.google.ps/maps/@31.9038,35.2034,17z', { send: direct.send }), { latitude: 31.9038, longitude: 35.2034 }, 'a point in the link is read without a request');
+}
 for (const location of ['http://www.google.com/maps/@31.9038,35.2034,17z', 'https://accounts.google.evil.example/x', 'https://consent.google.example/', 'https://www.google.com/search?q=x', 'https://www.google.com:8443/maps/@31.9038,35.2034,17z', 'https://www.google.tk/maps/@31.9038,35.2034,17z']) {
   const { send, calls } = script([redirect(location)]);
   await refusal(resolveSharedLink(SHORT, { send }));
