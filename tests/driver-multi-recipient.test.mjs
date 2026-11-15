@@ -86,6 +86,8 @@ try {
   const completedB = await advance(retried, { code: codes[1], collectedCents: 2500, varianceReason: 'PARTIAL_PAYMENT' });
   assert.equal(completedB.collected.reason, 'PARTIAL_PAYMENT', 'a short payment carries its owner-approved reason');
   assert.equal(completedB.collected.cents, 2500);
+  assert.equal(Number((await persistence.one('SELECT door_expected_cents FROM orders WHERE id=?', b.id)).door_expected_cents), 3000,
+    'the short payment is measured against the full amount due');
   await report(c, 'refused');
   const returning = await call(`/admin/orders/${c.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused fixture parcel' } });
   const returnSheet = runSheet(await carried());

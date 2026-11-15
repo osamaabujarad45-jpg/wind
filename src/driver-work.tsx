@@ -6,7 +6,7 @@ import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
 import { activeGpsTestEnabled, backgroundLocationDiagnostics, backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
 import { MIN_GAP, locationCadence, movingHeading, type TrackingReceipt } from './location-delivery';
-import { driverLocationDiagnostics, type DriverLocationDiagnostics } from './driver-location-diagnostics';
+import { driverLocationDiagnostics, sameDiagnostics, type DriverLocationDiagnostics } from './driver-location-diagnostics';
 import { deliverPresenceFix, startPresence, stopPresence, subscribePresence, subscribePresenceError, suspendPresence } from './driver-presence-runtime';
 import type { PresenceState } from './driver-presence';
 import { requestBackgroundTracking } from './background-permission';
@@ -45,6 +45,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const permission = permissionResult?.actor === actor && permissionResult.revision === lifecycle.revision ? permissionResult.value : null;
   const servicesGeneration = useRef(0);
   const [servicesResult, setServicesResult] = useState<{ actor: number; revision: number; enabled: boolean }>();
+  const webReceipt = useRef<{ actor: number; orderId: number; receipt: TrackingReceipt } | null>(null);
   const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'>;
     diagnostics?: DriverLocationDiagnostics; revision?: number; session?: number }>();
   const [presenceResult,setPresenceResult]=useState<{actor:number|null;revision:number;state:PresenceState|'permission_denied'}>();
@@ -250,10 +251,12 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     let queued: GeolocationPosition | null = null;
     let wait: ReturnType<typeof setTimeout> | undefined;
     const clock = createLocationWebClock();
-    let diagnosticReceipt: TrackingReceipt | null = null;
-    const session = apiSessionRevision();
+    // The last accepted fix and acknowledgement outlive a foreground toggle, as the native stored receipt does.
+    const kept = webReceipt.current;
+    let diagnosticReceipt: TrackingReceipt | null = kept?.actor === actor && kept.orderId === orderId ? kept.receipt : null;
     const monotonic = () => globalThis.performance?.now?.() ?? Date.now();
-    const setState = (value: Exclude<Tracking, 'idle'>) => {
+    const setState = (value: Exclude<Tracking, 'idle'>, session = apiSessionRevision()) => {
+      if (diagnosticReceipt) webReceipt.current = { actor, orderId, receipt: diagnosticReceipt };
       if (!stopped && actorRef.current === actor && apiSessionRevision() === session) setTrackingResult({ actor, orderId, value,
         diagnostics: driverLocationDiagnostics(diagnosticReceipt, value !== 'off', null, 'web'), revision: lifecycle.revision, session });
     };
@@ -271,6 +274,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
         return;
       }
       publishing = true; clock.attempted(monotonic());
+      const session = apiSessionRevision();
       try {
         // Heading/accuracy only draw the marker; drop values the API would refuse rather than lose the fix.
         const receipt = await api<{ accepted?: boolean }>('/location', { latitude, longitude, age: Math.max(0, Date.now() - timestamp),
@@ -282,11 +286,12 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
         if (!stopped && receipt.accepted !== false && timestamp <= receivedAt + 5_000 && receivedAt - timestamp <= 30_000) {
           clock.accepted(timestamp, monotonic());
           diagnosticReceipt.fixAt = timestamp;
-          setState('sharing');
-        } else setState('starting');
+          setState('sharing', session);
+        } // a refused or late fix leaves the state as it was, as on native; the card still shows the acknowledgement time
+        else if (diagnosticReceipt) webReceipt.current = { actor, orderId, receipt: diagnosticReceipt };
       } catch {
         queued = null; // do not replay a location after a network failure
-        setState('starting');
+        setState('starting', session);
         void reload();
       } finally {
         publishing = false;
@@ -326,14 +331,16 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     }
     if (!servicesEnabled) { void stopBackgroundLocation().catch(() => {}); return; }
     let cancelled = false;
-    const session = apiSessionRevision();
-    const status = () => Promise.all([backgroundLocationState(), backgroundLocationDiagnostics(actor, nativeOrderId)]).then(([value, diagnostics]) => {
-      // The poll runs every three seconds: keep the same object while nothing changed, so consumers do not re-render for nothing.
-      if (!cancelled && actorRef.current === actor && apiSessionRevision() === session) setTrackingResult(previous => previous?.actor === actor && previous.orderId === nativeOrderId && previous.value === value
-        && previous.revision === lifecycle.revision && previous.session === session
-        && Object.entries(diagnostics).every(([key, entry]) => previous.diagnostics?.[key as keyof DriverLocationDiagnostics] === entry)
-        ? previous : { actor, orderId: nativeOrderId, value, diagnostics, revision: lifecycle.revision, session });
-    }).catch(() => {});
+    const status = () => {
+      const session = apiSessionRevision();
+      return Promise.all([backgroundLocationState(),
+        backgroundLocationDiagnostics(actor, nativeOrderId).catch(() => driverLocationDiagnostics(null, null, null, Platform.OS))]).then(([value, diagnostics]) => {
+        // The poll runs every three seconds: keep the same object while nothing changed, so consumers do not re-render for nothing.
+        if (!cancelled && actorRef.current === actor && apiSessionRevision() === session) setTrackingResult(previous => previous?.actor === actor && previous.orderId === nativeOrderId && previous.value === value
+          && previous.revision === lifecycle.revision && previous.session === session && sameDiagnostics(previous.diagnostics, diagnostics)
+          ? previous : { actor, orderId: nativeOrderId, value, diagnostics, revision: lifecycle.revision, session });
+      }).catch(() => {});
+    };
     if (activeGpsTestEnabled) void stopBackgroundLocation().catch(() => {});
     void Location.getBackgroundPermissionsAsync().then(p => { if (!cancelled) setBgResult({ actor, granted: p.granted }); }).catch(() => {});
     void startBackgroundLocation(actor, nativeOrderId, activeGpsTestEnabled ? activeOrderKey.split(',').map(Number) : undefined,

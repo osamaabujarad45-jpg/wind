@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { deliverDriverFix } from '../src/location-delivery.ts';
-import { driverLocationDiagnostics } from '../src/driver-location-diagnostics.ts';
+import { driverLocationDiagnostics, sameDiagnostics } from '../src/driver-location-diagnostics.ts';
+import { copy } from '../src/copy.ts';
 
 const stamp = 1_800_000_000_000;
 let receipt = null, response = { status: 200, accepted: true }, acknowledgedAt = stamp + 4_000;
@@ -37,13 +38,19 @@ assert.deepEqual(driverLocationDiagnostics(null, false, null, 'android'), {
 });
 assert.equal(driverLocationDiagnostics(null, true, false, 'android').nextRetry, 'unknown');
 assert.equal(driverLocationDiagnostics(null, null, null, 'android').nextRetry, 'unknown', 'a pending status read cannot imply no retry');
+assert.equal(driverLocationDiagnostics(null, true, null, 'android').nextRetry, 'unknown', 'an unreadable registration cannot promise a retry');
+assert.equal(driverLocationDiagnostics(null, true, null, 'web').nextRetry, 'fresh_fix', 'web has no task to register');
 assert.equal(driverLocationDiagnostics(null, true, null, 'web').registration, 'not_applicable');
+// The poll keeps the previous object only when every field matches.
+assert.equal(sameDiagnostics(undefined, accepted), false);
+assert.equal(sameDiagnostics({ ...accepted }, accepted), true);
+for (const key of Object.keys(accepted)) assert.equal(sameDiagnostics({ ...accepted, [key]: 'changed' }, accepted), false, key);
 assert.equal(driverLocationDiagnostics(null, true, true, 'ios').foregroundService, 'not_applicable');
 assert.deepEqual(Object.keys(accepted).sort(), ['foregroundService', 'lastAcceptedFixAt', 'lastServerAcknowledgementAt', 'nextRetry', 'registration', 'requested'].sort());
 assert.ok(!JSON.stringify(accepted).includes('private-token'));
 let language = 'en';
 const jsx = (type, props) => ({ type, props });
-const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, './ui': { Card: 'Card', Txt: 'Txt', useCopy: () => ({ language }) } };
+const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, './ui': { Card: 'Card', Txt: 'Txt', useCopy: () => ({ language, c: copy[language] }) } };
 const contextForCard = { exports: {}, require: name => { assert.ok(name in modules, `unexpected support side effect: ${name}`); return modules[name]; } };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/driver-support-card.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },

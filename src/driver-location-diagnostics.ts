@@ -21,6 +21,11 @@ export function driverLocationDiagnostics(receipt: TrackingReceipt | null, reque
     registration: platform === 'web' ? 'not_applicable' : registered === null ? 'unknown' : registered ? 'registered' : 'unregistered',
     // Expo reports task registration, not whether Android's OS foreground service is alive.
     foregroundService: platform === 'android' ? 'unknown' : 'not_applicable',
-    nextRetry: requested === false ? 'none' : requested === null || (registered === false && platform !== 'web') ? 'unknown' : 'fresh_fix',
+    // A native retry is only promised when the task is known to be registered; an unreadable status cannot promise one.
+    nextRetry: requested === false ? 'none' : requested === null || (platform !== 'web' && registered !== true) ? 'unknown' : 'fresh_fix',
   };
 }
+
+/** Field-by-field equality, so the three-second status poll can keep the previous object and skip a re-render. */
+export const sameDiagnostics = (a: DriverLocationDiagnostics | undefined, b: DriverLocationDiagnostics) =>
+  !!a && (Object.keys(b) as (keyof DriverLocationDiagnostics)[]).every(key => a[key] === b[key]);

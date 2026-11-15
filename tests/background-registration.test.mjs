@@ -10,7 +10,7 @@ globalThis.__windNative = native;
 const modules = {
   'react-native': `export const Platform={OS:'android'};`,
   'expo-location': `const n=globalThis.__windNative;export const Accuracy={High:6};export const ActivityType={AutomotiveNavigation:2};
-    export const hasStartedLocationUpdatesAsync=async()=>n.registered;
+    export const hasStartedLocationUpdatesAsync=async()=>{if(n.statusFail)throw Error('status read failed');return n.registered;};
     export async function startLocationUpdatesAsync(task,options){n.starts.push({task,options});if(n.blockStart)await n.blockStart;if(n.fail)throw Error('Native start failed');n.registered=true;n.foreground=true;}
     export async function stopLocationUpdatesAsync(){n.stops++;n.registered=false;n.foreground=false;}`,
   'expo-task-manager': `export const isTaskDefined=()=>false;export function defineTask(name,task){globalThis.__windNative.task=task;}`,
@@ -38,6 +38,22 @@ try {
   native.store.set('token','current-driver');
   native.store.set('wind.tracking',JSON.stringify({id:'restored',token:'current-driver',actor:2,orderId:3}));
   assert.equal(await location.backgroundLocationState(),'off','restored task registration is not current-launch authority');
+  // UX-05 support diagnostics read only the stored metadata, and only for the same driver, order and token.
+  native.store.set('wind.tracking.receipt',JSON.stringify({id:'restored',lastSentAt:now,fixAt:now-1000,acknowledgedAt:now}));
+  const own=await location.backgroundLocationDiagnostics(2,3);
+  assert.equal(own.registration,'registered');
+  assert.equal(own.lastAcceptedFixAt,now-1000);
+  assert.equal(own.requested,false,'a restored registration is not a current tracking request');
+  for(const [actor,orderId,label] of [[9,3,'another driver'],[2,8,'another order']]){
+    const other=await location.backgroundLocationDiagnostics(actor,orderId);
+    assert.equal(other.lastAcceptedFixAt,null,label);assert.equal(other.registration,'unknown',label);assert.equal(other.requested,false,label);
+  }
+  native.store.set('token','someone-else');
+  assert.equal((await location.backgroundLocationDiagnostics(2,3)).lastAcceptedFixAt,null,'a changed token sees no receipt');
+  native.store.set('token','current-driver');
+  native.statusFail=true;now+=3000;
+  assert.equal((await location.backgroundLocationDiagnostics(2,3)).registration,'unknown','an unreadable task status reads unknown');
+  native.statusFail=false;native.store.delete('wind.tracking.receipt');now+=3000;
   let coldRequests=0;
   globalThis.fetch=async()=>{coldRequests++;return new Response('{}');};
   await native.task({data:{locations:[{timestamp:now,coords:{latitude:32,longitude:35}}]}});
