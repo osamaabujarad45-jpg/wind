@@ -273,6 +273,16 @@ export const latinDigits = (text: string) =>
   text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
 /** A number typed in a form: Arabic-Indic digits and the Arabic decimal separator (٫) or a comma are normal input here. */
 export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
+/** Shekels typed by a person as exact integer agorot, never through a float: "12.5" → 1250, "٠٫٠٥" → 5, "-3" → -300.
+ * Anything else (a third decimal, two separators, letters, empty) is NaN, so the form refuses it instead of rounding. */
+export function minorFromText(text: string): number {
+  // Pasted text brings the Arabic comma, the Unicode minus and direction marks; they are not part of the amount.
+  const clean = latinDigits(text.trim().replace(/[\u200e\u200f\u061c]/g, '').replace(/\u060c/g, ',').replace(/\u2212/g, '-'));
+  const m = /^(-?)(\d*)(?:[.٫,](\d{0,2}))?$/.exec(clean);
+  if (!m || (!m[2] && !m[3])) return NaN; // ".5" and "5." are amounts; "." and "" are not
+  const minor = Number(m[2] || '0') * 100 + Number((m[3] ?? '').padEnd(2, '0'));
+  return Number.isSafeInteger(minor) ? (m[1] && minor ? -minor : minor) : NaN;
+}
 
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
 // and +970 / +972 / 00970 / 00972 / 0 prefixes. Returns canonical 05XXXXXXXX or null.

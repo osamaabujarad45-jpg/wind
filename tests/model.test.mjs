@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -37,6 +37,12 @@ assert.equal(servedCity({ latitude: 30.5, longitude: 34.4 }), null); // Sinai: n
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');
 assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5'), typedNumber('12')], [20, 0.5, 1.5, 12]);
+// Money typed by a cashier is exact agorot: 1.15 and 4.35 are the classic float traps (1.15*100 = 114.99999999999999).
+assert.deepEqual(['12', '12.5', '12.05', '1.15', '4.35', ' ٢٠٫٥٠ ', '0,07', '-3', '-0.5', '٠', '.5', '5.', '۱۲٫۵', '\u200f12\u060c5', '\u22123'].map(minorFromText),
+  [1200, 1250, 1205, 115, 435, 2050, 7, -300, -50, 0, 50, 500, 1250, 1250, -300]);
+assert.ok(Object.is(minorFromText('-0'), 0), '-0 is zero, not negative zero');
+for (const bad of ['', ' ', '.', '-', '1.234', '1.2.3', '1,000.5', '1,000', '1.000', '1 000', 'abc', '12a', '--1', '+1', '1e3', '0x10', 'Infinity', '99999999999999'])
+  assert.ok(Number.isNaN(minorFromText(bad)), `refused: ${JSON.stringify(bad)}`);
 assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
 assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
 assert.deepEqual(vehicleServices.bicycle, ['parcel']);
