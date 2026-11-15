@@ -21,6 +21,9 @@ export default function AdminSettings() {
   const { me, refresh, signOut, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [values, setValues] = useState(() => toText(me!.settings));
+  // Keys this admin has typed into since the server last confirmed the form. Only these are reviewed and sent:
+  // comparing text against the mount value would miss a reversal (12 → 10 looks unedited when 10 was loaded).
+  const [touched, setTouched] = useState<Partial<Record<keyof Settings, true>>>({});
   // What the server last confirmed. A failed save clears it: a lost reply may hide a committed write,
   // so the next comparison reads /me first instead of trusting an old copy.
   const [baseline, setBaseline] = useState<Settings | null>(me!.settings);
@@ -42,6 +45,7 @@ export default function AdminSettings() {
       const saved = await api<Settings>('/admin/settings', patch, 'POST');
       setBaseline(saved);
       setValues(toText(saved));
+      setTouched({});
       await refresh();
       haptic.success();
       setBad('');
@@ -84,10 +88,13 @@ export default function AdminSettings() {
     }
     const before = await currentSettings().catch(e => { setError(err(e)); return null; });
     if (!before) return;
-    // Only changed keys are shown and sent; an unchanged form writes nothing.
-    const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => numbers[key] !== before[key]);
+    // Only fields this admin edited, and only where the server differs, are shown and sent. A field left
+    // alone never goes out, so another admin's edit to it survives even after a lost reply.
+    const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]);
     if (!keys.length) { setMessage(c.saved); return; }
-    const changes = keys.map(key => `${c[`set_${key}`]}: ${before[key]} → ${numbers[key]}`);
+    // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
+    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : `${value} ₪`;
+    const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
     const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
     confirm(fill(c.settingsReview, { changes: changes.join('\n') }), () => void commit(patch), c.save, c.cancel);
   }
@@ -100,7 +107,7 @@ export default function AdminSettings() {
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
-        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); if (bad === key) setBad(''); }} />)}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>

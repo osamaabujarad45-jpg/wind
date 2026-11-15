@@ -112,6 +112,7 @@ const settingsCall = path => call => call.path === path;
 for (const language of ['ar', 'en']) {
   const c = copy[language];
   const typed12 = language === 'ar' ? arabicDigits(12) : '12';
+  const typed14 = language === 'ar' ? arabicDigits(14) : '14';
 
   // Unchanged settings: no confirmation, no request, and the form says it is saved.
   {
@@ -130,7 +131,7 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.calls.length, 0, 'no request before the admin confirms');
     assert.equal(config.dialogs.length, 1);
     const [review] = config.dialogs;
-    assert.equal(review.message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 10 → 12` }), 'only the changed key, old → new');
+    assert.equal(review.message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 10 ₪ → 12 ₪` }), 'only the changed key, old → new');
     assert.equal(review.yesLabel, c.save);
     assert.equal(review.noLabel, c.cancel);
     review.yes(); await flush();
@@ -168,9 +169,41 @@ for (const language of ['ar', 'en']) {
     config.dialogs[0].yes(); await flush();
     field(config.render(), c.set_parcelPrice).onChangeText('10');
     await tap(config, c.save);
-    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 → 10` }), 'compared against the saved 12, not the stale 10');
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
+  }
+
+  // Once a save is confirmed, a later save with no new edits does not re-send the old value over another admin's change.
+  {
+    const config = screen('settings', language, { me: { settings: settingsBase } });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    config.concurrentServerEdit({ parcelPrice: 15 });
+    await tap(config, c.save);
+    assert.equal(config.dialogs.length, 1, 'no edit since the confirmed save: nothing to review');
+    assert.equal(config.calls.filter(settingsCall('/admin/settings')).length, 1);
+    assert.equal(config.server().parcelPrice, 15, 'the other admin change is not overwritten');
+  }
+
+  // A field edited in an earlier, confirmed save is not still "edited" after a lost reply: the re-read must not
+  // send its old value over another admin's newer change.
+  {
+    const config = screen('settings', language, { me: { settings: settingsBase } });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    field(config.render(), c.set_commission).onChangeText('0.2');
+    await tap(config, c.save);
+    config.loseNextCall();
+    config.dialogs[1].yes(); await flush();
+    config.concurrentServerEdit({ parcelPrice: 15 });
+    const reviewed = config.dialogs.length;
+    await tap(config, c.save);
+    assert.equal(config.dialogs.length, reviewed, 'parcelPrice was not edited since its confirmed save: not reviewed');
+    assert.equal(config.calls.filter(settingsCall('/admin/settings')).length, 2, 'no write for it');
+    assert.equal(config.server().parcelPrice, 15, 'the other admin change survives');
   }
 
   // Timeout after the server committed: no "Saved" for a write that was not confirmed, the next comparison re-reads /me,
@@ -188,11 +221,28 @@ for (const language of ['ar', 'en']) {
     await tap(config, c.save);
     assert.equal(config.calls.at(-1).path, '/me', 'the stale baseline is replaced by a direct read of /me');
     assert.equal(config.dialogs.length, 2);
-    assert.equal(config.dialogs[1].message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 → 10` }));
+    assert.equal(config.dialogs[1].message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }));
     assert.ok(!shows(config.render(), c.saved), 'no "Saved" before the reversal is written');
     config.dialogs[1].yes(); await flush();
     assert.equal(config.server().parcelPrice, 10, 'the confirmed reversal reaches the server');
     assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).map(call => call.body), [{ parcelPrice: 12 }, { parcelPrice: 10 }]);
+  }
+
+  // A lost reply, then another admin edits a field this admin did not touch: the next save sends only the
+  // field this admin edited, so the other admin's change survives.
+  {
+    const config = screen('settings', language, { me: { settings: settingsBase } });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    await tap(config, c.save);
+    config.loseNextCall();
+    config.dialogs[0].yes(); await flush();
+    config.concurrentServerEdit({ commission: 0.2 });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed14);
+    await tap(config, c.save);
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 14 ₪` }), 'only the edited field is reviewed');
+    config.dialogs.at(-1).yes(); await flush();
+    assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).at(-1).body, { parcelPrice: 14 }, 'the untouched commission is not sent');
+    assert.equal(config.server().commission, 0.2, 'the other admin commission survives');
   }
 
   // If re-reading /me fails too, neither a comparison nor a write happens; the next attempt reads again.
@@ -221,6 +271,8 @@ for (const language of ['ar', 'en']) {
     await tap(config, c.save);
     const release = config.holdNextSettingsWrite();
     config.dialogs[0].yes(); await flush();
+    config.dialogs[0].yes(); await flush();   // a second confirm of the same review while in flight
+    assert.equal(config.calls.filter(settingsCall('/admin/settings')).length, 1, 'a second confirm sends nothing');
     assert.equal(field(config.render(), c.set_parcelPrice).disabled, true, 'fields are disabled while the write is in flight');
     assert.equal(field(config.render(), c.set_commission).disabled, true);
     release(); await flush();
