@@ -10,7 +10,7 @@ import { router } from 'expo-router';
 const groups: { title: 'pricing' | 'discounts' | 'plans'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
   // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
-  { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
+  { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission', 'driverCashCap'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
 ];
 

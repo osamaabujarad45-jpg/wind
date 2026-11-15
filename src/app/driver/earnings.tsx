@@ -7,7 +7,7 @@ import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading,
 type Bucket = { jobs: number; gross: number; commission: number; net: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
-type Cash = { owedCents: number; pendingCents: number; discountsCents: number; entries: CashEntry[] };
+type Cash = { owedCents: number; pendingCents: number; discountsCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
 const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
 
 export default function Earnings() {
@@ -57,6 +57,9 @@ function CashCard() {
       <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
     </Row>
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
+    {data.capCents !== undefined && data.exposureCents !== undefined && (data.capCents - data.exposureCents > 0
+      ? <Txt variant="label" style={{ marginTop: 4 }}>{`${c.cashCapLeft}: ${money((data.capCents - data.exposureCents) / 100)}`}</Txt>
+      : <Txt variant="title" style={{ marginTop: 6, color: tones.error.fg }}>{c.cashCapReached}</Txt>)}
     {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}
     <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>

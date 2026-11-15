@@ -2301,6 +2301,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       const carryingOffer = (await activeLoad(user.id));
       if (!canTake(carryingOffer, offered.service)) fail(409, 'vehicle_busy');
       const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+      await guardCashCap(user.id, offered.price, offeredRate);
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
       await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id); // T33: both backends bind the rate snapshot
@@ -2327,6 +2328,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   const carrying = (await activeLoad(user.id));
   if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+  await guardCashCap(user.id, order.price, rate);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
@@ -2978,6 +2980,18 @@ async function cashBalances(where: string, ...params: SQLInputValue[]) {
       // Promo discounts are Wind's cost: the driver collected that much less cash, so it comes off what they owe.
       pendingCents: r.pending as number, owedCents: cashOwed(r.commission, r.discounts, r.adjustments, r.remitted), lastRemittanceAt: (r.last_remittance as number) ?? null }));
 }
+// What a driver would owe Wind if every job in hand finished now: the settled balance plus the commission on active jobs.
+// The cash cap (settings.driverCashCap) is checked against this at accept, as Wolt, Careem and Cedar GO cap courier cash.
+async function cashExposureCents(driverId: number) {
+  const owed = (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0;
+  const commission = persistence.backend === 'postgres' ? 'commission_minor' : 'CAST(ROUND(commission * 100) AS INTEGER)';
+  const active = (await one(`SELECT COALESCE(SUM(${commission}), 0) AS cents FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId))!;
+  return owed + Number(active.cents);
+}
+async function guardCashCap(driverId: number, price: number, rate: number) {
+  const cap = Math.round((await settings()).driverCashCap * 100);
+  if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) > cap) fail(409, 'cash_cap_exceeded');
+}
 // A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
 async function cashSettled(userId: number) {
   const balance = (await cashBalances('u.id = ?', userId))[0];
@@ -2994,6 +3008,7 @@ route('GET', '/api/driver/cash', async ({ user, query }) => {
   const protocol = query.get('protocol') === '1' ? { durableCommands: persistence.backend === 'postgres', currency: 'ILS',
     entries: persistence.backend === 'postgres' ? await all('SELECT id,version,amount_cents AS amountCents FROM cash_entries WHERE driver_id=? AND status=\'pending\' ORDER BY id LIMIT 100',user.id) : [] } : undefined;
   return { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents, ...(protocol ? { protocol } : {}),
+    capCents: Math.round((await settings()).driverCashCap * 100), exposureCents: await cashExposureCents(user.id),
     // The latest 50, plus every handover still waiting on the courier, so an older one is never lost behind newer history.
     entries: (await all(`SELECT * FROM cash_entries WHERE driver_id = ? AND (status = 'pending' OR id >= COALESCE(
       (SELECT id FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 1 OFFSET 49), 0)) ORDER BY id DESC`, user.id, user.id)).map(cashEntry) };
