@@ -81,7 +81,7 @@ try {
   assert.equal(JSON.parse(audit[0].detail).driverId, d1.user.id);
   await assign(a, d1.user.id); // a double submit finds the work done
   assert.equal(rows(a.id).length, 1, 'a replay writes no second audit row');
-  assert.equal((await call(`/jobs/${a.id}/accept`, { token: d2.token, body: {}, expect: 409 })).error, 'already_taken');
+  assert.equal((await call(`/jobs/${a.id}/accept`, { token: d2.token, body: {}, expect: 404 })).error, 'not_found'); // taken orders leave other drivers' view
 
   // ---- stale view and reassign before pickup ----
   assert.equal((await assign(a, d2.user.id, { expectedStatus: 'searching' }, 409)).error, 'order_changed');
@@ -116,7 +116,7 @@ try {
   ]);
   const wins = results.filter(r => r.status === 200).length;
   assert.equal(wins, 1, `exactly one request wins, saw ${results.map(r => r.status)}`);
-  for (const r of results.filter(r => r.status !== 200)) assert.equal(r.status, 409);
+  for (const r of results.filter(r => r.status !== 200)) assert.ok([404, 409].includes(r.status), `a loser is refused, saw ${r.status}`); // a driver accept finds the order gone (404)
   const final = await call(`/orders/${race.id}`, { token: customer.token });
   assert.equal(final.status, 'assigned');
   assert.ok([d1, d2, d3].some(d => d.user.id === final.driverId));
