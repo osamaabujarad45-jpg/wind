@@ -75,7 +75,8 @@ try {
   assert.equal(recovered.recipientName, 'Huda');
   assert.equal(recovered.collected.cents, 2000);
   assert.deepEqual((await call(`/orders/${a.id}/advance`, { token: driver.token, body: completion })).collected, recovered.collected);
-  assert.equal(Number((await persistence.one('SELECT count(*) AS n FROM order_cash_collections WHERE order_id=?', a.id)).n), 1);
+  // One write-once door-cash fact on the order, stamped with the first request: the replay added nothing.
+  assert.deepEqual({ ...(await persistence.one('SELECT collected_cents, door_request_id FROM orders WHERE id=?', a.id)) }, { collected_cents: 2000, door_request_id: completion.requestId });
 
   const report = (order, reason) => call(`/orders/${order.id}/exception`, { token: driver.token,
     body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason, note: 'Fixture recipient unavailable' } });
