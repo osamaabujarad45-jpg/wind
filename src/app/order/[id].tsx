@@ -10,7 +10,7 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -44,6 +44,11 @@ function openMaps(point: Point | null, place: string, landmark: string, region: 
   const q = encodeURIComponent(`${landmark}, ${place}, ${region}`);
   return Linking.openURL(Platform.select({ ios: `maps:0,0?q=${q}`, android: `geo:0,0?q=${q}`, default: `https://www.google.com/maps/search/?api=1&query=${q}` }));
 }
+
+/** Read inside the accept handler, never during render (React Compiler's purity rule cannot tell the two apart here). */
+const tapTime = () => Date.now();
+/** The A11 reasons that fit this amount, in the owner's order. */
+const allowedReasons = (collected: number, due: number) => varianceReasons.filter(reason => varianceAllowed(collected, due, reason));
 
 export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -89,6 +94,9 @@ export default function OrderScreen() {
   if (proofInput.context !== proofContext) setProofInput({ context: proofContext, value: '' });
   const code = proofInput.context === proofContext ? proofInput.value : '';
   const setCode = (value: string) => setProofInput({ context: proofContext, value: codeInput(value, 4) });
+  // WP-01: the cash taken at the door, typed by the driver; prefilled with what is due, so an exact payment is one tap.
+  // A difference needs a reason the driver picks for this amount: never a default, and a new amount clears it.
+  const [door, setDoor] = useState<{ context: string; text: string | null; reason: VarianceReason | null }>({ context: proofContext, text: null, reason: null });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
@@ -146,6 +154,16 @@ export default function OrderScreen() {
   const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
   const farFill = (pinned: string, cityLevel: string) => parcelFarKm === null ? '' // no pin: the distance is to the city centre
     : order.pickupPoint ? fill(pinned, { km: kmLabel(parcelFarKm) }) : fill(cityLevel, { km: kmLabel(parcelFarKm), city: from[language] });
+  const doorStep = !!mine && order.status === 'in_transit' && order.service === 'parcel';
+  const dueCents = Math.round((order.price - order.discount) * 100);
+  const doorOwn = door.context === proofContext ? door : { text: null, reason: null };
+  const doorText = doorOwn.text ?? String(dueCents / 100);
+  const collectedCents = minorFromText(doorText);
+  const doorValid = Number.isSafeInteger(collectedCents) && collectedCents >= 0 && collectedCents <= doorCashMaxCents; // the server refuses more (invalid_input)
+  const doorDiffers = doorValid && collectedCents !== dueCents;
+  const doorReasons = doorDiffers ? allowedReasons(collectedCents, dueCents) : [];
+  const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
+  const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
@@ -164,7 +182,7 @@ export default function OrderScreen() {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? (needsCode && code ? { code } : {}) : { reason: problem.reason, note: problem.note.trim() },
+          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof } : { reason: problem.reason, note: problem.note.trim() },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
@@ -185,14 +203,14 @@ export default function OrderScreen() {
         const prepared = await work.prepareTracking();
         if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
         if (!prepared) { setActionError(c.locationOff); return; }
-        const lease = dispatchAcceptance(order, Date.now());
+        const lease = dispatchAcceptance(order, tapTime());
         if (lease === null) { setActionError(c.dispatchExpired); return; }
         body = { ...lease, ...capacityCommand(order) };
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
         const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
-          { expectedStatus: order.status, code: needsCode ? code : '', ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+          { expectedStatus: order.status, code: needsCode ? code : '', ...doorProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
         body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
@@ -452,6 +470,8 @@ export default function OrderScreen() {
           {order.discount > 0 && !isAdmin && !cancelled && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
           {isDriver && !cancelled && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
+          {order.collected && (isAdmin || isDriver) && <Detail label={c.doorCollectedShort} value={money(order.collected.cents / 100)} />}
+          {order.collected?.reason && (isAdmin || isDriver) && <Detail label={c.doorReasonShort} value={c[`variance_${order.collected.reason}`]} />}
         </View>
       </Card>
     </Appear>
@@ -676,6 +696,16 @@ export default function OrderScreen() {
         </>}
       </View>}
       footer={mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
+        {doorStep && <>
+          <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
+            onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
+            error={doorText.trim() && !doorValid ? c.doorInvalid : undefined} />
+          {doorDiffers && <>
+            <Txt variant="caption">{c.doorReasonHint}</Txt>
+            <FilterChips label={c.doorReasonHint} items={doorReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason ?? ('' as VarianceReason)}
+              disabled={!!busy || advanceLocked === order.status} onChange={reason => setDoor({ context: proofContext, text: doorOwn.text, reason })} />
+          </>}
+        </>}
         {needsCode &&
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
@@ -685,8 +715,8 @@ export default function OrderScreen() {
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code)}
-          reason={rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady}
+          reason={doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}

@@ -91,9 +91,25 @@ const boardingCommand = newDriverCommand(9, { ...order, journey: { boarding: { p
 assert.equal(driverCommandBody(boardingCommand).expectedPinRevision,3,'protected proof intent binds to the reviewed challenge');
 assert.throws(() => readDriverCommand({ ...command, payload: { code: 'not-a-pin' } }));
 assert.throws(() => readDriverCommand({ ...command, expiresAt: command.createdAt }));
+// A11 door cash on a saved command: only a completing advance carries it, the amount is a whole number, and a reason needs an amount and a listed name.
+assert.equal(readDriverCommand({ ...command, payload: { code: '1234', collectedCents: 4000, varianceReason: 'PARTIAL_PAYMENT' } }).payload.varianceReason, 'PARTIAL_PAYMENT');
+assert.equal(readDriverCommand({ ...command, payload: { code: '1234', collectedCents: 4900 } }).payload.collectedCents, 4900, 'an exact amount takes no reason');
+for (const payload of [{ varianceReason: 'PARTIAL_PAYMENT' }, { collectedCents: 1.5 }, { collectedCents: 4000, varianceReason: 'tip' }])
+  assert.throws(() => readDriverCommand({ ...command, payload: { code: '1234', ...payload } }), /invalid_pending_command/, JSON.stringify(payload));
+assert.equal(readDriverCommand({ ...command, action: 'exception', payload: { reason: 'absent', note: '' } }).action, 'exception', 'an exception with no cash stays valid');
+assert.throws(() => readDriverCommand({ ...command, action: 'exception', payload: { reason: 'absent', note: '', collectedCents: 4000 } }), /invalid_pending_command/, 'cash never rides on an exception');
 const proof = { expectedStatus: 'at_pickup', code: '1234', expectedPinRevision: 1 };
 const held = advanceRequest(null, 5, proof, () => 'first');
 assert.equal(advanceRequest(held, 5, { ...proof }, () => 'second'), held, 'a lost acknowledgement replays the same advance');
 assert.equal(advanceRequest(held, 5, { ...proof, expectedPinRevision: 2 }, () => 'second').body.requestId, 'second', 'a rotated PIN is a new advance');
 assert.equal(advanceRequest(held, 5, { ...proof, code: '5678' }, () => 'second').body.code, '5678', 'a retyped code is sent, not the held one');
+// A11: a corrected amount or reason is a new advance, so a lost acknowledgement never replays the old cash figure.
+const cashProof = { expectedStatus: 'in_transit', code: '1234', collectedCents: 4900 };
+const exactHeld = advanceRequest(null, 5, cashProof, () => 'exact');
+assert.equal(advanceRequest(exactHeld, 5, { ...cashProof }, () => 'second'), exactHeld, 'the same amount replays the same advance');
+assert.equal(advanceRequest(exactHeld, 5, { ...cashProof, collectedCents: 4000, varianceReason: 'PARTIAL_PAYMENT' }, () => 'amount').body.requestId, 'amount', 'a corrected amount is a new advance');
+const shortHeld = advanceRequest(null, 5, { ...cashProof, collectedCents: 4000, varianceReason: 'PARTIAL_PAYMENT' }, () => 'short');
+assert.equal(advanceRequest(shortHeld, 5, { ...cashProof, collectedCents: 4000, varianceReason: 'PARTIAL_PAYMENT' }, () => 'second'), shortHeld, 'the same short payment replays');
+assert.equal(advanceRequest(shortHeld, 5, { ...cashProof, collectedCents: 4000, varianceReason: 'APPROVED_DISCOUNT' }, () => 'reason').body.requestId, 'reason', 'a changed reason alone is a new advance');
+assert.equal(advanceRequest(shortHeld, 5, { ...cashProof, collectedCents: 4000 }, () => 'cleared').body.requestId, 'cleared', 'a cleared reason is a new advance');
 console.log('Driver command process replacement, exact replay, proof-once receipts, assignment fences, session invalidation and screen advance replay passed');

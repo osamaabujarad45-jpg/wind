@@ -36,6 +36,7 @@ import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-r
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { doorCash } from './domain/door-cash.ts';
 import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
@@ -327,6 +328,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
+    ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
@@ -645,7 +648,8 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 30 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))) fail(503, 'unavailable');
+      if (schema < 31 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))
+        || !(await one('SELECT version FROM schema_migrations WHERE version = 31'))) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -2451,12 +2455,13 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   return { ok: true };
 });
 
-async function advanceOrder(user: User, id: number, body: Row) {
+async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
   const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  if ((next !== 'completed' || r.service !== 'parcel') && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: parcel delivery fee only
   (await safetyFree(r.id));
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
@@ -2471,8 +2476,13 @@ async function advanceOrder(user: User, id: number, body: Row) {
       fail(400, 'wrong_code');
     }
     const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
-      next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
+    const door = next === 'completed' ? doorCash(r.price, r.discount, body, fail) : null;
+    // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
+    // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
+    if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
+      door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
+      next, r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
+      door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
@@ -2547,7 +2557,7 @@ route('POST', '/api/orders/:id/advance', async ({ user, params, body }) => {
 });
 
 // Lost acknowledgements replay the stored outcome instead of applying a driver command twice.
-async function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) {
+async function driverCommand(user: User, id: number, body: Row, apply: (user: User, id: number, input: Row, requestId: string) => Promise<Order>) {
   const { requestId, ...input } = body;
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
   if (!activeStatuses.includes(input.expectedStatus)) fail(400, 'invalid_status');
@@ -2574,7 +2584,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
             || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
             || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
         }
-        result = (await apply(user, id, input));
+        result = (await apply(user, id, input, requestId));
       }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',

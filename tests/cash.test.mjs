@@ -192,6 +192,105 @@ try {
   await call(`/driver/cash/${capHandover.id}/confirm`, { token: other.token, body: { decision: 'confirm' } });
   assert.equal((await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {} })).status, 'assigned', 'after the handover the driver works again');
 
+  // ---- WP-01: door cash and typed variance are evidence only; commission and the owed maths do not move ----
+  await call('/admin/settings', { token: admin.token, body: { driverCashCap: 5000 } });
+  const dueCents = 4900; // the ₪49 parcel, no discount
+  const toTransit = async () => {
+    const o = await call(`/jobs/${(await newOrder()).id}/accept`, { token: other.token, body: {} });
+    return advance(other.token, await advance(other.token, o));
+  };
+  const finish = async (extra, expect) => {
+    const o = await toTransit();
+    const { handoverCode } = await call(`/orders/${o.id}`, { token: customer.token });
+    const done = await call(`/orders/${o.id}/advance`, { token: other.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code: handoverCode, ...extra }, expect });
+    return { o, handoverCode, done };
+  };
+  const adminView = id => call(`/orders/${id}`, { token: admin.token });
+  const owedNow = async () => (await call('/driver/cash', { token: other.token })).owedCents;
+  let owed = await owedNow();
+  const exact = await finish({ collectedCents: dueCents });
+  assert.equal(exact.done.status, 'completed');
+  assert.deepEqual((await adminView(exact.o.id)).collected, { cents: dueCents, reason: null });
+  const owedExact = await owedNow() - owed;
+  assert.equal(owedExact, Math.round(exact.done.commission * 100), 'owed rises by the commission only');
+  owed = await owedNow();
+  const short = await finish({ collectedCents: 4000, varianceReason: 'PARTIAL_PAYMENT' });
+  assert.deepEqual((await adminView(short.o.id)).collected, { cents: 4000, reason: 'PARTIAL_PAYMENT' });
+  assert.deepEqual(short.done.collected, { cents: 4000, reason: 'PARTIAL_PAYMENT' }, 'the driver sees what they recorded');
+  assert.equal(await owedNow() - owed, owedExact, 'a short payment changes neither commission nor owed');
+  assert.equal(short.done.commission, exact.done.commission);
+  owed = await owedNow();
+  const over = await finish({ collectedCents: 5200, varianceReason: 'INCORRECT_CASH' });
+  assert.deepEqual((await adminView(over.o.id)).collected, { cents: 5200, reason: 'INCORRECT_CASH' });
+  assert.equal(await owedNow() - owed, owedExact, 'an overpayment changes neither commission nor owed');
+  assert.equal(over.done.commission, exact.done.commission);
+  assert.equal('collected' in await call(`/orders/${over.o.id}`, { token: customer.token }), false, 'the customer never receives the door-cash record');
+  // Refusals: a difference needs a listed reason; amounts are non-negative integers; the order stays in transit.
+  const blocked = await toTransit();
+  const blockedCode = (await call(`/orders/${blocked.id}`, { token: customer.token })).handoverCode;
+  for (const extra of [{ collectedCents: 4000 }, { collectedCents: 4000, varianceReason: 'nope' }, { collectedCents: dueCents, varianceReason: 'OTHER_ADMIN_REVIEW' },
+    { collectedCents: -1, varianceReason: 'OTHER_ADMIN_REVIEW' }, { collectedCents: 40.5, varianceReason: 'OTHER_ADMIN_REVIEW' }, { collectedCents: '4000', varianceReason: 'OTHER_ADMIN_REVIEW' },
+    { varianceReason: 'OTHER_ADMIN_REVIEW' }, { collectedCents: 100_000_001, varianceReason: 'OTHER_ADMIN_REVIEW' },
+    // A11 direction rule: over-collection takes only INCORRECT_CASH/OTHER_ADMIN_REVIEW; did-not-pay means 0; partial means > 0.
+    { collectedCents: 5200, varianceReason: 'PARTIAL_PAYMENT' }, { collectedCents: 5200, varianceReason: 'APPROVED_DISCOUNT' },
+    { collectedCents: 4000, varianceReason: 'CUSTOMER_DID_NOT_PAY' }, { collectedCents: 0, varianceReason: 'PARTIAL_PAYMENT' },
+    { collectedCents: 4000, varianceReason: 'customer_short' }])
+    assert.equal((await call(`/orders/${blocked.id}/advance`, { token: other.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code: blockedCode, ...extra }, expect: 400 })).error, 'invalid_input', JSON.stringify(extra));
+  assert.equal((await call(`/orders/${blocked.id}`, { token: other.token })).status, 'in_transit');
+  const unpaid = await finish({ collectedCents: 0, varianceReason: 'CUSTOMER_DID_NOT_PAY' });
+  assert.deepEqual((await adminView(unpaid.o.id)).collected, { cents: 0, reason: 'CUSTOMER_DID_NOT_PAY' }, 'nothing taken is recorded, not refused');
+  // The fields mean nothing before delivery.
+  const early = await call(`/jobs/${(await newOrder()).id}/accept`, { token: other.token, body: {} });
+  assert.equal((await call(`/orders/${early.id}/advance`, { token: other.token, body: { expectedStatus: 'assigned', requestId: randomUUID(), collectedCents: dueCents }, expect: 400 })).error, 'invalid_input');
+  // Replay: the same request id returns the stored outcome and never applies twice.
+  const replayId = randomUUID(), replayBody = { expectedStatus: 'in_transit', requestId: replayId, code: blockedCode, collectedCents: 4500, varianceReason: 'PARTIAL_PAYMENT' };
+  const replayFirst = await call(`/orders/${blocked.id}/advance`, { token: other.token, body: replayBody });
+  const again = await call(`/orders/${blocked.id}/advance`, { token: other.token, body: replayBody });
+  assert.equal(again.completedAt, replayFirst.completedAt);
+  assert.deepEqual(again.collected, { cents: 4500, reason: 'PARTIAL_PAYMENT' });
+  await call(`/orders/${blocked.id}/advance`, { token: other.token, body: { ...replayBody, collectedCents: 4600 }, expect: 409 }); // same id, other payload
+  // Only the assigned driver may record it.
+  const roleOrder = await toTransit();
+  const roleBody = { expectedStatus: 'in_transit', requestId: randomUUID(), collectedCents: dueCents };
+  await call(`/orders/${roleOrder.id}/advance`, { token: customer.token, body: roleBody, expect: 403 });
+  await call(`/orders/${roleOrder.id}/advance`, { token: admin.token, body: roleBody, expect: 403 });
+  const third = await call('/auth/register', { body: { phone: '0599300006', name: 'Rami', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${third.user.id}/approve`, { token: admin.token, body: {} });
+  await call(`/orders/${roleOrder.id}/advance`, { token: third.token, body: { ...roleBody, requestId: randomUUID() }, expect: 404 }); // another driver cannot even see the order
+  // Orders completed without the fields (older apps) stay valid and carry no record.
+  const legacy = await finish({});
+  assert.equal('collected' in await adminView(legacy.o.id), false);
+  // A11 boundaries: the largest amount is accepted with a reason, and an exact amount may state no reason (null is absent).
+  const ceiling = await finish({ collectedCents: 100_000_000, varianceReason: 'INCORRECT_CASH' });
+  assert.deepEqual((await adminView(ceiling.o.id)).collected, { cents: 100_000_000, reason: 'INCORRECT_CASH' });
+  const nullReason = await finish({ collectedCents: dueCents, varianceReason: null });
+  assert.deepEqual((await adminView(nullReason.o.id)).collected, { cents: dueCents, reason: null });
+  // A11 discounted parcel: the expected amount is the fare minus the recorded promo, so the exact payment is ₪44, not ₪49.
+  await call('/admin/promos', { token: admin.token, body: { code: 'DOOR5', amount: 5, maxUses: 5, days: 7 } });
+  let promoted = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), promoCode: 'DOOR5', expectedDiscount: 5 } });
+  promoted = await call(`/jobs/${promoted.id}/accept`, { token: other.token, body: {} });
+  promoted = await advance(other.token, await advance(other.token, promoted));
+  const promotedCode = (await call(`/orders/${promoted.id}`, { token: customer.token })).handoverCode;
+  const promotedAdvance = (extra, expect, requestId = randomUUID()) => call(`/orders/${promoted.id}/advance`, { token: other.token,
+    body: { expectedStatus: 'in_transit', requestId, code: promotedCode, ...extra }, expect });
+  await promotedAdvance({ collectedCents: dueCents }, 400); // the undiscounted ₪49 is not what is due
+  await promotedAdvance({ collectedCents: 4900, varianceReason: 'PARTIAL_PAYMENT' }, 400); // over the due amount is never a partial payment
+  await promotedAdvance({ collectedCents: 4400, varianceReason: 'tip' }, 400); // exact takes no reason, and 'tip' is not on the list
+  assert.equal((await call(`/orders/${promoted.id}`, { token: other.token })).status, 'in_transit');
+  const doneRequest = randomUUID();
+  const promotedDone = await promotedAdvance({ collectedCents: 4400 }, 200, doneRequest);
+  assert.equal(promotedDone.status, 'completed');
+  assert.deepEqual((await adminView(promoted.id)).collected, { cents: 4400, reason: null });
+  const door = db.prepare('SELECT door_expected_cents, door_collected_by, door_request_id FROM orders WHERE id = ?').get(promoted.id);
+  assert.equal(door.door_expected_cents, 4400, 'the record names the expected amount after the discount');
+  assert.equal(door.door_collected_by, other.user.id, 'the record names the collecting driver');
+  assert.equal(door.door_request_id, doneRequest, 'the record names the replay identity of the advance');
+  // A11 write-once: after collection none of the five door columns can change, on any path.
+  for (const [column, value] of [['collected_cents', 1], ['variance_reason', 'INCORRECT_CASH'], ['door_expected_cents', 1],
+    ['door_collected_by', customer.user.id], ['door_request_id', randomUUID()]])
+    assert.throws(() => db.prepare(`UPDATE orders SET ${column} = ? WHERE id = ?`).run(value, promoted.id), /door cash is write-once/, column);
+  db.prepare('UPDATE orders SET updated_at = updated_at WHERE id = ?').run(promoted.id); // other columns stay writable
+
   console.log('cash: ok');
 } finally {
   await shutdown();

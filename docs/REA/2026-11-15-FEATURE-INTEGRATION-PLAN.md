@@ -342,6 +342,7 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 - PR 1: `server/db/sqlite-schema.ts` (`merchant_cod`, `merchant_cod_events`, append-only triggers like `:128-132`), port `server/domain/payments.ts:158-190` to the SQLite dialect behind a new `server/domain/cod.ts`, cash cap counts goods held (extend `cashExposureCents` `server/main.ts:2991`).
 - PR 2: booking field "collect from recipient", driver collect step (reuses WP-01's amount and variance), admin remit/resolve in `src/app/admin/cash.tsx`, receipts.
 - Acceptance: collected goods money never mixes with commission maths; remit needs a payout reference; cap counts goods held.
+- Door cash on `orders` (WP-01, A11) is the source of truth for delivery-fee collection until the PostgreSQL cutover decision; the dormant PG `cash_receipts` ledger (`server/domain/ledger.ts`) is not read or written by the app, so it must not be reconciled against `orders` until that decision.
 
 **WP-17 Parcel pickup code. P2.**
 - Files: `server/db/sqlite-schema.ts` (nullable `pickup_code` next to `return_code :135`), `advanceOrder` at the `at_pickup→in_transit` step (`server/main.ts:2440`, same lockout pattern as `proof_attempts`), `src/app/order/[id].tsx` (sender sees code, driver enters it), copy.

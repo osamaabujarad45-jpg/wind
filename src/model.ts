@@ -28,6 +28,21 @@ export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' 
   | 'on_hold' | 'returning' | 'returned';
 export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
 export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
+// WP-01 / Fable A11: why the cash taken at the door differs from what was due. The owner-approved vocabulary
+// (docs/fable/OWNER-DECISIONS-2026-11-14.md); evidence for disputes, never free text.
+export type VarianceReason = 'PARTIAL_PAYMENT' | 'CUSTOMER_DID_NOT_PAY' | 'APPROVED_DISCOUNT' | 'RETURNED_ITEMS' | 'INCORRECT_CASH' | 'OTHER_ADMIN_REVIEW';
+export const varianceReasons: VarianceReason[] = ['PARTIAL_PAYMENT', 'CUSTOMER_DID_NOT_PAY', 'APPROVED_DISCOUNT', 'RETURNED_ITEMS', 'INCORRECT_CASH', 'OTHER_ADMIN_REVIEW'];
+/** Largest door-collected amount in minor units (1,000,000 shekels): far above any fare, below any float or overflow edge. */
+export const doorCashMaxCents = 100_000_000;
+/** A11 direction rule: an exact amount takes no reason; more than due only INCORRECT_CASH or OTHER_ADMIN_REVIEW;
+ * less than due any reason, but CUSTOMER_DID_NOT_PAY means nothing was taken and PARTIAL_PAYMENT means something was. */
+export function varianceAllowed(collectedCents: number, dueCents: number, reason: VarianceReason | null): boolean {
+  if (collectedCents === dueCents) return reason === null;
+  if (reason === null || !varianceReasons.includes(reason)) return false;
+  if (reason === 'INCORRECT_CASH' || reason === 'OTHER_ADMIN_REVIEW') return true;
+  if (collectedCents > dueCents) return false;
+  return reason === 'PARTIAL_PAYMENT' ? collectedCents > 0 : reason === 'CUSTOMER_DID_NOT_PAY' ? collectedCents === 0 : true;
+}
 export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null; credit?: { code: string; amount: number } | null };
 export type Road = { id: number; name: string; cities: CityId[]; point: Point | null; status: 'open' | 'slow' | 'closed' | null; note: string; reportedAt: number | null; agreeing: number };
 /** Checkpoints touching either city with a recent slow/closed report: booking warning and live ETA wording. */
@@ -151,6 +166,7 @@ export type Order = {
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   destinationChange?: DestinationChange | null; canChangeDestination?: boolean;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
+  collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
   returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
