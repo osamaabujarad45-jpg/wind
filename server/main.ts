@@ -223,6 +223,17 @@ async function checkPassword(password: string, stored: string) {
   catch (error) { if (error instanceof PasswordBusyError) fail(503, 'password_busy'); throw error; }
 }
 
+// An unknown identifier costs the same scrypt as a known one: it is checked against a decoy hash made once, lazily.
+// decoyChecks lets a test see the unknown path reached the hash (a timing assertion would be flaky).
+let decoyHash: Promise<string> | undefined;
+export const loginCheck = { decoyChecks: 0 };
+async function checkLoginPassword(password: string, stored: string | undefined) {
+  if (stored !== undefined) return checkPassword(password, stored);
+  loginCheck.decoyChecks++;
+  await checkPassword(password, await (decoyHash ??= createPasswordHash(randomBytes(32).toString('hex'))));
+  return false;
+}
+
 function newPassword(value: unknown, minimum = production || selfService ? 12 : 6) {
   const password = typeof value === 'string' ? value : '';
   if (password.length < minimum || password.length > 100) fail(400, 'weak_password');
@@ -477,6 +488,7 @@ async function entraAccount(claims: EntraClaims, body: Row, placeholder: string)
     if (user) {
       // Staff accounts link only through an authenticated operator action, never by
       // presenting a phone/email claim (phone-identity.ts excludes admins the same way).
+      // Unlike password login, this answers 'blocked' to a caller who proved the identity at Entra, not a password.
       if (user.status === 'blocked') fail(403, 'blocked');
       if (user.role === 'admin' || user.entra_oid) fail(403, 'entra_link_required');
       const linked = await run(`UPDATE users SET entra_oid = ? WHERE id = ? AND entra_oid IS NULL AND role <> 'admin' AND status <> 'blocked'
@@ -695,7 +707,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
   let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
   const supplied = String(body.password ?? '');
-  let valid = !!r && await checkPassword(supplied, r.password);
+  let valid = await checkLoginPassword(supplied, r?.password as string | undefined);
   if (r && !valid && firebaseReset && r.email && r.status !== 'blocked' && r.role !== 'admin'
     && supplied.length >= (production || selfService ? 12 : 6) && supplied.length <= 100) {
     const pending = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ? AND requested_at > ?', r.id, Date.now() - FIREBASE_RESET_TTL);
