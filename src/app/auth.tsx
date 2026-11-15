@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, useReducedMotion } from '../motion';
 import { router } from 'expo-router';
-import { api, privacyUrl, SUPPORT_URL, TERMS_URL } from '../api';
+import { api, errorCode, privacyUrl, SUPPORT_URL, TERMS_URL } from '../api';
 import { isValidPhone, normalizeEmail, vehicles, type Vehicle } from '../model';
 import { HelpLinks } from '../parts';
 import { InstallLink } from '../install-link';
@@ -28,6 +28,7 @@ export default function Auth() {
   const [emailResetLink, setEmailResetLink] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState('');
+  const [blocked, setBlocked] = useState(false); // the server said so after a correct password; support is one tap away
   const [notice, setNotice] = useState(() => takeAuthNotice() ?? ''); // e.g. after a verified number change ended the last session
   // Phone-code reset: the server says whether the module exists and is switched on. A failed check is never shown as available.
   const [phoneCaps, setPhoneCaps] = useState<Capabilities | null>(null);
@@ -49,7 +50,13 @@ export default function Auth() {
   const [entraRequest, setEntraRequest] = useState<EntraRequest | null>(null);
   const [entraPrepareFailed, setEntraPrepareFailed] = useState(false);
   const [entraTry, setEntraTry] = useState(0);
-  const [error, setError] = useState('');
+  const [error, setErrorText] = useState('');
+  const setError = (text: string) => { setBlocked(false); setErrorText(text); }; // every message but a blocked one drops the support button
+  const showError = (e: unknown) => {
+    const isBlocked = errorCode(e) === 'blocked';
+    setErrorText(isBlocked && !SUPPORT_URL ? c.err_blocked_nosupport : err(e));
+    setBlocked(isBlocked);
+  };
   // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
   const [policyTry, setPolicyTry] = useState(0);
@@ -101,7 +108,7 @@ export default function Auth() {
       setMode('in'); setResetSent(false); setCode(''); setNotice(c.resetDone); setBusy(false);
     } catch (e) {
       haptic.error();
-      setError(err(e));
+      showError(e);
       setBusy(false);
     }
   }
@@ -127,7 +134,7 @@ export default function Auth() {
       await signIn(data);
     } catch (e) {
       haptic.error();
-      setError(err(e));
+      showError(e);
       setBusy(false);
     }
   }
@@ -153,7 +160,7 @@ export default function Auth() {
       await signIn(data);
     } catch (e) {
       haptic.error();
-      setError(err(e));
+      showError(e);
       setBusy(false);
     } finally {
       setEntraTry(n => n + 1); // never reuse a nonce, state, or PKCE verifier
@@ -244,6 +251,7 @@ export default function Auth() {
           </Appear>}
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
+          {blocked && !!error && SUPPORT_URL && <Button title={c.support} icon="mail-outline" variant="soft" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
           {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
             disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
