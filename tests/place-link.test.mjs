@@ -27,14 +27,14 @@ const refusal = (promise, code = 'link_not_resolved') => assert.rejects(promise,
 
 // Three redirects are the most that are followed: the point comes from the third target.
 {
-  const { send, calls } = script([redirect('https://www.google.com/a'), redirect('https://www.google.com/b'), redirect(RAMALLAH_AT)]);
+  const { send, calls } = script([redirect('https://www.google.com/maps/a'), redirect('https://www.google.com/maps/b'), redirect(RAMALLAH_AT)]);
   assert.deepEqual(await resolveSharedLink(SHORT, { send }), { latitude: 31.9038, longitude: 35.2034 });
   assert.equal(calls.length, 3);
 }
 
 // A chain of four redirects is refused, and the coordinates behind the fourth are never fetched.
 {
-  const { send, calls } = script([redirect('https://www.google.com/a'), redirect('https://www.google.com/b'), redirect('https://www.google.com/c'), redirect(RAMALLAH_AT)]);
+  const { send, calls } = script([redirect('https://www.google.com/maps/a'), redirect('https://www.google.com/maps/b'), redirect('https://www.google.com/maps/c'), redirect(RAMALLAH_AT)]);
   await refusal(resolveSharedLink(SHORT, { send }));
   assert.equal(calls.length, 4);
 }
@@ -46,7 +46,7 @@ const refusal = (promise, code = 'link_not_resolved') => assert.rejects(promise,
   assert.deepEqual(calls, [SHORT]);
 }
 // So is a redirect to plain http on an allowed host, and to a Google page that is not a map.
-for (const location of ['http://www.google.com/maps/@31.9038,35.2034,17z', 'https://accounts.google.evil.example/x', 'https://consent.google.example/']) {
+for (const location of ['http://www.google.com/maps/@31.9038,35.2034,17z', 'https://accounts.google.evil.example/x', 'https://consent.google.example/', 'https://www.google.com/search?q=x', 'https://www.google.com:8443/maps/@31.9038,35.2034,17z', 'https://www.google.tk/maps/@31.9038,35.2034,17z']) {
   const { send, calls } = script([redirect(location)]);
   await refusal(resolveSharedLink(SHORT, { send }));
   assert.equal(calls.length, 1, location);
@@ -72,12 +72,12 @@ for (const location of ['http://www.google.com/maps/@31.9038,35.2034,17z', 'http
 }
 // The budget is shared across hops: a fast first redirect does not buy the second hop more time.
 {
-  const { send, calls } = script([redirect('https://www.google.com/a'), 'hang']);
+  const { send, calls } = script([redirect('https://www.google.com/maps/a'), 'hang']);
   await refusal(resolveSharedLink(SHORT, { send, timeoutMs: 40 }));
   assert.equal(calls.length, 2);
 }
 // Only the caller's input is checked before a request: https on an allowlisted host.
-for (const input of ['http://maps.app.goo.gl/AbC123', 'https://evil.example/maps/@31.9038,35.2034,17z', 'not a url', 'https://www.google.evil.example/maps/@31.9038,35.2034,17z']) {
+for (const input of ['http://maps.app.goo.gl/AbC123', 'https://evil.example/maps/@31.9038,35.2034,17z', 'not a url', 'https://www.google.evil.example/maps/@31.9038,35.2034,17z', 'https://www.google.com/search?q=x', 'https://maps.app.goo.gl:8443/AbC123']) {
   const { send, calls } = script([]);
   await refusal(resolveSharedLink(input, { send }), 'invalid_input');
   assert.equal(calls.length, 0, input);

@@ -17,10 +17,18 @@ const PAIR_RESOLUTION = [20, 1, 0.05, 0.0025, 0.000125];
 const GRID_ROWS = 5, GRID_COLUMNS = 4;
 const DIGITS = /^[23456789CFGHJMPQRVWX]+$/;
 
-// Google's own hosts, then the two short-link hosts. google.<cc> covers google.ps, google.co.il, google.com.ps and so on.
-const GOOGLE_HOST = /^(?:www\.)?google\.(?:com|[a-z]{2}|com?\.[a-z]{2})$/;
-export const isAllowedMapHost = (host: string) => host === 'maps.app.goo.gl' || host === 'goo.gl' || host === 'maps.google.com' || GOOGLE_HOST.test(host);
+// Google's own hosts, then the two short-link hosts. google.<cc> covers google.ps, google.co.il, google.com.ps and so on,
+// except the free-registration domains: google.tk and friends are not Google's, and anyone can register them.
+const FREE_TLDS = new Set(['tk', 'ml', 'ga', 'cf', 'gq']);
+const GOOGLE_HOST = /^(?:www\.)?google\.(com|(?:com?\.)?([a-z]{2}))$/;
+const googleHost = (host: string) => { const m = GOOGLE_HOST.exec(host); return !!m && !FREE_TLDS.has(m[2] ?? 'com'); };
+export const isAllowedMapHost = (host: string) => host === 'maps.app.goo.gl' || host === 'goo.gl' || host === 'maps.google.com' || googleHost(host);
 const isShortHost = (host: string) => host === 'maps.app.goo.gl' || host === 'goo.gl';
+// A link the app reads: https, no credentials or port, an allowlisted host, and a Maps path (short links always qualify).
+export function isPlainMapUrl(url: URL): boolean {
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || !isAllowedMapHost(url.hostname)) return false;
+  return isShortHost(url.hostname) || url.hostname === 'maps.google.com' || /^\/maps(\/|$)/.test(url.pathname);
+}
 
 const NUMBER = '[+-]?\\d{1,3}\\.\\d+';
 const PAIR_TEXT = new RegExp(`^(${NUMBER})(?:\\s*[,،]\\s*|\\s+)(${NUMBER})$`);
@@ -137,9 +145,11 @@ export function recoverPlusCode(code: string, reference: Point): Point | null {
 }
 
 // Coordinates and map links name a point themselves; a short code needs its town after it ("CWC8+R9 Ramallah").
+// Towns match with spaces and hyphens dropped, so "Al Bireh" and "Al-Bireh" name the same town.
+const squash = (text: string) => fold(text).replace(/[\s-]/g, '');
 function localityCentre(text: string): Point | null {
-  const term = fold(text);
-  const town = cities.find(item => term.includes(fold(item.en)) || term.includes(fold(item.ar)));
+  const term = squash(text);
+  const town = cities.find(item => term.includes(squash(item.en)) || term.includes(squash(item.ar)));
   return town ? { latitude: town.latitude, longitude: town.longitude } : null;
 }
 
@@ -150,6 +160,7 @@ function plusCodeRead(head: string, rest: string): SharedLocation | null {
     const point = decodePlusCode(head);
     return point ? checked(point.latitude, point.longitude, 'plus_code') : { error: 'bad_plus_code' };
   }
+  if (parsed.sep === 0) return null; // "+22" is a stray separator or a phone number, not a place
   const reference = localityCentre(rest);
   if (!reference) return { error: 'short_plus_code' };
   const point = recoverPlusCode(head, reference);
@@ -157,10 +168,9 @@ function plusCodeRead(head: string, rest: string): SharedLocation | null {
 }
 
 // A map link. The point is in the path (@lat,lng), or in q=, ll= or query=; a Google Maps link without one has no point.
-function mapLinkRead(url: URL): SharedLocation {
-  if (isShortHost(url.hostname)) return url.pathname.length > 1 ? { shortLink: url.href } : { error: 'bad_link' };
-  const onMapsPath = url.hostname === 'maps.google.com' || /^\/maps(\/|$)/.test(url.pathname);
-  if (!onMapsPath) return { error: 'bad_link' };
+function mapLinkRead(url: URL): SharedLocation | null {
+  // A short code is at least six characters: a shorter path is still being typed, so it is not read yet.
+  if (isShortHost(url.hostname)) return url.pathname.length >= 7 ? { shortLink: url.href } : null;
   const at = AT_POINT.exec(url.pathname);
   const fromQuery = ['q', 'll', 'query'].map(key => PAIR_PREFIX.exec(url.searchParams.get(key) ?? '')).find((m): m is RegExpExecArray => m !== null);
   const pair = at ?? fromQuery;
@@ -178,10 +188,9 @@ export function parseSharedLocation(text: string): SharedLocation | null {
   if (pair) return checked(Number(pair[1]), Number(pair[2]), 'coordinates');
   if (/^https?:\/\//i.test(t) || URL_SHAPED.test(t)) {
     let url: URL;
-    try { url = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`); } catch { return { error: 'bad_link' }; }
-    if (url.pathname === '/' && !url.search && !url.hash) return null; // a host still being typed
-    if (url.protocol !== 'https:' || !isAllowedMapHost(url.hostname)) return { error: 'bad_link' };
-    return mapLinkRead(url);
+    try { url = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`); } catch { return null; } // still being typed
+    // Anything that is not a plain Google Maps or short link is ordinary search text; only real map links are read.
+    return isPlainMapUrl(url) ? mapLinkRead(url) : null;
   }
   const [head = '', ...others] = t.split(/[\s,،]+/);
   return head.includes('+') ? plusCodeRead(head, others.join(' ')) : null;

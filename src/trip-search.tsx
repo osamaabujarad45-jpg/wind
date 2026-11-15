@@ -67,13 +67,14 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   const [link, setLink] = useState<{ url: string; point?: Point; failed?: boolean } | null>(null);
   useEffect(() => {
     if (!linkUrl) return;
-    let live = true;
+    const asking = new AbortController();
     const timer = setTimeout(() => {
-      api<Point>(`/places/resolve-link?url=${encodeURIComponent(linkUrl)}`)
-        .then(r => { if (live) setLink({ url: linkUrl, point: { latitude: r.latitude, longitude: r.longitude } }); })
-        .catch(() => { if (live) setLink({ url: linkUrl, failed: true }); });
+      api<Point>(`/places/resolve-link?url=${encodeURIComponent(linkUrl)}`, undefined, 'GET', asking.signal)
+        .then(r => { if (!asking.signal.aborted) setLink({ url: linkUrl, point: { latitude: r.latitude, longitude: r.longitude } }); })
+        .catch(() => { if (!asking.signal.aborted) setLink({ url: linkUrl, failed: true }); });
     }, 300);
-    return () => { live = false; clearTimeout(timer); };
+    // Leaving this link (or changing it) drops its answer, so an old result never shows while the next one is read.
+    return () => { asking.abort(); clearTimeout(timer); setLink(null); };
   }, [linkUrl]);
   const linked = link?.url === linkUrl ? link : null;
   const sharedPoint = shared && 'point' in shared ? shared.point : linked?.point && servedCity(linked.point) ? linked.point : null;

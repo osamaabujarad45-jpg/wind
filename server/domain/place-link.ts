@@ -5,7 +5,7 @@
 // ponytail: the 3 s budget is one AbortSignal for the chain; a per-hop budget and a response cache come when the pilot
 // sends enough links to notice the latency.
 import type { Point } from '../../src/model.ts';
-import { isAllowedMapHost, parseSharedLocation } from '../../src/shared-location.ts';
+import { isPlainMapUrl, parseSharedLocation } from '../../src/shared-location.ts';
 
 type Register = (method: string, path: string, handler: (ctx: { user: { id: number }; query: URLSearchParams }) => Promise<unknown>) => unknown;
 type Guards = {
@@ -27,11 +27,11 @@ export class LinkError extends Error {
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 const refuse = (code: 'invalid_input' | 'link_not_resolved'): never => { throw new LinkError(code); };
 
-// https on an allowlisted host, or refuse. The first hop is the caller's input; every later hop is a redirect target.
+// A Maps or short link on an allowlisted host, or refuse. The first hop is the caller's input; every later hop is a redirect target.
 function hop(text: string, base: URL | null): URL {
   let url: URL;
   try { url = new URL(text, base ?? undefined); } catch { return refuse(base ? 'link_not_resolved' : 'invalid_input'); }
-  if (url.protocol !== 'https:' || !isAllowedMapHost(url.hostname)) return refuse(base ? 'link_not_resolved' : 'invalid_input');
+  if (!isPlainMapUrl(url)) return refuse(base ? 'link_not_resolved' : 'invalid_input');
   return url;
 }
 

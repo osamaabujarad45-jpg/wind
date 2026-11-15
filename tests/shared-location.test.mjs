@@ -26,21 +26,29 @@ assert.deepEqual(pointOf('https://maps.google.com/?q=32.3116,35.0279'), TULKARM)
 assert.deepEqual(pointOf('https://www.google.ps/maps?ll=32.2211,35.2544'), { latitude: 32.2211, longitude: 35.2544 });
 assert.deepEqual(pointOf('https://google.com.ps/maps/search/?api=1&query=31.9038,35.2034'), RAMALLAH);
 assert.equal(parseSharedLocation('https://www.google.com/maps/@31.9038,35.2034,17z').source, 'map_link');
-// Refused: hosts off the allowlist, plain http, a non-map Google path, a Maps link without a point, and a point outside the area.
-for (const text of ['https://evil.example/maps/@31.9038,35.2034,17z', 'http://www.google.com/maps/@31.9038,35.2034,17z', 'https://www.google.com/search?q=32.31,35.02', 'https://www.google.com/maps', 'https://google.evil.example/maps/@31.9038,35.2034,17z'])
-  assert.deepEqual(parseSharedLocation(text), { error: 'bad_link' }, text);
+// Not a plain Maps link, so ordinary search text: other hosts, plain http, a Google page that is not a map, a port, credentials.
+for (const text of ['https://evil.example/maps/@31.9038,35.2034,17z', 'http://www.google.com/maps/@31.9038,35.2034,17z', 'https://www.google.com/search?q=32.31,35.02', 'https://google.evil.example/maps/@31.9038,35.2034,17z', 'https://www.google.com:8443/maps/@31.9038,35.2034,17z', 'https://user@www.google.com/maps/@31.9038,35.2034,17z'])
+  assert.equal(parseSharedLocation(text), null, text);
+// A Maps link that names no point is reported; a point outside the served area is refused.
+assert.deepEqual(parseSharedLocation('https://www.google.com/maps'), { error: 'bad_link' });
 assert.deepEqual(parseSharedLocation('https://www.google.com/maps/@32.7940,34.9896,17z'), { error: 'outside_area' });
 // Short links are not read here; the server follows them. A bare host still being typed is not a link yet.
 assert.deepEqual(parseSharedLocation('https://maps.app.goo.gl/AbC123'), { shortLink: 'https://maps.app.goo.gl/AbC123' });
 assert.deepEqual(parseSharedLocation('maps.app.goo.gl/AbC123'), { shortLink: 'https://maps.app.goo.gl/AbC123' });
 assert.deepEqual(parseSharedLocation('https://goo.gl/maps/AbC123'), { shortLink: 'https://goo.gl/maps/AbC123' });
 assert.equal(parseSharedLocation('https://maps.app.goo.gl/'), null);
+assert.equal(parseSharedLocation('https://maps.app.goo.gl/AbC'), null); // a short code is six or more characters
 assert.equal(parseSharedLocation('https://www.goog'), null);
+assert.equal(parseSharedLocation('https://www.google.com/m'), null); // "/maps" still being typed
+assert.equal(parseSharedLocation('Dr.Ahmed/clinic'), null);
 
 // Allowlisted map hosts.
 for (const host of ['google.com', 'www.google.com', 'google.ps', 'www.google.ps', 'google.co.il', 'google.com.ps', 'maps.google.com', 'maps.app.goo.gl', 'goo.gl'])
   assert.ok(isAllowedMapHost(host), host);
 for (const host of ['google.com.evil.example', 'notgoogle.com', 'maps.google.evil.example', 'evil.example', 'www.google.com.au.evil.example', 'mail.google.com.evil.example'])
+  assert.equal(isAllowedMapHost(host), false, host);
+// Free-registration domains are not Google's, whatever the two letters say.
+for (const host of ['google.tk', 'google.com.tk', 'google.ml', 'google.ga', 'google.cf', 'google.gq'])
   assert.equal(isAllowedMapHost(host), false, host);
 
 // Full Plus Codes: the official cell bounds, padding, and the encoder back to the same code.
@@ -68,8 +76,8 @@ assert.equal(full.length, 11);
 const short = recoverPlusCode('CJ+2VX', { latitude: 51.3701125, longitude: -1.217765625 });
 const wanted = decodePlusCode('9C3W9QCJ+2VX');
 near(short.latitude, wanted.latitude); near(short.longitude, wanted.longitude);
-// Official recovery edge: the nearest cell is off the earth, so the centre stays where it is.
-near(recoverPlusCode('CFX22222+22', { latitude: 89.6, longitude: 0 }).latitude, 89.0000625);
+// Official recovery edge: the nearest cell is off the earth, so the centre stays where it is (shortCodeTests: 2222+22 from CFX22222+22).
+near(recoverPlusCode('2222+22', { latitude: 89.6, longitude: 0 }).latitude, 89.0000625);
 // A short code is read against its town. Shortening the Ramallah code keeps the cell, so the town gives back the point.
 const shortRamallah = full.slice(4); // four characters, the separator and two more
 const recovered = pointOf(`${shortRamallah} Ramallah`);
@@ -80,6 +88,11 @@ assert.equal(parseSharedLocation(`${shortRamallah} رام الله`).source, 'pl
 assert.equal(parseSharedLocation(`${full} Ramallah`).source, 'plus_code');
 // Refused: a short code with no town, with a town we do not serve, and a full code that names no place on the earth.
 assert.deepEqual(parseSharedLocation('CWC8+R9'), { error: 'short_plus_code' });
+// A bare separator is a phone number or a stray "+", not a place.
+assert.equal(parseSharedLocation('+22 Ramallah'), null);
+assert.equal(parseSharedLocation('+972 59 712 7547'), null);
+// Town names match with spaces and hyphens dropped.
+assert.equal(parseSharedLocation(`${shortRamallah} Ram Allah`).source, 'plus_code');
 assert.deepEqual(parseSharedLocation(`${shortRamallah} Tel Aviv`), { error: 'short_plus_code' });
 assert.deepEqual(parseSharedLocation('FFFFFFFF+FF'), { error: 'bad_plus_code' });
 // Full codes served by the app: a point on the Tulkarm side, and one outside the area.
