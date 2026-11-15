@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
+import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
@@ -476,6 +477,8 @@ export default function OrderScreen() {
         onPress={() => confirm(c.rideRecoveryConfirm, () => act(action.key, `/admin/orders/${order.id}/${action.endpoint}`,
           { reason: resetReason.trim(), ...(action.key === 'ride-reset' && boarding ? { rotate: true, expectedAssignmentEpoch: order.recovery?.assignmentEpoch, expectedPinRevision: boarding.pinRevision } : {}) }, () => setProofReset({ id, reason: '', done: true })), action.title, c.no)} />)}
     </Card>}
+
+    {isAdmin && ['searching', 'assigned', 'at_pickup'].includes(order.status) && <AdminAssign order={order} busy={!!busy} act={act} />}
 
     {isAdmin && order.status === 'on_hold' && <Card tone="clay">
       <Txt variant="title">{c.exceptionTitle}</Txt>
