@@ -14,9 +14,40 @@ node tests/azure-infra.test.mjs
 
 The validation script compiles/lints the template and builds all three parameter examples with a fixed compile-only placeholder. It does not read operator secrets. The test checks compiled ingress/probe ports against the packaged API, the polling worker's minimum replica, and the separate graph-storage foundation. It has no deployment command, Azure login, or authenticated provider call.
 
-## Production host on AWS, what runs today
+## Production host on Azure, what runs today
 
-**Since 12 November 2026** production runs on AWS account `083712835043`, Region `eu-north-1`, from the CloudFormation stack `wind` (`infra/aws/wind.yaml`; why: `docs/operations/aws-migration-study.md`). Azure stopped the old VM over billing and then disabled the subscription; the Azure resources are left untouched until the owner deletes them.
+**Since 15 November 2026** production runs on Azure subscription "Azure subscription 1" (tenant `birzeit822.onmicrosoft.com`, Pay-As-You-Go), resource group `wind-prod` in **Sweden Central**. The owner chose Azure over the AWS host of 12–15 November; that host is kept, with the API stopped, as history below.
+
+- **Public address:** `https://windapp-ps.swedencentral.cloudapp.azure.com`, the DNS label of the static public IP `wind-ip` (20.91.140.253). The name belongs to that IP resource: deleting `wind-ip` releases it and breaks every installed APK, so keep the IP even if the VM is replaced. It is Azure-owned; an owned domain removes this dependency. It is the repository variable `WIND_API_URL` and the EAS `production` variable `EXPO_PUBLIC_API_URL`. Retired addresses are listed in `scripts/retired-api-hosts.json`: `app.config.js` refuses them and CI scans the exported bundles for them.
+- **Host:** VM `wind-vm`, `Standard_D2als_v6` (2 vCPU, 4 GiB, AMD, NVMe), Ubuntu 24.04, 32 GiB StandardSSD, 2 GiB swap file. This new Pay-As-You-Go subscription was refused every B-series size (quota 0, and an automatic quota request failed), so this size costs about USD 63/month. Request `standardBasv2Family` quota (Help + support → Service and subscription limits); once granted, move to `Standard_B2als_v2` (about USD 28). That size has no NVMe, so the move is a new VM from a snapshot of the OS disk, attached to the same NIC and `wind-ip`, not an in-place resize.
+- **TLS:** Caddy (`infra/vm/Caddyfile` at `/srv/Caddyfile`) holds a Let's Encrypt certificate for the public name and answers on 80 and 443 directly; there is no CDN in front. It sets `X-Forwarded-For` to the caller's address (an incoming one is ignored), which `WIND_TRUST_PROXY=1` tells the API to use.
+- **Network:** NSG `wind-nsg` admits 443 and 80 from anywhere. SSH (22, key `~/.ssh/wind-azure` on the owner's PC, user `windadmin`) is admitted only from one address, by rule `ssh-setup`, while someone is working on the VM; delete the rule afterwards and use `az vm run-command invoke -g wind-prod -n wind-vm --command-id RunShellScript --scripts ...`, which needs no open port.
+- **Credentials:** none stored on the VM. Its system-assigned managed identity has **AcrPull** on registry `windpsacr` and **Storage Blob Data Contributor** on the container `windpsbackup/wind-backups` only. `/srv/azure-token.sh` (`infra/vm/azure-token.sh`) turns that identity into short-lived tokens for `deploy.sh` and the backup. GitHub signs in as the app registration `wind-release-image` through OIDC, trusted only for this repository's `master` (immutable owner and repository ids), with **AcrPush** on `windpsacr` and nothing else.
+- **Settings:** `/srv/wind-api.env` (root, 0600) holds the same keys as before, with `WIND_PUSH_SUBJECT=https://windapp-ps.swedencentral.cloudapp.azure.com`, `OSRM_URL=http://wind-osrm:5000` and `WIND_TRUST_PROXY=1`.
+- **Cron:** `infra/vm/wind.cron` at `/etc/cron.d/wind`: nightly backup 03:10 UTC, watchdog every minute.
+- **Backups:** `windpsbackup` is zone-redundant, shared-key and public access are off (identity only), blob versioning is on, and deleted blobs and versions are kept 30 days.
+- **APK downloads:** storage account `windpsrelease`, public container `downloads`. `https://windpsrelease.blob.core.windows.net/downloads/wind.apk` is always the newest signed APK; it is the EAS variable `EXPO_PUBLIC_UPDATE_URL`, which the forced-upgrade screen opens.
+- **Caddy:** started once by hand; its certificate lives in the `caddy_data` volume:
+
+```sh
+docker run -d --name caddy --restart unless-stopped --network windnet -p 80:80 -p 443:443 \
+  -e WIND_ORIGIN=windapp-ps.swedencentral.cloudapp.azure.com -v /srv/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -v caddy_data:/data -v caddy_config:/config --log-opt max-size=20m --log-opt max-file=3 caddy:2.10.2-alpine
+```
+
+### Releasing an image
+
+`infra/vm/deploy.sh` takes the tag, the pushed digest and the source revision. It logs in to ACR with the VM's managed identity, pulls and runs the image by digest, and refuses one whose `org.opencontainers.image.revision` label is not that revision, before the backup or the switch. The tag only names the rollback container, and a tag that already has one is refused, and the release workflow refuses to push a tag the registry already holds. `tests/deploy-script.test.mjs` runs the script against a moved tag in CI. After any change to `infra/vm/deploy.sh`, copy it to `/srv/deploy.sh` and compare SHA256 again before releasing. Its rollback restarts the old container with its original environment, which is not safe across a database-backend cutover (master plan Phase 3).
+
+1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
+2. Record the workflow URL, its exact `headSha`, the pushed digest and the matching revision label.
+3. Run the `sudo /srv/deploy.sh …` line from the workflow summary on the VM, over SSH or `az vm run-command invoke`.
+
+The **Uptime** workflow checks `$WIND_API_URL/api/ready` hourly from outside Azure. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
+
+### The AWS host (history, 12–15 November 2026)
+
+From 12 to 15 November 2026 production ran on AWS account `083712835043`, Region `eu-north-1`, from the CloudFormation stack `wind` (`infra/aws/wind.yaml`; why: `docs/operations/aws-migration-study.md`). Azure stopped the old VM over billing and then disabled the subscription; the Azure resources are left untouched until the owner deletes them.
 
 - **Public address:** `https://dlvxzw3gj596d.cloudfront.net` (CloudFront). It is AWS-owned and stays the same when the host is replaced, so the app does not need a rebuild for a host move. It lasts only as long as that distribution: the stack keeps it (and the host and the backup bucket) on `delete-stack` (`DeletionPolicy: Retain`); deleting it by hand breaks every installed APK. An owned domain removes this dependency. It is the repository variable `WIND_API_URL`, read by CI, the release workflow and Uptime. Before ever changing it, remember that every installed APK has the address built in.
 - **Host:** EC2 `t3.small` `wind-host` with an Elastic IP, Ubuntu 24.04 from a pinned AMI (a changed AMI would replace the host and its database; the OS patches itself in place), 30 GiB encrypted gp3 that survives instance deletion (a replacement would need it attached and mounted by hand), 2 GiB swap. Preview every stack update as a change set and refuse any that replaces `Host` or `Edge`. Docker runs `wind-api`, `wind-osrm` and `caddy` on the `windnet` network, SQLite at `/srv/wind-data/wind.db`, as on Azure.
@@ -31,19 +62,11 @@ The validation script compiles/lints the template and builds all three parameter
 docker run -d --name caddy --restart unless-stopped --network windnet -p 80:80 -p 443:443   -e WIND_ORIGIN=<OriginName> --env-file /srv/caddy.env -v /srv/Caddyfile:/etc/caddy/Caddyfile:ro   -v caddy_data:/data -v caddy_config:/config --log-opt max-size=20m --log-opt max-file=3 caddy:2.10.2-alpine
 ```
 
-### Releasing an image
+After the move to Azure the stack is kept with `wind-api` stopped, so nothing writes to its copy of the database. Delete it only with the owner's approval.
 
-`infra/vm/deploy.sh` takes the tag, the pushed digest and the source revision. It logs in to ECR with the host role, pulls and runs the image by digest, and refuses one whose `org.opencontainers.image.revision` label is not that revision, before the backup or the switch. The tag only names the rollback container, and a tag that already has one is refused; ECR tags are immutable too. `tests/deploy-script.test.mjs` runs the script against a moved tag in CI. After any change to `infra/vm/deploy.sh`, copy it to `/srv/deploy.sh` and compare SHA256 again before releasing. Its rollback restarts the old container with its original environment, which is not safe across a database-backend cutover (master plan Phase 3).
+### The first Azure VM (history, until 12 November 2026)
 
-1. Require applicable gates and CI on the actual merge SHA. Confirm remote `master` still equals that green candidate, then run `gh workflow run release-image.yml --ref master -f tag=<tag>`. The workflow is master-only and refuses an existing tag; it does not check the candidate's CI itself.
-2. Record the workflow URL, its exact `headSha`, the pushed digest and the matching revision label.
-3. Run the `sudo /srv/deploy.sh …` line from the workflow summary on the host, through Session Manager or `aws ssm send-command --document-name AWS-RunShellScript`.
-
-The **Uptime** workflow checks `$WIND_API_URL/api/ready` hourly from outside AWS. A failed run emails whoever last changed its schedule, under their GitHub notification settings.
-
-### The Azure VM (history, until 12 November 2026)
-
-Production ran on Azure VM `wind-vm` (rg `wind-prod`, Sweden Central, `windapi236.swedencentral.cloudapp.azure.com`), image registry `windprodacr`, backups in Blob `windprodstore/wind-backups`. The last image there was `wind-api:20261110-help-ref` (`sha256:56d4df47…6cdd`, revision `bd51d592`). An extra, unused Container App also named `wind-api` cost about USD 3 a day. Delete all of it only with the owner's approval, after AWS has run well for two weeks.
+Production ran on Azure VM `wind-vm` in an earlier subscription (rg `wind-prod`, Sweden Central, `windapi236.swedencentral.cloudapp.azure.com`), image registry `windprodacr`, backups in Blob `windprodstore/wind-backups`. The last image there was `wind-api:20261110-help-ref` (`sha256:56d4df47…6cdd`, revision `bd51d592`). An extra, unused Container App also named `wind-api` cost about USD 3 a day. Delete all of it only with the owner's approval, after AWS has run well for two weeks.
 
 ### Firebase (done 7 November 2026, project `wind-development`)
 

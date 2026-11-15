@@ -121,6 +121,24 @@ try {
   } finally {
     if (savedRole === undefined) delete process.env.WIND_TEST_ROLE; else process.env.WIND_TEST_ROLE = savedRole;
   }
+  // A release build naming a retired API host is refused (scripts/retired-api-hosts.json): installed builds keep it forever.
+  {
+    const savedRelease = { role: process.env.WIND_TEST_ROLE, release: process.env.WIND_RELEASE, local: process.env.WIND_LOCAL_TEST, url: process.env.EXPO_PUBLIC_API_URL };
+    delete process.env.WIND_TEST_ROLE; delete process.env.WIND_GOOGLE_MAPS; delete process.env.EAS_BUILD_PLATFORM;
+    Object.assign(process.env, { WIND_RELEASE: '1', WIND_LOCAL_TEST: '0' });
+    try {
+      for (const host of JSON.parse(readFileSync(new URL('../scripts/retired-api-hosts.json', import.meta.url), 'utf8'))) {
+        process.env.EXPO_PUBLIC_API_URL = `https://${host}`;
+        assert.throws(build, /retired API host/, host);
+      }
+      process.env.EXPO_PUBLIC_API_URL = 'https://windapp-ps.swedencentral.cloudapp.azure.com';
+      assert.doesNotThrow(build, 'the current production address builds');
+    } finally {
+      for (const [key, value] of Object.entries({ WIND_TEST_ROLE: savedRelease.role, WIND_RELEASE: savedRelease.release, WIND_LOCAL_TEST: savedRelease.local, EXPO_PUBLIC_API_URL: savedRelease.url })) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  }
   setEnv({});
   process.env.WIND_GOOGLE_MAPS = '1';
   process.env.WIND_TEST_IDENTIFIER = '0599700001';

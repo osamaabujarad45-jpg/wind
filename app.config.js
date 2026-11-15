@@ -53,6 +53,10 @@ if (release) {
   if (process.env.WIND_LOCAL_TEST === '1' || url?.protocol !== 'https:' || local || url.username || url.password || url.search || url.hash) {
     throw new Error('Production builds require EXPO_PUBLIC_API_URL=https://your-public-api-domain with no credentials, query or fragment. WIND_LOCAL_TEST is for local debug exports only.');
   }
+  // Every installed build keeps the address it was built with: one that names a retired host is stranded the day it ships.
+  if (require('./scripts/retired-api-hosts.json').includes(host)) {
+    throw new Error(`EXPO_PUBLIC_API_URL names a retired API host (${host}). Use the current production address: docs/operations/deploy.md.`);
+  }
 }
 
 module.exports = ({ config }) => ({
