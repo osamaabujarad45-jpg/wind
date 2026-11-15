@@ -125,6 +125,10 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-firebase-reset.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(30,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 31'))) {
+      await database.run(readFileSync(new URL('./postgres-door-cash.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(31,?)', Date.now());
+    }
   });
 }
 

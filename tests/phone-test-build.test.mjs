@@ -7,7 +7,7 @@ import { join, resolve, sep } from 'node:path';
 const require = createRequire(import.meta.url);
 const plugin = require('../plugins/with-phone-test.js');
 const releasePlugin = require('../plugins/with-release-guard.js');
-const variables = ['WIND_TEST_ROLE', 'WIND_LOCAL_TEST', 'EAS_BUILD', 'WIND_RELEASE', 'EXPO_PUBLIC_API_URL',
+const variables = ['WIND_TEST_ROLE', 'WIND_TEST_SANDBOX', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_LOCAL_TEST', 'EAS_BUILD', 'WIND_RELEASE', 'EXPO_PUBLIC_API_URL',
   'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM',
   'EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY'];
 const saved = Object.fromEntries(variables.map(key => [key, process.env[key]]));
@@ -30,6 +30,22 @@ try {
   }
   setEnv({});
   assert.throws(() => plugin({ ...config(), android: { package: 'ps.wind.app' } }), /separate/);
+  // Ordinary sign-in variant: no role, own application ID, same loopback and release refusals.
+  const ordinaryConfig = () => ({ name: 'Wind Ordinary Test', slug: 'wind', android: { package: 'ps.wind.app.testordinary' } });
+  const ordinaryEnv = overrides => { setEnv({ WIND_TEST_SANDBOX: '1', ...overrides }); if (!overrides.WIND_TEST_ROLE) delete process.env.WIND_TEST_ROLE; };
+  for (const overrides of [
+    { WIND_LOCAL_TEST: '' }, { EAS_BUILD: '1' }, { WIND_RELEASE: '1' }, { WIND_RELEASE: 'true' }, { WIND_TEST_ROLE: 'customer' },
+    { WIND_TEST_IDENTIFIER: '0599000101' }, { WIND_TEST_PASSWORD: 'x'.repeat(24) },
+    { EXPO_PUBLIC_API_URL: 'https://wind-production-72aa.up.railway.app' }, { EXPO_PUBLIC_API_URL: 'http://192.168.1.2:4191' },
+    { EXPO_PUBLIC_API_URL: 'http://localhost:4191' }, { EXPO_PUBLIC_API_URL: 'http://127.0.0.1:4192' }, { EXPO_PUBLIC_API_URL: 'http://127.0.0.1:4191/api' },
+  ]) {
+    ordinaryEnv(overrides);
+    assert.throws(() => plugin(ordinaryConfig()), undefined, JSON.stringify(overrides));
+  }
+  ordinaryEnv({});
+  assert.throws(() => plugin({ ...ordinaryConfig(), android: { package: 'ps.wind.app.testcustomer' } }), /separate/);
+  assert.ok(plugin(ordinaryConfig()).mods.android.dangerous, 'ordinary variant gets the loopback-only debug network policy');
+  setEnv({});
   delete process.env.WIND_TEST_ROLE;
   const normal = config();
   assert.equal(plugin(normal), normal);
@@ -148,6 +164,11 @@ try {
 
   const buildScript = readFileSync(new URL('../scripts/build-phone-tests.ps1', import.meta.url), 'utf8');
   assert.match(buildScript, /\$env:GRADLE_USER_HOME = Join-Path \$phoneBuild /, 'Gradle files stay inside the marked build directory, never another session’s cache');
+  assert.match(buildScript, /\[ValidateSet\('Scripted', 'Ordinary'\)\]/, 'build script offers the ordinary sign-in switch');
+  assert.match(buildScript, /\$env:WIND_TEST_SANDBOX = '1'\s+Remove-Item Env:WIND_TEST_ROLE, Env:WIND_TEST_IDENTIFIER, Env:WIND_TEST_PASSWORD/, 'ordinary build clears every credential variable');
+  assert.match(buildScript, /GOOGLE_MAPS_ANDROID_KEY, Env:GOOGLE_MAPS_IOS_KEY/, 'build clears the Google keys');
+  assert.match(buildScript, /check-test-apk.mjs/, 'ordinary APK is scanned by the tested Node module');
+  assert.match(buildScript, /must carry no credentials and its own application ID/, 'ordinary APK is checked for credentials');
   console.log('Phone build boundaries passed: isolated role IDs/cache, loopback-only Debug policy, embedded bundle and intact Release guards; Google opt-in fails early without a restricted platform key and never leaks key strings into public config');
 } finally {
   for (const key of variables) {

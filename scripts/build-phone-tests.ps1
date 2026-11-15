@@ -5,6 +5,10 @@ param(
   [ValidateSet('arm64-v8a', 'x86_64')]
   [string]$Architecture = 'arm64-v8a',
   [string]$BuildRoot = 'C:\w-phone-qa-20261021',
+  # Ordinary: one extra app (ps.wind.app.testordinary) with NO bundled credentials, so a person signs in
+  # through the normal screens against the same loopback sandbox. -Roles is ignored.
+  [ValidateSet('Scripted', 'Ordinary')]
+  [string]$SignIn = 'Scripted',
   [string]$ProvisionPath,
   [string]$OutputDirectory
 )
@@ -39,7 +43,8 @@ if (![Uri]::TryCreate([string]$phoneProvision.apiUrl, [UriKind]::Absolute, [ref]
     $phoneApi.UserInfo -or $phoneApi.Query -or $phoneApi.Fragment) {
   throw 'Provisioning must target the isolated loopback HTTP API.'
 }
-foreach ($phoneRole in $Roles) {
+$phoneTargets = if ($SignIn -eq 'Ordinary') { @('ordinary') } else { $Roles }
+foreach ($phoneRole in ($phoneTargets | Where-Object { $_ -ne 'ordinary' })) {
   $phoneAccount = $phoneProvision.roles.$phoneRole
   if (!$phoneAccount.identifier -or !$phoneAccount.password) { throw "Missing synthetic credentials for $phoneRole." }
 }
@@ -67,8 +72,8 @@ foreach ($phoneFolder in @('src', 'assets', 'plugins', 'vendor', 'public')) {
 }
 
 $phoneEnvNames = @('ANDROID_HOME', 'ANDROID_SDK_ROOT', 'JAVA_HOME', 'CI', 'NODE_ENV', 'EXPO_PUBLIC_API_URL',
-  'WIND_LOCAL_TEST', 'WIND_TEST_ROLE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_RELEASE', 'EAS_BUILD',
-  'GOOGLE_MAPS_API_KEY', 'EXPO_NO_GIT_STATUS', 'GRADLE_USER_HOME', 'CMAKE_OBJECT_PATH_MAX')
+  'WIND_LOCAL_TEST', 'WIND_TEST_ROLE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_TEST_SANDBOX', 'WIND_RELEASE', 'EAS_BUILD',
+  'GOOGLE_MAPS_API_KEY', 'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'EXPO_NO_GIT_STATUS', 'GRADLE_USER_HOME', 'CMAKE_OBJECT_PATH_MAX')
 $phoneSavedEnv = @{}
 foreach ($phoneEnvName in $phoneEnvNames) { $phoneSavedEnv[$phoneEnvName] = [Environment]::GetEnvironmentVariable($phoneEnvName, 'Process') }
 $phoneArtifactsPath = Join-Path $phoneOutput 'artifacts.json'
@@ -90,7 +95,7 @@ try {
   $env:CMAKE_OBJECT_PATH_MAX = '250'
   $env:EXPO_PUBLIC_API_URL = [string]$phoneProvision.apiUrl
   $env:WIND_LOCAL_TEST = '1'
-  Remove-Item Env:WIND_RELEASE, Env:EAS_BUILD, Env:GOOGLE_MAPS_API_KEY -ErrorAction SilentlyContinue
+  Remove-Item Env:WIND_RELEASE, Env:EAS_BUILD, Env:GOOGLE_MAPS_API_KEY, Env:GOOGLE_MAPS_ANDROID_KEY, Env:GOOGLE_MAPS_IOS_KEY -ErrorAction SilentlyContinue
   Push-Location -LiteralPath $phoneBuild
   try {
     $phoneLockHash = (Get-FileHash -LiteralPath (Join-Path $phoneBuild 'package-lock.json') -Algorithm SHA256).Hash
@@ -103,10 +108,16 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed; see the private build log.' }
       Set-Content -LiteralPath $phoneInstalledLock -Value $phoneLockHash -Encoding ascii
     }
-    foreach ($phoneRole in $Roles) {
-      $env:WIND_TEST_ROLE = $phoneRole
-      $env:WIND_TEST_IDENTIFIER = [string]$phoneProvision.roles.$phoneRole.identifier
-      $env:WIND_TEST_PASSWORD = [string]$phoneProvision.roles.$phoneRole.password
+    foreach ($phoneRole in $phoneTargets) {
+      if ($phoneRole -eq 'ordinary') {
+        $env:WIND_TEST_SANDBOX = '1'
+        Remove-Item Env:WIND_TEST_ROLE, Env:WIND_TEST_IDENTIFIER, Env:WIND_TEST_PASSWORD -ErrorAction SilentlyContinue
+      } else {
+        Remove-Item Env:WIND_TEST_SANDBOX -ErrorAction SilentlyContinue
+        $env:WIND_TEST_ROLE = $phoneRole
+        $env:WIND_TEST_IDENTIFIER = [string]$phoneProvision.roles.$phoneRole.identifier
+        $env:WIND_TEST_PASSWORD = [string]$phoneProvision.roles.$phoneRole.password
+      }
       $phoneNative = Join-Path $phoneBuild 'android'
       if ((Test-Path -LiteralPath $phoneNative) -and ((Get-Item -LiteralPath $phoneNative).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Refusing clean prebuild through a junction.'
@@ -150,9 +161,16 @@ try {
         $phoneEmbeddedConfig = $phoneZip.GetEntry('assets/app.config')
         if (!$phoneEmbeddedConfig) { throw 'The test APK has no embedded Expo configuration.' }
         $phoneConfigReader = [IO.StreamReader]::new($phoneEmbeddedConfig.Open())
-        try { $phoneConfigValue = $phoneConfigReader.ReadToEnd() | ConvertFrom-Json } finally { $phoneConfigReader.Dispose() }
+        try { $phoneConfigText = $phoneConfigReader.ReadToEnd() } finally { $phoneConfigReader.Dispose() }
+        $phoneConfigValue = $phoneConfigText | ConvertFrom-Json
         $phoneExpectedAccount = $phoneProvision.roles.$phoneRole
-        if ($phoneConfigValue.android.package -ne "ps.wind.app.test$phoneRole" -or
+        if ($phoneRole -eq 'ordinary') {
+          # Every zip entry is scanned for every provisioned identifier, password and token (unit-tested in CI).
+          # Logged, so a Windows PowerShell 5.1 stderr line cannot end the build before its exit code is read.
+          $phoneScanLog = Join-Path $phoneLogs "$phoneRole-credential-scan.log"
+          Invoke-Logged $phoneScanLog { & node (Join-Path $phoneSource 'scripts\check-test-apk.mjs') $phoneApk $ProvisionPath }
+          if ($LASTEXITCODE -ne 0) { throw "The ordinary-sign-in APK must carry no credentials and its own application ID (see $phoneScanLog)." }
+        } elseif ($phoneConfigValue.android.package -ne "ps.wind.app.test$phoneRole" -or
             $phoneConfigValue.extra.phoneTest.role -ne $phoneRole -or
             $phoneConfigValue.extra.phoneTest.identifier -ne $phoneExpectedAccount.identifier -or
             $phoneConfigValue.extra.phoneTest.password -ne $phoneExpectedAccount.password) {
@@ -162,7 +180,9 @@ try {
       $phoneAapt = Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\aapt.exe'
       $phonePackage = "ps.wind.app.test$phoneRole"
       $phoneExpectedPackage = [regex]::Escape($phonePackage)
-      $phoneBadging = & $phoneAapt dump badging $phoneApk 2>&1
+      $phoneBadgingLog = Join-Path $phoneLogs "$phoneRole-badging.log"
+      Invoke-Logged $phoneBadgingLog { & $phoneAapt dump badging $phoneApk }
+      $phoneBadging = Get-Content -LiteralPath $phoneBadgingLog
       if ($LASTEXITCODE -ne 0 -or !($phoneBadging -match "package: name='$phoneExpectedPackage'")) { throw 'The APK application ID does not match its test role.' }
       $phoneArtifact = Join-Path $phoneOutput "wind-$phoneRole.apk"
       Copy-Item -LiteralPath $phoneApk -Destination $phoneArtifact -Force

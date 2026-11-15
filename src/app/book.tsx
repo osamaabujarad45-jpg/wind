@@ -13,7 +13,7 @@ import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quot
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
-import { RouteLine, ServiceIcon, SlotPicker, useFormat } from '../parts';
+import { etaShort, RouteLine, ServiceIcon, SlotPicker, useFormat } from '../parts';
 import { SceneMap } from '../scene-map';
 import { TripSearch, type TripField, type TripPlace } from '../trip-search';
 import { RouteCheckpoints, type RoadRoute } from '../road';
@@ -403,12 +403,14 @@ function BookForm() {
     const timer = setTimeout(() => expireQuoteEta(value => value + 1), remaining + 1);
     return () => clearTimeout(timer);
   }, [smart?.eta]);
-  const quoteMinutes = !smart ? null : smart.eta
-    ? deadlineMilliseconds(smart.eta.validity.expiresAt, smart.eta) > 0 ? `${Math.ceil(smart.eta.minSeconds / 60)}–${Math.ceil(smart.eta.maxSeconds / 60)}` : null
-    : smart.minutes;
+  // The quote's minutes as one range, shown in the same "less than" wording as the order screen. A checkpoint delay keeps the range.
+  const quoteEta: [number, number] | null = !smart ? null : smart.eta
+    ? deadlineMilliseconds(smart.eta.validity.expiresAt, smart.eta) > 0 ? [Math.ceil(smart.eta.minSeconds / 60), Math.ceil(smart.eta.maxSeconds / 60)] : null
+    : [smart.minutes, smart.minutes];
+  const slowRoute = !!smart && (smart.slow.length > 0 || smart.closed.length > 0);
 
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
-  const reasons = smart && [quoteMinutes !== null && fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${quoteMinutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
+  const reasons = smart && [quoteEta !== null && `${smart.estimated ? '≈ ' : ''}${etaShort(c, quoteEta, slowRoute)}` /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
     .filter(Boolean).join(' · ');
   // A checked code holds for the fare it was checked against; the server re-checks it on booking.
@@ -552,7 +554,7 @@ function BookForm() {
   const dropoffTitle = !dropoffChosen ? '' : dropoffNote.trim() || city(dropoffCity)[language];
   const estimate = (s: Service) => s === service ? (smart && !quoting ? smart.price : null)
     : preview ? smartPrice(settings, { service: s, option: optionsFor(s)[0], km: preview.km, minutes: preview.minutes, delayMinutes: 0, at: slotBucket.at, plus }) : null;
-  const minutes = quoteMinutes ?? preview?.minutes ?? null;
+  const minutes = quoteEta ?? (preview ? [preview.minutes, preview.minutes] as [number, number] : null);
   const swapStops = () => { // the landmark belongs to its place, so it travels with it
     haptic.tap(); setPickupCity(dropoffCity); setDropoffCity(pickupCity); setPickupPoint(dropoffPoint); setDropoffPoint(pickupPoint);
     setPickupChosen(dropoffChosen); setDropoffChosen(pickupChosen); pickupTouched.current = true;
@@ -568,7 +570,7 @@ function BookForm() {
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
       insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
-      eta={step === 'trip' && routeChosen && minutes !== null ? fill(c.minutesShort, { m: minutes }) : null}
+      eta={step === 'trip' && routeChosen && minutes !== null ? etaShort(c, minutes, slowRoute) : null}
       label={step === 'pin' ? `${pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}. ${c.pinHint}` : routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
       onMoving={() => { setPinMoving(true); setPinLabel(null); }} onGesture={() => { locationRequest.current?.abort(); if (pinFor === 'pickup') pickupTouched.current = true; setLocating(false); setPinMoving(true); setPinLabel(null); setLocationError(''); }}
       onCenter={point => { setPinPoint(point); setPinMoving(false); }}
@@ -645,7 +647,7 @@ function BookForm() {
             <ServiceIcon service={s} size={36} />
             <View style={{ flex: 1 }}>
               <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
-              {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${fill(c.minutesShort, { m: minutes })}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
+              {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${etaShort(c, minutes, slowRoute)}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
             </View>
             {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${approx}${money(value)}`}</Txt>}
           </Press>;
@@ -738,6 +740,7 @@ function BookForm() {
           <View style={{ flex: 1 }}>
             <Txt variant="micro">{c.payWith}</Txt>
             <Txt variant="title">{c.cash}</Txt>
+            <Txt variant="caption">{c.noChangeBook}</Txt>
           </View>
           {plus && <Txt variant="label" style={{ color: palette.olive }}>{c.plusApplied}</Txt>}
         </Row>

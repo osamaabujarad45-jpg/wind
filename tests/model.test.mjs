@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -41,6 +41,16 @@ assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5
 assert.deepEqual(['12', '12.5', '12.05', '1.15', '4.35', ' ٢٠٫٥٠ ', '0,07', '-3', '-0.5', '٠', '.5', '5.', '۱۲٫۵', '\u200f12\u060c5', '\u22123'].map(minorFromText),
   [1200, 1250, 1205, 115, 435, 2050, 7, -300, -50, 0, 50, 500, 1250, 1250, -300]);
 assert.ok(Object.is(minorFromText('-0'), 0), '-0 is zero, not negative zero');
+// A11 door cash (owner decision 14 Nov): exact takes no reason; over takes only INCORRECT_CASH/OTHER_ADMIN_REVIEW;
+// CUSTOMER_DID_NOT_PAY means 0 collected, PARTIAL_PAYMENT means some but less than due.
+assert.equal(varianceReasons.length, 6);
+assert.equal(varianceAllowed(4900, 4900, null), true);
+for (const r of varianceReasons) assert.equal(varianceAllowed(4900, 4900, r), false, `exact + ${r}`);
+assert.deepEqual(varianceReasons.filter(r => varianceAllowed(5200, 4900, r)), ['INCORRECT_CASH', 'OTHER_ADMIN_REVIEW']);
+assert.deepEqual(varianceReasons.filter(r => varianceAllowed(4000, 4900, r)), ['PARTIAL_PAYMENT', 'APPROVED_DISCOUNT', 'RETURNED_ITEMS', 'INCORRECT_CASH', 'OTHER_ADMIN_REVIEW']);
+assert.deepEqual(varianceReasons.filter(r => varianceAllowed(0, 4900, r)), ['CUSTOMER_DID_NOT_PAY', 'APPROVED_DISCOUNT', 'RETURNED_ITEMS', 'INCORRECT_CASH', 'OTHER_ADMIN_REVIEW']);
+assert.equal(varianceAllowed(4000, 4900, null), false, 'a difference never passes without a reason');
+assert.equal(varianceAllowed(4000, 4900, 'customer_short'), false, 'retired vocabulary is refused');
 for (const bad of ['', ' ', '.', '-', '1.234', '1.2.3', '1,000.5', '1,000', '1.000', '1 000', 'abc', '12a', '--1', '+1', '1e3', '0x10', 'Infinity', '99999999999999'])
   assert.ok(Number.isNaN(minorFromText(bad)), `refused: ${JSON.stringify(bad)}`);
 assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);

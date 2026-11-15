@@ -234,7 +234,7 @@
       "type": "table",
       "name": "orders",
       "tableName": "orders",
-      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL)"
+      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, collected_cents INTEGER, variance_reason TEXT, door_expected_cents INTEGER, door_collected_by INTEGER REFERENCES users(id), door_request_id TEXT)"
     },
     {
       "type": "table",
@@ -367,6 +367,12 @@
       "name": "cash_entries_no_edit",
       "tableName": "cash_entries",
       "sql": "CREATE TRIGGER cash_entries_no_edit BEFORE UPDATE ON cash_entries\n  WHEN OLD.status <> 'pending' OR NEW.amount_cents <> OLD.amount_cents OR NEW.driver_id <> OLD.driver_id OR NEW.kind <> OLD.kind\n  BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "orders_door_cash_write_once",
+      "tableName": "orders",
+      "sql": "CREATE TRIGGER orders_door_cash_write_once BEFORE UPDATE OF collected_cents, variance_reason, door_expected_cents, door_collected_by, door_request_id ON orders\n  WHEN OLD.collected_cents IS NOT NULL AND (NEW.collected_cents IS NOT OLD.collected_cents OR NEW.variance_reason IS NOT OLD.variance_reason\n    OR NEW.door_expected_cents IS NOT OLD.door_expected_cents OR NEW.door_collected_by IS NOT OLD.door_collected_by OR NEW.door_request_id IS NOT OLD.door_request_id)\n  BEGIN SELECT RAISE(ABORT, 'door cash is write-once'); END"
     }
   ],
   "tables": [
@@ -1998,11 +2004,61 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 42,
+          "name": "collected_cents",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 43,
+          "name": "variance_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 44,
+          "name": "door_expected_cents",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 45,
+          "name": "door_collected_by",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 46,
+          "name": "door_request_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
         }
       ],
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "door_collected_by",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "users",
           "from": "driver_id",
@@ -2012,7 +2068,7 @@
           "match": "NONE"
         },
         {
-          "id": 1,
+          "id": 2,
           "seq": 0,
           "table": "users",
           "from": "customer_id",

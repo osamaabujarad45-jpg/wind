@@ -9,7 +9,7 @@ import { city, cities, servedCity, type CityId, type Places, type Point } from '
 import { searchPlaces, type MapHit } from './place-search';
 import { parseSharedLocation, type SharedLocationError } from './shared-location';
 import type { CopyKey } from './copy';
-import { Button, ErrorText, haptic, IconButton, iconSize, palette, Press, Txt, useCopy, type IconName } from './ui';
+import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, palette, Press, Txt, useCopy, type IconName } from './ui';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
 export type TripField = 'pickup' | 'dropoff';
@@ -96,7 +96,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       .catch(e => setWider(w => w?.term === term ? { term, hits: [], failed: errorCode(e) === 'too_many_attempts' ? c.err_too_many_attempts : c.searchMapFailed } : w));
   };
   const placeName = (label: string, note: string) => label === 'other' || label === 'recent' ? note : c[`place_${label as 'home' | 'work'}`];
-  const input = (which: TripField, placeholder: string, value: string) => <TextInput autoFocus={which === field} ref={r => { inputs.current[which] = r; }}
+  const input = (which: TripField, placeholder: string, value: string) => <TextInput maxFontSizeMultiplier={maxScale} autoFocus={which === field} ref={r => { inputs.current[which] = r; }}
     accessibilityLabel={`${which === 'pickup' ? c.pickup : c.dropoff}${value && !query[which] ? `: ${value}` : ''}`}
     value={query[which]} placeholder={value || placeholder} placeholderTextColor={value ? palette.ink : palette.secondary /* the field's only label; faint was 4.1:1 on the focused muted fill */} onFocus={() => onField(which)} maxLength={100}
     onChangeText={text => setQuery(q => ({ ...q, [which]: text }))} returnKeyType="search" autoCorrect={false}

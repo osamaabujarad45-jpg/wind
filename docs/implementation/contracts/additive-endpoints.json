@@ -109,6 +109,23 @@
       ]
     },
     {
+      "packet": "WP-02-admin-assign",
+      "source": "server/domain/admin-assign.ts",
+      "registrar": "registerAdminAssignRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/admin/orders/:id/assignable-drivers",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/admin/orders/:id/assign",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
       "packet": "T05-routing",
       "source": "server/domain/routing-status.ts",
       "registrar": "registerRoutingStatusRoutes",

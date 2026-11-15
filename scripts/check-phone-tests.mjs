@@ -70,8 +70,22 @@ async function smoke() {
   }
   writeFileSync(join(output, 'smoke-results.json'), JSON.stringify({ at: new Date().toISOString(), results }, null, 2));
 }
+// Ordinary sign-in variant (build-phone-tests.ps1 -SignIn Ordinary): no bundled credentials, so it must show sign-in.
+async function ordinary() {
+  const pkg = 'ps.wind.app.testordinary';
+  adb('reverse', 'tcp:4191', 'tcp:4191');
+  adb('shell', 'am', 'force-stop', pkg);
+  adb('shell', 'am', 'start', '-W', '-n', `${pkg}/.MainActivity`);
+  await pause(5_000);
+  const ui = await snapshot('ordinary-home');
+  const text = ui.map(n => n.text || n['content-desc']).filter(Boolean);
+  assert.ok(ui.some(n => n.package === pkg), 'ordinary variant is foreground');
+  assert.ok(text.some(t => t === 'تسجيل الدخول' || t === 'Sign in'), 'ordinary variant shows the normal sign-in screen');
+  console.log('PASS ordinary: no bundled credentials, normal sign-in shown');
+}
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   if (process.argv[2] === 'smoke') await smoke();
+  else if (process.argv[2] === 'ordinary') await ordinary();
   else if (process.argv[2] === 'snapshot') console.log((await snapshot(process.argv[3] || 'current')).filter(n => n.text || n['content-desc']).map(n => ({ text: n.text, description: n['content-desc'], bounds: n.bounds, clickable: n.clickable })));
-  else throw new Error('Use smoke or snapshot <name>');
+  else throw new Error('Use smoke, ordinary or snapshot <name>');
 }

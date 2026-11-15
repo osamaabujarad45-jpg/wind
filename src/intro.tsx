@@ -3,7 +3,7 @@
 // a gust blows through the three trails, the pin drops onto its spot, then the tile rises and the name appears.
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from './motion';
-import { headingFont, logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, palette, useCopy } from './ui';
+import { headingFont, logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, maxScale, palette, useCopy } from './ui';
 
 export const INTRO_MS = 1600;
 export const TILE = 120; // keep equal to expo-splash-screen "imageWidth" in app.json
@@ -47,8 +47,8 @@ export function Intro() {
         animationName: { from: { opacity: 0, transform: [{ translateY: 14 }] }, to: { opacity: 1, transform: [{ translateY: 0 }] } },
         animationDuration: '460ms', animationDelay: '900ms', animationTimingFunction: EASE, animationFillMode: 'both',
       }, still && { opacity: 0 }]}>
-        <Text style={styles.brand}>{c.brand}</Text>
-        <Text style={styles.tagline}>{c.tagline}</Text>
+        <Text maxFontSizeMultiplier={maxScale} style={styles.brand}>{c.brand}</Text>
+        <Text maxFontSizeMultiplier={maxScale} style={styles.tagline}>{c.tagline}</Text>
       </Animated.View>
     </Animated.View>
   </View>;
