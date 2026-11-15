@@ -4,8 +4,9 @@ import * as Location from 'expo-location';
 import { api, apiSessionRevision, errorCode } from './api';
 import { activeStatuses, type Order } from './model';
 import { useSession } from './session';
-import { activeGpsTestEnabled, backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
-import { MIN_GAP, locationCadence, movingHeading } from './location-delivery';
+import { activeGpsTestEnabled, backgroundLocationDiagnostics, backgroundLocationState, startBackgroundLocation, stopBackgroundLocation } from './background-location';
+import { MIN_GAP, locationCadence, movingHeading, type TrackingReceipt } from './location-delivery';
+import { driverLocationDiagnostics, type DriverLocationDiagnostics } from './driver-location-diagnostics';
 import { deliverPresenceFix, startPresence, stopPresence, subscribePresence, subscribePresenceError, suspendPresence } from './driver-presence-runtime';
 import type { PresenceState } from './driver-presence';
 import { requestBackgroundTracking } from './background-permission';
@@ -14,7 +15,7 @@ import { createLocationWebClock } from './location-web-clock';
 import { boundedPermission } from './location-permission-timeout';
 
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
-type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; reload: () => Promise<void>; update: (order: Order) => void;
+type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; diagnostics: DriverLocationDiagnostics; reload: () => Promise<void>; update: (order: Order) => void;
   permission: ReturnType<typeof Location.useForegroundPermissions>[0]; requestPermission: ReturnType<typeof Location.useForegroundPermissions>[1]; prepareTracking: () => Promise<boolean>;
   presenceState: PresenceState | 'permission_denied'; presencePending:boolean; presenceError?:string; presenceConsentAccepted:boolean;
   enablePresence:()=>Promise<void>; disablePresence:()=>Promise<void>; backgroundGranted: boolean | null; requestBackgroundTracking:()=>Promise<boolean> };
@@ -44,7 +45,8 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
   const permission = permissionResult?.actor === actor && permissionResult.revision === lifecycle.revision ? permissionResult.value : null;
   const servicesGeneration = useRef(0);
   const [servicesResult, setServicesResult] = useState<{ actor: number; revision: number; enabled: boolean }>();
-  const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'> }>();
+  const [trackingResult, setTrackingResult] = useState<{ actor: number; orderId: number; value: Exclude<Tracking, 'idle'>;
+    diagnostics?: DriverLocationDiagnostics; revision?: number; session?: number }>();
   const [presenceResult,setPresenceResult]=useState<{actor:number|null;revision:number;state:PresenceState|'permission_denied'}>();
   const [bgResult, setBgResult] = useState<{ actor: number | null; granted: boolean } | null>(null);
   const [presenceError,setPresenceError]=useState<string>();
@@ -238,9 +240,12 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     let queued: GeolocationPosition | null = null;
     let wait: ReturnType<typeof setTimeout> | undefined;
     const clock = createLocationWebClock();
+    let diagnosticReceipt: TrackingReceipt | null = null;
+    const session = apiSessionRevision();
     const monotonic = () => globalThis.performance?.now?.() ?? Date.now();
     const setState = (value: Exclude<Tracking, 'idle'>) => {
-      if (!stopped) setTrackingResult({ actor, orderId, value });
+      if (!stopped && actorRef.current === actor && apiSessionRevision() === session) setTrackingResult({ actor, orderId, value,
+        diagnostics: driverLocationDiagnostics(diagnosticReceipt, value !== 'off', null, 'web'), revision: lifecycle.revision, session });
     };
     // Keep only the latest fresh callback while a request or cadence window is active.
     const later = () => { if (!wait && queued && !stopped) wait = setTimeout(flush, Math.max(0, Math.max(MIN_GAP, locationCadence(queued.coords.speed,queued.coords.accuracy)) - clock.sinceAttempt(monotonic()))); };
@@ -262,11 +267,13 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
           ...(heading != null && { heading }),
           ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }) });
         const receivedAt = Date.now();
+        diagnosticReceipt = { id: '', lastSentAt: 0, fixAt: diagnosticReceipt?.fixAt ?? 0, acknowledgedAt: receivedAt };
         if (clock.observe(receivedAt)) queued = null;
         if (!stopped && receipt.accepted !== false && timestamp <= receivedAt + 5_000 && receivedAt - timestamp <= 30_000) {
           clock.accepted(timestamp, monotonic());
+          diagnosticReceipt.fixAt = timestamp;
           setState('sharing');
-        }
+        } else setState('starting');
       } catch {
         queued = null; // do not replay a location after a network failure
         setState('starting');
@@ -286,7 +293,7 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
       if (clock.sincePublished(monotonic()) >= 15_000) geolocation.getCurrentPosition(position => { void publish(position); }, fail, options);
     }, 15_000);
     return () => { stopped = true; clearInterval(heartbeat); clearTimeout(wait); geolocation.clearWatch(watch); };
-  }, [actor, foreground, order?.id, permission?.granted, reload, servicesEnabled]);
+  }, [actor, foreground, order?.id, permission?.granted, reload, servicesEnabled, lifecycle.revision]);
 
   // Reconcile only in the foreground. AppState changes must not tear down the native service.
   const nativeOrderId = result?.actor === actor ? result.orders[0]?.id : undefined;
@@ -309,8 +316,14 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     }
     if (!servicesEnabled) { void stopBackgroundLocation().catch(() => {}); return; }
     let cancelled = false;
-    const status = () => backgroundLocationState().then(value => {
-      if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value });
+    const session = apiSessionRevision();
+    const status = () => Promise.all([backgroundLocationState(), backgroundLocationDiagnostics(actor, nativeOrderId)]).then(([value, diagnostics]) => {
+      // The poll runs every three seconds: keep the same object while the value is unchanged, so every
+      // consumer of the context is not re-rendered for nothing.
+      if (!cancelled && actorRef.current === actor && apiSessionRevision() === session) setTrackingResult(previous => previous?.actor === actor && previous.orderId === nativeOrderId && previous.value === value
+        && previous.revision === lifecycle.revision && previous.session === session
+        && Object.entries(diagnostics).every(([key, entry]) => previous.diagnostics?.[key as keyof DriverLocationDiagnostics] === entry)
+        ? previous : { actor, orderId: nativeOrderId, value, diagnostics, revision: lifecycle.revision, session });
     }).catch(() => {});
     if (activeGpsTestEnabled) void stopBackgroundLocation().catch(() => {});
     void Location.getBackgroundPermissionsAsync().then(p => { if (!cancelled) setBgResult({ actor, granted: p.granted }); }).catch(() => {});
@@ -324,8 +337,11 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
 
   const savedTracking = trackingResult?.actor === actor && trackingResult.orderId === order?.id ? trackingResult.value : undefined;
   const tracking: Tracking = !order ? 'idle' : !foreground || !permission?.granted || !servicesEnabled ? 'off' : savedTracking ?? 'starting';
+  const diagnostics = trackingResult?.actor === actor && trackingResult.orderId === order?.id && trackingResult.revision === lifecycle.revision
+    && trackingResult.session === apiSessionRevision() && foreground && permission?.granted && servicesEnabled && trackingResult.diagnostics
+    ? trackingResult.diagnostics : driverLocationDiagnostics(null, order ? null : false, null, Platform.OS);
 
-  return <Context.Provider value={{ order, orders, known: !!own && !own.error, error: own?.error, tracking, reload, update, permission, requestPermission, prepareTracking,
+  return <Context.Provider value={{ order, orders, known: !!own && !own.error, error: own?.error, tracking, diagnostics, reload, update, permission, requestPermission, prepareTracking,
     presenceState,presencePending,presenceError,presenceConsentAccepted,enablePresence,disablePresence,requestBackgroundTracking:requestBackgroundPermission, backgroundGranted: bgResult?.actor === actor ? bgResult.granted : null }}>{children}</Context.Provider>;
 }
 

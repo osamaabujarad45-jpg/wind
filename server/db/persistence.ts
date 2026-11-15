@@ -221,6 +221,24 @@ export class Persistence {
     }
   }
 
+  /** A refused mutation discards its writes and notifications, preserving earlier proof-attempt evidence. */
+  async savepoint<T>(work: () => Promise<T>): Promise<T> {
+    const owner = this.owner();
+    if (!owner?.active) throw new Error('Savepoints require an owned transaction');
+    const effects = owner.pending.length;
+    await this.run('SAVEPOINT mutation');
+    try {
+      const result = await work();
+      await this.run('RELEASE SAVEPOINT mutation');
+      return result;
+    } catch (error) {
+      try { await this.run('ROLLBACK TO SAVEPOINT mutation'); }
+      finally { owner.pending.length = effects; }
+      await this.run('RELEASE SAVEPOINT mutation');
+      throw error;
+    }
+  }
+
   /** PG request envelope keeps legacy commit boundaries as savepoints until durable intents exist. */
   async atomic<T>(actor: { id?: number; purpose?: string; correlationId?: string }, work: () => Promise<T>): Promise<T> {
     if (this.backend !== 'postgres') return this.scope(work);

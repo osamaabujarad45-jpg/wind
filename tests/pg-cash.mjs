@@ -1,5 +1,6 @@
 // WP03: original legacy assertions; async PG setup/fixture hooks only.
-import {freshPostgres,selectRuntime} from './pg-support.mjs';
+import {freshPostgres,selectRuntime,connect,schemaName} from './pg-support.mjs';
+import {initializePostgres} from '../server/db/postgres-schema.ts';
 const pg=await freshPostgres('cash');await pg.database.close();selectRuntime(pg.schema);
 // Driver cash settlement (SPEC-cash-settlement.md): commission owed, confirmed handovers, adjustments.
 import assert from 'node:assert/strict';
@@ -146,15 +147,84 @@ try {
   assert.equal((await call('/driver/earnings', { token: driver.token })).all.jobs, 4);
   const open = cash.owedCents;
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
-  await call('/me/delete', { token: driver.token, body: {}, expect: 409 });
+  await call('/me/delete', { token: driver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { role: 'customer' }, expect: 409 });
   const { persistence } = await import('../server/main.ts');
   await assert.rejects(persistence.run('DELETE FROM cash_entries'), /append-only/);
   await assert.rejects(persistence.run("UPDATE cash_entries SET amount_cents = 1 WHERE kind = 'adjustment'"), /append-only/);
-  const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
+  // Resolution metadata is allowed only on a pending decision; amount and all other fields stay immutable.
+  const adminConfirmed = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, note: 'PG admin resolution' } });
+  const confirmed = await call(`/admin/cash/${adminConfirmed.id}/resolve`, { token: admin.token,
+    body: { decision: 'confirm', reason: 'Office counted the isolated envelope', evidenceRef: 'PG-SAFE-001' } });
+  assert.equal(confirmed.status, 'confirmed');
+  const confirmedRow = await persistence.one('SELECT resolved_by,resolution_note FROM cash_entries WHERE id=?', adminConfirmed.id);
+  assert.equal(confirmedRow.resolved_by, admin.user.id);
+  assert.ok(confirmedRow.resolution_note.includes('Office counted') && confirmedRow.resolution_note.includes('PG-SAFE-001'));
+  await call(`/admin/cash/${adminConfirmed.id}/resolve`, { token: admin.token,
+    body: { decision: 'dispute', reason: 'Double tap must not repeat' }, expect: 409 });
+  const adminDisputed = await persistence.one('INSERT INTO cash_entries(driver_id,kind,amount_cents,note,status,recorded_by,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id',
+    driver.user.id, 'remittance', 1, 'PG admin dispute', 'pending', admin.user.id, Date.now());
+  const disputed = await call(`/admin/cash/${adminDisputed.id}/resolve`, { token: admin.token,
+    body: { decision: 'dispute', reason: 'Driver evidence conflicts with office count', evidenceRef: 'PG-SAFE-002' } });
+  assert.equal(disputed.status, 'disputed');
+  const disputedRow = await persistence.one('SELECT resolved_by,resolution_note FROM cash_entries WHERE id=?', adminDisputed.id);
+  assert.equal(disputedRow.resolved_by, admin.user.id);
+  assert.ok(disputedRow.resolution_note.includes('conflicts') && disputedRow.resolution_note.includes('PG-SAFE-002'));
+  await assert.rejects(persistence.run('UPDATE cash_entries SET amount_cents = 999 WHERE id = ?', adminConfirmed.id), /append-only/);
+  const settleAmount = (await call('/driver/cash', { token: driver.token })).owedCents;
+  const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: settleAmount } });
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
-  await call('/me/delete', { token: driver.token, body: {} }); // settled drivers may leave
+  await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
+
+  // Existing schemas keep migration markers 3–29: a fresh-schema-only guard fix would never reach them.
+  const upgradeSchema = schemaName('cash_up');
+  const upgrade = connect(upgradeSchema);
+  try {
+    await upgrade.run(`CREATE SCHEMA ${upgradeSchema}`);
+    await upgrade.run(`SET search_path TO ${upgradeSchema},public`);
+    await upgrade.run('CREATE TABLE schema_migrations(version BIGINT PRIMARY KEY, applied_at BIGINT NOT NULL)');
+    await upgrade.run('CREATE TABLE users(id BIGINT PRIMARY KEY)');
+    // Migrated schemas also carry the shared append-only guard from migration 6; migration 32 references it.
+    await upgrade.run("CREATE FUNCTION wp05_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'record is append-only' USING ERRCODE='23514'; END $$");
+    await upgrade.run(`CREATE TABLE orders(
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, driver_id BIGINT, service TEXT NOT NULL,
+      status TEXT NOT NULL, price_minor BIGINT NOT NULL DEFAULT 0, discount_minor BIGINT DEFAULT 0)`);
+    await upgrade.run('CREATE TABLE quotes(service TEXT NOT NULL)');
+    await upgrade.run(`CREATE TABLE cash_entries(
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, driver_id BIGINT NOT NULL,
+      kind TEXT NOT NULL, amount_cents BIGINT NOT NULL, note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+      recorded_by BIGINT NOT NULL, created_at BIGINT NOT NULL, decided_at BIGINT,
+      resolved_by BIGINT, resolution_note TEXT)`);
+    await upgrade.run(`CREATE FUNCTION immutable_cash() RETURNS trigger LANGUAGE plpgsql AS $old$
+    BEGIN
+      IF TG_OP <> 'UPDATE' THEN RAISE EXCEPTION 'cash ledger is append-only' USING ERRCODE='23514'; END IF;
+      IF OLD.status <> 'pending' OR OLD.kind <> 'remittance' OR NEW.status NOT IN ('confirmed','disputed')
+        OR NEW.decided_at IS NULL OR (to_jsonb(NEW) - 'status' - 'decided_at') IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'decided_at') THEN
+        RAISE EXCEPTION 'cash ledger is append-only' USING ERRCODE='23514';
+      END IF;
+      RETURN NEW;
+    END $old$`);
+    await upgrade.run('CREATE TRIGGER cash_entries_immutable BEFORE UPDATE OR DELETE ON cash_entries FOR EACH ROW EXECUTE FUNCTION immutable_cash()');
+    for (const version of [...Array.from({ length: 21 }, (_, i) => i + 3), ...Array.from({ length: 5 }, (_, i) => i + 25)])
+      await upgrade.run('INSERT INTO schema_migrations(version,applied_at) VALUES(?,?)', version, Date.now());
+    await upgrade.run("INSERT INTO cash_entries(driver_id,kind,amount_cents,note,status,recorded_by,created_at) VALUES(1,'remittance',1,'legacy','pending',7,1)");
+    await initializePostgres(upgrade, upgradeSchema);
+    assert.ok(await upgrade.one('SELECT version FROM schema_migrations WHERE version = 30'), 'the forward guard repair migration is recorded');
+    assert.ok(await upgrade.one('SELECT version FROM schema_migrations WHERE version = 31'), 'the additive parcel-priority migration follows the guard repair');
+    await upgrade.run("UPDATE cash_entries SET status='confirmed', decided_at=?, resolved_by=?, resolution_note=? WHERE id=1",
+      Date.now(), 7, 'Office counted');
+    const resolved = await upgrade.one('SELECT status,resolved_by,resolution_note FROM cash_entries WHERE id=1');
+    assert.equal(resolved.status, 'confirmed');
+    assert.equal(Number(resolved.resolved_by), 7);
+    assert.equal(resolved.resolution_note, 'Office counted');
+    await assert.rejects(upgrade.run("UPDATE cash_entries SET status='disputed', decided_at=? WHERE id=1", Date.now()), /append-only/);
+    await assert.rejects(upgrade.run('UPDATE cash_entries SET amount_cents=999 WHERE id=1'), /append-only/);
+    console.log('cash guard upgrade: old marked schema resolves once; amounts and repeat decisions stay immutable');
+  } finally {
+    await upgrade.run(`DROP SCHEMA IF EXISTS ${upgradeSchema} CASCADE`).catch(() => {});
+    await upgrade.close();
+  }
 
   console.log('cash: ok');
 } finally {

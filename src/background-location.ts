@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import { API_URL } from './api';
 import { deliverDriverFix, type ActiveGps, type TrackingContext, type TrackingReceipt } from './location-delivery';
 import { acquireActiveGps } from './active-gps-session';
+import { driverLocationDiagnostics } from './driver-location-diagnostics';
 
 const TASK = 'wind-active-delivery-location';
 const CONTEXT = 'wind.tracking';
@@ -123,6 +124,19 @@ export async function backgroundLocationState(): Promise<'off' | 'starting' | 's
   const receipt = await read<TrackingReceipt>(RECEIPT);
   const age=receipt ? Date.now()-receipt.lastSentAt : -1;
   return receipt?.id === context.id && !receipt.failed && age>=0 && age<60_000 ? 'sharing' : 'starting';
+}
+
+// Reuse the existing foreground status poll; this never requests a fix or sends a request.
+export async function backgroundLocationDiagnostics(actor: number, orderId: number) {
+  const generation = authorityGeneration, context = await read<TrackingContext>(CONTEXT);
+  if (!context || context.actor !== actor || context.orderId !== orderId || await SecureStore.getItemAsync('token') !== context.token)
+    return driverLocationDiagnostics(null, false, null, Platform.OS);
+  const registered = await Location.hasStartedLocationUpdatesAsync(TASK).catch(() => null);
+  const receipt = await read<TrackingReceipt>(RECEIPT);
+  if (generation !== authorityGeneration || (await read<TrackingContext>(CONTEXT))?.id !== context.id ||
+      await SecureStore.getItemAsync('token') !== context.token)
+    return driverLocationDiagnostics(null, false, null, Platform.OS);
+  return driverLocationDiagnostics(receipt?.id === context.id ? receipt : null, trackingEnabled, registered, Platform.OS);
 }
 
 const deliveryIO = {

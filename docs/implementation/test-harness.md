@@ -61,10 +61,16 @@ directory. These resources are process-exclusive:
   bind `127.0.0.1:4188`. Never run two of them at once. `test:scenarios` also exports the shared
   bundle to `.expo/location-review-web` with `--clear`; the other three reuse it. Run
   `test:scenarios` first (or export manually), and do not export while another gate is serving it.
-- **Port 4191** — `npm run phone:server` binds `127.0.0.1:4191`; `phone:web` builds against it and
-  `phone:check` runs `adb reverse tcp:4191 tcp:4191`. One phone sandbox per machine.
-- **Port 55473** — the single local PostgreSQL. Run one `test:persistence` at a time, including
-  filtered runs and the legacy harness. Take the machine-wide lock first:
+- **Port 4191 by default** — `npm run phone:server` binds loopback; `phone:web` builds against it and
+  `phone:check` runs `adb reverse tcp:4191 tcp:4191`. Set `WIND_PHONE_TEST_PORT` on the server,
+  launcher, and test-app build together when a second independent sandbox is required. The default
+  database/provisioning/APKs/web/device evidence lives in `.expo/phone-qa`; another port uses
+  `.expo/phone-qa-<port>`. One phone sandbox per port and directory; never share or reset another
+  session's backend.
+- **Port 55473 by default** — the original shared local PostgreSQL. Run one `test:persistence` at a
+  time per fixture, including filtered runs and the legacy harness. A separately initialized loopback
+  fixture on another port may be used for an independent run; do not point two runners at the old
+  recovering cluster. Take the machine-wide lock for a shared fixture first:
 
   ```pwsh
   $lock = 'C:\Users\osama\AppData\Local\Temp\opencode\wind-pg-lock'
@@ -89,7 +95,8 @@ directory. These resources are process-exclusive:
 ## Evidence rules
 
 - Run each gate as its own command and stop on the first failure.
-- A local run is reported as "local worktree fallback". Only the `k5` SSH run is remote evidence;
-  never present local output as remote.
+- A local run is reported as "local worktree fallback". Remote evidence must name the actual SSH host
+  and isolated root; this pass uses `DESKTOP-S2JKMK5` / `D:\wind-verify-20261113`. The configured `k5`
+  key is refused, so never present local output—or a different host's output—as `k5` evidence.
 - Phone acceptance uses the attached SM-A5360 only, never an emulator or simulator. Keep its backend
   on `adb reverse` and do not clear its Chrome profile.

@@ -13,18 +13,18 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SUPPORT_CONTACT = 'Synthetic <support> & "contact"';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
-const { server, db, promote } = await import('../server/main.ts');
+const { server, db, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
-async function call(path, { token, partnerKey, body, expect = 200 } = {}) {
+async function call(path, { token, partnerKey, body, headers = {}, expect = 200 } = {}) {
   if (path.endsWith('/advance') && body && !body.expectedStatus) {
     const order = await call(path.slice(0, -'/advance'.length), { token });
     body = { ...body, expectedStatus: order.status, requestId: randomUUID() };
   }
   const res = await fetch(base + path, {
     method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }) },
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...(partnerKey && { 'X-Partner-Key': partnerKey }), ...headers },
     body: body && JSON.stringify(body),
   });
   const data = await res.json();
@@ -38,6 +38,14 @@ try {
   assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 2);
   assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
   assert.equal((await call('/ready')).ok, true);
+  process.env.WIND_MIN_CLIENT_BUILD = '10014';
+  try {
+    assert.equal((await call('/ready', { headers: { 'X-Wind-Client': '10013' }, expect: 426 })).error, 'client_update_required');
+    assert.equal((await call('/ready', { headers: { 'X-Wind-Client': '10014' } })).ok, true);
+    assert.equal((await call('/ready')).ok, true, 'legacy clients without the header still need the separate distribution path');
+    const preflight = await fetch(base + '/ready', { method: 'OPTIONS' });
+    assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /X-Wind-Client/i);
+  } finally { delete process.env.WIND_MIN_CLIENT_BUILD; }
   // Registering can't make an admin; only the server-side promote command can.
   const admin = await call('/auth/register', { body: { phone: '0599000001', name: 'Admin', password: 'secret1', role: 'admin' } });
   assert.equal(admin.user.role, 'customer');
@@ -310,9 +318,11 @@ try {
   // Account deletion: refused with a live order, then erases personal data
   const leaver = await call('/auth/register', { body: { phone: '0599000004', name: 'Maya', password: 'secret1' } });
   const open = await call('/orders', { token: leaver.token, body: orderInput });
-  await call('/me/delete', { token: leaver.token, body: {}, expect: 409 });
+  await call('/me/delete', { token: leaver.token, body: {}, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'wrong' }, expect: 401 });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/orders/${open.id}/cancel`, { token: leaver.token, body: {} });
-  await call('/me/delete', { token: leaver.token, body: {} });
+  await call('/me/delete', { token: leaver.token, body: { password: 'secret1' } });
   await call('/me', { token: leaver.token, expect: 401 });
   await call('/auth/login', { body: { phone: '0599000004', password: 'secret1' }, expect: 401 });
   const erased = await call(`/orders/${open.id}`, { token: admin.token });
@@ -320,6 +330,24 @@ try {
   assert.equal(erased.customerName, '—');
   await call('/auth/register', { body: { phone: '0599000004', name: 'Maya again', password: 'secret1' } }); // number is free again
   await call('/me/delete', { token: admin.token, body: {}, expect: 409 });
+  for (const [index, change] of ['password', 'session'].entries()) {
+    const target = await call('/auth/register', { body: { phone: `059987000${index}`, name: 'Race fixture', password: 'secret1' } });
+    const original = persistence.atomic;
+    let intercepted = false;
+    persistence.atomic = async function(actor, work) {
+      if (actor.id === target.user.id && !intercepted) {
+        intercepted = true;
+        if (change === 'password') db.prepare('UPDATE users SET password=? WHERE id=?').run('changed', target.user.id);
+        else db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.user.id);
+      }
+      return original.call(this, actor, work);
+    };
+    try {
+      await call('/me/delete', { token: target.token, body: { password: 'secret1' }, expect: 401 });
+      assert.equal(intercepted, true);
+      assert.equal(db.prepare('SELECT status FROM users WHERE id=?').get(target.user.id).status, 'active', `${change} changed after verification prevents deletion`);
+    } finally { persistence.atomic = original; }
+  }
 
   const privacy = await fetch(base.replace('/api', '/privacy'));
   assert.equal(privacy.status, 200);

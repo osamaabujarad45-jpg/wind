@@ -8,22 +8,17 @@ One Expo app serves three roles, chosen by the account that signs in:
 - **Driver:** register with a motorcycle, bicycle, car, van or truck, wait for approval, accept matching jobs, see the latest completed trip and earnings, Wind Pro plan.
 - **Admin:** revenue dashboard, all orders, approve/block users, reset passwords, reopen delivery-code attempts after recipient verification, activate plans, edit tariffs and commissions.
 
-The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`, no npm dependencies.
+The API is `server/main.ts`: Node 24 with `node:http` and `node:sqlite`; the isolated/future PostgreSQL path uses `pg`.
 
-## Current workspace verification — 29 October 2026
+## Current workspace verification — 13 November 2026
 
-The workspace targets Android 1.0.13 / code 17 and Expo SDK 57; the signed preview
-(code 16) is installed on the connected A53 and was tested there, including native
-background tracking against this branch's API. On 29 October the candidate API
-image and corrected web bundle were deployed to
-`https://windapi236.swedencentral.cloudapp.azure.com`; the Android and web apps
-now share that origin and `check:deployment` passes. The release is still not
-public; see the [29 October readiness report](reports/release-readiness-2026-10-29.md).
-Email codes (Cloudflare Email Service) need a sending domain first. The live-tracking
-pass of 22 October (plausible GPS yardstick, driver identity in the live push,
-follow-camera on every platform, background polling pauses) is recorded in
-[the QA report](docs/QA-2026-10-21.md) and the
-[readiness workflow](docs/QA-WORKFLOW-2026-10-21.md).
+The workspace targets Android 1.0.13 / code 27 and Expo SDK 57. The signed preview APK
+is installed on the connected A53 and its embedded bundle points to the production AWS origin,
+`https://dlvxzw3gj596d.cloudfront.net`, not the retired Azure host. Installation and launch are
+verified; authenticated production journeys and overall pilot readiness remain unproven.
+The current source, test, restore, AWS and research evidence—including all remaining failures—is
+consolidated in [the 24-hour verification report](docs/verification/CONSOLIDATED-24H-2026-11-13.md).
+The 29 October Azure readiness report below is historical, not the current deployment.
 
 ## Release reference — 4 October 2026 (historical)
 
@@ -104,10 +99,10 @@ The logo is drawn by `scripts/make_icon.py` (icons, splash, favicon) and by `<Lo
 
 ## Deploy
 
+The current production host is AWS in `eu-north-1`, behind the CloudFront origin above.
 The [29 October release readiness report](reports/release-readiness-2026-10-29.md)
-records the current Azure endpoint, verified checks and remaining public-launch
-gates. The historical Railway release reference above is a legacy deployment; the
-live web app no longer calls it.
+and the Railway release reference are historical. Current evidence and launch gates are in
+[the consolidated verification report](docs/verification/CONSOLIDATED-24H-2026-11-13.md).
 
 ### 1. API
 
@@ -188,7 +183,7 @@ four-hour task for that interactive account. It runs only while the workstation
 is online and the account is logged in; it does not provide independent key
 recovery, retention management or failure alerts.
 
-The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch.
+The privacy policy is served at `https://<api>/privacy`; have it reviewed before launch. The public, login-free deletion request page is `https://<api>/account-deletion`. Set `SUPPORT_CONTACT` to a real monitored channel before launch. In-app deletion now requires the current password or a fresh Microsoft sign-in. Release the updated app before enabling this API change: older apps cannot provide the proof and must use support instead. For Microsoft sign-in, configure the `auth_time` optional ID-token claim in the Entra app registration and verify the flow with the real tenant before rollout; missing or stale claims are rejected.
 
 For an external deletion request, support records the request and privately verifies ownership of the registered number; never ask for a password or delivery code. An authorized operator can then run `node server/main.ts delete-account <verified-phone> --phone-verified` from the server shell. This reuses the in-app deletion transaction and refuses accounts with active orders or administrator accounts. Resolve the active delivery safely, retry, and confirm completion to the requester. Record fulfillment without copying passwords or order contact details into support logs. Administrator deletion needs a controlled role-transfer procedure; that exception is not automated by this command. Define and publish the required retention periods for retained accounting records and backups before public launch; restored backups must reapply later completed deletion requests before serving users. There is no public unauthenticated deletion API.
 Restore into a separate offline database, run `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, verify order/command/session counts, and test sign-in plus a synthetic order before replacing a stopped service's file. Backups contain personal data and password hashes: restrict access, encrypt off-host copies and apply the agreed retention policy.

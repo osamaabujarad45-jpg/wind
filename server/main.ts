@@ -13,6 +13,7 @@ import { PhoneIdentity, registerPhoneRoutes } from './domain/phone-identity.ts';
 import { Eligibility, measuredCapability, measuredScopes, registerEligibilityRoutes } from './domain/eligibility.ts';
 import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
+import { etaProjection, journeyOrder, offerFailure } from './domain/journey.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
@@ -25,6 +26,7 @@ import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdT
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
 import { destinationAvailable, destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
+import { expectedCashMinor, isCashCollectionInput, validCashVariance } from '../src/cash-collection.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
@@ -32,6 +34,9 @@ import { clientAddress } from './domain/client-address.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
+import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -42,8 +47,8 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
-  type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
+  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, validParcelPriority, sameDayBookingOpen, vehicleServices, vehicles,
+  type CityId, type DriverStats, type Offer, type Order, type ParcelPriority, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
 import { b64url, encrypt, pushEndpoint, vapid, pushSubject } from './push.ts';
@@ -97,7 +102,9 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   try { requested = decodeURIComponent(pathname === '/' ? '/index.html' : pathname); }
   catch { return false; }
   if (requested.includes('\0')) return false;
-  const candidate = resolve(webRoot, `.${requested}`);
+  // v1 names the bridge protocol; compatible page fixes refresh within a day. Keep /map.html for installed clients.
+  const versionedMap = requested === '/map/v1/map.html';
+  const candidate = resolve(webRoot, versionedMap ? './map.html' : `.${requested}`);
   const outside = relative(webRoot, candidate);
   if (outside.startsWith('..') || isAbsolute(outside)) return false;
   const file = (() => {
@@ -111,12 +118,16 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
   const contentType = webContentTypes[extension] ?? 'application/octet-stream';
   const useBrotli = compressible(contentType) && /(?:^|,)\s*br(?:;|,|$)/.test(String(req.headers['accept-encoding'] ?? ''));
   const modified = statSync(file).mtime;
-  const cacheControl = extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
+  const cacheControl = versionedMap ? 'public, max-age=86400' : extension === '.html' || extension === '.webmanifest' || file === resolve(webRoot, 'sw.js')
     ? 'no-cache' : 'public, max-age=604800, immutable';
-  // A revalidating client (the map page is no-cache) gets 304 instead of the whole file again.
+  const etag = file === resolve(webRoot, 'map.html') ? `W/"${createHash('sha256').update(readFileSync(file)).digest('hex')}"` : undefined;
+  // Content validators avoid a false 304 when a compatible map update has the same file timestamp.
   const since = req.headers['if-modified-since'];
-  if (since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000) {
-    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding' }).end();
+  const matches = etag && req.headers['if-none-match']
+    ? String(req.headers['if-none-match']).split(',').some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag.replace(/^W\//, ''))
+    : since && Date.parse(String(since)) >= Math.floor(modified.getTime() / 1000) * 1000;
+  if (matches) {
+    res.writeHead(304, { 'Cache-Control': cacheControl, 'Last-Modified': modified.toUTCString(), Vary: 'Accept-Encoding', ...(etag && { ETag: etag }) }).end();
     return true;
   }
   res.writeHead(200, {
@@ -124,11 +135,12 @@ function serveWeb(pathname: string, req: IncomingMessage, res: import('node:http
     // map.html (the Android WebView map) runs an inline module, so it keeps the frame/sniff headers only.
     ...(extension === '.html' && file !== resolve(webRoot, 'map.html') && { 'Content-Security-Policy': webCsp }),
     'Cache-Control': cacheControl,
+    ...(etag && { ETag: etag }),
     'Last-Modified': modified.toUTCString(),
     'Vary': 'Accept-Encoding', // always: a shared cache must not hand a brotli body to a client that cannot read it
     ...(useBrotli ? { 'Content-Encoding': 'br' } : {}),
   });
-  if (useBrotli) compressed(file).then(body => res.end(body), () => res.destroy());
+  if (useBrotli) compressed(file, etag).then(body => res.end(body), () => res.destroy());
   else createReadStream(file).on('error', () => res.destroy()).pipe(res);
   return true;
 }
@@ -150,9 +162,9 @@ const compressible = (type: string) => /^(text\/|application\/(javascript|json|m
 // The web build never changes while this process runs: compress each file once at maximum quality, off the event loop,
 // instead of per request (quality 11 on the 2.7 MB bundle took ~3.5 s of TTFB). ponytail: ~1 MB of memory for the whole build.
 const brotliCache = new Map<string, Promise<Buffer>>();
-const compressed = (file: string) => {
+const compressed = (file: string, revision: string | number = statSync(file).mtimeMs) => {
   // Keyed by mtime as well: an edited file must not be served from the body cached for the previous one.
-  const key = `${file}:${statSync(file).mtimeMs}`;
+  const key = `${file}:${revision}`;
   let body = brotliCache.get(key);
   if (!body) {
     body = promisify(brotliCompress)(readFileSync(file));
@@ -219,6 +231,13 @@ const sha = (token: string) => createHash('sha256').update(token).digest('hex');
 const canonical = (v: any): any => Array.isArray(v) ? v.map(canonical)
   : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(v[k])])) : v;
 const payloadHash = (body: Row) => sha(JSON.stringify(canonical(body)));
+// Standard is the legacy omitted attribute: preserve stored customer/partner command identities.
+const bookingIdentity = (body: Row) => {
+  const input = { ...body };
+  if (input.priority === 'standard' && (input.service === 'parcel' || input.service === undefined)) delete input.priority;
+  return input;
+};
+const bookingHash = (body: Row) => payloadHash(bookingIdentity(body));
 
 async function toUser(r: Row): Promise<User> {
   const stats = r.role === 'driver' ? (await driverStats(r.id)) : null;
@@ -256,13 +275,16 @@ const servesFor = (vehicle: unknown): Service[] => vehicleServices[vehicle as Ve
 const activeLoad = async (driverId: number) => (await all(`SELECT service FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId)) as { service: Service }[];
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle, d.plate driver_plate,
+  cc.expected_minor cash_expected_minor, cc.collected_minor cash_collected_minor, cc.variance_reason cash_variance_reason,
+  cc.actor_id cash_actor_id, cc.request_id cash_request_id, cc.collected_at cash_collected_at,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
   (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open,
   EXISTS(SELECT 1 FROM orders x WHERE x.driver_id = o.driver_id AND x.id <> o.id AND x.status IN (${activeSql})) shared_run
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
-  LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0) LEFT JOIN order_disputes od ON od.order_id = o.id`;
+  LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0) LEFT JOIN order_disputes od ON od.order_id = o.id
+  LEFT JOIN order_cash_collections cc ON cc.order_id = o.id`;
 
 type JobCardData = { customers: Map<number, { rating: number | null; trips: number }>;
   offers: Map<number, { price: number; createdAt: number }> };
@@ -276,10 +298,15 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
   // T33: the pending destination card follows the capability, not the dialect.
-  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await destinationAvailable(persistence)
+  const destinationChange = (viewer.id === r.customer_id || viewer.id === r.driver_id) && destinationEligible(r) && await destinationAvailable(persistence)
     ? await pendingDestination(persistence, r) : null;
   return {
     id: r.id, customerId: owner || assigned ? r.customer_id : null, driverId: r.driver_id ?? null, service: r.service, shared: !!r.shared,
+    ...(r.service === 'parcel' && { priority: r.priority ?? 'standard' }),
+    ...(assigned && r.service === 'parcel' && r.status === 'in_transit' && { cashCollectionAllowed: !!r.handover_code }),
+    ...(r.cash_collected_at != null && (owner || assigned) && { cashCollection: { expectedMinor: r.cash_expected_minor,
+      collectedMinor: r.cash_collected_minor, varianceReason: r.cash_variance_reason ?? null, actorId: r.cash_actor_id,
+      requestId: r.cash_request_id, collectedAt: r.cash_collected_at } }),
     pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     pickupPoint: (owner || assigned) && r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null,
     dropoffPoint: (owner || assigned) && r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null,
@@ -560,15 +587,29 @@ const postCashJournal = async (entryId: number) => {
 registerLedgerRoutes(route, ledger);
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
+// OpenCode / T3 provider service (runs zro CLI and records jobs)
+import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
+const opencodeService = createOpencode(persistence, fail);
+registerOpencodeRoutes(route, opencodeService);
 const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
+registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
+registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
 const nativePush = new NativePush(persistence, fail);
 registerNativePushRoutes(route, nativePush);
 const realtime = new Realtime(persistence, fail);
 registerRealtimeRoutes(route, realtime);
 export const phoneIdentity = new PhoneIdentity(persistence, fail, value => hashPassword(newPassword(value, 12)), checkPassword);
 registerPhoneRoutes(route, phoneIdentity);
-registerEntraRoutes(route, entraExchange);
+registerEntraRoutes(route, entraExchange, async ({ user, req }) => {
+  if (!entra || !(await one('SELECT entra_oid FROM users WHERE id=?', user.id))?.entra_oid) fail(409, 'entra_unavailable');
+  await limit(identityKey('delete-challenge', user.id), 10, 10 * 60_000);
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const nonce = randomBytes(32).toString('hex');
+  await run('DELETE FROM entra_replay WHERE expires_at < ?', Date.now());
+  await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`delete-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
+  return { nonce };
+});
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
@@ -583,7 +624,7 @@ route('GET', '/api/ready', async () => {
     } else {
       schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
       const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 21 || applied !== 19) fail(503, 'unavailable');
+      if (schema < 32 || applied !== 19 || !await one('SELECT version FROM schema_migrations WHERE version=32')) fail(503, 'unavailable');
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
@@ -657,7 +698,7 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -725,7 +766,10 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
     fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
   }
-  (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose));
+  // A reset runs outside the request transaction while hashing. Two requests
+  // may read the same code; only the request that atomically consumes it wins.
+  if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
+    r.id, purpose, row.code_hash, Date.now(), CODE_TRIES)).changes) fail(400, 'code_expired');
 }
 
 route('POST', '/api/me/email/code', async ({ user }) => {
@@ -822,13 +866,26 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
-async function deleteAccount(user: User) {
+async function deleteAccount(user: User, proof?: { sessionHash: string; passwordHash?: string; oid?: string; challengeHash?: string; tokenHash?: string; expiresAt?: number; authenticatedAt?: number }) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    if ((await one('SELECT role FROM users WHERE id = ?', user.id))?.role === 'admin') fail(409, 'cannot_change_self');
+    const current = await one(`SELECT role,status,password,entra_oid FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, user.id);
+    if (current?.role === 'admin') fail(409, 'cannot_change_self');
+    if (proof) {
+      const now = Date.now();
+      const session = await one(`SELECT 1 FROM sessions WHERE user_id=? AND token_hash=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
+        user.id, proof.sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
+      if (!current || current.status === 'blocked' || !session) fail(401, 'unauthorized');
+      if (proof.passwordHash !== undefined && current?.password !== proof.passwordHash) fail(401, 'wrong_password');
+      if (proof.oid !== undefined && (current?.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt)) fail(401, 'invalid_token');
+    }
     (await cashSettled(user.id));
     if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
+    if (proof?.oid) {
+      if (!(await run('DELETE FROM entra_replay WHERE token_hash=? AND expires_at>? AND expires_at<=?', proof.challengeHash!, Date.now(), proof.authenticatedAt! + 5 * 60_000 + 999)).changes) fail(401, 'invalid_token');
+      if (!(await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?) ON CONFLICT(token_hash) DO NOTHING', proof.tokenHash!, proof.expiresAt!)).changes) fail(401, 'invalid_token');
+    }
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
@@ -851,7 +908,29 @@ async function deleteAccount(user: User) {
   }
   return { ok: true };
 }
-route('POST', '/api/me/delete', async ({ user }) => (await deleteAccount(user)));
+route('POST', '/api/me/delete', async ({ user, body, req }) => {
+  if (user.role === 'admin') fail(409, 'cannot_change_self');
+  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
+  const key = identityKey('delete-auth', user.id);
+  await limit(key, 5, 10 * 60_000, false);
+  const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
+  if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password)) {
+    return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), passwordHash: current.password }));
+  }
+  if (entra && current.entra_oid && typeof body.idToken === 'string' && typeof body.nonce === 'string' && /^[a-f0-9]{64}$/.test(body.nonce)) {
+    let claims: EntraClaims | undefined;
+    try {
+      claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 });
+    } catch (error) {
+      if (error instanceof EntraUnavailableError) fail(503, 'entra_unavailable');
+    }
+    if (claims?.oid === current.entra_oid) return persistence.atomic({ id: user.id }, () => deleteAccount(user, { sessionHash: sha(token), oid: claims!.oid,
+      challengeHash: sha(`delete-challenge:${token}:${body.nonce}`), tokenHash: sha(claims!.tokenId || body.idToken), expiresAt: claims!.expiresAt,
+      authenticatedAt: claims!.authenticatedAt ?? undefined }));
+  }
+  await limit(key, 5, 10 * 60_000);
+  fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
+});
 
 // Saved and recent places (SPEC-saved-places.md): landmarks are the address here, so a repeat booking reuses them.
 const MAX_PLACES = 10;
@@ -1135,11 +1214,19 @@ function bookedPoint(p: unknown, id: CityId) {
   if (point && crowKm(city(id), point) > SERVICE_KM) fail(400, 'outside_area');
   return point;
 }
+function bookingPriority(service: unknown, value: unknown): ParcelPriority {
+  if (!validParcelPriority(service, value)) fail(400, 'invalid_priority');
+  return (value ?? 'standard') as ParcelPriority;
+}
+function checkPriorityCutoff(priority: ParcelPriority) {
+  if (priority === 'same_day' && !sameDayBookingOpen(Date.now())) fail(409, 'priority_cutoff');
+}
 
 // Smart recommended price (SPEC-driver-offers.md): the checkpoint-aware road route the map draws, plus Wind's own live
 // road reports (/api/roads). Without routing, straight km Ã— 1.3 at 50 km/h.
 async function recommend(user: User, b: Row) {
   const service = services.includes(b.service) ? b.service as Service : fail(400, 'invalid_service');
+  const priority = bookingPriority(service, b.priority);
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
@@ -1158,13 +1245,15 @@ async function recommend(user: User, b: Row) {
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice((await settings()), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
     plus: (await activePlan(user.id)) === 'plus' });
-  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', line: trip?.line ?? null, at };
+  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', line: trip?.line ?? null, at,
+    ...(service === 'parcel' && { priority }) };
 }
 route('POST', '/api/price', async ({ user, body }) => {
   need(user, 'customer');
   needActive(user);
   (await limit(identityKey('price', user.id), 120, 10 * 60_000));
   const base = (await recommend(user, body));
+  checkPriorityCutoff(base.priority ?? 'standard');
   if (!(await quotesAvailable(persistence))) return base;
   const service = body.service as Service;
   const option = String(body.option);
@@ -1193,6 +1282,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   const input = {
     customerId: user.id,
     service,
+    priority: base.priority,
     pickupCity: body.pickupCity,
     dropoffCity: body.dropoffCity,
     pickupLat: pickupPin?.latitude ?? null,
@@ -1221,6 +1311,7 @@ route('POST', '/api/price', async ({ user, body }) => {
     tariffVersion,
     declaredScope,
   };
+  checkPriorityCutoff(base.priority ?? 'standard');
   const record = (await createQuoteRecord(persistence, input as any, feasibility));
   const etaBand = { minSeconds: record.eta_min_seconds, maxSeconds: record.eta_max_seconds };
   const reasons = JSON.parse(record.reasons as unknown as string);
@@ -1255,7 +1346,7 @@ route('POST', '/api/price', async ({ user, body }) => {
 const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
 const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 24 * 86_400_000, 3_600_000);
 
-async function createOrder(user: User, body: Row, smart?: { price: number; km: number }) {
+async function createOrder(user: User, body: Row, smart?: { price: number; km: number }, authorize?: () => Promise<User>) {
   // T21: the cap check and the insert share the caller's write transaction — every booking path enters
   // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
   // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
@@ -1272,6 +1363,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     // Lock quote for consumption; re-evaluate prohibition with current evidence before committing.
     const quoted = (await one('SELECT * FROM quotes WHERE id=?::uuid FOR UPDATE', quoteId)) ?? fail(404, 'quote_not_found');
     if (Number(quoted.customer_id) !== user.id) fail(404, 'quote_not_found');
+    const priority = bookingPriority(quoted.service, body.priority);
+    if (priority !== (quoted.priority ?? 'standard')) fail(409, 'itinerary_changed');
     if (quoted.feasibility === 'infeasible') fail(409, 'route_prohibited');
     const now = Date.now();
     if (now > Number(quoted.expires_at) && quoted.consumed_at == null) fail(409, 'quote_expired');
@@ -1361,37 +1454,36 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const dropoff = effDropoffPoint;
     const recipientName = effRecipientName;
     const recipientPhone = effRecipientPhone;
+    const quotedScope = quoted.declared_scope == null ? null
+      : validateDeclaredScope(service, typeof quoted.declared_scope === 'string' ? JSON.parse(quoted.declared_scope as string) : quoted.declared_scope, fail);
+    const bookingScope = body.declaredScope == null ? null : validateDeclaredScope(service, body.declaredScope, fail);
+    if (quotedScope && bookingScope && scopePayloadHash(quotedScope) !== scopePayloadHash(bookingScope)) fail(409, 'itinerary_changed');
+    const committedScope = quotedScope ?? bookingScope;
+    // Routing, feasibility and promo work all yield: authority must still be valid at the commit boundary.
+    if (authorize) user = await authorize();
+    checkPriorityCutoff(priority);
     const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
-    recipient_name, recipient_phone, quote_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)`,
+    recipient_name, recipient_phone, quote_id, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?)`,
     user.id, service, Number(quoted.shared), quoted.pickup_city, quoted.dropoff_city,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
     effPickupNote, effDropoffNote, contact,
     pickupContact ?? contact,
     effDetail,
     quoted.option as string, Number(quoted.loading_help), price, service === 'ride' ? null : String(randomInt(1000, 10000)), nowTs, nowTs, scheduledFor, promo?.discount ?? null,
-    service === 'parcel' ? null : price, null, recipientName, recipientPhone, quoteId)).lastInsertRowid);
+    service === 'parcel' ? null : price, null, recipientName, recipientPhone, quoteId, priority)).lastInsertRowid);
     if (promo?.id) (await run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, nowTs));
     else if (promo) (await run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(referee_id) DO UPDATE SET referrer_id = excluded.referrer_id, order_id = excluded.order_id, created_at = excluded.created_at`, user.id, promo.referrerId, id, nowTs));
-    // WP12: commit the declared scope with the order. A scope supplied at
-    // booking must match the quoted scope; it never changes the price.
-    {
-      const quotedScope = quoted.declared_scope == null ? null
-        : validateDeclaredScope(service, typeof quoted.declared_scope === 'string' ? JSON.parse(quoted.declared_scope as string) : quoted.declared_scope, fail);
-      const bookingScope = body.declaredScope === undefined || body.declaredScope === null ? null
-        : validateDeclaredScope(service, body.declaredScope, fail);
-      if (quotedScope && bookingScope && scopePayloadHash(quotedScope) !== scopePayloadHash(bookingScope)) fail(409, 'itinerary_changed');
-      const committedScope = quotedScope ?? bookingScope;
-      if (committedScope) await saveDeclaredScope(persistence, fail, id, service, committedScope);
-    }
+    if (committedScope) await saveDeclaredScope(persistence, fail, id, service, committedScope);
     // Mark quote consumed atomically within the same order transaction.
     (await run('UPDATE quotes SET consumed_at=?, consumed_order_id=? WHERE id=?::uuid', nowTs, id, quoteId));
     if (scheduledFor == null) { (await run('UPDATE orders SET job_alerted_at = ? WHERE id = ?', nowTs, id)); (await dispatchOrBroadcast(service, id, user.id)); }
     return (await getOrder(id, user));
   }
   const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
+  const priority = bookingPriority(service, body.priority);
   // Parcels have one standard price: nothing to offer on, so no recommendation (SPEC-parcel-standard.md).
   const recommended = service === 'parcel' ? undefined : smart?.price;
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
@@ -1422,21 +1514,23 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   }
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  const pickupNote = text(body.pickupNote, 200), dropoffNote = text(body.dropoffNote, 200);
+  const pickupContact = body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone');
+  const detail = text(body.detail, 500, service !== 'ride');
+  if (body.declaredScope != null && !(await scopeAvailable(persistence))) fail(409, 'scope_unavailable');
+  const declaredScope = body.declaredScope == null ? null : validateDeclaredScope(service, body.declaredScope, fail);
+  if (authorize) user = await authorize();
+  checkPriorityCutoff(priority);
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
-    recipient_name, recipient_phone)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    recipient_name, recipient_phone, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'searching', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     user.id, service, shared ? 1 : 0, body.pickupCity, body.dropoffCity,
     point?.latitude ?? null, point?.longitude ?? null, dropoff?.latitude ?? null, dropoff?.longitude ?? null,
-    text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
-    body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
-    text(body.detail, 500, service !== 'ride'),
+    pickupNote, dropoffNote, contact, pickupContact, detail,
     option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
-    recommended ?? null, smart?.km ?? null, recipientName, recipientPhone)).lastInsertRowid); // the km the price used, shown on the driver's job card
-  if (body.declaredScope !== undefined && body.declaredScope !== null) {
-    if (!(await scopeAvailable(persistence))) fail(409, 'scope_unavailable');
-    await saveDeclaredScope(persistence, fail, id, service, validateDeclaredScope(service, body.declaredScope, fail));
-  }
+    recommended ?? null, smart?.km ?? null, recipientName, recipientPhone, priority)).lastInsertRowid); // the km the price used, shown on the driver's job card
+  if (declaredScope) await saveDeclaredScope(persistence, fail, id, service, declaredScope);
   if (promo?.id) (await run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, now));
   // Only reachable again after the earlier first order was cancelled (promoFor refuses otherwise).
   else if (promo) (await run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
@@ -1469,14 +1563,21 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     const recommended = input.quoteId ? undefined : await smart();
     user = (await authorize());
     (await persistence.exec('BEGIN IMMEDIATE'));
-    try { const order = (await createOrder(user, input, recommended)); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+    try { const order = (await createOrder(user, input, recommended, authorize)); (await persistence.exec('COMMIT')); return order; } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   }
   if (typeof requestId !== 'string' || !uuid.test(requestId)) fail(400, 'invalid_request_id');
-  const hash = payloadHash(input);
+  const hash = bookingHash(input);
   const replay = async () => {
+    user = await authorize(); // The promo limiter can wait past revocation; replay is an authorized read.
     const existing = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
     if (existing && existing.payload_hash !== hash) fail(409, 'idempotency_conflict');
-    return existing ? (await getOrder(existing.order_id, user)) : null;
+    if (existing) return (await getOrder(existing.order_id, user));
+    const rejected = (await one('SELECT payload_hash,error FROM order_command_rejections WHERE user_id = ? AND request_id = ?', user.id, requestId));
+    if (rejected) {
+      if (rejected.payload_hash !== hash) fail(409, 'idempotency_conflict');
+      fail(409, rejected.error);
+    }
+    return null;
   };
   const done = (await replay()); // a retried command returns its order even if today's price moved
   if (done) return done;
@@ -1484,19 +1585,43 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
   user = (await authorize());
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    // Replay under the same customer lock as creation: a committed retry must win before cap/quote checks.
+    if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+    user = (await authorize()); // the lock wait can also outlast this session's authority
     const raced = (await replay()); // the same command may have committed while routing was awaited
     if (raced) { (await persistence.exec('ROLLBACK')); return raced; }
-    const order = (await createOrder(user, input, recommended));
+    const order = (await createOrder(user, input, recommended, authorize));
     (await run('INSERT INTO order_commands (user_id, request_id, payload_hash, order_id) VALUES (?, ?, ?, ?)', user.id, requestId, hash, order.id));
     (await persistence.exec('COMMIT'));
     return order;
   } catch (error) {
     (await persistence.exec('ROLLBACK'));
-    // A concurrent retry can commit this key while we wait on it; answer with the winner.
-    if ((error as { code?: string }).code === '23505') { const won = (await replay()); if (won) return won; }
+    // Only these refusals are durable terminal outcomes. Null/unknown receipts never become absence.
+    if (['quote_expired', 'promo_used', 'priority_cutoff'].includes((error as { message?: string }).message ?? '')) {
+      (await persistence.exec('BEGIN IMMEDIATE'));
+      try {
+        if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+        user = (await authorize());
+        const won = (await one('SELECT * FROM order_commands WHERE user_id = ? AND request_id = ?', user.id, requestId));
+        if (won) {
+          if (won.payload_hash !== hash) fail(409, 'idempotency_conflict');
+          (await persistence.exec('COMMIT'));
+          return (await getOrder(won.order_id, user));
+        }
+        (await run(`INSERT INTO order_command_rejections (user_id,request_id,payload_hash,error,created_at)
+          VALUES (?,?,?,?,?) ON CONFLICT(user_id,request_id) DO NOTHING`, user.id, requestId, hash, (error as { message: string }).message, Date.now()));
+        const saved = (await one('SELECT payload_hash FROM order_command_rejections WHERE user_id = ? AND request_id = ?', user.id, requestId));
+        if (!saved || saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
+        (await persistence.exec('COMMIT'));
+      } catch (recordError) { (await persistence.exec('ROLLBACK')); throw recordError; }
+    }
+    // A concurrent retry can commit this key while we wait on it; answer with the winner only if still authorized.
+    if ((error as { code?: string }).code === '23505') { const won = (await replay()); if (won) { user = (await authorize()); return won; } }
     throw error;
   }
 });
+
+registerBookingReceiptRoutes(route, { need, fail, uuid, one });
 
 // A partner key stays on the two API servers; never ship it in a mobile bundle.
 function partner(req: IncomingMessage) {
@@ -1525,24 +1650,28 @@ route('GET', '/api/partner/config', ({ req }) => {
 
 route('POST', '/api/partner/quotes', async ({ req, body }) => {
   partner(req);
+  if (body.service !== undefined && body.service !== 'parcel') fail(400, 'invalid_service');
+  const priority = bookingPriority('parcel', body.priority);
+  checkPriorityCutoff(priority);
   if (!enabledServices.includes('parcel')) fail(409, 'service_unavailable');
   if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity) || !['small', 'medium', 'large'].includes(String(body.option))) fail(400, 'invalid_input');
   // Optional pins are refused here, before the seller agrees, rather than at booking where the buyer can no longer fix them.
   bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity);
-  return { currency: 'ILS', price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
+  return { currency: 'ILS', priority, price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
     option: body.option, shared: body.shared === true }) };
 }, true);
 
 route('POST', '/api/partner/orders', async ({ req, body }) => {
   partner(req);
+  if (body.service !== undefined && body.service !== 'parcel') fail(400, 'invalid_service');
   const ref = text(body.externalRef, 150);
   if (!Number.isSafeInteger(body.quotedPrice) || body.quotedPrice < 1) fail(400, 'invalid_input');
-  const hash = payloadHash(body);
+  const hash = bookingHash(body);
   const existing = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
   if (existing) {
     if (existing.payload_hash !== hash) {
-      if (existing.payload_hash !== sha(JSON.stringify(body))) fail(409, 'idempotency_conflict');
+      if (existing.payload_hash !== sha(JSON.stringify(bookingIdentity(body)))) fail(409, 'idempotency_conflict');
       (await run('UPDATE partner_orders SET payload_hash = ? WHERE external_ref = ?', hash, ref));
     }
     return (await getOrder(existing.order_id, (await partnerUser())));
@@ -1551,10 +1680,28 @@ route('POST', '/api/partner/orders', async ({ req, body }) => {
   // Same short atomic boundary the HTTP envelope used, including the partner_api audit purpose.
   try {
     return await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
-      const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
-      const order = (await createOrder(user, { ...input, service: 'parcel' }));
-      (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
-      return order;
+      if (persistence.backend === 'sqlite') (await persistence.exec('BEGIN IMMEDIATE'));
+      try {
+        // Recheck the external reference under the same customer lock as creation, before cap validation.
+        if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+        const raced = (await one('SELECT * FROM partner_orders WHERE external_ref = ?', ref));
+        if (raced) {
+          if (raced.payload_hash !== hash) {
+            if (raced.payload_hash !== sha(JSON.stringify(bookingIdentity(body)))) fail(409, 'idempotency_conflict');
+            (await run('UPDATE partner_orders SET payload_hash = ? WHERE external_ref = ?', hash, ref));
+          }
+          if (persistence.backend === 'sqlite') (await persistence.exec('COMMIT'));
+          return (await getOrder(raced.order_id, user));
+        }
+        const { promoCode: _code, expectedDiscount: _discount, ...input } = body; // Wind promos are for Wind customers only
+        const order = (await createOrder(user, { ...input, service: 'parcel' }));
+        (await run('INSERT INTO partner_orders (external_ref, payload_hash, order_id) VALUES (?, ?, ?)', ref, hash, order.id));
+        if (persistence.backend === 'sqlite') (await persistence.exec('COMMIT'));
+        return order;
+      } catch (error) {
+        if (persistence.backend === 'sqlite') (await persistence.exec('ROLLBACK'));
+        throw error;
+      }
     });
   } catch (error) {
     // A concurrent retry of this reference won the insert; map both callers to its order.
@@ -1615,9 +1762,18 @@ async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
   const scopes=await measuredScopes(persistence,orders.map(order=>order.id));
   return orders.map(order=>({...order,measuredScope:scopes[order.id]??null}));
 }
+async function recoveryMetadata(id: number) {
+  const row = await one('SELECT * FROM orders WHERE id=?', id) ?? fail(404, 'not_found');
+  const version = persistence.backend === 'postgres' ? Number(row.version ?? 0)
+    : Number((await one('SELECT COUNT(*) AS n FROM order_actions WHERE order_id=?', id))?.n ?? 0) + 1;
+  return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
+}
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
   const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user);
-  return query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  if ('journey' in order) return order;
+  const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
+  if (query.get('recoveryProtocol') !== '1') return result;
+  return { ...result, recovery: await recoveryMetadata(order.id) };
 });
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
 route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
@@ -2119,9 +2275,14 @@ async function advanceOrder(user: User, id: number, body: Row) {
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  const collection = body.cashCollection;
+  const expectedMinor = expectedCashMinor(r.price, r.discount ?? 0);
+  if (collection !== undefined && (r.service !== 'parcel' || next !== 'completed' || !r.handover_code
+    || !isCashCollectionInput(collection) || expectedMinor === null
+    || !validCashVariance(expectedMinor, collection.collectedMinor, collection.varianceReason))) fail(400, 'invalid_cash_collection');
   (await safetyFree(r.id));
   const now = Date.now();
-  await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code);
+  await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
   if (next === 'completed' || next === 'returned') {
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
@@ -2132,18 +2293,33 @@ async function advanceOrder(user: User, id: number, body: Row) {
       if ((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures === 5) await queuePush((await adminIds()), 'attention', r.id, '/admin/orders'); // the fifth miss locks it
       fail(400, 'wrong_code');
     }
-    const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
-      next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
-    if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
-    else (await rewardReferral(r.id, now));
-    await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
-  } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
-  if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
-  return (await getOrder(r.id, user));
+  }
+  return persistence.savepoint(async () => {
+    if (next === 'completed' || next === 'returned') {
+      const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+      (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
+        next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
+      if (collection !== undefined) {
+        await run(`INSERT INTO order_cash_collections(order_id,expected_minor,collected_minor,variance_reason,actor_id,request_id,collected_at)
+          VALUES(?,?,?,?,?,?,?)`, r.id, expectedMinor, collection.collectedMinor, collection.varianceReason ?? null, user.id, body.requestId, now);
+        if (collection.collectedMinor !== expectedMinor) {
+          await run(`INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'CASH_VARIANCE_REPORTED',?,?)`,
+            user.id, r.id, JSON.stringify({ expectedMinor, collectedMinor: collection.collectedMinor, varianceReason: collection.varianceReason, requestId: body.requestId }), now);
+          await queuePush(await adminIds(), 'attention', r.id, '/admin/orders');
+        }
+      }
+      if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
+      else (await rewardReferral(r.id, now));
+      await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
+    } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
+    await rideLifecycle.markVerified(r, next);
+    if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
+    return (await getOrder(r.id, user));
+  });
 }
 
 async function reportException(user: User, id: number, body: Row) {
+  if (body.cashCollection !== undefined) fail(400, 'invalid_cash_collection');
   const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !['at_pickup', 'in_transit'].includes(r.status) || r.service === 'ride') fail(409, 'cannot_report');
   (await safetyFree(r.id));
@@ -2220,7 +2396,20 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
       if (saved.error) failure = new HttpError(saved.http_status, saved.error);
       else result = (await getOrder(id, user)); // acknowledge the original action with the current authoritative state
     } else {
-      try { result = (await apply(user, id, input)); }
+      try {
+        if (input.recoveryProtocol !== undefined) {
+          if (input.recoveryProtocol !== 1 || !Number.isSafeInteger(input.attemptCreatedAt) || !Number.isSafeInteger(input.attemptExpiresAt)
+            || input.attemptExpiresAt <= input.attemptCreatedAt || input.attemptExpiresAt - input.attemptCreatedAt > 60 * 60_000
+            || input.attemptCreatedAt > Date.now() + 5_000) fail(400, 'invalid_recovery_command');
+          const current = await one(`SELECT * FROM orders WHERE id=?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id) ?? fail(404, 'not_found');
+          const metadata = await recoveryMetadata(id);
+          if (Date.now() >= input.attemptExpiresAt) fail(409, 'command_expired');
+          if (input.expectedAssignedAt !== (current.assigned_at ?? null)
+            || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
+            || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
+        }
+        result = (await apply(user, id, { ...input, requestId }));
+      }
       catch (error) { if (!(error instanceof HttpError)) throw error; failure = error; }
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
         user.id, requestId, hash, id, failure?.status ?? 200, failure?.message ?? null));
@@ -2228,7 +2417,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   if (failure) { await flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
-  return result;
+  return input.recoveryProtocol === 1 && result ? { ...result, recovery: await recoveryMetadata(id) } : result;
 }
 
 async function activeGpsAuthority(user: User, req: IncomingMessage) {
@@ -2429,9 +2618,9 @@ let routingHealth: { healthy: boolean | null; checkedAt: number | null; reason: 
 const routingTimeout = Math.min(10_000, Math.max(1000, Number(process.env.OSRM_TIMEOUT_MS) || 3000));
 registerRoutingStatusRoutes(route, () => ({ provider: 'osrm', configured: !!osrmUrl, ...routingHealth,
   reason: osrmUrl ? routingHealth.reason : 'not_configured', timeoutMs: routingTimeout }), user => need(user, 'admin'));
-type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm' };
+type RoadRoute = { km: number; minutes: number; line: [number, number][]; avoids: string[]; through: string[]; closed: Point[]; provider: 'osrm'; calculatedAt: number };
 type OsrmRoute = { distance: number; duration: number; line: [number, number][] };
-const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number }>(); // least recently used evicted
+const roadCache = new Map<string, { promise: Promise<RoadRoute>; points: number; calculatedAt?: number }>(); // least recently used evicted
 let roadCachePoints = 0;
 const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-geometry routes would be ~500 MB
 // Calibrated on Route 60 (2026-10-05): at 150 m a road 234 m away counted as clear yet may be the same junction; 250 m
@@ -2485,9 +2674,12 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
   const { closed, slow } = checkpoints;
   const key = `${at(a)};${at(b)}|${hint}|${closed.map(c => `c${c.id}@${at(c.point)}`).join(',')}|${slow.map(c => `s${c.id}@${at(c.point)}`).join(',')}`;
   let found = roadCache.get(key);
+  if (found?.calculatedAt !== undefined && Date.now() >= found.calculatedAt + 30_000) {
+    roadCachePoints -= found.points; roadCache.delete(key); found = undefined;
+  }
   if (found) { roadCache.delete(key); roadCache.set(key, found); } // recently used stays: the trip line outlives driver churn
   else {
-    const promise = (async () => {
+    const promise: Promise<RoadRoute> = (async () => {
       const routes = await osrmRoutes([a, b], `&alternatives=3${hint == null ? '' : `&bearings=${hint},60;`}`);
       if (!routes.length) throw new HttpError(404, 'no_route');
       const crossed = (r: OsrmRoute) => closed.filter(c => nearLine(c.point, r.line, CHECKPOINT_RADIUS));
@@ -2514,16 +2706,16 @@ async function roadRoute(a: Point, b: Point, heading: number | null = null, chec
         chosen = bestRoute(options, delay) ?? fastest;
       }
       const through = crossed(chosen), slowOn = slowCrossed(chosen);
-      return { km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
+      return { calculatedAt: Date.now(), km: Math.round(chosen.distance / 100) / 10, minutes: expectedMinutes(chosen.duration, slowOn.length), line: chosen.line,
         avoids: blocked.filter(c => !through.includes(c)).map(c => c.name), through: through.map(c => c.name), provider: 'osrm' as const,
         closed: [...new Set([...blocked, ...through])].map(c => c.point) }; // drawn as no-entry markers
-    })().catch(error => { roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
+    })().catch(error => { if (roadCache.get(key)?.promise === promise) roadCache.delete(key); throw error instanceof HttpError ? error : new HttpError(503, 'route_unavailable'); });
     found = { promise, points: 0 };
     roadCache.set(key, found);
     const entry = found;
     found.promise.then(route => { // the geometry is only known once OSRM answered: count it, then trim the cache
       if (roadCache.get(key) !== entry) return; // evicted while it was pending: it counts for nothing
-      entry.points = route.line.length;
+      entry.points = route.line.length; entry.calculatedAt = route.calculatedAt;
       roadCachePoints += route.line.length;
       for (const [old, cached] of roadCache) {
         if (roadCachePoints <= ROAD_CACHE_POINTS) break;
@@ -2543,7 +2735,8 @@ route('GET', '/api/route', async ({ user, query }) => {
   (await limit(identityKey('route', user.id), 120, 10 * 60_000));
   const heading = query.get('heading') == null ? null : Number(query.get('heading'));
   if (heading != null && !(heading >= 0 && heading < 360)) fail(400, 'invalid_heading');
-  return (await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading));
+  const { calculatedAt, ...result } = await roadRoute(queryPoint(query.get('from')), queryPoint(query.get('to')), heading);
+  return query.get('journeyProtocol') === '1' ? { ...result, eta: etaProjection(result.minutes * 60, calculatedAt, calculatedAt + 30_000) } : result;
 });
 
 // T07/T08 Google display-route proxy: budgets, validation and the HTTP boundary live in the domain
@@ -2585,6 +2778,12 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const current = await trackView(token);
   if (current.row.pickup_city !== r.pickup_city || current.row.dropoff_city !== r.dropoff_city) return { minutes: null };
   if (current.view.driver?.ref !== driverKey || current.view.status !== r.status) return { minutes: null, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
+  if (query.get('journeyProtocol') === '1') {
+    const now = Date.now(), fixExpiry = Number(r.loc_at) + 30_000;
+    const valid = current.row.loc_at === r.loc_at && !current.row.shared_run && now < fixExpiry && Number(r.loc_at) <= now;
+    const eta = valid && approach ? etaProjection(approach.minutes * 60, approach.calculatedAt, Math.min(approach.calculatedAt + 30_000, fixExpiry), now) : undefined;
+    return { minutes: eta ? approach!.minutes : null, ...(eta ? { eta, approach: approach!.line } : {}), delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
+  }
   return approach ? { minutes: approach.minutes, delayed, approach: approach.line, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at }
     : { minutes: null, delayed, road: line, fixAgeSeconds, fixUpdatedAt: r.loc_at };
 }, true);
@@ -2987,8 +3186,11 @@ async function orderProtocol(user: User, id: number, query: URLSearchParams) {
     const after = Number(query.get('after') ?? 0);
     if (!Number.isSafeInteger(after) || after < 0) fail(400, 'invalid_cursor');
     const events = await all('SELECT * FROM domain_events WHERE order_id=? AND sequence>? ORDER BY sequence LIMIT 100', id, after);
-    return { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
-      events: events.map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
+    const snapshot = { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
+      events: events.filter(event => query.get('journeyProtocol') === '1' || event.type !== 'fare.changed').map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
+    if (query.get('journeyProtocol') !== '1') return snapshot;
+    const measured = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([snapshot]))[0] : snapshot;
+    return journeyOrder(persistence, rideLifecycle, { ...measured, ...(query.get('recoveryProtocol') === '1' ? { recovery: await recoveryMetadata(id) } : {}) }, user);
   }, { commandId: randomUUID() });
 }
 
@@ -3009,14 +3211,14 @@ async function readBody(req: IncomingMessage): Promise<Row> {
   catch { return fail(400, 'invalid_json'); }
 }
 
-async function authenticate(req: IncomingMessage): Promise<User | null> {
+async function authenticate(req: IncomingMessage, touch = true): Promise<User | null> {
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
   if (!token) return null;
   const now = Date.now();
   const r = (await one('SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?',
     sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
   if (!r || r.status === 'blocked' || !contactAllowed(r) || (production && !(selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at))) return null;
-  if (now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
+  if (touch && now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
     void run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', now, sha(token)).catch(() => {});
   return (await toUser(r));
 }
@@ -3027,7 +3229,7 @@ const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // Bearer [REDACTED], no cookies: open CORS is safe
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Wind-Client');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -3040,6 +3242,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     await persistence.scope(async () => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (draining) fail(503, 'unavailable');
+    if (url.pathname.startsWith('/api/') && clientUpdateRequired(req.headers['x-wind-client'])) fail(426, 'client_update_required');
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
     if (page) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page); return; }
     if (req.method === 'GET' && serveWeb(url.pathname, req, res)) return;
@@ -3066,7 +3269,8 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
         if (body.offerId === undefined && body.leaseNonce === undefined) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
-        if (!await one('SELECT id FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id)) fail(404, 'not_found');
+        const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
+        if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
         await eligibility.guard(Number(customerOffer[2]), Number(customerOffer[1]), 'offer_accept', body.capacityProtocol, undefined, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && url.pathname === '/api/orders' && body.capacityProtocol !== undefined) {
         // An installed booking may be measured by an operator; it cannot assert its own verified load.
@@ -3090,7 +3294,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
     } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
-      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/password|admin\/users\/\d+\/password)$/.test(url.pathname)
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/(?:password|delete)|admin\/users\/\d+\/password)$/.test(url.pathname)
         || /^\/api\/partner\//.test(url.pathname))) {
       // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
       // envelope would hold a pooled connection and a transaction for the whole hash. Entra and
@@ -3113,12 +3317,38 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       });
       if (failure) throw failure;
     } else payload = await invoke();
+    if (url.searchParams.get('journeyProtocol') === '1' && user && /^\/api\/(orders|jobs|admin\/orders)(?:\/|$)/.test(url.pathname)) {
+      const decorate = async (value: unknown) => {
+        if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
+        if ('protocol' in value && 'journey' in value) return value; // already projected in the cursor's snapshot
+        const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
+        const authorized = await getOrder(Number((value as Order).id), viewer);
+        const recovery = 'recovery' in value ? { recovery: await recoveryMetadata(authorized.id) } : {};
+        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, ...recovery }, viewer);
+      };
+      payload = await persistence.transaction(async () => {
+        if (persistence.backend === 'postgres') await run('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        if (Array.isArray(payload)) return Promise.all(payload.map(decorate));
+        if (payload && typeof payload === 'object' && 'jobs' in payload && Array.isArray((payload as Row).jobs))
+          return { ...payload, jobs: await Promise.all((payload as Row).jobs.map(decorate)) };
+        return decorate(payload);
+      }, { commandId: randomUUID() });
+    }
+    if (url.searchParams.get('journeyProtocol') === '1' && url.pathname === '/api/price' && payload && typeof payload === 'object' && 'quoteId' in payload) {
+      const record = await one('SELECT * FROM quotes WHERE id=?::uuid', (payload as Row).quoteId);
+      if (record) payload = { ...payload, eta: etaProjection(null, Number(record.created_at), Number(record.expires_at), Date.now(), 'quote_band', [Number(record.eta_min_seconds), Number(record.eta_max_seconds)]) };
+    }
     });
     if (res.headersSent) return;
   } catch (error) {
 
     status = error instanceof HttpError ? error.status : databaseUnavailable(error) ? 503 : 500;
-    payload = { error: error instanceof HttpError ? error.message : 'server_error' };
+    const code = error instanceof HttpError ? error.message : 'server_error';
+    payload = { error: code };
+    const failedUrl = new URL(req.url ?? '/', 'http://localhost');
+    const verb = /^\/api\/jobs\/\d+\/accept$/.test(failedUrl.pathname) ? 'accept'
+      : /^\/api\/offers\/[a-f0-9-]+\/decline$/i.test(failedUrl.pathname) ? 'decline' : undefined;
+    if (verb && failedUrl.searchParams.get('journeyProtocol') === '1') payload = { error: code, offerFailure: offerFailure(verb, code, status) };
     if (status >= 500 && !(error instanceof HttpError && ['route_unavailable', 'email_unavailable'].includes(error.message)))
       logServerError('http_request_failed', error, { correlationId, httpStatus: status });
   }
@@ -3134,6 +3364,9 @@ let presenceSweepTimer: ReturnType<typeof setInterval> | undefined;
 let presenceSweepJob: Promise<void> = Promise.resolve();
 let presenceSweepRunning = false;
 server.on('listening', () => {
+  const minimumBuild = process.env.WIND_MIN_CLIENT_BUILD;
+  if (minimumBuild && !(Number.isSafeInteger(Number(minimumBuild)) && Number(minimumBuild) > 0))
+    console.warn('WIND_MIN_CLIENT_BUILD is not a positive build number, so the forced-upgrade gate is off');
   if (production) void persistence.scope(async () => { const users = Number((await one('SELECT COUNT(*) n FROM users'))?.n ?? 0); if (!users) console.error('Wind API: production database has no users yet. If this is not a first boot, check that the persistent volume is mounted at DB_PATH.'); }).catch(() => undefined);
   const sweep = () => {
     if(presenceSweepRunning || draining)return;

@@ -23,5 +23,7 @@ export function runtimePersistence(sqlite?: DatabaseSync) {
   if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) throw new Error('WP02 PostgreSQL API tests require loopback');
   const schema = process.env.WIND_POSTGRES_TEST_SCHEMA;
   if (!schema || !/^wp0[0-9]_[a-z0-9_]{1,48}$/.test(schema)) throw new Error('Invalid isolated PostgreSQL test schema');
-  return new Persistence({ connectionString, pool: schema ? { options: `-c search_path=${schema},public` } : undefined });
+  const lockTimeoutMs = process.env.WIND_TEST_POSTGRES_LOCK_TIMEOUT_MS === undefined ? undefined : Number(process.env.WIND_TEST_POSTGRES_LOCK_TIMEOUT_MS);
+  const acquireTimeoutMs = process.env.WIND_TEST_POSTGRES_ACQUIRE_TIMEOUT_MS === undefined ? undefined : Number(process.env.WIND_TEST_POSTGRES_ACQUIRE_TIMEOUT_MS);
+  return new Persistence({ connectionString, pool: schema ? { options: `-c search_path=${schema},public` } : undefined, lockTimeoutMs, acquireTimeoutMs });
 }

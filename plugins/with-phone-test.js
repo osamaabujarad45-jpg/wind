@@ -7,7 +7,7 @@ const { AndroidConfig, withAppBuildGradle, withDangerousMod, withMainApplication
 module.exports = config => {
   const role = process.env.WIND_TEST_ROLE;
   if (!role) return config;
-  if (!['customer', 'driver', 'admin'].includes(role) || process.env.WIND_LOCAL_TEST !== '1'
+  if (!['customer', 'driver', 'admin', 'ordinary'].includes(role) || process.env.WIND_LOCAL_TEST !== '1'
       || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
     throw new Error('Phone test builds require a valid WIND_TEST_ROLE and WIND_LOCAL_TEST=1, outside EAS/release builds.');
   }
@@ -16,6 +16,13 @@ module.exports = config => {
   if (!api || api.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(api.hostname)
       || api.username || api.password || api.search || api.hash) {
     throw new Error('Phone test builds require a loopback HTTP API forwarded over USB.');
+  }
+  if (role === 'ordinary') {
+    const port = process.env.WIND_PHONE_TEST_PORT ?? '4191';
+    if (!/^\d{1,5}$/.test(port) || Number(port) < 1024 || Number(port) > 65535
+        || api.origin !== `http://127.0.0.1:${port}` || api.pathname !== '/' || config.extra?.phoneTest !== undefined) {
+      throw new Error('Ordinary QA builds require the isolated loopback API and no phoneTest credentials.');
+    }
   }
   if (config.android?.package !== `ps.wind.app.test${role}`) {
     throw new Error('Phone test builds require a separate role-specific application ID.');

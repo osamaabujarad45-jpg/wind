@@ -57,6 +57,26 @@ for (const backend of ['sqlite', 'postgres']) {
     assert.deepEqual(effects, ['committed-sibling', 'proof-error-commit']);
     assert.equal((await storage.one('SELECT value FROM boundary WHERE id=1')).value, 30);
 
+    await assert.rejects(storage.savepoint(async () => {}), /owned transaction/);
+    await storage.scope(async () => {
+      await storage.exec('BEGIN');
+      storage.defer(() => { effects.push('proof-kept'); });
+      await assert.rejects(storage.savepoint(async () => {
+        await storage.run('UPDATE boundary SET value=999 WHERE id=1');
+        storage.defer(() => { effects.push('refused-mutation'); });
+        throw new Error('downstream refusal');
+      }), /downstream refusal/);
+      assert.equal((await storage.one('SELECT value FROM boundary WHERE id=1')).value, 30);
+      await storage.savepoint(async () => {
+        await storage.run('UPDATE boundary SET value=21 WHERE id=2');
+        storage.defer(() => { effects.push('mutation-kept'); });
+      });
+      await storage.exec('COMMIT');
+    });
+    assert.deepEqual(effects, ['committed-sibling', 'proof-error-commit', 'proof-kept', 'mutation-kept']);
+    assert.equal((await storage.one('SELECT value FROM boundary WHERE id=2')).value, 21);
+    await storage.run('UPDATE boundary SET value=20 WHERE id=2'); // Preserve the later deadlock fixture's baseline.
+
     // An accidentally detached callback cannot use a closed owner or open a transaction on its behalf.
     let late;
     await storage.scope(async () => { late = () => storage.run('UPDATE boundary SET value=999 WHERE id=1'); });

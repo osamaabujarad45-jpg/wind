@@ -104,7 +104,7 @@ export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: ()
   const saveReason = code.length !== 6 ? c.code_six_digits : !passwordOk ? c.password_rule : busy ? c.wait_busy : undefined;
 
   return <>
-    <Txt variant="h2" style={{ marginBottom: 4 }}>{c.phone_recovery_title}</Txt>
+    <Txt variant="h2" header style={{ marginBottom: 4 }}>{c.phone_recovery_title}</Txt>
     {notReady ? <Txt variant="caption" style={{ marginBottom: 12 }}>{c[notReady as CopyKey]}</Txt> : <>
       <Txt variant="caption" style={{ marginBottom: 12 }}>{step === 'phone' ? c.phone_recovery_body : c.phone_recovery_proof}</Txt>
       {step === 'phone' ? <>
@@ -125,8 +125,8 @@ export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: ()
       </>}
     </>}
     <ErrorText>{error}</ErrorText>
-    <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} onPress={onBack}>
-      <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
+    <Press accessibilityRole="button" accessibilityLabel={c.backToSignIn} onPress={onBack}>
+      <Txt variant="caption" center style={{ paddingVertical: 14, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
     </Press>
   </>;
 }

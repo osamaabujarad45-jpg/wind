@@ -10,7 +10,7 @@ export type DriverFix = { timestamp: number; mocked?: boolean; coords: { latitud
  */
 export const movingHeading = (heading?: number | null, speed?: number | null, accuracy?: number | null) =>
   heading != null && speed != null && speed > 2.5 && (accuracy == null || accuracy <= 50) && heading >= 0 && heading <= 360 ? heading : undefined;
-export type TrackingReceipt = { id: string; lastSentAt: number; fixAt: number; lastTriedAt?: number; failed?: boolean };
+export type TrackingReceipt = { id: string; lastSentAt: number; fixAt: number; lastTriedAt?: number; acknowledgedAt?: number; failed?: boolean };
 
 // Background callbacks can overlap; one at a time, so the receipt check orders and dedups fixes.
 let queue: Promise<void> = Promise.resolve();
@@ -34,6 +34,7 @@ async function deliverOnce(fix: DriverFix, io: {
   acknowledge: (receipt: TrackingReceipt) => Promise<void>;
   stop: (id: string) => Promise<void>;
   monotonic?: () => number;
+  now?: () => number;
   reserve?: (id: string) => Promise<ActiveGps | null>;
 }, now = Date.now()) {
   const context = await io.context();
@@ -76,9 +77,10 @@ async function deliverOnce(fix: DriverFix, io: {
   // refresh the sharing indicator or consume the next fresh measurement.
   if (status >= 200 && status < 300 && (accepted === false || (context.activeGps && accepted !== true))) {
     if (context.activeGps) await io.stop(context.id);
+    else await io.acknowledge({ ...previous, lastTriedAt: now, acknowledgedAt: io.now?.() ?? Date.now() });
     return;
   }
   await io.acknowledge(status >= 200 && status < 300
-    ? { id: context.id, lastSentAt: now, fixAt: fix.timestamp, lastTriedAt: now }
+    ? { id: context.id, lastSentAt: now, fixAt: fix.timestamp, lastTriedAt: now, acknowledgedAt: io.now?.() ?? Date.now() }
     : { ...previous, lastTriedAt: now, failed: true });
 }

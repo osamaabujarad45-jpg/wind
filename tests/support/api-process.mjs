@@ -20,6 +20,7 @@ export async function startApiProcess(storage) {
   if (!storage?.DB_PATH) throw new Error('Test API requires an explicit isolated database path');
   const env = { ...process.env };
   // Inherited credentials must never redirect a local test to a real database.
+  // Secrets must never reach the child; test PG pool overrides are allowed through.
   for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'WIND_DISPATCH_TEST_ONLY']) delete env[key];
   // A phone fixture must explicitly supply its isolated provider settings, never inherit live SMS access.
   for (const key of Object.keys(env)) if (/^WIND_(?:PHONE|OOREDOO|OTP)/.test(key)) delete env[key];

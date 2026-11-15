@@ -1,11 +1,82 @@
-# CommonJS compatibility for the upstream decoder fix
+# decode-uri-component
 
-`index.cjs` is `decode-uri-component@0.5.0` from npm, with its final `export default function` changed to `module.exports = function`. Literal replacement uses `split(key).join(value)` instead of constructing a regular expression from the encoded run. This additionally prevents large malformed runs from exceeding the JavaScript regular-expression limit and preserves literal dollar signs in decoded values. The upstream MIT license is included. No install scripts or dependencies are added.
+![CI](https://github.com/SamVerschueren/decode-uri-component/workflows/CI/badge.svg) [![Coverage Status](https://coveralls.io/repos/SamVerschueren/decode-uri-component/badge.svg?branch=master&service=github)](https://coveralls.io/github/SamVerschueren/decode-uri-component?branch=master)
 
-This carries the upstream fix for GHSA-vcc3-ghjq-m6fr while preserving the callable CommonJS export required by Expo Router's `query-string@7.1.3`. Upgrading that dependency directly to the ESM-only package returns a namespace object instead of the decoder function.
+> A better [decodeURIComponent](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/decodeURIComponent)
 
-Source: https://github.com/SamVerschueren/decode-uri-component/commit/fa479da
 
-Upstream npm archive SHA-1: `4592fa1e1d640ec5e2760e2e168ad2ab5f2c9da1`.
+## Why?
 
-Remove this compatibility copy when Expo Router supplies the patched decoder with a compatible import. Regression tests cover encoded Arabic, query arrays, malformed UTF-8 and a large malformed input in a time-bounded child process.
+- Converts the [BOM](https://en.wikipedia.org/wiki/Byte_order_mark) to a [replacement character](https://en.wikipedia.org/wiki/Specials_(Unicode_block)#Replacement_character) `�`.
+- Does not throw with invalid encoded input.
+- Decodes as much of the string as possible.
+
+
+## Install
+
+```
+$ npm install --save decode-uri-component
+```
+
+
+## Usage
+
+```js
+import decodeUriComponent from 'decode-uri-component';
+
+decodeUriComponent('%25');
+//=> '%'
+
+decodeUriComponent('%');
+//=> '%'
+
+decodeUriComponent('st%C3%A5le');
+//=> 'ståle'
+
+decodeUriComponent('%st%C3%A5le%');
+//=> '%ståle%'
+
+decodeUriComponent('%%7Bst%C3%A5le%7D%');
+//=> '%{ståle}%'
+
+decodeUriComponent('%7B%ab%%7C%de%%7D');
+//=> '{%ab%|%de%}'
+
+decodeUriComponent('%FE%FF');
+//=> '\uFFFD\uFFFD'
+
+decodeUriComponent('%C2');
+//=> '\uFFFD'
+
+decodeUriComponent('%C2%B5');
+//=> 'µ'
+```
+
+
+## API
+
+### decodeUriComponent(encodedURI)
+
+#### encodedURI
+
+Type: `string`
+
+An encoded component of a Uniform Resource Identifier.
+
+
+## License
+
+MIT © [Sam Verschueren](https://github.com/SamVerschueren)
+
+
+---
+
+<div align="center">
+	<b>
+		<a href="https://tidelift.com/subscription/pkg/npm-decode-uri-component?utm_source=npm-decode-uri-component&utm_medium=referral&utm_campaign=readme">Get professional support for this package with a Tidelift subscription</a>
+	</b>
+	<br>
+	<sub>
+		Tidelift helps make open source sustainable for maintainers while giving companies<br>assurances about security, maintenance, and licensing for their dependencies.
+	</sub>
+</div>

@@ -7,7 +7,7 @@ import { join, resolve, sep } from 'node:path';
 const require = createRequire(import.meta.url);
 const plugin = require('../plugins/with-phone-test.js');
 const releasePlugin = require('../plugins/with-release-guard.js');
-const variables = ['WIND_TEST_ROLE', 'WIND_LOCAL_TEST', 'EAS_BUILD', 'WIND_RELEASE', 'EXPO_PUBLIC_API_URL',
+const variables = ['WIND_TEST_ROLE', 'WIND_LOCAL_TEST', 'WIND_TEST_VERSION_CODE', 'WIND_TEST_IDENTIFIER', 'WIND_TEST_PASSWORD', 'WIND_PHONE_TEST_PORT', 'NODE_ENV', 'EAS_BUILD', 'WIND_RELEASE', 'EXPO_PUBLIC_API_URL',
   'GOOGLE_MAPS_ANDROID_KEY', 'GOOGLE_MAPS_IOS_KEY', 'GOOGLE_MAPS_API_KEY', 'WIND_GOOGLE_MAPS', 'EAS_BUILD_PLATFORM', 'WIND_BUILD_PLATFORM',
   'EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY'];
 const saved = Object.fromEntries(variables.map(key => [key, process.env[key]]));
@@ -15,7 +15,7 @@ const setEnv = overrides => {
   for (const key of variables) delete process.env[key];
   Object.assign(process.env, { WIND_TEST_ROLE: 'customer', WIND_LOCAL_TEST: '1', EXPO_PUBLIC_API_URL: 'http://127.0.0.1:4191', ...overrides });
 };
-const config = () => ({ name: 'Wind Customer Test', slug: 'wind', android: { package: 'ps.wind.app.testcustomer' } });
+const config = (role = 'customer') => ({ name: `Wind ${role} Test`, slug: 'wind', android: { package: `ps.wind.app.test${role}` } });
 const dir = mkdtempSync(join(tmpdir(), 'wind-phone-build-'));
 try {
   for (const overrides of [
@@ -34,6 +34,26 @@ try {
   const normal = config();
   assert.equal(plugin(normal), normal);
   assert.equal(normal.mods, undefined, 'Ordinary app configuration does not gain test mods');
+
+  // Ordinary sign-in gets the same embedded debug bundle and independent package,
+  // never a release task or a populated phoneTest shortcut.
+  setEnv({ WIND_TEST_ROLE: 'ordinary' });
+  const ordinaryMods = plugin(releasePlugin(config('ordinary'))).mods.android;
+  const ordinaryGradle = await ordinaryMods.appBuildGradle({ modResults: { language: 'groovy', contents: '' }, modRequest: {} });
+  assert.match(ordinaryGradle.modResults.contents, /debuggableVariants = \[\]/);
+  assert.match(ordinaryGradle.modResults.contents, /Phone test apps cannot be built as Release/);
+  assert.match(ordinaryGradle.modResults.contents, /Wind release requires a public HTTPS/);
+  assert.throws(() => plugin(config()), /separate/, 'ordinary cannot adopt another role package');
+  assert.throws(() => plugin({ ...config('ordinary'), extra: { phoneTest: null } }), /no phoneTest/);
+  for (const overrides of [
+    { WIND_LOCAL_TEST: '' }, { EAS_BUILD: '1' }, { WIND_RELEASE: '1' },
+    { EXPO_PUBLIC_API_URL: 'https://wind-production-72aa.up.railway.app' },
+    { EXPO_PUBLIC_API_URL: 'http://192.168.1.2:4191' }, { EXPO_PUBLIC_API_URL: 'http://127.0.0.1:4191/api' },
+    { EXPO_PUBLIC_API_URL: 'http://localhost:4191' }, { WIND_PHONE_TEST_PORT: '80' },
+  ]) {
+    setEnv({ WIND_TEST_ROLE: 'ordinary', ...overrides });
+    assert.throws(() => plugin(config('ordinary')), undefined, JSON.stringify(overrides));
+  }
 
   setEnv({});
   const mods = plugin(releasePlugin(config())).mods.android;
@@ -103,6 +123,16 @@ try {
     assert.equal(mapsPlugin(built).androidGoogleMapsApiKey, 'restricted-android-key');
     assert.equal(mapsPlugin(built).iosGoogleMapsApiKey, undefined, 'an Android build never embeds the iOS key');
     assert.equal(JSON.stringify(built.extra).includes('restricted-android-key'), false, 'key strings never enter public config');
+    const nativeManifest = { manifest: { application: [{ 'meta-data': [
+      { $: { 'android:name': 'com.google.android.geo.API_KEY', 'android:value': 'restricted-android-key' } },
+      { $: { 'android:name': 'unrelated.setting', 'android:value': 'keep' } },
+    ] }] } };
+    const guardedManifest = await releasePlugin(base).mods.android.manifest({ modResults: nativeManifest, modRequest: {} });
+    assert.equal(guardedManifest.modResults.manifest.application[0]['meta-data'].length, 2, 'release guard preserves the platform-specific Android map key');
+    delete process.env.GOOGLE_MAPS_ANDROID_KEY;
+    const baselineManifest = await releasePlugin(base).mods.android.manifest({ modResults: nativeManifest, modRequest: {} });
+    assert.deepEqual(baselineManifest.modResults.manifest.application[0]['meta-data'].map(item => item.$['android:name']), ['unrelated.setting'], 'a baseline prebuild removes only stale map metadata');
+    process.env.GOOGLE_MAPS_ANDROID_KEY = 'restricted-android-key';
     process.env.EAS_BUILD_PLATFORM = 'ios';
     assert.throws(build, /missing: ios/, 'an opted-in iOS build fails early without its platform key');
     process.env.GOOGLE_MAPS_IOS_KEY = 'restricted-ios-key';

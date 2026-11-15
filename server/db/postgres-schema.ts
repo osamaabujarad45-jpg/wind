@@ -113,6 +113,26 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-sessions-repairs.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(27,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 28'))) {
+      await database.run(readFileSync(new URL('./postgres-freight-crew.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(28,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 29'))) {
+      await database.run(readFileSync(new URL('./postgres-boarding-metadata.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(29,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 30'))) {
+      await database.run(readFileSync(new URL('./postgres-booking-repairs.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(30,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 31'))) {
+      await database.run(readFileSync(new URL('./postgres-parcel-priority.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(31,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 32'))) {
+      await database.run(readFileSync(new URL('./postgres-order-cash.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(32,?)', Date.now());
+    }
   });
 }
 

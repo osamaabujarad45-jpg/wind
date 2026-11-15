@@ -80,7 +80,7 @@ CREATE FUNCTION immutable_cash() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP <> 'UPDATE' THEN RAISE EXCEPTION 'cash ledger is append-only' USING ERRCODE='23514'; END IF;
   IF OLD.status <> 'pending' OR OLD.kind <> 'remittance' OR NEW.status NOT IN ('confirmed','disputed')
-    OR NEW.decided_at IS NULL OR (to_jsonb(NEW) - 'status' - 'decided_at') IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'decided_at') THEN
+    OR NEW.decided_at IS NULL OR (to_jsonb(NEW) - 'status' - 'decided_at' - 'resolved_by' - 'resolution_note') IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'decided_at' - 'resolved_by' - 'resolution_note') THEN
     RAISE EXCEPTION 'cash ledger is append-only' USING ERRCODE='23514';
   END IF;
   RETURN NEW;

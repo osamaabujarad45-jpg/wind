@@ -4,6 +4,8 @@ param environmentId string
 param identityId string
 param tags object
 param image string
+@description('Private registry hostname; empty keeps the module usable with public images.')
+param registryServer string = ''
 param containerName string
 param cpu string
 param memory string
@@ -32,6 +34,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: environmentId
     configuration: {
       activeRevisionsMode: 'Single'
+      registries: empty(registryServer) ? [] : [{ server: registryServer, identity: identityId }]
       secrets: concat(empty(acsAccessKey) ? [] : [{ name: 'acs-key', value: acsAccessKey }], secretConfigs)
       ...(ingressEnabled ? { ingress: { external: true, targetPort: ingressPort, transport: 'http', allowInsecure: false } } : {})
     }

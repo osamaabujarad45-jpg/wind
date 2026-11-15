@@ -1128,7 +1128,8 @@
         "estimated": true,
         "standard": true,
         "line": null,
-        "at": "<at>"
+        "at": "<at>",
+        "priority": "standard"
       }
     },
     {
@@ -1199,7 +1200,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1268,7 +1270,8 @@
         "customerStats": {
           "rating": null,
           "trips": 0
-        }
+        },
+        "priority": "standard"
       }
     },
     {
@@ -1323,7 +1326,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1394,7 +1398,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1507,7 +1512,8 @@
           "rating": null,
           "trips": 0
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1582,7 +1588,8 @@
         "sharedRun": true,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1648,7 +1655,8 @@
           "rating": null,
           "trips": 0
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1714,7 +1722,8 @@
           "rating": null,
           "trips": 0
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1795,7 +1804,9 @@
           "rating": null,
           "trips": 0
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard",
+        "cashCollectionAllowed": true
       }
     },
     {
@@ -1903,7 +1914,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -1970,7 +1982,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": null
+        "driverRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -2033,7 +2046,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2096,7 +2110,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2161,7 +2176,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2226,7 +2242,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2285,7 +2302,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2352,7 +2370,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2414,7 +2433,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2476,7 +2496,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2535,7 +2556,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2597,7 +2619,8 @@
           "rating": null,
           "trips": 1
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2655,7 +2678,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2722,7 +2746,8 @@
           "rating": null,
           "trips": 2
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2789,7 +2814,8 @@
           "rating": null,
           "trips": 2
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -2883,7 +2909,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3053,7 +3080,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -3113,7 +3141,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3173,7 +3202,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3284,7 +3314,8 @@
           "rating": null,
           "trips": 2
         },
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3346,7 +3377,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3495,7 +3527,8 @@
       "httpStatus": 200,
       "response": {
         "currency": "<currency>",
-        "price": 20
+        "price": 20,
+        "priority": "standard"
       }
     },
     {
@@ -3566,7 +3599,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -3637,7 +3671,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -3718,7 +3753,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -3787,7 +3823,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3846,7 +3883,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -3913,7 +3951,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -4035,7 +4074,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -4091,7 +4131,8 @@
         "routeKm": null,
         "sharedRun": false,
         "myOffer": null,
-        "customerRating": null
+        "customerRating": null,
+        "priority": "standard"
       }
     },
     {
@@ -4150,7 +4191,8 @@
         "sharedRun": true,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -4209,7 +4251,8 @@
         "sharedRun": true,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -4268,7 +4311,8 @@
         "sharedRun": true,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {
@@ -4330,7 +4374,8 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "priority": "standard"
       }
     },
     {

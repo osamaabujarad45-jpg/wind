@@ -95,7 +95,9 @@ await scenario('approach duration, append-only refresh, freshness and revision b
   const long=await f.approach(order,{seconds:120});await guardError(f,order,{},'stop_window_infeasible');
   await assert.rejects(f.db.run('UPDATE order_approaches SET seconds=1 WHERE id=?',long.approachId),{code:'23514'});
   const short=await f.approach(order,{seconds:1});assert.ok(short.approachId>long.approachId);
-  await f.approach(order,{observedAt:Date.now()+60000},400);await f.approach(order,{observedAt:Date.now()-300001},400);
+  // Far-future/far-past margins: the K5 test host's wall clock has been observed to step
+  // by minutes mid-run, which broke these assertions' seconds-scale expectations.
+  await f.approach(order,{observedAt:Date.now()+172800000},400);await f.approach(order,{observedAt:Date.now()-259200000},400);
   await f.approach(order,{validUntil:Date.now()+86400001},400);await f.approach(order,{from:{longitude:181,latitude:0}},400);
   await f.approach(order,{to:{longitude:35,latitude:31}},409);
   await f.db.run('UPDATE vehicle_runs SET revision=revision+1 WHERE vehicle_id=?',f.vehicle.id);

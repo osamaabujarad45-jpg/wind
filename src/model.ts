@@ -15,6 +15,13 @@ export const cities = [
 
 export type CityId = typeof cities[number]['id'];
 export type Service = 'parcel' | 'ride' | 'freight';
+export type ParcelPriority = 'standard' | 'same_day';
+export const parcelPriorities: ParcelPriority[] = ['standard', 'same_day'];
+export const validParcelPriority = (service: unknown, priority: unknown) =>
+  priority === undefined || service === 'parcel' && parcelPriorities.includes(priority as ParcelPriority);
+const jerusalemHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', hourCycle: 'h23' });
+/** Same-day booking closes at noon Jerusalem time, including its daylight-saving changes. */
+export const sameDayBookingOpen = (at: number) => Number.isFinite(at) && Math.abs(at) <= 8.64e15 && Number(jerusalemHour.format(at)) < 12;
 export type Role = 'customer' | 'driver' | 'admin';
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
@@ -127,7 +134,12 @@ export function normalizeEmail(input: unknown): string | null {
 export type Subscription = { id: number; userId: number; plan: Plan; status: 'pending' | 'active' | 'expired' | 'rejected'; price: number; endsAt: number | null; createdAt: number; userName?: string; userPhone?: string };
 
 export type Order = {
+  cashCollection?: import('./cash-collection.ts').CashCollection;
+  cashCollectionAllowed?: boolean;
+  journey?: import('./journey-contracts.ts').Journey;
+  recovery?: { schemaVersion: 1; version: number | null; assignmentEpoch: number | null };
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
+  priority?: ParcelPriority; // parcels only; older saved orders default to standard
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   recipientName?: string; recipientPhone?: string | null; // parcels and loads (SPEC-parcel-recipient.md)
@@ -152,6 +164,7 @@ export type Order = {
   dispatch?: { roundId: string; state: string; closeReason: string | null; offersIssued: number; deadlineAt: number; startedAt: number;
     myOffer?: { id: string; offerId: string; expiresAt: number; issuedAt: number; leaseNonce: string | null; pickupEtaSeconds: number; idleSeconds: number; idleCreditSeconds: number; rankScore: number; etaEstimated: boolean } | null } | null; // WP10 additive
   ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string } | null; // WP11 additive
+  measuredScope?: { requirementsRevision: number; grams: number; cm3: number; pieces: number; seats: number } | null;
   declaredScope?: { orderId: number; service: string; revision: number; itemCount: number | null; lengthMm: number | null; widthMm: number | null; heightMm: number | null;
     massGrams: number | null; volumeCm3: number | null; declaredValueMinor: number | null; equipment: string[]; crewCount: number | null;
     loadingAfter: number | null; loadingBefore: number | null; accessConstraints: string[]; pickupPromisedAfter: number | null;
@@ -161,7 +174,8 @@ export type DriverStats = { rating: number | null; priceRating: number | null; t
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
 export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
-  standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
+  priority?: ParcelPriority;
+  eta?: import('./journey-contracts.ts').JourneyEta; standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
 
 export function city(id: CityId) {
   return cities.find(item => item.id === id)!;
@@ -254,6 +268,16 @@ export const latinDigits = (text: string) =>
   text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
 /** A number typed in a form: Arabic-Indic digits and the Arabic decimal separator (٫) or a comma are normal input here. */
 export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
+/** Signed decimal major units to exact integer minor units; malformed, over-precise and unsafe input returns null. */
+export function parseMinorUnits(text: string): number | null {
+  const normalized = latinDigits(text).trim().replace(/[٫,]/, '.');
+  if (!/^[+-]?\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const negative = normalized.startsWith('-');
+  const [whole, fraction = ''] = normalized.replace(/^[+-]/, '').split('.');
+  const value = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  const signed = negative ? -value : value;
+  return Number.isSafeInteger(signed) ? signed === 0 ? 0 : signed : null;
+}
 
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
 // and +970 / 00970 / 0 prefixes. Returns canonical 05XXXXXXXX or null.

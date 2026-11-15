@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Persistence, type Row } from './db/persistence.ts';
 import { initializePostgres, isolatedSchema, MIGRATION_LOCK } from './db/postgres-schema.ts';
+import { expectedCashMinor, validCashVariance } from '../src/cash-collection.ts';
 
 type Table = { name: string; columns: { name: string; type: string; pk: number; notnull: number }[]; keyColumns: string[];
   foreignKeys: { from: string; table: string; to: string }[] };
@@ -14,6 +15,9 @@ const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // WP08 operational tables are PostgreSQL-only: quotes are 120s-ephemeral and road
 // restrictions/policy move only via the operator policy exchange, never snapshot import.
 export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+// Optional operator CLI history is outside the delivery-data migration contract.
+// It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
+NON_LEGACY_TABLES.add('opencode_jobs');
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
@@ -96,6 +100,14 @@ function preflight(snapshot: Snapshot): Issue[] {
     if (load.length > 200 || (load.length > 1 && load.some(r => r.service !== 'parcel')))
       issues.push({ table: 'orders', key: keyOf(snapshot.tables.find(t => t.name === 'orders')!, row), reason: 'incompatible legacy active commitments; operator correction required, no coercion' });
   }
+  const ordersById = new Map((snapshot.rows.orders ?? []).map(order => [order.id, order]));
+  for (const row of snapshot.rows.order_cash_collections ?? []) {
+    const order = ordersById.get(row.order_id);
+    if (!order || order.service !== 'parcel' || order.status !== 'completed' || order.driver_id !== row.actor_id
+      || expectedCashMinor(order.price, order.discount ?? 0) !== row.expected_minor
+      || !validCashVariance(row.expected_minor, row.collected_minor, row.variance_reason))
+      issues.push({ table: 'order_cash_collections', reason: 'collection fact differs from completed assigned parcel delivery fee or variance policy' });
+  }
   return issues;
 }
 
@@ -121,8 +133,14 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
       sourceRowsHash: hash(snapshot.rows[table.name].map(stable).sort().join('\n')),
       targetRowsHash: hash(rows.map(stable).sort().join('\n')) });
   }
+  if (!snapshot.tables.some(table => table.name === 'order_cash_collections')
+    && Number((await database.one('SELECT count(*) AS n FROM order_cash_collections'))!.n) !== 0)
+    mismatches.push({ table: 'order_cash_collections', reason: 'older snapshot has unknown collections; unexpected target facts' });
   const sum = (rows: Row[], column: string, money = false) => rows.reduce((total, row) => total + BigInt(money ? minor(row[column]) ?? 0 : row[column] ?? 0), 0n).toString();
   const orders = snapshot.rows.orders;
+  const priorities = new Map((await database.all('SELECT id,priority FROM orders')).map(row => [row.id, row.priority]));
+  for (const order of orders) if (priorities.get(order.id) !== (order.priority ?? 'standard'))
+    mismatches.push({ table: 'orders', key: keyOf(snapshot.tables.find(table => table.name === 'orders')!, order), reason: 'parcel priority differs' });
   const cash = snapshot.rows.cash_entries;
   const financial = {
     priceMinor: sum(orders, 'price', true), commissionMinor: sum(orders, 'commission', true), discountMinor: sum(orders, 'discount', true),
@@ -180,10 +198,15 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
         'eligibility_policy','service_areas','route_permissions','vehicles','driver_eligibility','driver_vehicles','verification_checks','order_requirements','vehicle_runs','capacity_reservations','capacity_stops','eligibility_offers','eligibility_audit','order_approaches',
         'phone_profiles','phone_mappings','phone_aliases','phone_challenges','phone_command_results','phone_rate_windows','phone_provider_budget','phone_audit',
         'driver_presence_sessions','driver_latest_locations','driver_presence_audit','driver_active_gps_sessions','driver_active_gps_session_ids','driver_active_gps_generations','native_push_tokens','quotes','road_restrictions','road_restriction_policy','dispatch_rounds','dispatch_offers','assignment_history','ride_lifecycle','ride_boarding_attempts','order_declared_scope','custody_records','order_scope_checks','private_objects','private_object_reads','ledger_accounts','ledger_journals','ledger_entries','cash_receipts','cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals'].includes(name));
-      for (const name of new Set(legacyTables)) if (!snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
+      for (const name of new Set(legacyTables)) {
+        // Migration 30 is additive: valid older v3 snapshots have no rejection table. When present,
+        // its rows still import and reconcile through the normal path; never exclude the table itself.
+        if (!['order_command_rejections','order_cash_collections'].includes(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
+      }
       if (errors.length) throw new Error('Snapshot preflight failed');
       // Assignment guards lock accounts; insert users before the deferred-reference tables.
-      for (const table of [...snapshot.tables].sort((a,b) => Number(b.name === 'users') - Number(a.name === 'users'))) for (const row of snapshot.rows[table.name]) {
+      for (const table of [...snapshot.tables].sort((a,b) => Number(b.name === 'users') - Number(a.name === 'users')
+        || Number(a.name === 'order_cash_collections') - Number(b.name === 'order_cash_collections'))) for (const row of snapshot.rows[table.name]) {
         if (NON_LEGACY_TABLES.has(table.name)) continue; // policy seed installed by migration 11; quotes/restrictions are PG-only (see preflight)
         const key = keyOf(table, row);
         await database.run('SAVEPOINT import_row');

@@ -78,7 +78,7 @@ try {
   assert.equal(roads.find(r => r.id === a.id).agreeing, 1);
 
   // Deleted reporters stop counting and their notes are erased; blocked ones stop counting too.
-  await call('/me/delete', { token: driver.token, body: {} });
+  await call('/me/delete', { token: driver.token, body: { password: 'secret1' } });
   assert.equal(db.prepare("SELECT COUNT(*) n FROM checkpoint_reports WHERE note != ''").get().n, 0);
   row = (await call('/roads', { token: customer.token })).find(r => r.id === a.id);
   assert.deepEqual([row.status, row.agreeing], [null, 0]);

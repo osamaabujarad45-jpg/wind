@@ -16,18 +16,33 @@ const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 const testRole = process.env.WIND_TEST_ROLE;
 let phoneTest;
 if (testRole) {
-  if (!['customer', 'driver', 'admin'].includes(testRole)
+  if (!['customer', 'driver', 'admin', 'ordinary'].includes(testRole)
     || process.env.WIND_LOCAL_TEST !== '1' || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
     throw new Error('Phone test roles require an explicitly local debug build.');
   }
   let testUrl;
   try { testUrl = new URL(apiUrl); } catch { /* rejected below */ }
-  if (testUrl?.origin !== 'http://127.0.0.1:4191' || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
-    || testUrl.username || testUrl.password || !/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '')
-    || (process.env.WIND_TEST_PASSWORD ?? '').length < 24) {
-    throw new Error('Phone tests require the isolated loopback API and provisioned synthetic credentials.');
+  const testPort = process.env.WIND_PHONE_TEST_PORT ?? '4191';
+  if (!/^\d{1,5}$/.test(testPort) || Number(testPort) < 1024 || Number(testPort) > 65535) {
+    throw new Error('WIND_PHONE_TEST_PORT must be a valid unprivileged TCP port.');
   }
-  phoneTest = { role: testRole, identifier: process.env.WIND_TEST_IDENTIFIER, password: process.env.WIND_TEST_PASSWORD };
+  if (testUrl?.origin !== `http://127.0.0.1:${testPort}` || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
+    || testUrl.username || testUrl.password) {
+    throw new Error('Phone tests require the isolated loopback API.');
+  }
+  if (testRole !== 'ordinary') {
+    if (!/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '') || (process.env.WIND_TEST_PASSWORD ?? '').length < 24) {
+      throw new Error('Phone test roles require provisioned synthetic credentials.');
+    }
+    phoneTest = { role: testRole, identifier: process.env.WIND_TEST_IDENTIFIER, password: process.env.WIND_TEST_PASSWORD };
+  }
+}
+const testVersionCode = process.env.WIND_TEST_VERSION_CODE;
+if (testVersionCode !== undefined) {
+  if (!testRole) throw new Error('WIND_TEST_VERSION_CODE requires a valid local phone test role.');
+  if (!/^[1-9]\d{0,9}$/.test(testVersionCode) || Number(testVersionCode) > 2147483647) {
+    throw new Error('WIND_TEST_VERSION_CODE must be a positive Android versionCode.');
+  }
 }
 const release = !!process.env.EAS_BUILD || process.env.WIND_RELEASE === '1'
   || (process.env.NODE_ENV === 'production' && process.env.WIND_LOCAL_TEST !== '1');
@@ -53,17 +68,22 @@ if (release) {
   }
 }
 
-module.exports = ({ config }) => ({
-  ...config,
-  ...(phoneTest && {
-    name: `Wind ${testRole[0].toUpperCase() + testRole.slice(1)} Test`,
-    scheme: `wind-test-${testRole}`,
-    android: { ...config.android, package: `ps.wind.app.test${testRole}` },
-    ios: { ...config.ios, bundleIdentifier: `ps.wind.app.test${testRole}` },
-  }),
-  extra: { ...config.extra, ...(phoneTest && { phoneTest }), googleMaps },
-  plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications', 'expo-local-authentication',
-    ['react-native-maps', { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
-    './plugins/with-release-guard',
-    ...(phoneTest ? ['./plugins/with-phone-test'] : [])],
-});
+module.exports = ({ config }) => {
+  const extra = { ...config.extra };
+  if (testRole === 'ordinary') delete extra.phoneTest;
+  return {
+    ...config,
+    ...(testRole && {
+      name: `Wind ${testRole[0].toUpperCase() + testRole.slice(1)} Test`,
+      scheme: `wind-test-${testRole}`,
+      android: { ...config.android, package: `ps.wind.app.test${testRole}`,
+        ...(testVersionCode !== undefined && { versionCode: Number(testVersionCode) }) },
+      ios: { ...config.ios, bundleIdentifier: `ps.wind.app.test${testRole}` },
+    }),
+    extra: { ...extra, ...(phoneTest && { phoneTest }), googleMaps },
+    plugins: [...config.plugins, 'expo-web-browser', 'expo-notifications', 'expo-local-authentication',
+      ['react-native-maps', { ...(googleAndroidKey && { androidGoogleMapsApiKey: googleAndroidKey }), ...(googleIosKey && { iosGoogleMapsApiKey: googleIosKey }) }],
+      './plugins/with-release-guard', './plugins/with-deadline-wake',
+      ...(testRole ? ['./plugins/with-phone-test'] : [])],
+  };
+};
