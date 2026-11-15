@@ -1197,6 +1197,18 @@ const ar = {
   priorityClosed: 'أُغلق حجز التوصيل في اليوم نفسه عند الساعة 12:00 بتوقيت القدس. اختر التوصيل العادي.',
   err_invalid_priority: 'اختر أولوية توصيل صالحة.',
   err_priority_cutoff: 'أُغلق حجز التوصيل في اليوم نفسه عند الساعة 12:00 بتوقيت القدس. اختر التوصيل العادي.',
+  // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  sharedLocationUse: 'استخدم هذا الموقع المشارك',
+  sharedLocationNoLink: 'تعذّر قراءة هذا الرابط. الصق رابط خرائط Google كاملاً أو الإحداثيات.',
+  sharedLocationRange: 'هذه الإحداثيات خارج النطاق.',
+  sharedLocationOutside: 'هذه النقطة خارج منطقة الخدمة.',
+  sharedLocationShortCode: 'أضف اسم المدينة بعد الرمز القصير، مثل: CWC8+R9 رام الله، أو الصق الرمز الكامل.',
+  sharedLocationBadCode: 'رمز Plus Code هذا غير صالح.',
+  // --- UX-02 admin review (begin): settings and role edits show old → new before they are saved ---
+  settingsReview: 'حفظ هذه التغييرات؟\n{changes}',
+  userRoleChangeConfirm: 'حفظ تغيير دور {name} من {from} إلى {to}؟ راجع الدورين القديم والجديد قبل المتابعة.',
+  err_settings_changed: 'غيّر مسؤول آخر هذه الإعدادات منذ فتح الشاشة. راجع القيم الحالية ثم احفظ مرة أخرى.',
+  // --- UX-02 admin review (end) ---
 };
 
 export type CopyKey = keyof typeof ar;
@@ -2374,6 +2386,18 @@ const en: Copy = {
   priorityClosed: 'Same-day booking closed at 12:00 Jerusalem time. Choose standard delivery.',
   err_invalid_priority: 'Choose a valid delivery priority.',
   err_priority_cutoff: 'Same-day booking closed at 12:00 Jerusalem time. Choose standard delivery.',
+  // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  sharedLocationUse: 'Use this shared location',
+  sharedLocationNoLink: 'Could not read this link. Paste the full Google Maps link or the coordinates.',
+  sharedLocationRange: 'These coordinates are out of range.',
+  sharedLocationOutside: 'This point is outside the served area.',
+  sharedLocationShortCode: 'Add the town after a short Plus Code, e.g. "CWC8+R9 Ramallah", or paste the full code.',
+  sharedLocationBadCode: 'This Plus Code is not valid.',
+  // --- UX-02 admin review (begin): settings and role edits show old → new before they are saved ---
+  settingsReview: 'Save these changes?\n{changes}',
+  userRoleChangeConfirm: 'Save the role change for {name} from {from} to {to}? Check the old and new roles before continuing.',
+  err_settings_changed: 'Another admin changed these settings after you opened the screen. Review the current values and save again.',
+  // --- UX-02 admin review (end) ---
 };
 
 export const copy = { ar: ar as Copy, en };

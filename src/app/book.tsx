@@ -242,11 +242,12 @@ function BookForm() {
       if (pickupChosen) setStep('trip'); else { setField('pickup'); setStep('search'); }
     }
   };
-  const openPin = (which: TripField) => {
+  // A shared location (GEO-03) starts the pin at its point; the customer still confirms it on the map.
+  const openPin = (which: TripField, shared?: Point) => {
     locationRequest.current?.abort(); setLocating(false);
     if (which === 'pickup') pickupTouched.current = true;
     const chosen = which === 'pickup' ? (pickupChosen ? pickupPoint : null) : (dropoffChosen ? dropoffPoint : null);
-    const start = chosen ?? here ?? (which === 'dropoff' && pickupChosen ? previewFrom : city(which === 'pickup' ? pickupCity : dropoffCity));
+    const start = shared ?? chosen ?? here ?? (which === 'dropoff' && pickupChosen ? previewFrom : city(which === 'pickup' ? pickupCity : dropoffCity));
     const at = { latitude: start.latitude, longitude: start.longitude };
     setPinFor(which); setPinNote(''); setPinCenter(at); setPinPoint(at); setPinLabel(null); setLocationError(''); setStep('pin');
   };

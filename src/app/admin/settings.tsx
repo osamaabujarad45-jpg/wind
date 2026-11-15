@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
-import { useSession } from '../../session';
+import { useSession, type Me } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
@@ -15,38 +15,91 @@ const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits'; keys: (
   { title: 'cashLimits', keys: ['driverCashCap'] },
 ];
 
+const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
+
 export default function AdminSettings() {
   const { me, refresh, signOut, language, setLanguage } = useSession();
   const { c, err } = useCopy();
-  const [values, setValues] = useState(() => Object.fromEntries(Object.entries(me!.settings).map(([k, v]) => [k, String(v)])));
+  const [values, setValues] = useState(() => toText(me!.settings));
+  // Keys this admin has typed into since the server last confirmed the form. Only these are reviewed and sent:
+  // comparing text against the mount value would miss a reversal (12 → 10 looks unedited when 10 was loaded).
+  const [touched, setTouched] = useState<Partial<Record<keyof Settings, true>>>({});
+  // What the server last confirmed. A failed save clears it: a lost reply may hide a committed write,
+  // so the next comparison reads /me first instead of trusting an old copy.
+  const [baseline, setBaseline] = useState<Settings | null>(me!.settings);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false); // a confirm built before this render must not send a second write
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [bad, setBad] = useState(''); // the setting the server would refuse: its own field says so
+
+  // The write carries exactly the keys the admin reviewed, so a concurrent edit to any other key survives.
+  // `expected` is the value each of those keys had in the review: the server refuses the write if another admin
+  // has changed one of them since, so a review never overwrites a change it did not show.
+  async function commit(patch: Record<string, number>, expected: Record<string, number>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      // The reply is the server's settings after this write: it becomes the comparison baseline.
+      const saved = await api<Settings>('/admin/settings', { ...patch, expected }, 'POST');
+      setBaseline(saved);
+      setValues(toText(saved));
+      setTouched({});
+      await refresh();
+      haptic.success();
+      setBad('');
+      setMessage(c.saved);
+    } catch (e) {
+      setBaseline(null); // A lost reply may hide a committed change; refresh before comparing again.
+      haptic.error();
+      setError(err(e));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+
+  // After a failed save the last server state is unknown, so read /me directly. The session refresh
+  // swallows network errors, which is why it cannot stand in for this read.
+  async function currentSettings(): Promise<Settings> {
+    if (baseline) return baseline;
+    setBusy(true);
+    try {
+      const settings = (await api<Me>('/me')).settings;
+      setBaseline(settings);
+      return settings;
+    } finally { setBusy(false); }
+  }
 
   async function save() {
-    setBusy(true);
+    if (busy || inFlight.current) return;
     setError('');
     setMessage('');
     // Catch it on the screen that can name the field, instead of letting the server
     // store a 0 or a mistyped 2000 that only shows up on the next customer's quote.
     const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)]));
-    const bad = invalidSetting(numbers);
-    if (bad) {
-      setBusy(false);
+    const invalid = invalidSetting(numbers);
+    if (invalid) {
       haptic.error();
-      setError(fill(c.set_invalid, { field: c[`set_${bad}`] }));
+      setBad(String(invalid));
+      setError(fill(c.set_invalid, { field: c[`set_${invalid}`] }));
       return;
     }
-    try {
-      await api('/admin/settings', numbers);
-      await refresh();
-      haptic.success();
-      setMessage(c.saved);
-    } catch (e) {
-      haptic.error();
-      setError(err(e));
-    }
-    setBusy(false);
+    const before = await currentSettings().catch(e => { setError(err(e)); return null; });
+    if (!before) return;
+    // Only fields this admin edited, and only where the server differs, are shown and sent. A field left
+    // alone never goes out, so another admin's edit to it survives even after a lost reply.
+    const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]);
+    if (!keys.length) { setMessage(c.saved); return; }
+    // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
+    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : `${value} ₪`;
+    const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
+    const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
+    const expected = Object.fromEntries(keys.map(key => [key, before[key]]));
+    confirm(fill(c.settingsReview, { changes: changes.join('\n') }), () => void commit(patch, expected), c.save, c.cancel);
   }
 
   return <Screen>
@@ -54,9 +107,10 @@ export default function AdminSettings() {
     {groups.map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
-      {group.keys.map(key => <Field key={key} keyboardType="decimal-pad"
+      {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
-        value={values[key]} onChangeText={text => setValues(v => ({ ...v, [key]: text }))} />)}
+        error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); setMessage(''); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>
