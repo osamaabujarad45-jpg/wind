@@ -6,6 +6,7 @@ import { readdirSync } from 'node:fs';
 const suites = [
   "journey-contracts.test.mjs",
   "runtime-config.test.mjs",
+  "large-text.test.mjs",
   "driver-command.test.mjs",
   "protected-recovery.test.mjs",
   "offline-snapshot.test.mjs",

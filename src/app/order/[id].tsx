@@ -28,7 +28,7 @@ import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
+  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -254,7 +254,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.handoverHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
-            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.handoverCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
         </Row>
       </Card>
@@ -268,7 +268,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.returnHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
-            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.returnCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
         </Row>
       </Card>
@@ -618,7 +618,8 @@ export default function OrderScreen() {
         <Ionicons name={maneuverIcon(maneuver.step)} size={34} color={palette.lime} />
         <View style={{ flex: 1 }}>
           <Txt variant="h2" style={{ color: palette.onFill }}>{maneuverDistance(maneuver.metres, c)}</Txt>
-          <Txt variant="caption" numberOfLines={2} style={{ color: palette.onFill }}>{maneuverText(maneuver.step, c)}</Txt>
+          {/* clamp, not numberOfLines: a plain line cap is dropped past 1.35x, and the driving banner must not grow over the map */}
+          <Txt variant="caption" clamp={4} style={{ color: palette.onFill }}>{maneuverText(maneuver.step, c)}</Txt>
         </View>
       </View> : <View style={[styles.topCard, shadow, { flexDirection: row }]}>
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
@@ -674,7 +675,7 @@ export default function OrderScreen() {
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
-      footer={mine && activeStatuses.includes(order.status) ? <View style={{ gap: 8 }}>
+      footer={mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
         {needsCode &&
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
@@ -695,7 +696,7 @@ export default function OrderScreen() {
             .catch(() => setActionError(c.mapUnavailable));
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
-      </View> : undefined}>
+      </View></BoundedFooter> : undefined}>
       {body}
     </MapSheet>
   </View>;
@@ -886,6 +887,12 @@ function IconStar({ n, label, on, disabled, onPress }: { n: number; label: strin
   </Pressable>;
 }
 
+// Each digit sits in a box that sizes itself and centres the Text, which carries no height: iOS ignores textAlignVertical,
+// so a fixed Text height clipped the digits at larger text sizes. The box grows with the font up to maxScale.
+function CodeDigit({ digit }: { digit: string }) {
+  return <View style={styles.digit}><Text maxFontSizeMultiplier={maxScale} style={styles.digitText}>{digit}</Text></View>;
+}
+
 const styles = StyleSheet.create({
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
   topCard: { alignItems: 'center', gap: 10, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
@@ -894,8 +901,9 @@ const styles = StyleSheet.create({
   progress: { gap: 4 },
   segment: { flex: 1, height: 5, borderRadius: 3, backgroundColor: palette.muted },
   divider: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
-  code: { gap: 4 },
-  digit: { width: 30, height: 40, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', lineHeight: 40, fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, overflow: 'hidden' },
+  code: { gap: 4, flexWrap: 'wrap' },
+  digit: { minWidth: 30, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 8, backgroundColor: palette.card, overflow: 'hidden' },
+  digitText: { fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, textAlign: 'center' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles

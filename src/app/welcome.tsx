@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
 import { InstallLink } from '../install-link';
-import { Button, fill, haptic, headingFont, Logo, palette, Press, Row, Txt, useCopy } from '../ui';
+import { Button, fill, haptic, headingFont, Logo, maxScale, palette, Press, Row, Txt, useCopy } from '../ui';
 
 const SLIDES = 3;
 
@@ -77,7 +77,7 @@ function PriceArt({ label }: { label: string }) {
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
     <View style={[styles.saveBadge, { flexDirection: row }]}>
       <Ionicons name="pricetag" size={16} color={palette.onFill} />
-      <Text key={language} style={styles.saveText}>{label}</Text>
+      <Text maxFontSizeMultiplier={maxScale} key={language} style={styles.saveText}>{label}</Text>
     </View>
     <Txt variant="caption">{c.cash}</Txt>
   </View>;
@@ -100,7 +100,7 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
     <Animated.View entering={reduced ? undefined : ZoomIn.duration(320).delay(460)} style={[styles.panel, { backgroundColor: palette.clayPale, borderColor: palette.clayPale }]}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt variant="title">{label}</Txt>
-        <Text style={styles.code}>4827</Text>
+        <Text maxFontSizeMultiplier={maxScale} style={styles.code}>4827</Text>
       </Row>
     </Animated.View>
   </View>;
