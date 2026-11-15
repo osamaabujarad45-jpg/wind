@@ -2446,7 +2446,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
-  if (next !== 'completed' && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input');
+  if ((next !== 'completed' || r.service !== 'parcel') && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: parcel delivery fee only
   (await safetyFree(r.id));
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);

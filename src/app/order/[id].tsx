@@ -9,7 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -89,7 +89,8 @@ export default function OrderScreen() {
   const code = proofInput.context === proofContext ? proofInput.value : '';
   const setCode = (value: string) => setProofInput({ context: proofContext, value: codeInput(value, 4) });
   // WP-01: the cash taken at the door, typed by the driver; prefilled with what is due, so an exact payment is one tap.
-  const [door, setDoor] = useState<{ context: string; text: string | null; reason: VarianceReason }>({ context: proofContext, text: null, reason: 'customer_short' });
+  // A difference needs a reason the driver picks for this amount: never a default, and a new amount clears it.
+  const [door, setDoor] = useState<{ context: string; text: string | null; reason: VarianceReason | null }>({ context: proofContext, text: null, reason: null });
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
@@ -144,14 +145,16 @@ export default function OrderScreen() {
   const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
   const farFill = (pinned: string, cityLevel: string) => parcelFarKm === null ? '' // no pin: the distance is to the city centre
     : order.pickupPoint ? fill(pinned, { km: kmLabel(parcelFarKm) }) : fill(cityLevel, { km: kmLabel(parcelFarKm), city: from[language] });
-  const doorStep = !!mine && order.status === 'in_transit' && order.service !== 'ride';
+  const doorStep = !!mine && order.status === 'in_transit' && order.service === 'parcel';
   const dueCents = Math.round((order.price - order.discount) * 100);
-  const doorOwn = door.context === proofContext ? door : { text: null, reason: door.reason };
+  const doorOwn = door.context === proofContext ? door : { text: null, reason: null };
   const doorText = doorOwn.text ?? String(dueCents / 100);
   const collectedCents = minorFromText(doorText);
   const doorValid = Number.isSafeInteger(collectedCents) && collectedCents >= 0;
   const doorDiffers = doorValid && collectedCents !== dueCents;
-  const doorProof = doorStep && doorValid ? { collectedCents, ...(doorDiffers ? { varianceReason: doorOwn.reason } : {}) } : {};
+  const doorReasons = doorDiffers ? varianceReasons.filter(reason => varianceAllowed(collectedCents, dueCents, reason)) : [];
+  const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
+  const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
@@ -683,11 +686,11 @@ export default function OrderScreen() {
       footer={mine && activeStatuses.includes(order.status) ? <View style={{ gap: 8 }}>
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
-            onChangeText={text => setDoor({ context: proofContext, text, reason: doorOwn.reason })} disabled={!!busy || advanceLocked === order.status}
+            onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
             error={doorText.trim() && !doorValid ? c.doorInvalid : undefined} />
           {doorDiffers && <>
             <Txt variant="caption">{c.doorReasonHint}</Txt>
-            <FilterChips label={c.doorReasonHint} items={varianceReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason}
+            <FilterChips label={c.doorReasonHint} items={doorReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason ?? ('' as VarianceReason)}
               disabled={!!busy || advanceLocked === order.status} onChange={reason => setDoor({ context: proofContext, text: doorOwn.text, reason })} />
           </>}
         </>}
@@ -700,8 +703,8 @@ export default function OrderScreen() {
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorValid}
-          reason={doorStep && !doorValid ? c.doorInvalid : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady}
+          reason={doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
