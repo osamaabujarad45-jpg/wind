@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS order_releases (
 CREATE TABLE IF NOT EXISTS order_commands (
   user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id), PRIMARY KEY(user_id, request_id));
+-- A12: a durable terminal refusal for a booking key, so a retry cannot succeed once the clock or the cap changes.
+CREATE TABLE IF NOT EXISTS order_command_rejections (
+  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+  error TEXT NOT NULL CHECK (error IN ('priority_cutoff')), created_at INTEGER NOT NULL, PRIMARY KEY(user_id, request_id));
 CREATE TABLE IF NOT EXISTS order_actions (
   user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id), http_status INTEGER NOT NULL, error TEXT,
@@ -206,6 +210,10 @@ CREATE TABLE IF NOT EXISTS road_restrictions (
   feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,
   itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id));
 `);
+// A12, additive: existing orders and quotes read as standard, and user_version stays 3 for older builds.
+for (const table of ['orders', 'quotes'])
+  if (!(db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).some(r => r.name === 'priority'))
+    db.exec(`ALTER TABLE ${table} ADD COLUMN priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard'))`);
   // Optional local operator history must not change the installed delivery schema.
   if (process.env.WIND_OPENCODE_ENABLED === '1' && process.env.NODE_ENV !== 'production') db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs (
     id TEXT PRIMARY KEY,

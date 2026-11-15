@@ -1189,6 +1189,14 @@ const ar = {
   chartMax: 'الأعلى',
   openOrder: 'فتح الطلب',
   noSubscriptions: 'لا توجد طلبات اشتراك',
+  // A12 same-day parcel priority (owner decision, 14 Nov 2026): an attribute, no surcharge, closes at 12:00 Jerusalem time.
+  parcelPriority: 'أولوية التوصيل',
+  priority_standard: 'عادي',
+  priority_same_day: 'في اليوم نفسه',
+  priorityPolicy: 'يغلق حجز التوصيل في اليوم نفسه الساعة 12:00 بتوقيت القدس. دون رسوم إضافية.',
+  priorityClosed: 'أُغلق حجز التوصيل في اليوم نفسه عند الساعة 12:00 بتوقيت القدس. اختر التوصيل العادي.',
+  err_invalid_priority: 'اختر أولوية توصيل صالحة.',
+  err_priority_cutoff: 'أُغلق حجز التوصيل في اليوم نفسه عند الساعة 12:00 بتوقيت القدس. اختر التوصيل العادي.',
   // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
   sharedLocationUse: 'استخدم هذا الموقع المشارك',
   sharedLocationNoLink: 'تعذّر قراءة هذا الرابط. الصق رابط خرائط Google كاملاً أو الإحداثيات.',
@@ -2370,6 +2378,14 @@ const en: Copy = {
   chartMax: 'Max',
   openOrder: 'Open order',
   noSubscriptions: 'No plan requests',
+  // A12 same-day parcel priority (owner decision, 14 Nov 2026): an attribute, no surcharge, closes at 12:00 Jerusalem time.
+  parcelPriority: 'Delivery priority',
+  priority_standard: 'Standard',
+  priority_same_day: 'Same day',
+  priorityPolicy: 'Same-day booking closes at 12:00 Jerusalem time. No extra charge.',
+  priorityClosed: 'Same-day booking closed at 12:00 Jerusalem time. Choose standard delivery.',
+  err_invalid_priority: 'Choose a valid delivery priority.',
+  err_priority_cutoff: 'Same-day booking closed at 12:00 Jerusalem time. Choose standard delivery.',
   // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
   sharedLocationUse: 'Use this shared location',
   sharedLocationNoLink: 'Could not read this link. Paste the full Google Maps link or the coordinates.',

@@ -1,4 +1,4 @@
-import { deadlineMilliseconds } from '../api-clock';
+import { deadlineMilliseconds, serverOffset } from '../api-clock';
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
@@ -9,7 +9,7 @@ import { api, ApiError, apiSessionRevision, errorCode, storage, useApi } from '.
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pendingSettlesAt, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
 import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
-import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, sameDayBookingOpen, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type ParcelPriority, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
@@ -73,6 +73,11 @@ function BookForm() {
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [option, setOption] = useState(optionsFor(service)[0]);
+  const [priority, setPriority] = useState<ParcelPriority>('standard'); // A12: parcels only
+  // 12:00 Jerusalem, judged on the server's clock; the form re-judges it every 15 s.
+  const [clock, setClock] = useState(Date.now);
+  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 15_000); return () => clearInterval(timer); }, []);
+  const sameDayOpen = sameDayBookingOpen(clock + serverOffset());
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -319,7 +324,7 @@ function BookForm() {
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupChosen(true); setDropoffChosen(true); setStep('trip'); pickupTouched.current = true;
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
-        setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp);
+        setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp); setPriority(p.priority ?? 'standard');
         if (p.declaredScope) {
           setFreight(freightDraftFromScope(p.declaredScope));
           setLoadingHours((p.declaredScope.loadingBefore - p.declaredScope.loadingAfter) / 3_600_000);
@@ -334,13 +339,13 @@ function BookForm() {
         if (!mounted) return;
         if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
           const p = pickupForm(old);
-          setService(p.service); setPickupCity(p.pickupCity); setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setOption(p.option);
+          setService(p.service); setPickupCity(p.pickupCity); setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setOption(p.option); setPriority('standard'); // a new parcel: not the old priority
           setSameFrom(true); setCopiedFrom(old.id);
           setPickupChosen(true);
         } else if (old) {
           const f = againForm(old);
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
-          setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp);
+          setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp); setPriority(f.priority ?? 'standard');
           if (f.contact) setContact(f.contact);
           setRecipientName(f.recipientName); setRecipientPhone(f.recipientPhone);
           setSameFrom(false); setCopiedFrom(old.id);
@@ -381,16 +386,17 @@ function BookForm() {
   const [priceTick, setPriceTick] = useState(0);
   const requote = () => { setQuotedAt(Date.now()); setPriceTick(n => n + 1); };
   // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
-  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, priceTick]);
+  const quotePriority: ParcelPriority = sameDayOpen ? priority : 'standard'; // a closed same-day quotes as standard
+  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, quotePriority, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null; error?: unknown } | null>(null);
   useEffect(() => {
     if (!isCustomer || pending || !routeChosen || scopeInvalid) return; // a pending booking keeps its complete terms
     let live = true;
-    const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity,
+    const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity, ...(service === 'parcel' && quotePriority === 'same_day' && { priority: quotePriority }),
       ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(declaredScope && { declaredScope }), ...(scheduledFor !== null && { scheduledFor }) })
       .then(quote => { if (live) setQuoted({ key: priceKey, quote }); }, error => { if (live) setQuoted({ key: priceKey, quote: null, error }); }), 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeInvalid, declaredScope]);
+  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeInvalid, declaredScope, quotePriority]);
   const quoting = isCustomer && !pending && routeChosen && !scopeInvalid && quoted?.key !== priceKey; // the Request button waits for it
   const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
   const smart = quoted?.key === priceKey ? quoted.quote : null;
@@ -436,6 +442,7 @@ function BookForm() {
     haptic.tap();
     setService(next);
     setOption(optionsFor(next)[0]);
+    setPriority('standard');
     setLoadingHelp(false);
     setError('');
     setSwapNotice('');
@@ -470,6 +477,7 @@ function BookForm() {
       if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone) scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
+    if (!pending && service === 'parcel' && priority === 'same_day' && !sameDayOpen) { setPriority('standard'); haptic.error(); setError(c.err_priority_cutoff); setSheetOpen(true); return; } // the next Request sends standard
     setInvalid({});
     sending.current = true;
     setBusy(true);
@@ -481,7 +489,7 @@ function BookForm() {
       const command = pending ? { ...pending, attemptedAt: Date.now() }
         : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
           contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
-          ...(declaredScope && { declaredScope }),
+          ...(declaredScope && { declaredScope }), ...(service === 'parcel' && priority === 'same_day' && { priority }),
           ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
           ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
       setOutcome(null); // a new attempt invalidates the answer that arrived before it
@@ -511,7 +519,7 @@ function BookForm() {
       } else {
         setError(err(e));
         if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict'
-          && !retrying && errorCode(e) !== 'booking_command_expired') {
+          && (!retrying || errorCode(e) === 'priority_cutoff') && errorCode(e) !== 'booking_command_expired') { // a retry refused by the cutoff is terminal too
           try { await storage.set(savedKey, null, true); if (!current()) return; latest.current = null; setPending(null); setOutcome(null); }
           catch { if (current()) setError(c.bookingStorageError); }
         // Anything else may have committed (a retry refusal says nothing about an earlier POST): only the receipt and deadline settle it.
@@ -695,6 +703,13 @@ function BookForm() {
             <Txt variant="label" style={{ marginBottom: 6 }}>{c.size}</Txt>
             <Choices label={c.size} items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
           </>}
+        {service === 'parcel' && <>
+          <Txt variant="label" style={{ marginVertical: 6 }}>{c.parcelPriority}</Txt>
+          <Choices label={c.parcelPriority} disabled={locked}
+            items={[{ key: 'standard', label: c.priority_standard }, { key: 'same_day', label: c.priority_same_day, disabled: !sameDayOpen }]}
+            value={pending ? pending.payload.priority ?? 'standard' : sameDayOpen ? priority : 'standard'} onChange={k => setPriority(k === 'same_day' ? 'same_day' : 'standard')} />
+          <Txt variant="caption">{sameDayOpen ? c.priorityPolicy : c.priorityClosed}</Txt>
+        </>}
         {service === 'freight' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.loadingHelp}</Txt>
           <Choices label={c.loadingHelp} items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} />

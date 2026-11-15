@@ -461,6 +461,7 @@ export default function OrderScreen() {
         <View style={styles.divider}>
           {!!order.detail && <Detail label={c.details} value={order.detail} />}
           <Detail label={order.service === 'ride' ? c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />
+          {order.service === 'parcel' && <Detail label={c.parcelPriority} value={order.priority === 'same_day' ? c.priority_same_day : c.priority_standard} />}
           {order.loadingHelp && <Detail label={c.loadingHelp} value={c.yes} />}
           <Detail label={c.payWith} value={c.cash} />
           <Detail label={c.issued} value={time(order.createdAt)} />

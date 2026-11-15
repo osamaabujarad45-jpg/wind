@@ -21,6 +21,15 @@ export const cities = [
 
 export type CityId = typeof cities[number]['id'];
 export type Service = 'parcel' | 'ride' | 'freight';
+// A12: a parcel's delivery priority. Standard is the default and the historical wire; same_day changes identity, never price.
+export type ParcelPriority = 'standard' | 'same_day';
+export const parcelPriorities: ParcelPriority[] = ['standard', 'same_day'];
+/** Parcels only: an omitted or known value. Rides and loads carry no priority at all. */
+export const validParcelPriority = (service: unknown, priority: unknown) =>
+  priority === undefined || service === 'parcel' && parcelPriorities.includes(priority as ParcelPriority);
+const jerusalemHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', hourCycle: 'h23' });
+/** Same-day booking closes at 12:00 Jerusalem time. Intl follows daylight saving; a fixed offset would be wrong half the year. */
+export const sameDayBookingOpen = (at: number) => Number.isFinite(at) && Math.abs(at) <= 8.64e15 && Number(jerusalemHour.format(at)) < 12;
 export type Role = 'customer' | 'driver' | 'admin';
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
@@ -160,6 +169,7 @@ export type Order = {
   journey?: import('./journey-contracts.ts').Journey;
   recovery?: { schemaVersion: 1; version: number | null; assignmentEpoch: number | null };
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
+  priority?: ParcelPriority; // parcels only; orders from before A12 read as standard
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   recipientName?: string; recipientPhone?: string | null; // parcels and loads (SPEC-parcel-recipient.md)
@@ -196,6 +206,7 @@ export type DriverStats = { rating: number | null; priceRating: number | null; t
 export type Offer = DriverStats & { driverId: number; name: string; vehicle: Vehicle | null; price: number; createdAt: number };
 /** What booking shows next to the recommended price. */
 export type PriceQuote = { price: number; km: number; minutes: number; delayMinutes: number; night: boolean; slow: string[]; closed: string[]; avoids: string[]; estimated: boolean;
+  priority?: ParcelPriority; // parcels only: the quote carries the attribute it commits
   eta?: import('./journey-contracts.ts').JourneyEta; standard?: boolean; quoteId?: string; quoteExpiresAt?: number }; // a parcel: one standard price, no breakdown; quoteId only when the server locked the quote
 
 export function city(id: CityId) {
