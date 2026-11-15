@@ -15,7 +15,8 @@ import { canShowOnRenderer, routeProvider } from '../map-provider';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
 import { etaShort, RouteLine, ServiceIcon, SlotPicker, useFormat } from '../parts';
 import { SceneMap } from '../scene-map';
-import { TripSearch, type TripField, type TripPlace } from '../trip-search';
+import { sharedMessage, TripSearch, type TripField, type TripPlace } from '../trip-search';
+import { parseSharedLocation } from '../shared-location';
 import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
@@ -54,6 +55,12 @@ function BookForm() {
   const [pinFor, setPinFor] = useState<TripField>('dropoff');
   const [pinCenter, setPinCenter] = useState<Point | null>(null); // where the camera is sent; a drag moves pinPoint only
   const [pinPoint, setPinPoint] = useState<Point | null>(null);
+  // UX-03 (Fable): the pin without a drag gesture. Zoom buttons TalkBack and a keyboard can use, the pin's coordinates read
+  // aloud, and a field that takes coordinates, a Google Maps link or a Plus Code (GEO-03's parser). The pin still waits for
+  // the same confirm button, so a typed point is never booked unseen.
+  const [pinZoom, setPinZoom] = useState(15);
+  const [pinTyped, setPinTyped] = useState('');
+  const [pinTypedError, setPinTypedError] = useState('');
   const [pinMoving, setPinMoving] = useState(false);
   const [pinLabel, setPinLabel] = useState<{ name: string; detail: string } | null>(null);
   const [pinNote, setPinNote] = useState(''); // a saved landmark keeps its words while its spot is confirmed
@@ -261,6 +268,19 @@ function BookForm() {
     return () => { live = false; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- describe only closes over the language, which re-renders this anyway
   }, [step, pinPoint, pinMoving, language]);
+  // Move the pin to typed coordinates, a map link or a Plus Code; short links are read by the server (GEO-03).
+  async function movePinTo(text: string) {
+    const read = parseSharedLocation(text);
+    let point = read && 'point' in read ? read.point : null;
+    if (read && 'shortLink' in read) {
+      point = await api<Point>(`/places/resolve-link?url=${encodeURIComponent(read.shortLink)}`, undefined, 'GET').catch(() => null);
+      if (point && !servedCity(point)) { setPinTypedError(c.sharedLocationOutside); return; }
+    }
+    if (!point) { setPinTypedError(c[read && 'error' in read ? sharedMessage[read.error] : 'sharedLocationNoLink']); return; }
+    locationRequest.current?.abort(); setLocating(false); setLocationError('');
+    setPinCenter(point); setPinPoint(point); setPinMoving(false); setPinTyped(''); setPinTypedError('');
+    AccessibilityInfo.announceForAccessibility(fill(c.pinCoordinatesSpoken, { lat: point.latitude.toFixed(5), lng: point.longitude.toFixed(5) }));
+  }
   function confirmPinSpot() {
     if (locating || !mapReady || !pinPoint || !pinServed || pinMoving) return;
     haptic.success();
@@ -574,7 +594,7 @@ function BookForm() {
   const side = useSideSheet();
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <View style={StyleSheet.absoluteFill} accessibilityElementsHidden={step === 'search'} importantForAccessibility={step === 'search' ? 'no-hide-descendants' : 'auto'} aria-hidden={step === 'search'}>
-    <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={15}
+    <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={step === 'pin' ? pinZoom : 15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
       insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
@@ -601,6 +621,8 @@ function BookForm() {
       </SafeAreaView>
       <View style={[styles.locate, rtl ? { left: 16 } : { right: 16 }, { bottom: pinPanel + 14 }]}>
         <IconButton icon={locating ? 'hourglass-outline' : 'locate'} label={c.useLocation} disabled={locating} onPress={() => { void locate(); }} />
+        <IconButton icon="add" label={c.pinZoomIn} disabled={!mapReady || pinZoom >= 18} onPress={() => { if (pinPoint) setPinCenter(pinPoint); setPinZoom(z => Math.min(18, z + 1)); }} />
+        <IconButton icon="remove" label={c.pinZoomOut} disabled={!mapReady || pinZoom <= 8} onPress={() => { if (pinPoint) setPinCenter(pinPoint); setPinZoom(z => Math.max(8, z - 1)); }} />
       </View>
       <SafeAreaView edges={['bottom']} style={styles.pinPanel} onLayout={e => setPinPanel(Math.ceil(e.nativeEvent.layout.height))}>
         <Txt variant="micro">{pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}</Txt>
@@ -612,6 +634,11 @@ function BookForm() {
               {!!(pinLabel?.detail || pinNote) && <Txt variant="caption" numberOfLines={1}>{pinNote ? pinLabel?.name : pinLabel?.detail}</Txt>}
             </>}
         </View>
+        {pinPoint && !pinMoving && <Txt variant="micro" selectable accessibilityLabel={fill(c.pinCoordinatesSpoken, { lat: pinPoint.latitude.toFixed(5), lng: pinPoint.longitude.toFixed(5) })} style={{ marginBottom: 6 }}>
+          {`${pinPoint.latitude.toFixed(5)}, ${pinPoint.longitude.toFixed(5)}`}</Txt>}
+        <Field label={c.pinTypedLabel} value={pinTyped} onChangeText={text => { setPinTyped(text); setPinTypedError(''); }}
+          onSubmitEditing={() => { void movePinTo(pinTyped); }} error={pinTypedError || undefined} />
+        <Button title={c.pinTypedMove} variant="soft" disabled={!pinTyped.trim()} onPress={() => { void movePinTo(pinTyped); }} />
         {!!locationError && <Txt variant="caption" style={{ marginBottom: 8 }}>{locationError}</Txt>}
         {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
           <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
@@ -830,7 +857,7 @@ const styles = StyleSheet.create({
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
   topCard: { alignItems: 'center', gap: 8, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
   pinTop: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
-  locate: { position: 'absolute' },
+  locate: { position: 'absolute', gap: 8 },
   pinPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     ...sheetShadow },
 });
