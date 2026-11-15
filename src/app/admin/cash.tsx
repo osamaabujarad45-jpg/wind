@@ -25,9 +25,20 @@ export default function AdminCash() {
   const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
   // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
   const cents = minorFromText;
+  const inFlight = useRef(false); // a confirm built in an earlier render sees a stale `busy`: this one is current
+  // Why the amount cannot be recorded, or null. The server stays authoritative; this only spares a confirm that would fail.
+  const amountProblem = (kind: 'remittance' | 'adjustment', text: string, room: number) => {
+    const value = cents(text);
+    if (Number.isNaN(value)) return c.cash_amount_format;
+    if (value === 0) return c.cash_amount_needed;
+    if (kind === 'remittance' && (value < 0 || value > room)) return c.err_invalid_amount;
+    if (kind === 'adjustment' && value < 0) return c.err_approval_required; // forgiving debt needs a second finance approver
+    return null;
+  };
 
   async function submit() {
-    if (!open || busy) return;
+    if (!open || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     try {
       const entry = await api<{ reference: string | null }>(`/admin/cash/${open.kind}`, open.kind === 'remittance'
@@ -36,7 +47,7 @@ export default function AdminCash() {
       haptic.success();
       if (entry.reference) setMessage(fill(c.cashRecorded, { r: entry.reference }));
       setOpen(null); reload(); reloadPending();
-    } catch (e) { fail(err(e)); } finally { setBusy(false); }
+    } catch (e) { fail(err(e)); } finally { inFlight.current = false; setBusy(false); }
   }
 
   // T25: the resolution is deliberate (a confirmation dialog), names a reason and an optional evidence
@@ -78,8 +89,8 @@ export default function AdminCash() {
             <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500} disabled={busy}
               onChangeText={note => setOpen({ ...open, note })} />
             <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
-              disabled={busy || !Number.isFinite(cents(open.amount)) || cents(open.amount) === 0 || (open.kind === 'adjustment' && open.note.trim().length < 5)}
-              reason={busy ? c.wait_busy : open.kind === 'adjustment' && open.note.trim().length < 5 ? c.reason_min5 : c.cash_amount_needed}
+              disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind === 'adjustment' && open.note.trim().length < 5)}
+              reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}
               onPress={() => confirm(fill(open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
                 () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />
             <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />
