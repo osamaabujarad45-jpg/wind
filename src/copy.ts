@@ -1190,6 +1190,13 @@ const ar = {
   openOrder: 'فتح الطلب',
   noSubscriptions: 'لا توجد طلبات اشتراك',
   // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  // UX-03 accessible pin (begin)
+  pinZoomIn: 'تكبير الخريطة',
+  pinZoomOut: 'تصغير الخريطة',
+  pinTypedLabel: 'إحداثيات أو رابط خرائط أو Plus Code',
+  pinTypedMove: 'انقل الدبوس إلى هنا',
+  pinCoordinatesSpoken: 'الدبوس عند خط العرض {lat} وخط الطول {lng}',
+  // UX-03 accessible pin (end)
   sharedLocationUse: 'استخدم هذا الموقع المشارك',
   sharedLocationNoLink: 'تعذّر قراءة هذا الرابط. الصق رابط خرائط Google كاملاً أو الإحداثيات.',
   sharedLocationRange: 'هذه الإحداثيات خارج النطاق.',
@@ -2371,6 +2378,13 @@ const en: Copy = {
   openOrder: 'Open order',
   noSubscriptions: 'No plan requests',
   // GEO-03 shared locations (src/shared-location.ts): coordinates, map links and Plus Codes in the pickup and drop-off search.
+  // UX-03 accessible pin (begin)
+  pinZoomIn: 'Zoom in',
+  pinZoomOut: 'Zoom out',
+  pinTypedLabel: 'Coordinates, map link or Plus Code',
+  pinTypedMove: 'Move the pin here',
+  pinCoordinatesSpoken: 'Pin at latitude {lat}, longitude {lng}',
+  // UX-03 accessible pin (end)
   sharedLocationUse: 'Use this shared location',
   sharedLocationNoLink: 'Could not read this link. Paste the full Google Maps link or the coordinates.',
   sharedLocationRange: 'These coordinates are out of range.',

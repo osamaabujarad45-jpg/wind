@@ -19,7 +19,7 @@ const kindIcons: Record<string, IconName> = { town: 'business-outline', area: 'm
   bank: 'card-outline', fuel: 'car-outline', transit: 'bus-outline', shop: 'bag-outline', junction: 'git-network-outline', street: 'trail-sign-outline', poi: 'location-outline' };
 
 // GEO-03: why a shared location cannot be used, in the words of the copy block.
-const sharedMessage = { out_of_range: 'sharedLocationRange', outside_area: 'sharedLocationOutside', short_plus_code: 'sharedLocationShortCode',
+export const sharedMessage = { out_of_range: 'sharedLocationRange', outside_area: 'sharedLocationOutside', short_plus_code: 'sharedLocationShortCode',
   bad_plus_code: 'sharedLocationBadCode', bad_link: 'sharedLocationNoLink' } as const satisfies Record<SharedLocationError, CopyKey>;
 
 function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title: string; detail?: string; onPress: () => void; onForget?: () => void }) {
