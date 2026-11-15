@@ -44,6 +44,11 @@ function openMaps(point: Point | null, place: string, landmark: string, region: 
   return Linking.openURL(Platform.select({ ios: `maps:0,0?q=${q}`, android: `geo:0,0?q=${q}`, default: `https://www.google.com/maps/search/?api=1&query=${q}` }));
 }
 
+/** Read inside the accept handler, never during render (React Compiler's purity rule cannot tell the two apart here). */
+const tapTime = () => Date.now();
+/** The A11 reasons that fit this amount, in the owner's order. */
+const allowedReasons = (collected: number, due: number) => varianceReasons.filter(reason => varianceAllowed(collected, due, reason));
+
 export default function OrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me } = useSession();
@@ -152,7 +157,7 @@ export default function OrderScreen() {
   const collectedCents = minorFromText(doorText);
   const doorValid = Number.isSafeInteger(collectedCents) && collectedCents >= 0;
   const doorDiffers = doorValid && collectedCents !== dueCents;
-  const doorReasons = doorDiffers ? varianceReasons.filter(reason => varianceAllowed(collectedCents, dueCents, reason)) : [];
+  const doorReasons = doorDiffers ? allowedReasons(collectedCents, dueCents) : [];
   const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
   const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
   const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
@@ -194,7 +199,7 @@ export default function OrderScreen() {
         const prepared = await work.prepareTracking();
         if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
         if (!prepared) { setActionError(c.locationOff); return; }
-        const lease = dispatchAcceptance(order, Date.now());
+        const lease = dispatchAcceptance(order, tapTime());
         if (lease === null) { setActionError(c.dispatchExpired); return; }
         body = { ...lease, ...capacityCommand(order) };
       }
