@@ -78,6 +78,8 @@ try {
   // `expected` must name keys the write sets, and must be an object.
   assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 30, expected: { commission: 0.2 } }, expect: 400 })).error, 'invalid_setting');
   assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 30, expected: 5 }, expect: 400 })).error, 'invalid_setting');
+  // ...and every key it writes must have been reviewed: an extra key rides on no `expected` value.
+  assert.equal((await call('/admin/settings', { token, body: { parcelPrice: 30, commission: 0.5, expected: { parcelPrice: 25 } }, expect: 400 })).error, 'invalid_setting');
   assert.equal((await saved()).parcelPrice, 25);
   // A client that sends no `expected` keeps the old behaviour.
   await call('/admin/settings', { token, body: { parcelPrice: 26 } });

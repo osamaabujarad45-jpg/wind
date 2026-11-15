@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, ApiError, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -49,7 +49,12 @@ export default function AdminCash() {
       haptic.success();
       if (entry.reference) setMessage(fill(c.cashRecorded, { r: entry.reference }));
       setOpen(null); reload(); reloadPending();
-    } catch (e) { fail(err(e)); setOpen(o => o && { ...o, uncertain: true }); reload(); reloadPending(); } finally { inFlight.current = false; setBusy(false); }
+    } catch (e) {
+      fail(err(e));
+      // Only a lost or failed reply can hide a recorded entry; a refusal (4xx) recorded nothing.
+      if (!(e instanceof ApiError) || (e.status ?? 0) >= 500) setOpen(o => o && { ...o, uncertain: true });
+      reload(); reloadPending();
+    } finally { inFlight.current = false; setBusy(false); }
   }
 
   // T25: the resolution is deliberate (a confirmation dialog), names a reason and an optional evidence
@@ -86,10 +91,10 @@ export default function AdminCash() {
             </View>
           </Row>
           {open?.id === row.driverId ? <View style={{ marginTop: 12 }}>
-            <Field label={open.kind === 'remittance' ? c.cashAmount : c.cashAdjustAmount} value={open.amount} keyboardType="decimal-pad" disabled={busy}
-              onChangeText={amount => setOpen({ ...open, amount, uncertain: false, requestId: open.uncertain ? newRequestId() : open.requestId })} />
-            <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500} disabled={busy}
-              onChangeText={note => setOpen({ ...open, note, uncertain: false, requestId: open.uncertain ? newRequestId() : open.requestId })} />
+            <Field label={open.kind === 'remittance' ? c.cashAmount : c.cashAdjustAmount} value={open.amount} keyboardType="decimal-pad"
+              onChangeText={amount => setOpen({ ...open, amount })} disabled={busy || !!open.uncertain} />
+            <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500}
+              onChangeText={note => setOpen({ ...open, note })} disabled={busy || !!open.uncertain} />
             <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind === 'adjustment' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}

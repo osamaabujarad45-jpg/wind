@@ -143,7 +143,7 @@ export default function Users() {
               {editing.role === 'driver' && editing.vehicle !== 'bicycle' && <Field label={c.plate} value={editing.plate} onChangeText={plate => setEditing({ ...editing, plate })} placeholder={c.plateHint} maxLength={12} disabled={busy !== null} />}
               <Row style={{ marginVertical: 10 }}>
                 <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => {
-                  const save = () => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH');
+                  const save = () => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, expectedRole: user.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH');
                   // A role change moves the account to another app: name the person, phone and both roles first. Otherwise save as before.
                   if (editing.role !== user.role) confirm(fill(c.userRoleChangeConfirm, { name: `${user.name} · ${user.phone}`, from: c[user.role], to: c[editing.role] }), save, c.save, c.cancel);
                   else void save();

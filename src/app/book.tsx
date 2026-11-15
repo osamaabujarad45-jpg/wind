@@ -414,7 +414,9 @@ function BookForm() {
   const [priceTick, setPriceTick] = useState(0);
   const requote = () => { setQuotedAt(Date.now()); setPriceTick(n => n + 1); };
   // Each answer is keyed by its inputs: while the latest does not match the form, the price is still being worked out.
-  const quotePriority: ParcelPriority = sameDayOpen ? priority : 'standard'; // a closed same-day quotes as standard
+  // Same day is booked now: a scheduled slot quotes and books standard (the server refuses same_day with a schedule).
+  const sameDayAllowed = sameDayOpen && scheduledFor == null;
+  const quotePriority: ParcelPriority = sameDayAllowed ? priority : 'standard'; // a closed or scheduled same-day quotes as standard
   const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, quotePriority, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null; error?: unknown } | null>(null);
   useEffect(() => {
@@ -517,7 +519,7 @@ function BookForm() {
       const command = pending ? { ...pending, attemptedAt: Date.now() }
         : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
           contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
-          ...(declaredScope && { declaredScope }), ...(service === 'parcel' && priority === 'same_day' && { priority }),
+          ...(declaredScope && { declaredScope }), ...(service === 'parcel' && priority === 'same_day' && sameDayAllowed && { priority }),
           ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
           ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
       setOutcome(null); // a new attempt invalidates the answer that arrived before it
@@ -604,7 +606,7 @@ function BookForm() {
     <View style={StyleSheet.absoluteFill} accessibilityElementsHidden={step === 'search'} importantForAccessibility={step === 'search' ? 'no-hide-descendants' : 'auto'} aria-hidden={step === 'search'}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={step === 'pin' ? pinZoom : 15}
       pickup={routeChosen ? previewFrom : null} dropoff={routeChosen ? previewTo : null} road={preview?.line} closed={preview?.closed} user={here}
-      insets={step === 'pin' ? { bottom: pinPanel } : { top: topBar, bottom: sheetPeek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={40}
+      insets={step === 'pin' ? { bottom: pinPanel + keyboardInset } : { top: topBar, bottom: sheetPeek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={40}
       labels={step === 'trip' && routeChosen ? { pickup: pickupTitle, dropoff: dropoffTitle } : null}
       eta={step === 'trip' && routeChosen && minutes !== null ? etaShort(c, minutes, slowRoute) : null}
       label={step === 'pin' ? `${pinFor === 'pickup' ? c.setPickupTitle : c.setDropoffTitle}. ${c.pinHint}` : routeChosen ? `${c.routeOnMap}: ${pickupTitle} → ${dropoffTitle}` : c.pinHint}
@@ -741,8 +743,8 @@ function BookForm() {
         {service === 'parcel' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.parcelPriority}</Txt>
           <Choices label={c.parcelPriority} disabled={locked}
-            items={[{ key: 'standard', label: c.priority_standard }, { key: 'same_day', label: c.priority_same_day, disabled: !sameDayOpen }]}
-            value={pending ? pending.payload.priority ?? 'standard' : sameDayOpen ? priority : 'standard'} onChange={k => setPriority(k === 'same_day' ? 'same_day' : 'standard')} />
+            items={[{ key: 'standard', label: c.priority_standard }, { key: 'same_day', label: c.priority_same_day, disabled: !sameDayAllowed }]}
+            value={pending ? pending.payload.priority ?? 'standard' : sameDayAllowed ? priority : 'standard'} onChange={k => setPriority(k === 'same_day' ? 'same_day' : 'standard')} />
           <Txt variant="caption">{sameDayOpen ? c.priorityPolicy : c.priorityClosed}</Txt>
         </>}
         {service === 'freight' && <>

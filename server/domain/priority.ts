@@ -5,8 +5,9 @@ import { sameDayBookingOpen, validParcelPriority, type ParcelPriority } from '..
 type Fail = (status: number, message: string) => never;
 
 /** The priority a booking commits. Omitted means standard, so every pre-A12 client keeps its meaning. */
-export function bookingPriority(service: unknown, value: unknown, fail: Fail): ParcelPriority {
+export function bookingPriority(service: unknown, value: unknown, fail: Fail, scheduledFor: unknown = null): ParcelPriority {
   if (!validParcelPriority(service, value)) fail(400, 'invalid_priority');
+  if (value === 'same_day' && scheduledFor != null) fail(400, 'invalid_priority'); // same day is booked now, never for a later slot
   return (value ?? 'standard') as ParcelPriority;
 }
 
