@@ -2,6 +2,23 @@
 
 Read this first. The plan and its reasoning are in `docs/REA/2026-11-15-PLAN-VS-FABLE-PATH.md`. This page holds the state: what is live, what merged, what is open, and how to run things.
 
+## Evening update (15 Nov, ~21:00 UTC) — read this section first
+
+- **Production:** image `20261115-azure8` = master `b4cabc9` (deployed with a backup first; rollback container `wind-api-pre-20261115-azure8`). Health and ready return 200.
+- **APK 1.1.3 (versionCode 32)** from `b4cabc9` is built on EAS and published to `downloads/wind.apk` + `wind-32.apk`. See the publish line at the end of this section; 1.1.2 (versionCode 31) was built but superseded and never published.
+- **C-01 fixed and verified on the A53 (#56).** Root cause: expo-crypto 57's Android `AESSealedData.fromCombined` rejects a base64 string. Every protected recovery record (the offline `summary` and the driver `command` slot) could be written but never opened. `open()` now passes bytes. On the device, an offline cold launch now lists the saved orders, read-only and labelled stale, and reconnect recovers by itself with no duplicates. `tests/recovery-storage.test.mjs` fails on the old code.
+- **C-07 verified (#51 + #54):** zoom buttons, the spoken coordinates and the coordinate/link/Plus Code field work; the panel stays above the keyboard; typed `31.9038,35.2034` moves the pin; Confirm is still required.
+- **Second review done:** Claude Haiku 5.5 (xhigh) reviewed #47–#56. Its valid findings are fixed in **#58**:
+  - cash double-credit guard (an uncertain remittance is locked; replay re-checked under the lock);
+  - role edit compare-and-set (`expectedRole`);
+  - `expected` must cover every settings key;
+  - same-day refused with a scheduled slot;
+  - replay re-authorizes after the rejection read;
+  - pin inset includes the keyboard.
+  Declined (Low): the #48 stale settings baseline, which the server compare-and-set still guards.
+- **Published:** APK 1.1.3 sha256 `949738de…`, signer `5947bab0…`, installed over 1.1.1 on the A53 with data kept. Forced-update floor still unset (set `WIND_MIN_CLIENT_BUILD=10103` to push everyone).
+- **Still open:** Fable UX-05 (driver support status + multi-recipient), A14 (native deadline re-arm), the WP-09 delivery-failure re-scope, the SCOPE audit, and the rest of the Appendix F phone matrix on a 1.1.3 QA build. Owner-only items are unchanged (alert route, SMS, email domain, Option A, Basv2 quota).
+
 ## Production (as of 17:25 UTC, 15 Nov)
 
 - **Live:** image `20261115-azure6` = master `ec6b951` (deployed 17:12 UTC; backup first; rollback container `wind-api-pre-20261115-azure6`). Health, ready and phone/capabilities return 200 on both the Azure host and CloudFront. Schema now has the door-cash columns, the write-once trigger and `priority`.
