@@ -48,6 +48,8 @@ function harness(overrides = {}) {
     option: 'small', loadingHelp: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
     ...overrides,
   };
+  // Derived like book.tsx: same day is booked now, never with a scheduled slot.
+  state.sameDayAllowed ??= state.sameDayOpen && state.scheduledFor == null;
   const calls = { writes: [], posts: [], setChecking: [], setPromo: [], navigations: [] };
   const context = {
     sending: { current: false }, settled: { current: false }, latest: { current: null }, scrollRef: { current: null }, fixMarked: { current: false },
@@ -103,6 +105,12 @@ await check('submit before the form is ready does nothing', async () => { const 
 await check('submit for an unavailable service without pending does nothing', async () => { const h = harness({ available: false }); await h.submit(); noWrites(h); });
 
 await check('same-day submit after the cutoff: zero storage writes, zero POSTs', async () => { const h = harness({ priority: 'same_day', sameDayOpen: false }); await h.submit(); noWrites(h); });
+await check('same-day with a scheduled slot posts standard (same day is booked now)', async () => {
+  const h = harness({ priority: 'same_day', scheduledFor: Date.now() + 3 * 60 * 60_000 });
+  await h.submit();
+  assert.equal(h.calls.posts.length, 1);
+  assert.equal(h.calls.posts[0].body.priority, undefined, 'no same_day on a scheduled booking');
+});
 await check('same-day submit before the cutoff stores and posts the attribute', async () => {
   const h = harness({ priority: 'same_day' });
   await h.submit();

@@ -66,6 +66,8 @@ try {
 
   // A courier with nothing in hand is blocked as before.
   await call(`/admin/users/${spare.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' }, expect: 409 }); // spare now holds a job
+  // An edit built on a role another admin has since changed is refused instead of reverting it (review on #48).
+  assert.equal((await call(`/admin/users/${spare.user.id}`, { token: admin.token, method: 'PATCH', body: { name: 'Spare', expectedRole: 'customer' }, expect: 409 })).error, 'user_changed');
   await call(`/orders/${assigned.id}/cancel`, { token: customer.token, body: {} });
   await call(`/admin/users/${spare.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } });
 

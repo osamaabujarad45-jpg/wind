@@ -1396,7 +1396,7 @@ async function recommend(user: User, b: Row) {
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
-  const priority = bookingPriority(service, b.priority, fail);
+  const priority = bookingPriority(service, b.priority, fail, b.scheduledFor ?? null);
   const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
   let trip: RoadRoute | null = null;
@@ -1599,7 +1599,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const service = quoted.service as Service;
     if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
     if (Number(quoted.shared) === 1) fail(409, 'pooling_unavailable');
-    const priority = bookingPriority(quoted.service, body.priority, fail);
+    const priority = bookingPriority(quoted.service, body.priority, fail, quoted.scheduled_for ?? null);
     if (priority !== (quoted.priority ?? 'standard')) fail(409, 'itinerary_changed');
     const price = Number(quoted.price_minor) / 100;
     const nowTs = Date.now();
@@ -1669,7 +1669,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     : service === 'ride' ? fail(400, 'invalid_input') : normalizePhone(String(body.recipientPhone)) ?? fail(400, 'invalid_phone');
   const recipientName = recipientPhone ? text(body.recipientName ?? '', 60, false) : '';
   // Smart orders arrive with their recommendation; Souq and apps before 1.0.8 keep the fixed tariff.
-  const priority = bookingPriority(service, body.priority, fail);
+  const priority = bookingPriority(service, body.priority, fail, body.scheduledFor ?? null);
   const price = recommended ?? quote((await settings()), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
     plus: (await activePlan(user.id)) === 'plus' });
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
@@ -1757,7 +1757,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
     if (!existing) {
       // A12: a cutoff refusal is terminal for its key; the same key cannot succeed later because the clock moved.
       const rejected = (await one('SELECT payload_hash, error FROM order_command_rejections WHERE user_id = ? AND request_id = ?', user.id, requestId));
-      if (rejected) fail(409, rejected.payload_hash === hash ? rejected.error : 'idempotency_conflict');
+      if (rejected) { user = await authorize(); fail(409, rejected.payload_hash === hash ? rejected.error : 'idempotency_conflict'); }
       return null;
     }
     // The receipt read can wait on a committing writer: authority is re-read after it, so a logout or reset during that wait
@@ -3119,6 +3119,13 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', Number(body.driverId));
+    // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
+    const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
+    if (raced) {
+      if (raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount) fail(409, 'idempotency_conflict');
+      (await persistence.exec('ROLLBACK'));
+      return cashEntry(raced);
+    }
     const balance = (await cashBalances('u.id = ?', Number(body.driverId)))[0] ?? fail(404, 'not_found');
     // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
     if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
@@ -3236,6 +3243,8 @@ const editUser: Handler = async ({ user, params, body }) => {
   need(user, 'admin');
   const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   if (target.role === 'admin') fail(409, 'cannot_change_admin');
+  // The role the editing admin saw: another admin's role change in between is refused, not silently reverted.
+  if (body.expectedRole !== undefined && body.expectedRole !== target.role) fail(409, 'user_changed');
   const name = body.name === undefined ? target.name : text(body.name, 60);
   const phone = body.phone === undefined ? target.phone : normalizePhone(String(body.phone)) ?? fail(400, 'invalid_phone');
   const email = body.email === undefined ? target.email ?? null : body.email === null || body.email === '' ? null : normalizeEmail(body.email) ?? fail(400, 'invalid_email');
@@ -3456,6 +3465,7 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
   // Clients that predate it send no `expected` and keep the old behaviour.
   if (expected !== undefined && (!expected || typeof expected !== 'object' || Array.isArray(expected))) fail(400, 'invalid_setting');
   for (const key of Object.keys(expected ?? {})) if (!(key in body)) fail(400, 'invalid_setting');
+  if (expected !== undefined) for (const key of Object.keys(body)) if (!(key in expected)) fail(400, 'invalid_setting');
   for (const [key, value] of Object.entries(body)) {
     const n = Number(value);
     if (!(key in defaultSettings) || !Number.isFinite(n) || n < 0 || (fractionSettings.includes(key as keyof Settings) && n >= 1)) fail(400, 'invalid_setting');

@@ -141,6 +141,8 @@ try {
   assert.equal((await book(late.token, { ...input(late.user), service: 'ride', option: '1', priority: 'same_day' }, 400)).error, 'invalid_priority');
   assert.equal((await book(late.token, { ...input(late.user), service: 'freight', option: 'small', priority: 'standard' }, 400)).error, 'invalid_priority');
   assert.equal((await call('/price', { token: late.token, body: { ...input(late.user), service: 'ride', option: '1', priority: 'standard' }, expect: 400 })).error, 'invalid_priority');
+  // Same day is booked now: a scheduled slot with same_day is refused (review on #49).
+  assert.equal((await call('/price', { token: late.token, body: { ...input(late.user), priority: 'same_day', scheduledFor: now + 3 * 60 * 60_000 }, expect: 400 })).error, 'invalid_priority');
 
   // A route wait can cross noon: the policy is judged again at the order write, and the refusal is recorded.
   const crossing = await customer();

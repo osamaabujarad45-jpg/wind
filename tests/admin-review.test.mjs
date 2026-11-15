@@ -333,7 +333,7 @@ for (const language of ['ar', 'en']) {
     review.yes(); await flush();
     assert.deepEqual(view.calls, [{
       path: '/admin/users/2', method: 'PATCH',
-      body: { name: 'Customer', email: null, phone: user.phone, role: 'driver', vehicle: 'car', plate: null },
+      body: { name: 'Customer', email: null, phone: user.phone, role: 'driver', expectedRole: 'customer', vehicle: 'car', plate: null },
     }]);
   }
 
@@ -356,7 +356,7 @@ for (const language of ['ar', 'en']) {
     assert.equal(view.dialogs.length, 0, 'an unchanged role does not prompt');
     assert.deepEqual(view.calls, [{
       path: '/admin/users/2', method: 'PATCH',
-      body: { name: 'Renamed', email: null, phone: user.phone, role: 'customer', vehicle: 'car', plate: null },
+      body: { name: 'Renamed', email: null, phone: user.phone, role: 'customer', expectedRole: 'customer', vehicle: 'car', plate: null },
     }]);
   }
 }
@@ -374,6 +374,9 @@ for (const language of ['ar', 'en']) {
   const first = view.calls.at(-1);
   assert.equal(first.path, '/admin/cash/remittance');
   assert.ok(shows(view.render(), c.cashUncertain), `${language}: a lost reply says the receipt may be recorded`);
+  // The amount and note are fixed until it is settled: an edited one would be a second receipt for cash already on record.
+  assert.equal(field(view.render(), c.cashAmount).disabled, true, `${language}: the amount is locked while the first send is unknown`);
+  assert.equal(field(view.render(), c.problemNote).disabled, true);
   await tap(view, c.cashRetrySame); await flush();
   const second = view.calls.at(-1);
   assert.equal(second.path, '/admin/cash/remittance');
