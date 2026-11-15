@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles, exceptionReasons, exceptionNextAction, suggestedNextAction } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -109,3 +109,14 @@ assert.deepEqual(sheet.map(g => [g.stage, g.city, g.orders.map(x => x.id)]), [
   ['pickup', 'bireh', [8]], ['pickup', 'ramallah', [3]], ['deliver', 'nablus', [2, 5, 9]], ['deliver', 'jenin', [6]], ['return', 'hebron', [4]]]);
 assert.deepEqual(runSheet([]), []);
 console.log('Run sheet checks passed');
+// PROD-06: every delivery-failure type has a next action, and none of them is a cash-variance reason (A11 keeps those).
+assert.deepEqual(Object.keys(exceptionNextAction).sort(), [...exceptionReasons].sort());
+for (const reason of exceptionReasons) assert.ok(['reattempt', 'return'].includes(exceptionNextAction[reason]), reason);
+// Holds written by support or scope checks, and reasons from another build, carry no suggestion (the card then shows none
+// and keeps reattempt as the default button).
+for (const reason of ['support', 'scope_mismatch', 'lost_in_space', 'toString', '', null, undefined]) assert.equal(suggestedNextAction(reason), undefined, String(reason));
+assert.equal(suggestedNextAction('refused'), 'return');
+assert.equal(suggestedNextAction('rescheduled'), 'reattempt');
+assert.equal(exceptionNextAction.access_blocked, 'reattempt');
+assert.equal(exceptionNextAction.damaged, 'return');
+

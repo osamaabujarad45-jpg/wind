@@ -97,6 +97,9 @@ assert.equal(readDriverCommand({ ...command, payload: { code: '1234', collectedC
 for (const payload of [{ varianceReason: 'PARTIAL_PAYMENT' }, { collectedCents: 1.5 }, { collectedCents: 4000, varianceReason: 'tip' }])
   assert.throws(() => readDriverCommand({ ...command, payload: { code: '1234', ...payload } }), /invalid_pending_command/, JSON.stringify(payload));
 assert.equal(readDriverCommand({ ...command, action: 'exception', payload: { reason: 'absent', note: '' } }).action, 'exception', 'an exception with no cash stays valid');
+for (const reason of ['rescheduled', 'access_blocked', 'damaged'])
+  assert.equal(readDriverCommand({ ...command, action: 'exception', payload: { reason, note: '' } }).payload.reason, reason, `queued ${reason} stays valid`);
+assert.throws(() => readDriverCommand({ ...command, action: 'exception', payload: { reason: 'lost_in_space', note: '' } }), /invalid_pending_command/);
 assert.throws(() => readDriverCommand({ ...command, action: 'exception', payload: { reason: 'absent', note: '', collectedCents: 4000 } }), /invalid_pending_command/, 'cash never rides on an exception');
 const proof = { expectedStatus: 'at_pickup', code: '1234', expectedPinRevision: 1 };
 const held = advanceRequest(null, 5, proof, () => 'first');
