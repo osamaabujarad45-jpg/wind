@@ -9,6 +9,7 @@ COPY assets ./assets
 COPY plugins ./plugins
 COPY src ./src
 COPY public ./public
+COPY scripts/retired-api-hosts.json ./scripts/
 ARG EXPO_PUBLIC_API_URL
 # Support WhatsApp in international digits (e.g. 972597127547); unset hides the support buttons, as in the native build.
 ARG EXPO_PUBLIC_SUPPORT_WHATSAPP=

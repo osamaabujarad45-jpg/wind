@@ -1,6 +1,6 @@
 param(
-    [string]$TargetHost = 'windadmin@20.91.209.132',
-    [string]$IdentityFile = "$env:USERPROFILE\.ssh\wind-vm_ed25519",
+    [string]$TargetHost = 'windadmin@windapp-ps.swedencentral.cloudapp.azure.com',
+    [string]$IdentityFile = "$env:USERPROFILE\.ssh\wind-azure",
     [string]$ContainerName = 'wind-api',
     [string]$OutputDirectory = "$env:LOCALAPPDATA\SouqWindPrivate\backups",
     [switch]$VerifyLatest

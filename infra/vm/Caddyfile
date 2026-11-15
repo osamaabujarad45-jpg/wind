@@ -2,8 +2,9 @@
 # Let's Encrypt certificate for it and is the only thing listening on 80 and 443. Port 80 answers certificate checks and redirects.
 {$WIND_ORIGIN} {
 	reverse_proxy wind-api:4000 {
-		# Callers reach Caddy directly, so any X-Forwarded-For they send is ignored: Caddy sets it to the caller's own address,
-		# and the API keys its per-address limits on the last entry (server/domain/client-address.ts).
+		# Callers reach Caddy directly and no trusted_proxies are set, so Caddy does not trust a caller's X-Forwarded-For; the last
+		# entry it sends is always the TCP peer, which is what the API keys its per-address limits on (server/domain/client-address.ts).
+		# The API listens on 127.0.0.1:4000 only (deploy.sh) and the NSG admits 80/443, so nothing reaches it except through Caddy.
 		transport http {
 			keepalive 4s # below Node's 5 s keepAliveTimeout, so Caddy never reuses a socket the API just closed
 		}

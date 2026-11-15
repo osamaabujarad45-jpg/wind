@@ -46,7 +46,7 @@ if (process.env.WIND_GOOGLE_MAPS === '1') {
 if (release) {
   let url;
   try { url = new URL(apiUrl); } catch { /* handled below */ }
-  const host = url?.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const host = url?.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   const local = !host || !host.includes('.') || /^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::|f[cd][0-9a-f]{2}:|fe80:)/.test(host)
     || /\.(localhost|local|test|invalid|example)$/.test(host)
     || /(^|\.)example\.(com|org|net)$/.test(host);
