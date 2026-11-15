@@ -3,7 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import type { Subscription } from '../../model';
 import { useFormat } from '../../parts';
-import { Appear, Badge, Button, Card, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
 export default function Subscriptions() {
   const { c, money, err } = useCopy();
@@ -27,6 +27,11 @@ export default function Subscriptions() {
     setBusy(null);
   }
 
+  // A-03: a decision names who, which plan and how much before it is sent; activation is the admin confirming payment arrived.
+  const review = (sub: Subscription, action: 'activate' | 'reject') => confirm(
+    fill(action === 'activate' ? c.subActivateReview : c.subRejectReview, { n: sub.userName, p: sub.plan === 'plus' ? c.plusTitle : c.proTitle, a: money(sub.price) }),
+    () => void decide(sub, action), action === 'activate' ? c.activate : c.reject, c.cancel);
+
   return <Screen onRefresh={reload} scrollRef={list}>
     <Header title={c.subscriptions} />
     <ErrorText>{actionError || (error && err(error))}</ErrorText>
@@ -45,8 +50,8 @@ export default function Subscriptions() {
             {sub.status === 'pending' && <Row gap={8} style={{ marginTop: 12 }}>
               {/* T22: while any decision is in flight both controls wait — the server CAS makes the loser
                   a 409 anyway, and the UI never invites the second tap. */}
-              <View style={{ flex: 1 }}><Button title={c.activate} loading={busy === `${sub.id}activate`} disabled={busy !== null} onPress={() => decide(sub, 'activate')} /></View>
-              <View style={{ flex: 1 }}><Button title={c.reject} variant="danger" loading={busy === `${sub.id}reject`} disabled={busy !== null} onPress={() => decide(sub, 'reject')} /></View>
+              <View style={{ flex: 1 }}><Button title={c.activate} loading={busy === `${sub.id}activate`} disabled={busy !== null} onPress={() => review(sub, 'activate')} /></View>
+              <View style={{ flex: 1 }}><Button title={c.reject} variant="danger" loading={busy === `${sub.id}reject`} disabled={busy !== null} onPress={() => review(sub, 'reject')} /></View>
             </Row>}
           </Card>
         </Appear>;
