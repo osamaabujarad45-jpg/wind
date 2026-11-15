@@ -167,6 +167,7 @@ try {
   assert.match(buildScript, /\[ValidateSet\('Scripted', 'Ordinary'\)\]/, 'build script offers the ordinary sign-in switch');
   assert.match(buildScript, /\$env:WIND_TEST_SANDBOX = '1'\s+Remove-Item Env:WIND_TEST_ROLE, Env:WIND_TEST_IDENTIFIER, Env:WIND_TEST_PASSWORD/, 'ordinary build clears every credential variable');
   assert.match(buildScript, /GOOGLE_MAPS_ANDROID_KEY, Env:GOOGLE_MAPS_IOS_KEY/, 'build clears the Google keys');
+  assert.match(buildScript, /check-test-apk.mjs/, 'ordinary APK is scanned by the tested Node module');
   assert.match(buildScript, /must carry no credentials and its own application ID/, 'ordinary APK is checked for credentials');
   console.log('Phone build boundaries passed: isolated role IDs/cache, loopback-only Debug policy, embedded bundle and intact Release guards; Google opt-in fails early without a restricted platform key and never leaks key strings into public config');
 } finally {

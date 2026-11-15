@@ -165,11 +165,11 @@ try {
         $phoneConfigValue = $phoneConfigText | ConvertFrom-Json
         $phoneExpectedAccount = $phoneProvision.roles.$phoneRole
         if ($phoneRole -eq 'ordinary') {
-          # No credential of any provisioned account may be anywhere in the embedded configuration.
-          $phoneLeaks = @($phoneProvision.roles.PSObject.Properties.Value | Where-Object { $phoneConfigText.Contains([string]$_.password) -or $phoneConfigText.Contains([string]$_.identifier) })
-          if ($phoneConfigValue.android.package -ne 'ps.wind.app.testordinary' -or $phoneConfigValue.extra.phoneTest -or $phoneLeaks.Count) {
-            throw 'The ordinary-sign-in APK must carry no credentials and its own application ID.'
-          }
+          # Every zip entry is scanned for every provisioned identifier, password and token (unit-tested in CI).
+          # Logged, so a Windows PowerShell 5.1 stderr line cannot end the build before its exit code is read.
+          $phoneScanLog = Join-Path $phoneLogs "$phoneRole-credential-scan.log"
+          Invoke-Logged $phoneScanLog { & node (Join-Path $phoneSource 'scripts\check-test-apk.mjs') $phoneApk $ProvisionPath }
+          if ($LASTEXITCODE -ne 0) { throw "The ordinary-sign-in APK must carry no credentials and its own application ID (see $phoneScanLog)." }
         } elseif ($phoneConfigValue.android.package -ne "ps.wind.app.test$phoneRole" -or
             $phoneConfigValue.extra.phoneTest.role -ne $phoneRole -or
             $phoneConfigValue.extra.phoneTest.identifier -ne $phoneExpectedAccount.identifier -or
@@ -180,7 +180,9 @@ try {
       $phoneAapt = Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\aapt.exe'
       $phonePackage = "ps.wind.app.test$phoneRole"
       $phoneExpectedPackage = [regex]::Escape($phonePackage)
-      $phoneBadging = & $phoneAapt dump badging $phoneApk 2>&1
+      $phoneBadgingLog = Join-Path $phoneLogs "$phoneRole-badging.log"
+      Invoke-Logged $phoneBadgingLog { & $phoneAapt dump badging $phoneApk }
+      $phoneBadging = Get-Content -LiteralPath $phoneBadgingLog
       if ($LASTEXITCODE -ne 0 -or !($phoneBadging -match "package: name='$phoneExpectedPackage'")) { throw 'The APK application ID does not match its test role.' }
       $phoneArtifact = Join-Path $phoneOutput "wind-$phoneRole.apk"
       Copy-Item -LiteralPath $phoneApk -Destination $phoneArtifact -Force
