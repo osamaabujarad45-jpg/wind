@@ -32,6 +32,7 @@ const tokensOf = (text: string) => foldPlace(text).split(' ').filter(Boolean).fl
   const bare = stripLatinAl(stripAl(token));
   return bare === token ? [token] : [token, bare];
 });
+const ARTICLES = new Set(['al', 'el', 'ال']);
 /** One spelling for a whole name: "al bireh", "Al-Bireh", "Albireh" and "bireh" are the same place name. */
 const nameKey = (name: string) => stripLatinAl(stripAl(name.replace(/ /g, '')));
 
@@ -99,7 +100,8 @@ export function suggestPlaces(query: string, lang: Lang, near: Point | null, lim
     let exactWord = 0, ok = true;
     for (const term of terms) {
       let hit = false;
-      for (const token of row.tokens) if (token.startsWith(term)) { hit = true; if (token === term) exactWord++; break; }
+      // An article on its own ("al", "el", "ال") is not a word that tells places apart: it never earns the exact-word bonus.
+      for (const token of row.tokens) if (token.startsWith(term)) { hit = true; if (token === term && !ARTICLES.has(term)) exactWord++; break; }
       if (!hit) { ok = false; break; }
     }
     if (!ok) continue;
