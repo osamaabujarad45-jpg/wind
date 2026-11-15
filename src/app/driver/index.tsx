@@ -16,6 +16,7 @@ import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-fl
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
+import { DriverSupportCard } from '../../driver-support-card';
 import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
@@ -205,6 +206,7 @@ export default function Jobs() {
       </Press>
       {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read 2.4:1 */}
     </Card>}
+    {assigned && work.known && <DriverSupportCard diagnostics={work.diagnostics} />}
 
     {/* During a job presence is stopped (driver-work) and Go online can't be pressed; the card returns if it has something to say. */}
     {presenceOn && !(assigned && !work.presenceError && !work.presencePending) ? <>

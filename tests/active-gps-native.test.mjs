@@ -13,7 +13,7 @@ const modules={
 };
 const hooks=registerHooks({resolve(specifier,context,next){if(context.parentURL?.endsWith('/src/background-location.ts')){
   if(specifier in modules)return {url:'test:'+specifier,shortCircuit:true};
-  if(specifier==='./location-delivery'||specifier==='./active-gps-session')return {url:new URL('../src/'+specifier.slice(2)+'.ts',import.meta.url).href,shortCircuit:true};
+  if(specifier==='./location-delivery'||specifier==='./active-gps-session'||specifier==='./driver-location-diagnostics')return {url:new URL('../src/'+specifier.slice(2)+'.ts',import.meta.url).href,shortCircuit:true};
 }return next(specifier,context);},load(url,context,next){if(url.startsWith('test:'))return {format:'module',source:modules[url.slice(5)],shortCircuit:true};return next(url,context);}});
 const previousFetch=globalThis.fetch, previousNow=Date.now;
 const performanceDescriptor=Object.getOwnPropertyDescriptor(globalThis,'performance');

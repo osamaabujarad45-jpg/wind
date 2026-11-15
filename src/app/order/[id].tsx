@@ -10,7 +10,7 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -55,6 +55,11 @@ export default function OrderScreen() {
   const { me } = useSession();
   const work = useDriverWork();
   const { c, language, money, err, row, rtl } = useCopy();
+  // A reason this build has no words for (a newer build's, or support's own holds) shows the title alone, never "undefined".
+  const reasonLine = (title: string, key: string) => {
+    const label = (c as Record<string, string | undefined>)[key];
+    return label ? `${title}: ${label}` : title;
+  };
   const { time } = useFormat();
   const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
@@ -71,6 +76,7 @@ export default function OrderScreen() {
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
     ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
+  const suggested = suggestedNextAction(order ? order.exceptionReason : null);
   const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
   useEffect(() => {
     if (!order || !me) return;
@@ -392,7 +398,7 @@ export default function OrderScreen() {
     {order.status === 'cancelled' && order.exceptionReason && <Card tone="clay" style={{ paddingVertical: 12 }}>
       {/* only a failed pickup cancels with a reason; the status card is gone once cancelled */}
       <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.clayInk} />
-        <Txt variant="title" style={{ flex: 1, color: palette.clayInk }}>{`${c.pickupFailed}: ${c[`pickup_${order.exceptionReason}`]}`}</Txt></Row>
+        <Txt variant="title" style={{ flex: 1, color: palette.clayInk }}>{reasonLine(c.pickupFailed, `pickup_${order.exceptionReason}`)}</Txt></Row>
     </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
@@ -417,7 +423,7 @@ export default function OrderScreen() {
           </Row>
         </View>}
         {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
-          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{`${c.exceptionTitle}: ${c[`reason_${order.exceptionReason}`]}`}</Txt>}
+          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{reasonLine(c.exceptionTitle, `reason_${order.exceptionReason}`)}</Txt>}
       </Card>
     </Appear>}
 
@@ -509,9 +515,11 @@ export default function OrderScreen() {
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
+      {suggested && <Txt variant="caption" style={{ marginBottom: 8 }}>
+        {fill(c.suggestedNext, { a: suggested === 'return' ? c.returnToSender : c.reattempt })}</Txt>}
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
-          variant={action === 'reattempt' ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
+          variant={action === (suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}

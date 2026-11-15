@@ -35,8 +35,20 @@ export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
 export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled'
   | 'on_hold' | 'returning' | 'returned';
-export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
-export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
+// Fable PROD-06: why a delivery (or pickup) could not happen. A typed list, separate from door-cash variance (A11) and from
+// safety reports; each type maps to the recovery support usually takes, which the admin sees as the suggested decision.
+export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address' | 'rescheduled' | 'access_blocked' | 'damaged';
+export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address', 'rescheduled', 'access_blocked', 'damaged'];
+/** The usual next step for each failure: try again (absent, unreachable, a corrected address, a new time, a reopened road)
+ *  or take it back to the sender (refused, damaged). Support still decides; this only orders the choices. */
+export const exceptionNextAction: Record<ExceptionReason, 'reattempt' | 'return'> = {
+  absent: 'reattempt', unreachable: 'reattempt', wrong_address: 'reattempt', rescheduled: 'reattempt', access_blocked: 'reattempt',
+  refused: 'return', damaged: 'return',
+};
+/** The suggestion for a stored hold reason. Holds also carry values outside the driver's list (support, scope_mismatch)
+ *  and older or newer builds may send ones this build does not know: those have no suggestion. */
+export const suggestedNextAction = (reason: string | null | undefined) =>
+  reason && Object.hasOwn(exceptionNextAction, reason) ? exceptionNextAction[reason as ExceptionReason] : undefined;
 // WP-01 / Fable A11: why the cash taken at the door differs from what was due. The owner-approved vocabulary
 // (docs/fable/OWNER-DECISIONS-2026-11-14.md); evidence for disputes, never free text.
 export type VarianceReason = 'PARTIAL_PAYMENT' | 'CUSTOMER_DID_NOT_PAY' | 'APPROVED_DISCOUNT' | 'RETURNED_ITEMS' | 'INCORRECT_CASH' | 'OTHER_ADMIN_REVIEW';
