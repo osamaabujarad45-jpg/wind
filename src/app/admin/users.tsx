@@ -142,7 +142,12 @@ export default function Users() {
               {editing.role === 'driver' && <View style={{ marginTop: 8 }}><Choices items={vehicles.map(key => ({ key, label: c[key] }))} value={editing.vehicle} onChange={vehicle => setEditing({ ...editing, vehicle })} disabled={busy !== null} /></View>}
               {editing.role === 'driver' && editing.vehicle !== 'bicycle' && <Field label={c.plate} value={editing.plate} onChangeText={plate => setEditing({ ...editing, plate })} placeholder={c.plateHint} maxLength={12} disabled={busy !== null} />}
               <Row style={{ marginVertical: 10 }}>
-                <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH')} /></View>
+                <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => {
+                  const save = () => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH');
+                  // A role change moves the account to another app: name the person, phone and both roles first. Otherwise save as before.
+                  if (editing.role !== user.role) confirm(fill(c.userRoleChangeConfirm, { name: `${user.name} · ${user.phone}`, from: c[user.role], to: c[editing.role] }), save, c.save, c.cancel);
+                  else void save();
+                }} /></View>
                 <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>
               </Row>
               {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clayInk }}>{fill(c.tempPassword, { password: temp.password })}</Txt>

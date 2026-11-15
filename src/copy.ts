@@ -1189,6 +1189,11 @@ const ar = {
   chartMax: 'الأعلى',
   openOrder: 'فتح الطلب',
   noSubscriptions: 'لا توجد طلبات اشتراك',
+  // --- UX-02 admin review (begin): settings and role edits show old → new before they are saved ---
+  settingsReview: 'حفظ هذه التغييرات؟\n{changes}',
+  userRoleChangeConfirm: 'حفظ تغيير دور {name} من {from} إلى {to}؟ راجع الدورين القديم والجديد قبل المتابعة.',
+  err_settings_changed: 'غيّر مسؤول آخر هذه الإعدادات منذ فتح الشاشة. راجع القيم الحالية ثم احفظ مرة أخرى.',
+  // --- UX-02 admin review (end) ---
 };
 
 export type CopyKey = keyof typeof ar;
@@ -2358,6 +2363,11 @@ const en: Copy = {
   chartMax: 'Max',
   openOrder: 'Open order',
   noSubscriptions: 'No plan requests',
+  // --- UX-02 admin review (begin): settings and role edits show old → new before they are saved ---
+  settingsReview: 'Save these changes?\n{changes}',
+  userRoleChangeConfirm: 'Save the role change for {name} from {from} to {to}? Check the old and new roles before continuing.',
+  err_settings_changed: 'Another admin changed these settings after you opened the screen. Review the current values and save again.',
+  // --- UX-02 admin review (end) ---
 };
 
 export const copy = { ar: ar as Copy, en };
