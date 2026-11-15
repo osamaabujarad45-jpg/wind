@@ -1,5 +1,7 @@
 @AGENTS.md
 
+**Start here (15 Nov 2026):** `docs/HANDOFF-2026-11-15-OPUS-LEAD.md` (what is live, what merged, open work, K5/phone recipes) and `docs/REA/2026-11-15-PLAN-VS-FABLE-PATH.md` (the work order; it follows the Fable 5.2 path in `docs/fable/`). Fable's unmerged implementation is preserved on branch `backup/fable-candidate6-20261115`: port from it, don't re-invent.
+
 Finishing the app: the lead's master plan is `docs/PLAN-2026-11-10-ASTRA-6-FINISH-WIND.md` (rules, sub-agent routing, gates, roadmap, owner decisions). Maps work: start at `docs/HANDOFF-2026-11-10-MAPS-FOR-ASTRA-6.md` (how the maps work at `1cd0de8`, what is unproven, ranked work queue). Latest handoffs: `docs/HANDOFF-2026-10-31-maps-real-data.md` (real map data, OSM place search, pilot readiness) and `docs/HANDOFF-2026-10-30-phone-acceptance.md` (A53 acceptance, CI repairs, decoder advisory, k5 isolation). Earlier: `docs/HANDOFF-2026-10-21-deploy.md`, `docs/HANDOFF-2026-09-29-uber-careem-redesign.md`, `docs/HANDOFF-2026-09-28-brand-and-screens.md`.
 
 ## Seeing the app
