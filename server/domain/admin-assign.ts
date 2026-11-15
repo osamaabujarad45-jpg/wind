@@ -86,8 +86,8 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
         await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', orderId);
       }
-      const driver = await one('SELECT id, role, status, vehicle, approved_at FROM users WHERE id = ?', driverId);
-      if (!driver || driver.role !== 'driver') fail(404, 'not_found');
+      const driver = (await one('SELECT id, role, status, vehicle, approved_at FROM users WHERE id = ?', driverId)) ?? fail(404, 'not_found');
+      if (driver.role !== 'driver') fail(404, 'not_found');
       const order = (await one('SELECT * FROM orders WHERE id = ?', orderId)) ?? fail(404, 'not_found');
       // A double submit (or a second admin choosing the same driver) finds the work already done.
       if (order.driver_id === driverId && ['assigned', 'at_pickup'].includes(order.status as string)) { /* nothing to do */ } else {
