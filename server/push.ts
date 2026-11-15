@@ -55,6 +55,8 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   destination_request: { ar: 'طلب الزبون تغيير الوجهة. افتح ويند للرد.', en: 'The customer asked to change the destination. Open Wind to respond.' },
   destination_accepted: { ar: 'قبل السائق تغيير الوجهة.', en: 'The driver accepted the new destination.' },
   destination_declined: { ar: 'لم يقبل السائق تغيير الوجهة.', en: 'The driver declined the new destination.' },
+  admin_assigned: { ar: 'أسندت إليك الإدارة طلباً. افتح ويند للتفاصيل.', en: 'Dispatch assigned you a job. Open Wind for details.' },
+  admin_unassigned: { ar: 'نقلت الإدارة طلبك إلى سائق آخر. لا تتوجه إلى الاستلام.', en: 'Dispatch moved your job to another driver. Do not go to the pickup.' },
 };
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 
