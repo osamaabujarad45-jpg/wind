@@ -104,7 +104,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await forget().catch(() => { if (dead === apiSessionCredential()) endLocally(); });
   }, [forget, endLocally]);
   const languageRef = useRef(language);
-  languageRef.current = language;
+  useEffect(() => { languageRef.current = language; }, [language]);
   // The 401 carries no reason (it must not tell a stolen token whose account it was); sign-in does, once the password is right.
   const expired = useCallback(() => { setAuthNotice(copy[languageRef.current].sessionEndedNotice); void ended(); }, [ended]);
 
