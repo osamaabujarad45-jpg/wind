@@ -9,7 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -155,7 +155,7 @@ export default function OrderScreen() {
   const doorOwn = door.context === proofContext ? door : { text: null, reason: null };
   const doorText = doorOwn.text ?? String(dueCents / 100);
   const collectedCents = minorFromText(doorText);
-  const doorValid = Number.isSafeInteger(collectedCents) && collectedCents >= 0;
+  const doorValid = Number.isSafeInteger(collectedCents) && collectedCents >= 0 && collectedCents <= doorCashMaxCents; // the server refuses more (invalid_input)
   const doorDiffers = doorValid && collectedCents !== dueCents;
   const doorReasons = doorDiffers ? allowedReasons(collectedCents, dueCents) : [];
   const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);

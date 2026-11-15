@@ -1,4 +1,4 @@
-import { isCity, services, type Order, type PriceQuote } from './model.ts';
+import { isCity, services, varianceReasons, type Order, type PriceQuote } from './model.ts';
 import { readRuntimeConfiguration } from './runtime-config.ts';
 import type { DriverReceipt } from './driver-command.ts';
 import type { Journey, JourneyEta } from './journey-contracts.ts';
@@ -66,6 +66,7 @@ export function readOrder(value: unknown): Order {
     && typeof o.ride.boardingRequired === 'boolean' && typeof o.ride.boardingLocked === 'boolean'
     && (o.ride.boardingCode === undefined || typeof o.ride.boardingCode === 'string' && /^\d{4}$/.test(o.ride.boardingCode)));
   if (o.journey !== undefined) readJourney(o.journey);
+  if (o.collected !== undefined) requireContract(object(o.collected) && integer(o.collected.cents) && (o.collected.reason === null || varianceReasons.includes(o.collected.reason)));
   if (o.protocol !== undefined) {
     const p = o.protocol;
     requireContract(object(p) && integer(p.version,1) && integer(p.assignmentEpoch) && integer(p.nextCursor) && integer(p.serverTime)

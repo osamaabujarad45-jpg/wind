@@ -32,6 +32,8 @@ export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreac
 // (docs/fable/OWNER-DECISIONS-2026-11-14.md); evidence for disputes, never free text.
 export type VarianceReason = 'PARTIAL_PAYMENT' | 'CUSTOMER_DID_NOT_PAY' | 'APPROVED_DISCOUNT' | 'RETURNED_ITEMS' | 'INCORRECT_CASH' | 'OTHER_ADMIN_REVIEW';
 export const varianceReasons: VarianceReason[] = ['PARTIAL_PAYMENT', 'CUSTOMER_DID_NOT_PAY', 'APPROVED_DISCOUNT', 'RETURNED_ITEMS', 'INCORRECT_CASH', 'OTHER_ADMIN_REVIEW'];
+/** Largest door-collected amount in minor units (1,000,000 shekels): far above any fare, below any float or overflow edge. */
+export const doorCashMaxCents = 100_000_000;
 /** A11 direction rule: an exact amount takes no reason; more than due only INCORRECT_CASH or OTHER_ADMIN_REVIEW;
  * less than due any reason, but CUSTOMER_DID_NOT_PAY means nothing was taken and PARTIAL_PAYMENT means something was. */
 export function varianceAllowed(collectedCents: number, dueCents: number, reason: VarianceReason | null): boolean {

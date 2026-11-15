@@ -260,6 +260,36 @@ try {
   // Orders completed without the fields (older apps) stay valid and carry no record.
   const legacy = await finish({});
   assert.equal('collected' in await adminView(legacy.o.id), false);
+  // A11 boundaries: the largest amount is accepted with a reason, and an exact amount may state no reason (null is absent).
+  const ceiling = await finish({ collectedCents: 100_000_000, varianceReason: 'INCORRECT_CASH' });
+  assert.deepEqual((await adminView(ceiling.o.id)).collected, { cents: 100_000_000, reason: 'INCORRECT_CASH' });
+  const nullReason = await finish({ collectedCents: dueCents, varianceReason: null });
+  assert.deepEqual((await adminView(nullReason.o.id)).collected, { cents: dueCents, reason: null });
+  // A11 discounted parcel: the expected amount is the fare minus the recorded promo, so the exact payment is ₪44, not ₪49.
+  await call('/admin/promos', { token: admin.token, body: { code: 'DOOR5', amount: 5, maxUses: 5, days: 7 } });
+  let promoted = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), promoCode: 'DOOR5', expectedDiscount: 5 } });
+  promoted = await call(`/jobs/${promoted.id}/accept`, { token: other.token, body: {} });
+  promoted = await advance(other.token, await advance(other.token, promoted));
+  const promotedCode = (await call(`/orders/${promoted.id}`, { token: customer.token })).handoverCode;
+  const promotedAdvance = (extra, expect, requestId = randomUUID()) => call(`/orders/${promoted.id}/advance`, { token: other.token,
+    body: { expectedStatus: 'in_transit', requestId, code: promotedCode, ...extra }, expect });
+  await promotedAdvance({ collectedCents: dueCents }, 400); // the undiscounted ₪49 is not what is due
+  await promotedAdvance({ collectedCents: 4900, varianceReason: 'PARTIAL_PAYMENT' }, 400); // over the due amount is never a partial payment
+  await promotedAdvance({ collectedCents: 4400, varianceReason: 'tip' }, 400); // exact takes no reason, and 'tip' is not on the list
+  assert.equal((await call(`/orders/${promoted.id}`, { token: other.token })).status, 'in_transit');
+  const doneRequest = randomUUID();
+  const promotedDone = await promotedAdvance({ collectedCents: 4400 }, 200, doneRequest);
+  assert.equal(promotedDone.status, 'completed');
+  assert.deepEqual((await adminView(promoted.id)).collected, { cents: 4400, reason: null });
+  const door = db.prepare('SELECT door_expected_cents, door_collected_by, door_request_id FROM orders WHERE id = ?').get(promoted.id);
+  assert.equal(door.door_expected_cents, 4400, 'the record names the expected amount after the discount');
+  assert.equal(door.door_collected_by, other.user.id, 'the record names the collecting driver');
+  assert.equal(door.door_request_id, doneRequest, 'the record names the replay identity of the advance');
+  // A11 write-once: after collection none of the five door columns can change, on any path.
+  for (const [column, value] of [['collected_cents', 1], ['variance_reason', 'INCORRECT_CASH'], ['door_expected_cents', 1],
+    ['door_collected_by', customer.user.id], ['door_request_id', randomUUID()]])
+    assert.throws(() => db.prepare(`UPDATE orders SET ${column} = ? WHERE id = ?`).run(value, promoted.id), /door cash is write-once/, column);
+  db.prepare('UPDATE orders SET updated_at = updated_at WHERE id = ?').run(promoted.id); // other columns stay writable
 
   console.log('cash: ok');
 } finally {
