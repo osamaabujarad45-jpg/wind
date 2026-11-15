@@ -27,6 +27,7 @@ const hooks=registerHooks({
       if(specifier in modules)return {url:'wind-test:'+specifier,shortCircuit:true};
       if(specifier==='./location-delivery')return {url:new URL('../src/location-delivery.ts',import.meta.url).href,shortCircuit:true};
       if(specifier==='./active-gps-session')return {url:new URL('../src/active-gps-session.ts',import.meta.url).href,shortCircuit:true};
+      if(specifier==='./driver-location-diagnostics')return {url:new URL('../src/driver-location-diagnostics.ts',import.meta.url).href,shortCircuit:true};
     }
     return next(specifier,context);
   },
