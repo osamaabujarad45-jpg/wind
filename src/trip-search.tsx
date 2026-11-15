@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
 import { city, cities, servedCity, type CityId, type Places, type Point } from './model';
 import { searchPlaces, type MapHit } from './place-search';
+import { parseSharedLocation, type SharedLocationError } from './shared-location';
+import type { CopyKey } from './copy';
 import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, palette, Press, Txt, useCopy, type IconName } from './ui';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
@@ -15,6 +17,10 @@ type Hit = MapHit & { kind?: string };
 
 const kindIcons: Record<string, IconName> = { town: 'business-outline', area: 'map-outline', health: 'medkit-outline', education: 'school-outline', worship: 'moon-outline', food: 'restaurant-outline',
   bank: 'card-outline', fuel: 'car-outline', transit: 'bus-outline', shop: 'bag-outline', junction: 'git-network-outline', street: 'trail-sign-outline', poi: 'location-outline' };
+
+// GEO-03: why a shared location cannot be used, in the words of the copy block.
+const sharedMessage = { out_of_range: 'sharedLocationRange', outside_area: 'sharedLocationOutside', short_plus_code: 'sharedLocationShortCode',
+  bad_plus_code: 'sharedLocationBadCode', bad_link: 'sharedLocationNoLink' } as const satisfies Record<SharedLocationError, CopyKey>;
 
 function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title: string; detail?: string; onPress: () => void; onForget?: () => void }) {
   const { c, row, align } = useCopy();
@@ -34,7 +40,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   field: TripField; onField: (field: TripField) => void;
   pickupText: string; dropoffText: string; near: Point | null; places: Places;
   locating: boolean; locationError?: string; notice?: string; onRetry?: () => void;
-  onPick: (field: TripField, place: TripPlace) => void; onMap: (field: TripField) => void; onLocate: () => void; onClose: () => void; onForget: (id: number) => void;
+  onPick: (field: TripField, place: TripPlace) => void; onMap: (field: TripField, at?: Point) => void; onLocate: () => void; onClose: () => void; onForget: (id: number) => void;
 }) {
   const { c, language, row, rtl, align } = useCopy();
   const [query, setQuery] = useState({ pickup: '', dropoff: '' });
@@ -55,6 +61,24 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
     return () => { live = false; clearTimeout(timer); };
   }, [term, field, language, nearText]);
   const shown = answer?.term === term && answer.field === field ? answer : null;
+  // GEO-03: a coordinate pair, map link or Plus Code read here; a short link is read by the server, once the typing pauses.
+  const shared = term ? parseSharedLocation(term) : null;
+  const linkUrl = shared && 'shortLink' in shared ? shared.shortLink : '';
+  const [link, setLink] = useState<{ url: string; point?: Point; failed?: boolean } | null>(null);
+  useEffect(() => {
+    if (!linkUrl) return;
+    const asking = new AbortController();
+    const timer = setTimeout(() => {
+      api<Point>(`/places/resolve-link?url=${encodeURIComponent(linkUrl)}`, undefined, 'GET', asking.signal)
+        .then(r => { if (!asking.signal.aborted) setLink({ url: linkUrl, point: { latitude: r.latitude, longitude: r.longitude } }); })
+        .catch(() => { if (!asking.signal.aborted) setLink({ url: linkUrl, failed: true }); });
+    }, 300);
+    // Leaving this link (or changing it) drops its answer, so an old result never shows while the next one is read.
+    return () => { asking.abort(); clearTimeout(timer); setLink(null); };
+  }, [linkUrl]);
+  const linked = link?.url === linkUrl ? link : null;
+  const sharedPoint = shared && 'point' in shared ? shared.point : linked?.point && servedCity(linked.point) ? linked.point : null;
+  const sharedError: SharedLocationError | null = shared && 'error' in shared ? shared.error : linked?.failed ? 'bad_link' : linked?.point && !servedCity(linked.point) ? 'outside_area' : null;
   const saved = term ? searchPlaces(term, places.saved).choices.filter(p => p.saved) : [];
   // Towns from the app's own list only when the server cannot answer, so search never comes up empty offline.
   const offlineTowns = term && shown?.failed ? searchPlaces(term).choices.filter(p => !p.saved) : [];
@@ -99,6 +123,10 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8, textAlign: align }}>{locationError}</Txt>}
       {!!notice && <ErrorText>{notice}</ErrorText>}
       {onRetry && <Button title={c.retry} size="sm" variant="soft" onPress={onRetry} />}
+      {!!linkUrl && !linked && <View style={styles.wait}><ActivityIndicator color={palette.olive} /></View>}
+      {sharedPoint && <Row icon="link-outline" title={c.sharedLocationUse} detail={`${sharedPoint.latitude.toFixed(5)}, ${sharedPoint.longitude.toFixed(5)}`}
+        onPress={() => { Keyboard.dismiss(); haptic.tap(); onMap(field, sharedPoint); }} />}
+      {!!sharedError && <Txt variant="caption" style={{ marginVertical: 8, textAlign: align }}>{c[sharedMessage[sharedError]]}</Txt>}
       <Row icon="pin-outline" title={c.setOnMap} onPress={() => { Keyboard.dismiss(); haptic.tap(); onMap(field); }} />
       {!term && <>
         {places.saved.map(p => <Row key={`s${p.id}`} icon={p.label === 'home' ? 'home-outline' : p.label === 'work' ? 'briefcase-outline' : 'star-outline'} title={placeName(p.label, p.note)}
@@ -114,7 +142,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       {shown?.failed && <Txt variant="caption" center style={{ marginVertical: 12 }}>{c.searchOffline}</Txt>}
       {wide?.hits?.filter(hit => !shown?.hits.some(known => known.name === hit.name || Math.abs(known.latitude - hit.latitude) + Math.abs(known.longitude - hit.longitude) < 0.002)).map((hit, i) => <Row key={`w${i}:${hit.latitude},${hit.longitude}`} icon="location-outline" title={hit.name} detail={hit.detail} onPress={() => pickHit(hit)} />)}
       <ErrorText>{wide?.failed}</ErrorText>
-      {term.length >= 3 && !!shown && !shown.failed && shown.hits.length < 4 && (!wide || !!wide.failed) &&
+      {term.length >= 3 && !shared && !!shown && !shown.failed && shown.hits.length < 4 && (!wide || !!wide.failed) &&
         <View style={{ marginTop: 10 }}><Button title={c.searchMap.replace('{q}', () => term)} icon="map-outline" variant="outline" onPress={searchWider} /></View>}
       {wide && !wide.hits && <View style={styles.wait}><ActivityIndicator color={palette.olive} /></View>}
       {(shown?.hits.length ?? 0) > 0 && <Txt variant="micro" style={{ marginTop: 12, textAlign: align }}>{c.mapCredit}</Txt>}
