@@ -66,7 +66,8 @@ foreach ($phoneFolder in @('src', 'assets', 'plugins', 'modules', 'vendor', 'pub
   if (!$phoneTarget.StartsWith($phoneBuild + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe build input target.' }
   if (Test-Path -LiteralPath $phoneTarget) {
     if ((Get-Item -LiteralPath $phoneTarget).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Build inputs must not be junctions.' }
-    Remove-Item -LiteralPath $phoneTarget -Recurse -Force
+    # Long-path form: a local native module's Gradle output (modules\<name>\android\build) exceeds MAX_PATH.
+    Remove-Item -LiteralPath ('\\?\' + $phoneTarget) -Recurse -Force
   }
   Copy-Item -LiteralPath (Join-Path $phoneSource $phoneFolder) -Destination $phoneTarget -Recurse -Force
 }
