@@ -14,7 +14,63 @@ node tests/azure-infra.test.mjs
 
 The validation script compiles/lints the template and builds all three parameter examples with a fixed compile-only placeholder. It does not read operator secrets. The test checks compiled ingress/probe ports against the packaged API, the polling worker's minimum replica, and the separate graph-storage foundation. It has no deployment command, Azure login, or authenticated provider call.
 
-## Production host on Azure, what runs today
+## Production host from 16 November 2026 (student Azure subscription)
+
+The 15 November subscription (`7bd97ddb…`, host `windapp-ps.swedencentral.cloudapp.azure.com`) went into the
+Warned, read-only state at 20:35 UTC. Azure stopped its VM and its registry answers `REGISTRY_NOT_READY`.
+Production moved to a VM on a separate student subscription. The 15 November section below describes the old host.
+
+- **Public address:** `https://4.223.118.16.sslip.io`. This is the EAS `production` and `preview` variable
+  `EXPO_PUBLIC_API_URL` on the EAS project `@osamaabujarad236s-organization/wind` (`app.json` `extra.eas.projectId`
+  `4da8c458-…`). It is also the repository variable `WIND_API_URL`.
+  - The name comes from sslip.io and the static IP `4.223.118.16`. Keep that IP, or every installed APK breaks.
+  - Installs built for an older address keep calling it until they are reinstalled.
+- **Host:**
+  - Subscription `b664239e-…` (Free Trial, spending limit on), resource group `wind-prod`, Sweden Central.
+  - VM `wind-vm`: Ubuntu 24.04, D2als_v6. The NSG allows 22, 80 and 443 only.
+  - SSH: `ssh -i ~/.ssh/wind-vm-prod windadmin@4.223.118.16`.
+  - The student subscription must not get new Azure resources, and its other resource groups are not Wind's.
+- **Runtime:** no Docker.
+  - systemd `wind-api.service` runs `/opt/node/bin/node server/main.ts` from `/opt/windapi` as root, on port 4000.
+    It listens on loopback only.
+  - The node binary is Node 24.
+  - Caddy (`/etc/caddy/Caddyfile`) terminates TLS with Let's Encrypt and proxies to `localhost:4000`.
+  - The unit sets `NODE_ENV`, `PORT`, `DB_PATH=/data/wind.db` and `TZ`.
+  - The drop-in `/etc/systemd/system/wind-api.service.d/10-master.conf` adds `EnvironmentFile=/etc/wind-api.env`
+    (root, 0600). That file holds:
+    - `SUPPORT_CONTACT`
+    - `WIND_PUSH_SUBJECT=https://4.223.118.16.sslip.io`
+    - `WIND_TRUST_PROXY=1`
+    - `WIND_IDENTITY_MODE=self-service`
+    - `WIND_ENABLED_SERVICES=parcel`
+    - `WIND_DRIVER_PRESENCE=off`
+    - `WEB_ROOT=/opt/windapi/web`
+  - Not configured yet: Firebase (closed-app push), OSRM and email. Their keys stayed on the old subscription.
+- **Release:** build the same tree the Dockerfile builds, on the test PC, then swap it in.
+  1. Run a web export with `EXPO_PUBLIC_API_URL=https://4.223.118.16.sslip.io WIND_RELEASE=1 NODE_ENV=production`.
+  2. Run `node scripts/runtime-dependencies.mjs api-runtime`.
+  3. Assemble the tree: `server/`, `api-runtime/src` as `src/`, `api-runtime/node_modules` as `node_modules/`,
+     `dist/` as `web/`, and `assets/icon.png` as `web/wind-icon.png`. Keep `backup.sh`.
+  4. Stage it as `/opt/windapi-new`.
+  5. Dry-run it on another port with a throwaway `DB_PATH`.
+  6. Stop the service, move `/opt/windapi` aside, move the new tree in, and start the service.
+  7. Check with `node scripts/check-deployment.mjs --origin https://4.223.118.16.sslip.io`.
+- **Rollback:** stop the service and restore the previous `/opt/windapi-old-<date>`. The tree that was live
+  before master, `/opt/windapi-old-20261116`, also needs `10-master.conf` removed. Then start the service.
+- **Data:** the database started fresh on 16 November. Users register again; the old data is only on the disabled
+  subscription.
+  - `/data/pre-master-20261116/` keeps the pre-master database and the QA journey database.
+  - `wind-backup.timer` runs `/opt/windapi/backup.sh` daily at 00:00 UTC. It writes `/data/backups/wind-<date>.db`
+    with `VACUUM INTO` (temp file, then rename, so a second run the same day works) and keeps 14 days.
+  - Backups live on the same disk as the database.
+- **Admin commands** run on the VM with the service environment, for example:
+  `cd /opt/windapi && sudo bash -c 'set -a; . /etc/wind-api.env; set +a; NODE_ENV=production DB_PATH=/data/wind.db /opt/node/bin/node server/main.ts verify-phone 05XXXXXXXX --phone-verified'`
+  and then `... server/main.ts promote 05XXXXXXXX`. In production, `promote` requires a verified phone.
+- **Builds:** the EAS project `@osamaabujarad236s-organization/wind` holds a copy of the Android upload keystore
+  (SHA-256 `5947bab0…`, the same signer as every installed APK). Its remote Android versionCode continues from 35.
+  `GOOGLE_SERVICES_JSON` was secret on the old project and could not be copied: closed-app push needs it uploaded again.
+
+## Production host on Azure, 15 November (subscription now disabled)
 
 **Since 15 November 2026** production runs on Azure subscription "Azure subscription 1" (tenant `birzeit822.onmicrosoft.com`, Pay-As-You-Go), resource group `wind-prod` in **Sweden Central**. The owner chose Azure over the AWS host of 12–15 November; that host is kept, with the API stopped, as history below.
 
