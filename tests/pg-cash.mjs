@@ -158,6 +158,32 @@ try {
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
+  // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----
+  // Counts what is owed plus the commission on jobs in hand (Wolt, Careem and Cedar GO cap courier cash the same way).
+  let otherCash = await call('/driver/cash', { token: other.token });
+  assert.equal(otherCash.capCents, Math.round(standard.driverCashCap * 100), 'the default cap is reported');
+  const startExposure = otherCash.exposureCents;
+  await call('/admin/settings', { token: admin.token, body: { driverCashCap: (startExposure + 735 + 100) / 100 } }); // room for exactly one job
+  await call('/admin/settings', { token: other.token, body: { driverCashCap: 5000 }, expect: 403 });
+  await call('/admin/settings', { token: admin.token, body: { driverCashCap: 5001 }, expect: 400 });
+  const newOrder = () => call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  let held = await call(`/jobs/${(await newOrder()).id}/accept`, { token: other.token, body: {} });
+  otherCash = await call('/driver/cash', { token: other.token });
+  assert.equal(otherCash.exposureCents, startExposure + 735, 'a job in hand counts before it is finished');
+  const waiting = await newOrder();
+  const refused = await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {}, expect: 409 });
+  assert.equal(refused.error, 'cash_cap_exceeded');
+  assert.equal((await call(`/orders/${waiting.id}`, { token: customer.token })).status, 'searching', 'a refused accept leaves the job for others');
+  held = await advance(other.token, await advance(other.token, held));
+  held = await advance(other.token, held, { code: (await call(`/orders/${held.id}`, { token: customer.token })).handoverCode });
+  otherCash = await call('/driver/cash', { token: other.token });
+  assert.equal(otherCash.exposureCents, startExposure + 735, 'finishing moves the commission from in hand to owed, not away');
+  assert.equal((await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {}, expect: 409 })).error, 'cash_cap_exceeded');
+  const capHandover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: other.user.id, amountCents: otherCash.owedCents } });
+  assert.equal((await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {}, expect: 409 })).error, 'cash_cap_exceeded'); // pending: only a confirmed handover counts
+  await call(`/driver/cash/${capHandover.id}/confirm`, { token: other.token, body: { decision: 'confirm' } });
+  assert.equal((await call(`/jobs/${waiting.id}/accept`, { token: other.token, body: {} })).status, 'assigned', 'after the handover the driver works again');
+
   console.log('cash: ok');
 } finally {
   await shutdown();

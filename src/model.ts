@@ -95,7 +95,7 @@ export const defaultSettings = {
   plusPrice: 29, proPrice: 99,
   perMinute: 0.25, nightExtra: 0.2, // smart price (SPEC-driver-offers.md): extra minutes, night share
   // Most a driver may owe Wind in cash commission, counting jobs in hand; past it, no new job until a handover.
-  // ₪150 is about 50 standard parcels, a busy week (Wolt: hand over weekly or before €200; docs/REA/2026-11-15-*).
+  // ₪150 is about 50 standard parcels, a busy week. Sources checked 15 Nov 2026: docs/REA/2026-11-15-competitor-apps-vs-wind.md.
   driverCashCap: 150,
 };
 export type Settings = typeof defaultSettings;

@@ -26,7 +26,8 @@
       "plusPrice": 29,
       "proPrice": 99,
       "perMinute": 0.25,
-      "nightExtra": 0.2
+      "nightExtra": 0.2,
+      "driverCashCap": 150
     },
     "units": "ILS; percentage settings are fractions in existing source",
     "fractionKeys": [

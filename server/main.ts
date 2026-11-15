@@ -2328,6 +2328,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   const carrying = (await activeLoad(user.id));
   if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+  if (order.status !== 'searching') fail(409, 'already_taken'); // say so before any cash message; the UPDATE below still decides
   await guardCashCap(user.id, order.price, rate);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
@@ -2984,7 +2985,9 @@ async function cashBalances(where: string, ...params: SQLInputValue[]) {
       // Promo discounts are Wind's cost: the driver collected that much less cash, so it comes off what they owe.
       pendingCents: r.pending as number, owedCents: cashOwed(r.commission, r.discounts, r.adjustments, r.remitted), lastRemittanceAt: (r.last_remittance as number) ?? null }));
 }
-// What a driver would owe Wind if every job in hand finished now: the settled balance plus the commission on active jobs.
+// The settled balance plus the full commission on active jobs (promo discounts on jobs in hand are not subtracted until they
+// finish, so the cap errs early). A customer's destination change on a job in hand can raise it past the cap: the cap
+// governs taking new work, never stranding a parcel already collected.
 // The cash cap (settings.driverCashCap) is checked against this at accept, as Wolt, Careem and Cedar GO cap courier cash.
 async function cashExposureCents(driverId: number) {
   // One statement, so PostgreSQL reads owed and in-hand from one snapshot: a job finishing between two reads cannot vanish from both.
