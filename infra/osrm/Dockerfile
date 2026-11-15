@@ -1,5 +1,5 @@
 # QUARANTINED (Fable GEO-01): unclipped israel-and-palestine graph from a moving 'latest' extract, so routes can leave the
-# West Bank and no build is reproducible. Not used in production; production builds infra/osrm/build-west-bank.sh.
+# West Bank and no build is reproducible. Not built anywhere (its railway.json was removed); production uses build-west-bank.sh.
 # Road routing for Wind (SPEC-routing-eta.md). Private service: Wind reaches it at http://osrm.railway.internal:5000.
 # Each deploy downloads a fresh OpenStreetMap extract, so redeploying refreshes the road graph.
 FROM ghcr.io/project-osrm/osrm-backend:v26.6.1-amd64-alpine
