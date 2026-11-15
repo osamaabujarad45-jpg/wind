@@ -16,7 +16,8 @@ export async function savedOfflineSummary() {
 }
 export function cacheOrderSummaries(orders: Order[], replace = false) {
   const owner = actor, revision = apiSessionRevision();
-  if (!owner || owner.status !== 'active' || owner.role === 'admin') return;
+  if (!owner) { console.warn('wind.offline-summary.save: no_actor'); return; }
+  if (owner.status !== 'active' || owner.role === 'admin') return;
   const current = () => revision === apiSessionRevision() && actor?.id === owner.id && actor?.role === owner.role;
   const run = cacheQueue.then(async () => {
     if (!current()) return;
@@ -32,6 +33,7 @@ export function cacheOrderSummaries(orders: Order[], replace = false) {
     if (retained.length && previous) newest.savedAt = Math.min(newest.savedAt, previous.savedAt);
     await recoveryStorage.write('summary', newest, effectiveRuntime(now).values.offlineMaxAgeMs);
   });
-  cacheQueue = run.catch(() => undefined);
+  // A failed save leaves the offline screen empty, so it must not be silent: the code only, never the data (C-01).
+  cacheQueue = run.catch(error => { console.warn(`wind.offline-summary.save: ${(error as Error)?.message ?? 'unknown'}`); });
   return cacheQueue;
 }
