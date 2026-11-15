@@ -1,6 +1,7 @@
 // Side-by-side phone icons must never turn production authentication into a bypass.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { phoneTestConfig } from '../src/phone-test.ts';
 
@@ -12,7 +13,7 @@ const appSource = readFileSync(new URL('../app.config.js', import.meta.url), 'ut
 const base = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8')).expo;
 const evaluate = (env = {}) => {
   const module = { exports: {} };
-  runInNewContext(appSource, { process: { env }, URL, module });
+  runInNewContext(appSource, { process: { env }, URL, module, require: createRequire(new URL('../app.config.js', import.meta.url)) });
   return module.exports({ config: structuredClone(base) });
 };
 const localEnv = role => ({
@@ -74,5 +75,8 @@ for (const release of [{ NODE_ENV: 'production' }, { EAS_BUILD: 'true' }, { WIND
   assert.equal(config.android.package, base.android.package);
   for (const api of [undefined, localApi, 'http://wind-production-72aa.up.railway.app', `${productionApi}/?x=1`, 'https://example.com'])
     assert.throws(() => evaluate({ ...release, EXPO_PUBLIC_API_URL: api }), 'release requires a real HTTPS API');
+  for (const host of JSON.parse(readFileSync(new URL('../scripts/retired-api-hosts.json', import.meta.url), 'utf8')))
+    for (const api of [`https://${host}`, `https://${host}./`])
+      assert.throws(() => evaluate({ ...release, EXPO_PUBLIC_API_URL: api }), /retired API host/, `release refuses ${api}`);
 }
 console.log('Phone test guards passed: isolated API, synthetic credentials, distinct role apps and production/EAS rejection');
