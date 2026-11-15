@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
 import { city, cities, servedCity, type CityId, type Places, type Point } from './model';
 import { searchPlaces, type MapHit } from './place-search';
-import { Button, ErrorText, haptic, IconButton, iconSize, palette, Press, Txt, useCopy, type IconName } from './ui';
+import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, palette, Press, Txt, useCopy, type IconName } from './ui';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
 export type TripField = 'pickup' | 'dropoff';
