@@ -68,6 +68,28 @@ for (const role of roles) {
 for (const values of [names, androidIds, iosIds, schemes]) assert.equal(values.size, roles.length, 'every role installs separately');
 assert.throws(() => evaluate(localEnv('merchant')));
 
+// WIND_TEST_SANDBOX=1: ordinary sign-in against the same loopback sandbox, no role and no credentials.
+const sandboxEnv = { WIND_TEST_SANDBOX: '1', WIND_LOCAL_TEST: '1', EXPO_PUBLIC_API_URL: localApi };
+const sandbox = evaluate(sandboxEnv);
+assert.equal(sandbox.extra.phoneTest, undefined, 'ordinary variant bakes no role or credentials');
+assert.ok(!JSON.stringify(sandbox).includes(credentials.password));
+assert.equal(sandbox.android.package, 'ps.wind.app.testordinary');
+assert.equal(sandbox.ios.bundleIdentifier, 'ps.wind.app.testordinary');
+assert.ok(!androidIds.has(sandbox.android.package) && sandbox.android.package !== base.android.package, 'installs beside every other app');
+assert.ok(!schemes.has(sandbox.scheme));
+assert.ok(sandbox.plugins.includes('./plugins/with-phone-test'), 'debug network policy still permits loopback');
+assert.equal(evaluate({ ...sandboxEnv, NODE_ENV: 'production' }).android.package, 'ps.wind.app.testordinary');
+for (const unsafe of [
+  { WIND_LOCAL_TEST: undefined }, { WIND_LOCAL_TEST: '0' }, { EAS_BUILD: 'true' }, { WIND_RELEASE: '1' },
+  { EXPO_PUBLIC_API_URL: 'https://wind-production-72aa.up.railway.app' }, { EXPO_PUBLIC_API_URL: undefined },
+  { EXPO_PUBLIC_API_URL: 'http://localhost:4191' }, { EXPO_PUBLIC_API_URL: 'http://192.168.1.2:4191' },
+  { EXPO_PUBLIC_API_URL: `${localApi}/api` }, { EXPO_PUBLIC_API_URL: `${localApi}/?x=1` },
+  { WIND_TEST_ROLE: 'customer' }, { WIND_TEST_IDENTIFIER: credentials.identifier }, { WIND_TEST_PASSWORD: credentials.password },
+  { WIND_GOOGLE_MAPS: '1' },
+]) assert.throws(() => evaluate({ ...sandboxEnv, ...unsafe }), 'ordinary variant fails closed');
+assert.throws(() => evaluate({ WIND_TEST_SANDBOX: '1', EXPO_PUBLIC_API_URL: localApi }), 'sandbox flag alone is not a local debug build');
+assert.equal(evaluate({ WIND_TEST_SANDBOX: '0', WIND_LOCAL_TEST: '1' }).android.package, base.android.package, 'only the exact flag value enables it');
+
 const productionApi = 'https://wind-production-72aa.up.railway.app';
 for (const release of [{ NODE_ENV: 'production' }, { EAS_BUILD: 'true' }, { WIND_RELEASE: '1' }]) {
   const config = evaluate({ ...release, EXPO_PUBLIC_API_URL: productionApi });

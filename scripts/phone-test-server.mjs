@@ -86,6 +86,8 @@ if (!db.prepare('SELECT id FROM orders LIMIT 1').get()) {
 provision.startedAt = new Date().toISOString();
 writeFileSync(provisionPath, JSON.stringify(provision, null, 2), { mode: 0o600 });
 console.log(`Phone sandbox ready on ${apiUrl}; customer, driver and admin provisioned. Credentials remain in ignored .expo/phone-qa/.`);
+console.log('Ordinary sign-in app (wind-test ordinary): type these on its normal sign-in screen (synthetic, sandbox only):');
+for (const role of Object.keys(labels)) console.log(`  ${role}: ${provision.roles[role].identifier} / ${provision.roles[role].password}`);
 console.log('Restarting this sandbox restores the three test identities after destructive account tests; delivery history remains. QA routing uses OSRM:', process.env.OSRM_URL);
 let ending = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {

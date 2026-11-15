@@ -5,9 +5,11 @@ const { AndroidConfig, withAppBuildGradle, withDangerousMod, withMainApplication
 // These apps have separate IDs and synthetic accounts. Never make the installed
 // production app debuggable or relax its network policy to enable phone testing.
 module.exports = config => {
-  const role = process.env.WIND_TEST_ROLE;
+  // WIND_TEST_SANDBOX=1: ordinary sign-in variant, no role and no credentials.
+  const sandbox = process.env.WIND_TEST_SANDBOX === '1';
+  const role = sandbox ? 'ordinary' : process.env.WIND_TEST_ROLE;
   if (!role) return config;
-  if (!['customer', 'driver', 'admin'].includes(role) || process.env.WIND_LOCAL_TEST !== '1'
+  if ((sandbox ? !!process.env.WIND_TEST_ROLE : !['customer', 'driver', 'admin'].includes(role)) || process.env.WIND_LOCAL_TEST !== '1'
       || process.env.EAS_BUILD || process.env.WIND_RELEASE === '1') {
     throw new Error('Phone test builds require a valid WIND_TEST_ROLE and WIND_LOCAL_TEST=1, outside EAS/release builds.');
   }
