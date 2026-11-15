@@ -110,7 +110,7 @@ export default function AdminSettings() {
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
-        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); if (bad === key) setBad(''); }} />)}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); setMessage(''); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>

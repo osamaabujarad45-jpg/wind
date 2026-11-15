@@ -141,6 +141,9 @@ for (const language of ['ar', 'en']) {
     assert.deepEqual(config.calls, [{ path: '/admin/settings', body: { parcelPrice: 12, expected: { parcelPrice: 10 } }, method: 'POST' }], 'one POST carrying only the reviewed key');
     assert.equal(config.server().parcelPrice, 12);
     assert.ok(shows(config.render(), c.saved));
+    // A-02 (A53, bcc0c97): an unsaved edit after a save must not keep saying "Saved".
+    field(config.render(), c.set_parcelPrice).onChangeText('19.5');
+    assert.ok(!shows(config.render(), c.saved), 'editing a field clears the saved notice');
   }
 
   // Cancel leaves the server and the form's baseline untouched.
