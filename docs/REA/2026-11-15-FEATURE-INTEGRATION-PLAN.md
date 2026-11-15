@@ -265,7 +265,7 @@ Rules for every package. One PR, about one day. Branch from `origin/master`. Mer
 
 **WP-02 Admin assign / reassign a driver. P1, 2V (dispatch).**
 - Goal: an admin can place a `searching` order on a named active driver, or move an assigned one, with a reason. Fixes "orders stuck searching" (PILOT.md). (A-05; R-SQ F-14.)
-- Files: new `server/domain/admin-assign.ts`; one line in `server/main.ts` near `:2500`; `src/app/admin/orders.tsx` (driver picker); `src/copy.ts`; contracts `additive-endpoints.json`.
+- Files: new `server/domain/admin-assign.ts`; one line in `server/main.ts` near `:2500`; `src/app/order/[id].tsx` (AdminAssign card, `src/admin-assign.tsx`; the admin order screen, not a separate list); `src/copy.ts`; contracts `additive-endpoints.json`.
 - Server: `POST /api/admin/orders/:id/assign {driverId, reason, requestId}`; reuse, do not copy, `guardCashCap` (`:3000`), `canTake` limits (`src/model.ts:228`), active/pending/blocked checks (`needActive`), push to the driver and the customer; write `security_events`; refuse if the order left `searching`/`assigned`.
 - Tests: assign, reassign, over-cap refused, blocked driver refused, double submit, status race with a driver accept.
 - Acceptance: assignment cannot bypass any rule a driver accept enforces.

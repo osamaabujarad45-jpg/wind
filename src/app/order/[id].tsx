@@ -8,15 +8,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
+import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
-import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, parcelPickupFarKm, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
-import { kmLabel } from '../../map-math';
+import { arrivingNow, kmLabel } from '../../map-math';
 import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
@@ -27,7 +28,7 @@ import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
+  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -130,6 +131,9 @@ export default function OrderScreen() {
   const role = me.user.role;
   const isCustomer = role === 'customer', isDriver = role === 'driver', isAdmin = role === 'admin';
   const mine = isDriver && order.driverId === me.user.id;
+  const toPickup = ['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine;
+  // Header chip and map label: the same words as EtaLine (arrival first, then the shared short wording).
+  const etaChip = ([lo, hi]: [number, number]) => arrivingNow(lo, alerts.length > 0) ? (toPickup ? c.arrivingPickup : c.arrivingDropoff) : etaShort(c, [lo, hi], alerts.length > 0);
   const cancelled = order.status === 'cancelled';
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
@@ -268,7 +272,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.handoverHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
-            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.handoverCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
         </Row>
       </Card>
@@ -282,7 +286,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.returnHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
-            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.returnCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
         </Row>
       </Card>
@@ -359,7 +363,7 @@ export default function OrderScreen() {
         </Row>}
         {live && eta && location && !location.stale && <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           {/* "the driver arrives" is for the other parties; the driver reads the neutral arrival line */}
-          <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={['assigned', 'at_pickup', 'returning'].includes(order.status) && !mine} />
+          <EtaLine eta={eta} km={km} now={now} slow={alerts.length > 0} toPickup={toPickup} />
         </View>}
         {live && order.sharedRun && location && !location.stale && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
@@ -497,6 +501,8 @@ export default function OrderScreen() {
           { reason: resetReason.trim(), ...(action.key === 'ride-reset' && boarding ? { rotate: true, expectedAssignmentEpoch: order.recovery?.assignmentEpoch, expectedPinRevision: boarding.pinRevision } : {}) }, () => setProofReset({ id, reason: '', done: true })), action.title, c.no)} />)}
     </Card>}
 
+    {isAdmin && ['searching', 'assigned', 'at_pickup'].includes(order.status) && <AdminAssign order={order} busy={!!busy} act={act} />}
+
     {isAdmin && order.status === 'on_hold' && <Card tone="clay">
       <Txt variant="title">{c.exceptionTitle}</Txt>
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
@@ -624,7 +630,7 @@ export default function OrderScreen() {
   if (live) return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
       driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
-      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` }) : null}
+      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? etaChip(eta) : null}
       stopLabels={{ pickup: order.pickupNote || from[language], dropoff: order.dropoffNote || to[language] }} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       {maneuver ? <View accessibilityLiveRegion="polite" style={[styles.nav, { flexDirection: row }]}>
@@ -632,7 +638,8 @@ export default function OrderScreen() {
         <Ionicons name={maneuverIcon(maneuver.step)} size={34} color={palette.lime} />
         <View style={{ flex: 1 }}>
           <Txt variant="h2" style={{ color: palette.onFill }}>{maneuverDistance(maneuver.metres, c)}</Txt>
-          <Txt variant="caption" numberOfLines={2} style={{ color: palette.onFill }}>{maneuverText(maneuver.step, c)}</Txt>
+          {/* clamp, not numberOfLines: a plain line cap is dropped past 1.35x, and the driving banner must not grow over the map */}
+          <Txt variant="caption" clamp={4} style={{ color: palette.onFill }}>{maneuverText(maneuver.step, c)}</Txt>
         </View>
       </View> : <View style={[styles.topCard, shadow, { flexDirection: row }]}>
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
@@ -675,7 +682,7 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             <Pulse color={serviceMeta[order.service].color} size={8} />
             <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="title" style={{ color: palette.olive }}>{fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` })}</Txt>}
+            {eta && location && !location.stale && <Txt variant="title" numberOfLines={1} style={{ color: palette.olive }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
@@ -688,7 +695,7 @@ export default function OrderScreen() {
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
-      footer={mine && activeStatuses.includes(order.status) ? <View style={{ gap: 8 }}>
+      footer={mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
             onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
@@ -719,7 +726,7 @@ export default function OrderScreen() {
             .catch(() => setActionError(c.mapUnavailable));
         }} />
         {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
-      </View> : undefined}>
+      </View></BoundedFooter> : undefined}>
       {body}
     </MapSheet>
   </View>;
@@ -910,6 +917,12 @@ function IconStar({ n, label, on, disabled, onPress }: { n: number; label: strin
   </Pressable>;
 }
 
+// Each digit sits in a box that sizes itself and centres the Text, which carries no height: iOS ignores textAlignVertical,
+// so a fixed Text height clipped the digits at larger text sizes. The box grows with the font up to maxScale.
+function CodeDigit({ digit }: { digit: string }) {
+  return <View style={styles.digit}><Text maxFontSizeMultiplier={maxScale} style={styles.digitText}>{digit}</Text></View>;
+}
+
 const styles = StyleSheet.create({
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
   topCard: { alignItems: 'center', gap: 10, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
@@ -918,8 +931,9 @@ const styles = StyleSheet.create({
   progress: { gap: 4 },
   segment: { flex: 1, height: 5, borderRadius: 3, backgroundColor: palette.muted },
   divider: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
-  code: { gap: 4 },
-  digit: { width: 30, height: 40, borderRadius: 8, backgroundColor: palette.card, textAlign: 'center', lineHeight: 40, fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, overflow: 'hidden' },
+  code: { gap: 4, flexWrap: 'wrap' },
+  digit: { minWidth: 30, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 8, backgroundColor: palette.card, overflow: 'hidden' },
+  digitText: { fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, textAlign: 'center' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles

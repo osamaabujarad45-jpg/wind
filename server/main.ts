@@ -37,6 +37,8 @@ import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { doorCash } from './domain/door-cash.ts';
+import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
+import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
@@ -539,7 +541,7 @@ const routes: [string, RegExp, Handler, boolean?][] = [];
 const route = (method: string, path: string, handler: Handler, isPublic = false) =>
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
-const eligibility = new Eligibility(persistence, fail);
+export const eligibility = new Eligibility(persistence, fail); // exported for the admin-assign test seam
 registerEligibilityRoutes(route, eligibility, async (order, action) => {
   if (action === 'confirm_return') await postOrderJournals(order.id);
   await queuePush([order.driver_id], 'decided', order.id);
@@ -1197,7 +1199,7 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
-  | 'destination_request' | 'destination_accepted' | 'destination_declined';
+  | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned'; // WP-02
 // T37: the subject is read at send time and must be configured (no obsolete host default).
 const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -2306,7 +2308,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   needActive(user);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-  const freshDriver = (await one('SELECT role, status, vehicle FROM users WHERE id = ?', user.id));
+  const freshDriver = (await one('SELECT id, role, status, vehicle, approved_at FROM users WHERE id = ?', user.id));
   if (!freshDriver || freshDriver.role !== 'driver' || freshDriver.status !== 'active') fail(403, 'blocked');
   user.vehicle = freshDriver!.vehicle;
   if (body.offerId !== undefined || body.leaseNonce !== undefined) {
@@ -2338,14 +2340,14 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', Number(params[0]));
   }
   const order = (await getOrder(Number(params[0]), user));
-  if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
-  if (!servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
   const carrying = (await activeLoad(user.id));
-  if (!canTake(carrying, order.service)) fail(409, 'vehicle_busy'); // parcels stack up to PARCEL_LOAD; rides and freight are exclusive
   const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
   if (order.status !== 'searching') fail(409, 'already_taken'); // say so before any cash message; the UPDATE below still decides
-  await guardCashCap(user.id, order.price, rate);
+  // The driver checks shared with the admin assign (driver-refusal.ts). Parcels stack up to PARCEL_LOAD; rides and freight are exclusive.
+  const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE },
+    { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor }, freshDriver!, rate);
+  if (refused) fail(409, refused);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
@@ -3033,6 +3035,10 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
+// WP-02: admin assign / reassign, through the same guards as the driver accept.
+registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
+  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
+  permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, eligibility, measured: () => measuredCapability(persistence) });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');

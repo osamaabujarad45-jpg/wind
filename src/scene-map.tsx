@@ -6,7 +6,7 @@ import { MAP_GROUND, MapPage } from './map-page';
 import type { Point } from './model';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type MapInsets, type PinMapProps, type RouteMapProps, type UserDot } from './route-preview';
-import { palette, useCopy } from './ui';
+import { maxScale, palette, useCopy } from './ui';
 
 export type SceneMapInsets = MapInsets;
 
@@ -39,7 +39,7 @@ export function SceneMap(props: SceneMapProps) {
       <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
         { translateX: ((insets?.left ?? 0) - (insets?.right ?? 0)) / 2 },
         { translateY: ((insets?.top ?? 0) - (insets?.bottom ?? 0)) / 2 },
-      ] }]}><Text>{c.retry}</Text></Pressable>
+      ] }]}><Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text></Pressable>
     </View>
   </View>;
   const liveDriver = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null;
