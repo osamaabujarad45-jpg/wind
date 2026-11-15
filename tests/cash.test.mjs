@@ -250,7 +250,7 @@ try {
   await call(`/orders/${roleOrder.id}/advance`, { token: admin.token, body: roleBody, expect: 403 });
   const third = await call('/auth/register', { body: { phone: '0599300006', name: 'Rami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${third.user.id}/approve`, { token: admin.token, body: {} });
-  await call(`/orders/${roleOrder.id}/advance`, { token: third.token, body: { ...roleBody, requestId: randomUUID() }, expect: 409 }); // another driver's order
+  await call(`/orders/${roleOrder.id}/advance`, { token: third.token, body: { ...roleBody, requestId: randomUUID() }, expect: 404 }); // another driver cannot even see the order
   // Orders completed without the fields (older apps) stay valid and carry no record.
   const legacy = await finish({});
   assert.equal('collected' in await adminView(legacy.o.id), false);
