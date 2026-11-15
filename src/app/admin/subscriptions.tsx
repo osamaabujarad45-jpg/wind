@@ -23,13 +23,15 @@ export default function Subscriptions() {
       await reload();
     } catch (e) {
       fail(err(e));
+      await reload(); // another admin may have decided it while the confirmation was open
     }
     setBusy(null);
   }
 
   // A-03: a decision names who, which plan and how much before it is sent; activation is the admin confirming payment arrived.
+  // A stacked second confirmation (two quick taps) can only send a decision the server's CAS already refuses.
   const review = (sub: Subscription, action: 'activate' | 'reject') => confirm(
-    fill(action === 'activate' ? c.subActivateReview : c.subRejectReview, { n: sub.userName, p: sub.plan === 'plus' ? c.plusTitle : c.proTitle, a: money(sub.price) }),
+    fill(action === 'activate' ? c.subActivateReview : c.subRejectReview, { n: sub.userName ?? '', p: sub.plan === 'plus' ? c.plusTitle : c.proTitle, a: money(sub.price) }),
     () => void decide(sub, action), action === 'activate' ? c.activate : c.reject, c.cancel);
 
   return <Screen onRefresh={reload} scrollRef={list}>
