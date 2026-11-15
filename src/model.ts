@@ -28,6 +28,9 @@ export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' 
   | 'on_hold' | 'returning' | 'returned';
 export type ExceptionReason = 'absent' | 'refused' | 'unreachable' | 'wrong_address';
 export const exceptionReasons: ExceptionReason[] = ['absent', 'refused', 'unreachable', 'wrong_address'];
+// WP-01: why the cash taken at the door differs from what was due. A fixed list: evidence for disputes, never free text.
+export type VarianceReason = 'customer_short' | 'no_change' | 'tip' | 'agreed_fare' | 'other';
+export const varianceReasons: VarianceReason[] = ['customer_short', 'no_change', 'tip', 'agreed_fare', 'other'];
 export type Dispute = { status: 'open' | 'resolved'; reason: string; resolution: string | null; credit?: { code: string; amount: number } | null };
 export type Road = { id: number; name: string; cities: CityId[]; point: Point | null; status: 'open' | 'slow' | 'closed' | null; note: string; reportedAt: number | null; agreeing: number };
 /** Checkpoints touching either city with a recent slow/closed report: booking warning and live ETA wording. */
@@ -151,6 +154,7 @@ export type Order = {
   option: string; loadingHelp: boolean; price: number; commission: number | null;
   destinationChange?: DestinationChange | null; canChangeDestination?: boolean;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
+  collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
   returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;

@@ -36,6 +36,7 @@ import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-r
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { doorCash } from './domain/door-cash.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
@@ -314,6 +315,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
+    ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
@@ -2443,6 +2446,7 @@ async function advanceOrder(user: User, id: number, body: Row) {
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  if (next !== 'completed' && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input');
   (await safetyFree(r.id));
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
@@ -2457,8 +2461,9 @@ async function advanceOrder(user: User, id: number, body: Row) {
       fail(400, 'wrong_code');
     }
     const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ? WHERE id = ?',
-      next, r.commission ?? commissionOn(r.price, rate), now, now, r.id));
+    const door = next === 'completed' ? doorCash(r.price, r.discount, body, fail) : null;
+    (await run('UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ? WHERE id = ?',
+      next, r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, door?.varianceReason ?? null, r.id));
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
