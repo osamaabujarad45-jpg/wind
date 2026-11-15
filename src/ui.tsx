@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { BottomTabBarHeightContext, type BottomTabBarProps } from 'expo-router/js-tabs';
 import { linesFor, maxScale } from './text-scale';
-import { copy, fill, type CopyKey } from './copy';
+import { copy, errorText, fill } from './copy';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
 import { ltr, type OrderStatus } from './model';
@@ -64,7 +64,7 @@ export function useCopy() {
     row: rtl ? 'row-reverse' as const : 'row' as const,
     align: rtl ? 'right' as const : 'left' as const,
     err: (error: unknown) => {
-      const text = copy[language][`err_${typeof error === 'string' ? error : errorCode(error)}` as CopyKey] ?? copy[language].err_generic;
+      const text = errorText(language, typeof error === 'string' ? error : errorCode(error));
       // A failure the server logged carries its id: the first eight characters are enough for support to find it.
       return error instanceof ApiError && error.reference ? `${text} ${copy[language].errorRef} ${ltr(error.reference.slice(0, 8))}` : text;
     },
