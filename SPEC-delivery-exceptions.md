@@ -44,7 +44,7 @@ in_transit ──report──▶ on_hold ──reattempt──▶ in_transit
 
 | Method + path | Who | Body | Rules |
 |---|---|---|---|
-| `POST /api/orders/:id/exception` | assigned driver | `requestId` (uuid), `expectedStatus: 'in_transit'`, `reason` ∈ `absent, refused, unreachable, wrong_address`, `note` ≤200 | Idempotent via `order_actions` like `/advance` |
+| `POST /api/orders/:id/exception` | assigned driver | `requestId` (uuid), `expectedStatus: 'in_transit'`, `reason` ∈ `absent, refused, unreachable, wrong_address, rescheduled, access_blocked, damaged`, `note` ≤200. Suggested next step for admin: `refused`/`damaged` → return, all others → reattempt (`exceptionNextAction`). At `at_pickup` any reason cancels the order (no charge; the sender books again) | Idempotent via `order_actions` like `/advance` |
 | `POST /api/admin/orders/:id/resolve` | admin | `action` ∈ `reattempt, return`, `reason` 5–500 | only from `on_hold` |
 | `POST /api/orders/:id/advance` | assigned driver | existing + `code` | from `returning` → `returned`, checks `return_code` |
 | `POST /api/orders/:id/dispute` | order customer | `reason` 10–1000 | `completed`/`returned`, ≤7 days after `updated_at`, one per order |

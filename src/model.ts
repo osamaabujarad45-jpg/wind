@@ -45,6 +45,10 @@ export const exceptionNextAction: Record<ExceptionReason, 'reattempt' | 'return'
   absent: 'reattempt', unreachable: 'reattempt', wrong_address: 'reattempt', rescheduled: 'reattempt', access_blocked: 'reattempt',
   refused: 'return', damaged: 'return',
 };
+/** The suggestion for a stored hold reason. Holds also carry values outside the driver's list (support, scope_mismatch)
+ *  and older or newer builds may send ones this build does not know: those have no suggestion. */
+export const suggestedNextAction = (reason: string | null | undefined) =>
+  reason && Object.hasOwn(exceptionNextAction, reason) ? exceptionNextAction[reason as ExceptionReason] : undefined;
 // WP-01 / Fable A11: why the cash taken at the door differs from what was due. The owner-approved vocabulary
 // (docs/fable/OWNER-DECISIONS-2026-11-14.md); evidence for disputes, never free text.
 export type VarianceReason = 'PARTIAL_PAYMENT' | 'CUSTOMER_DID_NOT_PAY' | 'APPROVED_DISCOUNT' | 'RETURNED_ITEMS' | 'INCORRECT_CASH' | 'OTHER_ADMIN_REVIEW';
