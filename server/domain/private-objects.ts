@@ -144,7 +144,7 @@ export class PrivateObjects {
     const object = (await this.db.one('SELECT * FROM private_objects WHERE id=?::uuid AND order_id=?', objectId, orderId)) ?? this.fail(404, 'not_found');
     if (object!.scan_state !== 'clean') this.fail(409, 'object_rejected');
     const bytes = await this.store!.get(String(object!.storage_key));
-    if (!bytes) this.fail(409, 'objects_unavailable');
+    if (!bytes) this.fail(503, 'object_missing'); // stored bytes gone for a clean object: a fault, not the switched-off gate
     return { contentBase64: bytes!.toString('base64'), contentType: object!.content_type, sizeBytes: Number(object!.size_bytes), sha256: object!.sha256 };
   }
 }
