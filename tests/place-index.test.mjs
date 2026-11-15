@@ -26,6 +26,12 @@ for (const q of ['bireh', 'al bireh', 'albireh', 'Al-Bireh', 'el bireh']) {
       `"${q}" from ${near ? `${near.latitude},${near.longitude}` : 'nowhere'} finds Al-Bireh city first: ${JSON.stringify(hit)}`);
   }
 }
+// While typing, the city stays on top (review of PR #32): partial words with an article, and short English prefixes.
+const isBireh = hit => hit?.kind === 'town' && Math.abs(hit.latitude - 31.90) < 0.05 && Math.abs(hit.longitude - 35.21) < 0.05;
+for (const [q, lang] of [['alb', 'en'], ['albi', 'en'], ['البي', 'ar'], ['البيرة', 'ar']])
+  for (const near of [null, tulkarm, ramallah]) assert.ok(isBireh(suggestPlaces(q, lang, near)[0]), `"${q}" keeps Al-Bireh first: ${JSON.stringify(suggestPlaces(q, lang, near)[0])}`);
+assert.equal(suggestPlaces('ram', 'en', ramallah)[0]?.name, 'Ramallah', '"ram" near Ramallah is the town, not Al Ram street');
+assert.ok(!/^Alpha/.test(suggestPlaces('pha', 'en', null)[0]?.name ?? ''), 'a short word does not become a fake word ("alpha" → "pha")');
 const arabicBireh = suggestPlaces('البيرة', 'ar', null)[0];
 assert.ok(arabicBireh.kind === 'town' && Math.abs(arabicBireh.latitude - 31.90) < 0.05, 'Arabic still finds the city first');
 assert.ok(names('خليل', null)[0]?.includes('الخليل'), 'a whole town name typed without ال is still a whole-name match');

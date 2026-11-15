@@ -17,7 +17,7 @@ export type SuggestHit = { name: string; detail: string; latitude: number; longi
 export type PinLabel = { name: string; detail: string };
 type Lang = 'ar' | 'en';
 // A place, or a street at the sample closest to the query's `near`.
-type Row = { ar: string; en: string; latitude: number; longitude: number; kind: PlaceKind; rank: number; tokens: string[]; folded: string; samples?: number[] };
+type Row = { ar: string; en: string; latitude: number; longitude: number; kind: PlaceKind; rank: number; tokens: string[]; folded: string; keys: string[]; squashed: string[]; samples?: number[] };
 
 const DIACRITICS = /[ً-ٰٟـ​-‏‪-‮⁦-⁩]/g;
 /** Arabic keyboards vary hamza, alef and ta-marbuta; digits may be Arabic-Indic. */
@@ -27,7 +27,8 @@ export const foldPlace = (text: string) => text.toLowerCase().replace(DIACRITICS
 // "ال" is optional when people type: مستشفى finds المستشفى and the reverse.
 const stripAl = (token: string) => token.startsWith('ال') && token.length > 3 ? token.slice(2) : token;
 // OSM often glues the Latin article on ("Albireh", "Elbireh"): index the bare word too, so "bireh" finds the city.
-const stripLatinAl = (token: string) => /^(al|el)[a-z]{3,}$/.test(token) ? token.slice(2) : token;
+// Five letters at least after the article, so "alpha", "almond" and "aleppo" do not grow fake words ("pha", "mond").
+const stripLatinAl = (token: string) => /^(al|el)[a-z]{5,}$/.test(token) ? token.slice(2) : token;
 const tokensOf = (text: string) => foldPlace(text).split(' ').filter(Boolean).flatMap(token => {
   const bare = stripLatinAl(stripAl(token));
   return bare === token ? [token] : [token, bare];
@@ -47,7 +48,12 @@ function index(): Index {
     { places: [string, string, number, number, PlaceKind, number][]; streets: [string, string][]; points: number[] };
   const pois = new Map<string, Row[]>(), areas = new Map<string, Row[]>(), streets = new Map<string, StreetSample[]>();
   const put = <T,>(map: Map<string, T[]>, key: string, value: T) => { const list = map.get(key); if (list) list.push(value); else map.set(key, [value]); };
-  const describe = (ar: string, en: string) => ({ tokens: [...new Set([...tokensOf(ar), ...tokensOf(en)])], folded: `${foldPlace(ar)} | ${foldPlace(en)}` });
+  const describe = (ar: string, en: string) => {
+    const names = [foldPlace(ar), foldPlace(en)].filter(Boolean);
+    // Computed once here, not per keystroke: the scorer compares whole names without spaces, with and without the article.
+    return { tokens: [...new Set([...tokensOf(ar), ...tokensOf(en)])], folded: `${foldPlace(ar)} | ${foldPlace(en)}`,
+      keys: names.map(nameKey), squashed: names.map(name => name.replace(/ /g, '')) };
+  };
   const rows: Row[] = raw.places.map(([ar, en, latitude, longitude, kind, rank]) => {
     const row: Row = { ar, en, latitude, longitude, kind, rank, ...describe(ar, en) };
     put(kind === 'town' || kind === 'area' ? areas : pois, bucketKey(latitude, longitude), row);
@@ -93,7 +99,7 @@ const streetPoint = (row: Row, near: Point | null): Point => {
 };
 
 export function suggestPlaces(query: string, lang: Lang, near: Point | null, limit = 8): SuggestHit[] {
-  const whole = foldPlace(query), terms = whole.split(' ').filter(Boolean).map(stripAl), wholeKey = nameKey(whole);
+  const whole = foldPlace(query), terms = whole.split(' ').filter(Boolean).map(stripAl), wholeKey = nameKey(whole), typed = whole.replace(/ /g, '');
   if (!terms.length) return [];
   // A lone article is optional ("el bireh" finds "Albireh"), unless it is all that was typed.
   const words = terms.filter(term => !ARTICLES.has(term)), required = words.length ? words : terms;
@@ -111,8 +117,10 @@ export function suggestPlaces(query: string, lang: Lang, near: Point | null, lim
     const km = near ? crowKm(near, point) : 0;
     // Closeness decides most ties: the Manara you mean is the one in your town. A town itself may be far away.
     const distance = row.kind === 'town' ? Math.min(km, 40) * 0.2 : Math.min(km, 60) * 0.8;
-    const names = row.folded.split(' | ').filter(Boolean).map(nameKey);
-    const score = (names.includes(wholeKey) ? 60 : names.some(name => name.startsWith(wholeKey)) ? 30 : 0) + exactWord * 6 - row.rank * 5 - distance;
+    // Whole name: the same place name in any spelling (60). Name so far: what was typed, as typed, starts the name with or
+    // without its article (30), so "alb" and "البي" keep the city while the word is still being typed.
+    const prefix = row.squashed.some(name => name.startsWith(typed)) || row.keys.some(key => key.startsWith(typed));
+    const score = (row.keys.includes(wholeKey) ? 60 : prefix ? 30 : 0) + exactWord * 6 - row.rank * 5 - distance;
     scored.push({ row, point, score });
   }
   scored.sort((a, b) => b.score - a.score);
