@@ -21,7 +21,7 @@ legacy.exec(`PRAGMA foreign_keys = ON; PRAGMA user_version = 2;
 legacy.prepare("INSERT INTO users VALUES (1, '0599000111', 'Existing customer', 'hash', 'customer', 'active', NULL, ?, ?, 'customer@example.test', NULL, NULL, NULL, NULL)").run(now, now);
 legacy.prepare("INSERT INTO users VALUES (2, '0599000112', 'Existing driver', 'hash', 'driver', 'active', 'car', ?, ?, 'driver@example.test', NULL, ?, NULL, NULL)").run(now, now, now);
 legacy.prepare("INSERT INTO sessions VALUES ('legacy-session', 1, ?)").run(now);
-legacy.prepare("INSERT INTO orders VALUES (10, 1, 2, 'completed')").run();
+legacy.prepare("INSERT INTO orders (id,customer_id,driver_id,status) VALUES (10, 1, 2, 'completed')").run();
 legacy.prepare('INSERT INTO driver_locations VALUES (2, 31.9, 35.2, ?)').run(now);
 legacy.close();
 
