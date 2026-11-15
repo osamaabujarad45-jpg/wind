@@ -93,6 +93,7 @@ const suites = [
   "change-destination.test.mjs",
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",
+  "account-status.test.mjs",
   "email.test.mjs",
   "firebase-reset.test.mjs",
   "dependencies.test.mjs",

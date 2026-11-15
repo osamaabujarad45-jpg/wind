@@ -480,7 +480,13 @@ try {
   await button(adminPage, c.cashRecord).click();
   await field(adminPage, c.cashAmount).fill(String(beforeCash.owedCents / 100));
   await field(adminPage, c.problemNote).fill('QA cash handover at office.');
+  const cashPrompts = [];
+  const notePrompt = dialog => cashPrompts.push(dialog.message());
+  adminPage.on('dialog', notePrompt); // the page-level handler still accepts it
   await button(adminPage, c.cashRecord).click();
+  await until(() => cashPrompts.length, n => n === 1, 'The cash handover was not confirmed exactly once');
+  adminPage.off('dialog', notePrompt);
+  assert.ok(cashPrompts[0].includes(String(beforeCash.owedCents / 100).split('.')[0]), `The confirm names the amount: ${cashPrompts[0]}`);
   await driverPage.goto(base + '/driver/earnings');
   await button(driverPage, c.cashConfirm).click();
   await until(() => call('/driver/cash', { token: driverToken }), cash => cash.owedCents === 0, 'Confirmed handover did not settle the ledger');
