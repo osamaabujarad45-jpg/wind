@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaBucket, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { arrivingNow, backtracks, bearing, ease, etaBucket, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
 import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, resolveMapProvider, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
@@ -186,9 +186,13 @@ try {
   assert.equal(local[0], 'let'); assert.deepEqual(local[2], ['to-string', ['get', 'name']]);
   assert.ok(JSON.stringify(local).includes('"index-of","ו"') && JSON.stringify(local).includes('"index-of","י"'));
   assert.deepEqual(etaRange(10), [10, 15]);
-  // "Less than N minutes" ladder on the upper bound; stale or missing input gets no bucket.
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 9, 10, 11].map(m => etaBucket(m)), [3, 3, 3, 5, 5, 10, 10, null, null]);
-  assert.equal(etaBucket(2, true), null); assert.equal(etaBucket(undefined), null); assert.equal(etaBucket(NaN), null); assert.equal(etaBucket(-1), null);
+  // "Less than N minutes" ladder on the upper bound: 0, 1, 2, the 3/5/10 edges, fractions either side, then no bucket at 10 and above.
+  assert.deepEqual([0, 1, 2, 2.99, 3, 4, 4.99, 5, 9, 9.99, 10, 11, 1e9].map(m => etaBucket(m)), [3, 3, 3, 3, 5, 5, 5, 10, 10, 10, null, null, null]);
+  // Missing, negative and non-finite input gets no bucket.
+  assert.equal(etaBucket(undefined), null); assert.equal(etaBucket(null), null); assert.equal(etaBucket(NaN), null);
+  assert.equal(etaBucket(Infinity), null); assert.equal(etaBucket(-1), null); assert.equal(etaBucket(-0.5), null);
+  // Arrival is at most a minute away and never during a checkpoint delay: the one rule the chip and EtaLine share.
+  assert.deepEqual([[0, false], [1, false], [1, true], [2, false], [0, true]].map(([m, slow]) => arrivingNow(m, slow)), [true, true, false, false, false]);
   assert.equal(kmLabel(0.84), '0.8'); assert.equal(kmLabel(9.96), '10'); assert.equal(kmLabel(12.6), '13');
   // Live marker: glides for the fix gap (continuous motion), catches up quickly after a long gap, turns the short way.
   assert.equal(glideMs(3_000), 3_000); assert.equal(glideMs(200), 600); assert.equal(glideMs(30_000), 1_200); assert.equal(glideMs(0), 1_200);
