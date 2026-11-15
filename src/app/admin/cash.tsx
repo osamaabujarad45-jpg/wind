@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
-import { typedNumber } from '../../model';
+import { minorFromText } from '../../model';
 import { useFormat } from '../../parts';
 import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
@@ -23,8 +23,8 @@ export default function AdminCash() {
   const [failure, setFailure] = useState('');
   const list = useRef<ScrollView>(null);
   const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
-  // Shekels in the form, integer agorot on the wire.
-  const cents = (text: string) => Math.round(typedNumber(text) * 100);
+  // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
+  const cents = minorFromText;
 
   async function submit() {
     if (!open || busy) return;
@@ -80,7 +80,8 @@ export default function AdminCash() {
             <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || !Number.isFinite(cents(open.amount)) || cents(open.amount) === 0 || (open.kind === 'adjustment' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : open.kind === 'adjustment' && open.note.trim().length < 5 ? c.reason_min5 : c.cash_amount_needed}
-              onPress={submit} />
+              onPress={() => confirm(fill(open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
+                () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />
             <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={row.owedCents - row.pendingCents <= 0} reason={c.cash_none_owed}
