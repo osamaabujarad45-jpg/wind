@@ -1,3 +1,4 @@
+// UX-05 multi-recipient acceptance, ported from Fable candidate6 and adapted to master's A11 door-cash API (collectedCents/varianceReason -> collected).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -58,12 +59,12 @@ try {
     [['deliver', 'hebron', 'Sami'], ['deliver', 'jenin', 'Nour'], ['deliver', 'nablus', 'Huda']],
     'the current city/stage run sheet retains each recipient at their own next stop');
   assert.deepEqual(sheet.map(group => group.orders[0].price), [30, 20, 20]);
-  for (const order of await carried()) { assert.equal(order.handoverCode, null); assert.equal(order.cashCollectionAllowed, true); }
-  assert.equal((await advance(a, { code: codes[1], cashCollection: { collectedMinor: 2000 } }, 400)).error, 'wrong_code');
+  for (const order of await carried()) { assert.equal(order.handoverCode, null); }
+  assert.equal((await advance(a, { code: codes[1], collectedCents: 2000 }, 400)).error, 'wrong_code');
   assert.equal((await call(`/orders/${a.id}`, { token: driver.token })).status, 'in_transit');
-  assert.equal((await call(`/orders/${b.id}`, { token: driver.token })).cashCollection, undefined);
+  assert.equal((await call(`/orders/${b.id}`, { token: driver.token })).collected, undefined);
 
-  const completion = { expectedStatus: 'in_transit', requestId: randomUUID(), code: codes[0], cashCollection: { collectedMinor: 2000 } };
+  const completion = { expectedStatus: 'in_transit', requestId: randomUUID(), code: codes[0], collectedCents: 2000 };
   loseReply = true;
   await assert.rejects(call(`/orders/${a.id}/advance`, { token: driver.token, body: completion }), /Test request failed/);
   offline = true;
@@ -72,8 +73,8 @@ try {
   const recovered = await call(`/orders/${a.id}`, { token: driver.token });
   assert.equal(recovered.status, 'completed');
   assert.equal(recovered.recipientName, 'Huda');
-  assert.equal(recovered.cashCollection.collectedMinor, 2000);
-  assert.deepEqual((await call(`/orders/${a.id}/advance`, { token: driver.token, body: completion })).cashCollection, recovered.cashCollection);
+  assert.equal(recovered.collected.cents, 2000);
+  assert.deepEqual((await call(`/orders/${a.id}/advance`, { token: driver.token, body: completion })).collected, recovered.collected);
   assert.equal(Number((await persistence.one('SELECT count(*) AS n FROM order_cash_collections WHERE order_id=?', a.id)).n), 1);
 
   const report = (order, reason) => call(`/orders/${order.id}/exception`, { token: driver.token,
@@ -81,9 +82,9 @@ try {
   await report(b, 'absent');
   const retried = await call(`/admin/orders/${b.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient confirmed available' } });
   assert.equal(retried.recipientName, 'Sami');
-  const completedB = await advance(retried, { code: codes[1], cashCollection: { collectedMinor: 2500, varianceReason: 'PARTIAL_PAYMENT' } });
-  assert.equal(completedB.cashCollection.expectedMinor, 3000);
-  assert.equal(completedB.cashCollection.collectedMinor, 2500);
+  const completedB = await advance(retried, { code: codes[1], collectedCents: 2500, varianceReason: 'PARTIAL_PAYMENT' });
+  assert.equal(completedB.collected.reason, 'PARTIAL_PAYMENT', 'a short payment carries its owner-approved reason');
+  assert.equal(completedB.collected.cents, 2500);
   await report(c, 'refused');
   const returning = await call(`/admin/orders/${c.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused fixture parcel' } });
   const returnSheet = runSheet(await carried());
@@ -95,7 +96,7 @@ try {
   assert.equal((await advance(returning, { code: wrongReturn }, 400)).error, 'wrong_code');
   const returned = await advance(returning, { code: senderView.returnCode });
   assert.equal(returned.status, 'returned');
-  assert.equal(returned.cashCollection, undefined, 'sender return proof creates no recipient cash fact');
+  assert.equal(returned.collected, undefined, 'sender return proof creates no recipient cash fact');
   assert.deepEqual(await carried(), []);
   offline = true;
   await assert.rejects(call('/driver/earnings', { token: driver.token }), /Test request failed/);
