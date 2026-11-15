@@ -737,6 +737,7 @@ function BookForm() {
           <View style={{ flex: 1 }}>
             <Txt variant="micro">{c.payWith}</Txt>
             <Txt variant="title">{c.cash}</Txt>
+            <Txt variant="caption">{c.noChangeBook}</Txt>
           </View>
           {plus && <Txt variant="label" style={{ color: palette.olive }}>{c.plusApplied}</Txt>}
         </Row>

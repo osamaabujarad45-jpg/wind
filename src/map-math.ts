@@ -100,6 +100,9 @@ export const labelField = (language: 'ar' | 'en') => language === 'ar'
   : ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], localName];
 
 /** ETA shown as a range: checkpoints and closures make a single road-time number lie. */
+/** "Less than N minutes" wording for a short estimate: N from the upper bound (3, 5 or 10), else null. Stale or missing input never gets a bucket. */
+export const etaBucket = (hiMinutes: number | null | undefined, stale = false): 3 | 5 | 10 | null =>
+  stale || hiMinutes == null || !Number.isFinite(hiMinutes) || hiMinutes < 0 ? null : hiMinutes < 3 ? 3 : hiMinutes < 5 ? 5 : hiMinutes < 10 ? 10 : null;
 export const etaRange = (minutes: number): [number, number] => [minutes, Math.round(minutes * 1.3) + 2];
 
 /** Road distance left, as trackers show it: one decimal close by, whole km further out. */

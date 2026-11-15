@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSettings, quote } from '../src/model.ts';
-import { backtracks, bearing, ease, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
+import { backtracks, bearing, ease, etaBucket, etaRange, fitBounds, kmLabel, fromDriver, glideMs, glider, labelField, metersPerPixelAtCoordinate, nearLine, onRoad, roadPath, routeFramePoints, shownApproach, turn } from '../src/map-math.ts';
 import { SIGNIFICANT_MOVEMENT_METRES, approachKey, canShowOnRenderer, googleApproachPath, googlePreviewPath, resolveMapProvider, routeProvider, selectRenderer } from '../src/map-provider.ts';
 import { apiCaller } from './support/api.mjs';
 
@@ -186,6 +186,9 @@ try {
   assert.equal(local[0], 'let'); assert.deepEqual(local[2], ['to-string', ['get', 'name']]);
   assert.ok(JSON.stringify(local).includes('"index-of","ו"') && JSON.stringify(local).includes('"index-of","י"'));
   assert.deepEqual(etaRange(10), [10, 15]);
+  // "Less than N minutes" ladder on the upper bound; stale or missing input gets no bucket.
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 9, 10, 11].map(m => etaBucket(m)), [3, 3, 3, 5, 5, 10, 10, null, null]);
+  assert.equal(etaBucket(2, true), null); assert.equal(etaBucket(undefined), null); assert.equal(etaBucket(NaN), null); assert.equal(etaBucket(-1), null);
   assert.equal(kmLabel(0.84), '0.8'); assert.equal(kmLabel(9.96), '10'); assert.equal(kmLabel(12.6), '13');
   // Live marker: glides for the fix gap (continuous motion), catches up quickly after a long gap, turns the short way.
   assert.equal(glideMs(3_000), 3_000); assert.equal(glideMs(200), 600); assert.equal(glideMs(30_000), 1_200); assert.equal(glideMs(0), 1_200);

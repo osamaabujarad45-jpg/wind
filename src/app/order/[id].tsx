@@ -16,7 +16,7 @@ import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
 import { arrivalDistanceKm, capacityCommand, dispatchAcceptance, parcelPickupFarKm, RIDE_ARRIVAL_RADIUS_METERS, rideStep, secondsUntil } from '../../ride-flow';
-import { kmLabel } from '../../map-math';
+import { etaBucket, kmLabel } from '../../map-math';
 import { advanceRequest, type AdvanceRequest } from '../../driver-command';
 import { recoverDriverAction } from '../../driver-recovery';
 import { useDriverRecovery } from '../../use-driver-recovery';
@@ -111,6 +111,7 @@ export default function OrderScreen() {
   // Live ETA ignores checkpoints; a recent slow/closed report on the route drops its upper bound (SPEC-road-aware-eta.md).
   const roads = useApi<Road[]>(eta ? '/roads' : null, 60_000).data ?? [];
   const alerts = order ? roadAlerts(roads, order.pickupCity, order.dropoffCity) : [];
+  const etaChip = (e: [number, number]) => { const n = alerts.length ? null : etaBucket(e[1]); return n ? fill(c.etaLessShort, { n }) : fill(c.minutesShort, { m: e[0] === e[1] ? e[0] : `${e[0]}-${e[1]}` }); };
   useFocusEffect(useCallback(() => {
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 5_000); // location age and arrival clock stay current
@@ -604,7 +605,7 @@ export default function OrderScreen() {
   if (live) return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
       driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
-      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` }) : null}
+      insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? etaChip(eta) : null}
       stopLabels={{ pickup: order.pickupNote || from[language], dropoff: order.dropoffNote || to[language] }} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.topBar, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       {maneuver ? <View accessibilityLiveRegion="polite" style={[styles.nav, { flexDirection: row }]}>
@@ -655,7 +656,7 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             <Pulse color={serviceMeta[order.service].color} size={8} />
             <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="title" style={{ color: palette.olive }}>{fill(c.minutesShort, { m: eta[0] === eta[1] ? eta[0] : `${eta[0]}-${eta[1]}` })}</Txt>}
+            {eta && location && !location.stale && <Txt variant="title" style={{ color: palette.olive }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />

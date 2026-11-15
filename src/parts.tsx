@@ -7,7 +7,7 @@ import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } f
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
 import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
-import { kmLabel } from './map-math';
+import { etaBucket, kmLabel } from './map-math';
 import { useSession } from './session';
 import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText } from './copy';
@@ -99,7 +99,9 @@ export function EtaLine({ eta, toPickup, slow, km, now }: { eta: [number, number
   const { c } = useCopy();
   const { stamp } = useFormat();
   const [lo, hi] = eta, here = lo <= 1 && !slow; // a checkpoint delay keeps its "or more" wording to the end
+  const less = here || slow ? null : etaBucket(hi); // a checkpoint delay has no upper bound to promise; callers already drop stale/hidden ETAs
   const head = here ? toPickup ? c.arrivingPickup : c.arrivingDropoff
+    : less ? fill(toPickup ? c.etaLessPickup : c.etaLessDropoff, { n: less })
     : fill(toPickup ? slow ? c.etaToPickupSlow : c.etaToPickup : slow ? c.etaToDropoffSlow : c.etaToDropoff, { lo, hi });
   // Arriving: no distance (a road route from a rounded origin still reads 0.2 km at the pin). "By" rounds up a minute.
   const detail = here ? '' : [km != null && fill(c.kmAway, { km: kmLabel(km) }), !slow && fill(c.arriveBy, { t: stamp(Math.ceil((now + hi * 60_000) / 60_000) * 60_000) })].filter(Boolean).join(', ');
