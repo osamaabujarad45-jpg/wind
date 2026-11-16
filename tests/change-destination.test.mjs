@@ -89,12 +89,12 @@ try {
   const customerPushes = () => sends.filter(s => s.url === customerEndpoint).map(s => readPush(s.body).kind);
   sends.length = 0;
   const accepted = await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' });
-  assert.deepEqual(customerPushes(), ['destination_accepted']);
   assert.equal(accepted.dropoffCity, 'hebron');
   assert.deepEqual(accepted.dropoffPoint, request.point);
   assert.equal(accepted.price, 34);
   assert.equal(accepted.commission, 5.1);
   assert.equal((await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' })).price, 34);
+  assert.deepEqual(customerPushes(), ['destination_accepted']);
   await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'decline' }, 409);
   for (const status of ['assigned', 'at_pickup', 'in_transit']) {
     const customerOrder = await call(`/orders/${order.id}`, { token: customer.token });
