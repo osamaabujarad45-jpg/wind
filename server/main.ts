@@ -222,11 +222,11 @@ async function guardCashCeiling(price: number, orderId?: number) {
   const cod = orderId == null ? 0 : await codGoodsMinor(persistence, orderId) / 100; // a booked order's goods COD rides on the fare
   if (overCashCeiling((await settings()), price + cod)) fail(409, 'over_cash_ceiling');
 }
-/** ADM-12 for a fare going back to the pool (release, courier block): the recommendation, but never so high that fare plus goods COD passes the ceiling. */
-async function restoredFare(orderId: number, recommended: number) {
+/** ADM-12 for a fare going back to the pool (release, courier block): the recommendation, but never so high that fare plus goods COD passes the ceiling.
+ * A ceiling lowered below the open goods COD leaves no room: the fare stays as booked (legal then), so a release or a safety block is never refused. */
+async function restoredFare(orderId: number, recommended: number, current: number) {
   const room = Math.floor((await settings()).orderCashCeiling - await codGoodsMinor(persistence, orderId) / 100);
-  if (room < 1) fail(409, 'over_cash_ceiling'); // a ceiling lowered below the open goods COD: support settles the COD first
-  return Math.min(recommended, room);
+  return room < 1 ? current : Math.min(recommended, room);
 }
 
 // scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
@@ -2534,7 +2534,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
       (await safetyFree(current.id));
       const now = Date.now();
       // Back to the recommendation, but never above a per-order cash ceiling lowered since the booking (ADM-12).
-      const restoredPrice = await restoredFare(current.id, current.recommendedPrice ?? current.price);
+      const restoredPrice = await restoredFare(current.id, current.recommendedPrice ?? current.price, current.price);
       const discount = (await restoredDiscount(current.id, restoredPrice, current.discount));
       (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
         job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, restoredPrice, discount, now, now, current.id)); // back to the recommendation
@@ -3392,7 +3392,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
-        const backPrice = await restoredFare(Number(o.id), (o.recommended_price ?? o.price) as number); // ADM-12, as a release
+        const backPrice = await restoredFare(Number(o.id), (o.recommended_price ?? o.price) as number, o.price as number); // ADM-12, as a release
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));
