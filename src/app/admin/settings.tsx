@@ -12,7 +12,7 @@ const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits'; keys: (
   // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
   { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
-  { title: 'cashLimits', keys: ['driverCashCap'] },
+  { title: 'cashLimits', keys: ['driverCashCap', 'orderCashCeiling'] },
 ];
 
 const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));

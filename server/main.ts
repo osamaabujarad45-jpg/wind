@@ -54,7 +54,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
@@ -215,6 +215,10 @@ function logAccountCommandFailure(error: unknown) {
 async function settings(): Promise<Settings> {
   const stored = Object.fromEntries((await all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
   return { ...defaultSettings, ...stored };
+}
+/** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
+async function guardCashCeiling(price: number) {
+  if (overCashCeiling((await settings()), price)) fail(409, 'over_cash_ceiling');
 }
 
 // scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
@@ -1412,6 +1416,7 @@ async function recommend(user: User, b: Row) {
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice((await settings()), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
     plus: (await activePlan(user.id)) === 'plus' });
+  await guardCashCeiling(price); // the price screen and a destination change hear it before anyone commits
   return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', ...(service === 'parcel' && { priority }), line: trip?.line ?? null, at };
 }
 route('POST', '/api/price', async ({ user, body }) => {
@@ -1602,6 +1607,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     const priority = bookingPriority(quoted.service, body.priority, fail, quoted.scheduled_for ?? null);
     if (priority !== (quoted.priority ?? 'standard')) fail(409, 'itinerary_changed');
     const price = Number(quoted.price_minor) / 100;
+    await guardCashCeiling(price); // the ceiling may have been lowered since the quote
     const nowTs = Date.now();
     const promo = body.promoCode == null ? null : (await promoFor(user, body.promoCode, price));
     if (promo && body.expectedDiscount != null && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
@@ -1674,6 +1680,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     plus: (await activePlan(user.id)) === 'plus' });
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
   if (body.quotedPrice != null && Number(body.quotedPrice) !== price) fail(409, 'price_changed');
+  await guardCashCeiling(price);
   const now = Date.now();
   const promo = body.promoCode == null ? null : (await promoFor(user, body.promoCode, price));
   if (promo && body.expectedDiscount != null && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
@@ -1836,8 +1843,10 @@ route('POST', '/api/partner/quotes', async ({ req, body }) => {
   bookedPoint(body.pickupPoint, body.pickupCity); bookedPoint(body.dropoffPoint, body.dropoffCity); apartPins(body.pickupPoint, body.dropoffPoint);
   const priority = bookingPriority('parcel', body.priority, fail);
   checkPriorityCutoff(priority, fail);
-  return { currency: 'ILS', priority, price: quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
-    option: body.option, shared: body.shared === true }) };
+  const price = quote((await settings()), { service: 'parcel', pickupCity: body.pickupCity, dropoffCity: body.dropoffCity,
+    option: body.option, shared: body.shared === true });
+  await guardCashCeiling(price); // the seller hears it before the buyer agrees
+  return { currency: 'ILS', priority, price };
 }, true);
 
 route('POST', '/api/partner/orders', async ({ req, body }) => {
@@ -2407,6 +2416,7 @@ route('POST', '/api/jobs/:id/offer', async ({ user, params, body }) => {
   if (!canTake((await activeLoad(user.id)), order.service)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
+  await guardCashCeiling(body.price); // a driver's own price may not take the order past the ceiling either
   await guardCashCap(user.id, body.price, await driverRate(user.id));
   // A driver changing their own live offer does not ring the customer again; a first or renewed one does.
   if (!(await one('SELECT 1 FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', order.id, user.id, Date.now() - OFFER_TTL)))
@@ -2431,6 +2441,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     const f = (await one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
+    await guardCashCeiling(Number(f.price)); // lowered since the driver offered
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
@@ -2470,7 +2481,8 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
       if (current.driverId !== user.id || !['assigned', 'at_pickup'].includes(current.status)) fail(409, 'cannot_release'); // nothing collected yet
       (await safetyFree(current.id));
       const now = Date.now();
-      const restoredPrice = current.recommendedPrice ?? current.price;
+      // Back to the recommendation, but never above a per-order cash ceiling lowered since the booking (ADM-12).
+      const restoredPrice = Math.min(current.recommendedPrice ?? current.price, (await settings()).orderCashCeiling);
       const discount = (await restoredDiscount(current.id, restoredPrice, current.discount));
       (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
         job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, restoredPrice, discount, now, now, current.id)); // back to the recommendation
@@ -3308,7 +3320,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
-        const backPrice = (o.recommended_price ?? o.price) as number;
+        const backPrice = Math.min((o.recommended_price ?? o.price) as number, (await settings()).orderCashCeiling); // ADM-12, as a release
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));

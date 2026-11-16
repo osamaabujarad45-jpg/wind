@@ -3,6 +3,7 @@ import { durableProtocolAvailable } from './events.ts';
 import { randomUUID } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import type { CityId, Order, Plan, Point, Role, Settings, User } from '../../src/model.ts';
+import { overCashCeiling } from '../../src/model.ts';
 
 // SPEC-change-destination.md: a proposal binds the whole agreement and assignment, not merely an order id.
 type Register = (method: string, path: string, handler: (ctx: { user: User; params: string[]; body: Row }) => Promise<unknown>) => unknown;
@@ -147,6 +148,8 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       await safetyFree(id);
       const now = Date.now();
       let fareChange;
+      // ADM-12: a ceiling lowered while the request waited refuses the new fare; a decline is always allowed.
+      if (desired === 'accepted' && overCashCeiling(await settings(), p.price)) fail(409, 'over_cash_ceiling');
       if (desired === 'accepted') {
         await db.run(`UPDATE orders SET dropoff_city = ?, dropoff_lat = ?, dropoff_lng = ?, dropoff_note = ?, price = ?, discount = ?,
           commission = ?, recommended_price = ?, route_km = ?, updated_at = ? WHERE id = ?`,
