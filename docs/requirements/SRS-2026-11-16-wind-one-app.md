@@ -1,7 +1,7 @@
 # Wind — Software Requirements Specification: one app for rides, shipping and delivery
 
 **Version 1.0 · 16 November 2026 · Status: draft for owner review.**
-**Baseline:** `origin/master` `fb05483`; production `https://4.223.118.16.sslip.io` (parcel only, cash only, SQLite).
+**Baseline:** commit `fb05483` (later master commits change docs only); production `https://4.223.118.16.sslip.io` (parcel only, cash only, SQLite).
 **Owner request (16 Nov):** study the Kimi research and the competitor apps, then specify one app that combines a
 shipping app, a delivery app and an Uber-style ride app — complete, designed, accessibility-checked, and consistent as
 one product with no conflicts between the parts.
@@ -22,8 +22,10 @@ one product with no conflicts between the parts.
   - **P** = partial; the gap is named in the row. A row marked just "P" has an unconfirmed gap that needs a short
     gap analysis before implementation.
   - **N** = new.
-  - A row that names several services takes the **lowest** status among them (E-off counts as not E). For example,
-    a rule that is live for parcels but off for rides is P.
+  - A row whose code is **service-specific** and names several services is **P** if at least one named service is
+    live and another is E-off or N; it is E-off or N only when no named service is live. A row about
+    **service-agnostic** order code (it works for any order, such as calling the captain or a dispute) is E when
+    that code is live.
 - External sources (the Kimi spec, the reference-app studies, the demo apps) are **outside this repository**. They are
   in the main checkout `research_notes/`, its `docs/BUILD-SPEC-…`, and `Documents/wind-competitors/`. IDs taken from
   them always carry their source key, for example `R-SQ A10`, `R-PAL A14`, `PLAN A-14`.
@@ -85,7 +87,7 @@ account, one map home, one order record, one captain app mode and one operations
 | Recipient | Receives a parcel or delivery for someone else | No account. Gets a tracking link and the delivery code by message |
 | Captain (driver) | Carries out jobs on approved vehicles and approved service lines | Driver account, approved by an admin |
 | Merchant (new) | Shop that receives Delivery orders, prepares them and hands them over | Merchant account, approved by an admin. Uses the merchant mode of the same app or the web console |
-| Admin / dispatcher / cashier | Approves people, dispatches, settles cash, resolves exceptions | Created by operator enrollment only (no self sign-up) |
+| Admin (duties: `dispatcher`, `finance`, `safety`, `driver_reviewer`, `platform_admin`; ADM-10) | Approves people, dispatches, settles cash, resolves exceptions | Created by operator enrollment only (no self sign-up) |
 
 ---
 
@@ -103,7 +105,7 @@ section.
 | ONE-05 | One home MUST serve all services: a map-first home with a service switcher (Ride · Send · Shop), plus one "where to" entry, saved places, recents and an active-order card (§4.2). | P: parcel only |
 | ONE-06 | One booking engine MUST cover all services, built as a step workflow (R-CA §3): place → service details → option/price → payment → confirm. Each step is a named, testable state, so a failed step is retried on its own. Service lines plug in steps and do not fork the flow. | P: booking is one component tree (`src/app/book.tsx`), not named step states |
 | ONE-07 | One quote model MUST serve all services: server-priced, versioned tariff, expiry, usable once, idempotent create (PLAN C-18). | P: server price check and idempotent create are live; versioned quote records (`server/domain/quotes.ts`) are PostgreSQL-only |
-| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one provider interface (`PaymentsProvider`, `server/domain/payments.ts`) (gate G-PAY). | P: cash, credit codes and promo are live; the `PaymentsProvider` interface is PostgreSQL-only |
+| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one provider interface (`PaymentsProvider`, `server/domain/payments.ts`) (gate G-PAY). | P: cash, credit codes and promo are live; the `PaymentsProvider` interface and routes are wired, but the Payments service's SQL runs only on PostgreSQL |
 | ONE-09 | One captain mode MUST serve all services: one job board and one offer channel, with each job showing a service badge (icon + word, never colour alone). Concurrency rules come from §2.2 and are enforced on the server. | P |
 | ONE-10 | One cash ledger and one cash cap per captain MUST count every service's cash: fares, delivery fees, shop goods cash at the door and, when enabled, goods COD (PLAN D-16/D-17, WP-16). | P: goods COD is E-off |
 | ONE-11 | One notification system MUST serve all services, with one channel per event class (`jobs`, `status`, `cash`, `attention`, `chat`, and `merchant_orders` for merchants) shared across services, not per service (PLAN N-03, WP-10). | P |
@@ -250,7 +252,7 @@ DLV-10's snapshot is taken again whenever items change before acceptance. BOOK-0
 | TRK-02 | ETA MUST be a road-aware range with validity. Near the end it MUST use the ladder "less than 10/5/3 minutes" (R-HA §4; WP-11). | P |
 | TRK-03 | Calling the captain and in-order chat with quick replies MUST be reachable from every live order (R-HA §4; PLAN T-07/T-08). Admin redaction is NTF-04. | E |
 | TRK-04 | A share-tracking link with no login MUST exist for rides (trip share) and for recipients (parcel/shop) (PLAN T-06). | P: parcel recipients and trip share exist; shop links are N |
-| TRK-05 | Safety MUST have an emergency call plus a safety report on every live order; for rides it is on the trip screen at all times (UB-F F10; PLAN T-18). | E |
+| TRK-05 | Safety MUST have an emergency call plus a safety report on every live order; for rides it is on the trip screen at all times (UB-F F10; PLAN T-18). | P: the order screen has the emergency numbers and safety report (`src/app/order/[id].tsx`); rides are E-off, shop is N; the recipient tracking page has no safety block |
 | TRK-06 | Rating MUST be per order (§2.2 CON-08); a customer rates the captain and, for shop orders, the merchant (R-HA). | P: merchant rating N |
 | TRK-07 | Receipt MUST be itemised and the same format for all services; a cancelled order shows no charge (PLAN T-15). | P: one format for all services and cancelled orders show no charge (E); the itemised breakdown (base, options, service fee) is N |
 | TRK-08 | Order history MUST list all services with a filter, and have separate empty states for current and past (R-HA §4). | P |
@@ -301,7 +303,7 @@ Live today for parcels. Freight is gated by **G-FREIGHT** (vehicle supply, load 
 | SHIP-09 | Return to sender MUST be a tracked leg that needs the sender's return code. | E | PLAN T-23 |
 | SHIP-10 | Custody chain: a per-parcel, append-only, human-readable event log (who held it, when) MUST be visible to sender and admin. | P: events stored; no customer view | R-SQ F-05 |
 | SHIP-11 | Door cash: the captain MUST enter the amount collected. A difference needs a typed variance reason (A11). | E | R-SQ F-03; WP-01 |
-| SHIP-12 | Goods COD (collect the item price for the sender and remit it later) MAY be enabled. It MUST keep goods money apart from fares and count it in the cash cap. | E-off: COD records and routes exist on PostgreSQL (`payments.ts`); no app UI; the cash cap does not count goods COD yet | R-SH F-03; WP-16; gate G-COD, ₪500 rule |
+| SHIP-12 | Goods COD (collect the item price for the sender and remit it later) MAY be enabled. It MUST keep goods money apart from fares and count it in the cash cap. | E-off: COD records and routes exist on PostgreSQL (`payments.ts`); no app UI; the cash cap does not count goods COD yet | R-SH F-03; WP-16; gates G-COD, G-LEGAL |
 | SHIP-13 | The recipient MUST receive the tracking link and delivery code by message (WhatsApp/SMS) and MUST NOT need an account. | P: link shared by sender | PLAN C-12 |
 | SHIP-14 | Delivery windows with a daily capacity cap per zone SHOULD be offered where scheduled delivery is enabled. | P | R-SQ F-02; PLAN C-10 |
 | SHIP-15 | Handoff hints ("leave with neighbour", "call on arrival") MAY be chips on the order. | N | PLAN T-24 |
@@ -331,12 +333,12 @@ menus are a later variant of the same model.
 | DLV-07 | The merchant MUST accept or reject within the accept timeout (owner-set, default 5 minutes). Rejection needs a typed reason ("closed", "out of stock", "too busy") shown to the customer in their language. With no answer, the order expires automatically at no charge and the customer is told. | N | R-HA (المطعم رفض الطلبيه) |
 | DLV-08 | The merchant MUST set the preparation minutes when accepting, then mark progress: accepted → preparing → ready. Each step is server-timestamped and drives the ETA and the dispatch start (DLV-12). | N | D-HA §3 |
 | DLV-09 | Order states in Arabic and English MUST name the actor (for example "The shop is preparing your order", "The captain picked up your order from the shop"). | N | R-HA §4; ONE-04 |
-| DLV-10 | Order snapshot: shop, items, prices and address MUST be frozen at placement and frozen again whenever items change before acceptance (§4.3a); earlier snapshots are kept, so later edits never rewrite history. | N | D-HA §3 |
+| DLV-10 | Order snapshot: shop, items, prices and address MUST be frozen at placement and frozen again whenever items change: before acceptance (§4.3a), by a DLV-06 consent, or by the merchant's final weights and substitutions (DLV-04, MER-03); earlier snapshots are kept, so later edits never rewrite history. | N | D-HA §3 |
 | DLV-11 | Edit or cancel MUST be allowed until the merchant accepts. After that, cancel goes through support, and after pickup it is refused (R-HA "لا يمكن تغيير او الغاء الطلبية بعد ارسال الطلبية"). | N | |
-| DLV-12 | Captain dispatch for a shop order MUST start so that arrival meets `ready` (the merchant's preparation minutes minus the captain's ETA), not at placement. If no captain is assigned by `ready` + 10 minutes (owner-tunable), the customer chooses to wait or cancel, the merchant is told to hold the order, and the admin stuck-order list shows it. | N | |
+| DLV-12 | Captain dispatch for a shop order MUST start so that arrival meets `ready` (the merchant's preparation minutes minus the captain's ETA), not at placement. If no captain is assigned by `ready` + X minutes (owner-set, default 10 minutes), the customer chooses to wait or cancel, the merchant is told to hold the order, and the admin stuck-order list shows it. | N | |
 | DLV-13 | At the shop the captain MUST enter the **merchant pickup code** (§2.1a), shown by the merchant and never to the customer, with the SHIP-05 lockout. The merchant then marks "handed over". | N | R-SQ F-04 |
 | DLV-14 | Delivery completes with the customer delivery code (`handover_code`, §2.1a), with the same lockout and audited reset as SHIP-05. | N (reuse) | |
-| DLV-15 | Cash at the door: goods total + delivery fee, collected by the captain (SHIP-11). Merchant settlement: Wind owes the merchant the goods total, minus commission, through a merchant ledger with append-only entries and a payout reference (ONE-10). | E-off: the `merchant_cod` tables and create/collect exist in `server/domain/payments.ts` (PostgreSQL only); the statement and payouts are N | R-SQ F-06; gates G-COD, G-PG, ₪500 rule |
+| DLV-15 | Cash at the door: goods total + delivery fee, collected by the captain (SHIP-11). Merchant settlement: Wind owes the merchant the goods total, minus commission, through a merchant ledger with append-only entries and a payout reference (ONE-10). | E-off: the `merchant_cod` tables and create/collect exist in `server/domain/payments.ts` (PostgreSQL only); the statement and payouts are N | R-SQ F-06; gates G-COD, G-PG, G-LEGAL |
 | DLV-16 | Delivery windows: shops MAY offer windows with per-window capacity (SHIP-14 mechanism). | N | R-SQ F-02 |
 | DLV-17 | The customer rates the merchant and the captain separately (CON-08). | N | |
 | DLV-18 | Order again for shop orders MUST rebuild the cart from current prices and availability and show any changes before checkout. | N | R-SQ F-14 |
@@ -413,7 +415,7 @@ menus are a later variant of the same model.
 | PAY-03 | Account credit and promo codes MUST apply to all services, subject to CON-06. | P |
 | PAY-04 | Cash entries MUST be append-only; corrections are new entries with a reason and an actor (R-SQ F-06). | E |
 | PAY-05 | The ledger MUST keep four separate books: captain cash (fares and fees), captain-held goods cash (shop goods collected at the door; counts in the captain cap and clears into the merchant ledger at cash handover), goods COD (sender money, gated) and merchant settlement (shop goods owed to merchants, gated). They MUST NOT be netted silently against each other. | P |
-| PAY-06 | Card/wallet MUST NOT be built until a PMA-licensed provider is contracted (G-PAY). When added, it plugs in behind ONE-08. Whether orders above ₪500 must be paid electronically is decided under G-LEGAL, not by the provider contract. | N, gated |
+| PAY-06 | Card/wallet MUST NOT be built until a PMA-licensed provider is contracted (G-PAY). When added, it plugs in behind ONE-08. Whether orders above ₪500 must be paid electronically is decided under G-LEGAL, not by the provider contract. | —, gated (G-PAY) |
 | PAY-07 | Customer arrears MUST NOT exist while cash-only (no fees). If fees are ever introduced, the Careem arrears rule applies: an unpaid balance blocks the next cash booking and is shown before booking (R-CA §5). | — |
 | PAY-08 | Tips MUST NOT be recorded in-app while cash-only (unrecorded money). | — |
 
@@ -527,9 +529,9 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | ADM-07 | Audit log viewer (read-only) over `security_events`. | N (WP-13) |
 | ADM-08 | Fleet view: captains online, last fix (stale shown as stale), current job and service. | P: per-order driver location exists; a fleet list is N (WP-18) |
 | ADM-09 | Merchant management: catalogue moderation, hours, pause, settlement statements. | N |
-| ADM-10 | Admin permissions MUST be split by duty, using the roles in `server/domain/ops.ts`: dispatch (orders, assign), `finance` (cash books, payouts), `safety` (incidents), `driver_reviewer` (captain approval) and `platform_admin` (users, settings), plus support (disputes, chat). Production has one `admin` role today. | E-off: staff duty roles exist in `server/domain/ops.ts` (PostgreSQL-only); production has one `admin` role |
+| ADM-10 | Admin permissions MUST be split by duty, using the roles in `server/domain/ops.ts`: `dispatcher` (orders, assign), `finance` (cash books, payouts), `safety` (incidents), `driver_reviewer` (captain approval) and `platform_admin` (users, settings), plus support (disputes, chat). Production has one `admin` role today. | E-off: staff duty roles exist in `server/domain/ops.ts` (PostgreSQL-only); production has one `admin` role |
 | ADM-11 | Abuse rules MUST exist: limits on promo use per person and device, flags for repeated cancellations, fake orders, merchants rejecting after acceptance, and captain–merchant collusion (one captain repeatedly taking one shop's orders with cash mismatches), reviewed in the admin queue. | N |
-| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced at booking for every cash-collecting order (ride, parcel, freight, goods COD, shop). It defaults to ₪500 until G-LEGAL decides; an order above it is refused with a specific message. Door cash entries keep their existing upper bound. | N |
+| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced at booking for every cash-collecting order (ride, parcel, freight, goods COD, shop). It defaults to ₪500 until G-LEGAL decides; an order above it is refused with a specific message. Door cash entries keep their existing upper bound. The existing goods-COD limit (`COD_LIMIT_MINOR`, ₪10,000 in `server/domain/payments.ts`) stays as a hard upper bound; ADM-12 sits under it. | N |
 
 ---
 
@@ -540,7 +542,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NFR-01 | Performance | Proposed targets, to be confirmed by measurement on the A53: cold start to interactive home ≤ 4 s on 3G; booking steps respond ≤ 300 ms locally; the first map tiles render ≤ 3 s. | P |
 | NFR-02 | Network | Every write is idempotent and recoverable. Shell, saved places and the active order are cached. A failed write keeps the user's input and shows a retry. Queued driver writes MAY be added (R-SQ A7). | P: booking and driver replay recover writes; queued driver writes and a cached shell are N |
 | NFR-03 | Battery and location | Location only while online or on a job. Cadence: 5 s moving with a good fix, else 15 s, 2 s floor. No always-on location. | E |
-| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: all of it exists except recipient-link expiry (N) |
+| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: no ad SDKs and `allowBackup=false` hold. The assigned captain sees the customer's phone for 24 h after the last update, not only during the job (`server/main.ts`); share links stay valid for 24 h after the order closes (`server/domain/realtime.ts`); there is no trace-retention policy; link expiry is N |
 | NFR-05 | Security | HTTPS only. Server-side roles. Compare-and-set on admin edits. Rate limits on auth and codes. Proof lockouts. Audit events. No secrets in the app. Retired API hosts refused at build. | E |
 | NFR-06 | Reliability | One SQLite instance with daily backups now. Before more than one API instance or the Ride/Delivery launch: a shared transactional store (the PostgreSQL decision), an off-host backup and a restore drill. | P: SQLite with daily on-disk backups; off-host backup, restore drill and a shared store are N (G-PG) |
 | NFR-07 | Observability | Every order id traceable across API, dispatch, location, proof and cash. Alerts on stuck states and failed backups reach the owner (WP-08). | P |
@@ -565,7 +567,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | G-STORAGE | ADDR-05, ACC-05, proof photos | Object storage with scanning and retention |
 | G-PUSH | NTF-01 closed-app | Firebase `google-services.json` and FCM key on the new EAS project; server Firebase key |
 | G-OSRM | TRK-02 road-aware ETA, MAP-11 | Self-hosted OSRM with the West Bank graph on the production host |
-| G-LEGAL | the ₪500 rule for all cash-collecting orders (ADM-12), item-sale proceeds (SHIP-12, DLV-15), tax invoice (TRK-13) | Counsel's written answer |
+| G-LEGAL | the MTDE ₪500 courier-payment reading (§1.2, PAY-06); the value of Wind's own default ceiling (ADM-12); item-sale proceeds (SHIP-12, DLV-15); tax invoice (TRK-13) | Counsel's written answer |
 | G-A11Y-TIME | A11Y-08 ride-offer timing | Owner's written acceptance of the WCAG 2.2.1 real-time exception for ride offers |
 | G-REFUND | DLV-21..23 | Goods return, refund and merchant-compensation policy |
 
@@ -619,21 +621,21 @@ was checked against the code at `1c3100a` (16 Nov audit); baseline `fb05483` has
 | ADDR addresses | 8 | 3 | 0 | 3 | 2 | 0 |
 | HOME home | 6 | 1 | 0 | 3 | 2 | 0 |
 | BOOK booking | 8 | 1 | 0 | 7 | 0 | 0 |
-| TRK tracking and after | 13 | 5 | 0 | 5 | 3 | 0 |
+| TRK tracking and after | 13 | 4 | 0 | 6 | 3 | 0 |
 | RIDE | 12 | 0 | 6 | 4 | 2 | 0 |
 | SHIP shipping | 16 | 5 | 1 | 4 | 6 | 0 |
 | DLV delivery | 24 | 0 | 1 | 0 | 23 | 0 |
 | MER merchant | 9 | 0 | 0 | 1 | 8 | 0 |
 | DRV captain | 16 | 6 | 1 | 8 | 0 | 1 |
 | MAP | 11 | 1 | 1 | 8 | 1 | 0 |
-| PAY | 8 | 2 | 0 | 3 | 1 | 2 |
+| PAY | 8 | 2 | 0 | 3 | 0 | 3 |
 | DES design | 14 | 5 | 0 | 7 | 2 | 0 |
 | A11Y accessibility | 27 | 4 | 0 | 18 | 4 | 1 |
 | NTF notifications | 5 | 1 | 0 | 3 | 1 | 0 |
 | SUP support | 2 | 1 | 0 | 1 | 0 | 0 |
 | ADM operations | 12 | 2 | 1 | 5 | 4 | 0 |
 | NFR | 11 | 4 | 0 | 6 | 0 | 1 |
-| **Total** | **228** | **47** | **13** | **103** | **60** | **5** |
+| **Total** | **228** | **46** | **13** | **104** | **59** | **6** |
 
 Delivery and merchant (31 new) is the largest block of new work. Ride exists mostly in code but is off
 (6 E-off) behind G-RIDE and G-PG. Shipping is mostly built: what remains is the one-app shell (ONE, mostly
