@@ -5,7 +5,7 @@ import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
-import { handoverExceptions, latinDigits, minorFromText, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
+import { handoverExceptions, hhmm, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
@@ -13,6 +13,15 @@ import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScal
 const WEIGHT_STEP = 250; // grams
 
 /** "1.5 kg" or "× 2", in the reader's language. */
+/** Today's opening hours in words, or null when the shop keeps none (the list and the closed shop's page). */
+// ponytail: the device's weekday; the pilot town and its customers share one time zone.
+export function todayHours(m: Pick<Merchant, 'hours' | 'open'>, c: Record<string, string>) {
+  if (!m.hours.length) return null;
+  const ranges = m.hours.filter(h => h.weekday === new Date().getDay()).map(h => ltr(`${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`)); // ltr: RTL would read the range backwards
+  // An open shop with no range today is in last night's overnight range, so it never says "Closed today".
+  return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : m.open ? null : c.shopClosedToday;
+}
+
 export function qtyLabel(qtyMilli: number, byWeight: boolean, c: Record<string, string>) {
   return byWeight ? fill(c.shopKg, { n: (qtyMilli / 1000).toFixed(qtyMilli % 1000 ? (qtyMilli % 100 ? 2 : 1) : 0) }) : fill(c.shopTimes, { n: qtyMilli / 1000 });
 }

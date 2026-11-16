@@ -19,6 +19,7 @@ export default function MerchantHome() {
   const statement = useApi<Statement>(merchant && merchant.status !== 'pending' ? '/merchant/statement' : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [hoursSaved, setHoursSaved] = useState(false); // kept here: the hours card remounts when the saved hours come back
   if (!mine.data) return <Screen><Header title={c.merchantMode} back /><Loading failed={!!mine.error} onRetry={mine.reload} /></Screen>;
   if (!merchant) return <Apply onDone={mine.reload} />;
   if (merchant.status === 'pending') return <Screen onRefresh={mine.reload}><Header title={merchant.name} back />
@@ -49,7 +50,7 @@ export default function MerchantHome() {
     {!orders.length && <Empty icon="file-tray-outline" title={c.merchantNoOrders} />}
     {orders.map(o => <InboxRow key={o.id} order={o} />)}
     {/* a setting touched rarely: below the inbox, which is the shop's main work */}
-    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} onDone={mine.reload} />
+    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} saved={hoursSaved} onSaved={done => { setHoursSaved(done); if (done) mine.reload(); }} />
     {!!statement.data?.entries.length && <Card>
       <Section title={c.merchantStatement} />
       {statement.data.entries.slice(0, 20).map(e => <Row key={e.id} style={{ justifyContent: 'space-between', paddingVertical: 3 }}>
@@ -61,7 +62,7 @@ export default function MerchantHome() {
 }
 
 /** MER-02 / DLV-01: one opening range for every day (the pilot's need); empty means open whenever not paused. */
-function Hours({ merchant, onDone }: { merchant: Merchant; onDone: () => void }) {
+function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolean; onSaved: (done: boolean) => void }) {
   const { c } = useCopy();
   const first = merchant.hours[0];
   // The editor writes one range for every day; hours stored per day (by support) are replaced on save, and it says so.
@@ -78,18 +79,21 @@ function Hours({ merchant, onDone }: { merchant: Merchant; onDone: () => void })
     setBusy(true); setError('');
     try {
       await api('/merchant/settings', { hours: empty ? [] : [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close })) });
-      onDone();
+      onSaved(true);
     } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
     finally { setBusy(false); }
   }
+  const edit = (set: (text: string) => void) => (text: string) => { set(text); if (saved) onSaved(false); };
   return <Card>
     <Section title={c.merchantHours} />
     {/* decimal-pad has no colon on Android, so 8.30 is read as 08:30 */}
-    <Field label={c.merchantOpens} value={opens} onChangeText={setOpens} keyboardType="decimal-pad" maxLength={5} />
-    <Field label={c.merchantCloses} value={closes} onChangeText={setCloses} keyboardType="decimal-pad" maxLength={5} />
+    <Field label={c.merchantOpens} value={opens} onChangeText={edit(setOpens)} keyboardType="decimal-pad" maxLength={5} />
+    {/* Go saves: on a phone the keyboard covers the button below */}
+    <Field label={c.merchantCloses} value={closes} onChangeText={edit(setCloses)} keyboardType="decimal-pad" maxLength={5} onSubmitEditing={ok && !busy ? save : undefined} />
     <Txt variant="caption">{c.merchantHoursHint}</Txt>
     {!uniform && <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantHoursReplace}</Txt>}
     <Button title={c.merchantSaveHours} size="sm" variant="outline" loading={busy} disabled={!ok} reason={ok ? undefined : c.merchantHoursBad} onPress={save} />
+    {saved && <Txt variant="caption" center style={{ marginTop: 6 }}>{c.saved}</Txt>}
     <ErrorText>{error}</ErrorText>
   </Card>;
 }
