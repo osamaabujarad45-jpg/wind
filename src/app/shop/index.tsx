@@ -2,7 +2,7 @@
 // today's hours, and can still be opened to browse; placing an order is refused until it opens (ONE-13 applies to the whole line).
 import { router } from 'expo-router';
 import { useApi } from '../../api';
-import { city, hhmm, type Merchant } from '../../model';
+import { city, hhmm, ltr, type Merchant } from '../../model';
 import { useCart, cartGoods } from '../../shop-cart';
 import { Badge, Button, Card, Empty, ErrorText, fill, Header, Loading, palette, Press, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
@@ -14,7 +14,7 @@ export default function ShopList() {
   // ponytail: the device's weekday; the pilot town and its customers share one time zone.
   const today = (m: Merchant) => {
     if (!m.hours.length) return null;
-    const ranges = m.hours.filter(h => h.weekday === new Date().getDay()).map(h => `${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`);
+    const ranges = m.hours.filter(h => h.weekday === new Date().getDay()).map(h => ltr(`${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`)); // ltr: RTL would read the range backwards
     // An open shop with no range today is in last night's overnight range, so it never says "Closed today".
     return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : m.open ? null : c.shopClosedToday;
   };
