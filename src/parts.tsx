@@ -19,6 +19,7 @@ export const serviceMeta: Record<Service, { icon: IconName; color: string; pale:
   parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
   ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
   freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
+  shop: { icon: 'basket-outline', color: palette.olive, pale: palette.olivePale }, // ONE-12: the accent stays on the icon and badge
 };
 
 export { statusText };
@@ -475,6 +476,8 @@ export function AccountScreen() {
     </ListGroup>
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
+      {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}
+      {me?.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') && <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
       {/* support lives one tap in: Help leads with it, so a second row here only splits the same door */}
       <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(privacyUrl(language))} />

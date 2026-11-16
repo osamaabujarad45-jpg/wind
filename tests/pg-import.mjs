@@ -58,6 +58,21 @@ sqlite.prepare('INSERT INTO promo_redemptions(promo_id,customer_id,order_id,crea
 const secondOrder=sqlite.prepare('SELECT id FROM orders WHERE id<>? ORDER BY id LIMIT 1').get(order).id;
 sqlite.prepare('INSERT INTO promo_redemptions(promo_id,customer_id,order_id,created_at) VALUES(?,?,?,?)').run(promo,user,secondOrder,now);
 sqlite.prepare("INSERT INTO order_messages(order_id,sender_id,driver_id,sender_role,body,created_at) VALUES(?,?,?,'customer','رسالة تجريبية محفوظة',?)").run(order,user,driver,now);
+// Shop delivery (migration 33): one row in every shop table, so a cutover is shown to carry shops, baskets and their money.
+sqlite.prepare("INSERT INTO merchants(owner_user_id,name,category,city,lat,lng,phone,status,paused_new,min_order_agorot,delivery_fee_agorot,service_fee_agorot,commission_bps,prep_minutes,licence_no,licence_expires_at,created_at,updated_at) VALUES(?,'مخبز تجريبي','bakery','tulkarm',32.312,35.029,'0599000003','active',0,2000,1000,200,1000,20,'TK-1',?,?,?)").run(user,now+86400000,now,now);
+const merchant=sqlite.prepare('SELECT max(id) id FROM merchants').get().id;
+sqlite.prepare('INSERT INTO merchant_hours(merchant_id,weekday,open_min,close_min) VALUES(?,1,420,1320)').run(merchant);
+sqlite.prepare("INSERT INTO merchant_items(merchant_id,section,name_ar,name_en,price_agorot,by_weight,available,sort,updated_at) VALUES(?,'مخبوزات','خبز','Bread',500,0,1,0,?)").run(merchant,now);
+const item=sqlite.prepare('SELECT max(id) id FROM merchant_items').get().id;
+sqlite.prepare("INSERT INTO shop_orders(order_id,merchant_id,merchant_state,accept_deadline,accept_extended,goods_estimate_agorot,goods_cap_agorot,goods_agorot,delivery_fee_agorot,service_fee_agorot,agree_limit,pickup_code,pickup_failures,paused_ms,packing) VALUES(?,?,'ready',?,0,1500,1650,1500,1000,200,0.1,'4821',0,0,'[{\"no\":1,\"sealed\":true,\"lineIds\":[]}]')").run(order,merchant,now);
+sqlite.prepare("INSERT INTO shop_lines(order_id,item_id,name_ar,name_en,policy,by_weight,qty_milli,unit_agorot,estimate_agorot,removed) VALUES(?,?,'خبز','Bread','ask_first',0,3000,500,1500,0)").run(order,item);
+const line=sqlite.prepare('SELECT max(id) id FROM shop_lines').get().id;
+sqlite.prepare("INSERT INTO shop_snapshots(order_id,reason,goods_agorot,body,created_at) VALUES(?,'placement',1500,'{\"lines\":[]}',?)").run(order,now);
+sqlite.prepare("INSERT INTO shop_changes(order_id,line_id,kind,payload,status,expires_at,extended,created_at,decided_at) VALUES(?,?,'substitution','{}','declined',?,0,?,?)").run(order,line,now,now,now);
+sqlite.prepare("INSERT INTO shop_handover_checks(order_id,actor_id,result,exception,note,created_at) VALUES(?,?,'ok',NULL,'',?)").run(order,driver,now);
+sqlite.prepare("INSERT INTO shop_seals(order_id,package_no,intact,attempt,actor_id,created_at) VALUES(?,1,1,'deliver',?,?)").run(order,driver,now);
+sqlite.prepare("INSERT INTO shop_faults(order_id,result,actor_id,note,created_at) VALUES(?,'none',?,'تجربة',?)").run(order,admin,now);
+sqlite.prepare("INSERT INTO shop_ledger(book,merchant_id,driver_id,order_id,kind,amount_agorot,note,reference,actor_id,business_ref,created_at) VALUES('merchant',?,NULL,?,'goods',1500,'Goods',NULL,?,'shop-goods-import',?)").run(merchant,order,admin,now);
 sqlite.prepare('INSERT OR IGNORE INTO referral_codes(user_id,code) VALUES(?,?)').run(user,'WTEST3');
 sqlite.prepare('INSERT OR IGNORE INTO referrals(referee_id,referrer_id,order_id,reward_promo_id,created_at) VALUES(?,?,?,?,?)').run(driver,user,order,promo,now);
 sqlite.prepare("INSERT INTO push_keys(id,private_jwk) VALUES(1,'{\"synthetic\":true}') ON CONFLICT(id) DO NOTHING").run();

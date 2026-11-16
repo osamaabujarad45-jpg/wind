@@ -23,7 +23,7 @@ export default function Home() {
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
   // A newer booked-ahead order hid a live trip or a search running now behind "See all". Stable sort keeps newest first per rank.
-  const active = orders.filter(o => o.status === 'searching' || activeStatuses.includes(o.status)).sort((a, b) => currentRank(b) - currentRank(a));
+  const active = orders.filter(o => o.status === 'requested' || o.status === 'searching' || activeStatuses.includes(o.status)).sort((a, b) => currentRank(b) - currentRank(a));
   // Latest distinct routes, newest first: the "book again" list. Only finished trips, as Amazon's "Buy it again"
   // skips what is still on its way; an in-flight route already shows above it.
   const done = orders.filter(o => !active.includes(o));
@@ -31,7 +31,7 @@ export default function Home() {
   const first = me?.user.name.split(' ')[0] ?? '';
   const greet = new Date().getHours() < 12 ? c.goodMorning : c.goodEvening;
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
-  const firstService: Service = enabledServices.includes('ride') ? 'ride' : 'parcel';
+  const firstService: Service = enabledServices.includes('ride') ? 'ride' : 'parcel'; // "where to" books a trip; shop delivery has its own tile
   const [here, setHere] = useState<(Point & { accuracy?: number | null }) | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationNote, setLocationNote] = useState('');
@@ -131,7 +131,7 @@ export default function Home() {
         </View>
         <Row gap={8} style={{ alignItems: 'stretch' }}>
           {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
-            <Press accessibilityLabel={c[service]} onPress={() => book({ service })} style={[styles.tile, shadow, { flexDirection: row }]}>
+            <Press accessibilityLabel={c[service]} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, { flexDirection: row }]}>
               <ServiceIcon service={service} size={28} />
               {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
               <Txt variant="label" numberOfLines={2} style={{ flex: 1, fontSize: 12 }}>{c[service]}</Txt>

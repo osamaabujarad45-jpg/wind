@@ -265,6 +265,11 @@ export default function Jobs() {
               <Ionicons name="cash-outline" size={iconSize.sm} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.collectCash, { p: money(order.price - order.discount) })}</Txt>
             </Row>}
+            {/* A shop job collects the goods and both fees at the door (DLV-15); weighed goods may still change, so it reads "about". */}
+            {order.shop && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
+              <Ionicons name="basket-outline" size={iconSize.sm} color={palette.olive} />
+              <Txt variant="label" style={{ flex: 1 }}>{fill(c.shopJobCash, { shop: order.shop.merchantName, p: money(order.shop.cashAgorot / 100) })}</Txt>
+            </Row>}
             <Txt variant="caption" style={{ marginBottom: 10 }}>{c.noChangeDriver}</Txt>
             {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />

@@ -621,6 +621,44 @@
           "anonymousStatus": 401
         }
       ]
+    },
+    {
+      "packet": "shop-delivery",
+      "source": "server/domain/shop.ts",
+      "registrar": "registerShop",
+      "endpoints": [
+        { "method": "POST", "path": "/api/merchant/apply", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/merchant", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/merchant/catalogue", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/items", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/items/:id", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/settings", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/shop/merchants", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/shop/merchants/:id", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/orders/:id/shop/edit", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/orders/:id/shop/consent", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/orders/:id/shop/again", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/orders/:id/shop/rate", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/merchant/orders", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/accept", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/extend", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/reject", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/preparing", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/lines/:line", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/merchant/orders/:id/ready", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/merchant/statement", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/orders/:id/shop/handover", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/merchants", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/merchants/:id", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/merchants/:id/payout", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/cancel", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/fault", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/unsellable", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/refund", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/reset-pickup", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/users/:id/shop-review", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/shop/attention", "anonymousStatus": 401 }
+      ]
     }
   ]
 }

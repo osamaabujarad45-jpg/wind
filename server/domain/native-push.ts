@@ -11,11 +11,12 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const expoTokenPattern = /^(?:ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_\-+/=]{8,}\]$/;
 export const PUSH_KINDS = ['assigned', 'at_pickup', 'in_transit', 'completed', 'returned', 'message', 'job', 'released', 'cancelled', 'offer',
   'offer_accepted', 'on_hold', 'returning', 'decided', 'approved', 'support', 'cash', 'attention', 'safety', 'plan',
-  'destination_request', 'destination_accepted', 'destination_declined', 'admin_assigned', 'admin_unassigned', 'dispatch_assigned'];
+  'destination_request', 'destination_accepted', 'destination_declined', 'admin_assigned', 'admin_unassigned', 'dispatch_assigned',
+  'merchant_order', 'shop_consent', 'shop_update'];
 export const NONESSENTIAL_KINDS = ['job', 'offer', 'message', 'released', 'approved', 'support', 'cash', 'attention', 'plan'];
 /** Kinds that wake the phone at high urgency; every sender reads this one list. */
 export const URGENT_KINDS = ['job', 'message', 'offer', 'offer_accepted', 'on_hold', 'returning', 'decided', 'attention', 'safety',
-  'destination_request', 'destination_accepted', 'destination_declined', 'admin_assigned', 'admin_unassigned'];
+  'destination_request', 'destination_accepted', 'destination_declined', 'admin_assigned', 'admin_unassigned', 'merchant_order', 'shop_consent'];
 export type NativePrefs = { nonessentialMuted: boolean; mutedKinds: string[]; quietHours: { startMinute: number; endMinute: number; utcOffsetMinutes: number } | null };
 export const defaultPrefs = (): NativePrefs => ({ nonessentialMuted: false, mutedKinds: [], quietHours: null });
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
