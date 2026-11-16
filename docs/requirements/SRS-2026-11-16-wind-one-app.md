@@ -78,7 +78,7 @@ account, one map home, one order record, one captain app mode and one operations
   read as requiring electronic payment for courier payments over ₪500; this is **unconfirmed**. `docs/SYSTEM.md` §7
   (item 3) asks counsel to confirm it (gate **G-LEGAL**), together with whether Wind may collect item-sale proceeds at
   all (`docs/SYSTEM.md` §10 excludes them from the initial scope). Once built, ADM-12 MUST apply a per-order cash ceiling to
-  every cash-collecting order, defaulting to ₪500 until G-LEGAL decides. Money MUST be integer agorot (PAY-01).
+  every cash-collecting order, defaulting to ₪500 (D-1). Money MUST be integer agorot (PAY-01).
 - **Network and devices:** budget Android phones on 3G or 2G. Arabic first, with full English.
 - **Supply:** a service line is visible only where verified captains, and for Delivery verified merchants, exist (SCOPE).
 
@@ -229,7 +229,7 @@ Changing any cell changes that table, which is server-enforced.
 | BOOK-05 | Scheduling MUST be available per service: ride later, parcel pickup time, shop delivery window. A scheduled job is hidden from captains until its release time (PLAN C-11). | P |
 | BOOK-06 | Create MUST be idempotent with a client request id. A lost acknowledgement MUST recover the same order and never book twice (PLAN C-18, `booking-recovery`). | E |
 | BOOK-07 | Edits after placing MUST follow §4.3a, which is the single source per service and state (for example a shop destination cannot change after the merchant accepts). Destination change after assignment needs captain consent where the table allows it (PLAN T-12/T-25). | P |
-| BOOK-08 | Cancellation MUST be free while cash-only (no fees, PLAN T-10/T-11). Ride and shipping orders can be cancelled until pickup; shop orders follow §4.3a and DLV-11. After pickup, cancellation MUST be refused with a reason. | P: ride cancellation is E-off; shop cancellation (DLV-11) is N |
+| BOOK-08 | Cancellation MUST be free while cash-only (no fees, PLAN T-10/T-11). Ride and shipping orders can be cancelled until pickup; shop orders until the merchant starts preparing (§4.3a, DLV-11, D-2). After that point, cancellation MUST be refused with a reason. | P: ride cancellation is E-off; shop cancellation (DLV-11) is N |
 
 ### 4.3a What may change after placing (one table for all services)
 
@@ -242,8 +242,9 @@ Changing any cell changes that table, which is server-enforced.
 | Shipping, `assigned`/`at_pickup` | note only | with captain consent | — | yes, free |
 | Shipping, `in_transit` and later | — | with captain consent | — | no |
 | Shop, before the merchant accepts | yes | yes | yes (new snapshot) | yes, free |
-| Shop, `merchant_state` `accepted`/`preparing`/`awaiting_approval` | note only | no | customer: approve or decline only (DLV-06); merchant: changes recorded while `preparing` (DLV-04, MER-03), each evaluated by DLV-06 | through support (DLV-11, DLV-23) |
-| Shop, `merchant_state` `ready` | note only | no | none (items are final) | through support (DLV-11, DLV-23) |
+| Shop, `merchant_state` `accepted` | note only | no | none (preparation has not started) | through support, free (DLV-11, DLV-23) |
+| Shop, `merchant_state` `preparing`/`awaiting_approval` | note only | no | customer: approve or decline only (DLV-06); merchant: changes recorded while `preparing` (DLV-04, MER-03), each evaluated by DLV-06 | no, with the reason shown (D-2) |
+| Shop, `merchant_state` `ready` | note only | no | none (items are final) | no, with the reason shown (D-2) |
 | Shop, `merchant_state` `handed_over` and later | — | no | — | no |
 
 Shop rows key on `merchant_state` (§2.1), not on the spine: an order can still be `requested` or `assigned` while the
@@ -309,7 +310,7 @@ Live today for parcels. Freight is gated by **G-FREIGHT** (vehicle supply, load 
 | SHIP-09 | Return to sender MUST be a tracked leg that needs the sender's return code. | E | PLAN T-23 |
 | SHIP-10 | Custody chain: a per-parcel, append-only, human-readable event log (who held it, when) MUST be visible to sender and admin. | P: events stored; no customer view | R-SQ F-05 |
 | SHIP-11 | Door cash: the captain MUST enter the amount collected. A difference needs a typed variance reason (A11). | E | R-SQ F-03; WP-01 |
-| SHIP-12 | Goods COD (collect the item price for the sender and remit it later) MAY be enabled. It MUST keep goods money apart from fares and count it in the cash cap. | E-off: COD records and routes exist on PostgreSQL (`payments.ts`); no app UI; the cash cap does not count goods COD yet | R-SH F-03; WP-16; gates G-COD, G-LEGAL |
+| SHIP-12 | Goods COD (collect the item price for the sender and remit it per MER-07) is decided yes (D-1); once enabled it MUST keep goods money apart from fares and count it in the cash cap. | E-off: COD records and routes exist on PostgreSQL (`payments.ts`); no app UI; the cash cap does not count goods COD yet | R-SH F-03; WP-16; gates G-COD, G-LEGAL |
 | SHIP-13 | The recipient MUST receive the tracking link and delivery code by message (WhatsApp/SMS) and MUST NOT need an account. | P: link shared by sender | PLAN C-12 |
 | SHIP-14 | Delivery windows with a daily capacity cap per zone SHOULD be offered where scheduled delivery is enabled. | P | R-SQ F-02; PLAN C-10 |
 | SHIP-15 | Handoff hints ("leave with neighbour", "call on arrival") MAY be chips on the order. | N | PLAN T-24 |
@@ -319,13 +320,13 @@ Live today for parcels. Freight is gated by **G-FREIGHT** (vehicle supply, load 
 
 ## 7. Delivery (DLV) — HAAT / Souq line (shop orders)
 
-New service key `shop`. Gate **G-SHOP**:
-- The owner decision on a merchant segment (PLAN A-16). `docs/PRODUCT.md` §2 advised against a restaurant marketplace
-  first, and this SRS follows the owner's 16 Nov request to include Delivery.
-- Signed merchants in the launch towns.
-- A food-handling and returns policy.
+New service key `shop`. Gate **G-SHOP** is decided (D-2, §16a): a one-town pilot. `docs/PRODUCT.md` §2 advised
+against a restaurant marketplace first; the owner's 16 Nov decision includes Delivery. Still needed before launch:
+- Signed merchants and their product lists in the pilot town.
+- A food-handling policy; the returns policy is D-2.
+- G-PG and the NFR-06 items (D-2).
 
-The design starts with **shops that prepare orders** (grocery, pharmacy-OTC, bakery, everyday goods). Restaurant
+The design starts with **shops that prepare orders** (grocery, bakery, everyday goods; pharmacy OTC once DLV-19's policy exists). Restaurant
 menus are a later variant of the same model.
 
 | ID | Requirement | St | Source |
@@ -340,8 +341,8 @@ menus are a later variant of the same model.
 | DLV-08 | The merchant MUST set the preparation minutes when accepting, then mark progress: accepted → preparing → ready. Each step is server-timestamped and drives the ETA and the dispatch start (DLV-12). | N | D-HA §3 |
 | DLV-09 | Order states in Arabic and English MUST name the actor (for example "The shop is preparing your order", "The captain picked up your order from the shop"). | N | R-HA §4; ONE-04 |
 | DLV-10 | Order snapshot: shop, items, prices and address MUST be frozen at placement and frozen again whenever items change: before acceptance (§4.3a), by a DLV-06 consent, or by the merchant's final weights and substitutions (DLV-04, MER-03); earlier snapshots are kept, so later edits never rewrite history. | N | D-HA §3 |
-| DLV-11 | Edit or cancel MUST be allowed until the merchant accepts. After that, cancel goes through support, and after pickup it is refused (R-HA "لا يمكن تغيير او الغاء الطلبية بعد ارسال الطلبية"). | N | |
-| DLV-12 | Captain dispatch for a shop order MUST start so that arrival meets `ready` (the merchant's preparation minutes minus the captain's ETA), not at placement. If no captain is assigned by `ready` + X minutes (owner-set, default 10 minutes), the customer chooses to wait or to request cancellation through support (§4.3a), the merchant is told to hold the order, and the admin stuck-order list shows it. | N | |
+| DLV-11 | Edit or cancel MUST follow §4.3a and D-2: free until the merchant accepts; through support (still free) while `merchant_state` is `accepted`; refused with the reason shown once it is `preparing` or later. | N | |
+| DLV-12 | Captain dispatch for a shop order MUST start so that arrival meets `ready` (the merchant's preparation minutes minus the captain's ETA), not at placement. If no captain is assigned by `ready` + X minutes (owner-set, default 10 minutes), the customer is told and keeps waiting (cancellation is refused from `preparing`, D-2), an admin may reassign or cancel, the merchant is told to hold the order, and the admin stuck-order list shows it. | N | |
 | DLV-13 | At the shop the captain MUST enter the **merchant pickup code** (§2.1a), shown by the merchant and never to the customer, with the SHIP-05 lockout. The merchant may mark "handed over" only when the order is `ready`; a captain who arrives earlier waits at `at_pickup`. | N | R-SQ F-04 |
 | DLV-14 | Delivery completes with the customer delivery code (`handover_code`, §2.1a), with the same lockout and audited reset as SHIP-05. | N (reuse) | |
 | DLV-15 | Cash at the door: goods total + delivery fee + service fee, all collected by the captain (SHIP-11); the fees go into the captain cash book and the goods into captain-held goods cash (PAY-05). Merchant settlement: Wind owes the merchant the goods total less merchant-fault refunds (DLV-22), minus commission on that net (MER-09), through a merchant ledger with append-only entries and a payout reference (ONE-10). | E-off: the `merchant_cod` tables and create/collect exist in `server/domain/payments.ts` (PostgreSQL only); the statement and payouts are N | R-SQ F-06; gates G-COD, G-PG, G-LEGAL |
@@ -350,9 +351,9 @@ menus are a later variant of the same model.
 | DLV-18 | Order again for shop orders MUST rebuild the cart from current prices and availability and show any changes before checkout. | N | R-SQ F-14 |
 | DLV-19 | Merchants MUST NOT list prohibited or age-restricted goods. Regulated categories (OTC medicine, tobacco) need an owner policy, and age-restricted items need an ID check at the door before they are allowed. | N | gate G-SHOP |
 | DLV-20 | Failed shop delivery MUST use the typed `ExceptionReason` list (absent, refused, unreachable, wrong address, rescheduled, access blocked, damaged) and go to admin review with a suggested next step. | N | WP-09 reuse |
-| DLV-21 | Goods return: undelivered goods MUST go back to the shop on a tracked return leg, confirmed by the return code (`return_code`, §2.1a) shown to the merchant. Perishables follow the merchant's disposal policy instead. | N | gate G-REFUND |
-| DLV-22 | Refunds: if goods paid in cash are later refused, missing or damaged, the refund MUST be recorded with a reason and an actor, append-only. **Who pays** depends only on fault: the merchant when the merchant is at fault (wrong, missing or damaged goods), otherwise Wind. **Where the cash comes from** depends on timing: before the captain's cash handover it is paid from captain-held goods cash; after it, the office pays the customer, posting to the merchant ledger (merchant fault) or the Wind operating-expense book (PAY-05). At cash handover the merchant ledger is always credited the gross goods total of the delivered order. A refund made before handover is always refilled into captain-held goods cash by a recorded transfer, so goods cash still balances to the gross total: from the operating-expense book when Wind pays (the merchant is not charged), or by a single debit on the merchant settlement book (the merchant ledger) when the merchant is at fault. Merchant commission is always computed on the goods total net of merchant-fault refunds, whatever the timing (MER-09). The captain never carries a correctly paid refund as a shortfall. The customer may choose account credit instead. A customer refusal or absence is not a refund case: the goods go back to the shop (DLV-21) and nothing is charged (D-2). | N | gate G-REFUND |
-| DLV-23 | Cancellation after placing follows D-2: free until the merchant accepts; through support while `merchant_state` is `accepted`; refused once it is `preparing` or later. An automatic below-minimum cancel (DLV-06) owes the merchant nothing. While cash-only, no fee is ever charged to the customer. | N | gate G-REFUND |
+| DLV-21 | Goods return: undelivered goods MUST go back to the shop on a tracked return leg, confirmed by the return code (`return_code`, §2.1a) shown to the merchant. Perishables follow the merchant's disposal policy instead. | N | decided D-2 |
+| DLV-22 | Refunds: if goods paid in cash are later found wrong, missing or damaged, the refund MUST be recorded with a reason and an actor, append-only. **Who pays** depends only on fault: the merchant when the merchant is at fault (wrong, missing or damaged goods), otherwise Wind. **Where the cash comes from** depends on timing: before the captain's cash handover it is paid from captain-held goods cash; after it, the office pays the customer, posting to the merchant ledger (merchant fault) or the Wind operating-expense book (PAY-05). At cash handover the merchant ledger is always credited the gross goods total of the delivered order. A refund made before handover is always refilled into captain-held goods cash by a recorded transfer, so goods cash still balances to the gross total: from the operating-expense book when Wind pays (the merchant is not charged), or by a single debit on the merchant settlement book (the merchant ledger) when the merchant is at fault. Merchant commission is always computed on the goods total net of merchant-fault refunds, whatever the timing (MER-09). The captain never carries a correctly paid refund as a shortfall. The customer may choose account credit instead. A customer refusal or absence is not a refund case: the goods go back to the shop (DLV-21) and nothing is charged (D-2). | N | decided D-2 |
+| DLV-23 | Cancellation after placing follows D-2: free until the merchant accepts; through support while `merchant_state` is `accepted`; refused once it is `preparing` or later. An automatic below-minimum cancel (DLV-06) owes the merchant nothing. While cash-only, no fee is ever charged to the customer. | N | decided D-2 |
 | DLV-24 | The shop line MUST launch with **one shop order per captain trip**. Stacking shop orders with each other or with parcels is deferred until the single-stop journey is proven (`docs/PRODUCT.md` multi-stop rule). | N | |
 
 ### 7.1 Merchant mode (MER)
@@ -365,7 +366,7 @@ menus are a later variant of the same model.
 | MER-04 | The merchant MUST see a settlement statement (orders, goods total, commission, payouts) built from the merchant ledger. | N |
 | MER-05 | Merchant mode MUST be a role mode inside the same app (and a web console), not a separate app, unless the owner chooses otherwise (R-PAL D2). | N |
 | MER-06 | Partner API: an external shop system MAY create Delivery or Shipping orders with a key (PLAN A-15). | P: Souq creates parcel orders (`SOUQ_PARTNER_KEY`); Delivery orders are N |
-| MER-07 | Merchant payouts MUST have a channel (bank transfer or cash pickup at the office), a frequency, a minimum amount and a payout reference. A captain cash shortfall is the captain's liability under the cash rules, never the merchant's. | N |
+| MER-07 | Payouts to merchants and to goods-COD senders MUST have a channel (bank transfer or cash pickup at the office), a frequency, a minimum amount and a payout reference. A captain cash shortfall is the captain's liability under the cash rules, never the merchant's or the sender's. | N |
 | MER-08 | Merchant onboarding MUST record the trade licence (with expiry) and the payout details; an expired licence pauses the shop. | N |
 | MER-09 | Merchant commission MUST be an admin setting per merchant or category (ADM-06), computed on the goods total net of merchant-fault refunds (DLV-22). | N |
 
@@ -391,6 +392,7 @@ menus are a later variant of the same model.
 | DRV-14 | Deadline re-arm: protected recovery records MUST survive reboot and clock change (A14). | E (Android) | R-PAL A14 |
 | DRV-15 | Acceptance-rate penalties and booked shifts MUST NOT exist in the pilot. Dispatch MUST NOT rank by acceptance reliability in the pilot either (this overrides `docs/SYSTEM.md` §4 for the pilot). | — | R-CA §10.4 |
 | DRV-16 | The captain MUST have an emergency call and a safety report on every active job, including rides (a passenger issue), with the event trail preserved. | P: the safety report and emergency numbers (tel:100/101/102) exist on the order screen for the assigned captain; the preserved event trail is N | |
+| DRV-17 | When a shop order ends with the customer refusing or absent, the captain MUST still be paid the trip and the return leg from Wind operating expenses (PAY-05), and DRV-11 earnings show it as a separate line (D-2). | N | decided D-2 |
 
 ---
 
@@ -398,7 +400,7 @@ menus are a later variant of the same model.
 
 | ID | Requirement | St | Source |
 |---|---|---|---|
-| MAP-01 | One map component MUST be used: MapLibre/OSM baseline (no key) on web and Android, iOS renderer to be decided (`platformRenderers` lists Apple today), Google renderers only where licensed. The provider sits behind one interface so the tile host is configurable (R-CA §6). | P | KIMI-MAP; M-01 |
+| MAP-01 | One map component MUST be used: MapLibre/OSM baseline (no key) on web and Android, on iOS the web map in Safari (the installable web app, NFR-09), Google renderers only where licensed. The provider sits behind one interface so the tile host is configurable (R-CA §6). | P | KIMI-MAP; M-01 |
 | MAP-02 | The camera MUST be driven by intents: `follow(target, zoom, offsetRatio)`, `fitBounds(bounds, padding)`, `free`. Fit padding MUST be derived from the measured sheet and header height and re-applied when the sheet snaps. | P: the camera is set per screen through props; one intent model is N | KIMI-MAP §1 |
 | MAP-03 | Pins MUST be composed (anchor + callout + content row): circle 16 dp pickup, square 16 dp drop-off, 8 dp waypoints, a callout radius of 8 dp, and a touch area ≥ 44 dp. | P | KIMI-MAP §2 |
 | MAP-04 | The ETA pill MUST have min height 36 dp, a 26 sp value and a stacked unit label in the `micro` style (11/15), and MUST be announced as text to screen readers (A11Y-15). | P | KIMI-MAP §2 |
@@ -420,11 +422,11 @@ menus are a later variant of the same model.
 | PAY-02 | Cash MUST be the default and stated before booking (BOOK-03). | E |
 | PAY-03 | Account credit and promo codes MUST apply to all services, subject to CON-06. | P |
 | PAY-04 | Cash entries MUST be append-only; corrections are new entries with a reason and an actor (R-SQ F-06). | E |
-| PAY-05 | The ledger MUST keep six separate books: captain cash (fares and fees), captain-held goods cash (shop goods collected at the door; counts in the captain cap and clears into the merchant ledger at cash handover as the gross goods total; DLV-22 covers refunds made before that), goods COD (sender money, gated), merchant settlement, also called the merchant ledger (shop goods owed to merchants: credited at handover, debited by merchant-fault refunds, by the commission transfer and by payouts, so it returns to zero after each payout; gated), Wind revenue (commissions transferred from the merchant ledger and the captain cash book) and Wind operating expenses (refunds and compensation Wind pays, DLV-22/23). They MUST NOT be netted silently against each other. | P |
+| PAY-05 | The ledger MUST keep six separate books: captain cash (fares and fees), captain-held goods cash (shop goods collected at the door; counts in the captain cap and clears into the merchant ledger at cash handover as the gross goods total; DLV-22 covers refunds made before that), goods COD (sender money, gated), merchant settlement, also called the merchant ledger (shop goods owed to merchants: credited at handover, debited by merchant-fault refunds, by the commission transfer and by payouts, so it returns to zero after each payout; gated), Wind revenue (commissions transferred from the merchant ledger and the captain cash book) and Wind operating expenses (refunds Wind pays, DLV-22, and captain pay for refused or absent trips, DRV-17). They MUST NOT be netted silently against each other. | P |
 | PAY-06 | Card/wallet MUST NOT be built until a PMA-licensed provider is contracted (G-PAY). When added, it plugs in behind ONE-08. Whether orders above ₪500 must be paid electronically is decided under G-LEGAL, not by the provider contract. | —, gated (G-PAY) |
 | PAY-07 | Customer arrears MUST NOT exist while cash-only (no fees). If fees are ever introduced, the Careem arrears rule applies: an unpaid balance blocks the next cash booking and is shown before booking (R-CA §5). | — |
 | PAY-08 | Tips MUST NOT be recorded in-app while cash-only (unrecorded money). | — |
-| PAY-09 | Two refusals or no-shows on shop orders within 30 days MUST pause the customer's cash shop orders until support reviews them, with the reason shown before booking (D-2; Careem cash-block pattern). | N |
+| PAY-09 | Two shop orders within 30 days that end with a DLV-20 `refused` or `absent` reason MUST pause the customer's cash shop orders until support reviews them, with the reason shown before booking (D-2). This is a behaviour rule, not an arrears rule (PAY-07): no balance is owed. | N |
 
 ---
 
@@ -472,7 +474,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | A11Y-05 | Focus order MUST follow reading order in both directions. In RTL the layout mirrors; directional icons flip; numbers and phone numbers stay LTR. | 1.3.2, 2.4.3 | P: layout mirrors through `rtl` flags; focus order with TalkBack is unverified (A11Y-25) |
 | A11Y-06 | Status MUST never be colour alone: service badges, order states and cash states always carry text and/or an icon. | 1.4.1 | P |
 | A11Y-07 | Error text MUST sit next to its field, be announced, and say how to fix it. | 3.3.1, 3.3.3 | E |
-| A11Y-08 | Timed actions (ride offers, waiting grace, merchant accept, consent timeouts) MUST announce the remaining time at intervals and MUST warn before acting automatically. Ride offers use the WCAG real-time exception (D-3): the default offer window is 20 s, and a captain can lengthen it up to 40 s in settings. | 2.2.1 | N |
+| A11Y-08 | Timed actions MUST announce the remaining time at intervals and MUST warn before acting automatically. Ride offers use the WCAG real-time exception (D-3): default window 20 s, and a captain can lengthen it up to 40 s in settings. The other timers MUST offer a way to extend: the merchant can add 5 minutes once to the accept timeout (DLV-07); the customer can add 5 minutes once to the consent timeout (DLV-06); the rider can ask for 2 more minutes once during the waiting grace (RIDE-06). | 2.2.1 | N |
 | A11Y-09 | Reduced motion MUST be honoured everywhere (DES-12); auto-moving content (glide, carousels) can be paused or stops under reduced motion. | 2.2.2 (2.3.3 AAA, adopted voluntarily) | E |
 | A11Y-10 | Language of content MUST be set (`lang` on web; RN `accessibilityLanguage` on iOS) so screen readers switch voice; Android behaviour is verified on the A53 (A11Y-26). | 3.1.1 | P |
 | A11Y-11 | Codes (delivery, pickup, PIN) MUST be readable digit by digit by screen readers and entered with large numeric keypads that accept Arabic-Indic digits. | 1.3.1, 3.3.2 | P |
@@ -505,7 +507,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
    and name, focus order is logical, timed screens announce time.
 5. Reduced motion on: the PR's screens show no movement and the state still reads.
 6. Keyboard (web): every action is reachable, focus is visible.
-7. Scope: TalkBack and web now; VoiceOver once the iOS build is enabled (NFR-09).
+7. Scope: TalkBack on Android and VoiceOver on iOS Safari (the installable web app), both now (NFR-09).
 
 ---
 
@@ -538,7 +540,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | ADM-09 | Merchant management: catalogue moderation, hours, pause, settlement statements. | N |
 | ADM-10 | Admin permissions MUST be split by duty, using the roles in `server/domain/ops.ts`: `dispatcher` (orders, assign), `finance` (cash books, payouts), `safety` (incidents), `driver_reviewer` (captain approval) and `platform_admin` (users, settings), plus support (disputes, chat). Production has one `admin` role today. | E-off: staff duty roles exist in `server/domain/ops.ts` (PostgreSQL-only); production has one `admin` role |
 | ADM-11 | Abuse rules MUST exist: limits on promo use per person and device, flags for repeated cancellations, fake orders, merchants rejecting after acceptance, and captain–merchant collusion (one captain repeatedly taking one shop's orders with cash mismatches), reviewed in the admin queue. | N |
-| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced for every cash-collecting order (ride, parcel, freight, goods COD, shop) against the highest reachable total: at booking, highest reachable cash = goods cap (DLV-04) + delivery fee + service fee for shop orders, quoted fare + declared COD amount for goods-COD parcels (SHIP-12), and the quoted fare for other services; afterwards any consent (DLV-06) or route change (RIDE-03, PLAN T-12) that would exceed the ceiling is refused. It defaults to ₪500 until G-LEGAL decides; an order above it is refused with a specific message. Door cash entries keep their existing upper bound. The existing goods-COD limit (`COD_LIMIT_MINOR`, ₪10,000 in `server/domain/payments.ts`) stays as a hard upper bound; ADM-12 sits under it. | N |
+| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced for every cash-collecting order (ride, parcel, freight, goods COD, shop) against the highest reachable total: at booking, highest reachable cash = goods cap (DLV-04) + delivery fee + service fee for shop orders, quoted fare + declared COD amount for goods-COD parcels (SHIP-12), and the quoted fare for other services; afterwards any consent (DLV-06) or route change (RIDE-03, PLAN T-12) that would exceed the ceiling is refused. It defaults to ₪500 (D-1); an order above it is refused with a specific message. Door cash entries keep their existing upper bound. The existing goods-COD limit (`COD_LIMIT_MINOR`, ₪10,000 in `server/domain/payments.ts`) stays as a hard upper bound; ADM-12 sits under it. | N |
 
 ---
 
@@ -554,7 +556,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NFR-06 | Reliability | One SQLite instance with daily backups now. Before more than one API instance or the Ride/Delivery launch: a shared transactional store (the PostgreSQL decision), an off-host backup and a restore drill. | P: SQLite with daily on-disk backups; off-host backup, restore drill and a shared store are N (G-PG) |
 | NFR-07 | Observability | Every order id traceable across API, dispatch, location, proof and cash. Alerts on stuck states and failed backups reach the owner (WP-08). | P |
 | NFR-08 | Localisation | Arabic default, complete English. All copy in `src/copy.ts` with typed keys. Number, date and currency formats per language. | E |
-| NFR-09 | Compatibility | Android: the versions Expo SDK 57 supports, up to Android 16, on ARM (APK and Play). iOS: the installable web app opened in Safari and added to the home screen (`public/install.html`); no App Store build is planned now (owner, 16 Nov). Web is also the fallback for any customer. | P |
+| NFR-09 | Compatibility | Android: the versions Expo SDK 57 supports, up to Android 16, on ARM (APK and Play). iOS: the installable web app opened in Safari and added to the home screen (`public/install.html`); no App Store build is planned now (owner, 16 Nov). iOS limits: a web page cannot track location in the background, so captains MUST use the Android app (iOS is for customers); Web Push on iOS needs the home-screen install (NTF-02); closed-app FCM push is Android only. Web is also the fallback for any customer. | P |
 | NFR-10 | Updates | A forced-upgrade floor by `CLIENT_BUILD`. Release builds keep the signing key (`5947bab0…`) across EAS accounts. | E |
 | NFR-11 | Legal | Passenger, courier and merchant licensing, insurance, privacy and terms reviewed per service line before launch (`docs/SYSTEM.md` §7). | —, gated (G-LEGAL) |
 
@@ -566,7 +568,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 |---|---|---|
 | G-RIDE | §5 | Passenger-transport permission, insurance, captain supply, dispatch review |
 | G-FREIGHT | Freight in §6 | Vehicle supply, load and damage policy |
-| G-SHOP | §7, MER | **Decided D-2 (go):** shop delivery launches as a pilot in one town with 3–5 shops. Still needed: signed merchants and their product list |
+| G-SHOP | §7, MER | **Decided D-2 (go):** one-town pilot with 3–5 shops. Still needed: signed merchants and their product lists, a food-handling policy, and the DLV-19 policy before any regulated category (pharmacy OTC is excluded until then) |
 | G-PG | NFR-06, ride lifecycle, dispatch, presence, ledger, COD | SQLite → PostgreSQL decision and migration |
 | G-PAY | PAY-06 | PMA-licensed provider contract |
 | G-COD | SHIP-12, DLV-15 | **Decided D-1 (yes):** Wind collects goods cash for shops and senders, under the ADM-12 ceiling; remittance per MER-07. The code part still waits on G-PG |
@@ -574,10 +576,10 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | G-STORAGE | ADDR-05, ACC-05, proof photos | Object storage with scanning and retention |
 | G-PUSH | NTF-01 closed-app | Firebase `google-services.json` and FCM key on the new EAS project; server Firebase key |
 | G-OSRM | TRK-02 road-aware ETA, MAP-11 | Self-hosted OSRM with the West Bank graph on the production host |
-| G-LEGAL | **Decided D-1 for the pilot:** cash collection, including goods, proceeds under the ₪500 ceiling. Counsel review stays recommended before raising the ceiling or scaling beyond the pilot. Covers: the MTDE ₪500 courier-payment reading (§1.2, PAY-06); the value of Wind's own default ceiling (ADM-12); item-sale proceeds (SHIP-12, DLV-15); tax invoice (TRK-13); licensing and insurance per service line (NFR-11) | Counsel's written answer |
+| G-LEGAL | the MTDE ₪500 courier-payment reading (§1.2, PAY-06), the ADM-12 ceiling value, item-sale proceeds (SHIP-12, DLV-15), tax invoice (TRK-13), licensing and insurance per service line (NFR-11) | **Partly decided:** D-1 lets cash collection, including goods, proceed under ₪500 for the pilot. **Open:** the PAY-06 reading, TRK-13 and NFR-11 (counsel's written answer) |
 | G-TELECOM | TRK-12 phone masking | A telecom contract for relayed calls |
-| G-A11Y-TIME | A11Y-08 ride-offer timing | **Decided D-3 (accepted):** ride offers use the WCAG 2.2.1 real-time exception, as in Uber and Careem |
-| G-REFUND | DLV-21..23, PAY-09 | **Decided D-2:** the refund and cancellation policy in §16a |
+| G-A11Y-TIME | A11Y-08 ride-offer timing | **Decided D-3 (accepted):** ride offers use the WCAG 2.2.1 real-time exception |
+| G-REFUND | DLV-21..23, PAY-09, DRV-17 | **Decided D-2:** the refund, cancellation and captain-pay policy in §16a |
 
 
 ### 16a. Owner decisions, 16 November 2026
@@ -587,9 +589,9 @@ installable web app from Safari (NFR-09); no App Store build is planned now.
 
 | ID | Decision | Competitor basis |
 |---|---|---|
-| D-1 | **Cash, including goods money, is collected at the door** for shop orders and goods-COD parcels, with a ₪500 per-order cash ceiling (ADM-12). Electronic payment comes later through G-PAY. Counsel review stays recommended before raising the ceiling or growing beyond the pilot. | Souq Tulkarm, Shiply and HAAT all collect cash on delivery (R-SQ F-03, R-SH F-03, R-HA §4); Careem treats cash as a first-class instrument (R-CA §5) |
-| D-2 | **Shop delivery goes ahead** as a one-town pilot with 3–5 shops (grocery, bakery, pharmacy OTC, everyday goods). **Refunds and cancellation:** (a) merchant fault (wrong, missing or damaged goods): the affected items are refunded and the merchant pays (DLV-22); (b) customer refusal or absence: the goods go back to the shop (DLV-21), the customer pays nothing for them, and the delivery fee is not collected (Wind holds no customer debt while cash-only); (c) two refusals or no-shows in 30 days pause the customer's cash shop orders until support reviews (PAY-09); (d) the customer may cancel free until the merchant accepts, through support while `merchant_state` is `accepted`, and not once it is `preparing` (DLV-11, DLV-23); (e) an automatic below-minimum cancel owes the merchant nothing, because the merchant's own stock change caused it. | HAAT forbids changes or cancellation once the order is sent (R-HA §5); Souq Tulkarm types failure reasons and returns goods (R-SQ F-08); Careem blocks cash bookings while a cash balance is outstanding (R-CA §5) |
-| D-3 | **Timed ride offers are accepted** under the WCAG 2.2.1 real-time exception: default window 20 s, which a captain can lengthen up to 40 s in settings; the remaining time is announced (A11Y-08). | Uber and Careem dispatch with short timed offers (R-HD §2.2, R-CA §10.3) |
+| D-1 | **Cash, including goods money, is collected at the door** for shop orders and goods-COD parcels, with a ₪500 per-order cash ceiling (ADM-12; ₪500 is Wind's own value, not a competitor figure). Electronic payment comes later through G-PAY. Counsel review stays recommended before raising the ceiling or growing beyond the pilot. This **supersedes** `docs/SYSTEM.md` §10's exclusion of item-sale proceeds for the shop and goods-COD pilot. | Direct evidence: Souq Tulkarm records the amount collected at the door (R-SQ F-03). Inferred: Shiply's COD order types (R-SH F-03) and HAAT's cash option beside card (R-HA §4–5). |
+| D-2 | **Shop delivery goes ahead** as a one-town pilot with 3–5 shops (grocery, bakery, everyday goods). Pharmacy OTC is **excluded** until the DLV-19 policy exists. **The first shop order waits on G-PG and the NFR-06 items** (shared store, off-host backup, restore drill), because merchant settlement and goods COD run only on PostgreSQL today. **Refunds and cancellation:** (a) merchant fault (wrong, missing or damaged goods): the affected items are refunded and the merchant pays (DLV-22); (b) customer refusal or absence: the goods go back to the shop (DLV-21), the customer pays nothing for them and no delivery fee is collected; the captain is still paid for the trip and the return leg from Wind operating expenses (DRV-17); (c) two shop orders within 30 days ending with a DLV-20 `refused` or `absent` reason pause the customer's cash shop orders until support reviews (PAY-09); (d) the customer may cancel free until the merchant accepts, through support while `merchant_state` is `accepted`, and not once it is `preparing` (DLV-11, DLV-23); (e) an automatic below-minimum cancel owes the merchant nothing. The owner accepts these policies for the pilot without counsel; counsel review is recommended before scaling. This **supersedes** `docs/SYSTEM.md` §7 item 4 (counsel before any booking) for the shop pilot only. | Souq Tulkarm types failure reasons and returns goods (R-SQ F-08). HAAT refuses changes or cancellation once an order is sent (R-HA §5); Wind deliberately allows free cancellation until the merchant accepts, because no goods have been prepared yet. |
+| D-3 | **Timed ride offers are accepted** under the WCAG 2.2.1 real-time exception: the rider is waiting, so an offer must expire and no alternative to the limit is possible. Wind's own values: default window 20 s, which a captain can lengthen up to 40 s in settings; the remaining time is announced (A11Y-08). | Timed offers with automatic expiry exist in courier apps (R-HD §2.2; exact timeouts unknown). The 20 s and 40 s values are Wind's. |
 
 ---
 
@@ -600,7 +602,7 @@ installable web app from Safari (NFR-09); no App Store build is planned now.
 | **1 — Shipping, hardened** (now) | ONE-01, 02, 04, 06, 13 (ONE-07 is already met for parcels on SQLite; versioned quote records wait for G-PG); PAY-01 (prices in integer agorot); ADM-12 (per-order cash ceiling, default ₪500); SHIP complete except gated items; ADDR-03/04; TRK-02 (needs G-OSRM); DRV-10/11; NTF-01 (closed-app part needs G-PUSH); A11Y checks on all existing screens | Pilot of 50 users runs 2 weeks with no lost order and no cash mismatch; A11Y §12.1 passes on the A53 |
 | **2 — One-app shell** | ONE-03 spine and state mapping (§2.1), ONE-05 service switcher, shared status/receipt/rating/chat components (DES-09..11), extend the existing eligibility path (`canTake` + `driver-refusal.ts`) with service-line approval and cash age (CON-04), notification channels | Parcel unchanged for users; Ride and Shop hidden (ONE-13); screens regenerated |
 | **3 — Ride** | §5 after G-RIDE and G-PG | Field test per town pair; boarding PIN and waiting grace on real phones; CON-01/02 enforced |
-| **4 — Delivery** | §7, MER (G-SHOP, G-REFUND, G-LEGAL and G-COD decided in §16a); G-PG still needed for merchant settlement | 3–5 merchants in one town; substitution consent, timeouts and weighted totals verified; failed delivery, goods return and refund drilled; the cash ceiling holds; merchant ledger balances daily and a first payout is made |
+| **4 — Delivery** | §7, MER (G-SHOP, G-REFUND, G-COD decided and G-LEGAL partly decided in §16a); G-PG and the NFR-06 items are needed before the first shop order | 3–5 merchants in one town; substitution consent, timeouts and weighted totals verified; failed delivery, goods return and refund drilled; the cash ceiling holds; the NFR-11 licensing review is done before the first shop order; merchant ledger balances daily and a first payout is made |
 | **Unphased rows** | Rows not named above (for example CON, the rest of ONE, ADM, NFR) belong to Phase 2 unless their gate places them later; each implementation PR names its phase. | — |
 | **5 — Scale** | Cards (G-PAY), photos (G-STORAGE), windows and zones, dark mode | Per-service SLOs and unit economics reviewed |
 
@@ -629,7 +631,7 @@ Each line is accepted on the physical A53 and in the test PC gate (`npm test` wi
 
 ## 19. Traceability summary
 
-These counts come from the `St` column of every requirement row above (229 requirements). The conflict
+These counts come from the `St` column of every requirement row above (230 requirements). The conflict
 rules CON-01..10 (§2.2) have no St column and are not counted; their implementation is tracked through the rows that
 enforce them. "No build" covers rows
 marked "—" or "gated": rules that forbid a feature, or items that wait on an outside dependency. Every E and E-off row
@@ -648,7 +650,7 @@ was checked against the code at `1c3100a` (16 Nov audit); baseline `fb05483` has
 | SHIP shipping | 16 | 5 | 1 | 4 | 6 | 0 |
 | DLV delivery | 24 | 0 | 1 | 0 | 23 | 0 |
 | MER merchant | 9 | 0 | 0 | 1 | 8 | 0 |
-| DRV captain | 16 | 6 | 1 | 8 | 0 | 1 |
+| DRV captain | 17 | 6 | 1 | 8 | 1 | 1 |
 | MAP | 11 | 1 | 1 | 8 | 1 | 0 |
 | PAY | 9 | 2 | 0 | 3 | 1 | 3 |
 | DES design | 14 | 5 | 0 | 7 | 2 | 0 |
@@ -657,7 +659,7 @@ was checked against the code at `1c3100a` (16 Nov audit); baseline `fb05483` has
 | SUP support | 2 | 1 | 0 | 1 | 0 | 0 |
 | ADM operations | 12 | 2 | 1 | 5 | 4 | 0 |
 | NFR | 11 | 4 | 0 | 6 | 0 | 1 |
-| **Total** | **229** | **46** | **13** | **104** | **60** | **6** |
+| **Total** | **230** | **46** | **13** | **104** | **61** | **6** |
 
 Delivery and merchant (31 new) is the largest block of new work. Ride exists mostly in code but is off
 (6 E-off) behind G-RIDE and G-PG. Shipping is mostly built: what remains is the one-app shell (ONE, mostly

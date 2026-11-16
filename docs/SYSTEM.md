@@ -110,6 +110,7 @@ Before any real booking:
 2. Confirm whether Wind itself needs an express-courier license or can operate through a licensed carrier; the [ministry publishes a 2025 licensed-company list](https://mtde.gov.ps/uploads/files/20250925085342_%D8%B4%D8%B1%D9%83%D8%A9_%D8%A7%D9%84%D8%A8%D8%B1%D9%8A%D8%AF_%D8%A7%D9%84%D9%85%D8%B1%D8%AE%D8%B5%D8%A9_2025.pdf).
 3. Confirm courier e-payment obligations and the over-₪500 rule from the [ministry's 2025 announcement](https://www.mtde.gov.ps/home/news/23075?culture=ar-SA); contract with a provider from the [PMA directory](https://www.pma.ps/supervision-institutions-companies/electronic-payment-service-companies).
 4. Set prohibited goods, damage/insurance, customer refund, cancellation, privacy/retention, emergency, and support policies with local counsel and pilot partners.
+   *Shop pilot, 16 Nov 2026:* the owner accepted the refund and cancellation policy for the one-town shop pilot without counsel (SRS decision D-2, `docs/requirements/SRS-2026-11-16-wind-one-app.md` §16a); counsel review is still recommended before scaling.
 5. Drive test each enabled city pair at representative times; validate maps, road restrictions, expected fare, safe pickup points, and fallback route.
 
 ## 8. Build plan
@@ -149,6 +150,8 @@ Still simplified versus the plan above, in order of likely need:
 - **Delivery exceptions are basic:** an in-transit parcel/load can go `on_hold` (absent, refused, unreachable, wrong address); an administrator reattempts or returns it with a recorded reason; `returned` needs the sender's return code; one customer dispute per finished order within seven days gets a recorded resolution. There is still no pickup evidence, return fee, refund movement or insured-loss workflow. Restrict real service to an approved operating policy with staffed support until those workflows are implemented and field tested.
 
 ## 10. Parcel launch workflow checklist
+
+> **16 Nov 2026:** for the shop and goods-COD pilot, SRS decision D-1 lets Wind collect item-sale proceeds at the door under a ₪500 per-order ceiling, superseding this section's exclusion for that pilot only (`docs/requirements/SRS-2026-11-16-wind-one-app.md` §16a). The parcel checklist below is unchanged.
 
 This is an operator acceptance checklist, not a list of implemented features. Current source supports one assigned parcel per driver, foreground location, pre-pickup cancel/release, recipient-code completion and calculated commission. It supports on-hold failed delivery, admin reattempt/return decisions, sender-code return closure and recorded disputes, and a driver cash ledger (commission owed, numbered handovers confirmed by the driver, reasoned adjustments), but not pickup/return photo evidence, return fees, refunds or per-order fare collection records. Those remaining gaps still block unsupervised public parcel service.
 
