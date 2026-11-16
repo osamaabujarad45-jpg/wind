@@ -7,7 +7,7 @@ import { View } from 'react-native';
 import { api, errorCode, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
-import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
 
 type AdminMerchant = Merchant & { balanceAgorot: number; payableAgorot: number };
 
@@ -23,8 +23,16 @@ export default function AdminMerchants() {
     <Header title={c.adminShops} />
     {!!attention.data?.orders.length && <>
       <Section title={c.adminShopAttention} />
-      <ListGroup>{attention.data.orders.map(o => <ListRow key={o.id} icon="alert-circle-outline" label={`${orderCode(o.id)} · ${o.shop?.merchantName ?? ''}`}
-        value={why(o)} tone="clay" onPress={() => router.push(`/order/${o.id}`)} />)}</ListGroup>
+      {/* the reason gets its own line: in a one-line row it truncated the order number */}
+      {attention.data.orders.map(o => <Press key={o.id} onPress={() => router.push(`/order/${o.id}`)} accessibilityLabel={`${orderCode(o.id)}، ${o.shop?.merchantName ?? ''}، ${why(o)}`}>
+        <Card tone="clay">
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt variant="label" style={{ writingDirection: 'ltr' }}>{orderCode(o.id)}</Txt>
+            <Txt variant="caption" style={{ flex: 1, marginHorizontal: 8 }} numberOfLines={1}>{o.shop?.merchantName}</Txt>
+          </Row>
+          <Txt style={{ marginTop: 4 }}>{why(o)}</Txt>
+        </Card>
+      </Press>)}
     </>}
     {!data.merchants.length && <Empty icon="storefront-outline" title={c.adminNoShops} />}
     {data.merchants.map(m => <MerchantCard key={m.id} merchant={m} onChange={reload} />)}

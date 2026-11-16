@@ -44,6 +44,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Edit profile · change number form (new number and current password, synthetic capability) | `/profile` | `src/phone-card.tsx` | [profile-phone-change.png](ar/profile-phone-change.png) | [profile-phone-change.png](en/profile-phone-change.png) |
 | Shop delivery · shops in the pilot town | `/shop` | `src/app/shop/index.tsx` | [shop-list.png](ar/shop-list.png) | [shop-list.png](en/shop-list.png) |
 | Shop · catalogue (weighed items say estimate) | `/shop/1` | `src/app/shop/[id].tsx` | [shop-store.png](ar/shop-store.png) | [shop-store.png](en/shop-store.png) |
+| Shop order · on hold after a failed delivery (the card names the hold) | `/order/14` | `src/shop-ui.tsx (ShopCustomerPanel)` | [shop-on-hold.png](ar/shop-on-hold.png) | [shop-on-hold.png](en/shop-on-hold.png) |
 | Shop order · the shop asks before a substitution (approve, decline, add time) | `/order/11` | `src/shop-ui.tsx (ShopCustomerPanel)` | [shop-consent.png](ar/shop-consent.png) | [shop-consent.png](en/shop-consent.png) |
 
 ## Merchant
@@ -59,7 +60,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 
 | Screen | Route | Code | Arabic | English |
 |---|---|---|---|---|
-| Shops · terms, licence, payouts | `/admin/merchants` | `src/app/admin/merchants.tsx` | [admin-shops.png](ar/admin-shops.png) | [admin-shops.png](en/admin-shops.png) |
+| Shops · orders that need attention, terms, licence, payouts | `/admin/merchants` | `src/app/admin/merchants.tsx` | [admin-shops.png](ar/admin-shops.png) | [admin-shops.png](en/admin-shops.png) |
 | Dashboard | `/admin` | `src/app/admin/index.tsx` | [admin-dashboard.png](ar/admin-dashboard.png) | [admin-dashboard.png](en/admin-dashboard.png) |
 | All orders | `/admin/orders` | `src/app/admin/orders.tsx` | [admin-orders.png](ar/admin-orders.png) | [admin-orders.png](en/admin-orders.png) |
 | Parcel · delivery code recovery | `/order/7` | `src/app/order/[id].tsx` | [admin-order.png](ar/admin-order.png) | [admin-order.png](en/admin-order.png) |

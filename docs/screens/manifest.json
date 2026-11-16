@@ -434,6 +434,20 @@
     "session": "customer"
   },
   {
+    "id": "shop-on-hold",
+    "group": "Customer",
+    "name": "Shop order · on hold after a failed delivery (the card names the hold)",
+    "route": "/order/14",
+    "file": "src/shop-ui.tsx (ShopCustomerPanel)",
+    "ar": [
+      "ar/shop-on-hold.png"
+    ],
+    "en": [
+      "en/shop-on-hold.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "shop-consent",
     "group": "Customer",
     "name": "Shop order · the shop asks before a substitution (approve, decline, add time)",
@@ -506,7 +520,7 @@
   {
     "id": "admin-shops",
     "group": "Admin",
-    "name": "Shops · terms, licence, payouts",
+    "name": "Shops · orders that need attention, terms, licence, payouts",
     "route": "/admin/merchants",
     "file": "src/app/admin/merchants.tsx",
     "ar": [
