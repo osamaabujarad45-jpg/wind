@@ -22,7 +22,7 @@ export default function MerchantOrder() {
   const [grams, setGrams] = useState('');
   const [substitute, setSubstitute] = useState<string>('');
   const [packing, setPacking] = useState<{ sealed: boolean; lineIds: number[] }[]>([{ sealed: true, lineIds: [] }]);
-  const clock = useCountdown(order?.status === 'requested' && !order.shop?.state ? order.shop!.acceptDeadline : null, c.shopAcceptLeft);
+  const clock = useCountdown(order?.status === 'requested' && order.shop && !order.shop.state ? order.shop.acceptDeadline : null, c.shopAcceptLeft);
   if (!order?.shop) return <Screen><Header title={c.merchantMode} back /><Loading failed={!!error} onRetry={reload} /></Screen>;
   const s = order.shop;
   const live = s.lines.filter(l => !l.removed);

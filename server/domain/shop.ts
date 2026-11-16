@@ -40,6 +40,8 @@ export type ShopDeps = {
   /** What a captain owes Wind in cash now (main.ts cash balances), in agorot. */
   owedCents: (driverId: number) => Promise<number>;
   flushPush: () => Promise<unknown>;
+  /** PostgreSQL ledger: door cash owed to the shop and to Wind (goods, service fee), and failed-trip pay. No-op on SQLite. */
+  journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; trip?: number }) => Promise<unknown>;
   /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
   driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
 };
@@ -272,7 +274,9 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const goods = goodsOf(lines);
     const fault = await db.one('SELECT result FROM shop_faults WHERE order_id = ?', r.id);
     return {
-      merchantId: Number(s.merchant_id), merchantName: m.name, merchantPoint: role === 'customer' && !s.merchant_state ? null : { latitude: m.lat, longitude: m.lng },
+      merchantId: Number(s.merchant_id), merchantName: m.name,
+      merchantPoint: (role === 'customer' && s.merchant_state) || (role === 'driver' && viewer.id === r.driver_id) || role === 'merchant' || role === 'admin'
+        ? { latitude: m.lat, longitude: m.lng } : null,
       state: s.merchant_state ?? null, acceptDeadline: Number(s.accept_deadline), acceptExtended: !!s.accept_extended,
       prepMinutes: s.prep_minutes == null ? null : Number(s.prep_minutes), acceptedAt: s.accepted_at ?? null, readyAt: s.ready_at ?? null, handedOverAt: s.handed_over_at ?? null,
       goodsEstimateAgorot: Number(s.goods_estimate_agorot), goodsCapAgorot: Number(s.goods_cap_agorot), goodsAgorot: goods,
@@ -656,7 +660,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }
   /** Goods of completed orders whose captain still owes Wind cash: Wind may not pay the shop money it has not received. */
   // ponytail: per captain, not per order. A captain owing anything holds back all their goods for this shop until cleared; FIFO matching of
-  // handovers to orders would release some earlier, if payouts wait too long in the pilot.
+  // handovers to orders would release some earlier, if payouts wait too long in the pilot. Failed-trip pay (DRV-17) is Wind's own debt to
+  // the captain and is settled by netting against the cash he holds, so a captain at zero has handed over every agora he owes, goods included.
   async function unsettledGoods(merchantId: number) {
     let held = 0;
     for (const row of await db.all(`SELECT o.driver_id, SUM(s.goods_agorot) AS goods FROM shop_orders s JOIN orders o ON o.id = s.order_id
@@ -678,12 +683,14 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (!deps.enabled()) return 0;
     if (!(await db.atomic({ purpose: 'shop_timers' }, () => shopTables(db)))) return 0;
     // Each timer runs in its own short transaction with a compare-and-set, so one bad row never blocks the rest.
-    const timer = (work: () => Promise<number>) => db.atomic({ purpose: 'shop_timers' }, work);
+    const timer = (work: () => Promise<number>) => db.atomic({ purpose: 'shop_timers' }, () => inTx(work));
     let changed = 0;
     for (const row of await db.all("SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'requested' AND s.merchant_state IS NULL AND s.accept_deadline <= ? LIMIT 50", now))
       changed += await timer(async () => {
         const r = await db.one(`SELECT * FROM orders WHERE id = ?${forUpdate}`, row.id), s = await shopRow(Number(row.id));
         if (!r || r.status !== 'requested' || !s || s.merchant_state || Number(s.accept_deadline) > now) return 0;
+        // Claim the expiry first: an accept that committed in between leaves merchant_state set, and this changes nothing.
+        if (!(await db.run("UPDATE shop_orders SET cancel_reason = 'accept_expired' WHERE order_id = ? AND merchant_state IS NULL AND cancel_reason IS NULL", r.id)).changes) return 0;
         await cancelWith(r, s, 'accept_expired', Number(r.customer_id));
         return 1;
       });
@@ -696,7 +703,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
         return 1;
       });
     for (const row of await db.all(`SELECT o.id, o.customer_id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'requested'
-      AND s.merchant_state IN ('accepted','preparing','awaiting_approval','ready') AND s.dispatch_at <= ? LIMIT 50`, now))
+      AND s.merchant_state IN ('accepted','preparing','ready') AND s.paused_at IS NULL AND s.dispatch_at <= ? LIMIT 50`, now))
       changed += await timer(async () => (await release(Number(row.id), Number(row.customer_id), now)) ? 1 : 0);
     // DLV-12: no captain by ready + X: tell the customer, the shop and support once. Never an automatic cancel.
     const waitMs = (await settings()).shopNoCaptainMinutes * MINUTE;
@@ -721,7 +728,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }
 
   // ---------- captain ----------
-  /** Cash a captain carries for a shop order before collection: the highest the door total can reach (CON-05, ONE-10). */
+  /** What a shop job will add to what the captain owes Wind at most: the goods cap and the service fee (CON-05, ONE-10). The delivery
+   * fee is the captain's own; its commission is already in the exposure. */
   async function holdCents(orderId: number) {
     if (!(await shopTables(db))) return 0;
     const s = await shopRow(orderId);
@@ -790,7 +798,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
   async function beforeAdvance(r: Row, next: string, body: Row, actor: number) {
     if (r.service !== 'shop') return;
     if (next === 'in_transit') fail(409, 'use_shop_handover');
-    if (next === 'completed') await checkSeals(r, body);
+    if (next === 'completed') {
+      if (body.collectedCents === undefined) fail(400, 'invalid_input'); // a shop door always records what was taken (DLV-15)
+      await checkSeals(r, body);
+    }
     void actor;
   }
   /** After a completed or returned shop order commits its status: the money rows (DLV-15, DLV-25, DRV-17). */
@@ -809,6 +820,11 @@ export function registerShop(route: Register, deps: ShopDeps) {
         await ledger('wind', { merchant: Number(m.id), order: r.id }, 'commission', commission, 'Merchant commission', actor, `shop-commission-w-${r.id}`);
       }
       if (Number(s.service_fee_agorot)) await ledger('wind', { order: r.id, driver: r.driver_id }, 'service_fee', Number(s.service_fee_agorot), 'Service fee', actor, `shop-service-${r.id}`);
+      // A short door (a typed variance) is Wind's loss, not the shop's or the captain's (DLV-22: Wind pays for everything else).
+      const collected = Number((await db.one('SELECT collected_cents FROM orders WHERE id = ?', r.id))?.collected_cents ?? 0);
+      const due = goods + Number(s.service_fee_agorot), held = Math.min(due, Math.max(0, collected - Number(s.delivery_fee_agorot)));
+      if (held < due) await ledger('wind', { order: r.id, driver: r.driver_id }, 'door_short', held - due, 'Collected less than due at the door', actor, `shop-short-${r.id}`);
+      await deps.journal(r.id, Number(r.driver_id), 'collection', { goods: Math.min(goods, held), service: held - Math.min(goods, held) });
       return;
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
@@ -817,16 +833,19 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (pay && r.driver_id) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
+      await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }
   }
   /** DLV-23 money: an assigned captain is paid the trip so far from operating expenses when the order stops before collection. */
   async function postCancel(r: Row, s: Row, reason: ShopCancelReason, actor: number) {
     if (!r.driver_id) return;
-    const pay = ['at_pickup'].includes(r.status) ? Number(s.delivery_fee_agorot) : 0; // ponytail: trip so far = the fee once at the shop, nothing before; measured distance needs live tracking
+    // ponytail: trip so far = half the fee on the way, the whole fee at the shop; measured distance comes with live tracking on PostgreSQL.
+    const fee = Number(s.delivery_fee_agorot), pay = r.status === 'at_pickup' ? fee : r.status === 'assigned' ? Math.round(fee / 2) : 0;
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
     if (pay) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, `Trip to the shop (${reason})`, actor, `shop-cancel-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, `Captain pay, cancelled at the shop (${reason})`, actor, `shop-cancel-opex-${r.id}`);
+      await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }
   }
   async function ledger(book: 'merchant' | 'captain' | 'wind', who: { merchant?: number; driver?: number | null; order?: number | null }, kind: string, amount: number,
@@ -852,7 +871,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const r = await db.one('SELECT service, exception_reason FROM orders WHERE id = ?', id);
     if (r?.service !== 'shop' || action !== 'reattempt') return;
     if (r.exception_reason !== 'rescheduled') fail(409, 'cannot_resolve');
-    if (await db.one("SELECT 1 FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED' AND detail LIKE '%\"reattempt\"%'", id)) fail(409, 'cannot_resolve');
+    const done = await db.all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'", id);
+    if (done.some(e => { try { return JSON.parse(e.detail).action === 'reattempt'; } catch { return false; } })) fail(409, 'cannot_resolve');
   }
 
   // ---------- admin ----------
@@ -943,7 +963,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
   route('POST', '/api/admin/orders/:id/shop/unsellable', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await adminOrder(user, Number(params[0]));
     const fault = await db.one('SELECT result FROM shop_faults WHERE order_id = ?', r.id) ?? fail(409, 'fault_required');
-    if (!['returned', 'cancelled'].includes(r.status)) fail(409, 'shop_state');
+    if (!(r.status === 'returned' || (r.status === 'cancelled' && ['no_captain', 'operational'].includes(s.cancel_reason) && s.preparing_at != null))) fail(409, 'shop_state');
     const line = (await linesOf(r.id)).find(l => l.id === Number(body.lineId) && !l.removed) ?? fail(404, 'not_found');
     const note = text(body.note, 500);
     if (note.length < 5) fail(400, 'invalid_input');
@@ -971,6 +991,13 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (fault!.result === 'none') fail(409, 'fault_required');
     const n = Number((await db.one("SELECT COUNT(*) AS n FROM shop_ledger WHERE order_id = ? AND kind = 'refund'", r.id))!.n);
     await ledger(fault!.result === 'merchant' ? 'merchant' : 'wind', { merchant: Number(s.merchant_id), order: r.id }, 'refund', -amount, reason, user.id, `shop-refund-${r.id}-${n + 1}`);
+    if (fault!.result === 'merchant') { // the commission on refunded goods comes back to the shop
+      const bps = Number((await db.one('SELECT commission_bps FROM merchants WHERE id = ?', s.merchant_id))!.commission_bps);
+      const back = Math.round(amount * bps / 10_000);
+      await ledger('merchant', { merchant: Number(s.merchant_id), order: r.id }, 'commission', back, 'Commission on refunded goods', user.id, `shop-refund-cm-${r.id}-${n + 1}`);
+      await ledger('wind', { merchant: Number(s.merchant_id), order: r.id }, 'commission', -back, 'Commission on refunded goods', user.id, `shop-refund-cw-${r.id}-${n + 1}`);
+    }
+    // The office pays the customer; the captain still owes the cash he collected at the door.
     await audit(user.id, r.id, 'SHOP_REFUND', { amount, payer: fault!.result, reason });
     await push([r.customer_id], 'shop_update', r.id);
     return getOrder(r.id, user);

@@ -326,7 +326,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     contact: partyPhones ? r.contact : null, // drivers see phones only after accepting, and only inside the contact window
     pickupContact: partyPhones ? r.pickup_contact ?? r.contact : null,
     recipientName: owner || assigned ? r.recipient_name ?? '' : '', recipientPhone: partyPhones ? r.recipient_phone ?? null : null,
-    price: r.price, commission: r.commission ?? null, status: r.status,
+    price: r.price, commission: r.service === 'shop' && !owner && !assigned ? null : r.commission ?? null, status: r.status, // a shop never sees the captain's commission
     ...(canChangeDest && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
     ...(destinationChange && { destinationChange }),
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
@@ -601,6 +601,25 @@ const postOrderJournals = async (orderId: number) => {
   if (discount > 0) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
     entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
 };
+// Shop door cash on PostgreSQL: the captain owes the goods (the shop's money) and the service fee (Wind's), so a remittance relieves a
+// receivable that exists; a failed-trip pay is Wind's operating expense, owed to the captain against what he holds (DLV-15, DRV-17).
+async function postShopJournal(orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; trip?: number }) {
+  if (!(await ledgerReady())) return;
+  const receivable = await ledger.ensureAccount(`driver:${driverId}:receivable`, 'driver_receivable', driverId);
+  if (kind === 'collection') {
+    const goods = amounts.goods ?? 0, service = amounts.service ?? 0;
+    if (goods + service <= 0) return;
+    const shopPayable = await ledger.ensureAccount('platform:shop_goods_payable', 'merchant_cod_payable', null);
+    const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+    await ledger.postJournal({ businessRef: `order:${orderId}:shop_collection`, kind: 'cash_collection', orderId,
+      entries: [{ accountId: receivable.id as number, debitMinor: goods + service },
+        ...(goods ? [{ accountId: shopPayable.id as number, creditMinor: goods }] : []), ...(service ? [{ accountId: revenue.id as number, creditMinor: service }] : [])] });
+  } else if (amounts.trip) {
+    const expense = await ledger.ensureAccount('platform:operating_expense', 'operating_expense', null);
+    await ledger.postJournal({ businessRef: `order:${orderId}:shop_trip`, kind: 'adjustment', orderId,
+      entries: [{ accountId: expense.id as number, debitMinor: amounts.trip }, { accountId: receivable.id as number, creditMinor: amounts.trip }] });
+  }
+}
 const postCashJournal = async (entryId: number) => {
   if (!(await ledgerReady())) return;
   const e = (await one('SELECT * FROM cash_entries WHERE id = ?', entryId))!;
@@ -1525,7 +1544,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
   // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
   if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
-  const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status = 'searching' AND scheduled_for IS NULL", user.id)) as { n: number };
+  // A placed shop order counts while it waits on the shop too, or one customer could queue baskets without end.
+  const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NULL", user.id)) as { n: number };
   if (Number(searching.n) >= SEARCHING_LIMIT) fail(409, 'too_many_searching');
   if (body.service === 'shop') {
     if (body.quoteId != null || body.quotedPrice != null) fail(400, 'invalid_input'); // the server prices a basket itself
@@ -2483,7 +2503,7 @@ registerDestinationRoutes(route, { need, needActive, fail, limit, identityKey, t
 const shop = registerShop(route, { db: persistence, need, needActive, fail, text, bookedPoint, normalizePhone, settings,
   enabled: () => enabledServices.includes('shop'), queuePush: (ids, kind, order, path) => queuePush(ids, kind as PushKind, order, path), getOrder, adminIds,
   dispatch: (orderId, customerId) => dispatchOrBroadcast('shop', orderId, customerId), limit, identityKey,
-  owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0, flushPush,
+  owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0, flushPush, journal: postShopJournal,
   driverCommand: (user, id, body, apply) => driverCommand(user, id, body, apply) });
 /** One pass of the shop timers; the server runs it each minute and tests call it with a chosen time. */
 export const shopSweep = (now = Date.now()) => shop.sweep(now);
@@ -3054,9 +3074,12 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
 route('GET', '/api/driver/earnings', async ({ user }) => {
   need(user, 'driver');
   const since = async (from: number) => {
-    const r = (await one(`SELECT COUNT(*) jobs, COALESCE(SUM(price), 0) gross, COALESCE(SUM(commission), 0) commission
+    // A returned shop order earns its failed-trip pay from the shop ledger, not its fare (DRV-17).
+    const r = (await one(`SELECT COUNT(*) jobs, COALESCE(SUM(CASE WHEN service = 'shop' AND status = 'returned' THEN 0 ELSE price END), 0) gross, COALESCE(SUM(commission), 0) commission
       FROM orders WHERE driver_id = ? AND status IN (${finishedSql}) AND completed_at >= ?`, user.id, from))!;
-    return { jobs: r.jobs, gross: r.gross, commission: r.commission, net: Math.round((r.gross - r.commission) * 100) / 100 };
+    const trip = await shopTables(persistence) ? Number((await one(`SELECT COALESCE(SUM(amount_agorot), 0) n FROM shop_ledger WHERE book = 'captain' AND driver_id = ? AND created_at >= ?`, user.id, from))!.n) / 100 : 0;
+    const gross = Math.round((Number(r.gross) + trip) * 100) / 100;
+    return { jobs: r.jobs, gross, commission: r.commission, net: Math.round((gross - r.commission) * 100) / 100 };
   };
   const midnight = new Date().setHours(0, 0, 0, 0);
   return { today: (await since(midnight)), week: (await since(Date.now() - 7 * DAY)), all: (await since(0)) };
@@ -3068,8 +3091,8 @@ const cashSum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cas
 const cashMinor = (column: 'commission' | 'discount') => persistence.backend === 'postgres' ? `${column}_minor` : `CAST(ROUND(${column} * 100) AS INTEGER)`;
 // The four inputs of cashOwed, as columns of one row per driver `u`.
 // Shop goods and the service fee collected at completed shop doors (DLV-15), less captain pay from the shop ledger (DRV-17).
-const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(s.goods_agorot + s.service_fee_agorot) FROM shop_orders s JOIN orders o ON o.id = s.order_id
-    WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
+const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot < s.goods_agorot + s.service_fee_agorot THEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot ELSE s.goods_agorot + s.service_fee_agorot END)
+    FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
 const owedColumns = (shop = false) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
     COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
     ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
@@ -3532,7 +3555,8 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
     const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => previous[key as keyof Settings] !== Number(value))
       .map(([key, value]) => [key, { old: previous[key as keyof Settings], new: Number(value) }]));
     const next = { ...previous, ...Object.fromEntries(Object.entries(body).map(([k, v]) => [k, Number(v)])) } as Settings;
-    if (enabledServices.includes('shop') && next.orderCashCeiling > next.driverCashCap) fail(409, 'ceiling_above_cap');
+    // Only a save that touches either value is refused, so other settings stay editable while an old pair is fixed.
+    if (enabledServices.includes('shop') && ('orderCashCeiling' in body || 'driverCashCap' in body) && next.orderCashCeiling > next.driverCashCap) fail(409, 'ceiling_above_cap');
     for (const [key, value] of Object.entries(body)) (await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, Number(value)));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SETTINGS_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ changes }), Date.now()));

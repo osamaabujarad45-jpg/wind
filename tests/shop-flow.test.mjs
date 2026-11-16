@@ -16,7 +16,9 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,shop';
 delete process.env.WIND_SHOP_TOWN;
 delete process.env.OSRM_URL;
-const { db, shutdown, server, promote } = await import('../server/main.ts');
+const { persistence, shutdown, server, promote } = await import('../server/main.ts');
+// One reader for both backends: tests/pg-shop.mjs runs this same file on PostgreSQL.
+const one = (sql, ...args) => persistence.atomic({ purpose: 'test' }, () => persistence.one(sql, ...args));
 await new Promise(resolve => server.listen(0, resolve));
 const realFetch = globalThis.fetch;
 const sends = [];
@@ -54,7 +56,7 @@ try {
   const approved = await call(`/admin/merchants/${merchantId}`, { token: admin.token, body: { status: 'active', minOrderAgorot: 3000, deliveryFeeAgorot: 1000,
     serviceFeeAgorot: 200, commissionBps: 1000 } });
   assert.equal(approved.status, 'active');
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE action = 'MERCHANT_APPROVED'").get().n, 1);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE action = 'MERCHANT_APPROVED'")).n), 1);
 
   // ---- catalogue (DLV-01, MER-02) ----
   const item = body => call('/merchant/items', { token: owner.token, body });
@@ -93,12 +95,12 @@ try {
   assert.equal(order.shop.pickupCode, null, 'the customer never sees the shop pickup code');
   assert.match(order.handoverCode, /^\d{4}$/, 'the customer holds the delivery code');
   assert.equal(order.price, 10, 'the order fee is the delivery fee in shekels');
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM shop_snapshots WHERE order_id = ?").get(order.id).n, 1);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM shop_snapshots WHERE order_id = ?", order.id)).n), 1);
   assert.equal((await call('/jobs', { token: captain.token })).length, 0, 'captains do not see a requested order');
 
   // ---- the customer may still change the basket before the shop accepts (DLV-11) ----
   order = await call(`/orders/${order.id}/shop/edit`, { token: customer.token, body: { lines: basket, expectedGoodsAgorot: estimate } });
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM shop_snapshots WHERE order_id = ?").get(order.id).n, 2, 'an edit appends a snapshot');
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM shop_snapshots WHERE order_id = ?", order.id)).n), 2, 'an edit appends a snapshot');
 
   // ---- merchant inbox: the pickup code is the shop's to show ----
   const inbox = await call('/merchant/orders', { token: owner.token });
@@ -179,9 +181,9 @@ try {
   // ---- pickup code: five misses lock it, on its own counter; the reset is audited ----
   for (let i = 0; i < 5; i++) await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: '0000', check: { result: 'ok' } } }, 400, 'wrong_code');
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'proof_locked');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM proof_attempts WHERE order_id = ?').get(order.id).n, 0, 'the delivery code counter is untouched');
+  assert.equal(Number((await one('SELECT COUNT(*) n FROM proof_attempts WHERE order_id = ?', order.id)).n), 0, 'the delivery code counter is untouched');
   await call(`/admin/orders/${order.id}/shop/reset-pickup`, { token: admin.token, body: { reason: 'Shop confirmed the captain at the counter' } });
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_PICKUP_RESET'").get(order.id).n, 1);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_PICKUP_RESET'", order.id)).n), 1);
 
   // ---- a handover exception reopens preparing; the shop fixes it and marks ready again (DLV-13) ----
   order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
@@ -203,16 +205,16 @@ try {
     seals: [{ no: 1, intact: true }], collectedCents: due - 100 } }, 400, 'invalid_input');
   order = await advance('in_transit', { code: deliveryCode, seals: [{ no: 1, intact: true }], collectedCents: due });
   assert.equal(order.status, 'completed');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM shop_seals WHERE order_id = ?').get(order.id).n, 1);
-  assert.equal(db.prepare('SELECT door_expected_cents d FROM orders WHERE id = ?').get(order.id).d, due);
+  assert.equal(Number((await one('SELECT COUNT(*) n FROM shop_seals WHERE order_id = ?', order.id)).n), 1);
+  assert.equal(Number((await one('SELECT door_expected_cents d FROM orders WHERE id = ?', order.id)).d), due);
 
   // ---- money: goods to the shop less its commission, the service fee to Wind, commission only on the delivery fee ----
-  const book = (b, kind) => db.prepare('SELECT COALESCE(SUM(amount_agorot), 0) n FROM shop_ledger WHERE book = ? AND kind = ? AND order_id = ?').get(b, kind, order.id).n;
-  assert.equal(book('merchant', 'goods'), goods);
-  assert.equal(book('merchant', 'commission'), -300);
-  assert.equal(book('wind', 'commission'), 300);
-  assert.equal(book('wind', 'service_fee'), 200);
-  assert.throws(() => db.prepare('UPDATE shop_ledger SET amount_agorot = 1').run(), /append-only/);
+  const book = async (b, kind) => Number((await one('SELECT COALESCE(SUM(amount_agorot), 0) n FROM shop_ledger WHERE book = ? AND kind = ? AND order_id = ?', b, kind, order.id)).n);
+  assert.equal(await book('merchant', 'goods'), goods);
+  assert.equal(await book('merchant', 'commission'), -300);
+  assert.equal(await book('wind', 'commission'), 300);
+  assert.equal(await book('wind', 'service_fee'), 200);
+  await assert.rejects(one('UPDATE shop_ledger SET amount_agorot = 1'), /append-only/);
   const cash = await call('/driver/cash', { token: captain.token });
   assert.equal(cash.shopCents, goods + 200, 'the captain owes the goods and the service fee they collected');
   assert.equal(cash.owedCents, Math.round(commissionOn(10, defaultSettings.commission) * 100) + goods + 200);

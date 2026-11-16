@@ -5,6 +5,8 @@ ALTER TABLE orders ADD CONSTRAINT orders_service_check CHECK (service IN ('ride'
 ALTER TABLE orders DROP CONSTRAINT orders_status_check;
 ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('requested','searching','assigned','at_pickup','in_transit','completed','cancelled','on_hold','returning','returned'));
 ALTER TABLE orders ADD CONSTRAINT orders_requested_check CHECK (status <> 'requested' OR (service = 'shop' AND driver_id IS NULL));
+ALTER TABLE ledger_accounts DROP CONSTRAINT ledger_accounts_kind_check;
+ALTER TABLE ledger_accounts ADD CONSTRAINT ledger_accounts_kind_check CHECK(kind IN ('platform_revenue','driver_receivable','driver_payable','promo_expense','provider_clearing','customer_receivable','merchant_cod_payable','operating_expense'));
 DROP INDEX orders_exclusive_driver;
 CREATE UNIQUE INDEX orders_exclusive_driver ON orders(driver_id)
   WHERE service IN ('ride','freight','shop') AND status IN ('assigned','at_pickup','in_transit','on_hold','returning');

@@ -191,13 +191,15 @@ export function SealToggles({ order, value, onChange }: { order: Order; value: R
   return <View style={{ marginVertical: 8 }}>
     <Txt variant="label">{c.shopSealsTitle}</Txt>
     {sealed.map(p => <View key={p.no} style={{ marginTop: 6 }}>
-      <Choices label={fill(c.shopSealOf, { n: p.no })} value={value[p.no] === false ? 'broken' : 'intact'}
+      <Choices label={fill(c.shopSealOf, { n: p.no })} value={(value[p.no] === undefined ? '' : value[p.no] ? 'intact' : 'broken') as 'intact'}
         onChange={k => onChange({ ...value, [p.no]: k === 'intact' })} items={[{ key: 'intact', label: fill(c.shopSealIntact, { n: p.no }) }, { key: 'broken', label: fill(c.shopSealBroken, { n: p.no }) }]} />
     </View>)}
   </View>;
 }
 export const sealsBody = (order: Order, value: Record<number, boolean>) =>
-  (order.shop?.packages ?? []).filter(p => p.sealed).map(p => ({ no: p.no, intact: value[p.no] !== false }));
+  (order.shop?.packages ?? []).filter(p => p.sealed).map(p => ({ no: p.no, intact: value[p.no] === true }));
+/** Every sealed package has been marked intact or broken by the captain. */
+export const sealsReady = (order: Order, value: Record<number, boolean>) => (order.shop?.packages ?? []).filter(p => p.sealed).every(p => typeof value[p.no] === 'boolean');
 
 /** Support's shop actions on one order (DLV-13, DLV-22, DLV-23, DLV-25): a typed cancel with a note, the fault result,
  * unsellable credit, a refund, and the audited pickup-code reset. The server enforces when each is allowed. */

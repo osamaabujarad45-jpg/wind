@@ -97,6 +97,20 @@ try {
   assert.equal(row(o.id).cancel_reason, 'below_minimum');
   assert.ok(dispatchBefore > 0);
 
+  // ---- no captain is called while the customer is still deciding on the basket (DLV-06 pause holds DLV-12 dispatch) ----
+  o = await place([{ itemId: rice.id, qtyMilli: 1000, policy: 'remove' }, { itemId: milk.id, qtyMilli: 1000, policy: 'ask_first' }]);
+  await call(`/merchant/orders/${o.id}/accept`, { token: owner.token, body: { prepMinutes: 16 } }); // dispatch due in one minute
+  await call(`/merchant/orders/${o.id}/preparing`, { token: owner.token, body: {} });
+  const askLine = (await call(`/orders/${o.id}`, { token: owner.token })).shop.lines.find(l => l.itemId === milk.id);
+  await call(`/merchant/orders/${o.id}/lines/${askLine.id}`, { token: owner.token, body: { substituteItemId: milk2.id } });
+  await shopSweep(Date.now() + 2 * MIN);
+  assert.equal(row(o.id).status, 'requested', 'no captain while consent is open');
+  const askChange = (await call(`/orders/${o.id}`, { token: customer.token })).shop.change;
+  await call(`/orders/${o.id}/shop/consent`, { token: customer.token, body: { changeId: askChange.id, decision: 'approve' } });
+  await shopSweep(Date.now() + 3 * MIN);
+  assert.equal(row(o.id).status, 'searching', 'after the answer, the paused time moved dispatch and it went out');
+  await call(`/admin/orders/${o.id}/shop/cancel`, { token: admin.token, body: { reason: 'no_captain', note: 'Clearing the board for the next case' } });
+
   // ---- no captain by ready + 10 minutes: flagged once, never cancelled; T21 never expires a shop order (DLV-12) ----
   o = await place([{ itemId: rice.id, qtyMilli: 2000, policy: 'remove' }]);
   await call(`/merchant/orders/${o.id}/accept`, { token: owner.token, body: { prepMinutes: 10 } });
@@ -141,6 +155,7 @@ try {
   assert.match(returnCode, /^\d{4}$/, 'the shop holds it (DLV-21)');
   o = await adv('returning', { code: returnCode });
   assert.equal(o.status, 'returned');
+  const returnedId = o.id;
   assert.equal(db.prepare('SELECT commission FROM orders WHERE id = ?').get(o.id).commission, 0, 'no commission on a failed delivery');
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'captain' AND order_id = ?").get(o.id).n, 2000, 'the trip and the return leg (DRV-17)');
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'wind' AND order_id = ?").get(o.id).n, -2000, 'paid from operating expenses');
@@ -155,10 +170,32 @@ try {
   await call(`/admin/orders/${o.id}/shop/unsellable`, { token: admin.token, body: { lineId: riceLine, note: 'Bag torn on the way back' } });
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150, 'goods value less commission');
 
+  // ---- a delivery must record the door cash; a short door is Wind's loss, and the captain owes what he collected (DLV-15, DLV-22) ----
+  o = await place([{ itemId: rice.id, qtyMilli: 2000, policy: 'remove' }]);
+  await call(`/merchant/orders/${o.id}/accept`, { token: owner.token, body: { prepMinutes: 5 } });
+  await call(`/merchant/orders/${o.id}/preparing`, { token: owner.token, body: {} });
+  await call(`/merchant/orders/${o.id}/ready`, { token: owner.token, body: { packages: [{ sealed: false, lineIds: [(await call(`/orders/${o.id}`, { token: owner.token })).shop.lines[0].id] }] } });
+  o = await call(`/jobs/${o.id}/accept`, { token: captain.token, body: {} });
+  o = await adv('assigned');
+  o = await call(`/orders/${o.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(),
+    code: (await call(`/orders/${o.id}`, { token: owner.token })).shop.pickupCode, check: { result: 'ok' } } });
+  const code = (await call(`/orders/${o.id}`, { token: customer.token })).handoverCode;
+  await err(`/orders/${o.id}/advance`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code } }, 400, 'invalid_input');
+  const owedBefore = (await call('/driver/cash', { token: captain.token })).owedCents;
+  o = await adv('in_transit', { code, collectedCents: 3000 + 1000 - 500, varianceReason: 'PARTIAL_PAYMENT' });
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'wind' AND kind = 'door_short' AND order_id = ?").get(o.id).n, -500);
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND kind = 'goods' AND order_id = ?").get(o.id).n, 3000, 'the shop is owed its goods in full');
+  const owedAfter = (await call('/driver/cash', { token: captain.token })).owedCents;
+  assert.equal(owedAfter - owedBefore, 3000 - 500 + Math.round(10 * 0.15 * 100), 'the captain owes the goods he collected plus his commission');
+  // a shop-fault refund gives back the commission taken on the refunded goods (MER-09)
+  await call(`/admin/orders/${o.id}/shop/fault`, { token: admin.token, body: { result: 'merchant', note: 'Rice bag was out of date' } });
+  await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag' } });
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150 - 1000 + 50);
+
   // ---- PAY-09: a second refused order with fault none pauses cash shop orders until support reviews ----
   db.prepare("UPDATE orders SET status = 'returned', exception_reason = 'refused', updated_at = ? WHERE id = (SELECT MAX(id) FROM orders WHERE customer_id = ? AND status = 'cancelled')").run(Date.now(), customer.user.id);
   db.prepare("INSERT INTO shop_faults (order_id, result, actor_id, note, created_at) SELECT MAX(id), 'none', ?, 'Refused twice', ? FROM orders WHERE customer_id = ? AND status = 'returned' AND id <> ?")
-    .run(admin.user.id, Date.now(), customer.user.id, o.id);
+    .run(admin.user.id, Date.now(), customer.user.id, returnedId);
   await err('/orders', { token: customer.token, body: { service: 'shop', merchantId: merchant.id, lines: [{ itemId: rice.id, qtyMilli: 2000, policy: 'remove' }],
     dropoffCity: 'tulkarm', dropoffPoint: home, dropoffNote: 'Gate', contact: '0599520003' } }, 409, 'shop_cash_paused');
   await call(`/admin/users/${customer.user.id}/shop-review`, { token: admin.token, body: { note: 'Called the customer, both were misunderstandings' } });

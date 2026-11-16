@@ -11,7 +11,7 @@ import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } 
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
-import { SealToggles, sealsBody, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
+import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -733,8 +733,8 @@ export default function OrderScreen() {
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady}
-          reason={doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
+          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}

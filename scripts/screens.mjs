@@ -207,7 +207,6 @@ const shopNew = await shopOrder(omar, [{ itemId: kaak.id, qtyMilli: 6000, policy
 const shopReady = await shopOrder(omar, [{ itemId: bread.id, qtyMilli: 5000, policy: 'remove' }]);
 await call(`/merchant/orders/${shopReady.id}/accept`, baker.token, { prepMinutes: 10 });
 await call(`/merchant/orders/${shopReady.id}/preparing`, baker.token, {});
-await call(`/merchant/orders/${shopReady.id}/ready`, baker.token, { packages: [{ sealed: true }] });
 
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
@@ -268,7 +267,7 @@ const screens = [
   { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
   { id: 'merchant-new-order', group: 'Merchant', name: 'Merchant · accept with preparation minutes or decline with a reason', route: `/merchant/order/${shopNew.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
-  { id: 'merchant-ready', group: 'Merchant', name: 'Merchant · ready, pickup code for the captain', route: `/merchant/order/${shopReady.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
+  { id: 'merchant-preparing', group: 'Merchant', name: 'Merchant · preparing: weights, substitutes and the packing record', route: `/merchant/order/${shopReady.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
   { id: 'merchant-catalogue', group: 'Merchant', name: 'Merchant · items, prices and out-of-stock switch', route: '/merchant/catalogue', file: 'src/app/merchant/catalogue.tsx', role: 'merchant' },
   { id: 'admin-shops', group: 'Admin', name: 'Shops · terms, licence, payouts', route: '/admin/merchants', file: 'src/app/admin/merchants.tsx', role: 'admin' },
   { id: 'driver-pending', group: 'Driver', name: 'Awaiting approval', route: '/driver', file: 'src/app/driver/index.tsx', role: 'pending' },
