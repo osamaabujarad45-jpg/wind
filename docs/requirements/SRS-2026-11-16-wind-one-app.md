@@ -25,7 +25,9 @@ one product with no conflicts between the parts.
   - A row whose code is **service-specific** and names several services is **P** if at least one named service is
     live and another is E-off or N; it is E-off or N only when no named service is live. A row about
     **service-agnostic** order code (it works for any order, such as calling the captain or a dispute) is E when
-    that code is live.
+    that code is live. "Live" means the row's own behaviour works in production for that service, not merely that
+    the service is enabled. Between E-off and N: E-off when the code exists but is switched off, N when it does not
+    exist.
 - External sources (the Kimi spec, the reference-app studies, the demo apps) are **outside this repository**. They are
   in the main checkout `research_notes/`, its `docs/BUILD-SPEC-…`, and `Documents/wind-competitors/`. IDs taken from
   them always carry their source key, for example `R-SQ A10`, `R-PAL A14`, `PLAN A-14`.
@@ -71,11 +73,11 @@ account, one map home, one order record, one captain app mode and one operations
 
 - **Geography:** West Bank towns, with checkpoints and road closures. Rollout order is West Bank → Israel → airport.
   Phone numbers start +970 or +972. Routes are field-checked before a town pair is enabled.
-- **Money:** cash first. Cards and wallets need a PMA-licensed provider (gate **G-PAY**). An MTDE 2025 announcement is
+- **Money:** cash first. Cards and wallets need a PMA-licensed provider (gate **G-PAY**). An announcement by the Ministry of Telecommunications and Digital Economy (MTDE, 2025) is
   read as requiring electronic payment for courier payments over ₪500; this is **unconfirmed**. `docs/SYSTEM.md` §7
   (item 3) asks counsel to confirm it (gate **G-LEGAL**), together with whether Wind may collect item-sale proceeds at
-  all (`docs/SYSTEM.md` §10 excludes them from the initial scope). Until then a per-order cash ceiling applies to every
-  cash-collecting order (ADM-12). Money is always integer agorot.
+  all (`docs/SYSTEM.md` §10 excludes them from the initial scope). Once built, ADM-12 MUST apply a per-order cash ceiling to
+  every cash-collecting order, defaulting to ₪500 until G-LEGAL decides. Money MUST be integer agorot (PAY-01).
 - **Network and devices:** budget Android phones on 3G or 2G. Arabic first, with full English.
 - **Supply:** a service line is visible only where verified captains, and for Delivery verified merchants, exist (SCOPE).
 
@@ -87,7 +89,7 @@ account, one map home, one order record, one captain app mode and one operations
 | Recipient | Receives a parcel or delivery for someone else | No account. Gets a tracking link and the delivery code by message |
 | Captain (driver) | Carries out jobs on approved vehicles and approved service lines | Driver account, approved by an admin |
 | Merchant (new) | Shop that receives Delivery orders, prepares them and hands them over | Merchant account, approved by an admin. Uses the merchant mode of the same app or the web console |
-| Admin (duties: `dispatcher`, `finance`, `safety`, `driver_reviewer`, `platform_admin`; ADM-10) | Approves people, dispatches, settles cash, resolves exceptions | Created by operator enrollment only (no self sign-up) |
+| Admin (duties: `dispatcher`, `finance`, `safety`, `driver_reviewer`, `support`, `platform_admin`; ADM-10) | Approves people, dispatches, settles cash, resolves exceptions | Created by operator enrollment only (no self sign-up) |
 
 ---
 
@@ -105,7 +107,7 @@ section.
 | ONE-05 | One home MUST serve all services: a map-first home with a service switcher (Ride · Send · Shop), plus one "where to" entry, saved places, recents and an active-order card (§4.2). | P: parcel only |
 | ONE-06 | One booking engine MUST cover all services, built as a step workflow (R-CA §3): place → service details → option/price → payment → confirm. Each step is a named, testable state, so a failed step is retried on its own. Service lines plug in steps and do not fork the flow. | P: booking is one component tree (`src/app/book.tsx`), not named step states |
 | ONE-07 | One quote model MUST serve all services: server-priced, versioned tariff, expiry, usable once, idempotent create (PLAN C-18). | P: server price check and idempotent create are live; versioned quote records (`server/domain/quotes.ts`) are PostgreSQL-only |
-| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one provider interface (`PaymentsProvider`, `server/domain/payments.ts`) (gate G-PAY). | P: cash, credit codes and promo are live; the `PaymentsProvider` interface and routes are wired, but the Payments service's SQL runs only on PostgreSQL |
+| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one provider interface (`PaymentsProvider`, `server/domain/payments.ts`) (gate G-PAY). | P: cash, credit codes and promo are live; the `PaymentsProvider` interface and routes exist, but no live provider is wired (test fake only) and the Payments service's SQL runs only on PostgreSQL |
 | ONE-09 | One captain mode MUST serve all services: one job board and one offer channel, with each job showing a service badge (icon + word, never colour alone). Concurrency rules come from §2.2 and are enforced on the server. | P |
 | ONE-10 | One cash ledger and one cash cap per captain MUST count every service's cash: fares, delivery fees, shop goods cash at the door and, when enabled, goods COD (PLAN D-16/D-17, WP-16). | P: goods COD is E-off |
 | ONE-11 | One notification system MUST serve all services, with one channel per event class (`jobs`, `status`, `cash`, `attention`, `chat`, and `merchant_orders` for merchants) shared across services, not per service (PLAN N-03, WP-10). | P |
@@ -137,7 +139,7 @@ section.
 | Pickup code (parcel, SHIP-04) | proves the captain collected the parcel | sender | Yes |
 | Delivery code (`handover_code`) | proves the item reached the recipient | order owner (sender or buyer), passed to the recipient | Yes, lockout and audited reset |
 | Return code (`return_code`) | proves the item came back to the sender or shop | sender, or merchant for goods (DLV-21) | Yes |
-| Cash handover | the captain hands cash to the office (DRV-10) | captain, cashier | Not a code |
+| Cash handover | the captain hands cash to the office (DRV-10) | captain, `finance` | Not a code |
 
 ### 2.2 Cross-service conflict rules
 
@@ -242,7 +244,8 @@ Changing any cell changes that table, which is server-enforced.
 | Shop, merchant accepted until pickup | note only | no | consent flow only (DLV-06) | through support (DLV-11, DLV-23) |
 | Shop, picked up and later | — | no | — | no |
 
-DLV-10's snapshot is taken again whenever items change before acceptance. BOOK-07 and DLV-11 follow this table.
+DLV-10's snapshot is taken again whenever items change: before acceptance, on a DLV-06 consent, or at the merchant's
+final weights and substitutions (DLV-04, MER-03). BOOK-07 and DLV-11 follow this table.
 
 ### 4.4 Tracking, trust and after the order (TRK)
 
@@ -257,9 +260,9 @@ DLV-10's snapshot is taken again whenever items change before acceptance. BOOK-0
 | TRK-07 | Receipt MUST be itemised and the same format for all services; a cancelled order shows no charge (PLAN T-15). | P: one format for all services and cancelled orders show no charge (E); the itemised breakdown (base, options, service fee) is N |
 | TRK-08 | Order history MUST list all services with a filter, and have separate empty states for current and past (R-HA §4). | P |
 | TRK-09 | "Report a problem" MUST open a dispute within 7 days and can end in account credit (PLAN T-17). | E |
-| TRK-10 | Order again / send another MUST copy the last order of the same service (PLAN C-14). | E (parcel) |
+| TRK-10 | Order again / send another MUST copy the last order of the same service (PLAN C-14). | E |
 | TRK-11 | Lost item: a rider or sender MUST be able to report a lost item on a finished order; the captain is notified and support mediates. (UB-F F11) | N |
-| TRK-12 | Phone masking (calls through a relay) MAY replace direct numbers once a telecom contract exists; until then a number is shown only during an active job (NFR-04). (gate: telecom contract) | N |
+| TRK-12 | Phone masking (calls through a relay) MAY replace direct numbers once a telecom contract exists; until then a number is shown only during an active job (NFR-04). (gate G-TELECOM) | N |
 | TRK-13 | A receipt that can serve as a tax invoice MUST follow the owner's accountant's requirements once a VAT position is decided. (gate: legal/tax) | N |
 
 ---
@@ -525,7 +528,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | ADM-03 | Dispatch: admin assign/reassign obeys the eligibility path (`driverRefusal`, CON-04). | E (WP-02) |
 | ADM-04 | Orders: cancel, resolve exception, proof reset (audited), decision card with suggested next step. | E |
 | ADM-05 | Cash: four books (PAY-05), handover confirm/dispute, merchant payouts with reference. | P |
-| ADM-06 | Settings: tariffs per service and vehicle, fees, minimums, merchant commission (MER-09), zones, windows and capacity, load per vehicle class in kg and volume (CON-03), cash cap and age limit, the per-order cash ceiling (ADM-12), and enabled services per town (ONE-14). Compare-and-set on save. | P |
+| ADM-06 | Settings: tariffs per service and vehicle, fees, minimums, merchant commission (MER-09), zones, windows and capacity, load per vehicle class in kg and volume (CON-03), cash cap and age limit, the per-order cash ceiling (ADM-12), the shop timers and limits (agreed limit DLV-04, consent timeout DLV-06, accept timeout DLV-07, no-captain wait DLV-12), and enabled services per town (ONE-14). Compare-and-set on save. | P |
 | ADM-07 | Audit log viewer (read-only) over `security_events`. | N (WP-13) |
 | ADM-08 | Fleet view: captains online, last fix (stale shown as stale), current job and service. | P: per-order driver location exists; a fleet list is N (WP-18) |
 | ADM-09 | Merchant management: catalogue moderation, hours, pause, settlement statements. | N |
@@ -542,14 +545,14 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NFR-01 | Performance | Proposed targets, to be confirmed by measurement on the A53: cold start to interactive home ≤ 4 s on 3G; booking steps respond ≤ 300 ms locally; the first map tiles render ≤ 3 s. | P |
 | NFR-02 | Network | Every write is idempotent and recoverable. Shell, saved places and the active order are cached. A failed write keeps the user's input and shows a retry. Queued driver writes MAY be added (R-SQ A7). | P: booking and driver replay recover writes; queued driver writes and a cached shell are N |
 | NFR-03 | Battery and location | Location only while online or on a job. Cadence: 5 s moving with a good fix, else 15 s, 2 s floor. No always-on location. | E |
-| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: no ad SDKs and `allowBackup=false` hold. The assigned captain sees the customer's phone for 24 h after the last update, not only during the job (`server/main.ts`); share links stay valid for 24 h after the order closes (`server/domain/realtime.ts`); there is no trace-retention policy; link expiry is N |
+| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: no ad SDKs and `allowBackup=false` hold. The assigned captain sees the customer's phone for 24 h after the last update, not only during the job (`server/main.ts`); share links stay valid for 24 h after the order closes (`server/domain/realtime.ts`); there is no time-based trace retention (rows are deleted on driver-state events); link expiry is N |
 | NFR-05 | Security | HTTPS only. Server-side roles. Compare-and-set on admin edits. Rate limits on auth and codes. Proof lockouts. Audit events. No secrets in the app. Retired API hosts refused at build. | E |
 | NFR-06 | Reliability | One SQLite instance with daily backups now. Before more than one API instance or the Ride/Delivery launch: a shared transactional store (the PostgreSQL decision), an off-host backup and a restore drill. | P: SQLite with daily on-disk backups; off-host backup, restore drill and a shared store are N (G-PG) |
 | NFR-07 | Observability | Every order id traceable across API, dispatch, location, proof and cash. Alerts on stuck states and failed backups reach the owner (WP-08). | P |
 | NFR-08 | Localisation | Arabic default, complete English. All copy in `src/copy.ts` with typed keys. Number, date and currency formats per language. | E |
 | NFR-09 | Compatibility | Android: the versions Expo SDK 57 supports, up to Android 16, on ARM. iOS: the versions SDK 57 supports, once the iOS build is enabled. Web as a fallback for customers. | P |
 | NFR-10 | Updates | A forced-upgrade floor by `CLIENT_BUILD`. Release builds keep the signing key (`5947bab0…`) across EAS accounts. | E |
-| NFR-11 | Legal | Passenger, courier and merchant licensing, insurance, privacy and terms reviewed per service line before launch (`docs/SYSTEM.md` §7). | gated |
+| NFR-11 | Legal | Passenger, courier and merchant licensing, insurance, privacy and terms reviewed per service line before launch (`docs/SYSTEM.md` §7). | —, gated (G-LEGAL) |
 
 ---
 
@@ -567,7 +570,8 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | G-STORAGE | ADDR-05, ACC-05, proof photos | Object storage with scanning and retention |
 | G-PUSH | NTF-01 closed-app | Firebase `google-services.json` and FCM key on the new EAS project; server Firebase key |
 | G-OSRM | TRK-02 road-aware ETA, MAP-11 | Self-hosted OSRM with the West Bank graph on the production host |
-| G-LEGAL | the MTDE ₪500 courier-payment reading (§1.2, PAY-06); the value of Wind's own default ceiling (ADM-12); item-sale proceeds (SHIP-12, DLV-15); tax invoice (TRK-13) | Counsel's written answer |
+| G-LEGAL | the MTDE ₪500 courier-payment reading (§1.2, PAY-06); the value of Wind's own default ceiling (ADM-12); item-sale proceeds (SHIP-12, DLV-15); tax invoice (TRK-13); licensing and insurance per service line (NFR-11) | Counsel's written answer |
+| G-TELECOM | TRK-12 phone masking | A telecom contract for relayed calls |
 | G-A11Y-TIME | A11Y-08 ride-offer timing | Owner's written acceptance of the WCAG 2.2.1 real-time exception for ride offers |
 | G-REFUND | DLV-21..23 | Goods return, refund and merchant-compensation policy |
 
