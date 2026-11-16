@@ -92,8 +92,8 @@ section.
 | ONE-04 | One status vocabulary in Arabic and English, naming the actor and the next step (R-HA §4), MUST be shared by every service: the same words for the same spine state. Service wording is allowed only in the sub-step line. | P |
 | ONE-05 | One home MUST serve all services: a map-first home with a service switcher (Ride · Send · Shop), plus one "where to" entry, saved places, recents and an active-order card (§4.2). | P: parcel only |
 | ONE-06 | One booking engine MUST cover all services, built as a step workflow (R-CA §3): place → service details → option/price → payment → confirm. Each step is a named, testable state, so a failed step is retried on its own. Service lines plug in steps and do not fork the flow. | P |
-| ONE-07 | One quote model MUST serve all services: server-priced, versioned tariff, expiry, usable once, idempotent create (PLAN C-18). | E |
-| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one `PaymentMethod` interface (gate G-PAY). | E (cash) |
+| ONE-07 | One quote model MUST serve all services: server-priced, versioned tariff, expiry, usable once, idempotent create (PLAN C-18). | P: server price check and idempotent create are live; versioned quote records (`server/domain/quotes.ts`) are PostgreSQL-only |
+| ONE-08 | One payment model MUST serve all services: cash (plus account credit and promo) now, a licensed PSP later behind one `PaymentMethod` interface (gate G-PAY). | E (cash); account credit exists as one-use credit codes; the provider interface exists only in PostgreSQL-gated `payments.ts` |
 | ONE-09 | One captain mode MUST serve all services: one job board and one offer channel, with each job showing a service badge (icon + word, never colour alone). Concurrency rules come from §2.2 and are enforced on the server. | P |
 | ONE-10 | One cash ledger and one cash cap per captain MUST count every service's cash (fares, delivery fees and, when enabled, goods COD) (PLAN D-16/D-17, WP-16). | P: goods COD is E-off |
 | ONE-11 | One notification system MUST serve all services, with one channel per event class (`jobs`, `status`, `cash`, `attention`, `chat`) shared across services, not per service (PLAN N-03, WP-10). | P |
@@ -149,7 +149,7 @@ Changing any cell changes that table, which is server-enforced.
 | ID | Requirement | St | Gate / source |
 |---|---|---|---|
 | ACC-01 | Sign-up and sign-in MUST use phone + password in Arabic and English. One account serves all service lines. | E | PLAN S-01 |
-| ACC-02 | The phone MUST be verified by an SMS code before a first booking in any service line, once a provider is contracted. | E-off | G-SMS (WP-04) |
+| ACC-02 | The phone MUST be verified by an SMS code before a first booking in any service line, once a provider is contracted. | E-off: the contact gate runs at sign-in behind `WIND_CONTACT_VERIFICATION_REQUIRED` (registration closes while it is set); phone codes are PostgreSQL-only (`phone-identity.ts`) | G-SMS (WP-04) |
 | ACC-03 | Email verification and password reset by email MUST be available. | E-off | G-EMAIL (WP-05) |
 | ACC-04 | A captain application MUST collect vehicle class, plate and requested service lines, and MUST wait for admin approval per service line. | P: one approval for all lines | R-CA §10 |
 | ACC-05 | Captain documents (licence, insurance, ID) MUST be uploaded with an expiry date. An expired document MUST block the affected service line. | N | G-STORAGE |
@@ -158,7 +158,7 @@ Changing any cell changes that table, which is server-enforced.
 | ACC-08 | Account deletion MUST be available in the app and on a public page. | E | PLAN S-04 |
 | ACC-09 | The language switch (ar/en) MUST apply instantly and mirror the layout. | E | |
 | ACC-10 | Captains MUST be able to set a "heading to" destination preference. | E | PLAN D-23 |
-| ACC-11 | Plus (customer) and Pro (captain) subscriptions MUST state the services their benefits cover (CON-07); activation is manual by an admin while cash-only. | E | PLAN A-13 |
+| ACC-11 | Plus (customer) and Pro (captain) subscriptions MUST state the services their benefits cover (CON-07); activation is manual by an admin while cash-only. | P: Plus and Pro exist with manual activation; benefits are not labelled per service line | PLAN A-13 |
 | ACC-12 | A referral code MUST credit the referrer after the referee's first completed order in any service line. | E | PLAN C-20 |
 
 ---
@@ -170,7 +170,7 @@ Changing any cell changes that table, which is server-enforced.
 | ID | Requirement | St | Source |
 |---|---|---|---|
 | ADDR-01 | An address MUST be a confirmed map pin plus a free-text landmark. A street number MUST NOT be required. A town tap MUST force a pin. | E | R-CA §4, R-SQ F-01, PLAN C-03/C-04 |
-| ADDR-02 | Saved places MUST support Home, Work and custom nicknames, and recents MUST be offered with one-tap reuse. | E | PLAN C-05 |
+| ADDR-02 | Saved places MUST support Home, Work and custom nicknames, and recents MUST be offered with one-tap reuse. | P: labels are fixed to home/work/other, named by the landmark; custom nicknames are N; recents exist | PLAN C-05 |
 | ADDR-03 | An address book screen MUST allow rename, edit pin and delete outside any booking. | P | PLAN C-06, WP-14 |
 | ADDR-04 | An address SHOULD carry a building type (house, apartment block, shop, office, other) and notes for the captain. Both travel into the order. | N | R-CA §4, WP-14 |
 | ADDR-05 | An address MAY carry one entrance photo, shown to the captain before arrival. | N | R-CA §4; G-STORAGE |
@@ -186,7 +186,7 @@ Changing any cell changes that table, which is server-enforced.
 | HOME-02 | An active order MUST show as a resumable card (CON-10). A ride takes the map; other orders are compact cards with status and ETA. | P |
 | HOME-03 | Shop discovery MUST list nearby open merchants by category, with distance/zone, minimum order, delivery fee and an "open now / opens at" state (R-HA §5; D-HA §2). | N |
 | HOME-04 | Place search MUST cover Palestinian places in Arabic and English from Wind's own index, with recents first (PLAN M-04). | E |
-| HOME-05 | Road and checkpoint status MUST be reachable from home, and MUST affect ETA wording on affected routes (PLAN A-14). | E |
+| HOME-05 | Road and checkpoint status MUST be reachable from home, and MUST affect ETA wording on affected routes (PLAN A-14). | P: Roads is reachable from Account, and road alerts appear in booking and on the order; there is no home entry |
 | HOME-06 | The service switcher order and promo slots SHOULD be server-driven (ONE-14). | N |
 
 ### 4.3 Booking (BOOK) — shared workflow
@@ -196,7 +196,7 @@ Changing any cell changes that table, which is server-enforced.
 | BOOK-01 | Booking MUST be the ONE-06 step workflow. Each step MUST state what is missing in words next to the control (`ui.tsx` button reason). | P |
 | BOOK-02 | The price MUST be shown before confirm, itemised: base, distance/options, service fee as its own labelled line, promo, credit and total (R-HA §5; PLAN P-05). | P: shop service fee is N |
 | BOOK-03 | "Cash only" and "the captain may not carry change" MUST be stated before confirm (PLAN C-22, WP-11). | P |
-| BOOK-04 | A promo code MUST be applied at the payment step (R-HA §5) and MUST obey CON-06. | E (parcel) |
+| BOOK-04 | A promo code MUST be applied at the payment step (R-HA §5) and MUST obey CON-06. | P: applied at payment (E); per-service scope (CON-06) is N: `promo_codes` has no service column |
 | BOOK-05 | Scheduling MUST be available per service: ride later, parcel pickup time, shop delivery window. A scheduled job is hidden from captains until its release time (PLAN C-11). | P |
 | BOOK-06 | Create MUST be idempotent with a client request id. A lost acknowledgement MUST recover the same order and never book twice (PLAN C-18, `booking-recovery`). | E |
 | BOOK-07 | Edit before dispatch: note, recipient and drop-off note MAY change while `searching`; destination change after assignment needs captain consent (PLAN T-12/T-25). | P |
@@ -212,7 +212,7 @@ Changing any cell changes that table, which is server-enforced.
 | TRK-04 | A share-tracking link with no login MUST exist for rides (trip share) and for recipients (parcel/shop) (PLAN T-06). | E |
 | TRK-05 | Safety MUST have an emergency call plus a safety report on every live order; for rides it is on the trip screen at all times (UB-F F10; PLAN T-18). | E |
 | TRK-06 | Rating MUST be per order (§2.2 CON-08); a customer rates the captain and, for shop orders, the merchant (R-HA). | P: merchant rating N |
-| TRK-07 | Receipt MUST be itemised and the same format for all services; a cancelled order shows no charge (PLAN T-15). | E |
+| TRK-07 | Receipt MUST be itemised and the same format for all services; a cancelled order shows no charge (PLAN T-15). | P: one format for all services and cancelled orders show no charge (E); the itemised breakdown (base, options, service fee) is N |
 | TRK-08 | Order history MUST list all services with a filter, and have separate empty states for current and past (R-HA §4). | P |
 | TRK-09 | "Report a problem" MUST open a dispute within 7 days and can end in account credit (PLAN T-17). | E |
 | TRK-10 | Order again / send another MUST copy the last order of the same service (PLAN C-14). | E (parcel) |
@@ -250,18 +250,18 @@ Live today for parcels. Freight is gated by **G-FREIGHT** (vehicle supply, load 
 
 | ID | Requirement | St | Source |
 |---|---|---|---|
-| SHIP-01 | The sender MUST enter recipient name and phone, item size option, a note, pickup and drop-off. Freight adds dimensions, weight, loading help and the vehicle match. | E (parcel) / E-off (freight) | D-SH §2; PRODUCT |
+| SHIP-01 | The sender MUST enter recipient name and phone, item size option, a note, pickup and drop-off. Freight adds dimensions, weight, loading help and the vehicle match. | P: recipient name and phone are optional today; freight fields are E-off | D-SH §2; PRODUCT |
 | SHIP-02 | Favourite recipients SHOULD be saved and picked in one tap. | N | R-SH F-01; PLAN C-13 |
 | SHIP-03 | Same-day priority MUST be an attribute of the parcel, not an order type, and MUST be refused for a scheduled slot. | E | R-SH F-06; A12 |
 | SHIP-04 | A pickup code shown only to the sender SHOULD confirm custody at pickup, with a 5-strike lockout like delivery. | N | PLAN T-19, WP-17 |
-| SHIP-05 | The delivery code MUST be held by the recipient and needed to complete. It MUST lock out after 5 wrong tries, with an audited admin reset. The code MUST contain no personal data. | E | R-SQ F-07 |
+| SHIP-05 | The delivery code MUST be held by the recipient and needed to complete. It MUST lock out after 5 wrong tries, with an audited admin reset. The code MUST contain no personal data. | P: lockout, audited reset and a PII-free code exist; the code is shown to the sender, who passes it on (recipient delivery by message is SHIP-13) | R-SQ F-07 |
 | SHIP-06 | A QR form of the delivery code MAY be offered beside the digits. | N | R-SQ F-07; PLAN T-21 |
 | SHIP-07 | A failed delivery MUST use a typed reason (absent, refused, unreachable, wrong address, rescheduled, access blocked, damaged). Each reason maps to a suggested next action (reattempt or return). | E | R-SQ F-08; WP-09 |
 | SHIP-08 | Attempts: a parcel SHOULD allow up to three attempts. The attempt step is tracked separately from status (R-SH F-02 three-axis model). | N | |
 | SHIP-09 | Return to sender MUST be a tracked leg that needs the sender's return code. | E | PLAN T-23 |
 | SHIP-10 | Custody chain: a per-parcel, append-only, human-readable event log (who held it, when) MUST be visible to sender and admin. | P: events stored; no customer view | R-SQ F-05 |
 | SHIP-11 | Door cash: the captain MUST enter the amount collected. A difference needs a typed variance reason (A11). | E | R-SQ F-03; WP-01 |
-| SHIP-12 | Goods COD (collect the item price for the sender and remit it later) MAY be enabled. It MUST keep goods money apart from fares and count it in the cash cap. | E-off | R-SH F-03; WP-16; gate G-COD, ₪500 rule |
+| SHIP-12 | Goods COD (collect the item price for the sender and remit it later) MAY be enabled. It MUST keep goods money apart from fares and count it in the cash cap. | E-off: COD records and routes exist on PostgreSQL (`payments.ts`); no app UI; the cash cap does not count goods COD yet | R-SH F-03; WP-16; gate G-COD, ₪500 rule |
 | SHIP-13 | The recipient MUST receive the tracking link and delivery code by message (WhatsApp/SMS) and MUST NOT need an account. | P: link shared by sender | PLAN C-12 |
 | SHIP-14 | Delivery windows with a daily capacity cap per zone SHOULD be offered where scheduled delivery is enabled. | P | R-SQ F-02; PLAN C-10 |
 | SHIP-15 | Handoff hints ("leave with neighbour", "call on arrival") MAY be chips on the order. | N | PLAN T-24 |
@@ -321,7 +321,7 @@ menus are a later variant of the same model.
 |---|---|---|---|
 | DRV-01 | Online/offline MUST be shift-scoped. Location is collected only while online or on a job, never always-on (R-PAL S9). Ride dispatch (RIDE-04) needs captain presence, which is PostgreSQL-only today (`presence.ts`). | P: job-scoped GPS; presence is PostgreSQL-only | PLAN D-05 |
 | DRV-02 | One job board MUST show all eligible jobs, with a service badge (icon + word), pickup distance, payout, cash to collect and the customer rating. It is paged and filterable by service and by heading. | P | PLAN D-08 |
-| DRV-03 | Ride offers MUST arrive as a full-screen timed offer on the `jobs` channel. Shipping and delivery MAY also be offered, or picked from the board. | E-off | R-HD §2.2 |
+| DRV-03 | Ride offers MUST arrive as a full-screen timed offer on the `jobs` channel. Shipping and delivery MAY also be offered, or picked from the board. | E-off: timed offers are PostgreSQL-only (`dispatch.ts`); the `jobs` channel is N (one `default` channel today, WP-10) | R-HD §2.2 |
 | DRV-04 | The run sheet MUST order pickups, drop-offs and returns by town for all carried non-ride jobs. | E | PLAN D-12 |
 | DRV-05 | Navigation MUST hand off to an external maps app from every stop. | E | PLAN D-13 |
 | DRV-06 | Every step advance MUST be an idempotent command with lost-acknowledgement replay. | E | PLAN D-14 |
@@ -331,7 +331,7 @@ menus are a later variant of the same model.
 | DRV-10 | Cash owed, handover, confirm/dispute MUST be append-only. A cash cap blocks new work; a warning MUST show at 80%. A held-cash age limit SHOULD exist (WP-12). | P | PLAN D-16..D-19 |
 | DRV-11 | Earnings MUST show today/week/all plus a per-job statement (fare, discount, commission, net, cash status) for all services. | P | R-CA §10.1; WP-15 |
 | DRV-12 | A delivery-location support card MUST show last accepted fix, server acknowledgement and registration state; it is collapsed by default. | E | UX-05 |
-| DRV-13 | Release a job back before pickup MUST be allowed with a reason. | E | PLAN D-10 |
+| DRV-13 | Release a job back before pickup MUST be allowed with a reason. | P: release exists (`POST /api/orders/:id/release`); no reason is captured | PLAN D-10 |
 | DRV-14 | Deadline re-arm: protected recovery records MUST survive reboot and clock change (A14). | E (Android) | R-PAL A14 |
 | DRV-15 | Acceptance-rate penalties and booked shifts MUST NOT exist in the pilot. | — | R-CA §10.4 |
 | DRV-16 | The captain MUST have an emergency call and a safety report on every active job, including rides (a passenger issue), with the event trail preserved. | P: the customer side exists (TRK-05) | |
@@ -360,7 +360,7 @@ menus are a later variant of the same model.
 
 | ID | Requirement | St |
 |---|---|---|
-| PAY-01 | Money MUST be integer agorot end to end; display in ₪ with Latin/Arabic digits per language. | E |
+| PAY-01 | Money MUST be integer agorot end to end and display in ₪; amount fields MUST accept Latin and Arabic-Indic digits (`latinDigits`). | P: cash entries and door cash are integer cents; `orders.price`, `discount` and `commission` are stored as REAL shekels and need migrating |
 | PAY-02 | Cash MUST be the default and stated before booking (BOOK-03). | E |
 | PAY-03 | Account credit and promo codes MUST apply to all services, subject to CON-06. | P |
 | PAY-04 | Cash entries MUST be append-only; corrections are new entries with a reason and an actor (R-SQ F-06). | E |
@@ -398,7 +398,7 @@ recognised by its icon and name, not by a different look.
 | DES-11 | The receipt, rating, chat and dispute screens MUST be one implementation, parameterised by service. | P |
 | DES-12 | Motion: short, purposeful transitions (sheet snap, pin drop, glide). Every animation MUST respect reduced motion: nothing moves, and the state still reads (`useReducedMotion`). | E |
 | DES-13 | Copy rules: actor-named states; specific bilingual refusal sentences per error code (`errorText()`); the ETA ladder; cash wording; never copy competitor strings (R-PAL X9). | P |
-| DES-14 | Screenshots of every screen in ar and en MUST be regenerated after UI changes (`npm run screens`), and new Ride and Shop screens added to `scripts/screens-routes.json`. | E |
+| DES-14 | Screenshots of every screen in ar and en MUST be regenerated after UI changes (`npm run screens`), and new Ride and Shop screens added to the screen list in `scripts/screens.mjs`. | P: the screen list is in `scripts/screens.mjs`; Ride and freight screens are listed; Shop screens are N |
 
 ---
 
@@ -410,7 +410,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 |---|---|---|---|
 | A11Y-01 | Text contrast MUST be ≥ 4.5:1 (≥ 3:1 for large text and meaningful non-text UI); `faint #66716B` is the lightest text grey; lime only on forest. `dash` (1.7–2.1:1) is allowed only for decorative marks such as the sheet grip, whose drag action has a button alternative. | 1.4.3, 1.4.11 | E |
 | A11Y-02 | Touch targets MUST be ≥ 44×44 dp (48 dp preferred on Android), including map pins and FABs (hitSlop allowed). This exceeds the AA minimum of 24 px. | 2.5.8 (exceeded) | P |
-| A11Y-03 | Text MUST scale to 200% with no clipped or hidden control (`maxScale` 2.0 everywhere; `minHeight`, not fixed heights). | 1.4.4 | E (X-01) |
+| A11Y-03 | Text MUST scale to 200% with no clipped or hidden control (`maxScale` 2.0 everywhere; `minHeight`, not fixed heights). | 1.4.4 | E (X-01), except fixed chrome capped at 1.3: tab labels, badges, route-preview map labels |
 | A11Y-04 | Every interactive element MUST have a role and a label in the current language; headings use `header`; errors and status changes are announced (`alert` / live regions). | 4.1.2, 1.3.1, 4.1.3 | P |
 | A11Y-05 | Focus order MUST follow reading order in both directions. In RTL the layout mirrors; directional icons flip; numbers and phone numbers stay LTR. | 1.3.2, 2.4.3 | P |
 | A11Y-06 | Status MUST never be colour alone: service badges, order states and cash states always carry text and/or an icon. | 1.4.1 | P |
@@ -423,11 +423,11 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | A11Y-13 | Haptics MAY confirm key actions but MUST NOT be the only signal. | 1.3.3 | — |
 | A11Y-14 | Forms MUST keep entered data after an error or network failure (the booking-recovery draft), and MUST NOT ask again for an address or recipient already given in the same flow. | 3.3.1, 3.3.4, 3.3.7 | E |
 | A11Y-15 | Map content MUST have a text equivalent on the sheet (captain distance, ETA range, last-fix age, route state). Markers expose labels. Pin placement has a non-gesture alternative (A11Y-16). | 1.1.1, 2.5.1 | P |
-| A11Y-16 | Every drag/pinch interaction MUST have a single-pointer or text alternative: zoom buttons, typed coordinates/link/Plus Code, "use my location", search. | 2.5.7 | E (UX-03 #51, coordinate field #54) |
+| A11Y-16 | Every drag/pinch interaction MUST have a single-pointer or text alternative: zoom buttons, typed coordinates/link/Plus Code, "use my location", search. | 2.5.7 | P: the booking pin has zoom buttons, typed coordinates/link/Plus Code, use-my-location and search (UX-03); tracking maps have recenter only |
 | A11Y-17 | Accessible authentication: no cognitive test; password managers and paste allowed; OTP autofill supported. | 3.3.8 | P |
 | A11Y-18 | Ride accessibility needs (RIDE-11) MUST be expressible at booking and visible to the captain. | — | N |
 | A11Y-19 | A focused control MUST NOT be hidden under a bottom sheet, keyboard or sticky header; sheets move or scroll the focused item into view. | 2.4.11 | P |
-| A11Y-20 | Help (support, FAQ, WhatsApp) MUST be in the same place on every screen (SUP-01). | 3.2.6 | E |
+| A11Y-20 | Help (support, FAQ, WhatsApp) MUST be in the same place on every screen (SUP-01). | 3.2.6 | P: help is on the account screens and every live order, not on every screen |
 | A11Y-21 | Web content MUST reflow at 320 CSS px with no horizontal scroll; native screens MUST work at 360 dp width. | 1.4.10 | P |
 | A11Y-22 | Increased line, letter and word spacing MUST NOT clip text (no fixed text boxes). | 1.4.12 | P |
 | A11Y-23 | A control's accessible name MUST contain its visible label. | 2.5.3 | P |
@@ -456,7 +456,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NTF-03 | Push content MUST follow CON-09 and A11Y-12, and MUST contain no codes or personal data on the lock screen. | P |
 | NTF-04 | Chat MUST be anchored to the order, with quick replies; admin MAY redact a message. | P |
 | SUP-01 | Help, FAQ and WhatsApp support MUST be reachable from every screen's account area and from every live order. | E |
-| SUP-02 | Disputes and incidents MUST share one admin queue covering all services. | E |
+| SUP-02 | Disputes and incidents MUST share one admin queue covering all services. | P: disputes and safety incidents are separate admin tabs and endpoints; one queue is N |
 
 ---
 
@@ -485,7 +485,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NFR-01 | Performance | Proposed targets, to be confirmed by measurement on the A53: cold start to interactive home ≤ 4 s on 3G; booking steps respond ≤ 300 ms locally; the first map tiles render ≤ 3 s. | P |
 | NFR-02 | Network | Every write is idempotent and recoverable. Shell, saved places and the active order are cached. A failed write keeps the user's input and shows a retry. Queued driver writes MAY be added (R-SQ A7). | P |
 | NFR-03 | Battery and location | Location only while online or on a job. Cadence: 5 s moving with a good fix, else 15 s, 2 s floor. No always-on location. | E |
-| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links are scoped and expiring. A captain sees a customer's phone only during an active job. | E |
+| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked by the sender (an expiry is N). A captain sees a customer's phone only during an active job. | E |
 | NFR-05 | Security | HTTPS only. Server-side roles. Compare-and-set on admin edits. Rate limits on auth and codes. Proof lockouts. Audit events. No secrets in the app. Retired API hosts refused at build. | E |
 | NFR-06 | Reliability | One SQLite instance with daily backups now. Before more than one API instance or the Ride/Delivery launch: a shared transactional store (the PostgreSQL decision), an off-host backup and a restore drill. | P (gate G-PG) |
 | NFR-07 | Observability | Every order id traceable across API, dispatch, location, proof and cash. Alerts on stuck states and failed backups reach the owner (WP-08). | P |
@@ -547,30 +547,31 @@ Each line is accepted on the physical A53 and in the test PC gate (`npm test` wi
 ## 19. Traceability summary
 
 These counts come from the `St` column of every requirement row above (215 requirements). "No build" covers rows
-marked "—" or "gated": rules that forbid a feature, or items that wait on an outside dependency.
+marked "—" or "gated": rules that forbid a feature, or items that wait on an outside dependency. Every E and E-off row
+was checked against the code at `1c3100a` (16 Nov audit).
 
 | Area | Total | Exists (E) | Exists, off (E-off) | Partial (P) | New (N) | No build |
 |---|---|---|---|---|---|---|
-| ONE one-app rules | 14 | 4 | 0 | 10 | 0 | 0 |
-| ACC account | 12 | 6 | 2 | 2 | 2 | 0 |
-| ADDR addresses | 8 | 4 | 0 | 2 | 2 | 0 |
-| HOME home | 6 | 2 | 0 | 2 | 2 | 0 |
-| BOOK booking | 8 | 3 | 0 | 5 | 0 | 0 |
-| TRK tracking and after | 13 | 7 | 0 | 3 | 3 | 0 |
+| ONE one-app rules | 14 | 3 | 0 | 11 | 0 | 0 |
+| ACC account | 12 | 5 | 2 | 3 | 2 | 0 |
+| ADDR addresses | 8 | 3 | 0 | 3 | 2 | 0 |
+| HOME home | 6 | 1 | 0 | 3 | 2 | 0 |
+| BOOK booking | 8 | 2 | 0 | 6 | 0 | 0 |
+| TRK tracking and after | 13 | 6 | 0 | 4 | 3 | 0 |
 | RIDE | 12 | 0 | 6 | 3 | 3 | 0 |
-| SHIP shipping | 16 | 6 | 1 | 3 | 6 | 0 |
+| SHIP shipping | 16 | 4 | 1 | 5 | 6 | 0 |
 | DLV delivery | 19 | 0 | 1 | 0 | 18 | 0 |
 | MER merchant | 6 | 1 | 0 | 0 | 5 | 0 |
-| DRV captain | 16 | 8 | 1 | 6 | 0 | 1 |
+| DRV captain | 16 | 7 | 1 | 7 | 0 | 1 |
 | MAP | 11 | 1 | 1 | 8 | 1 | 0 |
-| PAY | 8 | 3 | 0 | 2 | 1 | 2 |
-| DES design | 14 | 6 | 0 | 6 | 2 | 0 |
-| A11Y accessibility | 24 | 7 | 0 | 14 | 2 | 1 |
+| PAY | 8 | 2 | 0 | 3 | 1 | 2 |
+| DES design | 14 | 5 | 0 | 7 | 2 | 0 |
+| A11Y accessibility | 24 | 5 | 0 | 16 | 2 | 1 |
 | NTF notifications | 4 | 1 | 0 | 3 | 0 | 0 |
-| SUP support | 2 | 2 | 0 | 0 | 0 | 0 |
+| SUP support | 2 | 1 | 0 | 1 | 0 | 0 |
 | ADM operations | 11 | 2 | 0 | 5 | 4 | 0 |
 | NFR | 11 | 5 | 0 | 5 | 0 | 1 |
-| **Total** | **215** | **68** | **12** | **79** | **51** | **5** |
+| **Total** | **215** | **54** | **12** | **93** | **51** | **5** |
 
 Delivery and merchant (23 new) is the largest block of new work. Ride exists mostly in code but is off
 (6 E-off) behind G-RIDE and G-PG. Shipping is mostly built: what remains is the one-app shell (ONE, mostly
