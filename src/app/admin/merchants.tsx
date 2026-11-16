@@ -2,20 +2,30 @@
 // renew the licence, pause, read the statement and record a payout with its reference. Payouts never exceed what Wind has
 // received in cash for that shop's orders (the server's payable amount).
 import { useState } from 'react';
+import { router } from 'expo-router';
 import { View } from 'react-native';
 import { api, errorCode, useApi } from '../../api';
 import { newRequestId } from '../../booking';
-import { city, minorFromText, type Merchant } from '../../model';
-import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
+import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
+import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
 
 type AdminMerchant = Merchant & { balanceAgorot: number; payableAgorot: number };
 
 export default function AdminMerchants() {
   const { c } = useCopy();
   const { data, error, reload } = useApi<{ merchants: AdminMerchant[] }>('/admin/merchants', 30_000);
+  // DLV-12, DLV-13, DLV-22: the server's attention list (no captain, handover problem, locked pickup code, fault missing after two days).
+  const attention = useApi<{ orders: Order[] }>('/admin/shop/attention', 30_000);
+  const why = (o: Order) => o.shop?.handoverException && o.status === 'at_pickup' ? c.adminAttn_handover : o.status === 'searching' ? c.adminAttn_no_captain
+    : o.status === 'on_hold' || o.status === 'returned' ? c.adminAttn_fault : c.adminAttn_locked;
   if (!data) return <Screen><Header title={c.adminShops} /><Loading failed={!!error} onRetry={reload} /></Screen>;
   return <Screen onRefresh={reload}>
     <Header title={c.adminShops} />
+    {!!attention.data?.orders.length && <>
+      <Section title={c.adminShopAttention} />
+      <ListGroup>{attention.data.orders.map(o => <ListRow key={o.id} icon="alert-circle-outline" label={`${orderCode(o.id)} · ${o.shop?.merchantName ?? ''}`}
+        value={why(o)} tone="clay" onPress={() => router.push(`/order/${o.id}`)} />)}</ListGroup>
+    </>}
     {!data.merchants.length && <Empty icon="storefront-outline" title={c.adminNoShops} />}
     {data.merchants.map(m => <MerchantCard key={m.id} merchant={m} onChange={reload} />)}
   </Screen>;
