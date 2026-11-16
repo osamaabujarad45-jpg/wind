@@ -41,7 +41,7 @@ export type ShopDeps = {
   owedCents: (driverId: number) => Promise<number>;
   flushPush: () => Promise<unknown>;
   /** PostgreSQL ledger: door cash owed to the shop and to Wind (goods, service fee), and failed-trip pay. No-op on SQLite. */
-  journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; trip?: number }) => Promise<unknown>;
+  journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; over?: number; trip?: number }) => Promise<unknown>;
   /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
   driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
 };
