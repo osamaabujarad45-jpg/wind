@@ -30,7 +30,7 @@ const dbDir = mkdtempSync(join(tmpdir(), 'wind-screens-'));
 process.env.DB_PATH = join(dbDir, 'screens.db');
 for (const key of ['WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DATABASE_URL']) delete process.env[key];
 // Synthetic screenshots also cover gated legacy services; production defaults stay parcel-only.
-process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
+process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight,shop';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 // Deterministic West Bank road fixture (recorded OSRM highway geometries, with curved fallback) so every route map draws real road lines offline.
 const recordedRoutes = JSON.parse(readFileSync(join(root, 'scripts', 'screens-routes.json'), 'utf8'));
@@ -181,6 +181,34 @@ for (const [pickupCity, dropoffCity, pickupNote, dropoffNote, onBoard] of [['ram
   if (onBoard) for (let step = 0; step < 2; step++) await call(`/orders/${parcel.id}/advance`, recoveryDriver.token, {});
 }
 
+// Shop delivery (SRS §7): a bakery in Tulkarm with a small catalogue. Layla has one order waiting on her answer to a
+// substitution; Omar's order is new in the shop's inbox; a third is packed and waiting for a captain.
+const baker = await register('0599000010', 'مخبز الريحان');
+const bakery = (await call('/merchant/apply', baker.token, { name: 'مخبز الريحان', category: 'bakery', city: 'tulkarm', point: { latitude: 32.3120, longitude: 35.0290 },
+  phone: '0599000010', licenceNo: 'TK-2291', licenceExpiresAt: Date.now() + 365 * 86_400_000 })).merchant;
+await call(`/admin/merchants/${bakery.id}`, boss.token, { status: 'active', minOrderAgorot: 2000, deliveryFeeAgorot: 1000, serviceFeeAgorot: 200, commissionBps: 1000 });
+const shopItem = (section, nameAr, nameEn, priceAgorot, byWeight = false) => call('/merchant/items', baker.token, { section, nameAr, nameEn, priceAgorot, byWeight });
+const kaak = await shopItem('مخبوزات', 'كعك بالسمسم', 'Sesame kaak', 300);
+const bread = await shopItem('مخبوزات', 'خبز طابون', 'Taboon bread', 500);
+await shopItem('مخبوزات', 'مناقيش زعتر', 'Zaatar manakish', 600);
+const cheese = await shopItem('ألبان', 'جبنة نابلسية', 'Nabulsi cheese', 4500, true);
+const labneh = await shopItem('ألبان', 'لبنة', 'Labneh', 1800);
+await shopItem('ألبان', 'لبن رائب', 'Yogurt', 900);
+const shopOrder = (who, lines) => call('/orders', who.token, { service: 'shop', merchantId: bakery.id, lines, dropoffCity: 'tulkarm',
+  dropoffPoint: { latitude: 32.3150, longitude: 35.0250 }, dropoffNote: 'عمارة الأمل، الطابق الثالث', contact: who.user.phone });
+const shopConsent = await shopOrder(layla, [{ itemId: bread.id, qtyMilli: 3000, policy: 'remove' }, { itemId: cheese.id, qtyMilli: 500, policy: 'similar' },
+  { itemId: kaak.id, qtyMilli: 4000, policy: 'ask_first' }]);
+await call(`/merchant/orders/${shopConsent.id}/accept`, baker.token, { prepMinutes: 25 });
+await call(`/merchant/orders/${shopConsent.id}/preparing`, baker.token, {});
+const consentView = await call(`/orders/${shopConsent.id}`, baker.token);
+await call(`/merchant/orders/${shopConsent.id}/lines/${consentView.shop.lines.find(l => l.itemId === cheese.id).id}`, baker.token, { weightGrams: 550 });
+await call(`/merchant/orders/${shopConsent.id}/lines/${consentView.shop.lines.find(l => l.itemId === kaak.id).id}`, baker.token, { substituteItemId: labneh.id, qtyMilli: 1000 });
+const shopNew = await shopOrder(omar, [{ itemId: kaak.id, qtyMilli: 6000, policy: 'remove' }, { itemId: labneh.id, qtyMilli: 1000, policy: 'ask_first' }]);
+const shopReady = await shopOrder(omar, [{ itemId: bread.id, qtyMilli: 5000, policy: 'remove' }]);
+await call(`/merchant/orders/${shopReady.id}/accept`, baker.token, { prepMinutes: 10 });
+await call(`/merchant/orders/${shopReady.id}/preparing`, baker.token, {});
+await call(`/merchant/orders/${shopReady.id}/ready`, baker.token, { packages: [{ sealed: true }] });
+
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   console.log('Building the web app…');
@@ -235,6 +263,14 @@ const screens = [
   { id: 'profile-phone-code', group: 'Customer', name: 'Edit profile · code requested, provider accepted (synthetic), not confirmed as delivered', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-code' },
   { id: 'profile-phone-change', group: 'Customer', name: 'Edit profile · change number form (new number and current password, synthetic capability)', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-change' },
 
+  { id: 'shop-list', group: 'Customer', name: 'Shop delivery · shops in the pilot town', route: '/shop', file: 'src/app/shop/index.tsx', role: 'customer' },
+  { id: 'shop-store', group: 'Customer', name: 'Shop · catalogue (weighed items say estimate)', route: `/shop/${bakery.id}`, file: 'src/app/shop/[id].tsx', role: 'customer' },
+  { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
+  { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
+  { id: 'merchant-new-order', group: 'Merchant', name: 'Merchant · accept with preparation minutes or decline with a reason', route: `/merchant/order/${shopNew.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
+  { id: 'merchant-ready', group: 'Merchant', name: 'Merchant · ready, pickup code for the captain', route: `/merchant/order/${shopReady.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
+  { id: 'merchant-catalogue', group: 'Merchant', name: 'Merchant · items, prices and out-of-stock switch', route: '/merchant/catalogue', file: 'src/app/merchant/catalogue.tsx', role: 'merchant' },
+  { id: 'admin-shops', group: 'Admin', name: 'Shops · terms, licence, payouts', route: '/admin/merchants', file: 'src/app/admin/merchants.tsx', role: 'admin' },
   { id: 'driver-pending', group: 'Driver', name: 'Awaiting approval', route: '/driver', file: 'src/app/driver/index.tsx', role: 'pending' },
   { id: 'driver-jobs', group: 'Driver', name: 'Jobs', route: '/driver', file: 'src/app/driver/index.tsx', role: 'driver' },
   { id: 'driver-idle', group: 'Driver', name: 'Jobs · no job assigned, presence card offline (go-online not pressed)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'idle' },
@@ -253,7 +289,7 @@ const screens = [
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
-const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
+const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token, merchant: baker.token };
 
 // ---------- 4. capture ----------
 const { chromium } = await import('playwright');
