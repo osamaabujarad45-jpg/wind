@@ -16,7 +16,7 @@ one product with no conflicts between the parts.
   **MAY** = optional.
 - Every requirement has a stable ID: `AREA-NN` (for example `RIDE-07`). PRs cite these IDs in their titles or bodies.
 - **Status** (column `St`) is Wind's state at the baseline commit:
-  - **E** = exists in code and enabled in production.
+  - **E** = exists in code and live in production (the row's behaviour works there).
   - **E-off** = exists in code but disabled in production. The cause is a disabled service, PostgreSQL-only code, or a
     missing provider.
   - **P** = partial; the gap is named in the row. A row marked just "P" has an unconfirmed gap that needs a short
@@ -27,7 +27,8 @@ one product with no conflicts between the parts.
     **service-agnostic** order code (it works for any order, such as calling the captain or a dispute) is E when
     that code is live. "Live" means the row's own behaviour works in production for that service, not merely that
     the service is enabled. Between E-off and N: E-off when the code exists but is switched off, N when it does not
-    exist.
+    exist. A row whose code exists but is switched off is E-off even if part of it is still N; the N part is named in
+    the St text.
 - External sources (the Kimi spec, the reference-app studies, the demo apps) are **outside this repository**. They are
   in the main checkout `research_notes/`, its `docs/BUILD-SPEC-…`, and `Documents/wind-competitors/`. IDs taken from
   them always carry their source key, for example `R-SQ A10`, `R-PAL A14`, `PLAN A-14`.
@@ -120,7 +121,7 @@ section.
 | Spine state | Ride | Shipping (parcel/freight) | Delivery (shop) |
 |---|---|---|---|
 | `requested` (new) | — | — | order placed with merchant |
-| merchant sub-steps | — | — | `accepted` → `preparing` → (`awaiting_approval` for substitutions) → `ready` |
+| merchant sub-steps | — | — | `accepted` → `preparing` → (`awaiting_approval` for any change beyond the agreed limit, DLV-06) → `ready` |
 | `searching` | finding a captain | finding a captain | finding a captain (starts when `ready` is near; see DLV-12) |
 | `assigned` | captain on the way | captain on the way to pickup | captain on the way to shop |
 | `at_pickup` | captain arrived; waiting timer runs | captain at sender; pickup code check | captain at shop; handover from merchant |
@@ -138,7 +139,7 @@ section.
 | Merchant pickup code (new) | proves the captain collected the shop order | merchant (shows it) and captain (enters it); never the customer | Yes, lockout as SHIP-05 |
 | Pickup code (parcel, SHIP-04) | proves the captain collected the parcel | sender | Yes |
 | Delivery code (`handover_code`) | proves the item reached the recipient | order owner (sender or buyer), passed to the recipient | Yes, lockout and audited reset |
-| Return code (`return_code`) | proves the item came back to the sender or shop | sender, or merchant for goods (DLV-21) | Yes |
+| Return code (`return_code`) | proves the item came back to the sender, or the goods to the shop | sender, or merchant for goods (DLV-21) | Yes |
 | Cash handover | the captain hands cash to the office (DRV-10) | captain, `finance` | Not a code |
 
 ### 2.2 Cross-service conflict rules
@@ -227,7 +228,7 @@ Changing any cell changes that table, which is server-enforced.
 | BOOK-04 | A promo code MUST be applied at the payment step (R-HA §5) and MUST obey CON-06. | P: applied at payment (E); per-service scope (CON-06) is N: `promo_codes` has no service column |
 | BOOK-05 | Scheduling MUST be available per service: ride later, parcel pickup time, shop delivery window. A scheduled job is hidden from captains until its release time (PLAN C-11). | P |
 | BOOK-06 | Create MUST be idempotent with a client request id. A lost acknowledgement MUST recover the same order and never book twice (PLAN C-18, `booking-recovery`). | E |
-| BOOK-07 | Edits after placing MUST follow §4.3a: note, recipient and drop-off note while `searching` (shop: `requested`); destination change after assignment needs captain consent (PLAN T-12/T-25). | P |
+| BOOK-07 | Edits after placing MUST follow §4.3a, which is the single source per service and state (for example a shop destination cannot change after the merchant accepts). Destination change after assignment needs captain consent where the table allows it (PLAN T-12/T-25). | P |
 | BOOK-08 | Cancellation MUST be free before assignment. Ride and shipping orders can be cancelled until pickup; shop orders follow DLV-11. After pickup, cancellation MUST be refused with a reason. Fees stay out of scope while cash-only (PLAN T-10/T-11). | P: ride cancellation is E-off; shop cancellation (DLV-11) is N |
 
 ### 4.3a What may change after placing (one table for all services)
@@ -241,7 +242,7 @@ Changing any cell changes that table, which is server-enforced.
 | Shipping, `assigned`/`at_pickup` | note only | with captain consent | — | yes, free |
 | Shipping, `in_transit` and later | — | with captain consent | — | no |
 | Shop, `requested` | yes | yes | yes (new snapshot) | yes, free |
-| Shop, merchant accepted until pickup | note only | no | consent flow only (DLV-06) | through support (DLV-11, DLV-23) |
+| Shop, merchant accepted until pickup | note only | no | customer: no edits; merchant: final weights and policy substitutions within the agreed limit (DLV-04/05); anything beyond the limit goes through consent (DLV-06) | through support (DLV-11, DLV-23) |
 | Shop, picked up and later | — | no | — | no |
 
 DLV-10's snapshot is taken again whenever items change: before acceptance, on a DLV-06 consent, or at the merchant's
@@ -263,7 +264,7 @@ final weights and substitutions (DLV-04, MER-03). BOOK-07 and DLV-11 follow this
 | TRK-10 | Order again / send another MUST copy the last order of the same service (PLAN C-14). | E |
 | TRK-11 | Lost item: a rider or sender MUST be able to report a lost item on a finished order; the captain is notified and support mediates. (UB-F F11) | N |
 | TRK-12 | Phone masking (calls through a relay) MAY replace direct numbers once a telecom contract exists; until then a number is shown only during an active job (NFR-04). (gate G-TELECOM) | N |
-| TRK-13 | A receipt that can serve as a tax invoice MUST follow the owner's accountant's requirements once a VAT position is decided. (gate: legal/tax) | N |
+| TRK-13 | A receipt that can serve as a tax invoice MUST follow the owner's accountant's requirements once a VAT position is decided. (gate G-LEGAL) | N |
 
 ---
 
@@ -347,7 +348,7 @@ menus are a later variant of the same model.
 | DLV-18 | Order again for shop orders MUST rebuild the cart from current prices and availability and show any changes before checkout. | N | R-SQ F-14 |
 | DLV-19 | Merchants MUST NOT list prohibited or age-restricted goods. Regulated categories (OTC medicine, tobacco) need an owner policy, and age-restricted items need an ID check at the door before they are allowed. | N | gate G-SHOP |
 | DLV-20 | Failed shop delivery MUST use the typed `ExceptionReason` list (absent, refused, unreachable, wrong address, rescheduled, access blocked, damaged) and go to admin review with a suggested next step. | N | WP-09 reuse |
-| DLV-21 | Goods return: undelivered goods MUST go back to the shop on a tracked return leg, confirmed by a goods-return code shown to the merchant. Perishables follow the merchant's disposal policy instead. | N | gate G-REFUND |
+| DLV-21 | Goods return: undelivered goods MUST go back to the shop on a tracked return leg, confirmed by the return code (`return_code`, §2.1a) shown to the merchant. Perishables follow the merchant's disposal policy instead. | N | gate G-REFUND |
 | DLV-22 | Refunds: if goods were paid in cash and are later refused, missing or damaged, the refund MUST be paid out through the captain cash book (or account credit if the customer chooses), with a reason and an actor, append-only. | N | gate G-REFUND |
 | DLV-23 | A customer cancel after the merchant accepts MUST follow the merchant-compensation policy (prepared goods), decided under G-REFUND. While cash-only, no fee is charged to the customer. | N | gate G-REFUND |
 | DLV-24 | The shop line MUST launch with **one shop order per captain trip**. Stacking shop orders with each other or with parcels is deferred until the single-stop journey is proven (`docs/PRODUCT.md` multi-stop rule). | N | |
@@ -545,7 +546,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | NFR-01 | Performance | Proposed targets, to be confirmed by measurement on the A53: cold start to interactive home ≤ 4 s on 3G; booking steps respond ≤ 300 ms locally; the first map tiles render ≤ 3 s. | P |
 | NFR-02 | Network | Every write is idempotent and recoverable. Shell, saved places and the active order are cached. A failed write keeps the user's input and shows a retry. Queued driver writes MAY be added (R-SQ A7). | P: booking and driver replay recover writes; queued driver writes and a cached shell are N |
 | NFR-03 | Battery and location | Location only while online or on a job. Cadence: 5 s moving with a good fix, else 15 s, 2 s floor. No always-on location. | E |
-| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: no ad SDKs and `allowBackup=false` hold. The assigned captain sees the customer's phone for 24 h after the last update, not only during the job (`server/main.ts`); share links stay valid for 24 h after the order closes (`server/domain/realtime.ts`); there is no time-based trace retention (rows are deleted on driver-state events); link expiry is N |
+| NFR-04 | Privacy | No ad, attribution or engagement SDKs. `allowBackup=false`. Precise traces kept for a limited incident window. Recipient links show location only while the order is active and can be revoked; an expiry (`docs/SYSTEM.md` §4) SHOULD be added (N). A captain sees a customer's phone only during an active job. | P: no ad SDKs and `allowBackup=false` hold. The assigned captain sees the customer's phone for 24 h after the last update, not only during the job (`server/main.ts`); share links stay valid for 24 h after the order's last update (`server/domain/realtime.ts`); there is no time-based trace retention (rows are deleted on driver-state events); link expiry is N |
 | NFR-05 | Security | HTTPS only. Server-side roles. Compare-and-set on admin edits. Rate limits on auth and codes. Proof lockouts. Audit events. No secrets in the app. Retired API hosts refused at build. | E |
 | NFR-06 | Reliability | One SQLite instance with daily backups now. Before more than one API instance or the Ride/Delivery launch: a shared transactional store (the PostgreSQL decision), an off-host backup and a restore drill. | P: SQLite with daily on-disk backups; off-host backup, restore drill and a shared store are N (G-PG) |
 | NFR-07 | Observability | Every order id traceable across API, dispatch, location, proof and cash. Alerts on stuck states and failed backups reach the owner (WP-08). | P |
@@ -581,7 +582,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 
 | Phase | Scope | Exit gate |
 |---|---|---|
-| **1 — Shipping, hardened** (now) | ONE-01, 02, 04, 06, 13 (ONE-07 is already met for parcels on SQLite; versioned quote records wait for G-PG); PAY-01 (prices in integer agorot); SHIP complete except gated items; ADDR-03/04; TRK-02 (needs G-OSRM); DRV-10/11; NTF-01 (closed-app part needs G-PUSH); A11Y checks on all existing screens | Pilot of 50 users runs 2 weeks with no lost order and no cash mismatch; A11Y §12.1 passes on the A53 |
+| **1 — Shipping, hardened** (now) | ONE-01, 02, 04, 06, 13 (ONE-07 is already met for parcels on SQLite; versioned quote records wait for G-PG); PAY-01 (prices in integer agorot); ADM-12 (per-order cash ceiling, default ₪500); SHIP complete except gated items; ADDR-03/04; TRK-02 (needs G-OSRM); DRV-10/11; NTF-01 (closed-app part needs G-PUSH); A11Y checks on all existing screens | Pilot of 50 users runs 2 weeks with no lost order and no cash mismatch; A11Y §12.1 passes on the A53 |
 | **2 — One-app shell** | ONE-03 spine and state mapping (§2.1), ONE-05 service switcher, shared status/receipt/rating/chat components (DES-09..11), extend the existing eligibility path (`canTake` + `driver-refusal.ts`) with service-line approval and cash age (CON-04), notification channels | Parcel unchanged for users; Ride and Shop hidden (ONE-13); screens regenerated |
 | **3 — Ride** | §5 after G-RIDE and G-PG | Field test per town pair; boarding PIN and waiting grace on real phones; CON-01/02 enforced |
 | **4 — Delivery** | §7, MER after G-SHOP, G-REFUND and G-LEGAL, plus G-COD and G-PG for merchant settlement | 3–5 merchants in one town; substitution consent, timeouts and weighted totals verified; failed delivery, goods return and refund drilled; the cash ceiling holds; merchant ledger balances daily and a first payout is made |
@@ -613,7 +614,9 @@ Each line is accepted on the physical A53 and in the test PC gate (`npm test` wi
 
 ## 19. Traceability summary
 
-These counts come from the `St` column of every requirement row above (228 requirements). "No build" covers rows
+These counts come from the `St` column of every requirement row above (228 requirements). The conflict
+rules CON-01..10 (§2.2) have no St column and are not counted; their implementation is tracked through the rows that
+enforce them. "No build" covers rows
 marked "—" or "gated": rules that forbid a feature, or items that wait on an outside dependency. Every E and E-off row
 was checked against the code at `1c3100a` (16 Nov audit); baseline `fb05483` has the same `src/`, `server/`,
 `scripts/` and `tests/`.
