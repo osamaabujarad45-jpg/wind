@@ -223,7 +223,7 @@ async function guardCashCeiling(price: number, orderId?: number) {
   if (overCashCeiling((await settings()), price + cod)) fail(409, 'over_cash_ceiling');
 }
 /** ADM-12 for a fare going back to the pool (release, courier block): the recommendation, but never so high that fare plus goods COD passes the ceiling.
- * A ceiling lowered below the open goods COD leaves no room: the fare stays as booked (legal then), so a release or a safety block is never refused. */
+ * A ceiling lowered below the open goods COD leaves no room: the fare stays as booked (it was within the ceiling at booking), so a release or a courier block is never refused. */
 async function restoredFare(orderId: number, recommended: number, current: number) {
   const room = Math.floor((await settings()).orderCashCeiling - await codGoodsMinor(persistence, orderId) / 100);
   return room < 1 ? current : Math.min(recommended, room);

@@ -24,7 +24,7 @@ export default function AdminMerchants() {
     {!!attention.data?.orders.length && <>
       <Section title={c.adminShopAttention} />
       {/* the reason gets its own line: in a one-line row it truncated the order number */}
-      {attention.data.orders.map(o => <Press key={o.id} onPress={() => router.push(`/order/${o.id}`)} accessibilityLabel={`${orderCode(o.id)}، ${o.shop?.merchantName ?? ''}، ${why(o)}`}>
+      {attention.data.orders.map(o => <Press key={o.id} onPress={() => router.push(`/order/${o.id}`)} accessibilityLabel={[orderCode(o.id), o.shop?.merchantName, why(o)].filter(Boolean).join('، ')}>
         <Card tone="clay">
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="label" style={{ writingDirection: 'ltr' }}>{orderCode(o.id)}</Txt>
