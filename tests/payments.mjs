@@ -202,6 +202,18 @@ try {
   assert.equal(JSON.parse(audit.detail).reason, 'Merchant took the goods back at the office');
   await assert.rejects(pay.collectCod(driver, disputeOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
 
+  // ADM-12 review regressions: a fare going back to the pool counts the goods COD, and a shop order never takes a second (COD) collection.
+  const relOrder = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='assigned',assigned_at=?,price=100,recommended_price=400 WHERE id=?", f.d1.user.id, Date.now(), relOrder.id);
+  await assert.rejects(pay.createCod(admin, relOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 40_100, remittanceDueAt: Date.now() + 86_400_000 }), e => e.status === 409 && e.message === 'over_cash_ceiling');
+  await pay.createCod(admin, relOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 40_000, remittanceDueAt: Date.now() + 86_400_000 });
+  await f.call(`/orders/${relOrder.id}/release`, { token: f.d1.token, body: {} });
+  assert.equal(Number((await f.db.one('SELECT price FROM orders WHERE id=?', relOrder.id)).price), 100, 'release restores min(recommended, ceiling - COD goods), not the recommendation');
+  const shopOrder = await f.book();
+  await f.db.run("UPDATE orders SET service='shop',driver_id=?,status='assigned' WHERE id=?", f.d1.user.id, shopOrder.id);
+  await assert.rejects(pay.createCod(admin, shopOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 100, remittanceDueAt: Date.now() + 86_400_000 }), e => e.status === 409 && e.message === 'cod_unavailable');
+  await assert.rejects(pay.collectCod(driver, shopOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
+
   console.log('WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed');
 } finally { await f.close(); }
 

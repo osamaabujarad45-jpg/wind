@@ -18,7 +18,7 @@ import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecy
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
 import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
-import { createPayments, registerPaymentsRoutes } from './domain/payments.ts';
+import { codGoodsMinor, createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { Ops, registerOpsRoutes } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
@@ -220,6 +220,11 @@ async function settings(): Promise<Settings> {
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
 async function guardCashCeiling(price: number) {
   if (overCashCeiling((await settings()), price)) fail(409, 'over_cash_ceiling');
+}
+/** ADM-12 for a fare going back to the pool (release, courier block): the recommendation, but never so high that fare plus goods COD passes the ceiling. */
+async function restoredFare(orderId: number, recommended: number) {
+  const room = (await settings()).orderCashCeiling - await codGoodsMinor(persistence, orderId) / 100;
+  return Math.min(recommended, Math.max(0, Math.floor(room)));
 }
 
 // scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
@@ -603,17 +608,20 @@ const postOrderJournals = async (orderId: number) => {
 };
 // Shop door cash on PostgreSQL: the captain owes the goods (the shop's money) and the service fee (Wind's), so a remittance relieves a
 // receivable that exists; a failed-trip pay is Wind's operating expense, owed to the captain against what he holds (DLV-15, DRV-17).
-async function postShopJournal(orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; trip?: number }) {
+async function postShopJournal(orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; over?: number; trip?: number }) {
   if (!(await ledgerReady())) return;
   const receivable = await ledger.ensureAccount(`driver:${driverId}:receivable`, 'driver_receivable', driverId);
   if (kind === 'collection') {
-    const goods = amounts.goods ?? 0, service = amounts.service ?? 0;
-    if (goods + service <= 0) return;
+    const goods = amounts.goods ?? 0, service = amounts.service ?? 0, over = amounts.over ?? 0;
+    if (goods + service + over <= 0) return;
     const shopPayable = await ledger.ensureAccount('platform:shop_goods_payable', 'merchant_cod_payable', null);
     const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
+    // ponytail: the customer overpay sits as a credit on a customer_receivable account; add its own kind if refunds of it get a flow.
+    const overpay = over ? await ledger.ensureAccount('platform:customer_overpay', 'customer_receivable', null) : null;
     await ledger.postJournal({ businessRef: `order:${orderId}:shop_collection`, kind: 'cash_collection', orderId,
-      entries: [{ accountId: receivable.id as number, debitMinor: goods + service },
-        ...(goods ? [{ accountId: shopPayable.id as number, creditMinor: goods }] : []), ...(service ? [{ accountId: revenue.id as number, creditMinor: service }] : [])] });
+      entries: [{ accountId: receivable.id as number, debitMinor: goods + service + over },
+        ...(goods ? [{ accountId: shopPayable.id as number, creditMinor: goods }] : []), ...(service ? [{ accountId: revenue.id as number, creditMinor: service }] : []),
+        ...(overpay ? [{ accountId: overpay.id as number, creditMinor: over }] : [])] });
   } else if (amounts.trip) {
     const expense = await ledger.ensureAccount('platform:operating_expense', 'operating_expense', null);
     await ledger.postJournal({ businessRef: `order:${orderId}:shop_trip`, kind: 'adjustment', orderId,
@@ -2513,6 +2521,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   const order = await (async () => {
     (await persistence.exec('BEGIN IMMEDIATE'));
     try {
+      if (persistence.backend === 'postgres') await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', Number(params[0])); // a concurrent goods COD waits (ADM-12)
       if ((await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', Number(params[0]), user.id))) {
         (await persistence.exec('COMMIT'));
         return null; // the original release succeeded, possibly before the connection dropped
@@ -2523,7 +2532,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
       (await safetyFree(current.id));
       const now = Date.now();
       // Back to the recommendation, but never above a per-order cash ceiling lowered since the booking (ADM-12).
-      const restoredPrice = Math.min(current.recommendedPrice ?? current.price, (await settings()).orderCashCeiling);
+      const restoredPrice = await restoredFare(current.id, current.recommendedPrice ?? current.price);
       const discount = (await restoredDiscount(current.id, restoredPrice, current.discount));
       (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
         job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, restoredPrice, discount, now, now, current.id)); // back to the recommendation
@@ -3090,8 +3099,9 @@ route('GET', '/api/driver/earnings', async ({ user }) => {
 const cashSum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
 const cashMinor = (column: 'commission' | 'discount') => persistence.backend === 'postgres' ? `${column}_minor` : `CAST(ROUND(${column} * 100) AS INTEGER)`;
 // The four inputs of cashOwed, as columns of one row per driver `u`.
-// Shop goods and the service fee collected at completed shop doors (DLV-15), less captain pay from the shop ledger (DRV-17).
-const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot < s.goods_agorot + s.service_fee_agorot THEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot ELSE s.goods_agorot + s.service_fee_agorot END)
+// All shop cash collected at completed shop doors above the delivery fee: goods, the service fee and any over-collection (DLV-15),
+// less captain pay from the shop ledger (DRV-17).
+const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 ELSE COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot END)
     FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
 const owedColumns = (shop = false) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
     COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
@@ -3380,7 +3390,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
-        const backPrice = Math.min((o.recommended_price ?? o.price) as number, (await settings()).orderCashCeiling); // ADM-12, as a release
+        const backPrice = await restoredFare(Number(o.id), (o.recommended_price ?? o.price) as number); // ADM-12, as a release
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));

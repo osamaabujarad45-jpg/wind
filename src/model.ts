@@ -337,6 +337,16 @@ export function minorFromText(text: string): number {
   return Number.isSafeInteger(minor) ? (m[1] && minor ? -minor : minor) : NaN;
 }
 
+/** A minute of the day as HH:MM; 1440 (a close at midnight) reads 24:00. */
+export const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+/** A time typed as H, HH:MM or with Arabic-Indic digits, as a minute of the day (0–1440); anything else is NaN. */
+export function minuteFromText(text: string): number {
+  const m = /^(\d{1,2})(?:[:.٫](\d{2}))?$/.exec(latinDigits(text.trim()));
+  if (!m) return NaN;
+  const minute = Number(m[1]) * 60 + Number(m[2] ?? 0);
+  return Number(m[2] ?? 0) < 60 && minute <= 1440 ? minute : NaN;
+}
+
 // Palestinian mobiles (Jawwal 059, Ooredoo 056). Accepts Arabic-Indic digits, spaces, dashes,
 // and +970 / +972 / 00970 / 00972 / 0 prefixes. Returns canonical 05XXXXXXXX or null.
 // A West Bank mobile (Jawwal 059, Ooredoo 056) is the same line written +970 or +972, so both map to one identity
@@ -436,6 +446,8 @@ export type ShopView = {
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)
-  merchantRating: number | null; fault: ShopFault | null;
+  merchantRating: number | null;
+  customerRatingByMerchant: number | null; // the shop's stars for the customer (the merchant and support only)
+  fault: ShopFault | null;
   canCancel: boolean; canEditLines: boolean; role: 'customer' | 'merchant' | 'driver' | 'admin';
 };

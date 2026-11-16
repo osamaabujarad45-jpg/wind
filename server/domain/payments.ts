@@ -38,6 +38,11 @@ export async function paymentsAvailable(db: Persistence) {
   const tables = await db.one("SELECT to_regclass('payment_intents') AS intents, to_regclass('schema_migrations') AS migrations");
   return !!(tables?.intents && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=17'));
 }
+/** ADM-12: goods COD the door still collects on top of the fare (agorot). Every later fare write adds it before the ceiling check. */
+export async function codGoodsMinor(db: Persistence, orderId: number) {
+  if (!(await paymentsAvailable(db))) return 0;
+  return Number((await db.one("SELECT goods_minor FROM merchant_cod WHERE order_id=? AND status <> 'returned'", orderId))?.goods_minor ?? 0);
+}
 type Verifier = (event: Row, signature: string | undefined) => boolean | Promise<boolean>;
 export class Payments {
   private db: Persistence;
@@ -156,18 +161,23 @@ export class Payments {
   }
   async refundOrder(actor: Actor, orderId: number, body: Row) { await this.providerGate(); needStaff(await staffActor(this.db, actor), this.fail, 'finance'); const intent = await this.db.one('SELECT id FROM payment_intents WHERE order_id=?', orderId) ?? this.fail(404, 'not_found'); return this.refund(actor, String(intent.id), body.amountMinor, body.reason, body.requestId); }
   async createCod(actor: Actor, orderId: number, body: Row) {
-    await this.gate(); const order = await this.order(actor, orderId); this.owner(actor, order); if (['searching', 'cancelled'].includes(order.status)) this.fail(409, 'cod_unavailable');
+    await this.gate(); const order = await this.order(actor, orderId); this.owner(actor, order);
+    // A shop order collects its goods through the shop ledger; a second COD would be a second collection at the door.
+    if (['searching', 'cancelled'].includes(order.status) || order.service === 'shop') this.fail(409, 'cod_unavailable');
     if (typeof body.beneficiary !== 'string' || !body.beneficiary.trim() || !Number.isSafeInteger(body.goodsMinor) || body.goodsMinor < 0 || body.goodsMinor > COD_LIMIT_MINOR || !Number.isSafeInteger(body.remittanceDueAt) || body.remittanceDueAt <= 0) this.fail(400, 'invalid_input');
-    // ADM-12: goods COD collects the fare plus the goods at the door, under the per-order cash ceiling.
     const ceiling = Number((await this.db.one("SELECT value FROM settings WHERE key = 'orderCashCeiling'"))?.value ?? defaultSettings.orderCashCeiling);
-    if (Math.round(Number(order.price) * 100) + body.goodsMinor > Math.round(ceiling * 100)) this.fail(409, 'over_cash_ceiling');
-    return this.tx(async () => { const id = randomUUID(); const row = await this.db.one("INSERT INTO merchant_cod(id,order_id,beneficiary,goods_minor,status,remittance_due_at,created_at) VALUES(?::uuid,?,?,?,'expected',?,?) ON CONFLICT(order_id) DO NOTHING RETURNING *", id, orderId, body.beneficiary.trim(), body.goodsMinor, body.remittanceDueAt, Date.now()); if (!row) this.fail(409, 'cod_exists'); await this.codEvent(id, 'expected', actor.id, null); return row; });
+    return this.tx(async () => {
+      // ADM-12: goods COD collects the fare plus the goods at the door, under the per-order cash ceiling.
+      // The order row is locked so a concurrent fare change (destination, release) sees this COD or waits for it.
+      const fare = (await this.db.one('SELECT price FROM orders WHERE id=? FOR UPDATE', orderId))!;
+      if (Math.round(Number(fare.price) * 100) + body.goodsMinor > Math.round(ceiling * 100)) this.fail(409, 'over_cash_ceiling');
+      const id = randomUUID(); const row = await this.db.one("INSERT INTO merchant_cod(id,order_id,beneficiary,goods_minor,status,remittance_due_at,created_at) VALUES(?::uuid,?,?,?,'expected',?,?) ON CONFLICT(order_id) DO NOTHING RETURNING *", id, orderId, body.beneficiary.trim(), body.goodsMinor, body.remittanceDueAt, Date.now()); if (!row) this.fail(409, 'cod_exists'); await this.codEvent(id, 'expected', actor.id, null); return row; });
   }
   private async codEvent(id: string, action: string, actor: number, amount: number | null) { await this.db.run('INSERT INTO merchant_cod_events(id,cod_id,action,actor_id,amount_minor,created_at) VALUES(?::uuid,?::uuid,?,?,?,?)', randomUUID(), id, action, actor, amount, Date.now()); }
   async getCod(actor: Actor, orderId: number) { await this.gate(); await this.order(actor, orderId); return await this.db.one('SELECT * FROM merchant_cod WHERE order_id=?', orderId) ?? null; }
   async collectCod(actor: Actor, orderId: number, body: Row) {
     await this.gate(); return this.tx(async () => {
-      const order = await this.order(actor, orderId); this.driver(actor, order);
+      const order = await this.order(actor, orderId); this.driver(actor, order); if (order.service === 'shop') this.fail(409, 'cod_unavailable');
       if (!Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0) this.fail(400, 'invalid_amount');
       if (body.requestId != null && (typeof body.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.requestId))) this.fail(400, 'invalid_input');
       const row = await this.db.one('SELECT * FROM merchant_cod WHERE order_id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');

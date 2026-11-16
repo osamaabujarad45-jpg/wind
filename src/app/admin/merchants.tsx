@@ -69,7 +69,8 @@ function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onCh
         {m.status !== 'pending' && <Button title={c.save} loading={busy === 'save'} disabled={!terms()} reason={terms() ? undefined : c.adminShopTermsNeeded}
           onPress={() => save('save', { ...terms() })} />}
         {m.status === 'active' && <Button title={c.adminShopPause} variant="outline" loading={busy === 'pause'} onPress={() => save('pause', { status: 'paused' })} />}
-        {m.status === 'paused' && <Button title={c.adminShopActivate} variant="soft" loading={busy === 'activate'} onPress={() => save('activate', { status: 'active', ...(terms() ?? {}) })} />}
+        {m.status === 'paused' && <Button title={c.adminShopActivate} variant="soft" loading={busy === 'activate'} disabled={!terms()} reason={terms() ? undefined : c.adminShopTermsNeeded}
+          onPress={() => save('activate', { status: 'active', ...terms() })} />}
       </Row>
       {m.status !== 'pending' && <>
         <Section title={c.adminShopPayout} />
