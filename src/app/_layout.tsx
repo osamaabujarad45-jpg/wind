@@ -112,6 +112,13 @@ function Routes() {
     <Stack.Protected guard={role === 'customer'}>
       <Stack.Screen name="(customer)" />
       <Stack.Screen name="book" />
+      {/* Shop delivery and merchant mode: the same customer account (MER-05). */}
+      <Stack.Screen name="shop/index" />
+      <Stack.Screen name="shop/[id]" />
+      <Stack.Screen name="shop/cart" />
+      <Stack.Screen name="merchant/index" />
+      <Stack.Screen name="merchant/order/[id]" />
+      <Stack.Screen name="merchant/catalogue" />
     </Stack.Protected>
     <Stack.Protected guard={role === 'driver'}>
       <Stack.Screen name="driver" />

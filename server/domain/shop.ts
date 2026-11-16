@@ -40,6 +40,8 @@ export type ShopDeps = {
   /** What a captain owes Wind in cash now (main.ts cash balances), in agorot. */
   owedCents: (driverId: number) => Promise<number>;
   flushPush: () => Promise<unknown>;
+  /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
+  driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
 };
 
 const MINUTE = 60_000, DAY = 86_400_000;
@@ -834,6 +836,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run(`INSERT INTO shop_ledger (book, merchant_id, driver_id, order_id, kind, amount_agorot, note, reference, actor_id, business_ref, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, book, who.merchant ?? null, who.driver ?? null, who.order ?? null, kind, amount, note, reference, actor, ref, Date.now());
   }
+  route('POST', '/api/orders/:id/shop/handover', async ({ user, params, body }) => {
+    need(user, 'driver'); needActive(user);
+    return deps.driverCommand(user, Number(params[0]), body, async (driver, id, input) => { await handover(driver, id, input); return getOrder(id, driver); });
+  });
   /** Driver release and the captain's own exception path never move goods already handed over (§2.1, DRV-13, DRV-17). */
   async function guardCaptainExit(r: Row, kind: 'release' | 'exception') {
     if (r.service !== 'shop') return;

@@ -10,7 +10,8 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { SealToggles, sealsBody, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
@@ -106,7 +107,8 @@ export default function OrderScreen() {
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
-  const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
+  const [problem, setProblem] = useState<{ reason: ExceptionReason | 'wrong_or_missing_item'; note: string }>({ reason: 'absent', note: '' });
+  const [seals, setSeals] = useState<Record<number, boolean>>({}); // shop: each sealed package intact or broken (DLV-14)
   const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
   useDriverRecovery(polled, me?.user.id, !error && me?.user.role === 'driver' && !busy,
     reload, next => { setData(next); work.update(next); }, () => { setAdvanceLocked(null); advanceAttempt.current = null; problemAttempt.current = null; });
@@ -160,8 +162,10 @@ export default function OrderScreen() {
   const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
   const farFill = (pinned: string, cityLevel: string) => parcelFarKm === null ? '' // no pin: the distance is to the city centre
     : order.pickupPoint ? fill(pinned, { km: kmLabel(parcelFarKm) }) : fill(cityLevel, { km: kmLabel(parcelFarKm), city: from[language] });
-  const doorStep = !!mine && order.status === 'in_transit' && order.service === 'parcel';
-  const dueCents = Math.round((order.price - order.discount) * 100);
+  const doorStep = !!mine && order.status === 'in_transit' && (order.service === 'parcel' || order.service === 'shop');
+  // A shop door collects the goods and both fees (DLV-15); a parcel door the fare less its discount.
+  const dueCents = order.service === 'shop' && order.shop ? order.shop.cashAgorot : Math.round((order.price - order.discount) * 100);
+  const shopProof = order.service === 'shop' && order.status === 'in_transit' ? { seals: sealsBody(order, seals) } : {};
   const doorOwn = door.context === proofContext ? door : { text: null, reason: null };
   const doorText = doorOwn.text ?? String(dueCents / 100);
   const collectedCents = minorFromText(doorText);
@@ -188,7 +192,7 @@ export default function OrderScreen() {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof } : { reason: problem.reason, note: problem.note.trim() },
+          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, note: problem.note.trim(), ...shopProof },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
@@ -216,7 +220,7 @@ export default function OrderScreen() {
       if (key === 'advance') {
         setAdvanceLocked(order.status);
         const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
-          { expectedStatus: order.status, code: needsCode ? code : '', ...doorProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+          { expectedStatus: order.status, code: needsCode ? code : '', ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
         body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
@@ -551,6 +555,10 @@ export default function OrderScreen() {
       </View>}
     </Card>}
 
+    {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
+    {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
+    {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
+
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
@@ -565,14 +573,14 @@ export default function OrderScreen() {
         {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
       </Txt>}
       {mine && activeStatuses.includes(order.status) && <>
-        {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
+        {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
-          <FilterChips items={exceptionReasons.map(key => ({ key, label: atPickup ? c[`pickup_${key}`] : c[`reason_${key}`] }))} value={problem.reason}
+          <FilterChips items={(order.service === 'shop' ? shopExceptionReasons : exceptionReasons).map(key => ({ key, label: atPickup ? c[`pickup_${key as ExceptionReason}`] : c[`reason_${key}`] }))} value={problem.reason}
             onChange={reason => setProblem(p => ({ ...p, reason }))} />
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
           <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy} reason={c.wait_busy}
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
-              { reason: problem.reason, note: problem.note.trim() }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
+              { reason: problem.reason, note: problem.note.trim(), ...shopProof }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
         {(order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
@@ -629,7 +637,7 @@ export default function OrderScreen() {
           onPress={() => act('dispute', `/orders/${order.id}/dispute`, { reason: disputeReason.trim() }, () => setDispute({ id, reason: '' }))} />
       </Card>}
 
-      {((isCustomer || isAdmin) && ['searching', 'assigned', 'at_pickup'].includes(order.status)) && !(isCustomer && finding) && // the searching card already carries it
+      {((isCustomer || isAdmin) && ['searching', 'assigned', 'at_pickup'].includes(order.status)) && order.service !== 'shop' && !(isCustomer && finding) && // the searching card already carries it
         <Button title={c.cancelOrder} variant="danger" size="sm" icon="close-circle-outline" loading={busy === 'cancel'}
           onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />}
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
@@ -682,7 +690,7 @@ export default function OrderScreen() {
           onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
       </View>}
       {/* Uber keeps Cancel under the search animation: the bottom of the page is three screens away. */}
-      {isCustomer && <View style={{ marginTop: 14, alignSelf: 'stretch' }}>
+      {isCustomer && order.service !== 'shop' && <View style={{ marginTop: 14, alignSelf: 'stretch' }}>
         <Button title={c.cancelOrder} variant="ghost" icon="close-circle-outline" loading={busy === 'cancel'}
           onPress={() => confirm(c.cancelConfirm, () => act('cancel', `/orders/${order.id}/cancel`), c.cancelOrder, c.no)} />
       </View>}
@@ -705,6 +713,7 @@ export default function OrderScreen() {
         </>}
       </View>}
       footer={mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
+        {order.shop && order.status === 'in_transit' && <SealToggles order={order} value={seals} onChange={setSeals} />}
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
             onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
@@ -722,7 +731,7 @@ export default function OrderScreen() {
         {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
-        {order.status !== 'on_hold' && !order.safetyHold && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
+        {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady}
           reason={doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
