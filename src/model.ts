@@ -133,8 +133,13 @@ export const defaultSettings = {
   // Most a driver may owe Wind in cash commission, counting jobs in hand; past it, no new job until a handover.
   // ₪150 is about 50 standard parcels, a busy week. Sources checked 15 Nov 2026: docs/REA/2026-11-15-competitor-apps-vs-wind.md.
   driverCashCap: 150,
+  // ADM-12 / owner decision D-1 (SRS §16a): the most cash any one order may collect at the door, in ₪. An order whose
+  // highest reachable cash total is above it is refused at booking, and a later price change past it is refused too.
+  orderCashCeiling: 500,
 };
 export type Settings = typeof defaultSettings;
+/** ADM-12: true when an order's highest reachable door cash (₪) is above the per-order ceiling. */
+export const overCashCeiling = (s: Pick<Settings, 'orderCashCeiling'>, price: number) => price > s.orderCashCeiling;
 export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
 export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission', 'nightExtra'];
 
@@ -147,6 +152,7 @@ export const settingCeilings: Record<keyof Settings, number> = {
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
   plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
+  orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
 // Returns the offending key, or null when every value is storable. `Number.isFinite`
 // rejects the NaN an empty or non-numeric field produces; `<= 0` rejects the 0 that a
