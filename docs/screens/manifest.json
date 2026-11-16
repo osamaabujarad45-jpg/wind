@@ -406,6 +406,118 @@
     "session": "customer"
   },
   {
+    "id": "shop-list",
+    "group": "Customer",
+    "name": "Shop delivery · shops in the pilot town",
+    "route": "/shop",
+    "file": "src/app/shop/index.tsx",
+    "ar": [
+      "ar/shop-list.png"
+    ],
+    "en": [
+      "en/shop-list.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "shop-store",
+    "group": "Customer",
+    "name": "Shop · catalogue (weighed items say estimate)",
+    "route": "/shop/1",
+    "file": "src/app/shop/[id].tsx",
+    "ar": [
+      "ar/shop-store.png"
+    ],
+    "en": [
+      "en/shop-store.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "shop-consent",
+    "group": "Customer",
+    "name": "Shop order · the shop asks before a substitution (approve, decline, add time)",
+    "route": "/order/11",
+    "file": "src/shop-ui.tsx (ShopCustomerPanel)",
+    "ar": [
+      "ar/shop-consent.png"
+    ],
+    "en": [
+      "en/shop-consent.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "merchant-inbox",
+    "group": "Merchant",
+    "name": "Merchant mode · inbox with a new order and its accept clock",
+    "route": "/merchant",
+    "file": "src/app/merchant/index.tsx",
+    "ar": [
+      "ar/merchant-inbox.png"
+    ],
+    "en": [
+      "en/merchant-inbox.png"
+    ],
+    "session": "merchant"
+  },
+  {
+    "id": "merchant-new-order",
+    "group": "Merchant",
+    "name": "Merchant · accept with preparation minutes or decline with a reason",
+    "route": "/merchant/order/12",
+    "file": "src/app/merchant/order/[id].tsx",
+    "ar": [
+      "ar/merchant-new-order.png"
+    ],
+    "en": [
+      "en/merchant-new-order.png"
+    ],
+    "session": "merchant"
+  },
+  {
+    "id": "merchant-preparing",
+    "group": "Merchant",
+    "name": "Merchant · preparing: weights, substitutes and the packing record",
+    "route": "/merchant/order/13",
+    "file": "src/app/merchant/order/[id].tsx",
+    "ar": [
+      "ar/merchant-preparing.png"
+    ],
+    "en": [
+      "en/merchant-preparing.png"
+    ],
+    "session": "merchant"
+  },
+  {
+    "id": "merchant-catalogue",
+    "group": "Merchant",
+    "name": "Merchant · items, prices and out-of-stock switch",
+    "route": "/merchant/catalogue",
+    "file": "src/app/merchant/catalogue.tsx",
+    "ar": [
+      "ar/merchant-catalogue.png"
+    ],
+    "en": [
+      "en/merchant-catalogue.png"
+    ],
+    "session": "merchant"
+  },
+  {
+    "id": "admin-shops",
+    "group": "Admin",
+    "name": "Shops · terms, licence, payouts",
+    "route": "/admin/merchants",
+    "file": "src/app/admin/merchants.tsx",
+    "ar": [
+      "ar/admin-shops.png"
+    ],
+    "en": [
+      "en/admin-shops.png"
+    ],
+    "session": "admin"
+  },
+  {
     "id": "driver-pending",
     "group": "Driver",
     "name": "Awaiting approval",
