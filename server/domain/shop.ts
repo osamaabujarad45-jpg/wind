@@ -39,6 +39,7 @@ export type ShopDeps = {
   identityKey: (kind: string, value: string | number) => string;
   /** What a captain owes Wind in cash now (main.ts cash balances), in agorot. */
   owedCents: (driverId: number) => Promise<number>;
+  flushPush: () => Promise<unknown>;
 };
 
 const MINUTE = 60_000, DAY = 86_400_000;
@@ -672,17 +673,20 @@ export function registerShop(route: Register, deps: ShopDeps) {
   /** One pass of every shop timer (run each minute, and by tests with a chosen `now`). The timers only expire an unanswered
    * accept or consent and raise flags; no clock ever prepares, delivers or pays anything. */
   async function sweep(now = Date.now()) {
-    if (!deps.enabled() || !(await shopTables(db))) return 0;
+    if (!deps.enabled()) return 0;
+    if (!(await db.atomic({ purpose: 'shop_timers' }, () => shopTables(db)))) return 0;
+    // Each timer runs in its own short transaction with a compare-and-set, so one bad row never blocks the rest.
+    const timer = (work: () => Promise<number>) => db.atomic({ purpose: 'shop_timers' }, work);
     let changed = 0;
     for (const row of await db.all("SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'requested' AND s.merchant_state IS NULL AND s.accept_deadline <= ? LIMIT 50", now))
-      changed += await inTx(async () => {
+      changed += await timer(async () => {
         const r = await db.one(`SELECT * FROM orders WHERE id = ?${forUpdate}`, row.id), s = await shopRow(Number(row.id));
         if (!r || r.status !== 'requested' || !s || s.merchant_state || Number(s.accept_deadline) > now) return 0;
         await cancelWith(r, s, 'accept_expired', Number(r.customer_id));
         return 1;
       });
     for (const row of await db.all("SELECT c.id, c.order_id FROM shop_changes c WHERE c.status = 'pending' AND c.expires_at <= ? LIMIT 50", now))
-      changed += await inTx(async () => {
+      changed += await timer(async () => {
         const r = await db.one(`SELECT * FROM orders WHERE id = ?${forUpdate}`, row.order_id), s = await shopRow(Number(row.order_id));
         const c = await db.one('SELECT * FROM shop_changes WHERE id = ?', row.id);
         if (!r || !s || !c || c.status !== 'pending' || Number(c.expires_at) > now) return 0;
@@ -691,12 +695,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
       });
     for (const row of await db.all(`SELECT o.id, o.customer_id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'requested'
       AND s.merchant_state IN ('accepted','preparing','awaiting_approval','ready') AND s.dispatch_at <= ? LIMIT 50`, now))
-      changed += await inTx(async () => (await release(Number(row.id), Number(row.customer_id), now)) ? 1 : 0);
+      changed += await timer(async () => (await release(Number(row.id), Number(row.customer_id), now)) ? 1 : 0);
     // DLV-12: no captain by ready + X: tell the customer, the shop and support once. Never an automatic cancel.
     const waitMs = (await settings()).shopNoCaptainMinutes * MINUTE;
     for (const row of await db.all(`SELECT o.id, o.customer_id, m.owner_user_id FROM orders o JOIN shop_orders s ON s.order_id = o.id JOIN merchants m ON m.id = s.merchant_id
       WHERE o.status = 'searching' AND s.ready_at IS NOT NULL AND s.ready_at <= ? AND s.no_captain_alerted_at IS NULL LIMIT 50`, now - waitMs))
-      changed += await inTx(async () => {
+      changed += await timer(async () => {
         if (!(await db.run('UPDATE shop_orders SET no_captain_alerted_at = ? WHERE order_id = ? AND no_captain_alerted_at IS NULL', now, row.id)).changes) return 0;
         await push([row.customer_id], 'shop_update', Number(row.id));
         await push([row.owner_user_id], 'shop_update', Number(row.id), `/merchant/order/${row.id}`);
@@ -705,11 +709,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
       });
     // MER-08: an expired trade licence pauses the shop. Accepted orders continue.
     for (const row of await db.all("SELECT id, owner_user_id FROM merchants WHERE status = 'active' AND licence_expires_at <= ? LIMIT 50", now))
-      changed += await inTx(async () => {
+      changed += await timer(async () => {
         if (!(await db.run("UPDATE merchants SET status = 'paused', updated_at = ? WHERE id = ? AND status = 'active'", now, row.id)).changes) return 0;
         await push([row.owner_user_id], 'attention', 0, '/merchant');
         return 1;
       });
+    if (changed) await deps.flushPush();
     return changed;
   }
 

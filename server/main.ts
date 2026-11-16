@@ -2483,7 +2483,7 @@ registerDestinationRoutes(route, { need, needActive, fail, limit, identityKey, t
 const shop = registerShop(route, { db: persistence, need, needActive, fail, text, bookedPoint, normalizePhone, settings,
   enabled: () => enabledServices.includes('shop'), queuePush: (ids, kind, order, path) => queuePush(ids, kind as PushKind, order, path), getOrder, adminIds,
   dispatch: (orderId, customerId) => dispatchOrBroadcast('shop', orderId, customerId), limit, identityKey,
-  owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0 });
+  owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0, flushPush });
 /** One pass of the shop timers; the server runs it each minute and tests call it with a chosen time. */
 export const shopSweep = (now = Date.now()) => shop.sweep(now);
 route('POST', '/api/orders/:id/shop/handover', async ({ user, params, body }) => {

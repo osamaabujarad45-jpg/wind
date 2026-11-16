@@ -103,6 +103,8 @@ const suites = [
   "change-destination.test.mjs",
   "cash-ceiling.test.mjs",
   "shop-flow.test.mjs",
+  "shop-rules.test.mjs",
+  "shop-gate.test.mjs",
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",
   "account-status.test.mjs",
