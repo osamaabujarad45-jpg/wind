@@ -54,8 +54,9 @@ assert.equal(varianceAllowed(4000, 4900, 'customer_short'), false, 'retired voca
 for (const bad of ['', ' ', '.', '-', '1.234', '1.2.3', '1,000.5', '1,000', '1.000', '1 000', 'abc', '12a', '--1', '+1', '1e3', '0x10', 'Infinity', '99999999999999'])
   assert.ok(Number.isNaN(minorFromText(bad)), `refused: ${JSON.stringify(bad)}`);
 assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
-assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
-assert.deepEqual(vehicleServices.bicycle, ['parcel']);
+assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride', 'shop']);
+assert.deepEqual(vehicleServices.bicycle, ['parcel', 'shop'], 'bicycles never carry passengers; shop orders stay in one town');
+assert.deepEqual(vehicleServices.truck, ['freight'], 'no shop delivery by truck (SRS §2.3)');
 console.log('Model checks passed');
 
 // Delivery exceptions: a held order waits for an admin; a return ends in `returned`; no state is both active and finished.
