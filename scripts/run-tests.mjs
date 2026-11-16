@@ -102,6 +102,7 @@ const suites = [
   "subscription-migration.test.mjs",
   "change-destination.test.mjs",
   "cash-ceiling.test.mjs",
+  "shop-flow.test.mjs",
   "recipient.test.mjs",
   "driver-signup-alert.test.mjs",
   "account-status.test.mjs",

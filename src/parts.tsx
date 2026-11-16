@@ -19,6 +19,7 @@ export const serviceMeta: Record<Service, { icon: IconName; color: string; pale:
   parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
   ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
   freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
+  shop: { icon: 'basket-outline', color: palette.olive, pale: palette.olivePale }, // ONE-12: the accent stays on the icon and badge
 };
 
 export { statusText };

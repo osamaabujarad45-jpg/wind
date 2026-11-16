@@ -25,6 +25,7 @@ import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
 import { destinationAvailable, destinationEligible, pendingDestination, registerDestinationRoutes } from './domain/destination-change.ts';
+import { registerShop, shopTables } from './domain/shop.ts';
 import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
@@ -214,7 +215,7 @@ function logAccountCommandFailure(error: unknown) {
 
 async function settings(): Promise<Settings> {
   const stored = Object.fromEntries((await all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
-  return { ...defaultSettings, ...stored };
+  return { ...defaultSettings, ...(enabledServices.includes('shop') && { driverCashCap: 1000 }), ...stored };
 }
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
 async function guardCashCeiling(price: number) {
@@ -305,7 +306,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
   const assigned = viewer.id === r.driver_id;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
-  const partyPhones = (owner || assigned) && (activeStatuses.includes(r.status) || r.status === 'searching' || Date.now() - r.updated_at <= DAY);
+  const partyPhones = (owner || assigned) && (activeStatuses.includes(r.status) || r.status === 'searching' || r.status === 'requested' || Date.now() - r.updated_at <= DAY);
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
@@ -333,7 +334,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // Stage times for the status timeline: known only where the state was reached.
     assignedAt: r.assigned_at ?? null, pickedUpAt: r.picked_up_at ?? null, completedAt: r.completed_at ?? null,
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
-    returnCode: viewer.id === r.customer_id && r.status === 'returning' ? r.return_code ?? null : null, // the sender gives it back to the driver
+    returnCode: viewer.id === r.customer_id && r.status === 'returning' && r.service !== 'shop' ? r.return_code ?? null : null, // the sender gives it back to the driver; a shop's goods go back to the shop
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
     ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
@@ -363,6 +364,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ...(dispatchInfo ? { dispatch: dispatchInfo as Order['dispatch'] } : {}),
     ...(rideInfo ? { ride: rideInfo as Order['ride'] } : {}),
     ...(scopeInfo ? { declaredScope: scopeInfo as Order['declaredScope'] } : {}),
+    ...(r.service === 'shop' && { shop: (await shop.view(r, viewer)) ?? undefined }),
   };
 }
 
@@ -418,7 +420,7 @@ async function getOrder(id: number, viewer: User): Promise<Order> {
     !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
   const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
     (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && enabledServices.includes(r.service) && servesFor(viewer.vehicle).includes(r.service)
-      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE));
+      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE)) || (await shop.merchantSees(r, viewer));
   if (!canSee || released) fail(404, 'not_found');
   const order = await toOrder(r, viewer);
   // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
@@ -1005,7 +1007,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
       if (proof.oid !== undefined && (current?.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
     }
     (await cashSettled(user.id));
-    if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('searching',${activeSql})`, user.id, user.id)))
+    if ((await one(`SELECT id FROM orders WHERE (customer_id = ? OR driver_id = ?) AND status IN ('requested','searching',${activeSql})`, user.id, user.id)))
       fail(409, 'active_orders');
     if (proof?.oid) await spendEntraProof(proof as EntraProof);
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
@@ -1206,7 +1208,8 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
-  | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned'; // WP-02
+  | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned' // WP-02
+  | 'merchant_order' | 'shop_consent' | 'shop_update'; // shop delivery (SRS §7)
 // T37: the subject is read at send time and must be configured (no obsolete host default).
 const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -1329,7 +1332,7 @@ export async function expireStaleDemand(now = Date.now()) {
   return persistence.atomic({ purpose: 'stale_demand_expiry' }, async () => {
     if (draining) return 0;
     const before = now - SEARCH_EXPIRY_MS;
-    const staleWhere = `status = 'searching' AND driver_id IS NULL AND COALESCE(scheduled_for, created_at) < ?
+    const staleWhere = `status = 'searching' AND service <> 'shop' AND driver_id IS NULL AND COALESCE(scheduled_for, created_at) < ?
       AND (assigned_at IS NULL OR updated_at < ?)`;
     const stale = (await all(`SELECT id, customer_id FROM orders WHERE ${staleWhere} LIMIT 50`, before, before));
     let expired = 0;
@@ -1396,7 +1399,7 @@ function bookedPoint(p: unknown, id: CityId) {
 // Smart recommended price (SPEC-driver-offers.md): the checkpoint-aware road route the map draws, plus Wind's own live
 // road reports (/api/roads). Without routing, straight km × 1.3 at 50 km/h.
 async function recommend(user: User, b: Row) {
-  const service = services.includes(b.service) ? b.service as Service : fail(400, 'invalid_service');
+  const service = services.includes(b.service) && b.service !== 'shop' ? b.service as Service : fail(400, 'invalid_service');
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
@@ -1524,6 +1527,11 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
   const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status = 'searching' AND scheduled_for IS NULL", user.id)) as { n: number };
   if (Number(searching.n) >= SEARCHING_LIMIT) fail(409, 'too_many_searching');
+  if (body.service === 'shop') {
+    if (body.quoteId != null || body.quotedPrice != null) fail(400, 'invalid_input'); // the server prices a basket itself
+    if (authorize) user = await authorize();
+    return (await getOrder(await shop.place(user, body), user));
+  }
   // WP08: quote-bound path enforces immutable itinerary/scope, minor-unit lines, versioned ETA and 120s expiry.
   // Legacy path preserves recomputed price/price_changed and promo_changed contracts.
   if (body.quoteId != null) {
@@ -1659,7 +1667,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     if (scheduledFor == null) { (await run('UPDATE orders SET job_alerted_at = ? WHERE id = ?', nowTs, id)); (await dispatchOrBroadcast(service, id, user.id)); }
     return (await getOrder(id, user));
   }
-  const service = services.includes(body.service) ? body.service as Service : fail(400, 'invalid_service');
+  const service = services.includes(body.service) && body.service !== 'shop' ? body.service as Service : fail(400, 'invalid_service');
   // Parcels have one standard price: nothing to offer on, so no recommendation (SPEC-parcel-standard.md).
   const recommended = service === 'parcel' ? undefined : smart?.price;
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
@@ -1924,7 +1932,7 @@ route('GET', '/api/orders', async ({ user, query }) => {
   const where = user.role === 'admin' ? '1 = 1' : user.role === 'driver' ? 'o.driver_id = ?' : 'o.customer_id = ?';
   const args: SQLInputValue[] = user.role === 'admin' ? [] : [user.id];
   const filter = status ? (args.push(status), ' AND o.status = ?') : '';
-  const open = `o.status IN ('searching',${activeSql})`;
+  const open = `o.status IN ('requested','searching',${activeSql})`;
   // Load more: the next page of ended orders below the oldest one the client holds. Open work is never paged.
   if (before !== null) {
     const id = /^[1-9]\d{0,14}$/.test(before) ? Number(before) : fail(400, 'invalid_input');
@@ -1967,6 +1975,10 @@ route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
 
 route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
   const order = (await getOrder(Number(params[0]), user));
+  if (order.service === 'shop') {
+    if (user.id !== order.customerId) fail(409, user.role === 'admin' ? 'use_shop_cancel' : 'cannot_cancel');
+    return shop.customerCancel(user, order.id);
+  }
   if (order.status === 'cancelled' && (user.role === 'admin' || user.id === order.customerId)) return order;
   const allowed = (user.role === 'admin' || user.id === order.customerId) && cancellable.includes(order.status);
   if (!allowed) fail(409, 'cannot_cancel');
@@ -2036,7 +2048,7 @@ route('POST', '/api/orders/:id/rate', async ({ user, params, body }) => {
 const SHARE_GRACE = DAY; // a finished trip's final status stays readable for a day
 async function shareOrder(id: number, customerId: number) {
   const r = (await one('SELECT id, status FROM orders WHERE id = ? AND customer_id = ?', id, customerId)) ?? fail(404, 'not_found');
-  if (!['searching', ...activeStatuses].includes(r.status)) fail(409, 'cannot_share');
+  if (!['requested', 'searching', ...activeStatuses].includes(r.status)) fail(409, 'cannot_share');
   const token = randomBytes(32).toString('hex');
   (await run('UPDATE orders SET share_token_hash = ?, share_created_at = ? WHERE id = ?', sha(token), Date.now(), r.id));
   return { token, path: `/track/${token}` };
@@ -2065,7 +2077,7 @@ route('GET', '/api/track/([a-f0-9]{64})/live', async ({ params, query, req }) =>
 }, true);
 async function trackView(token: string) {
   const r = (await one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(token))) ?? fail(404, 'not_found');
-  const open = r.status === 'searching' || activeStatuses.includes(r.status);
+  const open = r.status === 'requested' || r.status === 'searching' || activeStatuses.includes(r.status);
   if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
   const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   return { orderId: r.id, driverId: r.driver_id as number | null, row: r, view: {
@@ -2467,6 +2479,17 @@ async function restoredDiscount(orderId: number, price: number, current: number 
 
 registerDestinationRoutes(route, { need, needActive, fail, limit, identityKey, text, isCity, bookedPoint, uuid,
   db: persistence, settings, tariffVersionFor, activePlan, safetyFree, queuePush, getOrder, recommend, restoredDiscount, commissionOn });
+// Shop delivery (SRS §7): hidden unless WIND_ENABLED_SERVICES lists `shop` (ONE-13).
+const shop = registerShop(route, { db: persistence, need, needActive, fail, text, bookedPoint, normalizePhone, settings,
+  enabled: () => enabledServices.includes('shop'), queuePush: (ids, kind, order, path) => queuePush(ids, kind as PushKind, order, path), getOrder, adminIds,
+  dispatch: (orderId, customerId) => dispatchOrBroadcast('shop', orderId, customerId), limit, identityKey,
+  owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0 });
+/** One pass of the shop timers; the server runs it each minute and tests call it with a chosen time. */
+export const shopSweep = (now = Date.now()) => shop.sweep(now);
+route('POST', '/api/orders/:id/shop/handover', async ({ user, params, body }) => {
+  need(user, 'driver'); needActive(user);
+  return (await driverCommand(user, Number(params[0]), body, async (driver, id, input) => { await shop.handover(driver, id, input); return getOrder(id, driver); }));
+});
 
 route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   need(user, 'driver'); needActive(user);
@@ -2479,6 +2502,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
       }
       const current = (await getOrder(Number(params[0]), user));
       if (current.driverId !== user.id || !['assigned', 'at_pickup'].includes(current.status)) fail(409, 'cannot_release'); // nothing collected yet
+      await shop.guardCaptainExit({ id: current.id, service: current.service, status: current.status }, 'release');
       (await safetyFree(current.id));
       const now = Date.now();
       // Back to the recommendation, but never above a per-order cash ceiling lowered since the booking (ADM-12).
@@ -2504,7 +2528,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
-  if ((next !== 'completed' || r.service !== 'parcel') && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: parcel delivery fee only
+  if ((next !== 'completed' || (r.service !== 'parcel' && r.service !== 'shop')) && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: the parcel fee, or a shop order's goods and fees
+  await shop.beforeAdvance(r, next, body, user.id);
   (await safetyFree(r.id));
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
@@ -2519,7 +2544,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
       fail(400, 'wrong_code');
     }
     const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
-    const door = next === 'completed' ? doorCash(r.price, r.discount, body, fail) : null;
+    const door = next === 'completed' ? (r.service === 'shop' ? await shop.doorCash(r, body) : doorCash(r.price, r.discount, body, fail)) : null;
     // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
     // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
     if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
@@ -2528,6 +2553,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
       door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
+    await shop.afterFinish(r, next, user.id, body);
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   await rideLifecycle.markVerified(r, next);
@@ -2538,6 +2564,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
 async function reportException(user: User, id: number, body: Row) {
   const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !['at_pickup', 'in_transit'].includes(r.status) || r.service === 'ride') fail(409, 'cannot_report');
+  if (body.reason === 'wrong_or_missing_item' && r.service !== 'shop') fail(400, 'invalid_input');
+  await shop.guardCaptainExit(r, 'exception');
   (await safetyFree(r.id));
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const now = Date.now();
@@ -2549,6 +2577,7 @@ async function reportException(user: User, id: number, body: Row) {
     await queuePush([r.customer_id], 'cancelled', r.id);
     return (await getOrder(r.id, user));
   }
+  if (r.service === 'shop') await shop.recordSeals(r, body, 'fail', user.id);
   (await run("UPDATE orders SET status = 'on_hold', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id));
   (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'DELIVERY_EXCEPTION', ?, ?)`,
     user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now));
@@ -2559,7 +2588,7 @@ async function reportException(user: User, id: number, body: Row) {
 
 route('POST', '/api/orders/:id/exception', async ({ user, params, body }) => {
   need(user, 'driver'); needActive(user);
-  if (!exceptionReasons.includes(body.reason)) fail(400, 'invalid_input');
+  if (!shop.exceptionReasons.includes(body.reason)) fail(400, 'invalid_input');
   text(body.note, 200, false);
   return (await driverCommand(user, Number(params[0]), body, reportException));
 });
@@ -2572,13 +2601,15 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const to = { reattempt: 'in_transit', return: 'returning', confirm_return: 'returned' }[String(body.action)] as PushKind;
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
   const id = Number(params[0]);
+  await shop.guardResolve(id, String(body.action));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    const order = (await one('SELECT customer_id, driver_id, status FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
+    const order = (await one('SELECT id, customer_id, driver_id, status, service FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (body.action === 'reattempt') (await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id));
     else if (body.action === 'confirm_return') {
       (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+      await shop.afterFinish(order, 'returned', user.id);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
@@ -3039,19 +3070,23 @@ route('GET', '/api/driver/earnings', async ({ user }) => {
 const cashSum = (filter: string) => `COALESCE((SELECT SUM(amount_cents) FROM cash_entries e WHERE e.driver_id = u.id AND ${filter}), 0)`;
 const cashMinor = (column: 'commission' | 'discount') => persistence.backend === 'postgres' ? `${column}_minor` : `CAST(ROUND(${column} * 100) AS INTEGER)`;
 // The four inputs of cashOwed, as columns of one row per driver `u`.
-const owedColumns = () => `COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+// Shop goods and the service fee collected at completed shop doors (DLV-15), less captain pay from the shop ledger (DRV-17).
+const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(s.goods_agorot + s.service_fee_agorot) FROM shop_orders s JOIN orders o ON o.id = s.order_id
+    WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
+const owedColumns = (shop = false) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
     COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
     ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
 async function cashBalances(where: string, ...params: SQLInputValue[]) {
+  const shopTablesReady = await shopTables(persistence);
   return (await all(`SELECT u.id, u.name, u.phone,
-    ${owedColumns()},
+    ${owedColumns(shopTablesReady)},
     ${cashSum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
     FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params))
     .map(r => ({ driverId: r.id as number, name: r.name as string, phone: r.phone as string,
       commissionCents: r.commission as number, discountsCents: r.discounts as number, adjustmentsCents: r.adjustments as number, remittedCents: r.remitted as number,
       // Promo discounts are Wind's cost: the driver collected that much less cash, so it comes off what they owe.
-      pendingCents: r.pending as number, owedCents: cashOwed(r.commission, r.discounts, r.adjustments, r.remitted), lastRemittanceAt: (r.last_remittance as number) ?? null }));
+      pendingCents: r.pending as number, shopCents: Number(r.shop_due), owedCents: cashOwed(r.commission, r.discounts, r.adjustments, r.remitted) + Number(r.shop_due), lastRemittanceAt: (r.last_remittance as number) ?? null }));
 }
 // The settled balance plus the full commission on active jobs (promo discounts on jobs in hand are not subtracted until they
 // finish, so the cap errs early). A customer's destination change on a job in hand can raise it past the cap: the cap
@@ -3059,16 +3094,21 @@ async function cashBalances(where: string, ...params: SQLInputValue[]) {
 // The cash cap (settings.driverCashCap) is checked against this at accept, as Wolt, Careem and Cedar GO cap courier cash.
 async function cashExposureCents(driverId: number) {
   // One statement, so PostgreSQL reads owed and in-hand from one snapshot: a job finishing between two reads cannot vanish from both.
-  const r = (await one(`SELECT ${owedColumns()},
-    COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${activeSql})), 0) active
+  const shopReady = await shopTables(persistence);
+  // A shop job in hand also holds the most cash its door can collect for Wind and the shop: the goods cap and the service fee.
+  const r = (await one(`SELECT ${owedColumns(shopReady)},
+    COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${activeSql})), 0) active,
+    ${shopReady ? `COALESCE((SELECT SUM(s.goods_cap_agorot + s.service_fee_agorot) FROM shop_orders s JOIN orders o ON o.id = s.order_id
+      WHERE o.driver_id = u.id AND o.status IN (${activeSql})), 0)` : '0'} shop_hold
     FROM users u WHERE u.id = ?`, driverId));
-  return r ? cashOwed(r.commission, r.discounts, r.adjustments, r.remitted) + Number(r.active) : 0;
+  return r ? cashOwed(r.commission, r.discounts, r.adjustments, r.remitted) + Number(r.shop_due) + Number(r.active) + Number(r.shop_hold) : 0;
 }
 const driverRate = async (driverId: number) => (await activePlan(driverId)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
 /** Refuses work that would take a driver past settings.driverCashCap; `code` is what the caller is told. */
-async function guardCashCap(driverId: number, price: number, rate: number, code = 'cash_cap_exceeded') {
+async function guardCashCap(driverId: number, price: number, rate: number, code = 'cash_cap_exceeded', orderId?: number) {
   const cap = Math.round((await settings()).driverCashCap * 100);
-  if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) > cap) fail(409, code);
+  const hold = orderId === undefined ? 0 : await shop.holdCents(orderId); // a shop job adds its door cash (CON-05)
+  if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) + hold > cap) fail(409, code);
 }
 // A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
 async function cashSettled(userId: number) {
@@ -3086,10 +3126,10 @@ registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, t
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');
-  const { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents } = (await cashBalances('u.id = ?', user.id))[0]!;
+  const { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents, shopCents } = (await cashBalances('u.id = ?', user.id))[0]!;
   const protocol = query.get('protocol') === '1' ? { durableCommands: persistence.backend === 'postgres', currency: 'ILS',
     entries: persistence.backend === 'postgres' ? await all('SELECT id,version,amount_cents AS amountCents FROM cash_entries WHERE driver_id=? AND status=\'pending\' ORDER BY id LIMIT 100',user.id) : [] } : undefined;
-  return { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents, ...(protocol ? { protocol } : {}),
+  return { owedCents, pendingCents, commissionCents, discountsCents, remittedCents, adjustmentsCents, ...(shopCents ? { shopCents } : {}), ...(protocol ? { protocol } : {}),
     capCents: Math.round((await settings()).driverCashCap * 100), exposureCents: await cashExposureCents(user.id),
     // The latest 50, plus every handover still waiting on the courier, so an older one is never lost behind newer history.
     entries: (await all(`SELECT * FROM cash_entries WHERE driver_id = ? AND (status = 'pending' OR id >= COALESCE(
@@ -3281,11 +3321,11 @@ const editUser: Handler = async ({ user, params, body }) => {
     const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
     if (Object.keys(locked).some(key => (locked[key] ?? null) !== (target[key] ?? null))) fail(409, 'user_changed');
     if (identityOrRoleChange &&
-      (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
+      (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('requested','searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
     if (roleChanged && target.role === 'driver') (await cashSettled(target.id));
     // A blocked customer loses the handover code, so a courier on the way could never finish. Support cancels or waits first.
     if (target.role === 'customer' && status === 'blocked' && target.status !== 'blocked'
-      && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
+      && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('requested','searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
       carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id));
@@ -3494,6 +3534,8 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
     for (const [key, value] of Object.entries(expected ?? {})) if (previous[key as keyof Settings] !== Number(value)) fail(409, 'settings_changed');
     const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => previous[key as keyof Settings] !== Number(value))
       .map(([key, value]) => [key, { old: previous[key as keyof Settings], new: Number(value) }]));
+    const next = { ...previous, ...Object.fromEntries(Object.entries(body).map(([k, v]) => [k, Number(v)])) } as Settings;
+    if (enabledServices.includes('shop') && next.orderCashCeiling > next.driverCashCap) fail(409, 'ceiling_above_cap');
     for (const [key, value] of Object.entries(body)) (await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, Number(value)));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SETTINGS_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ changes }), Date.now()));
@@ -3820,6 +3862,7 @@ if (import.meta.main) {
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
+    setInterval(async () => { try { (await shopSweep()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // shop accept, consent, dispatch and licence timers
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });

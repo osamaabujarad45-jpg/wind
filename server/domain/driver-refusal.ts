@@ -9,7 +9,7 @@ export type RefusalDeps = {
   servesFor: (vehicle: unknown) => string[];
   canTake: (active: { service: never }[], service: never) => boolean;
   activeLoad: (driverId: number) => Promise<{ service: string }[]>;
-  guardCashCap: (driverId: number, price: number, rate: number) => Promise<void>;
+  guardCashCap: (driverId: number, price: number, rate: number, code?: string, orderId?: number) => Promise<void>;
   // production self-service accounts also need the permanent approval a driver accept demands
   permanentApprovalRequired: boolean;
   // scheduled orders reach drivers this long before pickup (server/main.ts RELEASE_BEFORE)
@@ -29,7 +29,7 @@ export async function driverRefusal(deps: RefusalDeps, order: RefusalOrder, driv
   if (order.scheduled_for != null && order.scheduled_for > Date.now() + deps.releaseBefore) return 'not_released_yet';
   if (await deps.one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', order.id, driver.id)) return 'driver_released_order';
   if (!deps.canTake((await deps.activeLoad(Number(driver.id))) as never, order.service as never)) return 'vehicle_busy';
-  try { await deps.guardCashCap(Number(driver.id), Number(order.price), rate); }
+  try { await deps.guardCashCap(Number(driver.id), Number(order.price), rate, undefined, order.id); } // a shop order adds its door cash
   catch (error) { if ((error as { status?: number }).status === 409) return (error as Error).message; throw error; }
   return null;
 }

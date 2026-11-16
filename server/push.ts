@@ -58,6 +58,10 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   admin_assigned: { ar: 'أسندت إليك الإدارة طلباً. افتح ويند للتفاصيل.', en: 'Dispatch assigned you a job. Open Wind for details.' },
   admin_unassigned: { ar: 'نُقل أحد طلباتك إلى سائق آخر. راجع قائمة طلباتك قبل التوجه للاستلام.', en: 'One of your jobs moved to another driver. Check your job list before heading to pickup.' },
   dispatch_assigned: { ar: 'عيّنت الإدارة سائقاً لطلبك. افتح ويند للتفاصيل.', en: 'Dispatch assigned a driver to your order. Open Wind for details.' },
+  // Shop delivery (CON-09: the service and the next step are in the sentence).
+  merchant_order: { ar: 'طلب جديد لمحلك. افتح ويند واقبله قبل انتهاء المهلة.', en: 'A new order for your shop. Open Wind and accept it before time runs out.' },
+  shop_consent: { ar: 'المحل يسأل عن تغيير في طلب التسوق. افتح ويند للرد.', en: 'The shop is asking about a change to your shop order. Open Wind to answer.' },
+  shop_update: { ar: 'تحديث على طلب التسوق. افتح ويند للتفاصيل.', en: 'An update on a shop order. Open Wind for details.' },
 };
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 

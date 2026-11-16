@@ -35,7 +35,8 @@ const changeable = ['assigned', 'at_pickup', 'in_transit'];
 
 /** Old assignments store only a rounded amount, so they cannot recover the rate and stay unchanged. */
 export function destinationEligible(r: Row) {
-  return !!r.driver_id && changeable.includes(r.status) && typeof r.commission_rate === 'number'
+  // A shop order's destination is fixed once the shop accepts (DLV-11): the customer edits it before acceptance instead.
+  return !!r.driver_id && r.service !== 'shop' && changeable.includes(r.status) && typeof r.commission_rate === 'number'
     && Number.isFinite(r.commission_rate) && r.commission_rate >= 0 && r.commission_rate <= 1 && r.commission != null;
 }
 

@@ -20,7 +20,7 @@ export const cities = [
 ] as const;
 
 export type CityId = typeof cities[number]['id'];
-export type Service = 'parcel' | 'ride' | 'freight';
+export type Service = 'parcel' | 'ride' | 'freight' | 'shop';
 // A12: a parcel's delivery priority. Standard is the default and the historical wire; same_day changes identity, never price.
 export type ParcelPriority = 'standard' | 'same_day';
 export const parcelPriorities: ParcelPriority[] = ['standard', 'same_day'];
@@ -33,7 +33,8 @@ export const sameDayBookingOpen = (at: number) => Number.isFinite(at) && Math.ab
 export type Role = 'customer' | 'driver' | 'admin';
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
-export type OrderStatus = 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled'
+// `requested` is a shop order the merchant has not released to captains yet (SRS ONE-03): open for the customer, off the board.
+export type OrderStatus = 'requested' | 'searching' | 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'cancelled'
   | 'on_hold' | 'returning' | 'returned';
 // Fable PROD-06: why a delivery (or pickup) could not happen. A typed list, separate from door-cash variance (A11) and from
 // safety reports; each type maps to the recovery support usually takes, which the admin sees as the suggested decision.
@@ -83,7 +84,7 @@ export type DestinationChange = {
   road: { slow: string[]; closed: string[]; avoids: string[]; estimated: boolean; minutes: number };
 };
 
-export const services: Service[] = ['parcel', 'ride', 'freight'];
+export const services: Service[] = ['parcel', 'ride', 'freight', 'shop'];
 export const vehicles: Vehicle[] = ['motorcycle', 'bicycle', 'car', 'van', 'truck'];
 export const statusFlow: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'completed'];
 // on_hold and returning keep the driver assigned: they still hold the item.
@@ -96,7 +97,7 @@ export const bookedAhead = (o: { status: OrderStatus; scheduledFor?: number | nu
 // Home's "current order": a trip with a driver, then a search running now, then a booking for later (A53, 8 and 12 Nov).
 export const currentRank = (o: { status: OrderStatus; scheduledFor?: number | null }, now = Date.now()) =>
   activeStatuses.includes(o.status) ? 2 : bookedAhead(o, now) ? 0 : 1;
-export const isOpen = (o: Pick<Order, 'status'>) => o.status === 'searching' || activeStatuses.includes(o.status);
+export const isOpen = (o: Pick<Order, 'status'>) => o.status === 'requested' || o.status === 'searching' || activeStatuses.includes(o.status);
 /** Ended orders per orders-list page (GET /orders, then ?before=<oldest ended id>); open work only comes on the first page. */
 export const HISTORY_PAGE = 200;
 /** The polled first page plus the older pages loaded below it: the first page wins for any order it still holds. */
@@ -112,13 +113,14 @@ export const keepOlder = (was: Order[], now: Order[], older: Order[]) => {
 };
 // Motorcycles can carry small parcels and licensed passenger rides. Bicycles stay parcel-only:
 // they never enter the passenger-ride pool, so dispatch does not create an unsafe assignment.
+// Shop delivery (SRS §2.3): bicycles within one town only (the server checks the town), trucks never.
 export const vehicleServices: Record<Vehicle, Service[]> = {
-  motorcycle: ['parcel', 'ride'], bicycle: ['parcel'], car: ['parcel', 'ride'], van: ['parcel', 'freight'], truck: ['freight'],
+  motorcycle: ['parcel', 'ride', 'shop'], bicycle: ['parcel', 'shop'], car: ['parcel', 'ride', 'shop'], van: ['parcel', 'freight', 'shop'], truck: ['freight'],
 };
 export const planForRole: Partial<Record<Role, Plan>> = { customer: 'plus', driver: 'pro' };
 
 export function optionsFor(service: Service): string[] {
-  return service === 'ride' ? ['1', '2', '3', '4'] : ['small', 'medium', 'large'];
+  return service === 'ride' ? ['1', '2', '3', '4'] : service === 'shop' ? ['shop'] : ['small', 'medium', 'large'];
 }
 
 // Admin-editable; stored server-side. Discounts and commissions are fractions.
@@ -136,12 +138,16 @@ export const defaultSettings = {
   // ADM-12 / owner decision D-1 (SRS §16a): the most cash any one order may collect at the door, in ₪. An order whose
   // highest reachable cash total is above it is refused at booking, and a later price change past it is refused too.
   orderCashCeiling: 500,
+  // Shop delivery (SRS §7, ADM-06). The agreed limit is how far the weighed goods may pass the estimate without asking (DLV-04);
+  // the timers are minutes: merchant accept (DLV-07), customer consent (DLV-06), wait for a captain after ready (DLV-12),
+  // and the captain's drive to the shop that dispatch starts ahead of ready (DLV-12).
+  shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10, shopDispatchLeadMinutes: 15,
 };
 export type Settings = typeof defaultSettings;
 /** ADM-12: true when an order's highest reachable door cash (₪) is above the per-order ceiling. */
 export const overCashCeiling = (s: Pick<Settings, 'orderCashCeiling'>, price: number) => price > s.orderCashCeiling;
 export type Referral = { code: string; reward: number; joined: number; earned: number; credits: { code: string; amount: number; expiresAt: number }[] };
-export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission', 'nightExtra'];
+export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission', 'nightExtra', 'shopAgreeLimit'];
 
 // One ceiling per setting, shared by the admin form and the server. Without it a blank
 // field saved 0 (commission 0 throws in minorUnits; a plan price of 0 is free) and a
@@ -152,6 +158,7 @@ export const settingCeilings: Record<keyof Settings, number> = {
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
   plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
+  shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120,
   orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
 // Returns the offending key, or null when every value is storable. `Number.isFinite`
@@ -188,6 +195,7 @@ export type Order = {
   recovery?: { schemaVersion: 1; version: number | null; assignmentEpoch: number | null };
   id: number; customerId: number | null; driverId: number | null; service: Service; shared: boolean;
   priority?: ParcelPriority; // parcels only; orders from before A12 read as standard
+  shop?: ShopView; // shop orders only, for the customer, the merchant, the assigned captain and support
   pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string | null; pickupContact: string | null; detail: string;
   recipientName?: string; recipientPhone?: string | null; // parcels and loads (SPEC-parcel-recipient.md)
@@ -382,3 +390,52 @@ export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 
     .map(g => ({ ...g, orders: g.orders.sort((a, b) => a.id - b.id) }))
     .sort((a, b) => rank[a.stage] - rank[b.stage] || b.orders.length - a.orders.length || a.city.localeCompare(b.city));
 }
+
+// ---- Shop delivery (SRS §7, DLV/MER). Money is integer agorot end to end (PAY-01). ----
+export type ShopCategory = 'grocery' | 'bakery' | 'goods';
+/** DLV-19: only these categories open; pharmacy, tobacco and age-restricted goods stay closed until an owner policy exists. */
+export const shopCategories: ShopCategory[] = ['grocery', 'bakery', 'goods'];
+export type ShopPolicy = 'remove' | 'ask_first' | 'similar';
+export const shopPolicies: ShopPolicy[] = ['remove', 'ask_first', 'similar'];
+export type MerchantState = 'accepted' | 'preparing' | 'awaiting_approval' | 'ready' | 'handed_over';
+export type MerchantReject = 'merchant_closed' | 'out_of_stock' | 'merchant_rejected';
+export const merchantRejects: MerchantReject[] = ['merchant_closed', 'out_of_stock', 'merchant_rejected'];
+/** §2.1: the one typed reason a cancelled shop order carries; money follows it (DLV-23). */
+export type ShopCancelReason = 'customer_before_accept' | 'customer_via_support_accepted' | 'accept_expired' | 'below_minimum' | 'no_captain'
+  | 'operational' | MerchantReject | 'merchant_request' | 'handover_exception_unresolved';
+/** The reasons an operator may give (DLV-23); accept_expired and below_minimum are set by the server alone. */
+export const adminShopCancels: ShopCancelReason[] = ['customer_via_support_accepted', 'no_captain', 'operational', 'merchant_request', 'handover_exception_unresolved'];
+export type HandoverException = 'missing_item' | 'wrong_item' | 'damaged' | 'package_count';
+export const handoverExceptions: HandoverException[] = ['missing_item', 'wrong_item', 'damaged', 'package_count'];
+/** DLV-20: the parcel failure list plus wrong or missing contents, for shop orders only. */
+export const shopExceptionReasons = [...exceptionReasons, 'wrong_or_missing_item'] as const;
+export type ShopFault = 'merchant' | 'wind' | 'none';
+/** A weighed line's quantity is grams; a counted line's is units × 1000. Either way the estimate is price × qty / 1000, half up. */
+export const lineAgorot = (unitAgorot: number, qtyMilli: number) => Math.round(unitAgorot * qtyMilli / 1000);
+/** DLV-04: the agreed limit as a goods cap, in agorot, from the estimate and the customer's chosen fraction over it. */
+export const goodsCapFor = (estimateAgorot: number, fraction: number) => Math.round(estimateAgorot * (1 + fraction));
+export type MerchantItem = { id: number; section: string; nameAr: string; nameEn: string; priceAgorot: number; byWeight: boolean; available: boolean };
+export type Merchant = {
+  id: number; name: string; category: ShopCategory; city: CityId; point: Point; phone: string | null;
+  status: 'pending' | 'active' | 'paused'; pausedNew: boolean; open: boolean;
+  minOrderAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number; prepMinutes: number;
+  hours: { weekday: number; openMinute: number; closeMinute: number }[];
+  commissionBps?: number; licenceNo?: string; licenceExpiresAt?: number; ownerPhone?: string; // operator and owner only
+};
+export type ShopLine = { id: number; itemId: number | null; nameAr: string; nameEn: string; policy: ShopPolicy; byWeight: boolean;
+  qtyMilli: number; unitAgorot: number; estimateAgorot: number; finalAgorot: number | null; removed: boolean; substituteFor: number | null };
+export type ShopChange = { id: number; lineId: number; kind: 'weight' | 'substitution'; nameAr: string; nameEn: string;
+  fromAgorot: number; toAgorot: number; goodsAfterAgorot: number; expiresAt: number; extended: boolean };
+export type ShopView = {
+  merchantId: number; merchantName: string; merchantPoint: Point | null; state: MerchantState | null;
+  acceptDeadline: number; acceptExtended: boolean; prepMinutes: number | null; acceptedAt: number | null; readyAt: number | null; handedOverAt: number | null;
+  goodsEstimateAgorot: number; goodsCapAgorot: number; goodsAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number;
+  /** What the captain collects at the door now: goods so far plus both fees. */
+  cashAgorot: number;
+  lines: ShopLine[]; change: ShopChange | null; cancelReason: ShopCancelReason | null; handoverException: HandoverException | null;
+  packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
+  pickupCode: string | null; // the merchant and support only (§2.1a)
+  returnCode: string | null; // the merchant, while the goods come back (DLV-21)
+  merchantRating: number | null; fault: ShopFault | null;
+  canCancel: boolean; canEditLines: boolean; role: 'customer' | 'merchant' | 'driver' | 'admin';
+};

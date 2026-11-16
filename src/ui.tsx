@@ -434,6 +434,7 @@ export function ErrorText({ children }: { children?: string }) {
 // ---------- display ----------
 
 const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
+  requested: { bg: palette.clayPale, fg: palette.clayInk }, // a shop order waiting on the merchant reads like a search
   searching: { bg: palette.clayPale, fg: palette.clayInk },
   assigned: { bg: palette.bluePale, fg: palette.blue },
   at_pickup: { bg: palette.bluePale, fg: palette.blue },

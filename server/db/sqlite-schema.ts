@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { sqliteShopSchema } from './sqlite-shop.ts';
 type Row = Record<string, any>;
 
 export function initializeSqlite(db: DatabaseSync) {
@@ -309,6 +310,7 @@ CREATE TABLE IF NOT EXISTS native_push_tokens (
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, disabled_at INTEGER,
   FOREIGN KEY(auth_session_hash, user_id) REFERENCES sessions(token_hash, user_id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS native_push_tokens_user ON native_push_tokens(user_id, created_at);`);
+db.exec(sqliteShopSchema); // shop delivery, additive (SRS §7)
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }

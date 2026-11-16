@@ -8,7 +8,7 @@ const integer = (n: unknown, min = 0): n is number => Number.isSafeInteger(n) &&
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const nullableTime = (n: unknown) => n === null || integer(n);
 const uuid = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
-const statuses = ['searching','assigned','at_pickup','in_transit','completed','cancelled','on_hold','returning','returned'];
+const statuses = ['requested','searching','assigned','at_pickup','in_transit','completed','cancelled','on_hold','returning','returned'];
 const requireContract = (condition: unknown) => { if (!condition) throw new Error('invalid_response'); };
 
 export function readEta(value: unknown): JourneyEta {
