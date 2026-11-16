@@ -1014,7 +1014,8 @@
           "proPrice": 99,
           "perMinute": 0.25,
           "nightExtra": 0.2,
-          "driverCashCap": 150
+          "driverCashCap": 150,
+          "orderCashCeiling": 500
         },
         "capabilities": {
           "enabledServices": [
