@@ -169,7 +169,7 @@ section.
 | ADDR-03 | An address book screen MUST allow rename, edit pin and delete outside any booking. | P | PLAN C-06, WP-14 |
 | ADDR-04 | An address SHOULD carry a building type (house, apartment block, shop, office, other) and notes for the captain. Both travel into the order. | N | R-CA §4, WP-14 |
 | ADDR-05 | An address MAY carry one entrance photo, shown to the captain before arrival. | N | R-CA §4; G-STORAGE |
-| ADDR-06 | The pin MUST be settable by GPS, search, map drag, or typed coordinates / link / Plus Code. An accessible text alternative MUST exist for every map pick (A11Y-16). | E | UX-03, C-07 |
+| ADDR-06 | The pin MUST be settable by GPS, search, map drag, or typed coordinates / link / Plus Code. An accessible text alternative MUST exist for every map pick (A11Y-16). | E | UX-03 (#51), coordinate field (#54); phone check C-07 passed |
 | ADDR-07 | An outside-service-area pin MUST be refused before pricing, with a specific message. | E | PLAN C-17 |
 | ADDR-08 | Delivery and shop addresses SHOULD resolve to a zone, so that fees, minimums and windows can follow the zone (R-SQ F-02). | P | PLAN C-09; owner pricing policy |
 
@@ -222,7 +222,7 @@ PostgreSQL decision (ride lifecycle and dispatch are PostgreSQL-only today: `rid
 | ID | Requirement | St | Source |
 |---|---|---|---|
 | RIDE-01 | Pickup MUST be set by GPS or pin. Venue pickup points (access points) with a walking ETA SHOULD be offered where known. | P | KIMI-MAP §5; UB-F F3 |
-| RIDE-02 | Ride options (economy, comfort, van/family) MUST each show seats, price and ETA range. Surge MUST NOT exist at launch (`docs/SYSTEM.md` §4). | E-off | D-UB §2; PLAN C-23 |
+| RIDE-02 | Ride options (economy, comfort, van/family) MUST each show seats, price and ETA range. Surge MUST NOT exist at launch (`docs/SYSTEM.md` §4). | E-off | D-UB §2; ride pricing `src/model.ts` (off in production) |
 | RIDE-03 | Fare estimate MUST be upfront from the server tariff; the final fare MUST equal the estimate unless the route changes with the rider's consent. | E-off | KIMI-API; UB-F F4 |
 | RIDE-04 | Dispatch MUST send timed offers to one captain or a small batch; the offer screen shows pickup distance, trip estimate, rider rating and a countdown. Declines are not penalised in the pilot. | E-off | R-HD §2.2; R-CA §10.4 |
 | RIDE-05 | When no captain is found within the window, the rider MUST be offered retry, schedule or cancel, never left searching (`docs/SYSTEM.md` §3). | E-off | |
@@ -412,7 +412,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | A11Y-13 | Haptics MAY confirm key actions but MUST NOT be the only signal. | 1.3.3 | — |
 | A11Y-14 | Forms MUST keep entered data after an error or network failure (the booking-recovery draft). | 3.3.7 | E |
 | A11Y-15 | Map content MUST have a text equivalent on the sheet (captain distance, ETA range, last-fix age, route state). Markers expose labels. Pin placement has a non-gesture alternative (A11Y-16). | 1.1.1, 2.5.1 | P |
-| A11Y-16 | Every drag/pinch interaction MUST have a single-pointer or text alternative: zoom buttons, typed coordinates/link/Plus Code, "use my location", search. | 2.5.7 | E (UX-03, C-07) |
+| A11Y-16 | Every drag/pinch interaction MUST have a single-pointer or text alternative: zoom buttons, typed coordinates/link/Plus Code, "use my location", search. | 2.5.7 | E (UX-03 #51, coordinate field #54) |
 | A11Y-17 | Accessible authentication: no cognitive test; password managers and paste allowed; OTP autofill supported. | 3.3.8 | P |
 | A11Y-18 | Ride accessibility needs (RIDE-11) MUST be expressible at booking and visible to the captain. | — | N |
 
