@@ -82,7 +82,14 @@ try {
   assert.equal(pending.destinationChange.price, 34);
   assert.equal((await post(order.id, 'propose', customer.token, { id: requoted.id })).destinationChange.id, requoted.id);
   await post(order.id, 'decision', other.token, { id: requoted.id, decision: 'accept' }, 404);
+  // A9: the customer hears the driver's decision; a replayed decision does not push twice.
+  const customerEndpoint = 'https://fcm.googleapis.com/fcm/send/destination-customer';
+  await call('/push/subscribe', { token: customer.token, body: { endpoint: customerEndpoint,
+    p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en' } });
+  const customerPushes = () => sends.filter(s => s.url === customerEndpoint).map(s => readPush(s.body).kind);
+  sends.length = 0;
   const accepted = await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' });
+  assert.deepEqual(customerPushes(), ['destination_accepted']);
   assert.equal(accepted.dropoffCity, 'hebron');
   assert.deepEqual(accepted.dropoffPoint, request.point);
   assert.equal(accepted.price, 34);
@@ -104,8 +111,10 @@ try {
   next = await call(`/jobs/${next.id}/accept`, { token: driver.token, body: {} });
   const declinedQuote = await post(next.id, 'quote', customer.token, { city: 'hebron', note: 'Second address' });
   await post(next.id, 'propose', customer.token, { id: declinedQuote.id });
+  sends.length = 0;
   await post(next.id, 'decision', driver.token, { id: declinedQuote.id, decision: 'decline' });
   await post(next.id, 'decision', driver.token, { id: declinedQuote.id, decision: 'decline' });
+  assert.deepEqual(customerPushes(), ['destination_declined']);
   assert.equal((await call(`/orders/${next.id}`, { token: customer.token })).dropoffCity, 'nablus');
   const withdrawn = await post(next.id, 'quote', customer.token, { city: 'hebron', note: 'Withdraw this' });
   await post(next.id, 'propose', customer.token, { id: withdrawn.id });
