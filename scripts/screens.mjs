@@ -210,9 +210,9 @@ await call(`/merchant/orders/${shopReady.id}/preparing`, baker.token, {});
 // Hours (DLV-01): the bakery is open all day; a second shop opens in two hours, so the list shows a closed shop with today's hours.
 const everyDay = (open, close) => [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close }));
 await call('/merchant/settings', baker.token, { hours: everyDay(0, 1440) });
-const sweets = await register('0599000011', 'حلويات السلطان');
+const sweets = await register('0599000021', 'حلويات السلطان');
 const sweetShop = (await call('/merchant/apply', sweets.token, { name: 'حلويات السلطان', category: 'grocery', city: 'tulkarm', point: { latitude: 32.3100, longitude: 35.0300 },
-  phone: '0599000011', licenceNo: 'TK-3310', licenceExpiresAt: Date.now() + 365 * 86_400_000 })).merchant;
+  phone: '0599000021', licenceNo: 'TK-3310', licenceExpiresAt: Date.now() + 365 * 86_400_000 })).merchant;
 await call(`/admin/merchants/${sweetShop.id}`, boss.token, { status: 'active', minOrderAgorot: 2000, deliveryFeeAgorot: 1000, serviceFeeAgorot: 200, commissionBps: 1000 });
 const hebron = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hebron', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(Date.now()).map(x => [x.type, x.value]));
 const nowMinute = Number(hebron.hour) * 60 + Number(hebron.minute), opensAt = Math.ceil((nowMinute + 120) / 30) * 30 % 1440;
