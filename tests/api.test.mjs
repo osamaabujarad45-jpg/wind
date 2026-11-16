@@ -228,6 +228,11 @@ try {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'PROOF_FAILED'").get(order.id).n, 5);
   await call(`/admin/orders/${order.id}/proof-reset`, { token: driver.token, body: { reason: 'Recipient confirmed by support' }, expect: 403 });
   await call(`/admin/orders/${order.id}/proof-reset`, { token: admin.token, body: { reason: 'Recipient confirmed by support' } });
+  const proofReset = db.prepare("SELECT * FROM security_events WHERE order_id = ? AND action = 'PROOF_RESET'").all(order.id);
+  assert.equal(proofReset.length, 1, 'an admin proof reset leaves one audit row');
+  assert.equal(proofReset[0].actor_id, admin.user.id);
+  assert.deepEqual(JSON.parse(proofReset[0].detail), { reason: 'Recipient confirmed by support' });
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM proof_attempts WHERE order_id = ?').get(order.id).n, 0);
   // A courier's Arabic keypad sends the same digits in another script: the code still matches.
   const done = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { code: order.handoverCode.replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[d]) } });
   assert.equal((await call(`/orders/${order.id}/advance`, { token: driver.token, body: arrival })).status, 'completed'); // replay never regresses current state
