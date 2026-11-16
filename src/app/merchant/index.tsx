@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { api, errorCode, useApi } from '../../api';
-import { cities, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
+import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
 import { useCountdown } from '../../shop-ui';
@@ -48,6 +48,8 @@ export default function MerchantHome() {
     <Section title={c.merchantInbox} />
     {!orders.length && <Empty icon="file-tray-outline" title={c.merchantNoOrders} />}
     {orders.map(o => <InboxRow key={o.id} order={o} />)}
+    {/* a setting touched rarely: below the inbox, which is the shop's main work */}
+    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} onDone={mine.reload} />
     {!!statement.data?.entries.length && <Card>
       <Section title={c.merchantStatement} />
       {statement.data.entries.slice(0, 20).map(e => <Row key={e.id} style={{ justifyContent: 'space-between', paddingVertical: 3 }}>
@@ -56,6 +58,40 @@ export default function MerchantHome() {
       </Row>)}
     </Card>}
   </Screen>;
+}
+
+/** MER-02 / DLV-01: one opening range for every day (the pilot's need); empty means open whenever not paused. */
+function Hours({ merchant, onDone }: { merchant: Merchant; onDone: () => void }) {
+  const { c } = useCopy();
+  const first = merchant.hours[0];
+  // The editor writes one range for every day; hours stored per day (by support) are replaced on save, and it says so.
+  const uniform = !merchant.hours.length || (merchant.hours.length === 7 && new Set(merchant.hours.map(h => h.weekday)).size === 7
+    && merchant.hours.every(h => h.openMinute === first.openMinute && h.closeMinute === first.closeMinute));
+  const [opens, setOpens] = useState(first ? hhmm(first.openMinute) : '');
+  const [closes, setCloses] = useState(first ? hhmm(first.closeMinute) : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const open = minuteFromText(opens), close = minuteFromText(closes);
+  const empty = !opens.trim() && !closes.trim();
+  const ok = empty || (open < 1440 && close >= 0 && open !== close);
+  async function save() {
+    setBusy(true); setError('');
+    try {
+      await api('/merchant/settings', { hours: empty ? [] : [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close })) });
+      onDone();
+    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    finally { setBusy(false); }
+  }
+  return <Card>
+    <Section title={c.merchantHours} />
+    {/* decimal-pad has no colon on Android, so 8.30 is read as 08:30 */}
+    <Field label={c.merchantOpens} value={opens} onChangeText={setOpens} keyboardType="decimal-pad" maxLength={5} />
+    <Field label={c.merchantCloses} value={closes} onChangeText={setCloses} keyboardType="decimal-pad" maxLength={5} />
+    <Txt variant="caption">{c.merchantHoursHint}</Txt>
+    {!uniform && <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantHoursReplace}</Txt>}
+    <Button title={c.merchantSaveHours} size="sm" variant="outline" loading={busy} disabled={!ok} reason={ok ? undefined : c.merchantHoursBad} onPress={save} />
+    <ErrorText>{error}</ErrorText>
+  </Card>;
 }
 
 function InboxRow({ order }: { order: Order }) {

@@ -202,6 +202,29 @@ try {
   assert.equal(JSON.parse(audit.detail).reason, 'Merchant took the goods back at the office');
   await assert.rejects(pay.collectCod(driver, disputeOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
 
+  // ADM-12 review regressions: a fare going back to the pool counts the goods COD, and a shop order never takes a second (COD) collection.
+  const relOrder = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='assigned',assigned_at=?,price=100,recommended_price=400 WHERE id=?", f.d1.user.id, Date.now(), relOrder.id);
+  await assert.rejects(pay.createCod(admin, relOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 40_100, remittanceDueAt: Date.now() + 86_400_000 }), e => e.status === 409 && e.message === 'over_cash_ceiling');
+  await pay.createCod(admin, relOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 40_000, remittanceDueAt: Date.now() + 86_400_000 });
+  await f.call(`/orders/${relOrder.id}/release`, { token: f.d1.token, body: {} });
+  assert.equal(Number((await f.db.one('SELECT price FROM orders WHERE id=?', relOrder.id)).price), 100, 'release restores min(recommended, ceiling - COD goods), not the recommendation');
+  // A driver offer, and the customer's accept of one, count the goods COD too (₪200 + ₪400 > ₪500).
+  assert.equal((await f.call(`/jobs/${relOrder.id}/offer`, { token: f.d2.token, body: { price: 200 }, expect: 409 })).error, 'over_cash_ceiling');
+  await f.db.run('INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)', relOrder.id, f.d2.user.id, 200, Date.now());
+  assert.equal((await f.call(`/orders/${relOrder.id}/offers/${f.d2.user.id}/accept`, { token: f.customer.token, body: {}, expect: 409 })).error, 'over_cash_ceiling');
+  // A ceiling lowered below the open goods COD leaves no room: the release still goes through and keeps the booked fare (never ₪0).
+  await f.db.run("DELETE FROM order_offers WHERE order_id=?", relOrder.id);
+  await f.db.run("UPDATE orders SET driver_id=?,status='assigned',assigned_at=?,price=90 WHERE id=?", f.d2.user.id, Date.now(), relOrder.id);
+  await f.db.run("INSERT INTO settings (key, value) VALUES ('orderCashCeiling', 400) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  await f.call(`/orders/${relOrder.id}/release`, { token: f.d2.token, body: {} });
+  assert.equal(Number((await f.db.one('SELECT price FROM orders WHERE id=?', relOrder.id)).price), 90, 'no room: the booked fare stays');
+  await f.db.run("DELETE FROM settings WHERE key = 'orderCashCeiling'");
+  const shopOrder = await f.book();
+  await f.db.run("UPDATE orders SET service='shop',driver_id=?,status='assigned' WHERE id=?", f.d1.user.id, shopOrder.id);
+  await assert.rejects(pay.createCod(admin, shopOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 100, remittanceDueAt: Date.now() + 86_400_000 }), e => e.status === 409 && e.message === 'cod_unavailable');
+  await assert.rejects(pay.collectCod(driver, shopOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
+
   console.log('WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed');
 } finally { await f.close(); }
 

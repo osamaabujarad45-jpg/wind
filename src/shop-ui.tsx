@@ -5,7 +5,7 @@ import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
-import { handoverExceptions, latinDigits, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
+import { handoverExceptions, latinDigits, minorFromText, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
@@ -103,7 +103,9 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
     } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
     finally { setBusy(''); }
   }
+  // After a failed delivery (DLV-20) the order status says where the goods are, not the last shop step.
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
+    : order.status === 'on_hold' || order.status === 'returning' || order.status === 'returned' ? c[order.status]
     : !s.state ? c.shop_requested : order.status === 'completed' ? c.completed : c[`shop_${s.state}`];
   return <Card>
     <Section title={s.merchantName} />
@@ -211,16 +213,25 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
   const [fault, setFault] = useState<'merchant' | 'wind' | 'none'>('wind');
   const [line, setLine] = useState<string>(String(s.lines.find(l => !l.removed)?.id ?? ''));
   const [refund, setRefund] = useState('');
+  const [refundId, setRefundId] = useState(newRequestId); // one id per refund, so a retry after a lost response pays once
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   async function act(key: string, path: string, body: object) {
     if (busy) return;
     setBusy(key); setError('');
-    try { onChange(await api<Order>(path, body)); setNote(''); }
+    try { onChange(await api<Order>(path, body)); setNote(''); if (key === 'refund') { setRefund(''); setRefundId(newRequestId()); } }
     catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
     finally { setBusy(''); }
   }
   const noteOk = note.trim().length >= 5;
+  const refundMinor = minorFromText(refund), refundOk = refundMinor > 0;
+  // The reasons the server allows at this stage (DLV-23), so support is never offered a cancel it will refuse.
+  const cancels = (['customer_via_support_accepted', 'no_captain', 'operational', 'merchant_request', 'handover_exception_unresolved'] as const).filter(k =>
+    k === 'customer_via_support_accepted' ? s.state === 'accepted'
+    : k === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(s.state ?? '') && ['requested', 'searching'].includes(order.status)
+    : k === 'handover_exception_unresolved' ? !!s.handoverException
+    : k === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(s.state ?? '')
+    : true);
   const before = ['requested', 'searching', 'assigned', 'at_pickup'].includes(order.status) && s.state !== 'handed_over';
   const after = ['returned', 'cancelled', 'completed', 'on_hold'].includes(order.status);
   return <Card>
@@ -229,10 +240,10 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
     <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
     {before && <>
       <Txt variant="label">{c.adminShopCancelWhy}</Txt>
-      <Choices label={c.adminShopCancelWhy} value={reason} onChange={setReason}
-        items={(['customer_via_support_accepted', 'no_captain', 'operational', 'merchant_request', 'handover_exception_unresolved'] as const).map(k => ({ key: k, label: c[`adminCancel_${k}`] }))} />
+      <Choices label={c.adminShopCancelWhy} value={cancels.some(k => k === reason) ? reason : 'operational'} onChange={setReason}
+        items={cancels.map(k => ({ key: k, label: c[`adminCancel_${k}`] }))} />
       <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!noteOk} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'cancel'}
-        onPress={() => act('cancel', `/admin/orders/${order.id}/shop/cancel`, { reason, note: note.trim() })} />
+        onPress={() => act('cancel', `/admin/orders/${order.id}/shop/cancel`, { reason: cancels.some(k => k === reason) ? reason : 'operational', note: note.trim() })} />
       <Button title={c.adminShopResetPickup} variant="outline" size="sm" disabled={!noteOk} loading={busy === 'reset'}
         onPress={() => act('reset', `/admin/orders/${order.id}/shop/reset-pickup`, { reason: note.trim() })} />
     </>}
@@ -249,8 +260,9 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
       </>}
       {s.fault && s.fault !== 'none' && order.status === 'completed' && <>
         <Field label={c.adminShopRefund} value={refund} onChangeText={setRefund} keyboardType="decimal-pad" />
-        <Button title={c.adminShopRecordRefund} size="sm" variant="outline" disabled={!noteOk || !refund} loading={busy === 'refund'}
-          onPress={() => act('refund', `/admin/orders/${order.id}/shop/refund`, { amountAgorot: Math.round(Number(refund) * 100), reason: note.trim() })} />
+        <Button title={c.adminShopRecordRefund} size="sm" variant="outline" disabled={!noteOk || !refundOk}
+          reason={!noteOk ? c.adminNoteNeeded : refund && !refundOk ? c.err_invalid_amount : undefined} loading={busy === 'refund'}
+          onPress={() => act('refund', `/admin/orders/${order.id}/shop/refund`, { amountAgorot: refundMinor, reason: note.trim(), requestId: refundId })} />
       </>}
     </>}
     <ErrorText>{error}</ErrorText>

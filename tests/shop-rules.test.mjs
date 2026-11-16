@@ -190,8 +190,31 @@ try {
   // a shop-fault refund gives back the commission taken on the refunded goods (MER-09)
   await call(`/admin/orders/${o.id}/shop/fault`, { token: admin.token, body: { result: 'merchant', note: 'Rice bag was out of date' } });
   await call(`/admin/merchants/${merchant.id}`, { token: admin.token, body: { commissionBps: 2000 } }); // a later rate change does not change what this order paid
-  await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag' } });
+  await err(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag' } }, 400, 'invalid_input');
+  const refundId = randomUUID();
+  await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag', requestId: refundId } });
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150 - 1000 + 50);
+  // a retry after a lost response (same requestId) pays once
+  await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag', requestId: refundId } });
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150 - 1000 + 50, 'refund replay is idempotent');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM shop_ledger WHERE kind = 'refund' AND order_id = ?").get(o.id).n, 1);
+  await err(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 2000, reason: 'Out-of-date rice bag', requestId: refundId } }, 409, 'idempotency_conflict');
+  await err(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'A different reason', requestId: refundId } }, 409, 'idempotency_conflict');
+
+  // ---- an over-collection is the customer's money: the captain owes all of it, the shop is credited only for the goods ----
+  o = await place([{ itemId: rice.id, qtyMilli: 2000, policy: 'remove' }]);
+  await call(`/merchant/orders/${o.id}/accept`, { token: owner.token, body: { prepMinutes: 5 } });
+  await call(`/merchant/orders/${o.id}/preparing`, { token: owner.token, body: {} });
+  await call(`/merchant/orders/${o.id}/ready`, { token: owner.token, body: { packages: [{ sealed: false, lineIds: [(await call(`/orders/${o.id}`, { token: owner.token })).shop.lines[0].id] }] } });
+  o = await call(`/jobs/${o.id}/accept`, { token: captain.token, body: {} });
+  o = await adv('assigned');
+  o = await call(`/orders/${o.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(),
+    code: (await call(`/orders/${o.id}`, { token: owner.token })).shop.pickupCode, check: { result: 'ok' } } });
+  const overBefore = (await call('/driver/cash', { token: captain.token })).owedCents;
+  o = await adv('in_transit', { code: (await call(`/orders/${o.id}`, { token: customer.token })).handoverCode, collectedCents: 3000 + 1000 + 700, varianceReason: 'INCORRECT_CASH' });
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'wind' AND kind = 'door_over' AND order_id = ?").get(o.id).n, 700);
+  assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND kind = 'goods' AND order_id = ?").get(o.id).n, 3000, 'the shop is owed its goods, not the excess');
+  assert.equal((await call('/driver/cash', { token: captain.token })).owedCents - overBefore, 3000 + 700 + Math.round(10 * 0.15 * 100), 'the captain owes the excess too');
 
   // ---- PAY-09: a second refused order with fault none pauses cash shop orders until support reviews ----
   db.prepare("UPDATE orders SET status = 'returned', exception_reason = 'refused', updated_at = ? WHERE id = (SELECT MAX(id) FROM orders WHERE customer_id = ? AND status = 'cancelled')").run(Date.now(), customer.user.id);

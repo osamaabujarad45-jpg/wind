@@ -207,6 +207,23 @@ const shopNew = await shopOrder(omar, [{ itemId: kaak.id, qtyMilli: 6000, policy
 const shopReady = await shopOrder(omar, [{ itemId: bread.id, qtyMilli: 5000, policy: 'remove' }]);
 await call(`/merchant/orders/${shopReady.id}/accept`, baker.token, { prepMinutes: 10 });
 await call(`/merchant/orders/${shopReady.id}/preparing`, baker.token, {});
+// Hours (DLV-01): the bakery is open all day; a second shop opens in two hours, so the list shows a closed shop with today's hours.
+const everyDay = (open, close) => [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close }));
+await call('/merchant/settings', baker.token, { hours: everyDay(0, 1440) });
+const sweets = await register('0599000021', 'حلويات السلطان');
+const sweetShop = (await call('/merchant/apply', sweets.token, { name: 'حلويات السلطان', category: 'grocery', city: 'tulkarm', point: { latitude: 32.3100, longitude: 35.0300 },
+  phone: '0599000021', licenceNo: 'TK-3310', licenceExpiresAt: Date.now() + 365 * 86_400_000 })).merchant;
+await call(`/admin/merchants/${sweetShop.id}`, boss.token, { status: 'active', minOrderAgorot: 2000, deliveryFeeAgorot: 1000, serviceFeeAgorot: 200, commissionBps: 1000 });
+const hebron = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hebron', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(Date.now()).map(x => [x.type, x.value]));
+const nowMinute = Number(hebron.hour) * 60 + Number(hebron.minute), opensAt = Math.ceil((nowMinute + 120) / 30) * 30 % 1440;
+// A failed delivery waiting for support for three days, at the second shop so the bakery's screens stay as they were:
+// Layla's shop card names the hold, and the admin Shops tab lists it (DLV-13, DLV-22). Placed before its hours close it.
+const baklava = await call('/merchant/items', sweets.token, { section: 'حلويات', nameAr: 'بقلاوة', nameEn: 'Baklava', priceAgorot: 3000 });
+const shopHold = await call('/orders', layla.token, { service: 'shop', merchantId: sweetShop.id, lines: [{ itemId: baklava.id, qtyMilli: 1000, policy: 'remove' }],
+  dropoffCity: 'tulkarm', dropoffPoint: { latitude: 32.3150, longitude: 35.0250 }, dropoffNote: 'عمارة الأمل، الطابق الثالث', contact: layla.user.phone });
+await call('/merchant/settings', sweets.token, { hours: everyDay(opensAt, (opensAt + 360) % 1440 || 1440) });
+db.prepare("UPDATE orders SET status = 'on_hold', updated_at = ? WHERE id = ?").run(Date.now() - 3 * 86_400_000, shopHold.id);
+db.prepare("UPDATE shop_orders SET merchant_state = 'handed_over' WHERE order_id = ?").run(shopHold.id);
 
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
@@ -264,12 +281,13 @@ const screens = [
 
   { id: 'shop-list', group: 'Customer', name: 'Shop delivery · shops in the pilot town', route: '/shop', file: 'src/app/shop/index.tsx', role: 'customer' },
   { id: 'shop-store', group: 'Customer', name: 'Shop · catalogue (weighed items say estimate)', route: `/shop/${bakery.id}`, file: 'src/app/shop/[id].tsx', role: 'customer' },
+  { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the card names the hold)', route: `/order/${shopHold.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
   { id: 'merchant-new-order', group: 'Merchant', name: 'Merchant · accept with preparation minutes or decline with a reason', route: `/merchant/order/${shopNew.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
   { id: 'merchant-preparing', group: 'Merchant', name: 'Merchant · preparing: weights, substitutes and the packing record', route: `/merchant/order/${shopReady.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
   { id: 'merchant-catalogue', group: 'Merchant', name: 'Merchant · items, prices and out-of-stock switch', route: '/merchant/catalogue', file: 'src/app/merchant/catalogue.tsx', role: 'merchant' },
-  { id: 'admin-shops', group: 'Admin', name: 'Shops · terms, licence, payouts', route: '/admin/merchants', file: 'src/app/admin/merchants.tsx', role: 'admin' },
+  { id: 'admin-shops', group: 'Admin', name: 'Shops · orders that need attention, terms, licence, payouts', route: '/admin/merchants', file: 'src/app/admin/merchants.tsx', role: 'admin' },
   { id: 'driver-pending', group: 'Driver', name: 'Awaiting approval', route: '/driver', file: 'src/app/driver/index.tsx', role: 'pending' },
   { id: 'driver-jobs', group: 'Driver', name: 'Jobs', route: '/driver', file: 'src/app/driver/index.tsx', role: 'driver' },
   { id: 'driver-idle', group: 'Driver', name: 'Jobs · no job assigned, presence card offline (go-online not pressed)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'idle' },

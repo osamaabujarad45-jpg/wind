@@ -73,7 +73,7 @@ export default function MerchantOrder() {
           {l.policy !== 'remove' && <>
             <Txt variant="label" style={{ marginTop: 6 }}>{c.merchantSubstitute}</Txt>
             <Choices label={c.merchantSubstitute} value={substitute} onChange={setSubstitute}
-              items={(catalogue.data?.items ?? []).filter(i => i.available && i.id !== l.itemId).slice(0, 12).map(i => ({ key: String(i.id), label: `${name(i)} ${money(i.priceAgorot / 100)}` }))} />
+              items={(catalogue.data?.items ?? []).filter(i => i.available && i.id !== l.itemId).map(i => ({ key: String(i.id), label: `${name(i)} ${money(i.priceAgorot / 100)}` }))} />
             <Button title={l.policy === 'ask_first' ? c.merchantAskCustomer : c.merchantSubstituteSave} size="sm" disabled={!substitute} loading={busy === `s${l.id}`}
               onPress={() => act(`s${l.id}`, `/merchant/orders/${order.id}/lines/${l.id}`, { substituteItemId: Number(substitute) })} />
           </>}
@@ -109,7 +109,7 @@ export default function MerchantOrder() {
       <Txt variant="label">{c.merchantReturnCode}</Txt>
       <Txt variant="h1" selectable accessibilityLabel={fill(c.merchantCodeSpoken, { code: s.returnCode.split('').join(' ') })} style={{ writingDirection: 'ltr', letterSpacing: 8, textAlign: 'center' }}>{s.returnCode}</Txt>
     </Card>}
-    {['completed', 'returned'].includes(order.status) && <RateCustomer order={order} onDone={setData} />}
+    {['completed', 'returned'].includes(order.status) && s.customerRatingByMerchant == null && <RateCustomer order={order} onDone={setData} />}
     <ErrorText>{actionError}</ErrorText>
   </Screen>;
 }

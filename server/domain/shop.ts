@@ -41,7 +41,7 @@ export type ShopDeps = {
   owedCents: (driverId: number) => Promise<number>;
   flushPush: () => Promise<unknown>;
   /** PostgreSQL ledger: door cash owed to the shop and to Wind (goods, service fee), and failed-trip pay. No-op on SQLite. */
-  journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; trip?: number }) => Promise<unknown>;
+  journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; over?: number; trip?: number }) => Promise<unknown>;
   /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
   driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
 };
@@ -288,7 +288,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
       packages: s.packing ? JSON.parse(s.packing) : null,
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
-      merchantRating: s.merchant_rating ?? null, fault: (fault?.result as ShopFault) ?? null,
+      merchantRating: s.merchant_rating ?? null,
+      customerRatingByMerchant: role === 'merchant' || role === 'admin' ? s.customer_rating_by_merchant ?? null : null, fault: (fault?.result as ShopFault) ?? null,
       canCancel: role === 'customer' && r.status === 'requested' && !s.merchant_state,
       canEditLines: role === 'customer' && r.status === 'requested' && !s.merchant_state,
       role,
@@ -824,9 +825,11 @@ export function registerShop(route: Register, deps: ShopDeps) {
       if (Number(s.service_fee_agorot)) await ledger('wind', { order: r.id, driver: r.driver_id }, 'service_fee', Number(s.service_fee_agorot), 'Service fee', actor, `shop-service-${r.id}`);
       // A short door (a typed variance) is Wind's loss, not the shop's or the captain's (DLV-22: Wind pays for everything else).
       const collected = Number((await db.one('SELECT collected_cents FROM orders WHERE id = ?', r.id))?.collected_cents ?? 0);
-      const due = goods + Number(s.service_fee_agorot), held = Math.min(due, Math.max(0, collected - Number(s.delivery_fee_agorot)));
+      const due = goods + Number(s.service_fee_agorot), atDoor = Math.max(0, collected - Number(s.delivery_fee_agorot)), held = Math.min(due, atDoor);
       if (held < due) await ledger('wind', { order: r.id, driver: r.driver_id }, 'door_short', held - due, 'Collected less than due at the door', actor, `shop-short-${r.id}`);
-      await deps.journal(r.id, Number(r.driver_id), 'collection', { goods: Math.min(goods, held), service: held - Math.min(goods, held) });
+      // An over-collection is the customer's money: the captain owes all of it, and Wind holds the excess to give back.
+      if (atDoor > due) await ledger('wind', { order: r.id, driver: r.driver_id }, 'door_over', atDoor - due, 'Collected more than due at the door, owed back to the customer', actor, `shop-over-${r.id}`);
+      await deps.journal(r.id, Number(r.driver_id), 'collection', { goods: Math.min(goods, held), service: held - Math.min(goods, held), over: atDoor - held });
       return;
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
@@ -986,19 +989,26 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const { r, s } = await adminOrder(user, Number(params[0]));
     const fault = await db.one('SELECT result FROM shop_faults WHERE order_id = ?', r.id) ?? fail(409, 'fault_required');
     if (r.status !== 'completed') fail(409, 'shop_state');
+    // A refund is one business event per requestId, as a payout is: a retried request after a lost response pays once.
+    if (typeof body.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.requestId)) fail(400, 'invalid_input');
+    const key = `${r.id}-${String(body.requestId).toLowerCase()}`;
     const amount = agorot(body.amountAgorot, 10_000_000);
     const reason = text(body.reason, 500);
+    const prior = await db.one('SELECT amount_agorot, note FROM shop_ledger WHERE business_ref = ?', `shop-refund-${key}`);
+    if (prior) { // a replay must be the same refund, as a payout replay is
+      if (-Number(prior.amount_agorot) !== amount || prior.note !== reason) fail(409, 'idempotency_conflict');
+      return getOrder(r.id, user);
+    }
     const refunded = -Number((await db.one("SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE order_id = ? AND kind = 'refund'", r.id))!.n);
     if (amount < 1 || reason.length < 5 || amount + refunded > Number(s.goods_agorot)) fail(400, 'invalid_input');
     if (fault!.result === 'none') fail(409, 'fault_required');
-    const n = Number((await db.one("SELECT COUNT(*) AS n FROM shop_ledger WHERE order_id = ? AND kind = 'refund'", r.id))!.n);
-    await ledger(fault!.result === 'merchant' ? 'merchant' : 'wind', { merchant: Number(s.merchant_id), order: r.id }, 'refund', -amount, reason, user.id, `shop-refund-${r.id}-${n + 1}`);
+    await ledger(fault!.result === 'merchant' ? 'merchant' : 'wind', { merchant: Number(s.merchant_id), order: r.id }, 'refund', -amount, reason, user.id, `shop-refund-${key}`);
     if (fault!.result === 'merchant') { // the commission this order paid on the refunded goods comes back to the shop, pro rata
       const charged = -Number((await db.one('SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE business_ref = ?', `shop-commission-m-${r.id}`))!.n);
       const returned = Number((await db.one("SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE book = 'merchant' AND order_id = ? AND business_ref LIKE 'shop-refund-cm-%'", r.id))!.n);
       const back = Math.min(charged - returned, Number(s.goods_agorot) ? Math.round(amount * charged / Number(s.goods_agorot)) : 0);
-      await ledger('merchant', { merchant: Number(s.merchant_id), order: r.id }, 'commission', back, 'Commission on refunded goods', user.id, `shop-refund-cm-${r.id}-${n + 1}`);
-      await ledger('wind', { merchant: Number(s.merchant_id), order: r.id }, 'commission', -back, 'Commission on refunded goods', user.id, `shop-refund-cw-${r.id}-${n + 1}`);
+      await ledger('merchant', { merchant: Number(s.merchant_id), order: r.id }, 'commission', back, 'Commission on refunded goods', user.id, `shop-refund-cm-${key}`);
+      await ledger('wind', { merchant: Number(s.merchant_id), order: r.id }, 'commission', -back, 'Commission on refunded goods', user.id, `shop-refund-cw-${key}`);
     }
     // The office pays the customer; the captain still owes the cash he collected at the door.
     await audit(user.id, r.id, 'SHOP_REFUND', { amount, payer: fault!.result, reason });

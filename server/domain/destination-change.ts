@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import type { CityId, Order, Plan, Point, Role, Settings, User } from '../../src/model.ts';
 import { overCashCeiling } from '../../src/model.ts';
+import { codGoodsMinor } from './payments.ts';
 
 // SPEC-change-destination.md: a proposal binds the whole agreement and assignment, not merely an order id.
 type Register = (method: string, path: string, handler: (ctx: { user: User; params: string[]; body: Row }) => Promise<unknown>) => unknown;
@@ -96,6 +97,8 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
     const proposal = await recommend(user, { service: before.service, option: before.option, loadingHelp: !!before.loading_help,
       pickupCity: before.pickup_city, dropoffCity: body.city,
       pickupPoint: before.pickup_lat == null ? null : { latitude: before.pickup_lat, longitude: before.pickup_lng }, dropoffPoint: point });
+    // ADM-12: the door collects the new fare plus any goods COD, so the quote refuses a sum above the ceiling.
+    if (overCashCeiling(await settings(), proposal.price + await codGoodsMinor(db, id) / 100)) fail(409, 'over_cash_ceiling');
     const discount = await restoredDiscount(id, proposal.price, before.discount);
     const changeId = randomUUID(), now = Date.now();
     return inTx(async () => {
@@ -144,13 +147,14 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       const desired = body.decision === 'accept' ? 'accepted' : 'declined';
       if (p.state === desired) return getOrder(id, user);
       if (p.state !== 'pending' || p.expires_at <= Date.now()) fail(409, 'destination_expired');
-      const r = await db.one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
+      const r = await db.one(`SELECT * FROM orders WHERE id = ?${db.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id) ?? fail(404, 'not_found');
       if (!destinationEligible(r) || r.driver_id !== user.id || p.original !== destinationOriginal(r)) fail(409, 'order_changed');
       await safetyFree(id);
       const now = Date.now();
       let fareChange;
       // ADM-12: a ceiling lowered while the request waited refuses the new fare; a decline is always allowed.
-      if (desired === 'accepted' && overCashCeiling(await settings(), p.price)) fail(409, 'over_cash_ceiling');
+      // The order row is locked above, so a goods COD added since the quote is counted too.
+      if (desired === 'accepted' && overCashCeiling(await settings(), p.price + await codGoodsMinor(db, id) / 100)) fail(409, 'over_cash_ceiling');
       if (desired === 'accepted') {
         await db.run(`UPDATE orders SET dropoff_city = ?, dropoff_lat = ?, dropoff_lng = ?, dropoff_note = ?, price = ?, discount = ?,
           commission = ?, recommended_price = ?, route_km = ?, updated_at = ? WHERE id = ?`,

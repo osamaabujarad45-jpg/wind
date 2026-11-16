@@ -2,20 +2,38 @@
 // renew the licence, pause, read the statement and record a payout with its reference. Payouts never exceed what Wind has
 // received in cash for that shop's orders (the server's payable amount).
 import { useState } from 'react';
+import { router } from 'expo-router';
 import { View } from 'react-native';
 import { api, errorCode, useApi } from '../../api';
 import { newRequestId } from '../../booking';
-import { city, minorFromText, type Merchant } from '../../model';
-import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
+import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
+import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
 
 type AdminMerchant = Merchant & { balanceAgorot: number; payableAgorot: number };
 
 export default function AdminMerchants() {
   const { c } = useCopy();
   const { data, error, reload } = useApi<{ merchants: AdminMerchant[] }>('/admin/merchants', 30_000);
+  // DLV-12, DLV-13, DLV-22: the server's attention list (no captain, handover problem, locked pickup code, fault missing after two days).
+  const attention = useApi<{ orders: Order[] }>('/admin/shop/attention', 30_000);
+  const why = (o: Order) => o.shop?.handoverException && o.status === 'at_pickup' ? c.adminAttn_handover : o.status === 'searching' ? c.adminAttn_no_captain
+    : o.status === 'on_hold' || o.status === 'returned' ? c.adminAttn_fault : c.adminAttn_locked;
   if (!data) return <Screen><Header title={c.adminShops} /><Loading failed={!!error} onRetry={reload} /></Screen>;
   return <Screen onRefresh={reload}>
     <Header title={c.adminShops} />
+    {!!attention.data?.orders.length && <>
+      <Section title={c.adminShopAttention} />
+      {/* the reason gets its own line: in a one-line row it truncated the order number */}
+      {attention.data.orders.map(o => <Press key={o.id} onPress={() => router.push(`/order/${o.id}`)} accessibilityLabel={[orderCode(o.id), o.shop?.merchantName, why(o)].filter(Boolean).join('، ')}>
+        <Card tone="clay">
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt variant="label" style={{ writingDirection: 'ltr' }}>{orderCode(o.id)}</Txt>
+            <Txt variant="caption" style={{ flex: 1, marginHorizontal: 8 }} numberOfLines={1}>{o.shop?.merchantName}</Txt>
+          </Row>
+          <Txt style={{ marginTop: 4 }}>{why(o)}</Txt>
+        </Card>
+      </Press>)}
+    </>}
     {!data.merchants.length && <Empty icon="storefront-outline" title={c.adminNoShops} />}
     {data.merchants.map(m => <MerchantCard key={m.id} merchant={m} onChange={reload} />)}
   </Screen>;
@@ -69,7 +87,8 @@ function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onCh
         {m.status !== 'pending' && <Button title={c.save} loading={busy === 'save'} disabled={!terms()} reason={terms() ? undefined : c.adminShopTermsNeeded}
           onPress={() => save('save', { ...terms() })} />}
         {m.status === 'active' && <Button title={c.adminShopPause} variant="outline" loading={busy === 'pause'} onPress={() => save('pause', { status: 'paused' })} />}
-        {m.status === 'paused' && <Button title={c.adminShopActivate} variant="soft" loading={busy === 'activate'} onPress={() => save('activate', { status: 'active', ...(terms() ?? {}) })} />}
+        {m.status === 'paused' && <Button title={c.adminShopActivate} variant="soft" loading={busy === 'activate'} disabled={!terms()} reason={terms() ? undefined : c.adminShopTermsNeeded}
+          onPress={() => save('activate', { status: 'active', ...terms() })} />}
       </Row>
       {m.status !== 'pending' && <>
         <Section title={c.adminShopPayout} />
