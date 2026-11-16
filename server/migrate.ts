@@ -195,7 +195,9 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
         'phone_profiles','phone_mappings','phone_aliases','phone_challenges','phone_command_results','phone_rate_windows','phone_provider_budget','phone_audit',
         'driver_presence_sessions','driver_latest_locations','driver_presence_audit','driver_active_gps_sessions','driver_active_gps_session_ids','driver_active_gps_generations','native_push_tokens','quotes','road_restrictions','road_restriction_policy','dispatch_rounds','dispatch_offers','assignment_history','ride_lifecycle','ride_boarding_attempts','order_declared_scope','custody_records','order_scope_checks','private_objects','private_object_reads','ledger_accounts','ledger_journals','ledger_entries','cash_receipts','cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals'].includes(name));
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
-      const optionalLegacy = new Set(['order_command_rejections']);
+      // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
+      const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
       // Assignment guards lock accounts; insert users before the deferred-reference tables.
