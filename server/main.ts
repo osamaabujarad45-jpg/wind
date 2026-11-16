@@ -218,13 +218,15 @@ async function settings(): Promise<Settings> {
   return { ...defaultSettings, ...(enabledServices.includes('shop') && { driverCashCap: 1000 }), ...stored };
 }
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
-async function guardCashCeiling(price: number) {
-  if (overCashCeiling((await settings()), price)) fail(409, 'over_cash_ceiling');
+async function guardCashCeiling(price: number, orderId?: number) {
+  const cod = orderId == null ? 0 : await codGoodsMinor(persistence, orderId) / 100; // a booked order's goods COD rides on the fare
+  if (overCashCeiling((await settings()), price + cod)) fail(409, 'over_cash_ceiling');
 }
 /** ADM-12 for a fare going back to the pool (release, courier block): the recommendation, but never so high that fare plus goods COD passes the ceiling. */
 async function restoredFare(orderId: number, recommended: number) {
-  const room = (await settings()).orderCashCeiling - await codGoodsMinor(persistence, orderId) / 100;
-  return Math.min(recommended, Math.max(0, Math.floor(room)));
+  const room = Math.floor((await settings()).orderCashCeiling - await codGoodsMinor(persistence, orderId) / 100);
+  if (room < 1) fail(409, 'over_cash_ceiling'); // a ceiling lowered below the open goods COD: support settles the COD first
+  return Math.min(recommended, room);
 }
 
 // scrypt is admitted through a bounded worker pool (domain/passwords.ts); saturation is retryable, not a wrong password.
@@ -2456,7 +2458,7 @@ route('POST', '/api/jobs/:id/offer', async ({ user, params, body }) => {
   if (!canTake((await activeLoad(user.id)), order.service)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
-  await guardCashCeiling(body.price); // a driver's own price may not take the order past the ceiling either
+  await guardCashCeiling(body.price, order.id); // a driver's own price may not take the order past the ceiling either
   await guardCashCap(user.id, body.price, await driverRate(user.id));
   // A driver changing their own live offer does not ring the customer again; a first or renewed one does.
   if (!(await one('SELECT 1 FROM order_offers WHERE order_id = ? AND driver_id = ? AND created_at > ?', order.id, user.id, Date.now() - OFFER_TTL)))
@@ -2481,7 +2483,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     const f = (await one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
-    await guardCashCeiling(Number(f.price)); // lowered since the driver offered
+    await guardCashCeiling(Number(f.price), r.id); // lowered since the driver offered, or a goods COD added since
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
@@ -3358,7 +3360,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('requested','searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
-      carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id));
+      carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
       if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,

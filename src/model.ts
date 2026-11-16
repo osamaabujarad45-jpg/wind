@@ -341,7 +341,7 @@ export function minorFromText(text: string): number {
 export const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
 /** A time typed as H, HH:MM or with Arabic-Indic digits, as a minute of the day (0–1440); anything else is NaN. */
 export function minuteFromText(text: string): number {
-  const m = /^(\d{1,2})(?:[:.٫](\d{2}))?$/.exec(latinDigits(text.trim()));
+  const m = /^(\d{1,2})(?:[:.٫](\d{2}))?$/.exec(latinDigits(text.replace(/[\u200e\u200f\u061c]/g, '').trim()));
   if (!m) return NaN;
   const minute = Number(m[1]) * 60 + Number(m[2] ?? 0);
   return Number(m[2] ?? 0) < 60 && minute <= 1440 ? minute : NaN;

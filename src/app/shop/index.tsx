@@ -15,7 +15,8 @@ export default function ShopList() {
   const today = (m: Merchant) => {
     if (!m.hours.length) return null;
     const ranges = m.hours.filter(h => h.weekday === new Date().getDay()).map(h => `${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`);
-    return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : c.shopClosedToday;
+    // An open shop with no range today is in last night's overnight range, so it never says "Closed today".
+    return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : m.open ? null : c.shopClosedToday;
   };
   const footer = cart ? <Button title={fill(c.shopViewCart, { shop: cart.merchantName, total: money(cartGoods(cart) / 100) })} icon="basket-outline"
     onPress={() => router.push('/shop/cart')} /> : undefined;

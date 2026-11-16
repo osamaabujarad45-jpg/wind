@@ -63,6 +63,9 @@ export default function MerchantHome() {
 function Hours({ merchant, onDone }: { merchant: Merchant; onDone: () => void }) {
   const { c } = useCopy();
   const first = merchant.hours[0];
+  // The editor writes one range for every day; hours stored per day (by support) are replaced on save, and it says so.
+  const uniform = !merchant.hours.length || (merchant.hours.length === 7 && new Set(merchant.hours.map(h => h.weekday)).size === 7
+    && merchant.hours.every(h => h.openMinute === first.openMinute && h.closeMinute === first.closeMinute));
   const [opens, setOpens] = useState(first ? hhmm(first.openMinute) : '');
   const [closes, setCloses] = useState(first ? hhmm(first.closeMinute) : '');
   const [busy, setBusy] = useState(false);
@@ -84,6 +87,7 @@ function Hours({ merchant, onDone }: { merchant: Merchant; onDone: () => void })
     <Field label={c.merchantOpens} value={opens} onChangeText={setOpens} keyboardType="decimal-pad" maxLength={5} />
     <Field label={c.merchantCloses} value={closes} onChangeText={setCloses} keyboardType="decimal-pad" maxLength={5} />
     <Txt variant="caption">{c.merchantHoursHint}</Txt>
+    {!uniform && <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantHoursReplace}</Txt>}
     <Button title={c.merchantSaveHours} size="sm" variant="outline" loading={busy} disabled={!ok} reason={ok ? undefined : c.merchantHoursBad} onPress={save} />
     <ErrorText>{error}</ErrorText>
   </Card>;

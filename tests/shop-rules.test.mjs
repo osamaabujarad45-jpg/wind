@@ -198,6 +198,7 @@ try {
   await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag', requestId: refundId } });
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150 - 1000 + 50, 'refund replay is idempotent');
   assert.equal(db.prepare("SELECT COUNT(*) n FROM shop_ledger WHERE kind = 'refund' AND order_id = ?").get(o.id).n, 1);
+  await err(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 2000, reason: 'Out-of-date rice bag', requestId: refundId } }, 409, 'idempotency_conflict');
 
   // ---- an over-collection is the customer's money: the captain owes all of it, the shop is credited only for the goods ----
   o = await place([{ itemId: rice.id, qtyMilli: 2000, policy: 'remove' }]);

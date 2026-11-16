@@ -992,9 +992,13 @@ export function registerShop(route: Register, deps: ShopDeps) {
     // A refund is one business event per requestId, as a payout is: a retried request after a lost response pays once.
     if (typeof body.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.requestId)) fail(400, 'invalid_input');
     const key = `${r.id}-${String(body.requestId).toLowerCase()}`;
-    if (await db.one('SELECT 1 FROM shop_ledger WHERE business_ref = ?', `shop-refund-${key}`)) return getOrder(r.id, user);
     const amount = agorot(body.amountAgorot, 10_000_000);
     const reason = text(body.reason, 500);
+    const prior = await db.one('SELECT amount_agorot, note FROM shop_ledger WHERE business_ref = ?', `shop-refund-${key}`);
+    if (prior) { // a replay must be the same refund, as a payout replay is
+      if (-Number(prior.amount_agorot) !== amount || prior.note !== reason) fail(409, 'idempotency_conflict');
+      return getOrder(r.id, user);
+    }
     const refunded = -Number((await db.one("SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE order_id = ? AND kind = 'refund'", r.id))!.n);
     if (amount < 1 || reason.length < 5 || amount + refunded > Number(s.goods_agorot)) fail(400, 'invalid_input');
     if (fault!.result === 'none') fail(409, 'fault_required');
