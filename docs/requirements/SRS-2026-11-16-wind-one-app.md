@@ -127,7 +127,7 @@ section.
 | `at_pickup` | captain arrived; waiting timer runs | captain at sender; pickup code check | captain at shop; handover from merchant |
 | `in_transit` | `boarded` sub-step (PIN checked), then on trip | in transit | on the way |
 | `completed` | trip ended at drop-off | delivery code accepted | delivery code accepted |
-| side states | `cancelled` (reason: rider cancel, no-show) | `on_hold` (typed reason) → `returning` → `returned` | `cancelled` (reason: merchant rejected, expired, customer cancel); `on_hold` → admin review → return leg (DLV-21) |
+| side states | `cancelled` (reason: rider cancel, no-show) | `on_hold` (typed reason) → `returning` → `returned` | `cancelled` (reason: merchant rejected, expired, customer cancel, below minimum after consent); `on_hold` → admin review → return leg (DLV-21) |
 
 ### 2.1a Codes and handover vocabulary
 
@@ -229,7 +229,7 @@ Changing any cell changes that table, which is server-enforced.
 | BOOK-05 | Scheduling MUST be available per service: ride later, parcel pickup time, shop delivery window. A scheduled job is hidden from captains until its release time (PLAN C-11). | P |
 | BOOK-06 | Create MUST be idempotent with a client request id. A lost acknowledgement MUST recover the same order and never book twice (PLAN C-18, `booking-recovery`). | E |
 | BOOK-07 | Edits after placing MUST follow §4.3a, which is the single source per service and state (for example a shop destination cannot change after the merchant accepts). Destination change after assignment needs captain consent where the table allows it (PLAN T-12/T-25). | P |
-| BOOK-08 | Cancellation MUST be free before assignment. Ride and shipping orders can be cancelled until pickup; shop orders follow DLV-11. After pickup, cancellation MUST be refused with a reason. Fees stay out of scope while cash-only (PLAN T-10/T-11). | P: ride cancellation is E-off; shop cancellation (DLV-11) is N |
+| BOOK-08 | Cancellation MUST be free while cash-only (no fees, PLAN T-10/T-11). Ride and shipping orders can be cancelled until pickup; shop orders follow §4.3a and DLV-11. After pickup, cancellation MUST be refused with a reason. | P: ride cancellation is E-off; shop cancellation (DLV-11) is N |
 
 ### 4.3a What may change after placing (one table for all services)
 
@@ -242,7 +242,8 @@ Changing any cell changes that table, which is server-enforced.
 | Shipping, `assigned`/`at_pickup` | note only | with captain consent | — | yes, free |
 | Shipping, `in_transit` and later | — | with captain consent | — | no |
 | Shop, `requested` | yes | yes | yes (new snapshot) | yes, free |
-| Shop, merchant accepted until pickup | note only | no | customer: no edits; merchant: final weights and policy substitutions within the agreed limit (DLV-04/05); anything beyond the limit goes through consent (DLV-06) | through support (DLV-11, DLV-23) |
+| Shop, merchant accepted until `ready` | note only | no | customer: approve or decline only (DLV-06); merchant: final weights and policy substitutions while the total stays within the agreed limit (DLV-04/05); beyond it, or "ask me first", goes through consent (DLV-06) | through support (DLV-11, DLV-23) |
+| Shop, `ready` until pickup | note only | no | none (items are final) | through support (DLV-11, DLV-23) |
 | Shop, picked up and later | — | no | — | no |
 
 DLV-10's snapshot is taken again whenever items change: before acceptance, on a DLV-06 consent, or at the merchant's
@@ -276,7 +277,7 @@ PostgreSQL decision (ride lifecycle and dispatch are PostgreSQL-only today: `rid
 | ID | Requirement | St | Source |
 |---|---|---|---|
 | RIDE-01 | Pickup MUST be set by GPS or pin. Venue pickup points (access points) with a walking ETA SHOULD be offered where known. | P | KIMI-MAP §5; UB-F F3 |
-| RIDE-02 | Ride options MUST each show seats (1–4 today, `optionsFor`), price and ETA range; comfort or family tiers are N. Surge MUST NOT exist at launch (`docs/SYSTEM.md` §4). | E-off | D-UB §2; ride pricing `src/model.ts` (off in production) |
+| RIDE-02 | Ride options MUST each show seats (1–4 today, `optionsFor`), price and ETA range; comfort or family tiers are N. Surge MUST NOT exist at launch (`docs/SYSTEM.md` §4). | E-off: seat options and pricing exist (off); comfort/family tiers are N | D-UB §2; ride pricing `src/model.ts` (off in production) |
 | RIDE-03 | Fare estimate MUST be upfront from the server tariff; the final fare MUST equal the estimate unless the route changes with the rider's consent. | E-off | KIMI-API; UB-F F4 |
 | RIDE-04 | Dispatch MUST send timed offers to one captain or a small batch; the offer screen shows pickup distance, trip estimate, rider rating and a countdown. Declines are not penalised in the pilot. | E-off | R-HD §2.2; R-CA §10.4 |
 | RIDE-05 | When no captain is found within the window, the rider MUST be offered retry, schedule or cancel, never left searching (`docs/SYSTEM.md` §3). | E-off | |
@@ -331,9 +332,9 @@ menus are a later variant of the same model.
 | DLV-01 | Merchant catalogue: categories, items with price (integer agorot), photo optional, availability toggle and "sold by weight" flag. | N | D-HA §2; R-HA §5 |
 | DLV-02 | Cart MUST hold one merchant at a time. Switching merchant asks to clear the cart, with a confirm. | N | D-SQ §2; R-HA §5 |
 | DLV-03 | Minimum order and delivery fee MUST be shown before checkout; the service fee is its own labelled line (BOOK-02). | N | R-HA §4–5 |
-| DLV-04 | Weighted items: the cart shows an estimate labelled as an estimate. At handover the merchant records the actual weight and final line price. At checkout the customer sets an **agreed limit** (default: +10% of the estimate, owner-tunable). A final total above it MUST trigger consent (DLV-06). | N | D-HA §4; R-SQ F-09 |
-| DLV-05 | Substitution policy MUST be chosen per order or item: "remove if out of stock", "ask me first", "similar item within limit". | N | R-SQ F-09; D-SQ §3 |
-| DLV-06 | Consent-before-change: any change beyond the agreed limit MUST pause the order in `awaiting_approval` and notify the customer. Approve returns it to preparing; decline removes the line and recalculates. Falling below the minimum MUST cancel with a clear message. Waiting time MUST NOT count as preparation time. With no answer within the consent timeout (owner-set, default 5 minutes), the extra lines are declined automatically and the order continues, or is cancelled if it falls below the minimum. | N | R-SQ A9; D-SQ §3 |
+| DLV-04 | Weighted items: the cart shows an estimate labelled as an estimate. While packing, **before marking `ready`**, the merchant records the actual weight and final line price. At checkout the customer sets an **agreed limit**: a cap on the final goods total, as a percentage over the estimate (default +10%, owner-tunable). It applies to the cumulative total, not to each change. | N | D-HA §4; R-SQ F-09 |
+| DLV-05 | Substitution policy MUST be chosen per order or item: "remove if out of stock", "ask me first" (always goes through DLV-06), or "similar item within the agreed limit". | N | R-SQ F-09; D-SQ §3 |
+| DLV-06 | Consent-before-change: a merchant change (weight, substitution, removal) that would push the final goods total above the agreed limit, and every "ask me first" substitution regardless of the limit, MUST pause the order in `awaiting_approval` (between `preparing` and `ready`) and notify the customer. Approve returns it to preparing; decline removes the line and recalculates. Falling below the minimum MUST cancel with a clear message. Waiting time MUST NOT count as preparation time. With no answer within the consent timeout (owner-set, default 5 minutes), the extra lines are declined automatically and the order continues, or is cancelled if it falls below the minimum. | N | R-SQ A9; D-SQ §3 |
 | DLV-07 | The merchant MUST accept or reject within the accept timeout (owner-set, default 5 minutes). Rejection needs a typed reason ("closed", "out of stock", "too busy") shown to the customer in their language. With no answer, the order expires automatically at no charge and the customer is told. | N | R-HA (المطعم رفض الطلبيه) |
 | DLV-08 | The merchant MUST set the preparation minutes when accepting, then mark progress: accepted → preparing → ready. Each step is server-timestamped and drives the ETA and the dispatch start (DLV-12). | N | D-HA §3 |
 | DLV-09 | Order states in Arabic and English MUST name the actor (for example "The shop is preparing your order", "The captain picked up your order from the shop"). | N | R-HA §4; ONE-04 |
@@ -359,7 +360,7 @@ menus are a later variant of the same model.
 |---|---|---|
 | MER-01 | The merchant MUST have an order inbox with a loud new-order alert (its own notification channel), accept/reject, a prep timer and "ready". | N |
 | MER-02 | The merchant MUST be able to edit the catalogue, toggle availability, set open/closed and hours, and pause new orders. Pausing or closing does not cancel orders already accepted; an order the merchant can no longer fulfil goes to support with the customer told. | N |
-| MER-03 | The merchant MUST record actual weights and substitutions per line, which feed DLV-04/06. | N |
+| MER-03 | The merchant MUST record actual weights and substitutions per line while packing, before marking `ready`. These feed DLV-04/05/06 and the DLV-10 snapshot. | N |
 | MER-04 | The merchant MUST see a settlement statement (orders, goods total, commission, payouts) built from the merchant ledger. | N |
 | MER-05 | Merchant mode MUST be a role mode inside the same app (and a web console), not a separate app, unless the owner chooses otherwise (R-PAL D2). | N |
 | MER-06 | Partner API: an external shop system MAY create Delivery or Shipping orders with a key (PLAN A-15). | P: Souq creates parcel orders (`SOUQ_PARTNER_KEY`); Delivery orders are N |
@@ -535,7 +536,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | ADM-09 | Merchant management: catalogue moderation, hours, pause, settlement statements. | N |
 | ADM-10 | Admin permissions MUST be split by duty, using the roles in `server/domain/ops.ts`: `dispatcher` (orders, assign), `finance` (cash books, payouts), `safety` (incidents), `driver_reviewer` (captain approval) and `platform_admin` (users, settings), plus support (disputes, chat). Production has one `admin` role today. | E-off: staff duty roles exist in `server/domain/ops.ts` (PostgreSQL-only); production has one `admin` role |
 | ADM-11 | Abuse rules MUST exist: limits on promo use per person and device, flags for repeated cancellations, fake orders, merchants rejecting after acceptance, and captain–merchant collusion (one captain repeatedly taking one shop's orders with cash mismatches), reviewed in the admin queue. | N |
-| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced at booking for every cash-collecting order (ride, parcel, freight, goods COD, shop). It defaults to ₪500 until G-LEGAL decides; an order above it is refused with a specific message. Door cash entries keep their existing upper bound. The existing goods-COD limit (`COD_LIMIT_MINOR`, ₪10,000 in `server/domain/payments.ts`) stays as a hard upper bound; ADM-12 sits under it. | N |
+| ADM-12 | A per-order cash ceiling MUST be an admin setting, enforced for every cash-collecting order (ride, parcel, freight, goods COD, shop) against the highest reachable total: at booking the estimate plus the agreed limit (DLV-04); afterwards any consent (DLV-06) or route change (RIDE-03, PLAN T-12) that would exceed the ceiling is refused. It defaults to ₪500 until G-LEGAL decides; an order above it is refused with a specific message. Door cash entries keep their existing upper bound. The existing goods-COD limit (`COD_LIMIT_MINOR`, ₪10,000 in `server/domain/payments.ts`) stays as a hard upper bound; ADM-12 sits under it. | N |
 
 ---
 
@@ -602,7 +603,7 @@ Each line is accepted on the physical A53 and in the test PC gate (`npm test` wi
   change destination with consent → end → rating → receipt. No-show path. CON-01/02 refusals.
 - **Delivery:** browse → cart (minimum) → place → merchant accepts → substitution asks → approve/decline → weighted final
   → ready → merchant pickup code → delivery code → cash → merchant settlement entry. Merchant reject and accept-timeout
-  paths; consent timeout; no-captain wait/cancel; failed delivery → goods return code; refund; cancel windows (§4.3a).
+  paths; consent timeout; no-captain wait/cancel; failed delivery → return code; refund; cancel windows (§4.3a).
 - **Cross-service:**
   - A captain with two parcels cannot take a ride.
   - The cash cap counts parcel and shop cash together.
