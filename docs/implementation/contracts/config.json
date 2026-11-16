@@ -28,7 +28,12 @@
       "perMinute": 0.25,
       "nightExtra": 0.2,
       "driverCashCap": 150,
-      "orderCashCeiling": 500
+      "orderCashCeiling": 500,
+      "shopAgreeLimit": 0.1,
+      "shopAcceptMinutes": 5,
+      "shopConsentMinutes": 5,
+      "shopNoCaptainMinutes": 10,
+      "shopDispatchLeadMinutes": 15
     },
     "units": "ILS; percentage settings are fractions in existing source",
     "fractionKeys": [
@@ -36,7 +41,8 @@
       "plusDiscount",
       "commission",
       "proCommission",
-      "nightExtra"
+      "nightExtra",
+      "shopAgreeLimit"
     ],
     "validation": "Admin allows known keys, finite n >= 0; fraction keys < 1; values stored in SQLite settings and overlaid on defaults. No configured live tariff snapshot is claimed."
   },

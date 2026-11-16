@@ -1015,7 +1015,12 @@
           "perMinute": 0.25,
           "nightExtra": 0.2,
           "driverCashCap": 150,
-          "orderCashCeiling": 500
+          "orderCashCeiling": 500,
+          "shopAgreeLimit": 0.1,
+          "shopAcceptMinutes": 5,
+          "shopConsentMinutes": 5,
+          "shopNoCaptainMinutes": 10,
+          "shopDispatchLeadMinutes": 15
         },
         "capabilities": {
           "enabledServices": [
