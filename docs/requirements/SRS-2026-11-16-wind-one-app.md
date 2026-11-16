@@ -120,7 +120,7 @@ section.
 
 | Spine state | Ride | Shipping (parcel/freight) | Delivery (shop) |
 |---|---|---|---|
-| `requested` (new) | — | — | order placed with merchant |
+| `requested` (new) | — | — | order placed, dispatch not started (the merchant may already be preparing) |
 | merchant axis (separate field) | — | — | `merchant_state`: `accepted` → `preparing` ⇄ `awaiting_approval` (DLV-06) → `ready` → `handed_over`. It runs alongside the spine: the order moves `requested` → `searching` (DLV-12) → `assigned` → `at_pickup` while `merchant_state` is still `preparing`, so an early captain waits (DLV-13) |
 | `searching` | finding a captain | finding a captain | finding a captain (starts when `ready` is near; see DLV-12) |
 | `assigned` | captain on the way | captain on the way to pickup | captain on the way to shop |
@@ -241,12 +241,13 @@ Changing any cell changes that table, which is server-enforced.
 | Shipping, `searching` | yes | yes | — | yes, free |
 | Shipping, `assigned`/`at_pickup` | note only | with captain consent | — | yes, free |
 | Shipping, `in_transit` and later | — | with captain consent | — | no |
-| Shop, `requested` | yes | yes | yes (new snapshot) | yes, free |
-| Shop, merchant accepted until `ready` | note only | no | customer: approve or decline only (DLV-06); merchant: changes recorded while `preparing` (DLV-04, MER-03), each evaluated by DLV-06 | through support (DLV-11, DLV-23) |
-| Shop, `ready` until pickup | note only | no | none (items are final) | through support (DLV-11, DLV-23) |
-| Shop, picked up and later | — | no | — | no |
+| Shop, before the merchant accepts | yes | yes | yes (new snapshot) | yes, free |
+| Shop, `merchant_state` `accepted`/`preparing`/`awaiting_approval` | note only | no | customer: approve or decline only (DLV-06); merchant: changes recorded while `preparing` (DLV-04, MER-03), each evaluated by DLV-06 | through support (DLV-11, DLV-23) |
+| Shop, `merchant_state` `ready` | note only | no | none (items are final) | through support (DLV-11, DLV-23) |
+| Shop, `merchant_state` `handed_over` and later | — | no | — | no |
 
-DLV-10's snapshot is taken again whenever items change: before acceptance, on a DLV-06 consent, or at the merchant's
+Shop rows key on `merchant_state` (§2.1), not on the spine: an order can still be `requested` or `assigned` while the
+merchant is preparing. DLV-10's snapshot is taken again whenever items change: before acceptance, on a DLV-06 consent, or at the merchant's
 final weights and substitutions (DLV-04, MER-03). BOOK-07 and DLV-11 follow this table.
 
 ### 4.4 Tracking, trust and after the order (TRK)
@@ -350,7 +351,7 @@ menus are a later variant of the same model.
 | DLV-19 | Merchants MUST NOT list prohibited or age-restricted goods. Regulated categories (OTC medicine, tobacco) need an owner policy, and age-restricted items need an ID check at the door before they are allowed. | N | gate G-SHOP |
 | DLV-20 | Failed shop delivery MUST use the typed `ExceptionReason` list (absent, refused, unreachable, wrong address, rescheduled, access blocked, damaged) and go to admin review with a suggested next step. | N | WP-09 reuse |
 | DLV-21 | Goods return: undelivered goods MUST go back to the shop on a tracked return leg, confirmed by the return code (`return_code`, §2.1a) shown to the merchant. Perishables follow the merchant's disposal policy instead. | N | gate G-REFUND |
-| DLV-22 | Refunds: if goods paid in cash are later refused, missing or damaged, the refund MUST be paid, with a reason and an actor, append-only: before the captain's cash handover, from captain-held goods cash (PAY-05); after it, as a debit on the merchant ledger when the merchant is at fault (wrong or damaged goods), otherwise as a Wind expense entry. The customer may choose account credit instead. | N | gate G-REFUND |
+| DLV-22 | Refunds: if goods paid in cash are later refused, missing or damaged, the refund MUST be recorded with a reason and an actor, append-only. **Who pays** depends only on fault: the merchant when the merchant is at fault (wrong, missing or damaged goods), otherwise Wind. **Where the cash comes from** depends on timing: before the captain's cash handover it is paid from captain-held goods cash; after it, from the merchant ledger (merchant fault) or the Wind operating-expense book (PAY-05). A pre-handover refund that Wind pays is recorded as an operating expense, so the merchant is not charged. The customer may choose account credit instead. | N | gate G-REFUND |
 | DLV-23 | A customer cancel after the merchant accepts, and an automatic below-minimum cancel (DLV-06), MUST follow the merchant-compensation policy for prepared goods, decided under G-REFUND. While cash-only, no fee is charged to the customer. | N | gate G-REFUND |
 | DLV-24 | The shop line MUST launch with **one shop order per captain trip**. Stacking shop orders with each other or with parcels is deferred until the single-stop journey is proven (`docs/PRODUCT.md` multi-stop rule). | N | |
 
@@ -419,7 +420,7 @@ menus are a later variant of the same model.
 | PAY-02 | Cash MUST be the default and stated before booking (BOOK-03). | E |
 | PAY-03 | Account credit and promo codes MUST apply to all services, subject to CON-06. | P |
 | PAY-04 | Cash entries MUST be append-only; corrections are new entries with a reason and an actor (R-SQ F-06). | E |
-| PAY-05 | The ledger MUST keep four separate books: captain cash (fares and fees), captain-held goods cash (shop goods collected at the door; counts in the captain cap and clears into the merchant ledger at cash handover), goods COD (sender money, gated) and merchant settlement (shop goods owed to merchants, gated). They MUST NOT be netted silently against each other. | P |
+| PAY-05 | The ledger MUST keep five separate books: captain cash (fares and fees), captain-held goods cash (shop goods collected at the door; counts in the captain cap and clears into the merchant ledger at cash handover), goods COD (sender money, gated), merchant settlement (shop goods owed to merchants, gated) and Wind operating expenses (refunds and compensation Wind pays, DLV-22/23). They MUST NOT be netted silently against each other. | P |
 | PAY-06 | Card/wallet MUST NOT be built until a PMA-licensed provider is contracted (G-PAY). When added, it plugs in behind ONE-08. Whether orders above ₪500 must be paid electronically is decided under G-LEGAL, not by the provider contract. | —, gated (G-PAY) |
 | PAY-07 | Customer arrears MUST NOT exist while cash-only (no fees). If fees are ever introduced, the Careem arrears rule applies: an unpaid balance blocks the next cash booking and is shown before booking (R-CA §5). | — |
 | PAY-08 | Tips MUST NOT be recorded in-app while cash-only (unrecorded money). | — |
@@ -529,7 +530,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | ADM-02 | Users: approve captains per service line and vehicle; approve merchants; block with reason; edit with compare-and-set (`expectedRole`). | P |
 | ADM-03 | Dispatch: admin assign/reassign obeys the eligibility path (`driverRefusal`, CON-04). | E (WP-02) |
 | ADM-04 | Orders: cancel, resolve exception, proof reset (audited), decision card with suggested next step. | E |
-| ADM-05 | Cash: four books (PAY-05), handover confirm/dispute, merchant payouts with reference. | P |
+| ADM-05 | Cash: five books (PAY-05), handover confirm/dispute, merchant payouts with reference. | P |
 | ADM-06 | Settings: tariffs per service and vehicle, fees, minimums, merchant commission (MER-09), zones, windows and capacity, load per vehicle class in kg and volume (CON-03), cash cap and age limit, the per-order cash ceiling (ADM-12), the shop timers and limits (agreed limit DLV-04, consent timeout DLV-06, accept timeout DLV-07, no-captain wait DLV-12), and enabled services per town (ONE-14). Compare-and-set on save. | P |
 | ADM-07 | Audit log viewer (read-only) over `security_events`. | N (WP-13) |
 | ADM-08 | Fleet view: captains online, last fix (stale shown as stale), current job and service. | P: per-order driver location exists; a fleet list is N (WP-18) |
