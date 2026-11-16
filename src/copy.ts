@@ -3091,9 +3091,11 @@ export function fill(template: string, values: Record<string, string | number>) 
 }
 
 // A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null }, driver = false, now = Date.now()) => {
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null; shop?: { state: string | null } | null }, driver = false, now = Date.now()) => {
   if (bookedAhead(o, now)) return c.searching_booked;
-  if (o.status === 'requested') return c.shop_requested; // `requested` alone is a timeline noun
+  // A shop order stays `requested` while the shop works on it: the shop's own step is the honest status (DLV-09).
+  const shopState = o.shop?.state;
+  if (o.status === 'requested') return shopState ? (c as Record<string, string>)[`shop_${shopState}`] ?? c.shop_requested : c.shop_requested;
   const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
   return (driver && k[`driver_${o.status}${ride}`]) || (ride && k[`${o.status}${ride}`]) || c[o.status];
 };

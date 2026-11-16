@@ -82,7 +82,7 @@ export default function MerchantOrder() {
           <Button title={c.cancel} size="sm" variant="ghost" onPress={() => setEditing(null)} />
         </View>}
       </View>)}
-      <View style={{ marginTop: 8 }}><ShopLines order={order} /></View>
+      <View style={{ marginTop: 8 }}><ShopLines order={order} totalsOnly /></View>
     </Card>
     {s.state === 'preparing' && <Card>
       <Section title={c.merchantPacking} />

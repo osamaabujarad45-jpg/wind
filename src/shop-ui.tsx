@@ -50,15 +50,15 @@ export function useCountdown(until: number | null, label: string) {
 const lineName = (l: Pick<ShopLine, 'nameAr' | 'nameEn'>, language: string) => language === 'ar' ? l.nameAr : l.nameEn;
 
 /** The basket with each line's price, estimate or final, and the money lines (DLV-03): goods, delivery fee, service fee, cash at the door. */
-export function ShopLines({ order }: { order: Order }) {
+export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsOnly?: boolean }) {
   const { c, language, money } = useCopy();
   const s = order.shop!;
   return <>
-    {s.lines.filter(l => !l.removed).map(l => <Row key={l.id} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
+    {!totalsOnly && s.lines.filter(l => !l.removed).map(l => <Row key={l.id} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
       <Txt style={{ flex: 1 }}>{`${lineName(l, language)} ${qtyLabel(l.qtyMilli, l.byWeight, c)}`}{l.substituteFor ? ` · ${c.shopSubstitute}` : ''}</Txt>
       <Txt style={{ writingDirection: 'ltr' }}>{`${money((l.finalAgorot ?? l.estimateAgorot) / 100)}${l.byWeight && l.finalAgorot == null ? ` ${c.shopEstimateShort}` : ''}`}</Txt>
     </Row>)}
-    {s.lines.some(l => l.removed && !s.lines.some(x => x.substituteFor === l.id)) &&
+    {!totalsOnly && s.lines.some(l => l.removed && !s.lines.some(x => x.substituteFor === l.id)) &&
       <Txt variant="caption" style={{ marginTop: 4 }}>{fill(c.shopRemovedLines, { items: s.lines.filter(l => l.removed && !s.lines.some(x => x.substituteFor === l.id)).map(l => lineName(l, language)).join('، ') })}</Txt>}
     <View style={{ borderTopWidth: 1, borderTopColor: palette.line, marginTop: 8, paddingTop: 8, gap: 4 }}>
       <Money label={c.shopGoods} value={money(s.goodsAgorot / 100)} />

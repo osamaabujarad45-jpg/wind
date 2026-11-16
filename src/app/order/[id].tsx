@@ -470,13 +470,14 @@ export default function OrderScreen() {
         <RouteLine from={from[language]} to={to[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
         <View style={styles.divider}>
           {!!order.detail && <Detail label={c.details} value={order.detail} />}
-          <Detail label={order.service === 'ride' ? c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />
+          {order.service !== 'shop' && <Detail label={order.service === 'ride' ? c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />}
           {order.service === 'parcel' && <Detail label={c.parcelPriority} value={order.priority === 'same_day' ? c.priority_same_day : c.priority_standard} />}
           {order.loadingHelp && <Detail label={c.loadingHelp} value={c.yes} />}
           <Detail label={c.payWith} value={c.cash} />
           <Detail label={c.issued} value={time(order.createdAt)} />
           {/* a cancelled order was never charged and pays the driver nothing (earnings count finished jobs only) */}
-          <Detail label={order.discount > 0 || cancelled ? c.fare : c.total} value={money(order.price)} strong={!order.discount && !cancelled} />
+          {/* A shop order's total is the goods plus both fees, collected at the door (its fee lines are in the shop card). */}
+          <Detail label={order.discount > 0 || cancelled ? c.fare : c.total} value={money(order.shop ? order.shop.cashAgorot / 100 : order.price)} strong={!order.discount && !cancelled} />
           {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
           {order.discount > 0 && !isAdmin && !cancelled && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
           {isDriver && !cancelled && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
