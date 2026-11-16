@@ -28,6 +28,12 @@
     },
     {
       "type": "index",
+      "name": "merchant_items_merchant",
+      "tableName": "merchant_items",
+      "sql": "CREATE INDEX merchant_items_merchant ON merchant_items(merchant_id, section, sort)"
+    },
+    {
+      "type": "index",
       "name": "native_push_tokens_user",
       "tableName": "native_push_tokens",
       "sql": "CREATE INDEX native_push_tokens_user ON native_push_tokens(user_id, created_at)"
@@ -124,6 +130,42 @@
     },
     {
       "type": "index",
+      "name": "shop_changes_pending",
+      "tableName": "shop_changes",
+      "sql": "CREATE UNIQUE INDEX shop_changes_pending ON shop_changes(order_id) WHERE status = 'pending'"
+    },
+    {
+      "type": "index",
+      "name": "shop_ledger_driver",
+      "tableName": "shop_ledger",
+      "sql": "CREATE INDEX shop_ledger_driver ON shop_ledger(book, driver_id)"
+    },
+    {
+      "type": "index",
+      "name": "shop_ledger_merchant",
+      "tableName": "shop_ledger",
+      "sql": "CREATE INDEX shop_ledger_merchant ON shop_ledger(book, merchant_id, id)"
+    },
+    {
+      "type": "index",
+      "name": "shop_lines_order",
+      "tableName": "shop_lines",
+      "sql": "CREATE INDEX shop_lines_order ON shop_lines(order_id)"
+    },
+    {
+      "type": "index",
+      "name": "shop_orders_merchant",
+      "tableName": "shop_orders",
+      "sql": "CREATE INDEX shop_orders_merchant ON shop_orders(merchant_id, merchant_state)"
+    },
+    {
+      "type": "index",
+      "name": "shop_snapshots_order",
+      "tableName": "shop_snapshots",
+      "sql": "CREATE INDEX shop_snapshots_order ON shop_snapshots(order_id, id)"
+    },
+    {
+      "type": "index",
       "name": "subscriptions_pending",
       "tableName": "subscriptions",
       "sql": "CREATE UNIQUE INDEX subscriptions_pending ON subscriptions(user_id, plan) WHERE status = 'pending'"
@@ -187,6 +229,24 @@
       "name": "firebase_resets",
       "tableName": "firebase_resets",
       "sql": "CREATE TABLE firebase_resets (\n  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, requested_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "merchant_hours",
+      "tableName": "merchant_hours",
+      "sql": "CREATE TABLE merchant_hours (\n  merchant_id INTEGER NOT NULL REFERENCES merchants(id), weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),\n  open_min INTEGER NOT NULL CHECK (open_min BETWEEN 0 AND 1439), close_min INTEGER NOT NULL CHECK (close_min BETWEEN 0 AND 1440),\n  PRIMARY KEY (merchant_id, weekday, open_min))"
+    },
+    {
+      "type": "table",
+      "name": "merchant_items",
+      "tableName": "merchant_items",
+      "sql": "CREATE TABLE merchant_items (\n  id INTEGER PRIMARY KEY, merchant_id INTEGER NOT NULL REFERENCES merchants(id), section TEXT NOT NULL, name_ar TEXT NOT NULL, name_en TEXT NOT NULL,\n  price_agorot INTEGER NOT NULL CHECK (price_agorot >= 1), by_weight INTEGER NOT NULL DEFAULT 0 CHECK (by_weight IN (0,1)),\n  available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1)), sort INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "merchants",
+      "tableName": "merchants",
+      "sql": "CREATE TABLE merchants (\n  id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL UNIQUE REFERENCES users(id), name TEXT NOT NULL,\n  category TEXT NOT NULL CHECK (category IN ('grocery','bakery','goods')), city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, phone TEXT,\n  status TEXT NOT NULL CHECK (status IN ('pending','active','paused')), paused_new INTEGER NOT NULL DEFAULT 0 CHECK (paused_new IN (0,1)),\n  min_order_agorot INTEGER NOT NULL CHECK (min_order_agorot >= 0), delivery_fee_agorot INTEGER NOT NULL CHECK (delivery_fee_agorot >= 0),\n  service_fee_agorot INTEGER NOT NULL CHECK (service_fee_agorot >= 0), commission_bps INTEGER NOT NULL CHECK (commission_bps BETWEEN 0 AND 5000),\n  prep_minutes INTEGER NOT NULL CHECK (prep_minutes BETWEEN 1 AND 180), licence_no TEXT NOT NULL, licence_expires_at INTEGER NOT NULL,\n  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
     },
     {
       "type": "table",
@@ -352,6 +412,54 @@
     },
     {
       "type": "table",
+      "name": "shop_changes",
+      "tableName": "shop_changes",
+      "sql": "CREATE TABLE shop_changes (\n  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), line_id INTEGER NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('weight','substitution')), payload TEXT NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('pending','approved','declined','expired')), expires_at INTEGER NOT NULL,\n  extended INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, decided_at INTEGER)"
+    },
+    {
+      "type": "table",
+      "name": "shop_faults",
+      "tableName": "shop_faults",
+      "sql": "CREATE TABLE shop_faults (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id), result TEXT NOT NULL CHECK (result IN ('merchant','wind','none')),\n  actor_id INTEGER NOT NULL REFERENCES users(id), note TEXT NOT NULL, created_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "shop_handover_checks",
+      "tableName": "shop_handover_checks",
+      "sql": "CREATE TABLE shop_handover_checks (\n  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), actor_id INTEGER NOT NULL REFERENCES users(id),\n  result TEXT NOT NULL CHECK (result IN ('ok','exception')),\n  exception TEXT CHECK (exception IN ('missing_item','wrong_item','damaged','package_count')), note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "shop_ledger",
+      "tableName": "shop_ledger",
+      "sql": "CREATE TABLE shop_ledger (\n  id INTEGER PRIMARY KEY, book TEXT NOT NULL CHECK (book IN ('merchant','captain','wind')),\n  merchant_id INTEGER REFERENCES merchants(id), driver_id INTEGER REFERENCES users(id), order_id INTEGER REFERENCES orders(id),\n  kind TEXT NOT NULL, amount_agorot INTEGER NOT NULL CHECK (amount_agorot <> 0), note TEXT NOT NULL, reference TEXT,\n  actor_id INTEGER NOT NULL REFERENCES users(id), business_ref TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "shop_lines",
+      "tableName": "shop_lines",
+      "sql": "CREATE TABLE shop_lines (\n  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), item_id INTEGER REFERENCES merchant_items(id),\n  name_ar TEXT NOT NULL, name_en TEXT NOT NULL, policy TEXT NOT NULL CHECK (policy IN ('remove','ask_first','similar')),\n  by_weight INTEGER NOT NULL CHECK (by_weight IN (0,1)), qty_milli INTEGER NOT NULL CHECK (qty_milli > 0),\n  unit_agorot INTEGER NOT NULL CHECK (unit_agorot >= 0), estimate_agorot INTEGER NOT NULL CHECK (estimate_agorot >= 0),\n  final_agorot INTEGER CHECK (final_agorot >= 0), removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0,1)), substitute_for INTEGER)"
+    },
+    {
+      "type": "table",
+      "name": "shop_orders",
+      "tableName": "shop_orders",
+      "sql": "CREATE TABLE shop_orders (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id), merchant_id INTEGER NOT NULL REFERENCES merchants(id),\n  merchant_state TEXT CHECK (merchant_state IN ('accepted','preparing','awaiting_approval','ready','handed_over')),\n  accept_deadline INTEGER NOT NULL, accept_extended INTEGER NOT NULL DEFAULT 0, accepted_at INTEGER, preparing_at INTEGER, ready_at INTEGER,\n  handed_over_at INTEGER, prep_minutes INTEGER, dispatch_at INTEGER, paused_at INTEGER, paused_ms INTEGER NOT NULL DEFAULT 0, no_captain_alerted_at INTEGER,\n  goods_estimate_agorot INTEGER NOT NULL CHECK (goods_estimate_agorot >= 0), goods_cap_agorot INTEGER NOT NULL CHECK (goods_cap_agorot >= 0),\n  goods_agorot INTEGER, delivery_fee_agorot INTEGER NOT NULL CHECK (delivery_fee_agorot >= 0), service_fee_agorot INTEGER NOT NULL CHECK (service_fee_agorot >= 0),\n  agree_limit REAL NOT NULL, pickup_code TEXT NOT NULL, pickup_failures INTEGER NOT NULL DEFAULT 0, packing TEXT,\n  handover_exception TEXT CHECK (handover_exception IN ('missing_item','wrong_item','damaged','package_count')), cancel_reason TEXT,\n  merchant_rating INTEGER CHECK (merchant_rating BETWEEN 1 AND 5), customer_rating_by_merchant INTEGER CHECK (customer_rating_by_merchant BETWEEN 1 AND 5))"
+    },
+    {
+      "type": "table",
+      "name": "shop_seals",
+      "tableName": "shop_seals",
+      "sql": "CREATE TABLE shop_seals (\n  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id), package_no INTEGER NOT NULL,\n  intact INTEGER NOT NULL CHECK (intact IN (0,1)), attempt TEXT NOT NULL CHECK (attempt IN ('deliver','fail')),\n  actor_id INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "shop_snapshots",
+      "tableName": "shop_snapshots",
+      "sql": "CREATE TABLE shop_snapshots (\n  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),\n  reason TEXT NOT NULL CHECK (reason IN ('placement','edit','consent','merchant_change','ready')),\n  goods_agorot INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL)"
+    },
+    {
+      "type": "table",
       "name": "subscriptions",
       "tableName": "subscriptions",
       "sql": "CREATE TABLE subscriptions (\n  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), plan TEXT NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('pending','active','rejected')), price REAL NOT NULL,\n  activated_at INTEGER, ends_at INTEGER, created_at INTEGER NOT NULL)"
@@ -379,6 +487,66 @@
       "name": "orders_door_cash_write_once",
       "tableName": "orders",
       "sql": "CREATE TRIGGER orders_door_cash_write_once BEFORE UPDATE OF collected_cents, variance_reason, door_expected_cents, door_collected_by, door_request_id ON orders\n  WHEN OLD.collected_cents IS NOT NULL AND (NEW.collected_cents IS NOT OLD.collected_cents OR NEW.variance_reason IS NOT OLD.variance_reason\n    OR NEW.door_expected_cents IS NOT OLD.door_expected_cents OR NEW.door_collected_by IS NOT OLD.door_collected_by OR NEW.door_request_id IS NOT OLD.door_request_id)\n  BEGIN SELECT RAISE(ABORT, 'door cash is write-once'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_checks_append_only_d",
+      "tableName": "shop_handover_checks",
+      "sql": "CREATE TRIGGER shop_checks_append_only_d BEFORE DELETE ON shop_handover_checks BEGIN SELECT RAISE(ABORT, 'handover checks are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_checks_append_only_u",
+      "tableName": "shop_handover_checks",
+      "sql": "CREATE TRIGGER shop_checks_append_only_u BEFORE UPDATE ON shop_handover_checks BEGIN SELECT RAISE(ABORT, 'handover checks are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_faults_append_only_d",
+      "tableName": "shop_faults",
+      "sql": "CREATE TRIGGER shop_faults_append_only_d BEFORE DELETE ON shop_faults BEGIN SELECT RAISE(ABORT, 'fault results are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_faults_append_only_u",
+      "tableName": "shop_faults",
+      "sql": "CREATE TRIGGER shop_faults_append_only_u BEFORE UPDATE ON shop_faults BEGIN SELECT RAISE(ABORT, 'fault results are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_ledger_append_only_d",
+      "tableName": "shop_ledger",
+      "sql": "CREATE TRIGGER shop_ledger_append_only_d BEFORE DELETE ON shop_ledger BEGIN SELECT RAISE(ABORT, 'shop ledger is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_ledger_append_only_u",
+      "tableName": "shop_ledger",
+      "sql": "CREATE TRIGGER shop_ledger_append_only_u BEFORE UPDATE ON shop_ledger BEGIN SELECT RAISE(ABORT, 'shop ledger is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_seals_append_only_d",
+      "tableName": "shop_seals",
+      "sql": "CREATE TRIGGER shop_seals_append_only_d BEFORE DELETE ON shop_seals BEGIN SELECT RAISE(ABORT, 'seal records are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_seals_append_only_u",
+      "tableName": "shop_seals",
+      "sql": "CREATE TRIGGER shop_seals_append_only_u BEFORE UPDATE ON shop_seals BEGIN SELECT RAISE(ABORT, 'seal records are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_snapshots_append_only_d",
+      "tableName": "shop_snapshots",
+      "sql": "CREATE TRIGGER shop_snapshots_append_only_d BEFORE DELETE ON shop_snapshots BEGIN SELECT RAISE(ABORT, 'shop snapshots are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "shop_snapshots_append_only_u",
+      "tableName": "shop_snapshots",
+      "sql": "CREATE TRIGGER shop_snapshots_append_only_u BEFORE UPDATE ON shop_snapshots BEGIN SELECT RAISE(ABORT, 'shop snapshots are append-only'); END"
     }
   ],
   "tables": [
@@ -1071,6 +1239,321 @@
           "to": "id",
           "on_update": "NO ACTION",
           "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "merchant_hours",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "merchant_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "weekday",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        },
+        {
+          "cid": 2,
+          "name": "open_min",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 3
+        },
+        {
+          "cid": 3,
+          "name": "close_min",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "merchants",
+          "from": "merchant_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "merchant_items",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "merchant_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "section",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "name_ar",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "name_en",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "price_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "by_weight",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "available",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "sort",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "merchants",
+          "from": "merchant_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "merchants",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "owner_user_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "category",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "city",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "lat",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "lng",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "phone",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "paused_new",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "min_order_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "delivery_fee_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "service_fee_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "commission_bps",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "prep_minutes",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "licence_no",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "licence_expires_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "owner_user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
           "match": "NONE"
         }
       ]
@@ -3626,6 +4109,918 @@
         }
       ],
       "foreignKeys": []
+    },
+    {
+      "name": "shop_changes",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "line_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "payload",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "expires_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "extended",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "decided_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_faults",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "result",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "actor_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_handover_checks",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "actor_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "result",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "exception",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "''",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_ledger",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "book",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "merchant_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "driver_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "amount_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "reference",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "actor_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "business_ref",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "users",
+          "from": "driver_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "merchants",
+          "from": "merchant_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_lines",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "item_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "name_ar",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "name_en",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "policy",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "by_weight",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "qty_milli",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "unit_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "estimate_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "final_agorot",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "removed",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "substitute_for",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "merchant_items",
+          "from": "item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_orders",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "merchant_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "merchant_state",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "accept_deadline",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "accept_extended",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "accepted_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "preparing_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "ready_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "handed_over_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "prep_minutes",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "dispatch_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "paused_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "paused_ms",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "no_captain_alerted_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "goods_estimate_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "goods_cap_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "goods_agorot",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "delivery_fee_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "service_fee_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 19,
+          "name": "agree_limit",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 20,
+          "name": "pickup_code",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 21,
+          "name": "pickup_failures",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 22,
+          "name": "packing",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 23,
+          "name": "handover_exception",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 24,
+          "name": "cancel_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 25,
+          "name": "merchant_rating",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 26,
+          "name": "customer_rating_by_merchant",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "merchants",
+          "from": "merchant_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_seals",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "package_no",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "intact",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "attempt",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "actor_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "shop_snapshots",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "goods_agorot",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "body",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
     },
     {
       "name": "subscriptions",
