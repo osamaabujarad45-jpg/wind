@@ -672,7 +672,9 @@ export function registerShop(route: Register, deps: ShopDeps) {
 
   // ---------- dispatch and sweeps ----------
   async function release(orderId: number, customerId: number, now: number) {
-    if (!(await db.run("UPDATE orders SET status = 'searching', job_alerted_at = ?, updated_at = ? WHERE id = ? AND status = 'requested'", now, now, orderId)).changes) return false;
+    // The shop state is re-checked in the same statement: a consent pause committed after the sweep's read keeps the order off the board.
+    if (!(await db.run(`UPDATE orders SET status = 'searching', job_alerted_at = ?, updated_at = ? WHERE id = ? AND status = 'requested'
+      AND EXISTS (SELECT 1 FROM shop_orders s WHERE s.order_id = orders.id AND s.merchant_state IN ('accepted','preparing','ready') AND s.paused_at IS NULL)`, now, now, orderId)).changes) return false;
     await db.run('UPDATE shop_orders SET dispatch_at = ? WHERE order_id = ?', now, orderId);
     await deps.dispatch(orderId, customerId);
     return true;
@@ -991,9 +993,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (fault!.result === 'none') fail(409, 'fault_required');
     const n = Number((await db.one("SELECT COUNT(*) AS n FROM shop_ledger WHERE order_id = ? AND kind = 'refund'", r.id))!.n);
     await ledger(fault!.result === 'merchant' ? 'merchant' : 'wind', { merchant: Number(s.merchant_id), order: r.id }, 'refund', -amount, reason, user.id, `shop-refund-${r.id}-${n + 1}`);
-    if (fault!.result === 'merchant') { // the commission on refunded goods comes back to the shop
-      const bps = Number((await db.one('SELECT commission_bps FROM merchants WHERE id = ?', s.merchant_id))!.commission_bps);
-      const back = Math.round(amount * bps / 10_000);
+    if (fault!.result === 'merchant') { // the commission this order paid on the refunded goods comes back to the shop, pro rata
+      const charged = -Number((await db.one('SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE business_ref = ?', `shop-commission-m-${r.id}`))!.n);
+      const returned = Number((await db.one("SELECT COALESCE(SUM(amount_agorot), 0) AS n FROM shop_ledger WHERE book = 'merchant' AND order_id = ? AND business_ref LIKE 'shop-refund-cm-%'", r.id))!.n);
+      const back = Math.min(charged - returned, Number(s.goods_agorot) ? Math.round(amount * charged / Number(s.goods_agorot)) : 0);
       await ledger('merchant', { merchant: Number(s.merchant_id), order: r.id }, 'commission', back, 'Commission on refunded goods', user.id, `shop-refund-cm-${r.id}-${n + 1}`);
       await ledger('wind', { merchant: Number(s.merchant_id), order: r.id }, 'commission', -back, 'Commission on refunded goods', user.id, `shop-refund-cw-${r.id}-${n + 1}`);
     }

@@ -579,7 +579,9 @@ export default function OrderScreen() {
           <FilterChips items={(order.service === 'shop' ? shopExceptionReasons : exceptionReasons).map(key => ({ key, label: atPickup ? c[`pickup_${key as ExceptionReason}`] : c[`reason_${key}`] }))} value={problem.reason}
             onChange={reason => setProblem(p => ({ ...p, reason }))} />
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
-          <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy} reason={c.wait_busy}
+          <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'}
+            disabled={!!busy || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
+            reason={busy ? c.wait_busy : c.shopSealsNeeded}
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
               { reason: problem.reason, note: problem.note.trim(), ...shopProof }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}

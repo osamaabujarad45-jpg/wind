@@ -189,6 +189,7 @@ try {
   assert.equal(owedAfter - owedBefore, 3000 - 500 + Math.round(10 * 0.15 * 100), 'the captain owes the goods he collected plus his commission');
   // a shop-fault refund gives back the commission taken on the refunded goods (MER-09)
   await call(`/admin/orders/${o.id}/shop/fault`, { token: admin.token, body: { result: 'merchant', note: 'Rice bag was out of date' } });
+  await call(`/admin/merchants/${merchant.id}`, { token: admin.token, body: { commissionBps: 2000 } }); // a later rate change does not change what this order paid
   await call(`/admin/orders/${o.id}/shop/refund`, { token: admin.token, body: { amountAgorot: 1000, reason: 'Out-of-date rice bag' } });
   assert.equal(db.prepare("SELECT SUM(amount_agorot) n FROM shop_ledger WHERE book = 'merchant' AND order_id = ?").get(o.id).n, 3000 - 150 - 1000 + 50);
 
