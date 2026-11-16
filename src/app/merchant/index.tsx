@@ -42,13 +42,14 @@ export default function MerchantHome() {
     <Button title={merchant.pausedNew ? c.merchantResume : c.merchantPause} variant={merchant.pausedNew ? 'primary' : 'outline'} loading={busy} onPress={() => pause(!merchant.pausedNew)} />
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantPauseHint}</Txt>
     <ErrorText>{error}</ErrorText>
-    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} onDone={mine.reload} />
     <ListGroup>
       <ListRow icon="pricetags-outline" label={c.merchantCatalogue} onPress={() => router.push('/merchant/catalogue')} />
     </ListGroup>
     <Section title={c.merchantInbox} />
     {!orders.length && <Empty icon="file-tray-outline" title={c.merchantNoOrders} />}
     {orders.map(o => <InboxRow key={o.id} order={o} />)}
+    {/* a setting touched rarely: below the inbox, which is the shop's main work */}
+    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} onDone={mine.reload} />
     {!!statement.data?.entries.length && <Card>
       <Section title={c.merchantStatement} />
       {statement.data.entries.slice(0, 20).map(e => <Row key={e.id} style={{ justifyContent: 'space-between', paddingVertical: 3 }}>
