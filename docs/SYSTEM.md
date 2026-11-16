@@ -151,7 +151,7 @@ Still simplified versus the plan above, in order of likely need:
 
 ## 10. Parcel launch workflow checklist
 
-> **16 Nov 2026:** for the shop and goods-COD pilot, SRS decision D-1 lets Wind collect item-sale proceeds at the door under a ₪500 per-order ceiling, superseding this section's exclusion for that pilot only (`docs/requirements/SRS-2026-11-16-wind-one-app.md` §16a). The parcel checklist below is unchanged.
+> **16 Nov 2026:** for the shop and goods-COD pilot, SRS decision D-1 lets Wind collect item-sale proceeds at the door under a ₪500 per-order ceiling, superseding, for that pilot only, the item-sale exclusions in the Scope and Cash remittance rows below (`docs/requirements/SRS-2026-11-16-wind-one-app.md` §16a). The rest of the parcel checklist is unchanged.
 
 This is an operator acceptance checklist, not a list of implemented features. Current source supports one assigned parcel per driver, foreground location, pre-pickup cancel/release, recipient-code completion and calculated commission. It supports on-hold failed delivery, admin reattempt/return decisions, sender-code return closure and recorded disputes, and a driver cash ledger (commission owed, numbered handovers confirmed by the driver, reasoned adjustments), but not pickup/return photo evidence, return fees, refunds or per-order fare collection records. Those remaining gaps still block unsupervised public parcel service.
 
