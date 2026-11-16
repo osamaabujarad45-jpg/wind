@@ -2481,7 +2481,8 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
       if (current.driverId !== user.id || !['assigned', 'at_pickup'].includes(current.status)) fail(409, 'cannot_release'); // nothing collected yet
       (await safetyFree(current.id));
       const now = Date.now();
-      const restoredPrice = current.recommendedPrice ?? current.price;
+      // Back to the recommendation, but never above a per-order cash ceiling lowered since the booking (ADM-12).
+      const restoredPrice = Math.min(current.recommendedPrice ?? current.price, (await settings()).orderCashCeiling);
       const discount = (await restoredDiscount(current.id, restoredPrice, current.discount));
       (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
         job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, restoredPrice, discount, now, now, current.id)); // back to the recommendation
@@ -3319,7 +3320,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
       if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
-        const backPrice = (o.recommended_price ?? o.price) as number;
+        const backPrice = Math.min((o.recommended_price ?? o.price) as number, (await settings()).orderCashCeiling); // ADM-12, as a release
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));

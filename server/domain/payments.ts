@@ -2,6 +2,7 @@ import { needStaff, staffActor } from './ops.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { defaultSettings } from '../../src/model.ts';
 
 type Fail = (status: number, message: string) => never;
 type Actor = { id: number; role: string; status: string };
@@ -157,6 +158,9 @@ export class Payments {
   async createCod(actor: Actor, orderId: number, body: Row) {
     await this.gate(); const order = await this.order(actor, orderId); this.owner(actor, order); if (['searching', 'cancelled'].includes(order.status)) this.fail(409, 'cod_unavailable');
     if (typeof body.beneficiary !== 'string' || !body.beneficiary.trim() || !Number.isSafeInteger(body.goodsMinor) || body.goodsMinor < 0 || body.goodsMinor > COD_LIMIT_MINOR || !Number.isSafeInteger(body.remittanceDueAt) || body.remittanceDueAt <= 0) this.fail(400, 'invalid_input');
+    // ADM-12: goods COD collects the fare plus the goods at the door, under the per-order cash ceiling.
+    const ceiling = Number((await this.db.one("SELECT value FROM settings WHERE key = 'orderCashCeiling'"))?.value ?? defaultSettings.orderCashCeiling);
+    if (Math.round(Number(order.price) * 100) + body.goodsMinor > Math.round(ceiling * 100)) this.fail(409, 'over_cash_ceiling');
     return this.tx(async () => { const id = randomUUID(); const row = await this.db.one("INSERT INTO merchant_cod(id,order_id,beneficiary,goods_minor,status,remittance_due_at,created_at) VALUES(?::uuid,?,?,?,'expected',?,?) ON CONFLICT(order_id) DO NOTHING RETURNING *", id, orderId, body.beneficiary.trim(), body.goodsMinor, body.remittanceDueAt, Date.now()); if (!row) this.fail(409, 'cod_exists'); await this.codEvent(id, 'expected', actor.id, null); return row; });
   }
   private async codEvent(id: string, action: string, actor: number, amount: number | null) { await this.db.run('INSERT INTO merchant_cod_events(id,cod_id,action,actor_id,amount_minor,created_at) VALUES(?::uuid,?::uuid,?,?,?,?)', randomUUID(), id, action, actor, amount, Date.now()); }
