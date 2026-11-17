@@ -1,5 +1,6 @@
-// Preserve npm's native result. Permit one reviewed source backport, never an
-// advisory-wide or severity-wide suppression. CI runs the regressions first.
+// Preserve npm's native result. Permit reviewed source backports only, each pinned to its advisory, the exact packages
+// npm reports through it and the hash of the installed bytes; never an advisory-wide or severity-wide suppression.
+// CI runs the regressions first.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -12,6 +13,16 @@ const require = createRequire(import.meta.url);
 export const DECODER_SHA256 = 'e82696ecdf0ee2c25bd90169cc7915e552d2ccb82a5006c55bc17aecdb55b919';
 const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
+// vendor/picomatch-{2,4}/lib/parse.js as reviewed in the GHSA-fc5q-39xc-vjpf backport (no upstream fix released).
+export const PICOMATCH_PARSE_SHA256 = {
+  2: 'e0e5bc8dd5424da9e7493796e0638026d64ea73bc7f01fc263b71572335f420a',
+  4: '9cf9c1cdfd79db4b8c01512559d75a3665106df1307008f105dec1f504d2a91e',
+};
+const picomatchAdvisory = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
+const picomatchNames = new Set(['picomatch', 'fdir', 'tinyglobby', '@expo/cli', 'expo', 'react-native', 'babel-preset-expo',
+  '@react-native/codegen', '@react-native/babel-plugin-codegen', '@react-native/babel-preset', '@react-native/metro-babel-transformer',
+  '@react-native/metro-config', '@react-native/community-cli-plugin', '@react-native/virtualized-lists',
+  '@typescript-eslint/typescript-estree', 'eslint-import-resolver-typescript']);
 const severities = ['info', 'low', 'moderate', 'high', 'critical'];
 export const sourceHash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 
@@ -20,6 +31,18 @@ export function decoderHashes() {
   const queryRequire = createRequire(routerRequire.resolve('query-string'));
   const decoderPath = queryRequire.resolve('decode-uri-component');
   return { resolved: sourceHash(decoderPath), vendored: sourceHash(join(root, 'vendor/decode-uri-component/index.cjs')), decoderPath };
+}
+
+/** Every picomatch the lockfile installs (and both vendored sources) carries the reviewed guard; anything missing fails closed. */
+export function picomatchReviewed(lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))) {
+  const paths = Object.keys(lock?.packages ?? {}).filter(path => /(^|\/)picomatch(-[24])?$/.test(path));
+  if (!paths.some(path => path.startsWith('node_modules/'))) return false;
+  return paths.every(path => {
+    try {
+      const dir = join(root, path), major = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version.split('.')[0];
+      return sourceHash(join(dir, 'lib/parse.js')) === PICOMATCH_PARSE_SHA256[major];
+    } catch { return false; }
+  });
 }
 
 export function parseAudit(result) {
@@ -40,21 +63,35 @@ export function evaluateAudit(audit, hashes) {
   }
   if (severities.some(severity => counts[severity] !== observed[severity]) || counts.total !== Object.keys(entries).length)
     throw new Error('Inconsistent npm audit counts');
-  function reviewedChain(name, seen = new Set()) {
-    if (!allowedNames.has(name) || seen.has(name)) return false;
+  // A backport counts only while its installed bytes match the reviewed pin.
+  const backports = [
+    { leaf: 'decode-uri-component', advisory, names: allowedNames, reviewed: hashes?.resolved === DECODER_SHA256 && hashes?.vendored === DECODER_SHA256 },
+    { leaf: 'picomatch', advisory: picomatchAdvisory, names: picomatchNames, reviewed: hashes?.picomatch === true },
+  ].filter(backport => backport.reviewed);
+  const allowed = name => backports.some(backport => backport.names.has(name));
+  // A high entry is mitigated when every path below it stays on a reviewed backport's packages and ends at its advisory,
+  // and at least one path reaches it. A revisit (npm graphs have peer cycles) adds no advisory; a cycle that reaches
+  // no reviewed advisory still fails closed. A path into a moderate or low entry is that entry's own reported advisory:
+  // npm rates an entry by its worst path, so nothing high hides below it.
+  const minor = name => ['info', 'low', 'moderate'].includes(entries[name]?.severity);
+  const leaf = (name, via) => backports.some(backport => backport.leaf === name && via?.url === backport.advisory && via?.severity === 'high');
+  function closed(name, seen) {
+    if (seen.has(name)) return true;
     const entry = entries[name];
-    if (!entry || entry.severity !== 'high' || !entry.via.length) return false;
-    const next = new Set([...seen, name]);
-    return entry.via.every(via => typeof via === 'string' ? reviewedChain(via, next)
-      : name === 'decode-uri-component' && via?.url === advisory && via?.severity === 'high');
+    if (!allowed(name) || !entry || entry.severity !== 'high' || !entry.via.length) return false;
+    seen.add(name);
+    return entry.via.every(via => typeof via === 'string' ? minor(via) || closed(via, seen) : leaf(name, via));
   }
+  function reaches(name, seen) {
+    if (seen.has(name) || !entries[name]) return false;
+    seen.add(name);
+    return entries[name].via.some(via => typeof via === 'string' ? reaches(via, seen) : leaf(name, via));
+  }
+  const reviewedChain = name => closed(name, new Set()) && reaches(name, new Set());
   const mitigated = [], rejected = [];
   for (const [name, entry] of Object.entries(entries)) {
     if (entry.severity === 'critical') rejected.push(name);
-    else if (entry.severity === 'high') {
-      if (reviewedChain(name) && hashes?.resolved === DECODER_SHA256 && hashes?.vendored === DECODER_SHA256) mitigated.push(name);
-      else rejected.push(name);
-    }
+    else if (entry.severity === 'high') (reviewedChain(name) ? mitigated : rejected).push(name);
   }
   return { raw: counts, mitigated, rejected,
     moderate: Object.entries(entries).filter(([, entry]) => entry.severity === 'moderate').map(([name]) => name),
@@ -73,7 +110,7 @@ if (import.meta.main) {
     mkdirSync(output, { recursive: true });
     writeFileSync(join(output, 'raw.json'), native.stdout ?? '');
     const audit = parseAudit(native);
-    const hashes = decoderHashes();
+    const hashes = { ...decoderHashes(), picomatch: picomatchReviewed() };
     const verdict = evaluateAudit(audit, hashes);
     console.log(JSON.stringify({ ...verdict, decoderPath: hashes.decoderPath, decoderSha256: hashes.resolved }, null, 2));
     console.log('Raw audit retained at .artifacts/dependency-audit/raw.json; moderate/low entries remain reported.');
