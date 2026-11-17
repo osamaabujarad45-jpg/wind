@@ -6,6 +6,7 @@ import { api, API_URL, ApiError, configureApi, errorCode, invalidateApiSessionAc
 import { apiSessionCredential, apiSessionRevision, serverOffset } from './api-client';
 import { configureRecoveryActor, savedOfflineSummary } from './offline-recovery';
 import { acknowledgeRecoveryWake, pendingRecoveryWake, recoveryStorage } from './recovery-storage';
+import { outboxKey } from './chat-outbox';
 import { deadlineWake } from './deadline-wake';
 import { createDeadlineReconciler } from './deadline-recovery';
 import { copy } from './copy';
@@ -50,6 +51,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const accountLoaded = useRef(false);
   const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(null);
   const [me, setMe] = useState<Me | null>(null);
+  const signedInUser = useRef<number | null>(null);
+  useEffect(() => { if (me) signedInUser.current = me.user.id; }, [me]);
   const [onboarded, setOnboarded] = useState(false);
   const [language, setLanguageState] = useState<Language>(getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar');
   useEffect(() => {
@@ -94,6 +97,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!removed) return;
     // Only now: until the token is gone this session is still open, and a failed sign-out must leave its records readable.
     if (endedCredential) await recoveryStorage.clear(endedCredential).catch(() => {});
+    // Choosing to sign out also removes this account's unsent chat texts from the device (a forced sign-out keeps them).
+    if (revoke && signedInUser.current) await storage.set(outboxKey(signedInUser.current), null).catch(() => {});
     if (!current()) return;
     if (revoke && endedCredential) void api('/auth/logout', {}).catch(() => {});
     endLocally();

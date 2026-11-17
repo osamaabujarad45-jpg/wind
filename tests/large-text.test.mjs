@@ -71,7 +71,7 @@ const iconOnly = new Set(['iconButton', 'stepperKey', 'listIcon', 'emptyIcon', '
 for (const file of ['../src/ui.tsx', '../src/app/order/[id].tsx']) {
   for (const line of read(file).split('\n')) {
     const m = /^  (\w+): \{.*(?<![A-Za-z])(height|lineHeight)\s*:/.exec(line);
-    if (m && !iconOnly.has(m[1]) && !/^  (h1|h2|title|body|label|caption|micro):/.test(line)) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
+    if (m && !iconOnly.has(m[1]) && !/^  (display|h1|h2|title|body|label|caption|micro):/.test(line)) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
   }
 }
 

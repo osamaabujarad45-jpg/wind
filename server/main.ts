@@ -42,8 +42,10 @@ import { doorCash } from './domain/door-cash.ts';
 import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
+import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
+import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
 import { registerOfficeRoutes, remindOffice } from './domain/office.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
@@ -660,6 +662,7 @@ const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
 registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
 registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
+registerCommandReceiptRoutes(route, { db: persistence, fail });
 registerCustodyRoutes(route, { db: persistence, fail });
 registerOfficeRoutes(route, { db: persistence, fail, need, text, push: (ids, kind, order) => queuePush(ids, kind, order) });
 const nativePush = new NativePush(persistence, fail);
@@ -3174,6 +3177,7 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
+registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
   safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
@@ -3220,7 +3224,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
-    if (saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
+    // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
+    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
   (await persistence.exec('BEGIN IMMEDIATE'));
@@ -3229,7 +3234,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
     const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
     if (raced) {
-      if (raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount) fail(409, 'idempotency_conflict');
+      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount) fail(409, 'idempotency_conflict');
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }

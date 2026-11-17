@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import ts from 'typescript';
 import * as notice from '../src/phone/notice.ts'; // pure, so the real one runs
 import { createProtectedRecovery } from '../src/protected-recovery.ts';
+import * as chatOutbox from '../src/chat-outbox.ts'; // pure, so the real one runs
 
 const source = ts.transpileModule(readFileSync(new URL('../src/session.tsx', import.meta.url), 'utf8'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -67,6 +68,7 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     './api-client': { apiSessionCredential: () => credential, apiSessionRevision: () => revision, serverOffset: () => 0 },
     './offline-recovery': { configureRecoveryActor(next) { if (actor && next !== actor) revision++; actor = next; }, savedOfflineSummary: async () => summary },
     './recovery-storage': { recoveryStorage: recovery, pendingRecoveryWake: async () => null, acknowledgeRecoveryWake: async () => {} },
+    './chat-outbox': chatOutbox,
     // A14 wake handling has its own suite (deadline-recovery); here no native wake is ever pending.
     './deadline-wake': { deadlineWake: { clear: async () => {}, subscribe: () => ({ remove() {} }) } },
     './deadline-recovery': { createDeadlineReconciler: () => async () => {} }, './map-failures': { retryMapProviders() {} },

@@ -63,11 +63,25 @@ export default function Welcome() {
   </SafeAreaView>;
 }
 
-// Parcel is the launch service; additional services appear after operator approval.
+// Slide 1: the product itself, a small map with the pickup, the road and the drop-off pin (design review 17 Nov: the cube and
+// bar said nothing). Pure views, no image; the route follows reading direction, like the route rail in the app.
 function ServicesArt() {
-  return <View style={{ alignItems: 'center', gap: 22 }}>
-    <ServiceIcon service="parcel" size={80} />
-    <Road />
+  const { rtl } = useCopy();
+  const reduced = useReducedMotion();
+  const start = rtl ? 'right' : 'left', end = rtl ? 'left' : 'right';
+  const dots = [0, 1, 2, 3, 4, 5, 6];
+  return <View style={styles.map} accessible={false}>
+    {/* streets: pale bands across the wash */}
+    <View style={[styles.street, { top: 38, transform: [{ rotate: '-8deg' }] }]} />
+    <View style={[styles.street, { top: 104, transform: [{ rotate: '6deg' }] }]} />
+    <View style={[styles.avenue, { [start]: 118, transform: [{ rotate: rtl ? '-14deg' : '14deg' }] }]} />
+    {dots.map(i => <Animated.View key={i} entering={reduced ? undefined : FadeInDown.duration(220).delay(120 + i * 70)}
+      style={[styles.routeDot, { bottom: 34 + i * 12, [start]: 46 + i * 26 }]} />)}
+    <View style={[styles.pickup, { bottom: 24, [start]: 30 }]} />
+    <Animated.View entering={reduced ? undefined : ZoomIn.duration(300).delay(640)} style={{ position: 'absolute', top: 14, [end]: 30 }}>
+      <Ionicons name="location" size={36} color={palette.clay} />
+    </Animated.View>
+    <View style={[styles.parcelChip, { top: 14, [start]: 16 }]}><ServiceIcon service="parcel" size={36} /></View>
   </View>;
 }
 
@@ -76,7 +90,7 @@ function PriceArt({ label }: { label: string }) {
   return <View style={{ alignItems: 'center', gap: 18 }}>
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
     <View style={[styles.saveBadge, { flexDirection: row }]}>
-      <Ionicons name="pricetag" size={16} color={palette.onFill} />
+      <Ionicons name="pricetag" size={16} color={palette.olive} />
       <Text maxFontSizeMultiplier={maxScale} key={language} style={styles.saveText}>{label}</Text>
     </View>
     <Txt variant="caption">{c.cash}</Txt>
@@ -106,29 +120,25 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
   </View>;
 }
 
-// Origin (olive) to destination (terracotta), following reading direction.
-function Road() {
-  const { rtl } = useCopy();
-  return <View style={{ width: 260, height: 14, justifyContent: 'center' }}>
-    <View style={{ height: 4, borderRadius: 2, backgroundColor: palette.line }} />
-    <View style={[styles.end, { [rtl ? 'right' : 'left']: 0, backgroundColor: palette.olive }]} />
-    <View style={[styles.end, { [rtl ? 'left' : 'right']: 0, backgroundColor: palette.clay }]} />
-  </View>;
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
   pill: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card },
   body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 30 },
   art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' },
   footer: { paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.line },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.field }, // inactive dots were 1.2:1 on paper
   dotOn: { width: 24, backgroundColor: palette.olive },
   slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.forest, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
-  saveText: { color: palette.onFill, fontSize: 16, fontWeight: '900' },
+  // a pale tag, not the forest fill of a button: on the welcome slide it read as something to press
+  saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.olivePale, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
+  saveText: { color: palette.olive, fontSize: 16, fontWeight: '900' },
+  map: { width: 270, maxWidth: '100%', height: 160, borderRadius: 18, overflow: 'hidden', backgroundColor: palette.mapWash },
+  street: { position: 'absolute', left: -20, right: -20, height: 14, backgroundColor: palette.card, opacity: 0.85 },
+  avenue: { position: 'absolute', top: -20, width: 18, height: 190, backgroundColor: palette.card, opacity: 0.85 },
+  routeDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: palette.olive },
+  pickup: { position: 'absolute', width: 18, height: 18, borderRadius: 9, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
+  parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
-  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.line, alignItems: 'center', justifyContent: 'center' },
+  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
   code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },
-  end: { position: 'absolute', width: 14, height: 14, borderRadius: 7 },
 });

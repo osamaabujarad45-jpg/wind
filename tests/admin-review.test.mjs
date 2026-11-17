@@ -2,11 +2,13 @@
 // against a stub React and stub UI, with the real copy and model code. Each test asserts the recorded
 // requests (path, method, body), so "no write before confirmation" and "only changed keys" are proven, not assumed.
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { copy, fill } from '../src/copy.ts';
 import * as model from '../src/model.ts';
+import * as cashCommand from '../src/admin-cash-command.ts';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -20,7 +22,9 @@ for (const language of ['ar', 'en']) {
 
 // One screen rendered with a stub React: hooks are slots kept in call order, as React keeps them.
 // `me` is the session's user record; for settings it carries the server settings the form starts from.
-function screen(file, language, { data = {}, me = {} } = {}) {
+// `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
+// `receipt` is what GET /admin/cash/commands/:id answers.
+function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
   let loseNext = false, holding = false, releaseHeld = null;
@@ -31,7 +35,7 @@ function screen(file, language, { data = {}, me = {} } = {}) {
       return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
     },
     useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; },
-    useEffect() {},
+    useEffect(run) { const index = cursor++; if (effects && !(index in slots)) { slots[index] = true; run(); } },
   };
   // The server side of the stub. A "lost" call still reaches the server first (the write commits) and then the reply is dropped.
   const api = async (path, body, method) => {
@@ -51,6 +55,7 @@ function screen(file, language, { data = {}, me = {} } = {}) {
       if (lost) throw new Error('network');
       return { ...serverSettings };
     }
+    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: receipt }; }
     if (lost) throw new Error('network');
     return { reference: 'REF-1' };
   };
@@ -71,16 +76,19 @@ function screen(file, language, { data = {}, me = {} } = {}) {
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
     '../../phone/flow': { codeInput: raw => raw },
-    '../../booking': { newRequestId: () => `request-${calls.length}-${Math.random().toString(16).slice(2, 8)}` },
+    '../../admin-cash-command': cashCommand,
+    '../../storage': { storage: { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } } },
+    '../../booking': { newRequestId: () => randomUUID() }, // a real UUID: a saved cash command with any other id is refused
     '../../ui': ui,
     'expo-router': { router: {} },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, `unexpected import ${name}`); return modules[name]; } };
   runInNewContext(ts.transpileModule(read(`src/app/admin/${file}.tsx`), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText, context);
   return {
-    calls, dialogs,
+    calls, dialogs, store,
     render() { cursor = 0; return context.exports.default(); },
     server: () => serverSettings,
     // The next call (a write or a read) commits or answers on the server, then its reply is lost.
@@ -319,9 +327,16 @@ for (const language of ['ar', 'en']) {
 
   // Role edits: the confirmation names the person and phone and shows old → new; nothing is sent before it.
   const user = { id: 2, name: 'Customer', phone: '0599000004', role: 'customer', status: 'active', createdAt: 1 };
-  const people = () => screen('users', language, { data: { '/admin/users?q=': [user] }, me: { user: { id: 99 }, capabilities: {} } });
+  // A user's actions open from their row (design review 17 Nov), so each check opens it first.
+  const people = async () => {
+    const view = screen('users', language, { data: { '/admin/users?q=': [user] }, me: { user: { id: 99 }, capabilities: {} } });
+    const row = nodes(view.render(), 'Press').find(props => props.accessibilityLabel?.startsWith(user.name));
+    assert.ok(row, 'user row');
+    await row.onPress();
+    return view;
+  };
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     nodes(view.render(), 'Choices').find(props => props.value === 'customer').onChange('driver');
     await tap(view, c.save);
@@ -339,7 +354,7 @@ for (const language of ['ar', 'en']) {
 
   // Cancelling the role confirmation sends nothing.
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     nodes(view.render(), 'Choices').find(props => props.value === 'customer').onChange('driver');
     await tap(view, c.save);
@@ -349,7 +364,7 @@ for (const language of ['ar', 'en']) {
 
   // An edit that keeps the role saves directly, as before.
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     field(view.render(), c.name).onChangeText('Renamed');
     await tap(view, c.save);
@@ -362,11 +377,17 @@ for (const language of ['ar', 'en']) {
 }
 console.log('Admin settings and role-change review contracts passed');
 
+const cashData = { '/admin/cash': [
+  { driverId: 7, name: 'Driver', phone: '0599000102', owedCents: 100, pendingCents: 0, lastRemittanceAt: null },
+  { driverId: 8, name: 'Other', phone: '0599000103', owedCents: 300, pendingCents: 0, lastRemittanceAt: null }], '/admin/cash/pending': [] };
+const cashAdmin = { user: { id: 1, role: 'admin' } };
+const button = (tree, title) => nodes(tree, 'Button').filter(props => props.title === title);
 // A-01 (A53, bcc0c97): a remittance whose reply was lost cannot be re-recorded through the amount check (its own pending
 // copy fills the room), so the form offers the same receipt again: same request id, which the server replays, never twice.
 for (const language of ['ar', 'en']) {
   const c = copy[language];
-  const view = screen('cash', language, { data: { '/admin/cash': [{ driverId: 7, name: 'Driver', phone: '0599000102', owedCents: 100, pendingCents: 0, lastRemittanceAt: null }], '/admin/cash/pending': [] } });
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true });
+  await flush(); // the mount lookup finds nothing saved
   await tap(view, c.cashRecord); // opens the form
   view.loseNextCall();
   await tap(view, c.cashRecord); // the form's record button asks for review
@@ -383,5 +404,43 @@ for (const language of ['ar', 'en']) {
   assert.equal(second.body.requestId, first.body.requestId, `${language}: the retry replays the same request id`);
   assert.equal(second.body.amountCents, first.body.amountCents);
   assert.ok(!shows(view.render(), c.cashUncertain), `${language}: a confirmed retry closes the form`);
+  assert.equal(view.store.size, 0, `${language}: a confirmed entry clears the saved command`);
 }
 console.log('Admin cash lost-acknowledgement retry replays the same receipt');
+
+// A-01 after a restart: the saved command comes back locked and blocks new entries; the admin's own command receipt settles
+// it without a second POST, and a missing receipt keeps it unconfirmed (never shown as recorded or failed).
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const before = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  before.render(); // mounting runs the recovery lookup
+  await flush();
+  await tap(before, c.cashRecord);
+  before.loseNextCall();
+  await tap(before, c.cashRecord);
+  before.dialogs.at(-1).yes(); await flush();
+  const sent = before.calls.at(-1).body;
+  assert.equal(store.size, 1, `${language}: the lost entry is on the device`);
+
+  const unknown = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store }); // app restarted, no receipt yet
+  unknown.render(); // mounting runs the recovery lookup
+  await flush();
+  let tree = unknown.render();
+  assert.ok(shows(tree, c.cashUncertain), `${language}: the restored entry says it may be recorded`);
+  assert.equal(field(tree, c.cashAmount).disabled, true, `${language}: the restored amount is locked`);
+  assert.equal(button(tree, c.cancel).length, 0, `${language}: an unconfirmed entry cannot be dismissed`);
+  assert.ok(button(tree, c.cashAdjust).every(props => props.disabled), `${language}: no new entry while one is unconfirmed`);
+  assert.ok(unknown.calls.every(call => call.path !== '/admin/cash/remittance'), `${language}: the lookup never records`);
+  assert.equal(store.size, 1);
+
+  const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041' } });
+  known.render(); // mounting runs the recovery lookup
+  await flush();
+  tree = known.render();
+  assert.equal(known.calls.find(call => call.path.startsWith('/admin/cash/commands/'))?.path, `/admin/cash/commands/${sent.requestId}`);
+  assert.ok(shows(tree, 'R-000041') && !shows(tree, c.cashUncertain), `${language}: the receipt names the recorded entry`);
+  assert.ok(known.calls.every(call => call.path !== '/admin/cash/remittance'), `${language}: settled without a second POST`);
+  assert.equal(store.size, 0, `${language}: the settled command is cleared`);
+}
+console.log('Admin cash entry survives a restart and is settled only by its command receipt');

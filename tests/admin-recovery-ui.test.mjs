@@ -16,7 +16,7 @@ const user = { id: 7, role: 'driver', status: 'active', name: 'Driver', vehicle:
 const other = { id: 8, role: 'customer', status: 'active', name: 'Other', phone: '0599000008' };
 const verified = { id: 9, role: 'customer', status: 'active', name: 'Verified', phone: '0599000009', email: 'v@example.test', emailVerifiedAt: 1 };
 let emailReady = false, resetFailure = null; const resets = [];
-const ui = Object.fromEntries(['Appear','Badge','Button','Card','Choices','Empty','ErrorText','Field','FilterChips','Header','Loading','Row','Screen','Txt'].map(name => [name, name]));
+const ui = Object.fromEntries(['Appear','Badge','Button','Card','Choices','Empty','ErrorText','Field','FilterChips','Header','Loading','Press','Row','Screen','Txt'].map(name => [name, name]));
 const modules = {
   react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   '../../session': { useSession: () => ({ me: { user: { id: 1 }, capabilities: { emailVerification: emailReady } } }) }, 'react-native': { View: 'View', ScrollView: 'ScrollView' }, '../../model': model,
@@ -27,6 +27,7 @@ const modules = {
     if (path.endsWith('/identity-check')) return { at: 1, proof: '1.signature' };
     calls.push(body); if (calls.length === 1) throw new ApiError('carrying_parcels'); await new Promise(resolve => { complete = resolve; });
   } },
+  '@expo/vector-icons': { Ionicons: 'Ionicons' },
   '../../ui': { ...ui, fill: copy.fill, useCopy: () => ({ c: copy.copy.en, err: e => e.message }), palette: {}, tones: { active: {} },
     haptic: { success() {}, error() {} }, confirm: (_message, yes) => { confirmCount++; yes(); } },
 };
@@ -41,6 +42,13 @@ function find(node, title) {
   for (const child of [node.props?.children].flat(Infinity)) { const found = find(child, title); if (found) return found; }
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
+// The user's actions sit inside the expandable row (design review 17 Nov): open it first, as a person would.
+function row(node) {
+  if (!node || typeof node !== 'object') return;
+  if (node.type === 'Press' && node.props.accessibilityState && 'expanded' in node.props.accessibilityState) return node.props;
+  for (const child of [node.props?.children].flat(Infinity)) { const found = row(child); if (found) return found; }
+}
+row(render()).onPress();
 const first = find(render(), copy.copy.en.block);
 await first.onPress(); await flush();
 assert.equal(confirmCount, 2, 'block asks first (one tap ends every session), then asks about the parcels'); assert.equal(calls.length, 2); assert.equal(calls[1].recovery, 'return');
@@ -57,7 +65,18 @@ const all = (node, type, key, value, found = []) => {
   for (const child of [node.props?.children].flat(Infinity)) all(child, type, key, value, found);
   return found;
 };
-const edit = index => all(render(), 'Button', 'title', en.editUser)[index].onPress();
+// Each user's Edit sits inside their expandable row; one row opens at a time, and tapping an open row closes it.
+const rows = (node, found = []) => {
+  if (!node || typeof node !== 'object') return found;
+  if (node.type === 'Press' && node.props.accessibilityState && 'expanded' in node.props.accessibilityState) found.push(node.props);
+  for (const child of [node.props?.children].flat(Infinity)) rows(child, found);
+  return found;
+};
+const edit = index => {
+  const target = rows(render())[index];
+  if (!target.accessibilityState.expanded) target.onPress();
+  all(render(), 'Button', 'title', en.editUser)[0].onPress();
+};
 const note = () => all(render(), 'Field', 'label', en.resetAttestation)[0];
 const reset = () => all(render(), 'Button', 'title', en.resetPassword)[0];
 const written = 'Called the registered number back';

@@ -5,7 +5,8 @@ import { useApi } from '../../api';
 import type { Merchant, MerchantItem } from '../../model';
 import { cartGoods, clearCart, otherShop, qtyOf, setQuantity, useCart } from '../../shop-cart';
 import { QtyControl, todayHours } from '../../shop-ui';
-import { Button, Card, confirm, Empty, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { View } from 'react-native';
+import { Button, Card, confirm, Empty, fill, Header, IconButton, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
 export default function ShopStore() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,14 +34,18 @@ export default function ShopStore() {
       {data.items.filter(i => i.section === section).map(item => {
         const qty = qtyOf(mine, item.id);
         const name = language === 'ar' ? item.nameAr : item.nameEn;
-        return <Row key={item.id} style={{ justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: palette.line }}>
-          <Txt style={{ flex: 1 }}>
-            {name}{'\n'}
-            <Txt variant="caption">{item.byWeight ? fill(c.shopPerKg, { r: money(item.priceAgorot / 100) }) : money(item.priceAgorot / 100)}</Txt>
-          </Txt>
+        // Grocery-row pattern (design review 17 Nov): the name in ink, the price as the bold figure, a round "+" instead of a pill
+        // that was the loudest thing on the screen. A weighed price says it is an estimate until the shop weighs it.
+        return <Row key={item.id} style={{ justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: palette.line }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt style={{ color: palette.ink, fontWeight: '600' }}>{name}</Txt>
+            <Txt style={{ color: palette.ink, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+              {item.byWeight ? `${fill(c.shopPerKg, { r: money(item.priceAgorot / 100) })} ${c.shopEstimateShort}` : money(item.priceAgorot / 100)}
+            </Txt>
+          </View>
+          {/* A first tap adds 1 kg or one piece, the usual buy; the stepper then moves by 250 g or one. */}
           {qty === 0
-            ? <Button title={c.shopAdd} size="sm" variant="soft" icon="add" disabled={!m.open} label={fill(c.shopAddItem, { item: name })}
-              onPress={() => change(item, item.byWeight ? 1000 : 1000)} />
+            ? <IconButton icon="add" tone="forest" disabled={!m.open} label={fill(c.shopAddItem, { item: name })} onPress={() => change(item, 1000)} />
             : <QtyControl item={item} qtyMilli={qty} name={name} onChange={q => change(item, q)} />}
         </Row>;
       })}
