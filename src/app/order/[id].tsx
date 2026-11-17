@@ -899,12 +899,12 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
       </View>}
     {mineUnsent.map(u => <View key={u.requestId} style={[styles.bubble, styles.unsent, { alignSelf: rtl ? 'flex-start' : 'flex-end' }]}>
       <Txt accessibilityLabel={`${c.you}: ${u.body}, ${c.chatNotSent}`}>{u.body}</Txt>
-      <Row gap={18} style={{ marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <Row gap={12} style={{ marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
         <Txt variant="micro" style={{ color: palette.clayInk }}>{c.chatNotSent}</Txt>
-        {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} hitSlop={8}>
+        {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} style={styles.unsentAction}>
           <Txt variant="label" style={{ color: palette.olive }}>{c.chatResend}</Txt>
         </Press>}
-        <Press accessibilityLabel={`${c.chatDiscard}: ${u.body}`} disabled={busy} hitSlop={8}
+        <Press accessibilityLabel={`${c.chatDiscard}: ${u.body}`} disabled={busy} style={styles.unsentAction}
           onPress={() => confirm(c.chatDiscardConfirm, () => { void keep(without(outbox.current, u.requestId)); }, c.chatDiscard, c.cancel)}>
           <Txt variant="label" style={{ color: palette.secondary }}>{c.chatDiscard}</Txt>
         </Press>
@@ -1009,6 +1009,7 @@ const styles = StyleSheet.create({
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   unsent: { backgroundColor: palette.olivePale, marginBottom: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.clayInk },
+  unsentAction: { minHeight: 48, minWidth: 48, justifyContent: 'center', paddingHorizontal: 6 }, // 48 dp targets, as for Send
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
