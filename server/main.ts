@@ -2660,14 +2660,17 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   try {
     const order = (await one('SELECT id, customer_id, driver_id, status, service FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
-    if (body.action === 'reattempt') (await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ?", Date.now(), id));
+    // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
+    // PostgreSQL's BEGIN does not lock the row read above.
+    const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
+    if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (body.action === 'confirm_return') {
-      (await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ?", Date.now(), Date.now(), id));
+      moved((await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes);
       await shop.afterFinish(order, 'returned', user.id);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
-      (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), Date.now(), id));
+      moved((await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ? AND status = 'on_hold'", String(randomInt(1000, 10000)), Date.now(), id)).changes);
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
     }
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,

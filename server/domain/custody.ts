@@ -5,7 +5,7 @@ type Register = (method: string, path: string, handler: (ctx: { user: User; para
 type Deps = { db: Persistence; fail: (status: number, message: string) => never };
 
 /** One step of who held a parcel and when (SHIP-10). Reason codes only: notes are free text and can carry phone numbers. */
-export type CustodyStep = { at: number; kind: CustodyKind; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number };
+export type CustodyStep = { at: number; kind: CustodyKind; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number; attempt?: number };
 export type CustodyKind = 'booked' | 'released' | 'assigned' | 'picked_up' | 'pickup_failed' | 'held' | 'decided' | 'blocked'
   | 'delivered' | 'returned' | 'cancelled' | 'office_received' | 'office_collected' | 'office_donated' | 'office_destroyed';
 
@@ -38,7 +38,7 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     if (o!.picked_up_at) steps.push({ at: Number(o!.picked_up_at), kind: 'picked_up', by: 'driver' });
     const events = await deps.db.all(`SELECT e.action, e.detail, e.created_at, a.role FROM security_events e JOIN users a ON a.id = e.actor_id
       WHERE e.order_id = ? AND e.action IN ('PICKUP_FAILED','DELIVERY_EXCEPTION','EXCEPTION_RESOLVED','COURIER_BLOCKED','RETURN_COMPLETED','ORDER_CANCELLED_BY_ADMIN',
-        'OFFICE_RECEIVED','OFFICE_COLLECTED','OFFICE_DONATED','OFFICE_DESTROYED')`, id);
+        'OFFICE_RECEIVED','OFFICE_COLLECTED','OFFICE_DONATED','OFFICE_DESTROYED') ORDER BY e.created_at, e.id`, id);
     for (const e of events) {
       let detail: Record<string, unknown> = {};
       try { detail = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail ?? {}; } catch { /* an unreadable row still shows its step */ }
@@ -55,6 +55,13 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned'))
       steps.push({ at: Number(o!.completed_at), kind: 'returned', by: 'support' });
     steps.sort((a, b) => a.at - b.at);
+    // A retry after a failed delivery is a new attempt, not a silent status rewrite (the first try is attempt 1). Only a
+    // reattempt that follows a failed delivery counts: support can also hold and resume an order with no failed attempt.
+    let attempt = 1, failed = false;
+    for (const step of steps) {
+      if (step.kind === 'held') failed = true;
+      else if (step.kind === 'decided' && step.reason === 'reattempt' && failed) { step.attempt = ++attempt; failed = false; }
+    }
     return { orderId: id, steps };
   });
 }
