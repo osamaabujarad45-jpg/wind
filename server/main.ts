@@ -2135,10 +2135,20 @@ route('POST', '/api/orders/:id/dispute', async ({ user, params, body }) => {
   const r = (await one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id)) ?? fail(404, 'not_found');
   const reason = text(body.reason, 1000);
   if (reason.length < 10) fail(400, 'invalid_input');
+  // One dispute per order. A double tap or a resend after a lost reply (same customer, same reason) gets the dispute it
+  // already opened, not an error, even once the reporting window has closed; only the insert that wins alerts support.
+  const resent = async () => {
+    const opened = await one('SELECT customer_id, reason FROM order_disputes WHERE order_id = ?', r.id);
+    if (!opened) return false;
+    if (opened.customer_id !== user.id || opened.reason !== reason) fail(409, 'dispute_exists');
+    return true;
+  };
+  if (await resent()) return (await getOrder(r.id, user));
   if (!finishedStatuses.includes(r.status) || Date.now() - (r.completed_at ?? r.updated_at) > 7 * DAY) fail(409, 'cannot_dispute');
-  if ((await one('SELECT id FROM order_disputes WHERE order_id = ?', r.id))) fail(409, 'dispute_exists');
-  (await run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?)', r.id, user.id, reason, Date.now()));
-  await queuePush((await adminIds()), 'attention', r.id, '/admin/orders');
+  const inserted = (await run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(order_id) DO NOTHING',
+    r.id, user.id, reason, Date.now())).changes;
+  if (!inserted) await resent(); // a concurrent tap won the insert: replay it or refuse a different reason
+  else await queuePush((await adminIds()), 'attention', r.id, '/admin/orders');
   return (await getOrder(r.id, user));
 });
 
