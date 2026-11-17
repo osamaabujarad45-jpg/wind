@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ar">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#12342A" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Wind" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <title>Wind</title>
+    <!-- The react-native-web reset keeps the mobile app layout full height. -->
+    <style id="expo-reset">
+      html, body { height: 100%; }
+      body { overflow: hidden; }
+      #root { display: flex; height: 100%; flex: 1; }
+    </style>
+  <link rel="icon" href="/favicon.ico"/></head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- Painted before the app's JavaScript arrives; React replaces it. Same 120px tile as the native splash and src/intro.tsx. -->
+    <div id="root"><div style="flex:1;display:flex;align-items:center;justify-content:center;background:#F3F2EC">
+      <svg width="120" height="120" viewBox="0 0 512 512" role="img" aria-label="Wind"><rect width="512" height="512" rx="120" fill="#12342A"/>
+        <g fill="#D3F27A"><rect x="132" y="177" width="114" height="34" rx="17"/><rect x="72" y="241" width="174" height="38" rx="19"/><rect x="164" y="309" width="82" height="34" rx="17"/></g>
+        <path d="M358 148a82 82 0 0 1 82 82c0 52-82 116-82 116s-82-64-82-116a82 82 0 0 1 82-82z" fill="#CB6845"/><circle cx="358" cy="227" r="32" fill="#12342A"/></svg>
+    </div></div>
+      <script>
+/* demo-mock.js — Wind web demo, fully in-browser synthetic backend.
+   Loaded before the app bundle; wraps window.fetch for /api/* only.
+   Every response matches the app's own wire validators. All data is
+   synthetic; no backend, no storage of personal data. */
+(function () {
+  'use strict';
+
+  var SETTINGS = {
+    parcelPrice: 20, parcelLarge: 10, rideBase: 15, ridePerKm: 1.1,
+    freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
+    sharedDiscount: 0.4, plusDiscount: 0.15, commission: 0.15, proCommission: 0.05,
+    plusPrice: 29, proPrice: 99, perMinute: 0.25, nightExtra: 0.2
+  };
+  var CAPABILITIES = { enabledServices: ['ride', 'parcel', 'freight'], pooling: false, emailVerification: false };
+
+  var seedOrders = [
+      {
+        id: 1, customerId: 1, driverId: 900, service: 'ride', shared: false,
+        pickupCity: 'ramallah', dropoffCity: 'nablus',
+        pickupPoint: null, dropoffPoint: null,
+        pickupNote: 'Al-Manara', dropoffNote: 'Nablus market', detail: '', option: '1',
+        loadingHelp: false, contact: '0599000782', pickupContact: '0599000782',
+        recipientName: '', recipientPhone: null,
+        price: 66, commission: null, status: 'completed', canChangeDestination: false,
+        handoverCode: null, rating: 5, createdAt: nowMs() - 6 * 86400e3, updatedAt: nowMs() - 6 * 86400e3,
+        assignedAt: nowMs() - 6 * 86400e3, pickedUpAt: nowMs() - 6 * 86400e3, completedAt: nowMs() - 6 * 86400e3,
+        sharing: false, scheduledFor: null, discount: 0, returnCode: null,
+        exceptionReason: null, safetyHold: false, safetyReport: null, dispute: null,
+        customerName: 'Wind Demo', driverVehicle: 'Car', driverPlate: '000-7', driverLocation: null,
+        recommendedPrice: null, priceRating: null, routeKm: null, sharedRun: false,
+        myOffer: null, customerRating: 5
+      },
+      {
+        id: 2, customerId: 1, driverId: null, service: 'parcel', shared: false,
+        pickupCity: 'bireh', dropoffCity: 'ramallah',
+        pickupPoint: null, dropoffPoint: null,
+        pickupNote: 'Warehouse gate', dropoffNote: 'Home', detail: 'Documents', option: 'small',
+        loadingHelp: false, contact: '0599000782', pickupContact: '0599000782',
+        recipientName: '', recipientPhone: null,
+        price: 20, commission: null, status: 'cancelled', canChangeDestination: false,
+        handoverCode: null, rating: null, createdAt: nowMs() - 3 * 86400e3, updatedAt: nowMs() - 3 * 86400e3,
+        assignedAt: null, pickedUpAt: null, completedAt: null,
+        sharing: false, scheduledFor: null, discount: 0, returnCode: null,
+        exceptionReason: null, safetyHold: false, safetyReport: null, dispute: null,
+        customerName: 'Wind Demo', driverVehicle: null, driverPlate: null, driverLocation: null,
+        recommendedPrice: null, priceRating: null, routeKm: null, sharedRun: false,
+        myOffer: null, customerRating: null
+      }
+    ];
+  var state;
+  try { state = JSON.parse(localStorage.getItem('wind-demo-state') || 'null'); } catch (e) { state = null; }
+  if (!state || !Array.isArray(state.orders)) {
+    state = { user: null, token: null, places: [], recent: [{ city: 'ramallah', note: 'Ramallah' }],
+      nextPlaceId: 1, nextOrderId: 3, orders: seedOrders };
+  }
+  function save() { try { localStorage.setItem('wind-demo-state', JSON.stringify(state)); } catch (e) { /* private mode */ } }
+
+  // Pre-seed a signed-in demo session on first load so the demo survives reloads.
+  if (!state.token || !state.user) {
+    state.token = 'demo-token-seed-' + Math.random().toString(36).slice(2);
+    state.user = { id: 1, phone: '0599000782', name: 'Wind Demo', role: 'customer', status: 'active',
+      vehicle: null, plate: null, rating: null, createdAt: nowMs() - 30 * 86400e3, email: 'demo@example.test',
+      permanentlyApprovedAt: null, phoneVerifiedAt: null, emailVerifiedAt: null };
+    save();
+  }
+  // Keep the app's auth keys consistent with the mock's session, unconditionally.
+  try {
+    localStorage.setItem('token', state.token);
+    localStorage.setItem('onboarded', '1');
+    if (!localStorage.getItem('language')) localStorage.setItem('language', 'en');
+  } catch (e) { /* private mode */ }
+
+  function nowMs() { return Date.now(); }
+  function ok(payload, status) {
+    return new Response(JSON.stringify(payload), {
+      status: status || 200,
+      headers: { 'content-type': 'application/json', 'x-demo': 'wind-demo' }
+    });
+  }
+  function fail(status, error) { return ok({ error: error }, status); }
+  function auth(init) {
+    var h = init && init.headers;
+    var a = h && (h.Authorization || h.authorization);
+    return (state.token && a === 'Bearer ' + state.token) ? true : false;
+  }
+  function parseBody(init) {
+    try { return init && init.body ? JSON.parse(init.body) : {}; } catch (e) { return {}; }
+  }
+  function mePayload() {
+    return { user: state.user, subscription: null, plan: null, settings: SETTINGS, capabilities: CAPABILITIES };
+  }
+  function priceFor(service) {
+    if (service === 'freight') return { price: 186, km: 46.3, minutes: 62 };
+    if (service === 'parcel') return { price: 20, km: 46.3, minutes: 56 };
+    return { price: 66, km: 46.3, minutes: 56 };
+  }
+  function newOrder(payload) {
+    var q = priceFor(payload.service);
+    var price = typeof payload.quotedPrice === 'number' && payload.quotedPrice > 0 ? payload.quotedPrice : q.price;
+    return {
+      id: state.nextOrderId++, customerId: 1, driverId: null, service: payload.service, shared: false,
+      pickupCity: payload.pickupCity, dropoffCity: payload.dropoffCity,
+      pickupPoint: payload.pickupPoint || null, dropoffPoint: payload.dropoffPoint || null,
+      pickupNote: String(payload.pickupNote || ''), dropoffNote: String(payload.dropoffNote || ''),
+      detail: String(payload.detail || ''), option: String(payload.option || '1'),
+      loadingHelp: !!payload.loadingHelp, contact: payload.contact || '0599000782',
+      pickupContact: payload.contact || '0599000782',
+      recipientName: '', recipientPhone: null,
+      price: price, commission: null, status: 'searching', canChangeDestination: false,
+      handoverCode: null, rating: null, createdAt: nowMs(), updatedAt: nowMs(),
+      assignedAt: null, pickedUpAt: null, completedAt: null,
+      sharing: false, scheduledFor: payload.scheduledFor || null, discount: 0, returnCode: null,
+      exceptionReason: null, safetyHold: false, safetyReport: null, dispute: null,
+      customerName: state.user ? state.user.name : 'Wind Demo',
+      driverVehicle: null, driverPlate: null, driverLocation: null,
+      recommendedPrice: null, priceRating: null, routeKm: null, sharedRun: false,
+      myOffer: null, customerRating: null
+    };
+  }
+  function promote(order) {
+    // A driver "finds" the ride ~25s after the request lands (searching -> assigned).
+    if (order.status === 'searching' && nowMs() - order.createdAt > 25e3) {
+      order.status = 'assigned';
+      order.driverId = 900;
+      order.assignedAt = order.createdAt + 25e3;
+      order.driverVehicle = 'Car';
+      order.driverPlate = '000-7';
+      order.updatedAt = nowMs();
+      save();
+    }
+    return order;
+  }
+  function findOrder(id) { return state.orders.find(function (o) { return o.id === id; }); }
+
+  function handle(url, init) {
+    var u = new URL(url, location.origin);
+    var p = u.pathname.replace(/\/+$/, '');
+    var m = (init && init.method) || 'GET';
+    m = m.toUpperCase();
+
+    if (p === '/api/auth/options' && m === 'GET') return ok({ registrationOpen: true, emailReset: false });
+    if (p === '/api/runtime/configuration' && m === 'GET') {
+      var t = nowMs();
+      return ok({ schemaVersion: 1, revision: '1fe4f6e3a20e8d91939382d5', issuedAt: t, expiresAt: t + 45 * 60e3,
+        values: { orderRefreshMs: 4000, mapReadyTimeoutMs: 20000, offlineMaxAgeMs: 21600000, commandMaxAgeMs: 900000 },
+        mapProviders: { initialMapProvider: 'baseline', fallbackMapProviders: ['baseline'], missingProviderDefault: 'baseline' } });
+    }
+    if (p === '/api/runtime/capabilities' && m === 'GET') {
+      var caps = {};
+      ['durableCommands','measuredEligibility','activeGps','lockedQuotes','nativePush','dispatch','boarding','declaredScope','ledger','payments','operations','freightCrew','boardingMetadata'].forEach(function (k) {
+        caps[k] = { state: 'unavailable', operationalEvidence: 'not_checked' };
+      });
+      return ok({ schemaVersion: 1, capabilities: caps });
+    }
+    if (p === '/api/runtime/diagnostics') return ok({ ok: true });
+    if (p === '/api/phone/capabilities' && m === 'GET') return ok({ available: false, enabled: false });
+
+    if ((p === '/api/auth/register' || p === '/api/auth/login') && m === 'POST') {
+      var body = parseBody(init);
+      if (p === '/api/auth/register') {
+        if (!body.consent) return fail(400, 'consent_required');
+        var name = String(body.name || 'Wind Demo').trim() || 'Wind Demo';
+        state.user = { id: 1, phone: String(body.phone || '0599000782'), name: name, role: 'customer', status: 'active',
+          vehicle: null, plate: null, rating: null, createdAt: nowMs(), email: body.email || null,
+          permanentlyApprovedAt: null, phoneVerifiedAt: null, emailVerifiedAt: null };
+      } else if (!state.user) {
+        // Login with any password works in the demo: found the one seeded user.
+        state.user = { id: 1, phone: '0599000782', name: 'Wind Demo', role: 'customer', status: 'active',
+          vehicle: null, plate: null, rating: null, createdAt: nowMs() - 30 * 86400e3, email: 'demo@example.test',
+          permanentlyApprovedAt: null, phoneVerifiedAt: null, emailVerifiedAt: null };
+      }
+      state.token = 'demo-token-' + Math.random().toString(36).slice(2);
+      state.rideCount = 2;
+      save();
+      return ok(Object.assign(mePayload(), { token: state.token }));
+    }
+
+    if (!auth(init)) return fail(401, 'unauthorized');
+
+    if (p === '/api/me' && m === 'GET') return ok(mePayload());
+    if (p === '/api/me/places') {
+      if (m === 'GET') return ok({ saved: state.places, recent: state.recent });
+      if (m === 'POST') {
+        var b = parseBody(init);
+        state.places.push({ id: state.nextPlaceId++, label: b.label || 'home', city: b.city || 'ramallah', note: String(b.note || '') });
+        save();
+        return ok({ saved: state.places, recent: state.recent });
+      }
+      return ok({ saved: state.places, recent: state.recent });
+    }
+    var placesDelete = /^\/api\/me\/places\/(\d+)$/.exec(p);
+    if (placesDelete && m === 'DELETE') {
+      var delId = Number(placesDelete[1]);
+      state.places = state.places.filter(function (pl) { return pl.id !== delId; });
+      save();
+      return ok({ saved: state.places, recent: state.recent });
+    }
+    if (p === '/api/me/referral') return ok({ code: 'WIND25', reward: 25, joined: 1, earned: 0, credits: [] });
+    if (p === '/api/roads') {
+      return ok([{ id: 1, name: 'Al-Irsal', cities: ['ramallah'], point: null, status: 'slow',
+        note: 'Weekly market congestion', reportedAt: nowMs() - 3600e3, agreeing: 12 }]);
+    }
+    if (p === '/api/price' && m === 'POST') {
+      var pb = parseBody(init);
+      var q = priceFor(pb.service);
+      return ok({ price: q.price, km: q.km, minutes: q.minutes, delayMinutes: 0, night: false,
+        slow: [], closed: [], avoids: [], estimated: true, standard: false, line: null, at: nowMs() });
+    }
+    if (p === '/api/promos/check' && m === 'POST') {
+      var promo = parseBody(init);
+      if (String(promo.code || '').toUpperCase() === 'WIND25') return ok({ code: 'WIND25', discount: 0.25 });
+      return fail(400, 'promo_not_found');
+    }
+    if (p === '/api/orders' && m === 'GET') {
+      return ok(state.orders.map(promote).slice().sort(function (a, b) { return b.id - a.id; }));
+    }
+    if (p === '/api/orders' && m === 'POST') {
+      var ob = parseBody(init);
+      var created = newOrder(ob);
+      state.orders.unshift(created);
+      save();
+      return ok(created);
+    }
+    var orderMatch = /^\/api\/orders\/(\d+)$/.exec(p);
+    if (orderMatch && m === 'GET') {
+      var order = findOrder(Number(orderMatch[1]));
+      return order ? ok(promote(order)) : fail(404, 'not_found');
+    }
+    var actionMatch = /^\/api\/orders\/(\d+)\/([a-z_/]+)$/.exec(p);
+    if (actionMatch && m === 'POST') {
+      var actionOrder = findOrder(Number(actionMatch[1]));
+      if (!actionOrder) return fail(404, 'not_found');
+      if (actionMatch[2] === 'cancel') {
+        actionOrder.status = 'cancelled'; actionOrder.updatedAt = nowMs();
+        save();
+        return ok(actionOrder);
+      }
+      if (actionMatch[2] === 'rate' || actionMatch[2] === 'sos') return ok(actionOrder);
+      if (actionMatch[2] === 'share') return ok({ path: '/track/demo-' + actionOrder.id });
+      if (actionMatch[2] === 'share/revoke') return ok(actionOrder);
+      if (actionMatch[2] === 'messages') return ok([]);
+      return ok(actionOrder);
+    }
+    var messagesMatch = /^\/api\/orders\/(\d+)\/messages$/.exec(p);
+    if (messagesMatch && m === 'GET') return ok([]);
+    var trackEta = /^\/api\/track\/[^/]+\/eta$/.exec(p);
+    if (trackEta && m === 'GET') {
+      var t = nowMs();
+      return ok({ schemaVersion: 1, minSeconds: 2700, maxSeconds: 3600, rawSeconds: 3300,
+        accuracy: 'medium', basis: 'straight_line', serverTime: t,
+        validity: { issuedAt: t, expiresAt: t + 300e3, expiresInSeconds: 300 } });
+    }
+    return fail(404, 'not_found');
+  }
+
+  var realFetch = window.fetch ? window.fetch.bind(window) : null;
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/api/') !== -1) {
+      try { return Promise.resolve(handle(url, init)); } catch (e) {
+        return Promise.resolve(fail(500, 'demo_error'));
+      }
+    }
+    return realFetch(input, init);
+  };
+
+  // Demo badge — honest label, small and unobtrusive.
+  try {
+    var badge = document.createElement('div');
+    badge.textContent = 'Demo - synthetic data, no real drivers';
+    badge.style.cssText = 'position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:none;background:rgba(13,59,46,.85);color:#fff;font:500 11px/1 system-ui,-apple-system,sans-serif;padding:6px 14px;border-radius:14px;letter-spacing:.2px';
+    if (document.body) document.body.appendChild(badge);
+    else addEventListener('DOMContentLoaded', function () { document.body.appendChild(badge); });
+  } catch (e) { /* badge optional */ }
+})();
+
+</script>
+<script src="/_expo/static/js/web/index-659bb621f2d72cde2d8c7d8a5637dd3f.js" defer></script>
+</body>
+</html>
