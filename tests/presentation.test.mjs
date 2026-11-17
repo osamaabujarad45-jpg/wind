@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pickupForm, readBooking, retryIds } from '../src/booking.ts';
+import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pickupForm, readBooking } from '../src/booking.ts';
 import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from '../src/location-state.ts';
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
@@ -81,12 +81,7 @@ assert.equal(locked.requestId, quotedCommand.requestId);
 const legacy = orderRequest(pending);
 assert.equal(legacy.quotedPrice, payload.quotedPrice);
 assert.equal('quoteId' in legacy, false);
-// Chat retry: text A fails (reply lost), quick reply B goes out, A is resent with its first id.
-const chatIds = retryIds(), firstA = chatIds.for('A');
-chatIds.for('B'); chatIds.sent('B');
-assert.equal(chatIds.for('A'), firstA, 'a failed text keeps its id after another text was sent');
-chatIds.sent('A');
-assert.notEqual(chatIds.for('A'), firstA, 'the same text sent again after success is a new message');
+// Chat retry ids moved to the persistent outbox: tests/chat-outbox.test.mjs.
 // Orders "show older": the hook keeps every ended order it showed plus the loaded page, so when order 11 ends
 // and the polled first page drops 8 off its window, 8 stays listed; the polled copy wins for an order in both.
 const o = (id, status = 'completed') => ({ id, status });
