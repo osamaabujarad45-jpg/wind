@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, scheduleSlots } from '../../booking';
-import { delivered, outboxKey, queue, readOutbox, undeliverable, without, type Unsent } from '../../chat-outbox';
+import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } from '../../chat-outbox';
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
@@ -464,7 +464,7 @@ export default function OrderScreen() {
 
     {/* Codes sit above the chat: they are what the customer needs at the door. */}
     {(isAdmin || ((isCustomer || mine) && (activeStatuses.includes(order.status) || (order.driverId && now - order.updatedAt <= 86_400_000)))) && order.driverId &&
-      <Chat orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
+      <Chat key={me?.user.id ?? 0} orderId={order.id} canWrite={(isCustomer || mine) && activeStatuses.includes(order.status)} live={activeStatuses.includes(order.status)} />}
 
     <DestinationChangeCard key={order.id} order={order} customer={isCustomer} driver={!!mine} now={now} onChange={next => {
       setData(next); if (isDriver) work.update(next);
@@ -838,49 +838,50 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
-  // Unsent texts keep the id they were first sent with, saved in the account's own slot: a resend after a lost reply
-  // or an app restart is replayed by the server, never posted twice, even when other texts went out in between.
+  // Unsent texts keep the id they were first sent with, saved in the account's own slot before the request leaves: a
+  // resend after a lost reply or an app restart is replayed by the server, never posted twice. The parent keys this
+  // component by account, so another account's texts never show here.
   const userId = useSession().me?.user.id;
-  const key = userId ? outboxKey(userId, orderId) : null;
+  const [store] = useState(() => userId ? outboxStore({ read: () => storage.get(outboxKey(userId)), write: value => storage.set(outboxKey(userId), value) }, Date.now) : null);
   const [unsent, setUnsent] = useState<Unsent[]>([]);
-  const outbox = useRef<Unsent[]>([]); // current list for sends started from an older render
-  const keep = (list: Unsent[]) => {
-    outbox.current = list; setUnsent(list);
-    // A failed save keeps the in-memory copy: the chat never blocks on storage (SecureStore may refuse a large value).
-    if (key) void storage.set(key, list.length ? JSON.stringify(list) : null).catch(() => undefined);
-  };
+  const outbox = useRef<Unsent[]>([]); // the current list for sends started from an older render
+  const keep = (list: Unsent[]) => { outbox.current = list; setUnsent(list); return store?.save(list) ?? Promise.resolve(false); };
   useEffect(() => {
-    if (!key) return;
-    let live = true;
-    storage.get(key).then(raw => { if (live && raw) { const list = readOutbox(JSON.parse(raw)); outbox.current = list; setUnsent(list); } })
-      .catch(() => undefined);
-    return () => { live = false; };
-  }, [key]);
-  // A text the server already shows as mine was delivered although its reply was lost: stop offering to resend it.
+    let mounted = true;
+    void store?.load().then(list => { if (mounted) { outbox.current = list; setUnsent(list); } });
+    return () => { mounted = false; };
+  }, [store]);
+  // A text the server lists as mine, newer than what was on screen when it was queued, landed although its reply was lost.
+  const landed = data ? delivered(unsent, orderId, data).map(u => u.requestId).join() : '';
   useEffect(() => {
-    const landed = data ? delivered(outbox.current, data) : [];
-    if (landed.length) keep(outbox.current.filter(u => !landed.includes(u)));
-  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps -- keep only writes the outbox
+    if (!landed) return;
+    const ids = landed.split(',');
+    void keep(outbox.current.filter(u => !ids.includes(u.requestId)));
+  }, [landed]); // eslint-disable-line react-hooks/exhaustive-deps -- keep only writes the outbox; `landed` is the whole input
   async function send(body: string) {
     const text = body.trim();
     if (!text || busy) return;
     setBusy(true); setFailure('');
-    const { list, entry } = queue(outbox.current, text, Date.now());
-    keep(list);
-    try {
-      setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: entry.body, requestId: entry.requestId }));
-      keep(without(outbox.current, entry.requestId));
+    const newest = data?.at(-1)?.id ?? (data ? 0 : null); // null: the history is not loaded, so delivery cannot be inferred
+    const outcome = await sendText({ list: outbox.current, orderId, body: text, now: Date.now(), afterId: newest,
+      save: keep, post: entry => api<Message[]>(`/orders/${orderId}/messages`, { body: entry.body, requestId: entry.requestId }) });
+    outbox.current = outcome.list; setUnsent(outcome.list);
+    if (outcome.state === 'sent') {
+      setData(outcome.reply);
       if (body === draft) setDraft('');
       haptic.success();
-    } catch (e) {
-      haptic.error(); setFailure(err(e));
-      if (undeliverable(e)) keep(without(outbox.current, entry.requestId)); // refused for good: resending cannot deliver it
-      else if (body === draft) setDraft(''); // it waits below as "not sent yet", with its own resend
-    } finally { setBusy(false); }
+    } else if (outcome.state === 'full') setFailure(c.chatOutboxFull);
+    else {
+      haptic.error(); setFailure(err(outcome.error));
+      if (outcome.state === 'refused') setDraft(text); // never delivered: give the words back to edit or copy
+      else if (outcome.durable && body === draft) setDraft(''); // it waits below as "not sent yet", with its own resend
+    }
+    setBusy(false);
   }
+  const mineUnsent = unsent.filter(u => u.orderId === orderId);
   const recent = (data ?? []).slice(-20);
   // a closed chat with nothing in it is a card that says "nothing here"; a closed one with history still shows
-  if (!canWrite && !recent.length && !error) return null;
+  if (!canWrite && !recent.length && !error && !mineUnsent.length) return null;
   return <Card>
     <Row gap={8} style={{ marginBottom: 8 }}>
       <Ionicons name="chatbubbles-outline" size={20} color={palette.olive} />
@@ -896,15 +897,15 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
           <Txt variant="micro" style={styles.bubbleMeta}>{stamp(m.createdAt)}</Txt>
         </View>)}
       </View>}
-    {unsent.map(u => <View key={u.requestId} style={[styles.bubble, { alignSelf: rtl ? 'flex-start' : 'flex-end', backgroundColor: palette.olivePale, marginBottom: 6, opacity: 0.85 }]}
-      accessible accessibilityLabel={`${c.you}: ${u.body}, ${c.chatNotSent}`}>
-      <Txt>{u.body}</Txt>
-      <Row gap={10} style={{ marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+    {mineUnsent.map(u => <View key={u.requestId} style={[styles.bubble, styles.unsent, { alignSelf: rtl ? 'flex-start' : 'flex-end' }]}>
+      <Txt accessibilityLabel={`${c.you}: ${u.body}, ${c.chatNotSent}`}>{u.body}</Txt>
+      <Row gap={18} style={{ marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <Txt variant="micro" style={{ color: palette.clayInk }}>{c.chatNotSent}</Txt>
-        {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} hitSlop={12}>
+        {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} hitSlop={8}>
           <Txt variant="label" style={{ color: palette.olive }}>{c.chatResend}</Txt>
         </Press>}
-        <Press accessibilityLabel={`${c.chatDiscard}: ${u.body}`} disabled={busy} onPress={() => keep(without(outbox.current, u.requestId))} hitSlop={12}>
+        <Press accessibilityLabel={`${c.chatDiscard}: ${u.body}`} disabled={busy} hitSlop={8}
+          onPress={() => confirm(c.chatDiscardConfirm, () => { void keep(without(outbox.current, u.requestId)); }, c.chatDiscard, c.cancel)}>
           <Txt variant="label" style={{ color: palette.secondary }}>{c.chatDiscard}</Txt>
         </Press>
       </Row>
@@ -1007,6 +1008,7 @@ const styles = StyleSheet.create({
   digitText: { fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, textAlign: 'center' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  unsent: { backgroundColor: palette.olivePale, marginBottom: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.clayInk },
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },

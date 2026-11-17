@@ -28,14 +28,6 @@ export type PendingBooking = {
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** One retry id per unsent text: a failed text keeps its id when resent, even after other texts went out in between. */
-export function retryIds() {
-  const ids = new Map<string, string>();
-  return {
-    for(text: string) { let id = ids.get(text); if (!id) ids.set(text, id = newRequestId()); return id; },
-    sent(text: string) { ids.delete(text); },
-  };
-}
 export const newBooking = (payload: BookingPayload): PendingBooking => {
   const now = Date.now();
   return { requestId: newRequestId(), payload, sentAt: now, attemptedAt: now, commandExpiresAt: now + serverOffset() + BOOKING_COMMAND_TTL_MS };
