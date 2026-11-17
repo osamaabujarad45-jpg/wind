@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, useReducedMotion } from '../motion';
 import { router } from 'expo-router';
 import { api, errorCode, privacyUrl, SUPPORT_URL, TERMS_URL } from '../api';
