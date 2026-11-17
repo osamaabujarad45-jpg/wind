@@ -25,6 +25,7 @@
     "expo-web-browser": "~57.0.3",
     "pg": "8.23.1",
     "picomatch": "file:./vendor/picomatch-2",
+    "picomatch-4": "file:./vendor/picomatch-4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -91,15 +92,7 @@
     "zod": "4.6.7",
     "deepmerge": "$deepmerge",
     "picomatch@^2": "$picomatch",
-    "@expo/metro-config": {
-      "picomatch": "file:../../../vendor/picomatch-4"
-    },
-    "@expo/cli": {
-      "picomatch": "file:../../../../../vendor/picomatch-4"
-    },
-    "tinyglobby": {
-      "picomatch": "file:../../vendor/picomatch-4"
-    }
+    "picomatch@^4": "$picomatch-4"
   },
   "expo": {
     "install": {
