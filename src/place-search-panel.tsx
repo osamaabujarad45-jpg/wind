@@ -2,6 +2,7 @@
 // it only on the explicit Confirm tap, while the parent owns the booking. No Google Places request exists here,
 // so the panel keeps working with no connection. A confirmed pin is never moved by a search tap.
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 import { city, type SavedPlace } from './model';
 import { confirmPlace, proposePlace, searchPlaces, type PlaceCandidate, type PlaceChoice } from './place-search';
@@ -46,14 +47,20 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
     {!online && <Txt variant="caption" style={styles.note}>{text.offline}</Txt>}
     <ErrorText>{outside ? c.pinOutsideArea : undefined}</ErrorText>
     {!!term && !result.choices.length && <Txt variant="caption" center style={styles.note}>{c.noCities}</Txt>}
-    {result.choices.map(item => <Press key={item.key} accessibilityLabel={`${name(item)}, ${detail(item)}`} onPress={() => setChoice(item)}>
-      <Row gap={8} style={styles.row}>
-        <View style={styles.text}>
-          <Txt variant="title" numberOfLines={1}>{name(item)}</Txt>
-          <Txt variant="micro" numberOfLines={1}>{detail(item)}</Txt>
-        </View>
-      </Row>
-    </Press>)}
+    {!!result.choices.length && <View accessibilityRole="radiogroup" accessibilityLabel={text.label}>
+      {result.choices.map(item => {
+        const selectedChoice = choice?.key === item.key;
+        return <Press key={item.key} accessibilityRole="radio" accessibilityState={{ checked: selectedChoice }} accessibilityLabel={`${name(item)}, ${detail(item)}`} onPress={() => setChoice(item)}>
+          <Row gap={8} style={[styles.row, selectedChoice && styles.rowSelected]}>
+            <View style={styles.text}>
+              <Txt variant="title" numberOfLines={1}>{name(item)}</Txt>
+              <Txt variant="micro" numberOfLines={1}>{detail(item)}</Txt>
+            </View>
+            <Ionicons aria-hidden name={selectedChoice ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selectedChoice ? palette.forest : palette.faint} />
+          </Row>
+        </Press>;
+      })}
+    </View>}
     {proposal && choice && <Card tone="olive" style={styles.proposal}>
       <View accessibilityLiveRegion="polite">
         <Txt variant="title">{name(choice)}</Txt>
@@ -71,7 +78,8 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
 const styles = StyleSheet.create({
   panel: { gap: 4 },
   note: { marginTop: 8 },
-  row: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.hair },
+  row: { minHeight: 48, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.hair },
+  rowSelected: { paddingHorizontal: 12, borderRadius: 12, borderBottomColor: 'transparent', backgroundColor: palette.olivePale },
   text: { flex: 1 },
   proposal: { marginTop: 10, gap: 4 },
 });

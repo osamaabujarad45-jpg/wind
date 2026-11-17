@@ -17,6 +17,7 @@ const suites = [
   "presentation.test.mjs",
   "shared-ui.test.mjs",
   "launch-customer-ui.test.mjs",
+  "booking-ui.test.mjs",
   "driver-presence-card.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",

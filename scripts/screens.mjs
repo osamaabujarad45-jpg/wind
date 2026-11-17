@@ -186,6 +186,11 @@ const screens = [
   { id: 'book-parcel', group: 'Customer', name: 'Book a parcel', route: '/book?service=parcel', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-ride', group: 'Customer', name: 'Book a ride', route: '/book?service=ride', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-calculating', group: 'Customer', name: 'Book a ride · price being calculated (Request disabled, reason shown)', route: '/book?service=ride&from=ramallah&to=nablus', file: 'src/app/book.tsx', role: 'customer', state: 'calculating' },
+  { id: 'book-quote-failed', group: 'Customer', name: 'Book a ride · quote failed (keyboard submit blocked)', route: '/book?service=ride&from=ramallah&to=nablus', file: 'src/app/book.tsx', role: 'customer', state: 'quote-failed' },
+  { id: 'book-pending', group: 'Customer', name: 'Book a ride · unknown pending command with Orders recovery', route: '/book?service=ride&from=ramallah&to=nablus', file: 'src/app/book.tsx', role: 'customer', state: 'pending' },
+  { id: 'book-place-selected', group: 'Customer', name: 'Book a parcel · selected place proposal', route: '/book?service=parcel', file: 'src/place-search-panel.tsx', role: 'customer', generated: true },
+  { id: 'book-saved-place-pin-kept', group: 'Customer', name: 'Book a parcel · saved place keeps a disclosed pin', route: '/book?service=parcel', file: 'src/app/book.tsx', role: 'customer', generated: true },
+  { id: 'book-pickup-deep-link-guard', group: 'Customer', name: 'Book · ineligible pickup-only deep link stays empty', route: '/book?service=parcel', file: 'src/app/book.tsx', role: 'customer', generated: true },
   { id: 'book-freight', group: 'Customer', name: 'Book a load', route: '/book?service=freight', file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-again', group: 'Customer', name: 'Order again (form copied from a delivered order)', route: `/book?again=${completed.id}`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
@@ -227,6 +232,8 @@ const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDr
 const { chromium } = await import('playwright');
 const browser = await chromium.launch(process.env.SCREENS_CHROMIUM ? { executablePath: process.env.SCREENS_CHROMIUM } : {});
 const shots = [];
+const savedPlaceNote = 'بيت الاختبار';
+await call('/me/places', layla.token, { label: 'other', city: 'ramallah', note: savedPlaceNote });
 
 for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
@@ -549,6 +556,46 @@ for (const language of ['ar', 'en']) {
       assert.equal(await page.getByText(t.chooseService, { exact: true }).count(), 0, 'no empty service panel is exposed');
       console.log(`Home (${language}): capability guards, retry, plural/recent names and direct navigation passed`);
     }
+    if (screen.id === 'book-parcel') {
+      const t = copy[language];
+      await page.getByRole('button', { name: `${t.pickup}: ${t.chooseCity}`, exact: true }).click();
+      const search = page.getByRole('textbox', { name: t.searchLabel, exact: true });
+      await search.fill(language === 'ar' ? 'ا' : 'a');
+      const group = page.getByRole('radiogroup', { name: t.searchLabel, exact: true });
+      await group.waitFor();
+      const results = group.getByRole('radio');
+      assert.ok(await results.count() > 1, 'place search exposes a real radio group');
+      await results.first().click();
+      assert.equal(await results.first().getAttribute('aria-checked'), 'true');
+      assert.equal(await results.nth(1).getAttribute('aria-checked'), 'false');
+      assert.ok((await results.first().boundingBox()).height >= 48);
+      await search.fill(language === 'ar' ? 'رام الله' : 'Ramallah');
+      await page.waitForTimeout(150);
+      const selected = group.getByRole('radio');
+      assert.equal(await selected.count(), 1);
+      await selected.click();
+      assert.equal(await selected.getAttribute('aria-checked'), 'true');
+      await captureState('book-place-selected', 'Book a parcel · selected place proposal');
+      await page.getByRole('button', { name: t.searchApply, exact: true }).click();
+      await context.grantPermissions(['geolocation']);
+      await context.setGeolocation({ latitude: 31.9038, longitude: 35.2034, accuracy: 15 });
+      await page.getByRole('button', { name: t.pickupOnMap, exact: true }).click();
+      await page.getByRole('button', { name: t.confirmPin, exact: true }).click(); // waits for the real map and automatic location
+      await page.getByRole('button', { name: `${t.pickup}:`, exact: false }).click();
+      const pinQuote = page.waitForRequest(req => new URL(req.url()).pathname === '/api/price' && req.method() === 'POST'
+        && req.postDataJSON()?.pickupPoint && req.postDataJSON()?.pickupNote === savedPlaceNote);
+      await page.getByRole('button', { name: `${savedPlaceNote},`, exact: false }).click();
+      const keptQuote = (await pinQuote).postDataJSON();
+      assert.ok(keptQuote.pickupPoint, 'saved-place selection retains the confirmed pin');
+      assert.equal(keptQuote.pickupNote, savedPlaceNote);
+      await page.getByText(t.searchPinKept, { exact: true }).waitFor();
+      await captureState('book-saved-place-pin-kept', 'Book a parcel · saved place keeps a disclosed pin');
+      await page.goto(base + `/book?again=${inTransit.id}&keep=pickup`, { waitUntil: 'networkidle' });
+      assert.equal(await page.getByRole('radio', { name: t.parcel, exact: true }).getAttribute('aria-checked'), 'true');
+      await page.getByRole('button', { name: `${t.pickup}: ${t.chooseCity}`, exact: true }).waitFor();
+      await captureState('book-pickup-deep-link-guard', 'Book · ineligible pickup-only deep link stays empty');
+      console.log(`Booking (${language}): selected places, retained-pin notice/re-quote and pickup deep-link guard passed`);
+    }
     if (screen.id === 'driver-jobs') {
       await page.getByRole('button', { name: copy[language].activeOrder, exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: copy[language].accept, exact: true }).count() > 0, true);
@@ -771,9 +818,9 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   console.log('Driver UI: idle GPS privacy, foreground assignment/permission recovery, revoked/granted/pending/failed/stale permission reads, busy offers, role hints, completion cleanup, direct accept, late callbacks and logout passed');
 }
 // ---------- 4b. interactive states: a held quote and an offer price outside its band ----------
-if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-range')) {
+if (!only || only.some(id => ['book-calculating', 'book-quote-failed', 'book-pending', 'driver-offer-range'].includes(id))) {
   const base = `http://localhost:${WEB_PORT}`;
-  const stateShot = async (screen, language, token, { setup, run }) => {
+  const stateShot = async (screen, language, token, { setup, run, after }) => {
     const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB', reducedMotion: 'reduce' });
     await context.addInitScript(({ token, language }) => {
       if (sessionStorage.getItem('seeded')) return;
@@ -790,26 +837,138 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
     await run?.(page);
     await page.waitForTimeout(800);
     mkdirSync(join(outDir, language), { recursive: true });
+    await growCaptureViewport(page, phone.width);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
+    await after?.(page);
     await context.close();
   };
   const calculating = screens.find(s => s.id === 'book-calculating');
+  const quoteFailed = screens.find(s => s.id === 'book-quote-failed');
+  const pending = screens.find(s => s.id === 'book-pending');
   const offerRange = screens.find(s => s.id === 'driver-offer-range');
   // A smart-priced ride no driver has taken yet, and a fresh approved driver with no custody, so the offer form opens.
   await smartOrder(omar, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
   const fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
   await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
   for (const language of ['ar', 'en']) {
-    // The quote request is held for 9 s, so the footer shows the calculating reason and a disabled Request.
-    await stateShot(calculating, language, layla.token, {
-      setup: page => page.route('**/api/price', async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
-    });
-    await stateShot(offerRange, language, fresh.token, {
+    const t = copy[language];
+    const fillRide = async page => {
+      await page.getByLabel(t.pickupNote_ride, { exact: true }).fill('دوار المنارة');
+      await page.getByLabel(t.dropoffNote_ride, { exact: true }).fill('مدخل السوق');
+      const contact = page.getByLabel(t.contact, { exact: true });
+      await contact.fill('0599000001');
+      return contact;
+    };
+    if (!only || only.includes('book-calculating')) {
+      const priceBodies = [];
+      const quoteReleases = [];
+      const lockedQuoteId = '123e4567-e89b-42d3-a456-426614174000';
+      const postBodies = [];
+      let contact;
+      let request;
+      await stateShot(calculating, language, layla.token, {
+        setup: async page => {
+          page.on('request', req => { if (new URL(req.url()).pathname === '/api/orders' && req.method() === 'POST') postBodies.push(req.postDataJSON()); });
+          await page.route('**/api/orders*', route => route.request().method() === 'POST' ? route.fulfill({ json: { id: 990001 } }) : route.continue());
+          await page.route('**/api/price*', async route => {
+            priceBodies.push(route.request().postDataJSON());
+            await new Promise(resolve => { quoteReleases.push(resolve); });
+            const response = await route.fetch();
+            const quote = await response.json();
+            // Synthetic locked-quote metadata over the real SQLite recommendation; the final order response is stubbed above.
+            await route.fulfill({ response, json: { ...quote, quoteId: lockedQuoteId, quoteExpiresAt: Date.now() + 120_000,
+              currency: 'ILS', priceMinor: quote.price * 100, commissionMinor: 0 } });
+          });
+        },
+        run: async page => {
+          await page.getByText(t.quote_calculating, { exact: true }).waitFor();
+          contact = await fillRide(page);
+          request = page.getByRole('button', { name: t.request, exact: true });
+          await page.waitForTimeout(450);
+          assert.ok(priceBodies.some(body => body.pickupNote === 'دوار المنارة' && body.dropoffNote === 'مدخل السوق' && body.contact === '0599000001'),
+            'quote binds the complete booking fields');
+          const beforeEdit = priceBodies.length;
+          await contact.fill('0599000002');
+          await page.waitForTimeout(450);
+          assert.ok(priceBodies.length > beforeEdit, 'editing a bound field starts a fresh quote');
+          assert.equal(priceBodies.at(-1).contact, '0599000002');
+          assert.equal(await request.isDisabled(), true);
+          await contact.press('Enter');
+          await page.waitForTimeout(250);
+          assert.equal(postBodies.length, 0, 'Enter cannot bypass a pending quote');
+          assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('booking.')).length), 0);
+        },
+        after: async page => {
+          quoteReleases.at(-1)();
+          request = page.getByRole('button', { name: t.request, exact: false }).first();
+          await page.getByText(t.quote_calculating, { exact: true }).waitFor({ state: 'detached' });
+          await page.waitForTimeout(200);
+          assert.equal(await request.isDisabled(), false);
+          await contact.press('Enter');
+          await page.waitForURL(url => /^\/order\/\d+$/.test(url.pathname));
+          assert.equal(postBodies.length, 1, 'a valid quote submits exactly once');
+          assert.equal(postBodies[0].pricing, 'smart');
+          assert.equal(postBodies[0].quoteId, lockedQuoteId);
+          assert.equal('quotedPrice' in postBodies[0], false, 'a locked quote never carries a conflicting quotedPrice');
+          console.log(`Booking (${language}): edits re-quote; Enter waits; one synthetic locked quoteId reaches the wire without quotedPrice`);
+        },
+      });
+    }
+    if (!only || only.includes('book-quote-failed')) {
+      const postBodies = [];
+      await stateShot(quoteFailed, language, layla.token, {
+        setup: async page => {
+          page.on('request', req => { if (new URL(req.url()).pathname === '/api/orders' && req.method() === 'POST') postBodies.push(req.postDataJSON()); });
+          await page.route('**/api/price*', route => route.fulfill({ status: 503, json: { error: 'quote_failed' } }));
+        },
+        run: async page => {
+          const contact = await fillRide(page);
+          await page.getByText(t.quote_failed, { exact: true }).waitFor();
+          assert.equal(await page.getByRole('button', { name: t.request, exact: true }).isDisabled(), true);
+          await contact.press('Enter');
+          await page.waitForTimeout(250);
+          assert.equal(postBodies.length, 0, 'Enter cannot bypass a failed quote');
+          console.log(`Booking (${language}): failed quote blocks keyboard submission`);
+        },
+      });
+    }
+    if (!only || only.includes('book-pending')) {
+      await stateShot(pending, language, layla.token, {
+        setup: async page => {
+          await page.route('**/api/orders*', route => route.request().method() === 'POST' ? route.abort('failed') : route.continue());
+          await page.route('**/api/orders/commands/*', route => route.fulfill({ json: { orderId: null } }));
+        },
+        run: async page => {
+          await fillRide(page);
+          await page.getByText(t.quote_calculating, { exact: true }).waitFor({ state: 'detached' });
+          await page.waitForTimeout(200);
+          const request = page.getByRole('button', { name: t.request, exact: false }).first();
+          assert.equal(await request.isDisabled(), false);
+          await request.click();
+          await page.getByText(t.bookingPending, { exact: true }).waitFor();
+          await page.goto(base + '/book?service=ride&from=ramallah&to=nablus&when=later', { waitUntil: 'load' });
+          await page.getByText(t.bookingPending, { exact: true }).waitFor();
+          await page.getByText(t.bookingRecoveryWait, { exact: true }).waitFor();
+          assert.equal(await page.getByRole('radio', { name: t.now, exact: true }).getAttribute('aria-checked'), 'true', 'an unscheduled pending command wins over when=later');
+          assert.equal(await page.getByRole('radio', { name: t.later, exact: true }).getAttribute('aria-checked'), 'false');
+          assert.equal(await page.getByRole('button', { name: t.bookingEdit, exact: true }).count(), 0, 'unknown recovery has no dead Edit control');
+          assert.equal(await page.getByRole('button', { name: t.bookingDiscard, exact: true }).count(), 0, 'unknown recovery has no dead Discard control');
+          assert.equal(await page.getByRole('button', { name: t.orders, exact: true }).isDisabled(), false);
+        },
+        after: async page => {
+          await page.getByRole('button', { name: t.orders, exact: true }).click();
+          await page.waitForURL(url => url.pathname === '/orders');
+          assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('booking.')).length), 1, 'Orders recovery preserves the durable command');
+          console.log(`Booking (${language}): unknown pending command offers safe Orders recovery`);
+        },
+      });
+    }
+    if (!only || only.includes('driver-offer-range')) await stateShot(offerRange, language, fresh.token, {
       run: async page => {
-        await page.getByRole('button', { name: copy[language].offerPrice, exact: true }).first().click();
-        await page.getByLabel(`${copy[language].offerPrice} (₪)`).first().fill('5');
+        await page.getByRole('button', { name: t.offerPrice, exact: true }).first().click();
+        await page.getByLabel(`${t.offerPrice} (₪)`).first().fill('5');
         await page.mouse.wheel(0, 420); // bring the send button and its reason into view
       },
     });
