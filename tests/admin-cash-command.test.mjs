@@ -1,31 +1,52 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cashCommandBody, newCashCommand, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
+import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
+import { copy } from '../src/copy.ts';
 
-// A-01: a remittance whose reply is lost survives an app restart and is settled only by the admin's own command receipt
-// or a definite refusal; never shown as recorded or failed by guess.
+// A-01: a remittance whose reply is lost survives an app restart and a forced sign-out, and is settled only by the admin's
+// own command receipt or a definite refusal; never shown as recorded or failed by guess.
 const command = newCashCommand(7, 42, 'remittance', 1250, 'Office handover', '0b8f6a52-6c1e-4f7a-9d2b-3e4f5a6b7c8d');
 const rig = ({ receipt = async () => ({ entry: null }), send = async () => ({ id: 99, reference: 'R-99' }) } = {}) => {
-  const io = { stored: null, sends: 0, writes: [], read: async () => io.stored,
-    write: async c => { io.writes.push(c && c.requestId); io.stored = c; }, receipt, send: async c => { io.sends++; return send(c); } };
+  const io = { stored: null, sends: 0, receipts: 0, locks: 0, read: async () => io.stored,
+    write: async c => { io.stored = c; }, receipt: async c => { io.receipts++; return receipt(c); }, send: async c => { io.sends++; return send(c); },
+    exclusive: async run => { io.locks++; return run(); } };
   return io;
 };
 const failing = status => async () => { throw Object.assign(new Error('x'), { status }); };
 
-{ // The command is saved before the request leaves, so a reply lost mid-flight is still on disk.
+{ // The command is saved before the request leaves, under the cross-tab lock, so a reply lost mid-flight is still on disk.
   const io = rig({ send: async () => { assert.equal(io.stored?.requestId, command.requestId, 'saved before send'); return { id: 99, reference: 'R-99' }; } });
   assert.deepEqual(await sendCashCommand(io, command), { state: 'recorded', command, entry: { id: 99, reference: 'R-99' } });
   assert.equal(io.stored, null, 'a recorded entry clears the saved command');
+  assert.equal(io.locks, 1);
 }
 for (const status of [undefined, 0, 500, 502, 401, 403, 408, 429]) { // lost reply, server error, or a session problem: nothing is known
   const io = rig({ send: failing(status) });
   assert.equal((await sendCashCommand(io, command)).state, 'unconfirmed', String(status));
   assert.equal(io.stored?.requestId, command.requestId, `${status} keeps the command for a same-id resend`);
 }
-for (const status of [400, 404, 409]) { // the server refused this request id: nothing was recorded under it
+for (const status of [400, 404]) { // the server refused this request id before any replay could exist: nothing was recorded
   const io = rig({ send: failing(status) });
   assert.equal((await sendCashCommand(io, command)).state, 'refused', String(status));
   assert.equal(io.stored, null);
+}
+{ // 409 may be this admin's own entry with other fields: the receipt decides, and only an empty receipt means refused.
+  const own = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5' } }) });
+  assert.equal((await sendCashCommand(own, command)).state, 'recorded');
+  const other = rig({ send: failing(409) });
+  assert.equal((await sendCashCommand(other, command)).state, 'refused');
+  assert.equal(other.stored, null);
+  const unknown = rig({ send: failing(409), receipt: failing(503) });
+  assert.equal((await sendCashCommand(unknown, command)).state, 'unconfirmed');
+  assert.equal(unknown.stored?.requestId, command.requestId);
+}
+{ // A different command still unconfirmed is never overwritten by a new one.
+  const io = rig(); io.stored = command;
+  const next = newCashCommand(7, 43, 'adjustment', 500, 'Fuel advance');
+  await assert.rejects(sendCashCommand(io, next), /cash_command_pending/);
+  assert.equal(io.stored, command);
+  assert.equal(io.sends, 0);
+  assert.equal((await sendCashCommand(io, command)).state, 'recorded', 'the same command may be resent');
 }
 assert.equal(refusedForGood(null), false);
 
@@ -50,18 +71,41 @@ assert.equal(refusedForGood(null), false);
   for (const stored of [null, { ...command, actorId: 8 }, { schemaVersion: 1, actorId: 7, orderId: 5, action: 'advance' }]) {
     const io = rig(); io.stored = stored;
     assert.deepEqual(await recoverCashCommand(io, 7), { state: 'empty' });
+    assert.equal(io.stored, stored, 'someone else\'s record is left alone');
   }
-  assert.throws(() => readCashCommand({ ...command, amountCents: 0 }, 7), /invalid_pending_command/);
+  // An unreadable cash record cannot be resent and is dropped; a storage read failure keeps the record and is reported.
+  const corrupt = rig(); corrupt.stored = { ...command, amountCents: 0 };
+  assert.deepEqual(await recoverCashCommand(corrupt, 7), { state: 'empty' });
+  assert.equal(corrupt.stored, null);
+  const unreadable = rig(); unreadable.stored = command; unreadable.read = async () => { throw new Error('storage_unavailable'); };
+  await assert.rejects(recoverCashCommand(unreadable, 7), /storage_unavailable/);
+  assert.equal(unreadable.stored, command);
   assert.throws(() => readCashCommand({ ...command, requestId: 'nope' }, 7), /invalid_pending_command/);
+}
+{ // Only the form that was sent changes: recorded closes it, unconfirmed locks it, refused unlocks it; another form keeps its input.
+  const form = { id: 42, kind: 'remittance', amount: '12.5', note: 'Office handover', requestId: command.requestId, uncertain: true };
+  const other = { id: 43, kind: 'adjustment', amount: '3', note: 'typed', requestId: 'f'.repeat(8) + '-0000-4000-8000-' + '0'.repeat(12) };
+  assert.equal(formAfter(form, { state: 'recorded', command, entry: { id: 1 } }), null);
+  assert.equal(formAfter({ ...form, uncertain: false }, { state: 'unconfirmed', command }).uncertain, true);
+  assert.equal(formAfter(form, { state: 'refused', command, error: {} }).uncertain, false, 'a refused resend is editable again');
+  for (const state of ['recorded', 'unconfirmed', 'refused']) assert.equal(formAfter(other, { state, command, entry: { id: 1 } }), other, state);
+  assert.equal(formAfter(null, { state: 'recorded', command, entry: { id: 1 } }), null);
 }
 // The body is the same one the form sent: an adjustment names its reason, a remittance its note.
 assert.deepEqual(cashCommandBody(command), { driverId: 42, amountCents: 1250, note: 'Office handover', requestId: command.requestId });
 assert.deepEqual(cashCommandBody({ ...command, kind: 'adjustment' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId });
+assert.equal(cashCommandKey(7), 'adminCash.7');
+for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending'])
+  assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 
-// The screen saves through the encrypted recovery store and recovers when it opens; an unconfirmed form cannot be dismissed.
+// The screen keeps the command in the admin's own secure slot (not the token-scoped recovery store a forced sign-out wipes),
+// recovers when it opens, changes only the sent form, and blocks a new entry while one is unconfirmed.
 const screen = readFileSync(new URL('../src/app/admin/cash.tsx', import.meta.url), 'utf8');
-assert.match(screen, /sendCashCommand\(/);
-assert.match(screen, /recoverCashCommand\(/);
-assert.match(screen, /recoveryStorage\.(read|write)\('command'/);
+assert.match(screen, /storage\.(get|set)\(cashCommandKey\(actorId\)/);
+assert.doesNotMatch(screen, /recoveryStorage/);
+assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);
+assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/);
 assert.match(screen, /!open\.uncertain && <Button title=\{c\.cancel\}/);
-console.log('PASS: admin cash commands survive a lost reply and a restart, settled only by a command receipt or a definite refusal');
+// A forced sign-out never clears the account's slot: session.tsx forgets only token-scoped records.
+assert.doesNotMatch(readFileSync(new URL('../src/session.tsx', import.meta.url), 'utf8'), /adminCash/);
+console.log('PASS: admin cash commands survive a lost reply, a restart and a sign-out, settled only by a command receipt or a definite refusal');

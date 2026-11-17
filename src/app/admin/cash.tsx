@@ -1,23 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
-import { cashCommandBody, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO } from '../../admin-cash-command';
+import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { minorFromText } from '../../model';
 import { useFormat } from '../../parts';
-import { recoveryStorage } from '../../recovery-storage';
 import { useSession } from '../../session';
+import { storage } from '../../storage';
 import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
 type Balance = { driverId: number; name: string; phone: string; owedCents: number; pendingCents: number; lastRemittanceAt: number | null };
-// ponytail: the encrypted recovery store's 24 h ceiling; an entry still unconfirmed after a day shows in the ledger, not here.
-const COMMAND_TTL = 24 * 60 * 60_000;
-// A-01: the form is saved before it is sent and settled after a restart by this admin's own command receipt.
-const cashIO: CashIO = {
-  read: () => recoveryStorage.read('command'), write: command => recoveryStorage.write('command', command, COMMAND_TTL),
+// A-01: the form is saved in the admin's own secure slot before it is sent (it outlives a forced sign-out, like a pending
+// booking) and settled after a restart by this admin's command receipt or a same-id resend.
+const cashIO = (actorId: number): CashIO => ({
+  read: async () => { const raw = await storage.get(cashCommandKey(actorId), true); return raw ? JSON.parse(raw) : null; },
+  write: async command => { await storage.set(cashCommandKey(actorId), command && JSON.stringify(command), true); },
   receipt: command => api<{ entry: CashEntry | null }>(`/admin/cash/commands/${command.requestId}`),
   send: command => api<CashEntry>(`/admin/cash/${command.kind}`, cashCommandBody(command)),
-};
+  exclusive: run => storage.exclusive(run, 'wind.admin.cash'),
+});
+type Form = { id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string; uncertain?: boolean };
 type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string };
 
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
@@ -31,7 +33,8 @@ export default function AdminCash() {
   const { data: pending, reload: reloadPending } = useApi<PendingEntry[]>('/admin/cash/pending', 15_000);
   // `uncertain`: the last send failed, so the server may already hold it (A-01: a lost acknowledgement). The same request id
   // replays that entry instead of booking it twice; an edit makes it a new entry with a new id.
-  const [open, setOpen] = useState<{ id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string; uncertain?: boolean } | null>(null);
+  const [open, setOpen] = useState<Form | null>(null);
+  const [recovering, setRecovering] = useState(true); // no new entry until a saved one has been looked up
   const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -51,19 +54,19 @@ export default function AdminCash() {
     return null;
   };
 
+  const recorded = (entry: CashEntry) => setMessage(entry.reference ? fill(c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded);
   // After a restart the saved form comes back locked until this admin's command receipt or a same-id resend settles it.
   useEffect(() => {
     if (!actorId) return;
     let live = true;
-    void recoverCashCommand(cashIO, actorId).then(outcome => {
+    setRecovering(true);
+    recoverCashCommand(cashIO(actorId), actorId).then(outcome => {
       if (!live || outcome.state === 'empty') return;
-      if (outcome.state === 'recorded') {
-        if (outcome.entry.reference) setMessage(fill(c.cashRecorded, { r: outcome.entry.reference }));
-        reload(); reloadPending(); return;
-      }
+      if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); return; }
       const { command } = outcome;
       setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true });
-    }).catch(() => cashIO.write(null).catch(() => undefined)); // an unreadable record cannot be resent; the ledger still shows any entry it made
+    }).catch(e => { if (live) fail(err(e)); }) // the saved command stays on the device for the next attempt
+      .finally(() => { if (live) setRecovering(false); });
     return () => { live = false; };
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
@@ -72,18 +75,12 @@ export default function AdminCash() {
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     try {
-      const outcome = await sendCashCommand(cashIO, newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId));
-      if (outcome.state === 'recorded') {
-        haptic.success();
-        if (outcome.entry.reference) setMessage(fill(c.cashRecorded, { r: outcome.entry.reference }));
-        setOpen(null);
-      } else if (outcome.state !== 'empty') {
-        fail(err(outcome.error));
-        // Only a lost or failed reply can hide a recorded entry; a refusal of this request id recorded nothing.
-        if (outcome.state === 'unconfirmed') setOpen(o => o && { ...o, uncertain: true });
-      }
+      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId), newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId));
+      if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
+      else if (outcome.state !== 'empty') fail(err(outcome.error));
+      setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
       reload(); reloadPending();
-    } catch (e) { fail(err(e)); } // the form could not be saved, so nothing was sent
+    } catch (e) { fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); } // not saved, so nothing was sent
     finally { inFlight.current = false; setBusy(false); }
   }
 
@@ -99,6 +96,10 @@ export default function AdminCash() {
       setResolving(null); reload(); reloadPending();
     } catch (e) { fail(err(e)); } finally { setBusy(false); }
   }
+
+  // A new entry would replace the one form and the one saved command: wait for the lookup, the send, or the unconfirmed entry.
+  const blocked = busy || recovering || !!open?.uncertain;
+  const blockedReason = open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
 
   return <Screen onRefresh={() => { setMessage(''); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />
@@ -125,24 +126,24 @@ export default function AdminCash() {
               onChangeText={amount => setOpen({ ...open, amount })} disabled={busy || !!open.uncertain} />
             <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500}
               onChangeText={note => setOpen({ ...open, note })} disabled={busy || !!open.uncertain} />
-            <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
+            {!open.uncertain && <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind === 'adjustment' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}
               onPress={() => confirm(fill(open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
-                () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />
+                () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />}
             {open.uncertain && <>
-              {/* The amount check above counts this entry's own pending copy, so the retry is the one way to settle it. */}
+              {/* The balance already counts this entry's own pending copy, so the same-id resend is the one way to settle it. */}
               <Txt variant="caption" style={{ marginTop: 8 }}>{c.cashUncertain}</Txt>
               <Button title={c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy} reason={c.wait_busy} onPress={() => void submit()} />
             </>}
             {/* An unconfirmed entry is never dismissed: only its receipt or a same-id resend settles it. */}
             {!open.uncertain && <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />}
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={row.owedCents - row.pendingCents <= 0} reason={c.cash_none_owed}
+            <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={blocked || row.owedCents - row.pendingCents <= 0} reason={blocked ? blockedReason : c.cash_none_owed}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
-            {row.owedCents - row.pendingCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft"
+            {row.owedCents - row.pendingCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked} reason={blockedReason}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: String((row.pendingCents - row.owedCents) / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
-            <Button title={c.cashAdjust} size="sm" variant="outline" onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
+            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
           </Row>}
         </Card>
       </Appear>)}
