@@ -1,3 +1,5 @@
 public/vendor/** -text
 vendor/decode-uri-component/index.cjs -text
 *.sh text eol=lf
+vendor/picomatch-2/lib/parse.js -text
+vendor/picomatch-4/lib/parse.js -text

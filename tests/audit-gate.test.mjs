@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DECODER_SHA256, evaluateAudit, parseAudit, sourceHash } from '../scripts/check-audit.mjs';
+import { DECODER_SHA256, evaluateAudit, parseAudit, picomatchReviewed, sourceHash } from '../scripts/check-audit.mjs';
 
 const advisory = { url: 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f', severity: 'high' };
 const entry = (severity, via) => ({ severity, via });
@@ -43,4 +43,23 @@ for (const result of [{ status: 1, stdout: JSON.stringify({ error: { code: 'ENOA
   { status: 0, stdout: 'not JSON' }, { status: 2, stdout: JSON.stringify(report) },
   { status: null, signal: 'SIGTERM', stdout: '' }, { status: 1, error: new Error('network'), stdout: '' }])
   assert.throws(() => parseAudit(result), /audit/i, 'audit execution/network/protocol failures cannot pass');
+// GHSA-fc5q-39xc-vjpf (17 Nov 2026 audit, as npm reported it): accepted only through the hash-pinned picomatch backport.
+const picomatchReport = fixture(Object.fromEntries(Object.entries({"@expo/cli":["high",["glob","picomatch"]],"@expo/config":["moderate",["glob"]],"@expo/fingerprint":["moderate",["glob","minimatch"]],"@expo/metro-config":["moderate",["glob"]],"@react-native/babel-plugin-codegen":["high",["@react-native/codegen"]],"@react-native/babel-preset":["high",["@react-native/babel-plugin-codegen"]],"@react-native/codegen":["high",["tinyglobby"]],"@react-native/community-cli-plugin":["high",["@react-native/metro-config"]],"@react-native/metro-babel-transformer":["high",["@react-native/babel-preset"]],"@react-native/metro-config":["high",["@react-native/metro-babel-transformer"]],"@react-native/virtualized-lists":["high",["react-native"]],"@typescript-eslint/eslint-plugin":["moderate",["@typescript-eslint/type-utils","@typescript-eslint/utils"]],"@typescript-eslint/parser":["moderate",["@typescript-eslint/typescript-estree"]],"@typescript-eslint/type-utils":["moderate",["@typescript-eslint/typescript-estree","@typescript-eslint/utils"]],"@typescript-eslint/typescript-estree":["high",["minimatch","tinyglobby"]],"@typescript-eslint/utils":["moderate",["@typescript-eslint/typescript-estree"]],"babel-preset-expo":["high",["@react-native/babel-plugin-codegen"]],"eslint-import-resolver-typescript":["high",["tinyglobby"]],"expo":["high",["@expo/fingerprint","babel-preset-expo"]],"fdir":["high",["picomatch"]],"glob":["moderate",[{"url":"https://github.com/advisories/GHSA-3g3m-2fjr-6pw4","severity":"moderate"},"minimatch"]],"minimatch":["moderate",[{"url":"https://github.com/advisories/GHSA-g3hv-75wg-m249","severity":"moderate"}]],"picomatch":["high",[{"url":"https://github.com/advisories/GHSA-fc5q-39xc-vjpf","severity":"high"}]],"react-native":["high",["@react-native/codegen","@react-native/community-cli-plugin","@react-native/virtualized-lists","tinyglobby"]],"tinyglobby":["high",["fdir","picomatch"]]}).map(([name, [severity, via]]) => [name, entry(severity, via)])));
+const picomatchHigh = Object.keys(picomatchReport.vulnerabilities).filter(name => picomatchReport.vulnerabilities[name].severity === 'high').sort();
+assert.equal(picomatchHigh.length, 16);
+verdict = evaluateAudit(picomatchReport, { ...good, picomatch: true });
+assert.deepEqual(verdict.mitigated.sort(), picomatchHigh, 'react-native <-> virtualized-lists peer cycle and moderate side-paths still resolve');
+assert.deepEqual(verdict.rejected, []);
+assert.deepEqual(evaluateAudit(picomatchReport, { ...good, picomatch: false }).rejected.sort(), picomatchHigh, 'unreviewed picomatch bytes waive nothing');
+const pico = () => structuredClone(picomatchReport.vulnerabilities);
+changed = pico(); changed.newcomer = entry('high', ['tinyglobby']);
+assert.deepEqual(evaluateAudit(fixture(changed), { ...good, picomatch: true }).rejected, ['newcomer'], 'a new package on the chain is not waived');
+changed = pico(); changed.picomatch.via.push({ url: 'https://github.com/advisories/UNKNOWN', severity: 'high' });
+assert.equal(evaluateAudit(fixture(changed), { ...good, picomatch: true }).rejected.length, 16, 'a second picomatch advisory is not waived');
+changed = pico(); changed.glob.severity = 'high'; changed.glob.via[0].severity = 'high';
+assert.ok(evaluateAudit(fixture({ ...changed, glob: changed.glob }), { ...good, picomatch: true }).rejected.includes('@expo/cli'), 'a side-path turning high blocks again');
+// The installed copies are checked from the lockfile: a listed copy that is missing or changed fails closed.
+assert.equal(picomatchReviewed({ packages: {} }), false, 'no installed picomatch is not proof of the backport');
+assert.equal(picomatchReviewed({ packages: { 'node_modules/missing/node_modules/picomatch': {} } }), false);
+assert.equal(picomatchReviewed(), true, 'every copy the lockfile installs, and both vendored sources, match the committed pins');
 console.log('Audit gate: exact source/advisory acceptance, raw counts, changed bytes, new advisories, unknown propagation, criticals and native errors passed');
