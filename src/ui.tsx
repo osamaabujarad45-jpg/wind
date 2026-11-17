@@ -416,7 +416,7 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <Pressable onPress={() => ref.current?.focus()} disabled={disabled} accessible={false} style={{ alignSelf: 'stretch' }}>
-      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }}>
+      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }}>{/* ltr: a code's digits read left to right in Arabic too */}
         {Array.from({ length }, (_, i) => {
           const active = focused && (i === value.length || (i === length - 1 && value.length === length));
           return <View key={i} style={[styles.codeCell, active && styles.codeCellActive, disabled && { backgroundColor: palette.muted }]}>
