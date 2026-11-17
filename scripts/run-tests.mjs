@@ -74,6 +74,7 @@ const suites = [
   "cancel-race.test.mjs",
   "roads.test.mjs",
   "chat.test.mjs",
+  "chat-outbox.test.mjs",
   "promo.test.mjs",
   "referral.test.mjs",
   "credit.test.mjs",

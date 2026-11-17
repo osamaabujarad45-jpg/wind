@@ -7,7 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
-import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
+import { canOrderAgain, canSendAnother, newRequestId, scheduleSlots } from '../../booking';
+import { delivered, outboxKey, queue, readOutbox, undeliverable, without, type Unsent } from '../../chat-outbox';
+import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
@@ -836,20 +838,45 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
-  // Resending a text after a failure reuses its id, so a reply lost in transit never posts it twice,
-  // even when a quick reply went out in between.
-  const [attempts] = useState(retryIds);
+  // Unsent texts keep the id they were first sent with, saved in the account's own slot: a resend after a lost reply
+  // or an app restart is replayed by the server, never posted twice, even when other texts went out in between.
+  const userId = useSession().me?.user.id;
+  const key = userId ? outboxKey(userId, orderId) : null;
+  const [unsent, setUnsent] = useState<Unsent[]>([]);
+  const outbox = useRef<Unsent[]>([]); // current list for sends started from an older render
+  const keep = (list: Unsent[]) => {
+    outbox.current = list; setUnsent(list);
+    // A failed save keeps the in-memory copy: the chat never blocks on storage (SecureStore may refuse a large value).
+    if (key) void storage.set(key, list.length ? JSON.stringify(list) : null).catch(() => undefined);
+  };
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    storage.get(key).then(raw => { if (live && raw) { const list = readOutbox(JSON.parse(raw)); outbox.current = list; setUnsent(list); } })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [key]);
+  // A text the server already shows as mine was delivered although its reply was lost: stop offering to resend it.
+  useEffect(() => {
+    const landed = data ? delivered(outbox.current, data) : [];
+    if (landed.length) keep(outbox.current.filter(u => !landed.includes(u)));
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps -- keep only writes the outbox
   async function send(body: string) {
     const text = body.trim();
     if (!text || busy) return;
     setBusy(true); setFailure('');
+    const { list, entry } = queue(outbox.current, text, Date.now());
+    keep(list);
     try {
-      setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: text, requestId: attempts.for(text) }));
-      attempts.sent(text);
+      setData(await api<Message[]>(`/orders/${orderId}/messages`, { body: entry.body, requestId: entry.requestId }));
+      keep(without(outbox.current, entry.requestId));
       if (body === draft) setDraft('');
       haptic.success();
-    }
-    catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
+    } catch (e) {
+      haptic.error(); setFailure(err(e));
+      if (undeliverable(e)) keep(without(outbox.current, entry.requestId)); // refused for good: resending cannot deliver it
+      else if (body === draft) setDraft(''); // it waits below as "not sent yet", with its own resend
+    } finally { setBusy(false); }
   }
   const recent = (data ?? []).slice(-20);
   // a closed chat with nothing in it is a card that says "nothing here"; a closed one with history still shows
@@ -869,6 +896,19 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
           <Txt variant="micro" style={styles.bubbleMeta}>{stamp(m.createdAt)}</Txt>
         </View>)}
       </View>}
+    {unsent.map(u => <View key={u.requestId} style={[styles.bubble, { alignSelf: rtl ? 'flex-start' : 'flex-end', backgroundColor: palette.olivePale, marginBottom: 6, opacity: 0.85 }]}
+      accessible accessibilityLabel={`${c.you}: ${u.body}, ${c.chatNotSent}`}>
+      <Txt>{u.body}</Txt>
+      <Row gap={10} style={{ marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Txt variant="micro" style={{ color: palette.clayInk }}>{c.chatNotSent}</Txt>
+        {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} hitSlop={12}>
+          <Txt variant="label" style={{ color: palette.olive }}>{c.chatResend}</Txt>
+        </Press>}
+        <Press accessibilityLabel={`${c.chatDiscard}: ${u.body}`} disabled={busy} onPress={() => keep(without(outbox.current, u.requestId))} hitSlop={12}>
+          <Txt variant="label" style={{ color: palette.secondary }}>{c.chatDiscard}</Txt>
+        </Press>
+      </Row>
+    </View>)}
     {error && data && <>{/* the history and the draft stay; say newer messages may be missing */}
       <ErrorText>{c.chatPaused}</ErrorText>
       <Button title={c.retry} icon="refresh" variant="ghost" size="sm" onPress={reload} />
