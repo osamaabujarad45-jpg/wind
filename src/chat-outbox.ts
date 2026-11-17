@@ -50,9 +50,9 @@ export type SendOutcome<T> = { state: 'sent'; list: Unsent[]; reply: T } | { sta
   | { state: 'refused' | 'unsent'; list: Unsent[]; error: unknown; durable: boolean };
 
 /** Save, then send. `save` reports whether the record reached storage; a failure keeps the text in memory only. */
-export async function sendText<T>(o: { list: Unsent[]; orderId: number; body: string; now: number; afterId: number | null;
+export async function sendText<T>(o: { list: Unsent[]; orderId: number; body: string; now?: number; afterId: number | null;
   save: (list: Unsent[]) => Promise<boolean>; post: (entry: Unsent) => Promise<T> }): Promise<SendOutcome<T>> {
-  const queued = queue(o.list, o.orderId, o.body, o.now, o.afterId);
+  const queued = queue(o.list, o.orderId, o.body, o.now ?? Date.now(), o.afterId);
   if (!queued) return { state: 'full', list: o.list };
   const durable = await o.save(queued.list); // before the request: a reply lost after this point is still recoverable
   try {

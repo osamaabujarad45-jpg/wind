@@ -863,7 +863,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
     if (!text || busy) return;
     setBusy(true); setFailure('');
     const newest = data?.at(-1)?.id ?? (data ? 0 : null); // null: the history is not loaded, so delivery cannot be inferred
-    const outcome = await sendText({ list: outbox.current, orderId, body: text, now: Date.now(), afterId: newest,
+    const outcome = await sendText({ list: outbox.current, orderId, body: text, afterId: newest,
       save: keep, post: entry => api<Message[]>(`/orders/${orderId}/messages`, { body: entry.body, requestId: entry.requestId }) });
     outbox.current = outcome.list; setUnsent(outcome.list);
     if (outcome.state === 'sent') {
