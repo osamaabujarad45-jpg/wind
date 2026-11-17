@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { useSession } from '../../session';
 import { ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { api, ApiError, useApi } from '../../api';
 import { vehicles, type Role, type User, type Vehicle } from '../../model';
 import { useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import {
-  Appear, Badge, Button, Card, Choices, confirm, Empty, ErrorText, Field, fill, FilterChips, haptic, Header, Loading, palette, Row, Screen, tones, Txt, useCopy,
+  Appear, Badge, Button, Card, Choices, confirm, Empty, ErrorText, Field, fill, FilterChips, haptic, Header, Loading, palette, Press, Row, Screen, tones, Txt, useCopy,
 } from '../../ui';
 
 export default function Users() {
@@ -20,6 +21,8 @@ export default function Users() {
   const [busy, setBusy] = useState<number | null>(null);
   const pending = useRef<number | null>(null);
   const [actionError, setActionError] = useState('');
+  // One user open at a time: a closed row is a scannable line (design review 17 Nov: ~300 px and four buttons per user).
+  const [openId, setOpenId] = useState<number | null>(null);
   // The list is long and the error line sits above it: a failed action scrolls up to it, the card stays open as it was.
   const list = useRef<ScrollView>(null);
   const fail = (message: string) => { setActionError(message); list.current?.scrollTo({ y: 0 }); };
@@ -95,6 +98,8 @@ export default function Users() {
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="people-outline" title={c.noUsers} />
       : data.map((user, i) => <Appear key={user.id} index={i}>
         <Card>
+          <Press onPress={() => setOpenId(openId === user.id ? null : user.id)} accessibilityState={{ checked: openId === user.id }}
+            accessibilityLabel={`${user.name}، ${c[user.role]}، ${c[user.status]}`}>
           <Row style={{ justifyContent: 'space-between' }}>
             <View style={{ flex: 1, gap: 2 }}>
               <Txt variant="title">{user.name}</Txt>
@@ -102,7 +107,8 @@ export default function Users() {
               {user.email && <Txt variant="caption" selectable>{user.phone}</Txt>}
               <Txt variant="micro">{date(user.createdAt)}</Txt>
             </View>
-            <Badge label={c[user.status]} tone={user.status === 'active' ? tones.olive : user.status === 'pending' ? tones.clay : tones.error} />
+            <Badge label={c[user.status]} tone={user.status === 'active' ? tones.olive : user.status === 'pending' ? tones.warn : tones.error} />
+            <Ionicons name={openId === user.id ? 'chevron-up' : 'chevron-down'} size={18} color={palette.secondary} />
           </Row>
           <Row gap={6} style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <Badge label={c[user.role]} tone={tones.blue} />
@@ -110,8 +116,9 @@ export default function Users() {
             {user.plate && <Badge label={user.plate} tone={tones.muted} />}
             {user.permanentlyApprovedAt && <Badge label={c.permanentlyApproved} tone={tones.olive} />}
           </Row>
-          <Txt variant="micro" style={{ marginTop: 8 }}>{c.phone}: {user.phoneVerifiedAt ? c.verified : c.unverified}{user.email ? ` · ${c.email}: ${user.emailVerifiedAt ? c.verified : c.unverified}` : ''}</Txt>
-          {user.role !== 'admin' && me?.capabilities?.emailVerification && user.email && user.emailVerifiedAt && <View style={{ marginTop: 12 }}>
+          </Press>
+          {openId === user.id && <Txt variant="micro" style={{ marginTop: 8 }}>{c.phone}: {user.phoneVerifiedAt ? c.verified : c.unverified}{user.email ? ` · ${c.email}: ${user.emailVerifiedAt ? c.verified : c.unverified}` : ''}</Txt>}
+          {openId === user.id && user.role !== 'admin' && me?.capabilities?.emailVerification && user.email && user.emailVerifiedAt && <View style={{ marginTop: 12 }}>
             <Txt variant="label">{c.identityTitle}</Txt>
             {identity?.id === user.id && identity.confirmedAt
               ? <Txt variant="title" style={{ color: palette.olive, marginTop: 6 }}>{fill(c.identityConfirmed, { time: time(identity.confirmedAt) })}</Txt>
@@ -123,11 +130,11 @@ export default function Users() {
                   loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} reason={busy !== null ? c.wait_busy : c.code_six_digits} onPress={() => identityStep(user)} />
               </>}
           </View>}
-          {user.role !== 'admin' && <View style={{ marginTop: 12, gap: 8 }}>
+          {user.role !== 'admin' && (openId === user.id || user.role === 'driver' && !user.permanentlyApprovedAt) && <View style={{ marginTop: 12, gap: 8 }}>
             {/* only drivers wait on approval (server needActive); on a customer it was the loudest button doing nothing */}
             {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
-            <Row gap={8}>
+            {openId === user.id && <><Row gap={8}>{/* a pending driver's Approve stays on the closed row; the rest opens with it */}
               <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car', plate: user.plate ?? '' })} /></View>
               <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null} reason={c.wait_busy}
                 onPress={() => user.status === 'blocked'
@@ -157,8 +164,9 @@ export default function Users() {
                     onPress={() => confirm(fill(c.resetConfirm, { name: user.name }), () => resetPassword(user), c.resetPassword, c.cancel)} />
                 </>}
             </View>}
-            <Button title={c.deleteAccount} icon="trash-outline" variant="ghost" disabled={busy !== null} reason={c.wait_busy}
+            <Button title={c.deleteAccount} icon="trash-outline" variant="danger" size="sm" disabled={busy !== null} reason={c.wait_busy}
               onPress={() => confirm(fill(c.deleteUserConfirm, { name: user.name }), () => action(user, '', undefined, 'DELETE'), c.deleteAccount, c.cancel)} />
+            </>}
           </View>}
         </Card>
       </Appear>)}
