@@ -21,6 +21,14 @@
       ]
     },
     {
+      "packet": "a01-admin-cash-receipts",
+      "source": "server/domain/cash-receipts.ts",
+      "registrar": "registerCashReceiptRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/admin/cash/commands/([^/]+)", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "adoption-driver-recovery",
       "source": "server/domain/driver-receipts.ts",
       "registrar": "registerDriverReceiptRoutes",
