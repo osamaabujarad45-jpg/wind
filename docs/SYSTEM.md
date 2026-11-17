@@ -2,7 +2,7 @@
 
 ## 1. Architecture
 
-> **Target design, not as built.** Wind runs today as one Node 24 process (`server/main.ts`) on SQLite (`node:sqlite`, WAL) with polling plus Web Push, OSRM for roads and cash only; see the as-built notes further down. The diagram below is the suggested end state.
+> **Design and historical runtime notes.** The diagram below is a target architecture. As of the 1 November 2026 source review, Wind contains a legacy SQLite path plus gated PostgreSQL test/staging protocols, a worker, native-push registration, and ride/freight domain modules. Their presence does not establish live activation or provider readiness. Section 9 retains an earlier legacy-runtime snapshot and must not be read as a current deployment inventory. See [the current adoption analysis](../reports/uber-adoption-analysis-2026-11-01.md) and [the implementation evidence](../reports/study-implementation-2026-11-01.md) for dated scope and limitations.
 
 ```text
 Customer app (Expo) ─┐

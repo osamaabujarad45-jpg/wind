@@ -1,0 +1,96 @@
+{
+  "startedAt": "2026-11-08T19:28:06.860Z",
+  "finishedAt": "2026-11-08T19:28:23.463Z",
+  "environment": {
+    "node": "v24.12.0",
+    "os": "win32 10.0.26200",
+    "cpu": "AMD Ryzen 5 5600X 6-Core Processor             ",
+    "logicalCpus": 12,
+    "memoryGiB": 16,
+    "target": "ephemeral loopback child process; disposable SQLite WAL database",
+    "historicalOrders": 10000,
+    "searchingOrders": 120,
+    "syntheticAccounts": 121,
+    "pacingOperationsPerSecond": 250,
+    "phaseSeconds": 8
+  },
+  "phases": [
+    {
+      "phase": "mixed-60",
+      "concurrency": 60,
+      "kind": "mixed",
+      "elapsedSeconds": 10.09,
+      "requests": 283,
+      "errors": 0,
+      "timeouts": 0,
+      "p50": 2052.71,
+      "p95": 4183.89,
+      "p99": 4439.97,
+      "max": 4459.03,
+      "statuses": {
+        "200": 283
+      },
+      "requestsPerSecond": 28.04
+    }
+  ],
+  "checks": [
+    "60 concurrent foreign requests return 404; 60 anonymous requests return 401",
+    "60 held live requests receive newer accepted fixes after concurrent GPS updates",
+    "150ms external SQLite writer lock recovers with HTTP200 in 264ms",
+    "Long external writer lock returns retryable503 in 360ms; unrelated health request takes 252ms",
+    "Integrity OK, zero foreign-key errors, 24 idempotent bookings each stored once and cancelled"
+  ],
+  "performanceGates": [
+    {
+      "gate": "mixed-60: non-provider API p95 < 500ms",
+      "actualMs": 4183.89,
+      "passed": false
+    },
+    {
+      "gate": "mixed-60: populated driver jobs p95 < 500ms",
+      "actualMs": 4183.89,
+      "passed": false
+    },
+    {
+      "gate": "critical command acknowledgment p95 < 1000ms",
+      "actualMs": 2650.63,
+      "passed": false
+    }
+  ],
+  "unexpectedErrors": 0,
+  "correctness": {
+    "requests": 306,
+    "errors": 0,
+    "timeouts": 0,
+    "p50": 35.01,
+    "p95": 3719.21,
+    "p99": 4076.97,
+    "max": 4163.03,
+    "statuses": {
+      "200": 185,
+      "401": 60,
+      "404": 60,
+      "503": 1
+    }
+  },
+  "runtime": {
+    "type": "runtime",
+    "memory": {
+      "rss": 153231360,
+      "heapTotal": 54386688,
+      "heapUsed": 28217416,
+      "external": 14565284,
+      "arrayBuffers": 55785
+    },
+    "cpu": {
+      "user": 4703000,
+      "system": 1046000
+    },
+    "eventLoopMs": {
+      "p50": 26.722303,
+      "p95": 1934.622719,
+      "p99": 2457.862143,
+      "max": 2457.862143
+    }
+  }
+}

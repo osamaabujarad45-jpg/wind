@@ -4,6 +4,30 @@ Read [plan.md](plan.md) and [HANDOFF.md](HANDOFF.md) first. All new items below 
 
 **Common verification for every task:** `npm run lint`, `npm run typecheck`, `git diff --check`, plus the focused commands below. Run commands individually and stop on first failure. UI acceptance uses the physical phone. Follow plan.md for prerequisites, PostgreSQL isolation and evidence format. Estimated scope is S (1–2 files) or M (3–5); split larger work into numbered children before editing. Register any new suite in its runner and include that file in the budget.
 
+## 8 November booking follow-up
+
+R01/R17 extend T19/T20; the old completion evidence below remains historical. All four items are pending, to run when K5 has compute. [Plan, invariants and regression matrix](plan.md#8-november-follow-up--booking-recovery-and-authority-r01r17).
+
+### BR01 — terminal storage and compatibility
+- [ ] Choose and implement compatible success/rejection storage with immutable hash and account ownership; migration preserves installed success receipts and enforces valid terminal states.
+- **Depends on:** none. **Likely files:** existing PostgreSQL migration/registration, SQLite schema/migration, `server/domain/booking-receipts.ts`, focused persistence test (M; split migration/contract if over five files).
+- **Verify:** focused migration/receipt tests on both backends, changed-payload and cross-account cases, common checks. Final delayed-writer safety closes under BR02, not this schema task alone.
+
+### BR02 — serialized booking and revocation
+- [ ] Implement routing preparation outside the real envelope, post-lock replay before mutable checks, and authority synchronized through commit with revocation; prove success/terminal atomicity and parked-writer fencing.
+- **Depends on:** BR01. **Likely files:** `server/main.ts`, `tests/booking-retry-race.test.mjs`, `tests/booking-auth.test.mjs`, existing revocation handler(s) if outside `main.ts` (M; split preparation and mutation checkpoints if the inventory exceeds five files).
+- **Verify:** `npm run test -- --filter=booking` with PostgreSQL enabled; matrix cases for both race orderings, cap boundary, quote/provider changes and injected failures; common checks. Keep the completed repair together before release.
+
+### BR03 — recover or release the saved client command
+- [ ] Preserve frozen payload/key across failures/restart; resolve success or permit release only from authoritative same-command rejection; retain account isolation and storage errors.
+- **Depends on:** BR02. **Likely files:** `src/booking.ts`, `src/app/book.tsx`, `tests/booking-retry-race.test.mjs`, `tests/booking-auth.test.mjs`, `src/copy.ts` only if required (M).
+- **Verify:** focused booking recovery tests including null receipt, ordinary 4xx, true terminal release, account switch and storage failure; common checks.
+
+### BR04 — integrated acceptance
+- [ ] Run the plan's full main/persistence/contracts gates; obtain independent review; complete physical A53 lost-reply/restart/account-switch acceptance and record the exact candidate.
+- **Depends on:** BR01–BR03. **Likely files:** evidence/checklist updates (S).
+- **Verify:** [verification and handback](plan.md#verification-and-handback). Close R01/R17 only with passing repaired regressions and this evidence; no historical pass substitutes for the changed candidate.
+
 ## T01: Reconcile the baseline
 
 - [x] Complete with acceptance evidence

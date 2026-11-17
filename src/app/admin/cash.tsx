@@ -12,7 +12,7 @@ type PendingEntry = { id: number; amountCents: number; createdAt: number; userNa
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
 // one a driver cannot confirm (blocked, gone, dispute deadlock) is resolved here with a recorded reason (T25).
 export default function AdminCash() {
-  const { c, money, err } = useCopy();
+  const { c, money, err, rtl } = useCopy();
   const { date } = useFormat();
   const { data, error, reload } = useApi<Balance[]>('/admin/cash', 15_000);
   const { data: pending, reload: reloadPending } = useApi<PendingEntry[]>('/admin/cash/pending', 15_000);
@@ -51,7 +51,7 @@ export default function AdminCash() {
   }
 
   return <Screen onRefresh={reload}>
-    <Header title={c.cashTab} />
+    <Header title={c.cashTab} back />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{message}</Txt></View>}
@@ -64,7 +64,7 @@ export default function AdminCash() {
               <Txt variant="caption" selectable>{row.phone}</Txt>
               {row.lastRemittanceAt != null && <Txt variant="micro">{fill(c.cashLast, { d: date(row.lastRemittanceAt) })}</Txt>}
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
+            <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
               {row.owedCents < 0 && <Txt variant="micro">{c.cashWindOwes}</Txt>}
               <Txt variant="h2">{money(Math.abs(row.owedCents) / 100)}</Txt>
               {row.pendingCents > 0 && <Txt variant="micro">{`${c.entry_pending}: ${money(row.pendingCents / 100)}`}</Txt>}
@@ -89,18 +89,8 @@ export default function AdminCash() {
           </Row>}
         </Card>
       </Appear>)}
-      {resolving && <Card>
-        <Txt variant="title">{c.cashResolve}</Txt>
-        <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
-        <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
-        <Row gap={8} style={{ marginTop: 10 }}>
-          <Button title={c.cashResolveConfirm} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
-            reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolve, c.cancel)} />
-          <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
-        </Row>
-      </Card>}
       {!!pending?.length && <>
-        <Txt variant="h2" style={{ marginTop: 16, marginBottom: 8 }}>{c.cashPendingTitle}</Txt>
+        <Txt variant="h2" header style={{ marginTop: 16, marginBottom: 8 }}>{c.cashPendingTitle}</Txt>
         {pending.map(entry => <Appear key={entry.id} index={entry.id}>
           <Card>
             <Row style={{ justifyContent: 'space-between' }}>
@@ -109,7 +99,7 @@ export default function AdminCash() {
                 <Txt variant="caption" selectable>{entry.userPhone}</Txt>
                 <Txt variant="micro">{date(entry.createdAt)}</Txt>
               </View>
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+              <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end', gap: 4 }}>
                 <Txt variant="h2">{money(entry.amountCents / 100)}</Txt>
                 {entry.userStatus !== 'active' && <Badge label={c[entry.userStatus as 'blocked' | 'pending']} tone={tones.muted} />}
                 <Row gap={8}>
@@ -120,6 +110,17 @@ export default function AdminCash() {
                 </Row>
               </View>
             </Row>
+            {/* The form sits with the entry it resolves: at the foot of the screen it pushed its own button off-screen. */}
+            {resolving?.id === entry.id && <View style={{ marginTop: 12 }}>
+              <Txt variant="title" header>{c.cashResolve}</Txt>
+              <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
+              <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
+              <Row gap={8} style={{ marginTop: 10 }}>
+                <Button title={c.cashResolveConfirm} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
+                  reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolve, c.cancel)} />
+                <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
+              </Row>
+            </View>}
           </Card>
         </Appear>)}
       </>}

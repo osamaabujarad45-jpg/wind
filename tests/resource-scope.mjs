@@ -192,6 +192,12 @@ try {
   const crewOrder = await q.book({ service: 'freight', option: 'small', declaredScope: freightScope({ crewCount: 10 }) });
   await approachDeclared(q, crewOrder, crew.vehicle.id);
   assert.equal((await accept(q, crew.driver.token, crewOrder, 1, 409)).error, 'seats_unavailable', 'freight crew beyond the cab is rejected at accept');
+  await assert.rejects(() => q.assess(crewOrder, { seats: 0 }), /invalid_input/, 'measurement cannot erase declared crew seats');
+  await q.assess(crewOrder, { seats: 10 });
+  await q.approach(crewOrder, { vehicleId: crew.vehicle.id });
+  assert.equal((await accept(q, crew.driver.token, crewOrder, 1, 409)).error, 'seats_unavailable', 'measured freight still enforces crew capacity');
+  await q.db.run('UPDATE order_requirements SET seats=0 WHERE order_id=?', crewOrder.id);
+  assert.equal((await accept(q, crew.driver.token, crewOrder, 1, 409)).error, 'seats_unavailable', 'older zero-seat cargo measurements cannot bypass declared crew capacity');
   const good = await freightDriver();
   const negotiated = await q.book({ service: 'freight', option: 'small', pricing: 'smart', declaredScope: freightScope() });
   assert.ok(negotiated.recommendedPrice, 'freight keeps its negotiated recommended price');
@@ -204,6 +210,16 @@ try {
   assert.equal(accepted.declaredScope.dropoffPromisedBefore, q.until - 1000, 'freight promised windows are recorded and serialized');
   assert.ok(await q.db.one('SELECT order_id FROM capacity_reservations WHERE order_id=?', negotiated.id), 'the negotiated acceptance reserves the declared load');
   console.log('WP12 resource-scope: freight equipment/crew mismatch and negotiated acceptance passed');
+  const inspectedDriver = await freightDriver();
+  const inspected = await q.book({ service: 'freight', option: 'small', pricing: 'smart', declaredScope: freightScope({ crewCount: 1 }) });
+  await q.db.run('DELETE FROM schema_migrations WHERE version=28');
+  await assert.rejects(() => q.assess(inspected, { seats: 1 }), /measured_protocol_unavailable/, 'older schemas fail closed before measured freight crew activation');
+  await q.db.run('INSERT INTO schema_migrations(version,applied_at) VALUES(28,?)', Date.now());
+  await q.assess(inspected, { seats: 1 });
+  await q.approach(inspected, { vehicleId: inspectedDriver.vehicle.id });
+  await q.call(`/jobs/${inspected.id}/offer`, { token: inspectedDriver.driver.token, body: { price: inspected.recommendedPrice, capacityProtocol: 1, expectedRequirementsRevision: 1 } });
+  assert.equal((await q.call(`/orders/${inspected.id}/offers/${inspectedDriver.driver.user.id}/accept`, { token: q.customer.token, body: { capacityProtocol: 1, expectedRequirementsRevision: 1 } })).status, 'assigned');
+  assert.equal(Number((await q.db.one('SELECT seats FROM capacity_reservations WHERE order_id=?', inspected.id)).seats), 1, 'SQL assignment guard and domain reserve inspected freight crew seats');
 } finally { await q.close(); }
 
 // --- Browsing drivers see the load, never the value, reference or custody ----

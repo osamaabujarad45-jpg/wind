@@ -5,7 +5,8 @@ import { TabBar, tabIcon, useCopy } from '../../ui';
 export default function AdminTabs() {
   const { c } = useCopy();
   const { data } = useApi<{ pendingDrivers: number; pendingSubscriptions: number }>('/admin/stats', 10_000);
-  return <Tabs tabBar={props => <TabBar {...props} />} screenOptions={{ headerShown: false }}>
+  // Five tabs, not six: the cashier sits under Settings (its route still opens directly).
+  return <Tabs tabBar={props => <TabBar {...props} hidden={['cash']} />} screenOptions={{ headerShown: false }}>
     <Tabs.Screen name="index" options={{ title: c.dashboard, tabBarIcon: tabIcon('stats-chart-outline') }} />
     <Tabs.Screen name="orders" options={{ title: c.allOrders, tabBarIcon: tabIcon('receipt-outline') }} />
     <Tabs.Screen name="users" options={{ title: c.users, tabBarIcon: tabIcon('people-outline'), tabBarBadge: data?.pendingDrivers || undefined }} />

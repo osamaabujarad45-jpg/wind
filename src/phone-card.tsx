@@ -218,6 +218,8 @@ export function PhoneCard() {
       <Button title={c.phone_verify_send} icon="shield-checkmark-outline" onPress={() => issue('verify', user.phone, '')} loading={busy}
         disabled={!!blockKey || busy} reason={reason(blockKey) ?? c.wait_busy} />
     </View>}
+    {/* The error belongs to the control that caused it: next to the code, next to the form, or under the send button. */}
+    {!shown && !form && <ErrorText>{error}</ErrorText>}
 
     {shown && <View style={{ marginTop: 12 }}>
       <Txt variant="caption" style={{ marginBottom: 2 }}>{expired ? c.phone_code_expired : fill(c.phone_code_recorded, { t: clock(secondsUntil(shown.expiresAt, now)) })}</Txt>
@@ -226,13 +228,14 @@ export function PhoneCard() {
         <Field label={c.phone_code_label} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad" autoComplete="one-time-code"
           maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? prove : undefined} />
         <Txt variant="caption" style={{ marginBottom: 10 }}>{fill(c.phone_attempts, { n: Math.max(0, 5 - shown.attempts) })}</Txt>
+        <ErrorText>{error}</ErrorText>
         <Button title={shown.purpose === 'change' ? c.phone_confirm_change : c.phone_confirm} icon="checkmark-outline" onPress={prove} loading={busy}
           disabled={code.length !== 6 || busy} reason={code.length !== 6 ? c.code_six_digits : c.wait_busy} />
       </>}
       {(shown.purpose === 'verify' || !!form?.password) && <Button title={c.phone_resend} icon="mail-outline" variant="ghost"
         onPress={() => issue(shown.purpose, shown.phone, form?.password ?? '')} disabled={left > 0 || busy}
         reason={left > 0 ? fill(c.phone_resend_wait, { t: clock(left) }) : c.wait_busy} />}
-      {shown.purpose === 'change' && <Button title={c.cancel} variant="ghost" onPress={closeChange} disabled={busy} />}
+      {shown.purpose === 'change' && <Button title={c.cancel} variant="ghost" onPress={closeChange} disabled={busy} reason={c.wait_busy} />}
     </View>}
 
     {!form && !shown && <View style={{ marginTop: 10 }}>
@@ -247,12 +250,11 @@ export function PhoneCard() {
         maxLength={20} disabled={busy} />
       <Field label={c.phone_current_password} value={form.password} onChangeText={password => setForm({ ...form, password })} secureTextEntry
         autoComplete="password" maxLength={100} disabled={busy} />
+      <ErrorText>{error}</ErrorText>
       <Button title={c.phone_change_send} icon="mail-outline" onPress={() => issue('change', form.phone, form.password)} loading={busy}
         disabled={!formValid || busy || !!changeBlock} reason={formReason} />
-      <Button title={c.cancel} variant="ghost" onPress={closeChange} disabled={busy} />
+      <Button title={c.cancel} variant="ghost" onPress={closeChange} disabled={busy} reason={c.wait_busy} />
     </View>}
-
-    <ErrorText>{error}</ErrorText>
   </Card>;
 }
 

@@ -310,7 +310,10 @@ export function DriverWorkProvider({ children }: { children: ReactNode }) {
     if (!servicesEnabled) { void stopBackgroundLocation().catch(() => {}); return; }
     let cancelled = false;
     const status = () => backgroundLocationState().then(value => {
-      if (!cancelled) setTrackingResult({ actor, orderId: nativeOrderId, value });
+      // The poll runs every three seconds: keep the same object while the value is unchanged, so every
+      // consumer of the context is not re-rendered for nothing.
+      if (!cancelled) setTrackingResult(previous => previous?.actor === actor && previous.orderId === nativeOrderId && previous.value === value
+        ? previous : { actor, orderId: nativeOrderId, value });
     }).catch(() => {});
     if (activeGpsTestEnabled) void stopBackgroundLocation().catch(() => {});
     void Location.getBackgroundPermissionsAsync().then(p => { if (!cancelled) setBgResult({ actor, granted: p.granted }); }).catch(() => {});

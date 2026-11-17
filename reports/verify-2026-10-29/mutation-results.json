@@ -2,7 +2,7 @@
   {
     "id": "A. IDOR: canSee disabled",
     "verdict": "CAUGHT",
-    "detail": "AssertionError [ERR_ASSERTION]: /orders/5: {\"id\":5,\"customerId\":null,\"driverId\":3,\"service\":\"parcel\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"nablu"
+    "detail": "AssertionError [ERR_ASSERTION]: /orders/8: {\"id\":8,\"customerId\":null,\"driverId\":3,\"service\":\"parcel\",\"shared\":false,\"pickupCity\":\"ramallah\",\"dropoffCity\":\"nablu"
   },
   {
     "id": "B. Optimistic concurrency: expectedStatus not enforced",
@@ -12,7 +12,7 @@
   {
     "id": "C. Double-settle: status predicate removed",
     "verdict": "CAUGHT",
-    "detail": "{\"category\":\"http_request_failed\",\"code\":\"ERR_SQLITE_ERROR\",\"sqliteCode\":1811,\"correlationId\":\"ad4f94a5-9bd0-45d3-9884-471839fc855a\",\"httpStatus\":500} | {\"categ"
+    "detail": "{\"category\":\"http_request_failed\",\"code\":\"ERR_SQLITE_ERROR\",\"sqliteCode\":1811,\"correlationId\":\"ee2af639-460c-439d-afd0-b31b81401cbd\",\"httpStatus\":500} | {\"categ"
   },
   {
     "id": "D. Partner key: comparison not constant-time / not checked",
@@ -21,7 +21,7 @@
   },
   {
     "id": "E. Rating: overwrite allowed",
-    "verdict": "MISSED",
-    "detail": "suite stayed green"
+    "verdict": "CAUGHT",
+    "detail": "{\"category\":\"http_request_failed\",\"code\":\"ERR_SQLITE_ERROR\",\"sqliteCode\":1811,\"correlationId\":\"63797147-4213-4a66-a38c-58749bbf4a55\",\"httpStatus\":500} | {\"categ"
   }
 ]

@@ -57,6 +57,7 @@
     "test:jobs-ui": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-jobs-pages.mjs",
     "test:location": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-customer-location.mjs",
     "test:android-browser": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-android-browser.mjs",
+    "test:expanded-phone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-expanded-services.mjs",
     "test": "node scripts/run-tests.mjs",
     "lint": "expo lint",
     "server": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts",
@@ -69,6 +70,7 @@
     "phone:web": "node scripts/export-phone-web.mjs",
     "phone:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/check-phone-tests.mjs smoke",
     "test:dependency-security": "node tests/dependency-security.test.mjs",
+    "check:audit": "node scripts/check-audit.mjs",
     "test:contracts": "node scripts/check-contracts.mjs",
     "test:persistence": "node scripts/check-persistence.mjs",
     "db:migrate:staging": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/migrate-postgres.mjs"

@@ -25,7 +25,8 @@ for (const role of roles) {
   const value = { role, ...credentials };
   assert.deepEqual(phoneTestConfig(value, localApi), value);
   assert.deepEqual(phoneTestConfig(value, `${localApi}/`), value);
-  for (const api of ['https://wind-production-72aa.up.railway.app', 'http://localhost:4191', 'http://127.0.0.1:4190',
+  assert.deepEqual(phoneTestConfig(value, 'http://127.0.0.1:4192'), value, 'an independent unprivileged loopback port is accepted');
+  for (const api of ['https://wind-production-72aa.up.railway.app', 'http://localhost:4191', 'http://127.0.0.1:80',
     `${localApi}/api`, `${localApi}/?x=1`, `${localApi}/#token`, 'http://user:pass@127.0.0.1:4191', 'invalid']) {
     assert.throws(() => phoneTestConfig(value, api), `test credentials refuse ${api}`);
   }
@@ -66,6 +67,10 @@ for (const role of roles) {
 }
 for (const values of [names, androidIds, iosIds, schemes]) assert.equal(values.size, roles.length, 'every role installs separately');
 assert.throws(() => evaluate(localEnv('merchant')));
+
+const alternate = evaluate({ ...localEnv('customer'), EXPO_PUBLIC_API_URL: 'http://127.0.0.1:4192', WIND_PHONE_TEST_PORT: '4192' });
+assert.equal(alternate.extra.phoneTest.role, 'customer', 'a second independent loopback sandbox can be configured');
+assert.throws(() => evaluate({ ...localEnv('customer'), WIND_PHONE_TEST_PORT: '80' }), 'sandbox port must be unprivileged');
 
 const productionApi = 'https://wind-production-72aa.up.railway.app';
 for (const release of [{ NODE_ENV: 'production' }, { EAS_BUILD: 'true' }, { WIND_RELEASE: '1' }]) {

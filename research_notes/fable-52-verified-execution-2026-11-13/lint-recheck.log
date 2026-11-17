@@ -1,0 +1,4 @@
+Fresh local fallback recheck; Windows; no k5/CI/device/production.
+env: load .env.local
+env: export ZRO_API_KEY ZRO_PROVIDER_NAME
+exit=0

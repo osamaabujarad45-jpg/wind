@@ -1,0 +1,5 @@
+definitions: 288727
+inner (name contains $): 93651
+top-level (no $): 195076
+nesting depth histogram: {0: 195076, 1: 81262, 2: 7732, 3: 4365, 4: 149, 5: 50, 6: 71, 7: 16, 8: 3, 9: 1, 10: 2}
+first five inner examples: ['a0.a$a', 'a0.a$a$a', 'a0.a$b', 'a0.a$c', 'a0.m$a']

@@ -38,7 +38,7 @@ The user subsequently requested that further tests run on the `k5` host over SSH
 - Contact verification is not automatically guaranteed for every existing password account. Accounts with unverified matching contacts are not auto-linked; collision recovery and a real proof workflow need operational acceptance. Existing sessions with no idle timestamp may be required to sign in again once the idle limit is deployed; their previous activity cannot be reconstructed reliably.
 - Live provider integrations, actual payments, push delivery, background tracking and performance under realistic load and mobile OS restrictions have not been demonstrated end-to-end. A passing local suite is not evidence of production scale or a 100% quality guarantee.
 
-## Continuation — 28 Oct 2026 (multi-agent re-review)
+## Continuation ï¿½ 28 Oct 2026 (multi-agent re-review)
 
 Five parallel read-only reviewers (customer maps, driver tracking, Azure identity, server authz, routing) returned 38 findings (12 BLOCKING, 26 BACKLOG, 0 corroborated duplicates). Leader re-graded and verified each BLOCKING against the code:
 
@@ -55,11 +55,11 @@ Five parallel read-only reviewers (customer maps, driver tracking, Azure identit
 
 Gates: npm run typecheck clean, npm run lint clean, npm test 74 suites passed, test:contracts passed, PG quotes-routing passed, azure-infra Bicep checks passed (exit 0 on direct run). Remaining BACKLOG items are enumerated in the workflow synthesis (realtime PubSub credential, LIVE_TOTAL cap, clock-skew threshold, iOS pinch-follow, pin-sheet resync, Azure Maps adapter absence) and still need owner/device acceptance.
 
-## Continuation 2 — BACKLOG disposition (28 Oct 2026)
+## Continuation 2 ï¿½ BACKLOG disposition (28 Oct 2026)
 
-Fixed: track endpoint per-address limit 600/10min (was unlimited, heavy query per miss); public driver ref now HMAC-keyed in-memory (was sha(token:id), invertible by the link holder) — both ETA key sites aligned, route suite green; ETA re-check returns road/fixUpdatedAt (no more line flicker); Entra partial config no longer crash-loops the API (caught at boot, password auth continues); Azure throttles: WIND_TRUST_PROXY=1 in Bicep + X-Forwarded-For fallback (was global bucket behind ingress); driverChanged no longer blanks order/track screens (reload already fires); services-off now stops native tracking; route maps keep diagram until a real tile loads; iOS pinch counts as a user move + failed native maps retry on foreground; pin sheet re-syncs to a moved start until the user drags; realtime PubSub now requires a stable WIND_REALTIME_SECRET (no ephemeral-key credentials); sign-out offline race widened 1.5s->5s; saved-command replay re-verifies the live session after the lock wait.
+Fixed: track endpoint per-address limit 600/10min (was unlimited, heavy query per miss); public driver ref now HMAC-keyed in-memory (was sha(token:id), invertible by the link holder) ï¿½ both ETA key sites aligned, route suite green; ETA re-check returns road/fixUpdatedAt (no more line flicker); Entra partial config no longer crash-loops the API (caught at boot, password auth continues); Azure throttles: WIND_TRUST_PROXY=1 in Bicep + X-Forwarded-For fallback (was global bucket behind ingress); driverChanged no longer blanks order/track screens (reload already fires); services-off now stops native tracking; route maps keep diagram until a real tile loads; iOS pinch counts as a user move + failed native maps retry on foreground; pin sheet re-syncs to a moved start until the user drags; realtime PubSub now requires a stable WIND_REALTIME_SECRET (no ephemeral-key credentials); sign-out offline race widened 1.5s->5s; saved-command replay re-verifies the live session after the lock wait.
 
-Refuted on inspection: the 200-socket claim — a per-order cap of 20 already bounds one link to 10% of the global pool (residual: 10 links can still fill it; accepted).
+Refuted on inspection: the 200-socket claim ï¿½ a per-order cap of 20 already bounds one link to 10% of the global pool (residual: 10 links can still fill it; accepted).
 
 Owner-gated (recorded, not changed): SMS-only password reset (step-up for drivers is a policy choice); web token in localStorage (needs httpOnly-cookie session redesign); presence device-takeover and token-bound idempotency (60s lease bounds harm); Bicep workload crash-loop (workloadGate output already warns; DB binding is an owner gate); Azure Maps adoption and 15km-circle serviceability (WP05/WP08 corpus gates; coverage unproven for Palestine); active-GPS test-gated items; 3s/15s cadence tuning (needs device traces); clock-skew threshold (needs field data).
 

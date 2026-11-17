@@ -47,7 +47,6 @@ export const stopPresence=()=>controller.stopPresence();
 export const heartbeatPresence=()=>controller.heartbeatPresence();
 export const deliverPresenceFix=controller.deliverPresenceFix;
 export const suspendPresence=controller.suspend;
-export const markPresenceReconnecting=controller.markReconnecting;
 export const presenceState=()=>current;
 export function subscribePresence(listener:(state:PresenceState)=>void) {listeners.add(listener);listener(current);return ()=>{listeners.delete(listener);};}
 export function subscribePresenceError(listener:(error:string|null)=>void) {errorListeners.add(listener);listener(currentError);return ()=>{errorListeners.delete(listener);};}

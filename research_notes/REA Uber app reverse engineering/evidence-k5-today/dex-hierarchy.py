@@ -1,13 +1,12 @@
-"""Class hierarchy + access flags from an APK's DEX files.
+"""Find implementors and subclasses of a type across an APK's DEX files.
 
-Answers three questions cheaply, without any decompiler:
-  - which code file defines a class,
-  - is a member-bearing class abstract/interface (i.e. no bodies to read),
-  - which classes extend/implement a given class.
+Unlike a direct-superclass scan, this matches interfaces too, which is how Kotlin
+and Dagger wire most implementations.
 
 Usage:
-  python dex-hierarchy.py <apk> info <ClassName>...
-  python dex-hierarchy.py <apk> subclasses <ClassName>
+  python dex-hierarchy.py <apk> impls <InterfaceOrClass>       # direct implementors + subclasses
+  python dex-hierarchy.py <apk> info <ClassName>...            # flags/super/ifaces/file
+  python dex-hierarchy.py <apk> subclasses <ClassName>         # direct subclasses only
 """
 import re
 import struct
@@ -16,7 +15,6 @@ import zipfile
 
 ACC_ABSTRACT = 0x0400
 ACC_INTERFACE = 0x0200
-ACC_PUBLIC = 0x0001
 ACC_FINAL = 0x0010
 
 
@@ -57,43 +55,52 @@ def parse(buf):
         supers = types[super_idx] if super_idx != 0xFFFFFFFF and super_idx < len(types) else None
         ifs = []
         if interfaces:
-            n = u32(interfaces)
-            for k in range(n):
+            for k in range(u32(interfaces)):
                 idx = u32(interfaces + 4 + 4 * k)
                 if idx < len(types):
                     ifs.append(types[idx])
-        rows.append((cls[1:-1].replace("/", ".") if cls.startswith("L") else cls, supers, ifs, flags, bool(data_off)))
+        name = cls[1:-1].replace("/", ".") if cls.startswith("L") else cls
+        rows.append((name, supers, ifs, flags, bool(data_off)))
     return rows
+
+
+def norm(desc):
+    return desc if desc.startswith("L") else "L" + desc.replace(".", "/") + ";"
 
 
 def main(apk, mode, names):
     zf = zipfile.ZipFile(apk)
     dexes = sorted(n for n in zf.namelist() if re.match(r"^classes\d*\.dex$", n))
-    all_rows = {}
+    table = {}
     for d in dexes:
-        for cls, sup, ifs, flags, has_data in parse(zf.read(d)):
-            all_rows[cls] = (d, sup, ifs, flags, has_data)
-
-    def describe(name):
-        row = all_rows.get(name)
-        if not row:
-            print(f"{name}: NOT DEFINED IN THIS APK")
-            return
-        dex, sup, ifs, flags, has_data = row
-        kind = "interface" if flags & ACC_INTERFACE else ("abstract" if flags & ACC_ABSTRACT else "class")
-        print(f"{name}\n  file={dex} kind={kind} final={bool(flags & ACC_FINAL)} class_data={has_data}"
-              f"\n  extends={sup}\n  implements={', '.join(ifs) if ifs else '-'}")
+        for name, sup, ifs, flags, has_data in parse(zf.read(d)):
+            table[name] = (d, sup, ifs, flags, has_data)
 
     if mode == "info":
         for n in names:
-            describe(n)
-    elif mode == "subclasses":
-        target = names[0]
-        hits = [(c, v) for c, v in all_rows.items() if v[1] and v[1][1:-1].replace("/", ".") == target]
-        print(f"direct subclasses of {target}: {len(hits)}")
-        for c, v in sorted(hits):
-            kind = "abstract" if v[3] & ACC_ABSTRACT else "class"
-            print(f"  {c}  ({v[0]}, {kind})")
+            row = table.get(n)
+            if not row:
+                print(f"{n}: NOT DEFINED")
+                continue
+            dex, sup, ifs, flags, has_data = row
+            kind = "interface" if flags & ACC_INTERFACE else ("abstract" if flags & ACC_ABSTRACT else "class")
+            print(f"{n}\n  file={dex} kind={kind} final={bool(flags & ACC_FINAL)} class_data={has_data}"
+                  f"\n  extends={sup}\n  implements={', '.join(i[1:-1].replace('/', '.') for i in ifs) or '-'}")
+        return
+
+    target = norm(names[0])
+    want_sub = mode in ("subclasses", "impls")
+    want_if = mode == "impls"
+    hits = []
+    for name, (dex, sup, ifs, flags, has_data) in table.items():
+        if want_sub and sup == target:
+            hits.append((name, dex, "extends", flags))
+        if want_if and target in ifs:
+            hits.append((name, dex, "implements", flags))
+    print(f"{mode} of {target}: {len(hits)}")
+    for name, dex, how, flags in sorted(hits):
+        kind = "abstract" if flags & ACC_ABSTRACT else "class"
+        print(f"  {name}  ({dex}, {how}, {kind})")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+env: load .env.local
+env: export ZRO_API_KEY ZRO_PROVIDER_NAME

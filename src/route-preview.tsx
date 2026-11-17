@@ -18,8 +18,10 @@ export type RouteMapProps = {
   closed?: Point[] | null;
   /** Anonymous and public surfaces draw the free baseline only: no paid route, no Google tiles (T15). */
   forceBaseline?: boolean;
+  /** Internal adapter failure signal; the shared provider boundary owns fallback and retry. */
+  onFail?: () => void;
 };
-export type PinMapProps = { center: Point; onChange: (point: Point) => void; onReady?: () => void; onFail?: () => void; height?: number };
+export type PinMapProps = { center: Point; onChange: (point: Point) => void; onGesture?: () => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not
@@ -37,14 +39,15 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
     <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
-    {!plain && <Text style={styles.diagram}>{c.routeDiagram}</Text>}
+    {!plain && <Text maxFontSizeMultiplier={1.35} style={styles.diagram}>{c.routeDiagram}</Text>}
     {w > 0 && <>
       <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
       <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       {!plain && <>
-        <Text numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+        {/* Two lines, never a cut-off city name. */}
+        <Text numberOfLines={2} maxFontSizeMultiplier={1.35} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
+        <Text numberOfLines={2} maxFontSizeMultiplier={1.35} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
       </>}
     </>}
   </View>;
@@ -57,6 +60,6 @@ const styles = StyleSheet.create({
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
   dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
-  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
-  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
+  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '800', color: palette.ink },
+  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.secondary },
 });

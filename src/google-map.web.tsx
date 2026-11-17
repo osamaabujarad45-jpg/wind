@@ -6,9 +6,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { farJump, fitBounds, glideMs, routeFramePoints } from './map-math';
+import { farJump, fitBounds, glideMs, routeFramePoints, turn } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { palette, shadow, useCopy } from './ui';
+import { loadGoogleMaps } from './google-maps-loader';
+import { effectiveRuntime } from './runtime-config';
 
 // Referrer-restricted browser key: public by design, worthless off the licensed origins; the server's own
 // route-key secret is a different credential and never appears in web code.
@@ -19,26 +21,9 @@ type Listener = { remove(): void };
 declare global { interface Window { google?: { maps?: any } } }
 
 // One script per page: navigation unmounts maps, not the library. A failed load resets the promise so a
-// retry can fetch again (a succeeded one is cached by the browser and by `lib`).
-let lib: Promise<any> | null = null;
+// retry can fetch again; an initialized SDK is reused by the shared loader.
 function loadGoogle(): Promise<any> {
-  lib ??= new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { lib = null; reject(new Error('google maps timeout')); }, 25_000);
-    const existing = document.getElementById('wind-google-maps');
-    if (existing) return; // already loading or loaded for this page: its onload resolves below
-    const tag = Object.assign(document.createElement('script'), {
-      id: 'wind-google-maps', async: true,
-      src: `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(BROWSER_KEY ?? '')}&v=weekly&loading=async`,
-    });
-    tag.onload = () => {
-      clearTimeout(timer);
-      if (window.google?.maps) resolve(window.google.maps);
-      else { lib = null; reject(new Error('google maps did not initialize')); }
-    };
-    tag.onerror = () => { clearTimeout(timer); lib = null; tag.remove(); reject(new Error('google maps failed to load')); };
-    document.head.appendChild(tag);
-  });
-  return lib;
+  return loadGoogleMaps(BROWSER_KEY ?? '');
 }
 
 /** SVG path symbols with the same shapes the other renderers draw: dots, square pin, no-entry, car arrow. */
@@ -56,7 +41,8 @@ const FOLLOW_ZOOM = 15;
 
 export default function RouteMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
   const host = useRef<View>(null);
   const state = useRef<{ map?: GMap; maps?: any; ls: Listener[]; road?: any; approach?: any; closed: any[];
     driver?: any; halo?: any; shown?: { latitude: number; longitude: number }; at?: number; rotation?: number; frame?: number; moved?: boolean }>(
@@ -66,15 +52,22 @@ export default function RouteMap(props: RouteMapProps) {
   const [attempt, setAttempt] = useState(0);
   const [moved, setMoved] = useState(false);
   const movedRef = useRef(false);
+  const terminal = useRef(false);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const points = routeFramePoints({ pickup, dropoff, driver, focus: props.focus, road: props.road, approach: props.approach });
-  const roadKey = JSON.stringify([props.road, props.approach]);
+  const roadKey = JSON.stringify([props.road, props.approach, props.stale]);
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   const driverKey = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${props.focus}` : '';
+  const latest = useRef({ points, drawLines, drawClosed, drawDriver });
+  useEffect(() => { latest.current = { points, drawLines, drawClosed, drawDriver }; });
 
   useEffect(() => {
     let disposed = false;
+    terminal.current = false;
     loadGoogle().then(maps => {
-      if (disposed || !host.current) return;
+      if (disposed || terminal.current || !host.current) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (host.current as unknown as HTMLElement).appendChild(el);
@@ -85,12 +78,16 @@ export default function RouteMap(props: RouteMapProps) {
       });
       const s = state.current;
       s.map = map; s.maps = maps; s.ls = []; s.closed = [];
-      map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); });
+      s.ls.push(map.addListener('dragstart', () => { s.moved = movedRef.current = true; setMoved(true); }));
       // Tiles drawn, not map constructed, is the readiness signal: a revoked key or exhausted quota never
       // draws tiles, and the deadline below turns that into the labelled fallback.
-      const tiles = map.addListener('tilesloaded', () => { tiles.remove(); setReady(true); });
+      const stopFollow = () => { s.moved = movedRef.current = true; setMoved(true); };
+      el.addEventListener('wheel', stopFollow, { passive: true });
+      el.addEventListener('touchstart', stopFollow, { passive: true });
+      s.ls.push({ remove: () => { el.removeEventListener('wheel', stopFollow); el.removeEventListener('touchstart', stopFollow); } });
+      const tiles = map.addListener('tilesloaded', () => { if (disposed || terminal.current) return; tiles.remove(); setReady(true); });
       s.ls.push(tiles);
-      map.fitBounds(toBounds(maps, fitBounds(points)));
+      map.fitBounds(toBounds(maps, fitBounds(latest.current.points)));
       s.road = new maps.Polyline({ map, path: [], strokeColor: palette.forest, strokeOpacity: 0.85, strokeWeight: 4 });
       s.approach = new maps.Polyline({ map, path: [], strokeColor: palette.blue, strokeOpacity: 0.9, strokeWeight: 5 });
       s.halo = new maps.Circle({ map, center: toLng(maps, pickup), radius: 0, fillColor: palette.blue, fillOpacity: 0.12,
@@ -99,8 +96,8 @@ export default function RouteMap(props: RouteMapProps) {
       s.driver.setVisible(false);
       for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay]] as const)
         new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
-      drawLines(); drawClosed(); drawDriver();
-    }).catch(() => { if (!disposed) setFailed(true); });
+      latest.current.drawLines(); latest.current.drawClosed(); latest.current.drawDriver();
+    }).catch(() => { if (!disposed) { terminal.current = true; setFailed(true); } });
     return () => {
       disposed = true;
       const s = state.current;
@@ -113,22 +110,30 @@ export default function RouteMap(props: RouteMapProps) {
     };
   }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (ready || failed) return;
+    const timer = setTimeout(() => { terminal.current = true; setFailed(true); }, readyTimeout);
+    return () => clearTimeout(timer);
+  }, [ready, failed, attempt, readyTimeout]);
+
   // The camera rides along until the user grabs the map, like the other renderers.
   useEffect(() => {
     const s = state.current;
     if (!s.map || moved) return;
     if (driver) {
       s.map.setZoom(FOLLOW_ZOOM);
-      s.map.panTo({ lat: driver.latitude, lng: driver.longitude });
+      const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (still) s.map.setCenter({ lat: driver.latitude, lng: driver.longitude });
+      else s.map.panTo({ lat: driver.latitude, lng: driver.longitude });
     } else s.map.fitBounds(toBounds(s.maps, fitBounds(points)));
-  }, [driverKey, moved]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driverKey, roadKey, moved, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function drawLines() {
     const s = state.current;
     if (!s.maps) return;
     s.road.setPath((props.road ?? []).map(([longitude, latitude]) => ({ lat: latitude, lng: longitude })));
     const shown = s.shown;
-    s.approach.setPath(!props.approach ? [] : [[shown?.longitude ?? null, shown?.latitude ?? null], ...props.approach]
+    s.approach.setPath(!driver || props.stale || !props.approach ? [] : [[shown?.longitude ?? null, shown?.latitude ?? null], ...props.approach]
       .filter((p): p is [number, number] => p[0] != null).map(([longitude, latitude]) => ({ lat: latitude, lng: longitude })));
   }
 
@@ -158,22 +163,24 @@ export default function RouteMap(props: RouteMapProps) {
     const span = snap ? 0 : glideMs(s.at === undefined ? 0 : performance.now() - s.at);
     s.at = performance.now();
     const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const turnFrom = s.rotation ?? heading;
     const step = (t: number) => {
       const k = still ? 1 : Math.min(1, Math.max(0, span ? (t - s.at!) / span : 1));
       const lat = origin.latitude + (target.latitude - origin.latitude) * k;
       const lng = origin.longitude + (target.longitude - origin.longitude) * k;
       s.shown = { latitude: lat, longitude: lng };
       s.driver.setPosition({ lat, lng });
-      s.driver.setVisible(!props.stale);
+      s.driver.setVisible(true);
+      s.driver.setOpacity(props.stale ? 0.45 : 1);
       if (heading != null) {
-        s.rotation = s.rotation == null ? heading : s.rotation + shortestTurn(s.rotation, heading) * (still ? 1 : Math.min(1, 16 / 500));
+        s.rotation = turn(turnFrom ?? heading, heading, k === 1 ? 1 : (t - s.at!) / 500);
         s.driver.setIcon(symbol(ARROW, palette.blue, { rotation: s.rotation }));
       }
       s.halo.setCenter({ lat, lng });
       s.halo.setRadius(driver.accuracy ?? 0);
       s.halo.set('fillOpacity', props.stale ? 0.05 : 0.12);
       if (props.stale) s.approach.setPath([]); // no road left to follow behind a stale fix
-      else drawLines(); // keep the approach starting under the drawn car
+      else latest.current.drawLines(); // keep the approach starting under the drawn car
       if (k < 1) s.frame = requestAnimationFrame(step);
       else s.frame = undefined;
     };
@@ -187,25 +194,24 @@ export default function RouteMap(props: RouteMapProps) {
   function recenter() {
     const s = state.current;
     setMoved(false); movedRef.current = false; s.moved = false;
-    if (driver) { s.map.setZoom(FOLLOW_ZOOM); s.map.panTo({ lat: driver.latitude, lng: driver.longitude }); }
-    else s.map.fitBounds(toBounds(s.maps, fitBounds(points)));
+    // The moved-state effect performs exactly one camera operation.
   }
 
-  return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
-    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+  return <View style={{ height, width: '100%' }}>
     {!ready && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />
     </View>}
-    <View ref={host} style={StyleSheet.absoluteFill} />
+    <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
+      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? `, ${props.driverTitle ?? ''}` : ''}`} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
-      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>}
     {ready && !failed && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
-      style={[styles.recenter, shadow]}>
+      style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
       <Ionicons name="locate" size={20} color={palette.blue} />
     </Pressable>}
     {/* Google renders its own attribution and logo; nothing of theirs is redrawn or hidden here. */}
@@ -213,45 +219,71 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
   const host = useRef<View>(null);
-  const callbacks = useRef({ onChange, onFail, onReady });
-  useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
+  const callbacks = useRef({ onChange, onGesture, onFail, onReady });
+  useEffect(() => { callbacks.current = { onChange, onGesture, onFail, onReady }; });
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const mapRef = useRef<GMap>(null);
+  const centerRef = useRef(center);
+  useEffect(() => { centerRef.current = center; });
   useEffect(() => {
     let disposed = false;
+    let broken = false;
+    let cleanup: (() => void) | undefined;
     const hostElement = host.current;
+    const fail = () => {
+      if (disposed || broken) return;
+      broken = true;
+      setFailed(true); callbacks.current.onFail?.();
+    };
+    const timer = setTimeout(fail, readyTimeout);
     loadGoogle().then(maps => {
-      if (disposed || !hostElement) return;
+      if (disposed || broken || !hostElement) return;
       const el = document.createElement('div');
       el.style.cssText = 'position:absolute;inset:0';
       (hostElement as unknown as HTMLElement).appendChild(el);
+      const gesture = () => { if (!disposed && !broken) callbacks.current.onGesture?.(); };
+      el.addEventListener('pointerdown', gesture);
+      el.addEventListener('wheel', gesture, { passive: true });
       const map = new maps.Map(el, {
-        center: { lat: center.latitude, lng: center.longitude }, zoom: 16, gestureHandling: 'greedy',
+        center: { lat: centerRef.current.latitude, lng: centerRef.current.longitude }, zoom: 16, gestureHandling: 'greedy',
         mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false,
       });
       const listeners = [map.addListener('idle', () => {
+        if (disposed || broken) return;
         const p = map.getCenter();
         callbacks.current.onChange({ latitude: p.lat(), longitude: p.lng() });
-      }), map.addListener('tilesloaded', () => setReady(true))];
-      (el as unknown as { windCleanup?: () => void }).windCleanup = () => listeners.forEach(l => l.remove());
-    }).catch(() => { if (!disposed) { setFailed(true); callbacks.current.onFail?.(); } });
-    return () => { disposed = true; (hostElement?.firstChild as unknown as { windCleanup?: () => void } | undefined)?.windCleanup?.(); };
-  }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+      }), map.addListener('dragstart', () => { if (!disposed && !broken) callbacks.current.onGesture?.(); }),
+      map.addListener('tilesloaded', () => { if (!disposed && !broken) { clearTimeout(timer); setReady(true); } })];
+      mapRef.current = map;
+      cleanup = () => { listeners.forEach(l => l.remove()); maps.event.clearInstanceListeners(map);
+        el.removeEventListener('pointerdown', gesture); el.removeEventListener('wheel', gesture); el.remove(); mapRef.current = null; };
+    }).catch(fail);
+    return () => { disposed = true; clearTimeout(timer); cleanup?.(); };
+  }, [attempt, readyTimeout]);
   useEffect(() => {
     if (!ready) return;
     callbacks.current.onReady?.();
   }, [ready]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const p = map.getCenter();
+    if (Math.abs(p.lat() - center.latitude) + Math.abs(p.lng() - center.longitude) > 0.000001)
+      map.setCenter({ lat: center.latitude, lng: center.longitude });
+  }, [center.latitude, center.longitude]);
   return <View style={{ height, width: '100%' }}>
     <View ref={host} style={StyleSheet.absoluteFill} />
     <View pointerEvents="none" style={[styles.pin, failed && { opacity: 0 }]}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
-      <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>}
@@ -273,12 +305,11 @@ const bearingOf = (a: { latitude: number; longitude: number }, b: { latitude: nu
     Math.sin(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.cos(rad(b.longitude - a.longitude));
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 };
-const shortestTurn = (a: number, b: number) => ((b - a) % 360 + 540) % 360 - 180;
 
 const styles = StyleSheet.create({
   placeholder: { justifyContent: 'center' },
   failure: { backgroundColor: '#E6ECE3', justifyContent: 'center', alignItems: 'center' },
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
   retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },
 });

@@ -6,10 +6,12 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { routeFramePoints } from './map-math';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { Car } from './route-map.native';
 import { palette, shadow, useCopy } from './ui';
+import { effectiveRuntime } from './runtime-config';
 
 export type { PinMapProps, RouteMapProps };
 export const canPin = true;
@@ -17,10 +19,10 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012;
 
 export default function RouteMap(props: RouteMapProps) {
-  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, focus, height = 220 } = props;
-  const { c } = useCopy();
-  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
-  const points = driver ? [driver, ...stops] : stops;
+  const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
+  const { c, rtl } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
+  const points = routeFramePoints(props);
   const lats = points.map(p => p.latitude), lngs = points.map(p => p.longitude);
   const region = {
     latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
@@ -33,6 +35,9 @@ export default function RouteMap(props: RouteMapProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const failureCallback = useRef(props.onFail);
+  useEffect(() => { failureCallback.current = props.onFail; });
+  useEffect(() => { if (failed) failureCallback.current?.(); }, [failed]);
   const still = useReducedMotion();
   const key = JSON.stringify(region);
   useEffect(() => { if (!moved && !driver && !failed) view.current?.animateToRegion(region, still ? 0 : 800); }, [key, moved, driver, failed, still]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -44,29 +49,29 @@ export default function RouteMap(props: RouteMapProps) {
   // Returning to the foreground after a tunnel outage retries a failed map once, like web's online recovery.
   useEffect(() => {
     if (!failed) return;
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); } });
     return () => sub.remove();
   }, [failed]);
   // Tiles loaded, not map initialized, are the readiness signal: Google can initialize and still never
   // draw a tile (missing/revoked key, quota). A map that never loads tiles shows the diagram with a Retry.
   useEffect(() => {
     if (ready || failed) return;
-    const timer = setTimeout(() => setFailed(true), 25_000);
+    const timer = setTimeout(() => setFailed(true), readyTimeout);
     return () => clearTimeout(timer);
-  }, [ready, failed, attempt]);
+  }, [ready, failed, attempt, readyTimeout]);
   // A provider failure unmounts the map: its overlays go with it, and no Google content lingers anywhere.
   if (failed) return <View style={{ height, width: '100%' }}>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    onMapLoaded={() => setReady(true)} onPanDrag={() => setMoved(true)}
-    onRegionChangeComplete={r => { if (driver && Math.abs(r.latitude - driver.latitude) + Math.abs(r.longitude - driver.longitude) > 0.004) setMoved(true); }}>
+    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? `, ${driverTitle ?? ''}` : ''}`}
+    onMapLoaded={() => setReady(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
@@ -77,36 +82,56 @@ export default function RouteMap(props: RouteMapProps) {
     {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} stale={!!props.stale} />}
   </MapView>
   {moved && <Pressable onPress={() => setMoved(false)}
-    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, shadow]}>
+    accessibilityRole="button" accessibilityLabel={c.recenter} style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>
     <Ionicons name="locate" size={20} color={palette.blue} />
   </Pressable>}
   </View>;
 }
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const [readyTimeout] = useState(() => effectiveRuntime().values.mapReadyTimeoutMs);
+  const view = useRef<MapView>(null);
+  const reported = useRef(center);
+  const pendingCenter = useRef<PinMapProps['center'] | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const callbacks = useRef({ onFail, onReady, onChange });
   useEffect(() => { callbacks.current = { onFail, onReady, onChange }; });
+  useEffect(() => {
+    if (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude) return;
+    pendingCenter.current = { latitude: center.latitude, longitude: center.longitude };
+    if (!ready) return;
+    view.current?.animateToRegion({ latitude: center.latitude, longitude: center.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 0);
+    const timer = setTimeout(() => {
+      if (!pendingCenter.current) return;
+      pendingCenter.current = null; setFailed(true); callbacks.current.onFail?.();
+    }, readyTimeout);
+    return () => clearTimeout(timer);
+  }, [center.latitude, center.longitude, ready, attempt, readyTimeout]);
   // The sheet offers no pin to confirm until the tiles are actually drawn; a map that never loads says so.
   useEffect(() => {
     if (ready) { callbacks.current.onReady?.(); return; }
-    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, 25_000);
+    const timer = setTimeout(() => { setFailed(true); callbacks.current.onFail?.(); }, readyTimeout);
     return () => clearTimeout(timer);
-  }, [ready, attempt]);
+  }, [ready, attempt, readyTimeout]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
-    <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+    <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
       <Text>{c.retry}</Text>
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
-      initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
-      pitchEnabled={false} rotateEnabled={false} onMapLoaded={() => setReady(true)}
-      onRegionChangeComplete={r => callbacks.current.onChange({ latitude: r.latitude, longitude: r.longitude })} />
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
+      accessibilityLabel={c.pinHint}
+      initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
+      pitchEnabled={false} rotateEnabled={false} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapLoaded={() => setReady(true)}
+      onRegionChangeComplete={r => {
+        const target = pendingCenter.current;
+        if (target && Math.abs(target.latitude - r.latitude) + Math.abs(target.longitude - r.longitude) > 0.000001) return;
+        pendingCenter.current = null; reported.current = { latitude: r.latitude, longitude: r.longitude }; callbacks.current.onChange(reported.current);
+      }} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>
@@ -114,7 +139,7 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, right: 10, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });

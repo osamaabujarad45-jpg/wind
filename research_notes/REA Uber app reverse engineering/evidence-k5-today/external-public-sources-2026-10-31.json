@@ -1,0 +1,97 @@
+{
+ "captured": "2026-10-31",
+ "nature": "public sources retrieved from the open web; each entry records what was read, where, and what it corroborates or adds. These are NOT artifact measurements: they are the vendor's own public statements and store listings, kept in a separate evidence class.",
+ "boundary_note": "Reading public pages is not contact with the vendor's systems. No account, no traffic, no download of any app binary from a third-party mirror.",
+ "sources": [
+  {
+   "id": "play-rider",
+   "url": "https://play.google.com/store/apps/details?id=com.ubercab",
+   "retrieved": "2026-10-31",
+   "facts_read": {
+    "developer": "Uber Technologies, Inc.",
+    "rating": "4.8 star, 20.2M reviews",
+    "installs": "1B+",
+    "category": "Maps & Navigation",
+    "last_updated_on_listing": "Oct 23, 2026",
+    "content_rating": "Rated for 3+, Users Interact, Shares Location",
+    "whats_new": "generic bug-fix text; an in-app event 'Price Lock Pass has arrived' is linked"
+   },
+   "corroborates": "the package identity and the product positioning of the studied build; confirms the distribution channel is Google Play (matching the Play source stamp in the signing block)"
+  },
+  {
+   "id": "play-driver",
+   "url": "https://play.google.com/store/apps/details?id=com.ubercab.driver",
+   "retrieved": "2026-10-31",
+   "facts_read": {
+    "developer": "Uber Technologies, Inc.",
+    "rating": "4.6 star, ~6.3M reviews",
+    "category": "Business",
+    "last_updated_on_listing": "Oct 24, 2026 (locale pages show Oct 2 / Oct 16 / Oct 9 / Sep 18 / Jul 10)",
+    "content_rating": "Users Interact, Shares Location",
+    "notable_statement": "The app uses full-screen notifications to display incoming Voice over Internet Protocol (VoIP) calls between riders and drivers",
+    "data_use_statement": "This app typically uses 2 GB of data per month. Using navigation can decrease your phone's battery life"
+   },
+   "corroborates": "the driver app is a live, maintained product on the same publication channel; its VoIP and navigation statements match the functionality the rider build already carries in a quarantined feature module"
+  },
+  {
+   "id": "play-driver-data-safety",
+   "url": "https://play.google.com/store/apps/datasafety?id=com.ubercab.driver&hl=en",
+   "retrieved": "2026-10-31",
+   "facts_read": {
+    "collected": [
+     "approximate location and precise location (app functionality, personalization)",
+     "name, email, user IDs, phone number, other info (app functionality, fraud prevention/security/compliance, account management)",
+     "user payment info (optional) and purchase history (app functionality, fraud prevention/security/compliance)",
+     "photos (optional) — personalization",
+     "voice or sound recordings (optional) — app functionality",
+     "contacts (optional) — app functionality",
+     "fitness info (optional) — app functionality",
+     "app interactions, in-app search history, other actions — analytics",
+     "device or other IDs — app functionality, analytics, developer communications",
+     "crash logs, diagnostics, other app performance data — analytics"
+    ],
+    "shared": [
+     "crash logs, diagnostics, other app performance data — analytics",
+     "purchase history — advertising or marketing",
+     "name, email, user IDs, address, phone number — advertising or marketing",
+     "device or other IDs — advertising or marketing",
+     "app interactions, in-app search history — advertising or marketing"
+    ],
+    "security_practices": ["data is encrypted in transit", "the developer provides a way to request deletion"]
+   },
+   "corroborates": "the driver app's functional scope (background-grade location use, voice recording, fitness/motion data, payments) and its non-functional posture (transport encryption, deletion path); it is the closest verifiable public description of the app that is not installed on any study device",
+   "limits": "store-declared, developer-supplied; not an artifact measurement and not a complete permission list"
+  },
+  {
+   "id": "uber-tech-stack-1",
+   "url": "https://www.uber.com/us/en/blog/tech-stack-part-one-foundation",
+   "retrieved": "2026-10-31",
+   "facts_read": {
+    "android_stack": "OkHttp, Retrofit and Gson for networking; Gradle as the build system",
+    "configuration": "an in-house service and application configuration platform used to roll out behaviour safely",
+    "mapping_teams": "maps teams own datasets, algorithms and tooling around map data, display, routing, and address collection/recommendation",
+    "map_services_backend": "Map Services also powers the backend technology behind the search boxes in the rider and driver app"
+   },
+   "corroborates": "three artifact findings: the Gson/Retrofit/OkHttp networking stack (13,415 / 162 / 63 classes), the 14,516-parameter configuration platform, and the first-party map display and place-search stack"
+  },
+  {
+   "id": "uber-carbon-map-interface",
+   "url": "https://www.uber.com/en-IN/blog/building-a-scalable-and-reliable-map-interface-for-drivers",
+   "retrieved": "2026-10-31",
+   "facts_read": {
+    "architecture": "the map is a background view that persists for the app's lifetime, mediated by three components: a Layer Manager, a Padding Provider and a Camera Director",
+    "layer_manager": "each feature creates its own map layer and registers it; the layer's interface exposes add/remove for markers, polygons, polylines and tile overlays but no access to other layers; an 'exclusive' layer temporarily hides all others; every layer must be bound to a RIBs Interactor so it dies with the feature",
+    "padding_provider": "chrome registers itself as a padding source; the provider aggregates edge insets into an observable stream so region-fitting code knows the visible map area",
+    "camera_director": "features register camera rules listing coordinates that must be visible; the director aggregates them, and one feature at a time may request exclusive camera control",
+    "public_interfaces": "MapLayerManager.add(layer, interactorScope, exclusive) / remove(layer); MapLayer.add|remove(marker|polygon|polyline|tileOverlay); MapPaddingProvider.edgeInsetsStream + add/remove(paddingSource, viewControllerScope); MapCameraDirector.add/remove(cameraRule) + requestCameraControl/relinquishCameraControl"
+   },
+   "corroborates": "the artifact's own structure, independently and in the vendor's words: 488 `MapLayer` implementations that attach layers per feature, padding-inset handling on the map view, camera-listener plumbing, an active-map counter, and tile-overlay support — the same four ideas the post names"
+  }
+ ],
+ "what_public_sources_cannot_answer": [
+  "the driver app's exact build identity, permissions or class inventory (no binary is available to this study; store metadata is developer-declared)",
+  "why the observed session resolved the renderer to the Google client while the shipped default names the own engine",
+  "the delivered server-side parameter values at launch",
+  "the tile protocol / wire format"
+ ]
+}

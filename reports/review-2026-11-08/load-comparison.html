@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fastship — current-client latency</title>
+  <style>
+    :root { color-scheme: light dark; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground, CanvasText); }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    figure { margin: 0; }
+    .lede { font-size: 16px; line-height: 1.5; margin: 0 0 24px; }
+    .lede strong { font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .metric { margin: 0 0 24px; }
+    .heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px; }
+    h3 { margin: 0; font-size: 16px; }
+    .gate, figcaption, .axis { font-size: 13px; color: var(--muted-foreground, GrayText); line-height: 1.5; }
+    .row { display: grid; grid-template-columns: 132px minmax(0,1fr) 94px; align-items: center; gap: 12px; margin: 8px 0; font-size: 14px; }
+    .track { height: 16px; background: var(--secondary, color-mix(in srgb, CanvasText 6%, transparent)); }
+    .bar { height: 16px; background: var(--chart-2, SteelBlue); }
+    .current { background: var(--destructive, FireBrick); }
+    .value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .axis { display: flex; justify-content: space-between; margin: 4px 106px 0 144px; }
+    figcaption { border-top: 1px solid var(--border, GrayText); padding-top: 16px; }
+    @media (max-width: 480px) {
+      .row { grid-template-columns: 105px minmax(0,1fr) 84px; gap: 8px; font-size: 13px; }
+      .axis { margin-left: 113px; margin-right: 92px; }
+      .heading { gap: 8px; }
+      .lede strong { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <figure aria-label="Latency comparison: existing harness versus current-client journey protocol. Lower is better.">
+    <p class="lede"><strong>9.8× higher API p95</strong><br>when the load harness sends the journey protocol used by the current app.</p>
+    <section class="metric" aria-label="API p95">
+      <div class="heading"><h3>API p95</h3><span class="gate">Target &lt;500 ms</span></div>
+      <div class="row"><span>Existing harness</span><div class="track"><div class="bar" style="width:9.5293%"></div></div><span class="value">428.82 ms</span></div>
+      <div class="row"><span>Current protocol</span><div class="track"><div class="bar current" style="width:92.9753%"></div></div><span class="value">4,183.89 ms</span></div>
+      <div class="axis"><span>0</span><span>4,500 ms</span></div>
+    </section>
+    <section class="metric" aria-label="Command p95">
+      <div class="heading"><h3>Command p95</h3><span class="gate">Target &lt;1,000 ms</span></div>
+      <div class="row"><span>Existing harness</span><div class="track"><div class="bar" style="width:9.5276%"></div></div><span class="value">428.74 ms</span></div>
+      <div class="row"><span>Current protocol</span><div class="track"><div class="bar current" style="width:58.9029%"></div></div><span class="value">2,650.63 ms</span></div>
+      <div class="axis"><span>0</span><span>4,500 ms</span></div>
+    </section>
+    <figcaption>Local fallback · 8 November 2026 · SQLite WAL · 60 mixed workers · identical eight-second scheduling windows. Zero workload errors/timeouts in either run. Short synthetic comparison; not production capacity or PostgreSQL throughput. Sources: load-baseline.json and load-current-client.json.</figcaption>
+  </figure>
+</body>
+</html>
