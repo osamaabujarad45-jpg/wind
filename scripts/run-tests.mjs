@@ -99,6 +99,7 @@ const suites = [
   "runtime-dependencies.test.mjs",
   "phone-provider.mjs",
   "native-push-sqlite.mjs",
+  "backup.test.mjs",
   "dispatch-ranking.test.mjs",
   "dispatch-sqlite.mjs",
   "ride-lifecycle-sqlite.mjs",

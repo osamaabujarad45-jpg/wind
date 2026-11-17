@@ -1050,6 +1050,23 @@ dispatch.onOffer = async (driverId, orderId) => { await queuePush([driverId], 'o
 rideLifecycle.onBoardingLocked = async orderId => { await queuePush((await adminIds()), 'attention', orderId, '/admin/orders'); };
 const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")).map(a => a.id as number);
 const flushPush = () => persistence.flushEffects();
+// T46: the nightly job touches this marker after its off-VM copy succeeds. Silence is the failure, so the API watches for it.
+const backupMarker = process.env.WIND_BACKUP_MARKER ?? (production && persistence.backend === 'sqlite' ? resolve(dirname(process.env.DB_PATH!), 'backups', 'last-ok') : null);
+const backupStale = (now = Date.now()) => {
+  if (!backupMarker) return false;
+  try { return now - statSync(backupMarker).mtimeMs > 26 * 60 * 60_000; } catch { return true; } // a day plus slack for the job's own run time
+};
+/** At most one alert a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
+export async function alertMissedBackup(now = Date.now()) {
+  if (!backupStale(now)) return false;
+  const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
+    try { await limit(identityKey('backup-alert', 'system'), 1, DAY); } catch { return false; }
+    await queuePush(await adminIds(), 'attention', 0, '/admin');
+    return true;
+  });
+  if (sent) await flushPush();
+  return sent;
+}
 async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string) {
   const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
   const ids = userIds.map(() => '?').join(',');
@@ -2910,6 +2927,7 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
+    backupStale: backupStale(),
     daily,
   };
 });
@@ -3393,7 +3411,7 @@ if (import.meta.main) {
       (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
     };
     (await prune());
-    setInterval(async () => { try { (await prune()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
+    setInterval(async () => { try { (await prune()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
