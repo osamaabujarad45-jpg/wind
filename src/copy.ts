@@ -1405,6 +1405,7 @@ const ar = {
   pickupOnMap_ride: 'نقطة الالتقاء على الخريطة',
   dropoffOnMap_ride: 'الوجهة على الخريطة',
   earnLabel: 'حصّتك',
+  customerPays: 'يدفع الزبون {p}',
   earningsNote: 'من الطلبات المكتملة. التحصيل والدفع يُؤكَّدان بشكل منفصل.',
   // errors
   err_network: 'تعذّر الاتصال بويند. تحقق من الإنترنت.',
@@ -3007,6 +3008,7 @@ const en: Copy = {
   pickupOnMap_ride: 'Pickup on map',
   dropoffOnMap_ride: 'Destination on map',
   earnLabel: 'Your share',
+  customerPays: 'Customer pays {p}',
   earningsNote: 'From completed jobs. Cash and payouts are confirmed separately.',
   err_network: 'Can’t reach Wind. Check your connection.',
   err_invalid_phone: 'Invalid mobile number. Example: 0599123456',

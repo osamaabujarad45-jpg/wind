@@ -235,6 +235,8 @@ export default function Jobs() {
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
 
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
+    {/* the cash rule holds for every job: said once above the list, not on each card (design review 17 Nov) */}
+    {!!jobs?.length && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.noChangeDriver}</Txt>}
 
     {!jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
       : !jobs ? <Loading failed={!!error} onRetry={reload} /> : jobs.length === 0
@@ -257,8 +259,10 @@ export default function Jobs() {
                   fill(c.tripsCount, { n: order.customerStats.trips })].filter(Boolean).join(' · ') : c.newCustomer}</Txt>}
               </View>
               <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
+                {/* what the driver keeps leads, and the customer's fare sits under it, so the two figures read as one sum */}
                 <Txt variant="micro">{c.earnLabel}</Txt>
-                <Txt variant="h2" style={{ color: palette.olive }}>{money(earn)}</Txt>
+                <Txt variant="h1" style={{ color: palette.olive, fontVariant: ['tabular-nums'] }}>{money(earn)}</Txt>
+                <Txt variant="micro">{fill(c.customerPays, { p: money(order.price) })}</Txt>
               </View>
             </Row>
             {order.discount > 0 && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
@@ -270,7 +274,6 @@ export default function Jobs() {
               <Ionicons name="basket-outline" size={iconSize.sm} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.shopJobCash, { shop: order.shop.merchantName, p: money(order.shop.cashAgorot / 100) })}</Txt>
             </Row>}
-            <Txt variant="caption" style={{ marginBottom: 10 }}>{c.noChangeDriver}</Txt>
             {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
