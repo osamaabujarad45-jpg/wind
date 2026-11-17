@@ -76,7 +76,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     '../../session': { useSession: () => session },
     '../../phone/flow': { codeInput: raw => raw },
     '../../admin-cash-command': cashCommand,
-    '../../storage': { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } },
+    '../../storage': { storage: { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } } },
     '../../booking': { newRequestId: () => `request-${calls.length}-${Math.random().toString(16).slice(2, 8)}` },
     '../../ui': ui,
     'expo-router': { router: {} },
