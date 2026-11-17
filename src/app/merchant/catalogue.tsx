@@ -1,7 +1,7 @@
 // The shop's catalogue (DLV-01, MER-02): sections, items, prices in shekels (stored as agorot), sold by weight, and the
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { ActivityIndicator, Switch, View } from 'react-native';
 import { api, errorCode, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
@@ -34,10 +34,11 @@ export default function MerchantCatalogue() {
         </Row>
         {/* The state, as a switch: a button labelled "Out of stock" on an item in stock read as the item's state (design review 17 Nov). */}
         <Row style={{ marginTop: 4, justifyContent: 'space-between' }}>
-          <Row gap={8}>
-            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id}
-              accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })}
+          <Row gap={8} style={{ minHeight: 44 }}>
+            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id} hitSlop={8}
+              accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} accessibilityState={{ busy: busy === i.id }}
               trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card} />
+            {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
           <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />

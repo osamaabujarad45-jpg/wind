@@ -98,7 +98,7 @@ export default function Users() {
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="people-outline" title={c.noUsers} />
       : data.map((user, i) => <Appear key={user.id} index={i}>
         <Card>
-          <Press onPress={() => setOpenId(openId === user.id ? null : user.id)} accessibilityState={{ checked: openId === user.id }}
+          <Press onPress={() => setOpenId(openId === user.id ? null : user.id)} accessibilityState={{ expanded: openId === user.id }}
             accessibilityLabel={`${user.name}، ${c[user.role]}، ${c[user.status]}`}>
           <Row style={{ justifyContent: 'space-between' }}>
             <View style={{ flex: 1, gap: 2 }}>

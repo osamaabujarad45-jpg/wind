@@ -262,13 +262,13 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // Press feedback: 3% scale over 120ms on the UI thread.
 export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
+  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; expanded?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+    aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
@@ -402,7 +402,6 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
   </Rail></View>;
 }
 
-// error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
 /**
  * A one-time code as separate cells (design review 17 Nov: six digits in one wide box were hard to check). One real TextInput
  * lies over the cells, so typing, paste, the SMS autofill and screen readers all work on a single field; the cells only draw.
@@ -416,7 +415,7 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
     <Pressable onPress={() => ref.current?.focus()} disabled={disabled} accessible={false} style={{ alignSelf: 'stretch' }}>
-      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }}>{/* ltr: a code's digits read left to right in Arabic too */}
+      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }} importantForAccessibility="no-hide-descendants">{/* ltr: a code's digits read left to right in Arabic too */}
         {Array.from({ length }, (_, i) => {
           const active = focused && (i === value.length || (i === length - 1 && value.length === length));
           return <View key={i} style={[styles.codeCell, active && styles.codeCellActive, disabled && { backgroundColor: palette.muted }]}>
@@ -431,6 +430,7 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
   </View>;
 }
 
+// error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
 export function Field({ label, value, onChangeText, onBlur, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
@@ -663,8 +663,8 @@ const styles = StyleSheet.create({
   codeCellActive: { borderColor: palette.forest, borderWidth: 2 },
   codeDigit: { fontSize: 24, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] },
   codeInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.02, color: 'transparent' },
-  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.field, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.card },
-  inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11 }, // 2px focus ring; the padding keeps the text still
+  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.field, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 1, backgroundColor: palette.card },
+  inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 0 }, // 2px focus ring; the padding keeps the text and the height still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
   fieldError: { flex: 1, color: palette.error, fontSize: 13, fontWeight: '700' },
   input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
@@ -685,5 +685,5 @@ const styles = StyleSheet.create({
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   barText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: palette.onFill, fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
+  barBadgeText: { color: palette.onFill, fontSize: 12, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

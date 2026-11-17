@@ -713,7 +713,7 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             <Pulse color={statusTone[order.status].fg} size={8} />{/* the state's colour, as on its badge */}
             <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].fg }}>{etaChip(eta)}</Txt>}
+            {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: statusTone[order.status].fg, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />

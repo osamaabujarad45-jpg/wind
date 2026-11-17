@@ -74,7 +74,7 @@ function ServicesArt() {
     {/* streets: pale bands across the wash */}
     <View style={[styles.street, { top: 38, transform: [{ rotate: '-8deg' }] }]} />
     <View style={[styles.street, { top: 104, transform: [{ rotate: '6deg' }] }]} />
-    <View style={[styles.street, { width: 18, height: 190, top: -20, [start]: 118, transform: [{ rotate: rtl ? '-14deg' : '14deg' }] }]} />
+    <View style={[styles.avenue, { [start]: 118, transform: [{ rotate: rtl ? '-14deg' : '14deg' }] }]} />
     {dots.map(i => <Animated.View key={i} entering={reduced ? undefined : FadeInDown.duration(220).delay(120 + i * 70)}
       style={[styles.routeDot, { bottom: 34 + i * 12, [start]: 46 + i * 26 }]} />)}
     <View style={[styles.pickup, { bottom: 24, [start]: 30 }]} />
@@ -132,12 +132,13 @@ const styles = StyleSheet.create({
   // a pale tag, not the forest fill of a button: on the welcome slide it read as something to press
   saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.olivePale, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
   saveText: { color: palette.olive, fontSize: 16, fontWeight: '900' },
-  map: { width: 270, height: 160, borderRadius: 18, overflow: 'hidden', backgroundColor: palette.mapWash },
+  map: { width: 270, maxWidth: '100%', height: 160, borderRadius: 18, overflow: 'hidden', backgroundColor: palette.mapWash },
   street: { position: 'absolute', left: -20, right: -20, height: 14, backgroundColor: palette.card, opacity: 0.85 },
+  avenue: { position: 'absolute', top: -20, width: 18, height: 190, backgroundColor: palette.card, opacity: 0.85 },
   routeDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: palette.olive },
   pickup: { position: 'absolute', width: 18, height: 18, borderRadius: 9, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
   parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
-  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.line, alignItems: 'center', justifyContent: 'center' },
+  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
   code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },
 });

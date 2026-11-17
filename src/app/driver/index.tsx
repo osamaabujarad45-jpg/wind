@@ -262,7 +262,7 @@ export default function Jobs() {
                 {/* what the driver keeps leads, and the customer's fare sits under it, so the two figures read as one sum */}
                 <Txt variant="micro">{c.earnLabel}</Txt>
                 <Txt variant="h1" style={{ color: palette.olive, fontVariant: ['tabular-nums'] }}>{money(earn)}</Txt>
-                <Txt variant="micro">{fill(c.customerPays, { p: money(order.price) })}</Txt>
+                <Txt variant="micro">{fill(c.customerPays, { p: money(order.price - order.discount) })}</Txt>
               </View>
             </Row>
             {order.discount > 0 && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
