@@ -126,10 +126,13 @@ map.on('sourcedata', e => {
 });
 map.once('load', () => { mapLoaded = true; announceReady(); });
 
+const mapEl = document.getElementById('map');
 const state = { driver: config.driver ?? null, road: null, approach: null, closed: [], focus: undefined };
 let ready = false, moved = false, marker, arrow, shown, frame, at, turned, lineAt = 0, haloAt = 0;
 window.wind = update => {
   if (failed) return;
+  // The map is one labelled image for screen readers; Recenter sits outside it and stays reachable.
+  if (typeof update.label === 'string') { mapEl.setAttribute('role', 'img'); mapEl.setAttribute('aria-label', update.label); }
   Object.assign(state, update);
   if (ready) {
     if (pin && update.center) centerPin(update.center);
