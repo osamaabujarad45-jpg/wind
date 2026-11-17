@@ -5,7 +5,7 @@ import { useApi } from '../../api';
 import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
 import { statusText, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Appear, Badge, Button, ErrorText, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Button, ErrorText, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
 export default function Receipt() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,7 +36,11 @@ export default function Receipt() {
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
     ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
     ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
-    [c.payWith, c.paymentUnconfirmed],
+    // A selected or expected payment is not proof of payment: the receipt names what the driver recorded at the door
+    // (shown to the driver and admins only), and otherwise says the cash is not confirmed by Wind.
+    [c.payWith, order.collected
+      ? `${fill(c.cashCollected, { a: money(order.collected.cents / 100) })}${order.collected.reason ? ` · ${c[`variance_${order.collected.reason}`]}` : ''}`
+      : c.paymentUnconfirmed],
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
