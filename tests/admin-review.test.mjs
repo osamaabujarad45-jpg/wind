@@ -406,6 +406,7 @@ for (const language of ['ar', 'en']) {
   const c = copy[language];
   const store = new Map();
   const before = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  before.render(); // mounting runs the recovery lookup
   await flush();
   await tap(before, c.cashRecord);
   before.loseNextCall();
@@ -415,6 +416,7 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 1, `${language}: the lost entry is on the device`);
 
   const unknown = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store }); // app restarted, no receipt yet
+  unknown.render(); // mounting runs the recovery lookup
   await flush();
   let tree = unknown.render();
   assert.ok(shows(tree, c.cashUncertain), `${language}: the restored entry says it may be recorded`);
@@ -425,6 +427,7 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 1);
 
   const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041' } });
+  known.render(); // mounting runs the recovery lookup
   await flush();
   tree = known.render();
   assert.equal(known.calls.find(call => call.path.startsWith('/admin/cash/commands/'))?.path, `/admin/cash/commands/${sent.requestId}`);
