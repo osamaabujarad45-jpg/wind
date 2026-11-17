@@ -12,10 +12,10 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 ## Slices
 | Slice | PR | Branch | State |
 |---|---|---|---|
-| A-01 admin lost-reply remittance recovery | #79 | claude/p0-command-recovery | MERGED 63fe2452 (CI image/persistence/verify green at 55b4ad43; test PC: tsc, lint, unit, cash, admin-review, contracts pass; full suite blocked by test-PC memory) |
-| Dispute resend returns the order | #80 | claude/dispute-resend | MERGED 117cf25b (CI green; test-PC npm test hit an env timeout, rerun queued) |
-| Generic sender-scoped command receipt (server) | #81 | claude/command-receipts | review fixed; CI green at d682e825; master merged in at 5af4f5ac (contract conflict resolved), CI rerunning |
-| Chat outbox: unsent messages survive restart (SQLite-compatible) | #82 | claude/chat-outbox | Haiku review running; gates queued |
+| A-01 admin lost-reply remittance recovery | #79 | claude/p0-command-recovery | MERGED 63fe2452 (CI image/persistence/verify green at 55b4ad43; test PC: tsc, lint, admin-cash-command, cash, admin-review, cash-ceiling, pg-cash, ledger, authz-matrix, contracts pass; the monolithic full suite is blocked by test-PC memory) |
+| Dispute resend returns the order | #80 | claude/dispute-resend | MERGED 117cf25b (CI green; test PC: tsc, lint, credit, exceptions, contracts, and url-decoder alone pass; the earlier url-decoder failure was a memory-starved spawn timeout) |
+| Generic sender-scoped command receipt (server) | #81 | claude/command-receipts | MERGED 730bfdaa (CI green at 5af4f5ac; test PC: commands (PostgreSQL, two API processes), commands-sqlite, authz-matrix, contracts pass) |
+| Chat outbox: unsent messages survive restart (SQLite-compatible) | #82 | claude/chat-outbox | Haiku review: 2 high + 11 others, all fixed; test PC at bcb67cc6: chat-outbox, session-recovery, phone-ui, chat, presentation, lint, tsc pass; CI rerunning |
 | Design system part 1 (taken over) | #78 | claude/design-system | review fixed (11 findings); gates pending |
 | Old UI audit | #9 | claude/ui-ux-audit-2026-11-07b | closed as superseded (branch kept) |
 
@@ -41,6 +41,12 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 
 ## Blockers only the owner can clear
 - [O] Test PC memory: `Python314-pool\python.exe` (PID 8036, started 08:51) holds about 9.5 GB of 16 GB, leaving about 0.6 GB free. Node then crashed natively during `npm test` (exit 134), ESLint crashed (0xC0000409), and PostgreSQL connections dropped. Full suites and the phone sandbox cannot run there until it is restarted or capped. My own queued runs were stopped (only processes under `D:\wind-lead-1115\seq-1117c` / `cr81c`).
+
+## Next slices (from the 17 Nov priorities #2-#4 map of master)
+- #2 Money truth: the fare receipt always says "Paid in cash, directly to the driver" (`src/app/receipt/[id].tsx:37`, `copy.paymentUnconfirmed`) even when the driver recorded CUSTOMER_DID_NOT_PAY. Slice: truthful payment line, show the recorded collection/variance to driver and admin.
+- #3 Quote explanation: locked quotes keep tariff and lines, but the order serializer never exposes them; the receipt rebuilds the breakdown. Slice: echo `quote { tariffVersion, currency, lines }` for owner/driver/admin and render it.
+- #4 Retries/custody: a reattempt is a silent status rewrite. Slice: tag custody `decided` steps with `attempt: n` from existing events and show "Attempt n".
+- None touches the payment, cash-cap, dispatch or boarding gates.
 
 ## Not done / open
 - Phone acceptance on the A53 for the A-01 restored-form states (not run).
