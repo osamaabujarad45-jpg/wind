@@ -75,8 +75,6 @@ export default function Jobs() {
   const blocked = (order: Order) => !canTake(carrying, order.service);
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
-    // The offline card says no requests come in; an enabled Accept beside it contradicted it (design review 17 Nov).
-    : presenceOn && work.presenceState !== 'online' && !order.dispatch?.myOffer ? c.accept_go_online
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
