@@ -168,11 +168,12 @@ export function Header({ title, back = false, right, subtitle }: { title: string
 export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
-  const bg = { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
+  // Disabled looks disabled (muted fill, faint glyph), like Button: a forest "+" on a closed shop read as pressable.
+  const bg = disabled ? palette.muted : { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
     accessibilityState={{ disabled: !!disabled }}
-    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
-    <Ionicons name={icon} size={iconSize.lg} color={tone === 'forest' ? palette.lime : palette.ink} />
+    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && !disabled && shadow, pressed && { opacity: 0.7 }]}>
+    <Ionicons name={icon} size={iconSize.lg} color={disabled ? palette.faint : tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
 }
 
