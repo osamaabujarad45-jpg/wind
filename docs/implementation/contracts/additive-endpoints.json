@@ -3,6 +3,24 @@
   "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
   "modules": [
     {
+      "packet": "ship-custody-chain",
+      "source": "server/domain/custody.ts",
+      "registrar": "registerCustodyRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/orders/:id/custody", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "ship-office-returns",
+      "source": "server/domain/office.ts",
+      "registrar": "registerOfficeRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/admin/orders/:id/office", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/orders/:id/office", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/office", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "adoption-driver-recovery",
       "source": "server/domain/driver-receipts.ts",
       "registrar": "registerDriverReceiptRoutes",

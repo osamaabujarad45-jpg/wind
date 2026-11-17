@@ -4,6 +4,7 @@ import Animated, { cubicBezier, useReducedMotion } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useApi } from '../../api';
+import { OfficeShelf } from '../../office-ui';
 import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
@@ -54,6 +55,8 @@ export default function Dashboard() {
         {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/users')} />}
         {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/subscriptions')} />}
       </Appear>}
+
+      <OfficeShelf />
 
       <Appear index={9}>
         <Card>

@@ -62,6 +62,8 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   merchant_order: { ar: 'طلب جديد لمحلك. افتح ويند واقبله قبل انتهاء المهلة.', en: 'A new order for your shop. Open Wind and accept it before time runs out.' },
   shop_consent: { ar: 'المحل يسأل عن تغيير في طلب التسوق. افتح ويند للرد.', en: 'The shop is asking about a change to your shop order. Open Wind to answer.' },
   shop_update: { ar: 'تحديث على طلب التسوق. افتح ويند للتفاصيل.', en: 'An update on a shop order. Open Wind for details.' },
+  // SHIP-19: returned goods wait at the Wind office (said daily until collected).
+  office: { ar: 'غرضك المُرجَع في مكتب ويند. افتح ويند لمعرفة موعد الاستلام قبل انتهاء المهلة.', en: 'Your returned item is at the Wind office. Open Wind to see how long it is kept.' },
 };
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 
