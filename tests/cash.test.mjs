@@ -305,7 +305,9 @@ try {
   db.prepare('UPDATE orders SET updated_at = updated_at WHERE id = ?').run(promoted.id); // other columns stay writable
 
   // An adjustment has no reference; its receipt still names the entry for the admin who recorded it.
-  const adjusted = { driverId: driver.user.id, amountCents: 200, reason: 'Fuel advance correction', requestId: randomUUID() };
+  const fresh = await call('/auth/register', { body: { phone: '0599300019', name: 'Nour', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${fresh.user.id}/approve`, { token: admin.token, body: {} });
+  const adjusted = { driverId: fresh.user.id, amountCents: 200, reason: 'Fuel advance correction', requestId: randomUUID() };
   const adjustment = await call('/admin/cash/adjustment', { token: admin.token, body: adjusted });
   const adjustmentReceipt = (await call(`/admin/cash/commands/${adjusted.requestId}`, { token: admin.token, method: 'GET' })).entry;
   assert.deepEqual([adjustmentReceipt.id, adjustmentReceipt.kind, adjustmentReceipt.reference], [adjustment.id, 'adjustment', null]);

@@ -59,7 +59,6 @@ export default function AdminCash() {
   useEffect(() => {
     if (!actorId) return;
     let live = true;
-    setRecovering(true);
     recoverCashCommand(cashIO(actorId), actorId).then(outcome => {
       if (!live || outcome.state === 'empty') return;
       if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); return; }
