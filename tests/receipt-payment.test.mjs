@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { copy, fill } from '../src/copy.ts';
 import { varianceReasons } from '../src/model.ts';
-import { paymentLine, receiptTotal } from '../src/receipt-payment.ts';
+import { fareLines, paymentLine, receiptTotal } from '../src/receipt-payment.ts';
 
 // Money truth (research priority #2): a completed order with cash expected at the door is not proof the customer paid.
 const money = n => `₪${n}`;
@@ -23,4 +23,19 @@ for (const language of ['ar', 'en']) {
 // The total is what the customer owes at the door: goods plus fees for a shop order, the fare less a Wind-funded promo otherwise.
 assert.equal(receiptTotal({ price: 50, discount: 5 }), 45);
 assert.equal(receiptTotal({ price: 12, discount: 0, shop: { cashAgorot: 8650 } }), 86.5);
-console.log('PASS: receipts never claim unconfirmed cash was paid; recorded collection, refusal reason and shop totals shown');
+// Quote/receipt explanation (research priority #3): the fare basis comes only from what the order stored at booking.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  for (const key of ['roadDistance', 'agreedFare']) assert.ok(c[key]?.trim(), `${language}: ${key}`);
+  // Accepted at Wind's suggested fare: the distance it used, no fare line repeating the total.
+  assert.deepEqual(fareLines(c, { price: 40, discount: 0, routeKm: 34.2, recommendedPrice: 40 }, money), [[c.roadDistance, `34.2 ${c.km}`]]);
+  // A driver's offer was accepted: both the suggestion and the agreed fare, so the total is explained.
+  assert.deepEqual(fareLines(c, { price: 45, discount: 0, routeKm: 34, recommendedPrice: 40 }, money),
+    [[c.roadDistance, `34 ${c.km}`], [c.recommendedPrice, '₪40'], [c.agreedFare, '₪45']]);
+  // A promo with no suggestion stored (parcel tariff, older orders): fare then the Wind-funded discount, as before.
+  assert.deepEqual(fareLines(c, { price: 50, discount: 5, routeKm: null, recommendedPrice: null }, money),
+    [[c.fare, '₪50'], [c.promoDiscount, '₪-5']]);
+  // Nothing stored: nothing invented.
+  assert.deepEqual(fareLines(c, { price: 50, discount: 0 }, money), []);
+}
+console.log('PASS: receipts never claim unconfirmed cash was paid; recorded collection, refusal reason and shop totals shown; fare basis from stored booking facts only');
