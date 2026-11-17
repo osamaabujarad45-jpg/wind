@@ -15,8 +15,8 @@ const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
 // vendor/picomatch-{2,4} as reviewed in the GHSA-fc5q-39xc-vjpf backport (no upstream fix released): every file's bytes.
 export const PICOMATCH_TREE_SHA256 = {
-  2: 'b6baae3884cf7e21d62831cdc4396e6f0734f9093aa160affeb52b830be788c5',
-  4: 'da4c181152b4dee827f21e44d679e215f853797657b2843e9022cf8730aa9571',
+  2: 'd7949c7fd2888120bc20c06359f7cc647cd9a8ffdc8192f7b548072dd549ffec',
+  4: '637279e70cff23552825f37e3db4c82f3b6546823bd88c08ee0e5dc680050a5f',
 };
 const picomatchAdvisory = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
 const picomatchNames = new Set(['picomatch', 'fdir', 'tinyglobby', '@expo/cli', 'expo', 'react-native', 'babel-preset-expo',
@@ -33,9 +33,11 @@ export function decoderHashes() {
   return { resolved: sourceHash(decoderPath), vendored: sourceHash(join(root, 'vendor/decode-uri-component/index.cjs')), decoderPath };
 }
 
-/** One digest over a directory: each file's relative path and content hash, in path order. */
+/** One digest over a directory: each file's relative path and content hash, in path order. Links are refused. */
 export function treeHash(dir) {
-  const files = readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile())
+  const entries = readdirSync(dir, { recursive: true, withFileTypes: true });
+  if (entries.some(entry => !entry.isFile() && !entry.isDirectory())) throw new Error('unexpected entry in a reviewed tree');
+  const files = entries.filter(entry => entry.isFile())
     .map(entry => join(entry.parentPath, entry.name).slice(dir.length + 1).replaceAll('\\', '/')).sort();
   const digest = createHash('sha256');
   for (const file of files) digest.update(`${file}\0${sourceHash(join(dir, file))}\n`);
@@ -43,27 +45,32 @@ export function treeHash(dir) {
 }
 
 /**
- * The picomatch backport is in force only when both vendored trees match their pins and every package the lockfile
- * installs under the real name `picomatch` (aliases included) resolves to one of those trees. When npm audit's own
- * node list is given, each audited location must be one of those copies too. Anything else fails closed.
+ * The picomatch backport is in force only when both vendored trees match their pins and every lockfile package that
+ * could be picomatch (its lock name, its installed manifest name, or its folder name says so; aliases included)
+ * resolves to one of those trees. `audited` is npm audit's node list for picomatch: when given, each audited location
+ * must be one of those copies; `null` (audit named picomatch without a node list) fails. Anything else fails closed.
  */
 export function picomatchReviewed(lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), base = root, audited = undefined) {
   try {
+    const real = path => realpathSync.native(path);
     const trees = new Set(Object.entries(PICOMATCH_TREE_SHA256).map(([major, pin]) => {
-      const dir = realpathSync(join(base, `vendor/picomatch-${major}`));
+      const dir = real(join(base, `vendor/picomatch-${major}`));
       if (treeHash(dir) !== pin) throw new Error('changed');
       return dir;
     }));
     const copies = new Set();
     for (const [path, entry] of Object.entries(lock?.packages ?? {})) {
-      if (!path || path.startsWith('vendor/')) continue;
-      if (path.split('/').includes('..') || !path.startsWith('node_modules/')) return false;
-      let name = entry?.name;
-      if (!name) try { name = JSON.parse(readFileSync(join(base, path, 'package.json'), 'utf8')).name; } catch { name = path.split('node_modules/').pop(); }
-      if (name !== 'picomatch') continue;
-      if (!trees.has(realpathSync(join(base, path)))) return false;
+      if (!path) continue;
+      if (path.split('/').includes('..') || !/^(node_modules|vendor)\//.test(path)) return false;
+      const dir = join(base, path), folder = path.split('/').pop();
+      let installed;
+      try { installed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name; } catch { installed = undefined; }
+      const named = [entry?.name, installed, folder].some(name => name === 'picomatch' || /^picomatch-[24]$/.test(name ?? ''));
+      if (!named) continue;
+      if (!trees.has(real(dir))) return false; // missing, unreadable or unreviewed
       copies.add(path);
     }
+    if (audited === null) return false;
     return copies.size > 0 && (audited === undefined || (Array.isArray(audited) && audited.every(node => copies.has(node))));
   } catch { return false; }
 }
@@ -133,7 +140,8 @@ if (import.meta.main) {
     mkdirSync(output, { recursive: true });
     writeFileSync(join(output, 'raw.json'), native.stdout ?? '');
     const audit = parseAudit(native);
-    const hashes = { ...decoderHashes(), picomatch: picomatchReviewed(undefined, root, audit.vulnerabilities?.picomatch?.nodes) };
+    const hashes = { ...decoderHashes(), picomatch: picomatchReviewed(undefined, root,
+      audit.vulnerabilities?.picomatch ? audit.vulnerabilities.picomatch.nodes ?? null : undefined) };
     const verdict = evaluateAudit(audit, hashes);
     console.log(JSON.stringify({ ...verdict, decoderPath: hashes.decoderPath, decoderSha256: hashes.resolved }, null, 2));
     console.log('Raw audit retained at .artifacts/dependency-audit/raw.json; moderate/low entries remain reported.');

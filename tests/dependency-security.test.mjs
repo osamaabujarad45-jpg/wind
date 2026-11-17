@@ -133,23 +133,21 @@ test('every installed picomatch consumer resolves the vendored ReDoS guard of it
 });
 
 test('patched picomatch refuses repeated star extglobs in bounded time and keeps ordinary globs', () => {
-  // 28 repeats of each shape's own unit, then a `/` that `[^/]` cannot consume: an unguarded copy takes seconds here
-  // (about 4x per 2 units), so a regression fails instead of hanging.
-  const shapes = { '+(*)': 'a', '+(*a)': 'a', '*(*a)': 'a', '+(a*)': 'a', '+(x*a)': 'xa', '+(**)': 'a', '+(a[*)': 'a[', '+([a*)': '[a',
-    '+(a*(?:b))': 'ab', '+(a|*b)': 'b', '+(ab*|cd)': 'ab',
-    // Variable-width or overlapping branches without a star: negation, a repeat behind another group, braces, overlaps.
-    '+(!(a))': 'b', '+(!(a)|b)': 'b', '+(@(+(a)))': 'a', '+([a-z]|a)': 'a', '+(ab|ab)': 'ab', '+(a?|a)': 'a',
-    '+({a,aa})': 'a', '+(@(a|aa))': 'a' };
+  // Each shape's own unit repeated, then a `/` that `[^/]` cannot consume. Counts are set so an unguarded copy takes
+  // seconds (2^n shapes at 28 units, the slower-growing `a|aa` family at 40), so a regression fails instead of passing.
+  const shapes = [['+(*)', 'a'], ['+(*a)', 'a'], ['*(*a)', 'a'], ['+(a*)', 'a'], ['+(x*a)', 'xa'], ['+(**)', 'a'], ['+(a[*)', 'a['],
+    ['+([a*)', '[a'], ['+(a*(?:b))', 'ab'], ['+(a|*b)', 'b'], ['+(ab*|cd)', 'ab'],
+    // Variable-width or ambiguous branches without a star: negation, a repeat behind another group, overlaps.
+    ['+(!(a))', 'b'], ['+(!(a)|b)', 'b'], ['+(@(+(a)))', 'a'], ['+([a-z]|a)', 'a'], ['+(ab|ab)', 'ab'], ['+(a?|a)', 'a'],
+    ['+("a"|a)', 'a'], ['+(a|"a")', 'a'], ['+({a,aa})', 'a', 40], ['+(@(a|aa))', 'a', 40], ['+("a"|aa)', 'a', 40],
+    ['+(a|A)', 'a', 28, { nocase: true }], ['+(*(a))', 'a', 28, { maxExtglobRecursion: false }],
+    ['+(*(a)|b)', 'a', 28, { maxExtglobRecursion: false }], ['+(*a)', 'a', 28, { maxExtglobRecursion: false }]];
   for (const [major, picomatch] of Object.entries(picomatches)) {
-    for (const [glob, unit] of Object.entries(shapes)) {
+    for (const [glob, unit, count = 28, options] of shapes) {
       const started = performance.now();
-      assert.equal(picomatch.isMatch(unit.repeat(28) + '/x', glob), false, `${major} ${glob}`);
-      assert.ok(performance.now() - started < 250, `picomatch ${major}: ${glob} backtracked`);
+      assert.equal(picomatch.isMatch(unit.repeat(count) + '/x', glob, options), false, `${major} ${glob}`);
+      assert.ok(performance.now() - started < 250, `picomatch ${major}: ${glob} ${JSON.stringify(options ?? {})} backtracked`);
     }
-    // The guard runs before upstream's maxExtglobRecursion opt-out, so an option cannot switch it off.
-    const started = performance.now();
-    assert.equal(picomatch.isMatch('a'.repeat(28) + '/x', '+(*a)', { maxExtglobRecursion: false }), false);
-    assert.ok(performance.now() - started < 250, `picomatch ${major}: opt-out bypassed the guard`);
     // Ordinary globs, multi-branch extglobs without a star and Jest's default testMatch still match as before.
     assert.equal(picomatch.isMatch('src/a.js', 'src/*.js'), true);
     assert.equal(picomatch.isMatch('a/b/c.ts', '**/*.ts'), true);
@@ -160,6 +158,9 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
     assert.equal(picomatch.isMatch('src/a.tsx', '**/?(*.)+(spec|test).[jt]s?(x)'), false);
     // Fixed-width repeats keep their meaning; a star inside a repeat is now literal (`[*]` included), by design.
     assert.equal(picomatch.isMatch('file-123.js', 'file-+([0-9]).js'), true);
+    // Alternatives that share a prefix but decode uniquely keep matching (`js|jsx`, `ts|tsx`, `md|mdx`, `json|json5`).
+    for (const [file, glob] of [['a.jsx', '*.+(js|jsx)'], ['a.js', '*.+(js|jsx)'], ['src/b/c.tsx', '**/*.+(js|jsx|ts|tsx)'],
+      ['README.mdx', '*.+(md|mdx)'], ['x.json5', '*.+(json|json5)'], ['ababb', '+(a|ab|bb)']]) assert.equal(picomatch.isMatch(file, glob), true, `${major} ${glob} ${file}`);
     assert.equal(picomatch.isMatch('abac', '+(a?)'), true);
     assert.equal(picomatch.isMatch('**', '+([*])'), false);
     // 4.x flattens all-single-character star branches to one class; 2.x never matched these, and still does not.

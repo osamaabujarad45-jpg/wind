@@ -57,6 +57,8 @@ changed = pico(); changed.newcomer = entry('high', ['tinyglobby']);
 assert.deepEqual(evaluateAudit(fixture(changed), { ...good, picomatch: true }).rejected, ['newcomer'], 'a new package on the chain is not waived');
 changed = pico(); changed.picomatch.via.push({ url: 'https://github.com/advisories/UNKNOWN', severity: 'high' });
 assert.equal(evaluateAudit(fixture(changed), { ...good, picomatch: true }).rejected.length, 16, 'a second picomatch advisory is not waived');
+changed = pico(); changed.sneaky = entry('moderate', ['picomatch']); changed.tinyglobby.via.push('sneaky');
+assert.deepEqual(evaluateAudit(fixture(changed), { ...good, picomatch: true }).rejected, [], 'a moderate side-path is reported, not blocking');
 changed = pico(); changed.glob.severity = 'high'; changed.glob.via[0].severity = 'high';
 assert.ok(evaluateAudit(fixture({ ...changed, glob: changed.glob }), { ...good, picomatch: true }).rejected.includes('@expo/cli'), 'a side-path turning high blocks again');
 // The installed copies are checked from the lockfile, by real package name, against the whole reviewed trees.
@@ -80,6 +82,13 @@ assert.equal(picomatchReviewed({ packages: { ...linked, 'node_modules/pm3': { ve
   'the on-disk name is read when the lock omits it');
 assert.equal(picomatchReviewed({ packages: { ...linked, 'node_modules/../../x/picomatch': {} } }, base), false, 'lock keys stay inside node_modules');
 assert.equal(picomatchReviewed({ packages: { ...linked, 'node_modules/missing/node_modules/picomatch': {} } }, base), false, 'a listed copy that is missing blocks');
+mkdirSync(join(base, 'node_modules/lodashish'));
+writeFileSync(join(base, 'node_modules/lodashish/package.json'), JSON.stringify({ name: 'picomatch', version: '4.0.7' }));
+assert.equal(picomatchReviewed({ packages: { ...linked, 'node_modules/lodashish': { name: 'lodash', version: '4.0.7' } } }, base), false,
+  'a lock name cannot hide an installed picomatch');
+assert.equal(picomatchReviewed({ packages: { ...linked, 'vendor/x/node_modules/picomatch': { version: '4.0.7' } } }, base), false,
+  'nested vendor copies are checked too');
+assert.equal(picomatchReviewed({ packages: linked }, base, null), false, 'an audit entry without a node list fails closed');
 appendFileSync(join(base, 'vendor/picomatch-4/index.js'), '\n// changed after review\n');
 assert.equal(picomatchReviewed({ packages: linked }, base), false, 'any changed byte in a vendored tree blocks');
 assert.equal(picomatchReviewed(), true, 'the repository lockfile installs only the reviewed copies');

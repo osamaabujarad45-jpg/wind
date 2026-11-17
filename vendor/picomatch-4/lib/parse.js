@@ -286,26 +286,47 @@ const repeatedExtglobRecursion = pattern => {
 
 // Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026). A repeated extglob
 // (`+(...)`, `*(...)`) backtracks exponentially when one iteration can match the same text in more than one way:
-// a `*`, a nested group or negation (`!(a)` compiles to `[^/]*?`), braces, or overlapping alternatives. It is safe only
-// when one branch is fixed-width (plain characters, `?`, `[...]`), or every branch is a plain literal (or upstream's
-// flattenable `*(x)` sequence) and no literal is a prefix of another. Anything else takes the existing risky path
-// (matched literally). ponytail: conservative; e.g. `+([0-9]|x)` or `+(*.js)` now match literally.
-const windRiskyRepeat = branches => {
-  const flattenable = branch => !!getStarExtglobSequenceChars(branch);
-  if (branches.length === 1) return !flattenable(branches[0]) && /[*(|{]/.test(branches[0]);
+// a `*`, a nested group or negation (`!(a)` compiles to `[^/]*?`), braces, quotes, or alternatives that do not decode
+// uniquely (`a|aa`, `ab|ab`; case-folded, since `nocase` folds them). It is safe only when its one branch is
+// fixed-width (plain characters, `?`, `[...]`), or every branch is a plain literal (or, unless the recursion opt-out
+// skips upstream's flattening, a flattenable `*(x)` sequence) and the literals form a uniquely decodable code
+// (Sardinas-Patterson), so `js|jsx` and `ts|tsx` stay safe. Anything else takes the existing risky path (matched literally).
+// ponytail: conservative; e.g. `+([0-9]|x)`, `+({a,b})` or `+(*.js)` now match literally.
+const windUniquelyDecodable = words => {
+  const code = new Set(words);
+  if (code.size !== words.length) return false;
+  const dangling = (from, to) => {
+    const out = new Set();
+    for (const a of from) for (const b of to) if (a !== b && b.startsWith(a)) out.add(b.slice(a.length));
+    return out;
+  };
+  const seen = new Set();
+  for (let suffixes = dangling(code, code); suffixes.size;) {
+    for (const suffix of suffixes) if (code.has(suffix)) return false;
+    const key = [...suffixes].sort().join('\u0000');
+    if (seen.has(key)) return true;
+    seen.add(key);
+    suffixes = new Set([...dangling(suffixes, code), ...dangling(code, suffixes)]);
+  }
+  return true;
+};
+
+const windRiskyRepeat = (branches, optOut) => {
+  const flattenable = branch => !optOut && !!getStarExtglobSequenceChars(branch);
+  if (branches.length === 1) return !flattenable(branches[0]) && /[*(|{"]/.test(branches[0]);
   const literals = [];
   for (const branch of branches) {
     if (flattenable(branch)) continue;
-    const literal = normalizeSimpleBranch(branch);
+    const literal = branch.includes('"') ? undefined : normalizeSimpleBranch(branch);
     if (!literal) return true;
-    literals.push(literal);
+    literals.push(literal.toLowerCase());
   }
-  return literals.some((a, i) => literals.some((b, j) => i !== j && b.startsWith(a)));
+  return !windUniquelyDecodable(literals);
 };
 
 const analyzeRepeatedExtglob = (body, options) => {
   // Runs before the maxExtglobRecursion opt-out: the advisory guard cannot be switched off by an option.
-  if (windRiskyRepeat(splitTopLevel(body).map(branch => branch.trim()))) {
+  if (windRiskyRepeat(splitTopLevel(body).map(branch => branch.trim()), options.maxExtglobRecursion === false)) {
     return { risky: true };
   }
 
