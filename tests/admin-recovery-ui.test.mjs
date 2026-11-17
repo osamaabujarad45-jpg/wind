@@ -16,7 +16,7 @@ const user = { id: 7, role: 'driver', status: 'active', name: 'Driver', vehicle:
 const other = { id: 8, role: 'customer', status: 'active', name: 'Other', phone: '0599000008' };
 const verified = { id: 9, role: 'customer', status: 'active', name: 'Verified', phone: '0599000009', email: 'v@example.test', emailVerifiedAt: 1 };
 let emailReady = false, resetFailure = null; const resets = [];
-const ui = Object.fromEntries(['Appear','Badge','Button','Card','Choices','Empty','ErrorText','Field','FilterChips','Header','Loading','Row','Screen','Txt'].map(name => [name, name]));
+const ui = Object.fromEntries(['Appear','Badge','Button','Card','Choices','Empty','ErrorText','Field','FilterChips','Header','Loading','Press','Row','Screen','Txt'].map(name => [name, name]));
 const modules = {
   react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   '../../session': { useSession: () => ({ me: { user: { id: 1 }, capabilities: { emailVerification: emailReady } } }) }, 'react-native': { View: 'View', ScrollView: 'ScrollView' }, '../../model': model,
@@ -42,6 +42,13 @@ function find(node, title) {
   for (const child of [node.props?.children].flat(Infinity)) { const found = find(child, title); if (found) return found; }
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
+// The user's actions sit inside the expandable row (design review 17 Nov): open it first, as a person would.
+function row(node) {
+  if (!node || typeof node !== 'object') return;
+  if (node.type === 'Press' && node.props.accessibilityState && 'expanded' in node.props.accessibilityState) return node.props;
+  for (const child of [node.props?.children].flat(Infinity)) { const found = row(child); if (found) return found; }
+}
+row(render()).onPress();
 const first = find(render(), copy.copy.en.block);
 await first.onPress(); await flush();
 assert.equal(confirmCount, 2, 'block asks first (one tap ends every session), then asks about the parcels'); assert.equal(calls.length, 2); assert.equal(calls[1].recovery, 'return');
