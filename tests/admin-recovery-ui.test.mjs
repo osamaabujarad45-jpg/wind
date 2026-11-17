@@ -65,7 +65,18 @@ const all = (node, type, key, value, found = []) => {
   for (const child of [node.props?.children].flat(Infinity)) all(child, type, key, value, found);
   return found;
 };
-const edit = index => all(render(), 'Button', 'title', en.editUser)[index].onPress();
+// Each user's Edit sits inside their expandable row; one row opens at a time, and tapping an open row closes it.
+const rows = (node, found = []) => {
+  if (!node || typeof node !== 'object') return found;
+  if (node.type === 'Press' && node.props.accessibilityState && 'expanded' in node.props.accessibilityState) found.push(node.props);
+  for (const child of [node.props?.children].flat(Infinity)) rows(child, found);
+  return found;
+};
+const edit = index => {
+  const target = rows(render())[index];
+  if (!target.accessibilityState.expanded) target.onPress();
+  all(render(), 'Button', 'title', en.editUser)[0].onPress();
+};
 const note = () => all(render(), 'Field', 'label', en.resetAttestation)[0];
 const reset = () => all(render(), 'Button', 'title', en.resetPassword)[0];
 const written = 'Called the registered number back';
