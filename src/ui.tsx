@@ -425,7 +425,7 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
         })}
       </View>
       <TextInput ref={ref} value={value} onChangeText={onChangeText} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode"
-        maxLength={length} editable={!disabled} accessibilityLabel={label} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        maxLength={length} editable={!disabled} accessibilityLabel={label} maxFontSizeMultiplier={maxScale} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmitEditing} caretHidden style={styles.codeInput} />
     </Pressable>
   </View>;
