@@ -403,6 +403,34 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
 }
 
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
+/**
+ * A one-time code as separate cells (design review 17 Nov: six digits in one wide box were hard to check). One real TextInput
+ * lies over the cells, so typing, paste, the SMS autofill and screen readers all work on a single field; the cells only draw.
+ * Digits always run left to right, in Arabic too.
+ */
+export function CodeField({ label, value, onChangeText, length = 6, disabled, onSubmitEditing }: {
+  label: string; value: string; onChangeText: (text: string) => void; length?: number; disabled?: boolean; onSubmitEditing?: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const ref = React.useRef<TextInput>(null);
+  return <View style={styles.field}>
+    <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
+    <Pressable onPress={() => ref.current?.focus()} disabled={disabled} accessible={false} style={{ alignSelf: 'stretch' }}>
+      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }}>
+        {Array.from({ length }, (_, i) => {
+          const active = focused && (i === value.length || (i === length - 1 && value.length === length));
+          return <View key={i} style={[styles.codeCell, active && styles.codeCellActive, disabled && { backgroundColor: palette.muted }]}>
+            <Text maxFontSizeMultiplier={maxScale} style={styles.codeDigit}>{value[i] ?? ''}</Text>
+          </View>;
+        })}
+      </View>
+      <TextInput ref={ref} value={value} onChangeText={onChangeText} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode"
+        maxLength={length} editable={!disabled} accessibilityLabel={label} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onSubmitEditing={onSubmitEditing} caretHidden style={styles.codeInput} />
+    </Pressable>
+  </View>;
+}
+
 export function Field({ label, value, onChangeText, onBlur, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
@@ -631,6 +659,10 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
   chipText: { fontSize: 14, fontWeight: '700', color: palette.ink },
   field: { marginBottom: 12 },
+  codeCell: { flex: 1, minHeight: 56, maxWidth: 56, borderRadius: 12, borderWidth: 1, borderColor: palette.field, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  codeCellActive: { borderColor: palette.forest, borderWidth: 2 },
+  codeDigit: { fontSize: 24, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] },
+  codeInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.02, color: 'transparent' },
   inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.field, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.card },
   inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11 }, // 2px focus ring; the padding keeps the text still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
