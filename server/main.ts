@@ -1356,6 +1356,10 @@ async function reofferReleased(service: Service, orderId: number, customerId: nu
   await newJobPush(service, orderId, customerId, driverId);
 }
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
+/** SHIP-19: the daily office reminders, with each push and its OFFICE_REMINDED record in one transaction. */
+export async function remindOfficeJobs(now = Date.now()) {
+  return persistence.atomic({ purpose: 'office_reminders' }, () => remindOffice(persistence, (ids, kind, order) => queuePush(ids, kind, order), now));
+}
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
 }
@@ -3905,7 +3909,7 @@ if (import.meta.main) {
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
     setInterval(async () => { try { (await shopSweep()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // shop accept, consent, dispatch and licence timers
-    setInterval(async () => { try { (await remindOffice(persistence, (ids, kind, order) => queuePush(ids, kind, order))); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
+    setInterval(async () => { try { (await remindOfficeJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });

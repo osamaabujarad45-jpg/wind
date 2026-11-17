@@ -11,8 +11,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-custody-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
-const { shutdown, server, promote, db, persistence } = await import('../server/main.ts');
-const { remindOffice } = await import('../server/domain/office.ts');
+const { shutdown, server, promote, db, remindOfficeJobs } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const call = apiCaller(() => base);
@@ -61,7 +60,7 @@ try {
     o = await advance(driver.token, await call(`/jobs/${o.id}/accept`, { token: driver.token, body: {} }));
     o = await advance(driver.token, o);
     await call(`/orders/${o.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'refused' } });
-    await call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused it' } });
+    await call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'fraud' } }); // one word, still support's own text
     return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
   }
   let kept = await backAtOffice();
@@ -80,12 +79,15 @@ try {
   const arrived = seen.steps.find(s => s.kind === 'office_received');
   assert.equal(arrived.until, received.office.until);
   assert.ok(!JSON.stringify(seen).includes('cold box'), 'office notes stay with support');
-  // Daily reminder: not within the day, then once a day later.
-  const push = [];
-  assert.equal(await remindOffice(persistence, async (ids, kind, order) => { push.push({ ids, kind, order }); }), 0);
-  assert.equal(await remindOffice(persistence, async (ids, kind, order) => { push.push({ ids, kind, order }); }, Date.now() + 24 * 3_600_000), 1);
-  assert.deepEqual(push, [{ ids: [customer.user.id], kind: 'office', order: kept.id }]);
-  assert.equal(await remindOffice(persistence, async () => { push.push('again'); }, Date.now() + 24 * 3_600_000 + 60_000), 0); // not twice the same day
+  assert.ok(!JSON.stringify(seen).includes('fraud'), "support's resolve reason stays with support, even one word");
+  assert.equal(seen.steps.find(s => s.kind === 'decided').reason, 'return');
+  // Daily reminder through the real sweep (queuePush inside its transaction): not within the day, then once a day later.
+  const reminded = () => db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'OFFICE_REMINDED'").get(kept.id).n;
+  assert.equal(await remindOfficeJobs(), 0);
+  assert.equal(await remindOfficeJobs(Date.now() + 24 * 3_600_000), 1);
+  assert.equal(reminded(), 1);
+  assert.equal(await remindOfficeJobs(Date.now() + 24 * 3_600_000 + 60_000), 0); // not twice the same day
+  assert.equal(reminded(), 1);
   const collected = await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'collected' } });
   assert.equal(collected.office.closed.action, 'collected');
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'donated', note: 'Gave it away' }, expect: 409 }); // already ended
@@ -103,6 +105,18 @@ try {
   const live = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   await call(`/admin/orders/${live.id}/office`, { token: admin.token, body: { action: 'received', note: 'Too early' }, expect: 409 });
   await call(`/orders/${live.id}/cancel`, { token: customer.token, body: {} });
+
+  // A return the driver closed with the sender's code went to the sender: it never reaches the office.
+  await call(`/admin/orders/${order.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf C' }, expect: 409 });
+  await call(`/admin/orders/${order.id}/office`, { token: admin.token, body: { action: ['received'], note: 'Shelf C' }, expect: 400 });
+
+  // Every earlier holder is named: a courier who gave the job back appears with the release.
+  const handed = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  await call(`/jobs/${handed.id}/accept`, { token: driver.token, body: {} });
+  await call(`/orders/${handed.id}/release`, { token: driver.token, body: {} });
+  const afterRelease = await call(`/orders/${handed.id}/custody`, { token: customer.token });
+  assert.equal(afterRelease.steps.find(s => s.kind === 'released').driver, 'Sami');
+  await call(`/orders/${handed.id}/cancel`, { token: customer.token, body: {} });
 
   // A ride has no parcel to hold.
   const ride = { ...input, service: 'ride', option: '1', detail: '' };

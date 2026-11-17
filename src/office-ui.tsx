@@ -1,11 +1,18 @@
 // SHIP-19 (D-5): support's side of returned goods kept at the Wind office: record the receipt, then one ending.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { api, errorCode, useApi } from './api';
 import { orderCode } from './model';
 import { useFormat } from './parts';
 import { Button, Card, Check, confirm, ErrorText, Field, fill, Loading, Press, Row, Section, Txt, useCopy } from './ui';
+
+/** Minute clock for hold deadlines: read in an effect, never during render. */
+function useMinute() {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
+  return now;
+}
 
 type Office = { receivedAt: number; perishable: boolean; until: number; closed: null | { action: 'collected' | 'donated' | 'destroyed'; at: number } };
 
@@ -18,7 +25,7 @@ export function OfficePanel({ orderId }: { orderId: number }) {
   const [perishable, setPerishable] = useState(false);
   const [busy, setBusy] = useState('');
   const [failure, setFailure] = useState('');
-  const [now] = useState(Date.now); // read once per visit: the hold ends in hours, not seconds
+  const now = useMinute();
   if (!data) return <Loading failed={!!error} onRetry={reload} />;
   const office = data.office;
   async function act(action: 'received' | 'collected' | 'donated' | 'destroyed') {
@@ -59,7 +66,7 @@ export function OfficeShelf() {
   const { c } = useCopy();
   const { time } = useFormat();
   const { data } = useApi<{ items: (Office & { orderId: number })[] }>('/admin/office', 60_000);
-  const [now] = useState(Date.now);
+  const now = useMinute();
   if (!data?.items.length) return null;
   return <View style={{ marginBottom: 14 }}>
     <Section title={fill(c.officeShelf, { n: data.items.length })} />
