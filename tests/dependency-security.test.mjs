@@ -114,3 +114,34 @@ test('patched Forge still verifies a valid Node RSA/SHA-256 signature and reject
   assert.equal(key.verify(createHash('sha256').update('Changed synthetic message').digest('binary'), signature), false);
 });
 
+
+// GHSA-fc5q-39xc-vjpf: picomatch <= 4.0.7 backtracks exponentially on a single-branch repeated extglob (`+(*)`, `+(*a)`).
+// No patched release exists; both majors in the tree are vendored with a guard (vendor/picomatch-{2,4}).
+const picomatches = { 2: require('../vendor/picomatch-2'), 4: require('../vendor/picomatch-4') };
+
+test('every installed picomatch consumer resolves the vendored ReDoS guard', () => {
+  for (const consumer of ['micromatch', 'tinyglobby', 'expo', '@expo/metro-config']) {
+    const manifest = createRequire(require.resolve(`${consumer}/package.json`))('picomatch/package.json');
+    assert.match(manifest.description, /GHSA-fc5q-39xc-vjpf/, `${consumer} resolves picomatch ${manifest.version} without the guard`);
+  }
+});
+
+test('patched picomatch refuses single-branch repeated star extglobs in bounded time and keeps ordinary globs', () => {
+  const crafted = 'a'.repeat(64) + '!';
+  for (const [major, picomatch] of Object.entries(picomatches)) {
+    for (const glob of ['+(*)', '+(*a)', '*(*a)', '+(a*)', '+(x*a)']) {
+      const started = performance.now();
+      assert.equal(picomatch.isMatch(crafted, glob), false, `${major} ${glob}`);
+      assert.ok(performance.now() - started < 250, `picomatch ${major}: ${glob} backtracked`);
+    }
+    // Ordinary globs, multi-branch extglobs and the existing safe rewrites still match as before.
+    assert.equal(picomatch.isMatch('src/a.js', 'src/*.js'), true);
+    assert.equal(picomatch.isMatch('a/b/c.ts', '**/*.ts'), true);
+    assert.equal(picomatch.isMatch('abba', '+(a|b)'), true);
+    // 4.x flattens all-single-character star branches to one class; 2.x never matched these, and still does not.
+    assert.equal(picomatch.isMatch('aab', '+(*(a)|*(b))'), major === '4');
+    assert.equal(picomatch.isMatch('foo.js', '*.+(js|ts)'), true);
+    assert.equal(picomatch.isMatch('foo.md', '*.+(js|ts)'), false);
+    assert.equal(picomatch.isMatch('**', '+([*])'), true, `${major}: a star inside brackets is a literal, not a quantifier`);
+  }
+});
