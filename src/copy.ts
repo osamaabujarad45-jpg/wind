@@ -545,7 +545,7 @@ const ar = {
   merchantState_ready: 'جاهز للسائق',
   merchantState_handed_over: 'مع السائق',
   merchantReturning: 'يعود إلى المحل',
-  merchantLines: '{n} أصناف · {r}',
+  merchantLines: 'الأصناف: {n} · {r}', // a label, so 1, 2 and 11 all read right without plural forms
   merchantPrepMinutes: 'دقائق التجهيز',
   merchantAccept: 'اقبل الطلب',
   merchantRejectWhy: 'سبب الرفض',
@@ -2108,7 +2108,7 @@ const en: Copy = {
   merchantState_ready: 'Ready for the captain',
   merchantState_handed_over: 'With the captain',
   merchantReturning: 'Coming back to the shop',
-  merchantLines: '{n} items · {r}',
+  merchantLines: 'Items: {n} · {r}',
   merchantPrepMinutes: 'Minutes to prepare',
   merchantAccept: 'Accept order',
   merchantRejectWhy: 'Reason to decline',

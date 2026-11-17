@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
 import type { Merchant, MerchantItem } from '../../model';
 import { cartGoods, clearCart, otherShop, qtyOf, setQuantity, useCart } from '../../shop-cart';
-import { QtyControl } from '../../shop-ui';
+import { QtyControl, todayHours } from '../../shop-ui';
 import { Button, Card, confirm, Empty, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
 export default function ShopStore() {
@@ -26,7 +26,7 @@ export default function ShopStore() {
   return <Screen onRefresh={reload} footer={footer}>
     <Header title={m.name} back subtitle={[m.open ? c.shopOpen : c.shopClosed, fill(c.shopMinimum, { r: money(m.minOrderAgorot / 100) }),
       fill(c.shopDeliveryFee, { r: money(m.deliveryFeeAgorot / 100) })].join(' · ')} />
-    {!m.open && <Card tone="clay"><Txt>{c.shopClosedBody}</Txt></Card>}
+    {!m.open && <Card tone="clay"><Txt>{c.shopClosedBody}</Txt>{!!todayHours(m, c) && <Txt style={{ marginTop: 4, fontWeight: '700' }}>{todayHours(m, c)}</Txt>}</Card>}
     {!data.items.length && <Empty icon="basket-outline" title={c.shopNoItems} />}
     {sections.map(section => <Card key={section}>
       <Section title={section} />

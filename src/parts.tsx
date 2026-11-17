@@ -170,7 +170,11 @@ export function MoreOrders({ more }: { more: ReturnType<typeof useOrders>['more'
 /** The trip in a line. Inside one town its name says nothing, so the places do. */
 export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pickupNote' | 'dropoffNote'>, language: 'ar' | 'en', rtl: boolean) {
   const here = order.pickupCity === order.dropoffCity && !!order.pickupNote && !!order.dropoffNote;
-  return `${here ? order.pickupNote : city(order.pickupCity)[language]} ${rtl ? '←' : '→'} ${here ? order.dropoffNote : city(order.dropoffCity)[language]}`;
+  // Each place is isolated (FSI…PDI) and a leading mark sets the line's direction, so two Latin notes on an Arabic screen
+  // still read pickup first: without them the line took the direction of its first letter and the arrow pointed backwards.
+  // A note's own direction marks are dropped: a stray PDI would close the isolate early.
+  const place = (text: string) => `\u2068${text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')}\u2069`;
+  return `${rtl ? '\u200f' : '\u200e'}${place(here ? order.pickupNote! : city(order.pickupCity)[language])} ${rtl ? '←' : '→'} ${place(here ? order.dropoffNote! : city(order.dropoffCity)[language])}`;
 }
 
 export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
@@ -178,10 +182,12 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
   const { time } = useFormat();
   const { me } = useSession();
   const mine = me?.user.role === 'driver' && order.driverId === me.user.id;
+  // A shop order's door cash, as on its detail page; the captain's own trips keep the fare, which is what they earn from.
+  const total = order.shop && !mine ? order.shop.cashAgorot / 100 : order.price;
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
-      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${tripTitle(order, language, rtl)}, ${money(order.price)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
+      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${tripTitle(order, language, rtl)}, ${money(total)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
@@ -190,7 +196,7 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
                 {tripTitle(order, language, rtl)}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
-              <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>
+              <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(total)}</Txt>
             </Row>
             {/* private is the default and sat on every row; only shared, the exception, is marked */}
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
