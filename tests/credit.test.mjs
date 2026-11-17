@@ -42,6 +42,10 @@ try {
 
   const order = await finished(customer.token);
   await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'The box arrived wet and torn.' } });
+  // A resend after a lost reply finds the dispute it already opened, never an error; a second, different dispute is still refused.
+  assert.equal((await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'The box arrived wet and torn.' } })).id, order.id);
+  assert.equal((await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Another complaint entirely.' }, expect: 409 })).error, 'dispute_exists');
+  assert.equal((await call('/admin/disputes', { token: admin.token })).filter(d => d.orderId === order.id).length, 1);
   const [row] = await call('/admin/disputes', { token: admin.token });
   for (const creditShekels of [0, 51, 2.5, '10'])
     await call(`/admin/disputes/${row.id}/resolve`, { token: admin.token, body: { resolution: 'Sorry about that', creditShekels }, expect: 400 });
@@ -81,6 +85,10 @@ try {
   assert.equal((await call(`/admin/disputes/${last.id}/resolve`, { token: admin.token, body: { resolution: 'Checked', creditShekels: 5 }, expect: 409 })).error, 'customer_inactive');
   await call(`/admin/disputes/${last.id}/resolve`, { token: admin.token, body: { resolution: 'Checked' } });
 
+  // A double tap sends both at once: one dispute row, and both replies succeed.
+  const tapped = await finished(customer.token);
+  await Promise.all([1, 2].map(() => call(`/orders/${tapped.id}/dispute`, { token: customer.token, body: { reason: 'Double tapped complaint' } })));
+  assert.equal((await call('/admin/disputes', { token: admin.token })).filter(d => d.orderId === tapped.id).length, 1);
   console.log('credit: ok');
 } finally {
   await shutdown();
