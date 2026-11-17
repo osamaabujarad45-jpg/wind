@@ -2662,7 +2662,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     if (order.status !== from) fail(409, 'cannot_resolve');
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
-    const moved = (changes: number) => { if (!changes) fail(409, 'cannot_resolve'); };
+    const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
     if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (body.action === 'confirm_return') {
       moved((await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes);
