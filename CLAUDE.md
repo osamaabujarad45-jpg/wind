@@ -14,3 +14,17 @@ After changing UI, run `npm run screens` (or `/screens`) so the screenshots matc
 - Logo geometry lives in two places that must stay identical: `logoMark` in `src/ui.tsx` and `scripts/make_icon.py` (run `python scripts/make_icon.py` to regenerate `assets/`).
 - The native splash (`app.json`, imageWidth 120) hands over to the animated intro in `src/intro.tsx` (`TILE = 120`). Change both together.
 - Animations respect reduced motion (`useReducedMotion`): nothing moves, the state still reads.
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown: specs and tickets live as files under `.scratch/<feature>/` (no GitHub issues). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each ticket file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily by `/domain-modeling`. See `docs/agents/domain.md`.
