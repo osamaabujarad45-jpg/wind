@@ -31,7 +31,7 @@ import { CustodyChain } from '../../custody';
 import { OfficePanel } from '../../office-ui';
 import { useSession } from '../../session';
 import {
-  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
+  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, statusTone, Txt, useCopy,
 } from '../../ui';
 
 const DONE = ZoomIn.duration(300);
@@ -606,7 +606,8 @@ export default function OrderScreen() {
       {canSendAnother(order, role) && <Button title={c.sendAnother} icon="add-circle-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id), keep: 'pickup' } })} />}
 
-      {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="soft"
+      {/* one primary on a finished order: repeating it is the likely next step; receipt and send-another stay quieter */}
+      {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="primary"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
 
       {(isCustomer || isAdmin) && (order.service === 'parcel' || order.service === 'freight') && <CustodyChain orderId={order.id} />}
@@ -710,9 +711,9 @@ export default function OrderScreen() {
     </View>}
         {activeStatuses.includes(order.status) && <>
           <Row gap={8} style={{ marginBottom: 4 }}>
-            <Pulse color={serviceMeta[order.service].color} size={8} />
-            <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="title" numberOfLines={1} style={{ color: palette.olive }}>{etaChip(eta)}</Txt>}
+            <Pulse color={statusTone[order.status].fg} size={8} />{/* the state's colour, as on its badge */}
+            <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
+            {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].fg }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />

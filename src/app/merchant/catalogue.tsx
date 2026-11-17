@@ -1,7 +1,7 @@
 // The shop's catalogue (DLV-01, MER-02): sections, items, prices in shekels (stored as agorot), sold by weight, and the
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Switch, View } from 'react-native';
 import { api, errorCode, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
@@ -32,9 +32,14 @@ export default function MerchantCatalogue() {
           <Txt style={{ flex: 1, opacity: i.available ? 1 : 0.6 }}>{language === 'ar' ? i.nameAr : i.nameEn}</Txt>
           <Txt style={{ writingDirection: 'ltr' }}>{i.byWeight ? fill(c.shopPerKg, { r: money(i.priceAgorot / 100) }) : money(i.priceAgorot / 100)}</Txt>
         </Row>
-        <Row style={{ marginTop: 4 }}>
-          <Button size="sm" variant={i.available ? 'outline' : 'soft'} loading={busy === i.id} title={i.available ? c.merchantMarkOut : c.merchantMarkIn}
-            label={fill(i.available ? c.merchantMarkOutOf : c.merchantMarkInOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} onPress={() => toggle(i)} />
+        {/* The state, as a switch: a button labelled "Out of stock" on an item in stock read as the item's state (design review 17 Nov). */}
+        <Row style={{ marginTop: 4, justifyContent: 'space-between' }}>
+          <Row gap={8}>
+            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id}
+              accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })}
+              trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card} />
+            <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
+          </Row>
           <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}

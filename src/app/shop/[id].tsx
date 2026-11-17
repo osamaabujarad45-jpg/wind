@@ -38,9 +38,10 @@ export default function ShopStore() {
             {name}{'\n'}
             <Txt variant="caption">{item.byWeight ? fill(c.shopPerKg, { r: money(item.priceAgorot / 100) }) : money(item.priceAgorot / 100)}</Txt>
           </Txt>
+          {/* A first tap adds 1 kg or one piece, the usual buy; the stepper then moves by 250 g or one. */}
           {qty === 0
             ? <Button title={c.shopAdd} size="sm" variant="soft" icon="add" disabled={!m.open} label={fill(c.shopAddItem, { item: name })}
-              onPress={() => change(item, item.byWeight ? 1000 : 1000)} />
+              onPress={() => change(item, 1000)} />
             : <QtyControl item={item} qtyMilli={qty} name={name} onChange={q => change(item, q)} />}
         </Row>;
       })}

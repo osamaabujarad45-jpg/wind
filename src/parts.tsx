@@ -490,8 +490,9 @@ export function AccountScreen() {
     </ListGroup>
     <ErrorText>{deleteError}</ErrorText>
     <ListGroup>
-      <ListRow icon="log-out-outline" label={c.logout} danger onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setDeleteError(err(e))); }, c.logout, c.no)} />
-      {!deleteOpen ? <ListRow icon="trash-outline" label={c.deleteAccount} tone="muted" onPress={() => setDeleteOpen(true)} />
+      {/* Signing out is undone by signing in, so it is neutral; deleting the account cannot be undone, so it carries the danger tone. */}
+      <ListRow icon="log-out-outline" label={c.logout} tone="muted" onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setDeleteError(err(e))); }, c.logout, c.no)} />
+      {!deleteOpen ? <ListRow icon="trash-outline" label={c.deleteAccount} danger onPress={() => setDeleteOpen(true)} />
         : <View style={{ padding: 16, gap: 8 }}>
           <Txt>{c.deleteReauth}</Txt>
           <Field label={c.currentPassword} value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" disabled={busy} maxLength={100} />
