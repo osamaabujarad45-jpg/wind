@@ -55,6 +55,7 @@ const suites = [
   "job-alert-migration.test.mjs",
   "exceptions.test.mjs",
   "pickup.test.mjs",
+  "custody.test.mjs",
   "parcel-pickup-far.test.mjs",
   "courier-block.test.mjs",
   "cash.test.mjs",

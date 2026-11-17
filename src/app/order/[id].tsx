@@ -27,6 +27,8 @@ import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { maneuverDistance, maneuverIcon, maneuverText, nextManeuver } from '../../nav-steps';
 import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
+import { CustodyChain } from '../../custody';
+import { OfficePanel } from '../../office-ui';
 import { useSession } from '../../session';
 import {
   Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, Txt, useCopy,
@@ -560,6 +562,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
+    {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
     {!live && <ErrorText>{actionError}</ErrorText>}
 
@@ -605,6 +608,8 @@ export default function OrderScreen() {
 
       {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
+
+      {(isCustomer || isAdmin) && (order.service === 'parcel' || order.service === 'freight') && <CustodyChain orderId={order.id} />}
 
       {isCustomer && (live || order.sharing) && <Card style={{ gap: 8 }}>
         <Txt variant="caption">{c.shareHint}</Txt>

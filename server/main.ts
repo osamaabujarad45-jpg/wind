@@ -44,6 +44,8 @@ import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
+import { registerCustodyRoutes } from './domain/custody.ts';
+import { registerOfficeRoutes, remindOffice } from './domain/office.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { bookingPriority, checkPriorityCutoff, priorityIdentity } from './domain/priority.ts';
@@ -658,6 +660,8 @@ const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
 registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
 registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
+registerCustodyRoutes(route, { db: persistence, fail });
+registerOfficeRoutes(route, { db: persistence, fail, need, text, push: (ids, kind, order) => queuePush(ids, kind, order) });
 const nativePush = new NativePush(persistence, fail);
 registerNativePushRoutes(route, nativePush);
 const realtime = new Realtime(persistence, fail);
@@ -1239,7 +1243,8 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
   | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned' // WP-02
-  | 'merchant_order' | 'shop_consent' | 'shop_update'; // shop delivery (SRS §7)
+  | 'merchant_order' | 'shop_consent' | 'shop_update' // shop delivery (SRS §7)
+  | 'office'; // SHIP-19 returned goods at the office
 // T37: the subject is read at send time and must be configured (no obsolete host default).
 const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -1351,6 +1356,10 @@ async function reofferReleased(service: Service, orderId: number, customerId: nu
   await newJobPush(service, orderId, customerId, driverId);
 }
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
+/** SHIP-19: the daily office reminders, with each push and its OFFICE_REMINDED record in one transaction. */
+export async function remindOfficeJobs(now = Date.now()) {
+  return persistence.atomic({ purpose: 'office_reminders' }, () => remindOffice(persistence, (ids, kind, order) => queuePush(ids, kind, order), now));
+}
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
 }
@@ -3900,6 +3909,7 @@ if (import.meta.main) {
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
     setInterval(async () => { try { (await shopSweep()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // shop accept, consent, dispatch and licence timers
+    setInterval(async () => { try { (await remindOfficeJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
