@@ -44,7 +44,7 @@ function harness(overrides = {}) {
     ready: true, available: true, pending: null, busy: false, locating: false, quoting: false, quoteFailed: false,
     checking: false, resolving: false, scopeInvalid: false, routeChosen: true, pickupChosen: true, scheduledFor: null,
     service: 'parcel', priority: 'standard', sameDayOpen: true, pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
-    pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Fragile box', contact: '0599123456', recipientPhone: '', recipientName: '',
+    pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Fragile box', contact: '0599123456', recipientPhone: '', recipientName: '', goodsOk: true,
     option: 'small', loadingHelp: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
     ...overrides,
   };
@@ -96,6 +96,7 @@ await check('submit while a fresh quote is calculating: zero storage writes, zer
 await check('submit after a failed quote: zero storage writes, zero POSTs', async () => { const h = harness({ quoteFailed: true }); await h.submit(); noWrites(h); });
 await check('submit while a promo check runs: zero storage writes, zero POSTs', async () => { const h = harness({ checking: true }); await h.submit(); noWrites(h); });
 await check('submit while locating: zero storage writes, zero POSTs', async () => { const h = harness({ locating: true }); await h.submit(); noWrites(h); });
+await check('SHIP-16: a parcel without the prohibited-goods confirmation: zero storage writes, zero POSTs', async () => { const h = harness({ goodsOk: false }); await h.submit(); noWrites(h); });
 await check('pending replay while locating: zero storage writes, zero POSTs (retry button is disabled then)', async () => {
   const cmd = pendingCommand(), h = harness({ pending: cmd, scheduledFor: pastSlot, locating: true }); await h.submit(); noWrites(h);
 });
