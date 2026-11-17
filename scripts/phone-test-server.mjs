@@ -8,7 +8,10 @@ import { restorePhoneTestIdentity } from './phone-test-state.mjs';
 
 if (process.env.NODE_ENV === 'production') throw new Error('Phone sandbox refuses production mode');
 const root = fileURLToPath(new URL('../', import.meta.url));
-const dir = join(root, '.expo', 'phone-qa');
+const port = Number(process.env.WIND_PHONE_TEST_PORT ?? 4191);
+if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error('WIND_PHONE_TEST_PORT must be a valid unprivileged TCP port');
+const sandboxName = port === 4191 ? 'phone-qa' : `phone-qa-${port}`;
+const dir = join(root, '.expo', sandboxName);
 mkdirSync(dir, { recursive: true });
 process.env.DB_PATH = join(dir, 'sandbox.db');
 if (existsSync(join(dir, 'web', 'index.html'))) process.env.WEB_ROOT = join(dir, 'web');
@@ -21,8 +24,8 @@ process.env.OSRM_URL ??= 'https://router.project-osrm.org';
 for (const key of ['WIND_EMAIL_FROM', 'CLOUDFLARE_EMAIL_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'SOUQ_PARTNER_KEY',
   'WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DATABASE_URL']) delete process.env[key];
 const { db, server, promote, shutdown } = await import('../server/main.ts');
-await new Promise(resolve => server.listen(4191, '127.0.0.1', resolve));
-const apiUrl = 'http://127.0.0.1:4191';
+await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
+const apiUrl = `http://127.0.0.1:${port}`;
 async function call(path, token, body) {
   const res = await fetch(`${apiUrl}/api${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -35,6 +38,7 @@ async function call(path, token, body) {
 }
 const provisionPath = join(dir, 'provision.json');
 const provision = existsSync(provisionPath) ? JSON.parse(readFileSync(provisionPath, 'utf8')) : { apiUrl, roles: {} };
+provision.apiUrl = apiUrl;
 const labels = { customer: ['0599000101', 'عميل تجريبي'], driver: ['0599000102', 'سائق تجريبي'], admin: ['0599000109', 'إدارة تجريبية'] };
 for (const [role, [identifier, name]] of Object.entries(labels)) {
   const saved = provision.roles[role];
@@ -84,7 +88,7 @@ if (!db.prepare('SELECT id FROM orders LIMIT 1').get()) {
 }
 provision.startedAt = new Date().toISOString();
 writeFileSync(provisionPath, JSON.stringify(provision, null, 2), { mode: 0o600 });
-console.log(`Phone sandbox ready on ${apiUrl}; customer, driver and admin provisioned. Credentials remain in ignored .expo/phone-qa/.`);
+console.log(`Phone sandbox ready on ${apiUrl}; customer, driver and admin provisioned. Credentials remain in ignored .expo/${sandboxName}/.`);
 console.log('Restarting this sandbox restores the three test identities after destructive account tests; delivery history remains. QA routing uses OSRM:', process.env.OSRM_URL);
 let ending = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {

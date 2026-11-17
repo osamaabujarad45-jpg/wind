@@ -27,6 +27,7 @@ const hooks=registerHooks({
       if(specifier in modules)return {url:'wind-test:'+specifier,shortCircuit:true};
       if(specifier==='./location-delivery')return {url:new URL('../src/location-delivery.ts',import.meta.url).href,shortCircuit:true};
       if(specifier==='./active-gps-session')return {url:new URL('../src/active-gps-session.ts',import.meta.url).href,shortCircuit:true};
+      if(specifier==='./driver-location-diagnostics')return {url:new URL('../src/driver-location-diagnostics.ts',import.meta.url).href,shortCircuit:true};
     }
     return next(specifier,context);
   },
@@ -49,6 +50,13 @@ try {
   assert.equal(native.writes.find(write=>write.key==='wind.tracking').options.keychainAccessible,8);
   assert.equal(native.foreground,true,'A restored task must restart its missing foreground service');
   assert.equal(native.starts.length,1);
+  const starts = native.starts.length;
+  const registered = await location.backgroundLocationDiagnostics(2,3);
+  assert.equal(registered.requested,true);
+  assert.equal(registered.registration,'registered');
+  assert.equal(registered.foregroundService,'unknown','registration cannot prove the OS service is alive');
+  assert.equal(native.starts.length,starts,'reading support never starts location');
+  assert.equal((await location.backgroundLocationDiagnostics(99,3)).lastAcceptedFixAt,null,'another actor cannot see tracking history');
   assert.equal(native.starts[0].options.foregroundService.killServiceOnDestroy,false);
   const context=native.store.get('wind.tracking');
   native.foreground=false;
@@ -75,6 +83,12 @@ try {
   now+=15000;
   await native.task({data:{locations:[{...fix,timestamp:now}]}});
   assert.equal(await location.backgroundLocationState(),'sharing','Accepted upload confirms native GPS sharing');
+  const diagnostics = await location.backgroundLocationDiagnostics(2,3);
+  assert.equal(diagnostics.lastAcceptedFixAt,now);
+  assert.equal(diagnostics.lastServerAcknowledgementAt,now);
+  native.store.set('token','replacement-session');
+  assert.equal((await location.backgroundLocationDiagnostics(2,3)).lastAcceptedFixAt,null,'logout/session replacement hides old timestamps');
+  native.store.set('token','next-driver');
   now-=60_000;
   assert.equal(await location.backgroundLocationState(),'starting','A clock rewind cannot make an old receipt look current');
   now+=90_000;

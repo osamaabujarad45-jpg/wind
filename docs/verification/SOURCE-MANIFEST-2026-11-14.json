@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-14T19:45:03.3988616Z",
+  "sourceRoot": "C:\\Users\\osama\\.local\\share\\opencode\\worktree\\b44bf6\\fable-5.2-verification",
+  "actualHead": "b60922952d607f698eee24b9c68ac3394daecd3c",
+  "detachedHead": true,
+  "uncommittedWork": true,
+  "coverage": "Selected-file checkpoint (35 files), not complete release provenance; full relevant inventory required before candidate construction",
+  "canonicalReference": "b89f2205965523b5ab8545dff3940d1eacb6062c (comparison only, not a clean checkout)",
+  "currentVerification": {
+    "integrationSelectedSuites": 109,
+    "selectedTestSuites": 100,
+    "otherSuites": 9,
+    "testFilesOnDisk": 102,
+    "postgresOnlyExemptions": 2,
+    "persistenceSelectedSuites": 52,
+    "legacyRunnerIncluded": true,
+    "productionVerdict": "NO-GO"
+  },
+  "files": [
+    {
+      "purpose": "Single connected Fable implementation brief",
+      "sha256": "1027747abcc4882d0c57c0842063ef57be2bb3d97cd7133dc1dcac5361aaee74",
+      "path": "docs/HANDOFF-2026-11-14-FABLE-5.2-FINAL-IMPLEMENTATION.md"
+    },
+    {
+      "purpose": "Issue/change/proof ledger and physical evidence",
+      "sha256": "fcddee693a445cb23e565e9a9331cc22ca5d533afd377c24776335bdc9f0d1d2",
+      "path": "docs/verification/REVIEW-FIXES-2026-11-14.md"
+    },
+    {
+      "purpose": "Full continuation handoff and historical evidence index",
+      "sha256": "b54d726d174f22ce2212cd93c209bd4b923c597146c502d06a9082b6d8a6cf6a",
+      "path": "docs/HANDOFF-2026-11-14-FABLE-5.2-VERIFIED-CONTINUATION.md"
+    },
+    {
+      "purpose": "Consolidated research and current verification report",
+      "sha256": "e46c52fb570ae74ef41c0c53245c3ff65d6e145a25a31fe78c6a207d6f410381",
+      "path": "docs/verification/CONSOLIDATED-24H-2026-11-13.md"
+    },
+    {
+      "purpose": "Measurable readiness gates and score",
+      "sha256": "4f0c020f49db0f00941734e2585ae27d210f2fb6916a9ea1aa823495e7ee92d3",
+      "path": "docs/REA/2026-11-13-PILOT-READY.md"
+    },
+    {
+      "purpose": "Remaining product work and acceptance criteria",
+      "sha256": "88948c69f98adcfc9a28cdbcb1686972d3d41b373f08dc052c3ef54ef5a10e70",
+      "path": "docs/REA/2026-11-13-GAP-BACKLOG.md"
+    },
+    {
+      "purpose": "Expo config and guarded QA version override",
+      "sha256": "6a533f23509399ce6660ada1d5028512649ae567ef3938b6c2505bfcebd6c09f",
+      "path": "app.config.js"
+    },
+    {
+      "purpose": "Booking, partner, replay, readiness and authority paths",
+      "sha256": "5151424ee553300dc3fa400e1b3fa3f95a34ea5119c643f7f4395a1835598226",
+      "path": "server/main.ts"
+    },
+    {
+      "purpose": "Isolated PostgreSQL runtime and test-only lock budget",
+      "sha256": "da9cd1c553c8666dfccf4733f9c7dc268b55321cbd6f8f739aa71e884b97df63",
+      "path": "server/db/runtime.ts"
+    },
+    {
+      "purpose": "SQLite schema including terminal rejections",
+      "sha256": "bddea5e3b303f9370bc8a0282b1c208e6ec550973d8cf00536f619b12b9d5cc2",
+      "path": "server/db/sqlite-schema.ts"
+    },
+    {
+      "purpose": "Forward PostgreSQL migration registration through version 30",
+      "sha256": "cd082b00f254cba37f18bc6ed9805cbce5b271cd80eb91c449303eda45e199fc",
+      "path": "server/db/postgres-schema.ts"
+    },
+    {
+      "purpose": "Migration 30 rejection table and cash guard repair",
+      "sha256": "5ee050232ca6627bc89d61b63180c9eb131f5484b9469bd4017f6510af045ead",
+      "path": "server/db/postgres-booking-repairs.sql"
+    },
+    {
+      "purpose": "Old/current snapshot import compatibility",
+      "sha256": "23b3a815ed4a4694c3a879bdf2b1657f04fbab00c841f041b6b0c5b37729521f",
+      "path": "server/migrate.ts"
+    },
+    {
+      "purpose": "Present/absent/unknown booking receipts",
+      "sha256": "7b157dd4a7444941d4f25b593276a34bcc5d6d9941c3ac01b0f6cd7a19c8be26",
+      "path": "server/domain/booking-receipts.ts"
+    },
+    {
+      "purpose": "Pending command identity and outcome mapping",
+      "sha256": "782068b0de00d3df50e16c19fb231b1114de16cf2d78939eb1cc00bf052c09b1",
+      "path": "src/booking.ts"
+    },
+    {
+      "purpose": "Booking retention and immediate terminal reconciliation",
+      "sha256": "47757b869aca9cdbea24a37f027115ef6e30fcbe411ce33363341eff96f3eb89",
+      "path": "src/app/book.tsx"
+    },
+    {
+      "purpose": "Five-tab admin navigation",
+      "sha256": "c45c9a8cc1802d6646f3506e6d7a5e1c9424b50944605913d09bc88793c92728",
+      "path": "src/app/admin/_layout.tsx"
+    },
+    {
+      "purpose": "Integration suite registration",
+      "sha256": "6c644eb7d89e4b1c1b7a31b0abc6a4d367ef2549651542dbf88f54d0bb0326fa",
+      "path": "scripts/run-tests.mjs"
+    },
+    {
+      "purpose": "Physical five-tab and account/back acceptance",
+      "sha256": "24c58e5089908b2ae906ca4686fba1f732ed2a11314b37b9ad6f2024fb029101",
+      "path": "scripts/check-admin-tabs.mjs"
+    },
+    {
+      "purpose": "Native cash handover acceptance",
+      "sha256": "cb0d00e9cf5c9c3a90fef788fd6aaed4963bd92328045d243a9021f11eb07ff0",
+      "path": "scripts/check-native-cash.mjs"
+    },
+    {
+      "purpose": "Configurable proxy forced-409 acceptance",
+      "sha256": "5885f0345d8c6fc7463dce215f0002e397b1e900d0628ede8e5393e3e3a495cd",
+      "path": "scripts/check-native-ambiguous.mjs"
+    },
+    {
+      "purpose": "N+1 pending-command upgrade acceptance",
+      "sha256": "ef5fa00189d80d03e84f7fefb0f526bbe51b76debdc19cb603e063857ff2a0ca",
+      "path": "scripts/check-native-upgrade.mjs"
+    },
+    {
+      "purpose": "Cap replay and revoked-session replay regressions",
+      "sha256": "2e654801c8c69be9406052072081a5118d67253406562cdc9e4b084627d916e6",
+      "path": "tests/booking-retry-race.test.mjs"
+    },
+    {
+      "purpose": "Quoted authority and quote-expiry terminal rejection",
+      "sha256": "5e02ddbf632fa6958d9229adf7a81a5d11e79a37f84fb4faafa9f222ac32f3cd",
+      "path": "tests/booking-quoted-authority.test.mjs"
+    },
+    {
+      "purpose": "Client recovery and SQLite terminal rejection",
+      "sha256": "af71bb654aa66bb5f1e3b3a5fc72c8f853479484eab85e16d9c10ce4dc640ebd",
+      "path": "tests/booking-auth.test.mjs"
+    },
+    {
+      "purpose": "SQLite partner rollback/atomicity",
+      "sha256": "d770187894d2307c5ca2bd4765ae307a6c1eb6bce49a274512bc64512642ab27",
+      "path": "tests/partner-atomic.test.mjs"
+    },
+    {
+      "purpose": "PostgreSQL partner cap replay",
+      "sha256": "a860002e83e2b3a393c9e9dd4cd7b9ddd0895a43dc5673f5d4816a8b222e302e",
+      "path": "tests/partner-retry-race.test.mjs"
+    },
+    {
+      "purpose": "Cash behavior and old-schema guard upgrade",
+      "sha256": "57161c1307377785ee69eb7c6f6c72d668c014846d1b1e00915c5d46604b5cc1",
+      "path": "tests/pg-cash.mjs"
+    },
+    {
+      "purpose": "Frozen PostgreSQL contract and schema-30 readiness",
+      "sha256": "4e5e1fc6a46aa5bb352cc4ff95a5051ae361d4efd06258f23dd0f9bf302875eb",
+      "path": "tests/pg-contracts.mjs"
+    },
+    {
+      "purpose": "Old/current snapshot import and restore parity",
+      "sha256": "7b92a84a9c27b14af49df491f721fd97e26bfdd384afecd25cf3cc6122c03b72",
+      "path": "tests/pg-import.mjs"
+    },
+    {
+      "purpose": "Readiness rejects schema 21 and accepts migration 30",
+      "sha256": "6d2034e5375cc6a5fc56f8af39d05d5b20067e490644bd5b600439b059e0d728",
+      "path": "tests/db-api.test.mjs"
+    },
+    {
+      "purpose": "UI contracts including exact five-tab assertion",
+      "sha256": "2c0981071d3f0528a7263a97d91f4cf0f56700f3ebcbf7bee0d0b6d3be8af474",
+      "path": "tests/phone-ui.test.mjs"
+    },
+    {
+      "purpose": "Additive API boundary inventory including booking receipts",
+      "sha256": "f838b72b61071fb6f12e36f74d688f41593487aa13948470310505992af92625",
+      "path": "docs/implementation/contracts/additive-endpoints.json"
+    },
+    {
+      "purpose": "Reviewed SQLite schema fixture with rejection table",
+      "sha256": "251eb5a19543d1a90036a5ca2d489c5cdaf0d8cdf5eb58f0cbe19cd21a3f583f",
+      "path": "docs/implementation/contracts/schema.json"
+    },
+    {
+      "purpose": "Redacted dated competitor-thread architecture, evidence, gaps and safe reuse inventory",
+      "sha256": "5148c1c486fbc21cff96659802768d302775f496c8352b3a9dece27a64f9d2f5",
+      "path": "docs/verification/COMPETITOR-THREAD-INVENTORY-2026-11-14.md"
+    }
+  ]
+}

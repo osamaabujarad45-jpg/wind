@@ -10,7 +10,7 @@ import { Appear, Badge, Button, ErrorText, Header, Loading, Logo, palette, Row, 
 export default function Receipt() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me } = useSession();
-  const { c, language, money, err, rtl } = useCopy();
+  const { c, language, money, err, rtl, largeText } = useCopy();
   const { time } = useFormat();
   const { data: order, error, reload } = useApi<Order>(`/orders/${id}`);
 
@@ -30,19 +30,22 @@ export default function Receipt() {
   const lines: [string, string][] = [
     [c.receiptNo, ltr(orderCode(order.id))],
     [c.issued, time(order.updatedAt)],
-    [c.service, `${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`], // same rule as OrderRow: only shared, the exception, is marked
+    [c.service, `${c[order.service]}${order.shared ? `, ${c.shared}` : ''}`], // same rule as OrderRow: only shared, the exception, is marked
+    ...(order.service === 'parcel' ? [[c.parcelPriority, c[`priority_${order.priority ?? 'standard'}`]] as [string, string]] : []),
     [c.route, `${from} ${arrow} ${to}`],
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
-    ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
+    ...(order.driverName ? [[c.driver, [order.driverName, order.driverVehicle ? c[order.driverVehicle] : '', order.driverPlate ? ltr(order.driverPlate) : ''].filter(Boolean).join(', ')] as [string, string]] : []),
     ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
     [c.payWith, c.cash],
-    [c.payment, c.paymentUnconfirmed],
+    ...(order.service === 'parcel' ? [[c.cashCollected, order.cashCollection ? money(order.cashCollection.collectedMinor / 100) : c.cashCollectionUnknown]] as [string, string][] : []),
+    ...(order.cashCollection ? [[c.cashExpected, money(order.cashCollection.expectedMinor / 100)]] as [string, string][] : []),
+    ...(order.cashCollection?.varianceReason ? [[c.cashVarianceReason, c[`cashReason_${order.cashCollection.varianceReason}`]], [c.cashVarianceReview, c.cashVarianceReviewHint]] as [string, string][] : []),
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
   async function share() {
-    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
+    const text = [`${c.brand} — ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
     try { await Share.share({ message: text }); } catch { /* dismissed or unsupported */ }
   }
 
@@ -56,28 +59,27 @@ export default function Receipt() {
           <View style={{ flexDirection: 'row' /* ltr: one centred badge, direction unused */ }}><Badge label={statusText(c, order)} status={order.status} /></View>
         </View>
         <View style={styles.tear} />
-        {lines.map(([label, value]) => <Row key={label} gap={12} style={styles.line}>
-          <Txt variant="caption" style={{ width: 104 }}>{label}</Txt>
+        {lines.map(([label, value]) => <Row key={label} gap={12} style={[styles.line, largeText && { flexDirection: 'column', alignItems: 'stretch', gap: 4 }]}>
+          <Txt variant="caption" style={largeText ? undefined : { width: 104 }}>{label}</Txt>
           <Txt variant="title" style={{ flex: 1, fontSize: 14 }}>{value}</Txt>
         </Row>)}
         <View style={styles.tear} />
-        <Row style={{ justifyContent: 'space-between', paddingTop: 14 }}>
+        <Row style={{ justifyContent: 'space-between', paddingTop: 14, ...(largeText && { flexDirection: 'column', alignItems: 'stretch' }) }}>
           <Txt variant="title">{c.total}</Txt>
           <Txt variant="h1" style={{ color: palette.olive }}>{money(cash)}</Txt>
         </Row>
-        {role === 'driver' && <Row style={styles.sub}>
+        {role === 'driver' && <Row style={[styles.sub, largeText && { flexDirection: 'column', alignItems: 'stretch' }]}>
           <Txt>{c.commission}</Txt><Txt variant="title">{money(-commission)}</Txt>
         </Row>}
-        {role === 'driver' && order.discount > 0 && <Row style={styles.sub}>
+        {role === 'driver' && order.discount > 0 && <Row style={[styles.sub, largeText && { flexDirection: 'column', alignItems: 'stretch' }]}>
           <Txt>{c.promoCredit}</Txt><Txt variant="title">{`+${money(order.discount)}`}</Txt>
         </Row>}
-        {role === 'driver' && <Row style={styles.sub}>
+        {role === 'driver' && <Row style={[styles.sub, largeText && { flexDirection: 'column', alignItems: 'stretch' }]}>
           <Txt>{c.youEarn}</Txt><Txt variant="title" style={{ color: palette.olive }}>{money(order.price - commission)}</Txt>
         </Row>}
-        {role === 'admin' && order.commission != null && <Row style={styles.sub}>
+        {role === 'admin' && order.commission != null && <Row style={[styles.sub, largeText && { flexDirection: 'column', alignItems: 'stretch' }]}>
           <Txt>{c.commission}</Txt><Txt variant="title">{money(order.commission)}</Txt>
         </Row>}
-        <Txt variant="caption" center style={{ marginTop: 16 }}>{c.thankYou}</Txt>
       </View>
     </Appear>
     {/* Web has no reliable share sheet; the page itself can be printed or screenshotted. */}

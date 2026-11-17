@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api, storage } from './api';
 import { router } from 'expo-router';
+import { notificationChannels } from './notification-channels';
 
 // Foreground pushes must still surface, and a tap must land on the linked
 // screen; without a handler Expo drops foreground notifications silently.
@@ -32,6 +33,17 @@ if (Platform.OS !== 'web') {
 export async function registerNativePush(lang: 'ar' | 'en'): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
+    const runtime = await api<{ capabilities: Record<string, { state: string }> }>('/runtime/capabilities');
+    if (runtime.capabilities.nativePush?.state !== 'configured') return;
+    if (Platform.OS === 'android') {
+      for (const channel of notificationChannels()) {
+        await Notifications.setNotificationChannelAsync(channel.id, {
+          name: channel.name,
+          importance: channel.urgent ? Notifications.AndroidImportance.HIGH : Notifications.AndroidImportance.DEFAULT,
+          sound: channel.sound,
+        });
+      }
+    }
     let status = (await Notifications.getPermissionsAsync()).status;
     if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
     if (status !== 'granted') return;

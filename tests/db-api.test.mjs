@@ -42,7 +42,13 @@ try {
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(20, 0)');
   await setup.run('INSERT INTO schema_migrations VALUES(21, 0)');
-  assert.deepEqual(await call('/ready'), { ok: true, schema: 21 });
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'schema 21 is too old for booking receipts/replay');
+  await setup.run('INSERT INTO schema_migrations SELECT version, 0 FROM generate_series(22, 30) AS version WHERE version<>24');
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'schema 30 lacks parcel priority');
+  await setup.run('INSERT INTO schema_migrations VALUES(31, 0)');
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'schema 31 lacks immutable door cash collection facts');
+  await setup.run('INSERT INTO schema_migrations VALUES(32, 0)');
+  assert.deepEqual(await call('/ready'), { ok: true, schema: 32 }, 'migration 32 restores readiness');
   await setup.run('DELETE FROM schema_migrations WHERE version=19');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(19, 0)');

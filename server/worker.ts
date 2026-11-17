@@ -10,6 +10,7 @@ import { Dispatch } from './domain/dispatch.ts';
 import { Eligibility } from './domain/eligibility.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { createPayments, type Payments } from './domain/payments.ts';
+import { notificationChannelFor } from '../src/notification-channels.ts';
 
 type Work = Row & { event_id: string; destination: string; lease_owner: string; payload: Row };
 type WorkerOptions = { leaseMs?: number; maxAttempts?: number; baseBackoffMs?: number;
@@ -188,7 +189,7 @@ export class DurableWorker {
     const data=JSON.parse(message) as Row;
     const response=await fetch('https://exp.host/--/api/v2/push/send',{method:'POST',redirect:'error',signal:AbortSignal.timeout(10_000),
       headers:{Accept:'application/json','Content-Type':'application/json',...(process.env.EXPO_ACCESS_TOKEN?{Authorization:`Bearer ${process.env.EXPO_ACCESS_TOKEN}`}:{})},
-      body:JSON.stringify([{to:String(token.expo_push_token),title:'Wind',body:data.lang === 'en' ? 'You have a new update. Open Wind to view it.' : 'لديك تحديث جديد. افتح ويند لعرضه.',sound:'default',ttl,data:{kind:data.kind,order:data.order,url:data.url,eventId:data.eventId}}])});
+      body:JSON.stringify([{to:String(token.expo_push_token),title:'Wind',body:data.lang === 'en' ? 'You have a new update. Open Wind to view it.' : 'لديك تحديث جديد. افتح ويند لعرضه.',sound:'default',channelId:notificationChannelFor(data.kind).id,ttl,data:{kind:data.kind,order:data.order,url:data.url,eventId:data.eventId}}])});
     const tickets=await response.json().catch(()=>null) as { data?: { status?: string; details?: { error?: string } }[] } | null;
     await response.body?.cancel().catch(()=>{});
     if (!response.ok) throw Object.assign(new Error('provider_failed'),{providerStatus:response.status});

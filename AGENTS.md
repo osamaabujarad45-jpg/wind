@@ -43,5 +43,5 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Test device and heavy work (owner rule, 29 Oct 2026)
 
 - **Never use an emulator.** All acceptance and UI testing uses the connected physical Android phone (`SM-A5360`, adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask instead of starting one.
-- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 29 Oct 2026 the configured `k5` keys are refused (`Permission denied (publickey)`), so the owner must supply the authorized account/key before remote-only testing can resume.
+- **Run all future tests and heavy builds on `DESKTOP-S2JKMK5` over SSH**, one job at a time; unavailable SSH leaves verification blocked, with no new local test/build fallback. Use `pc gaming@DESKTOP-S2JKMK5`, key `~/.ssh/smartstore-runner`, `HostKeyAlias=desktop-s2jkmk5.local`, `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`, and workspace `D:\wind-verify-20261113\src3`. The `k5` alias points to an old refused IP; use the explicit host. Existing local-fallback results are historical evidence only.
 - Keep the phone's test backend on `adb reverse` (the QA sandbox binds `127.0.0.1`), and do not clear the phone's Chrome profile.

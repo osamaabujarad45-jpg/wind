@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS order_releases (
 CREATE TABLE IF NOT EXISTS order_commands (
   user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id), PRIMARY KEY(user_id, request_id));
+CREATE TABLE IF NOT EXISTS order_command_rejections (
+  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+  error TEXT NOT NULL CHECK (error IN ('quote_expired','promo_used','priority_cutoff')), created_at INTEGER NOT NULL,
+  PRIMARY KEY(user_id, request_id));
 CREATE TABLE IF NOT EXISTS order_actions (
   user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id), http_status INTEGER NOT NULL, error TEXT,
@@ -186,7 +190,7 @@ CREATE TABLE IF NOT EXISTS road_restrictions (
   last_confirmed_at INTEGER NOT NULL, confidence TEXT NOT NULL CHECK (confidence IN ('high','medium','low','unknown')),
   confirmed_prohibition INTEGER NOT NULL, reviewer_id INTEGER NOT NULL REFERENCES users(id),
   evidence_ref TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(restriction_key, version));
-CREATE TABLE IF NOT EXISTS quotes (
+  CREATE TABLE IF NOT EXISTS quotes (
   id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),
   pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,
   pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,
@@ -198,6 +202,18 @@ CREATE TABLE IF NOT EXISTS quotes (
   feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,
   itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id));
 `);
+  // Optional local operator history must not change the installed delivery schema.
+  if (process.env.WIND_OPENCODE_ENABLED === '1' && process.env.NODE_ENV !== 'production') db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),
+    provider_job_id TEXT,
+    result TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`);
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 
@@ -272,6 +288,54 @@ try {
 // T25, additive: an administrator who resolves a pending handover leaves an actor and a reason on the row.
 for (const column of ['resolved_by INTEGER', "resolution_note TEXT"])
   if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
+// Priority is additive: existing orders/quotes and pre-priority v3 snapshots remain standard.
+db.exec('BEGIN IMMEDIATE');
+try {
+  for (const table of ['orders', 'quotes'])
+    if (!(db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).some(r => r.name === 'priority'))
+      db.exec(`ALTER TABLE ${table} ADD COLUMN priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard'))`);
+  const rejections = db.prepare("SELECT sql FROM sqlite_schema WHERE name = 'order_command_rejections'").get() as Row;
+  if (!String(rejections.sql).includes("'priority_cutoff'")) db.exec(`
+    ALTER TABLE order_command_rejections RENAME TO order_command_rejections_priority_upgrade;
+    CREATE TABLE order_command_rejections (
+      user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+      error TEXT NOT NULL CHECK (error IN ('quote_expired','promo_used','priority_cutoff')), created_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id, request_id));
+    INSERT INTO order_command_rejections SELECT * FROM order_command_rejections_priority_upgrade;
+    DROP TABLE order_command_rejections_priority_upgrade;
+  `);
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
+// A11 is additive: older orders keep unknown collection history; never backfill an assumed amount.
+db.exec(`
+CREATE TABLE IF NOT EXISTS order_cash_collections (
+  order_id INTEGER PRIMARY KEY REFERENCES orders(id),
+  expected_minor INTEGER NOT NULL CHECK(typeof(expected_minor)='integer' AND expected_minor BETWEEN 0 AND 9007199254740991),
+  collected_minor INTEGER NOT NULL CHECK(typeof(collected_minor)='integer' AND collected_minor BETWEEN 0 AND 9007199254740991),
+  variance_reason TEXT,
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  request_id TEXT NOT NULL CHECK(length(request_id)=36 AND substr(request_id,9,1)='-' AND substr(request_id,14,1)='-'
+    AND substr(request_id,19,1)='-' AND substr(request_id,24,1)='-' AND length(replace(request_id,'-',''))=32
+    AND lower(replace(request_id,'-','')) NOT GLOB '*[^0-9a-f]*'),
+  collected_at INTEGER NOT NULL CHECK(typeof(collected_at)='integer' AND collected_at BETWEEN 0 AND 9007199254740991),
+  UNIQUE(actor_id,request_id),
+  CHECK(CASE
+    WHEN collected_minor=expected_minor THEN variance_reason IS NULL
+    WHEN variance_reason IN ('INCORRECT_CASH','OTHER_ADMIN_REVIEW') THEN 1
+    WHEN collected_minor<expected_minor THEN CASE variance_reason
+      WHEN 'PARTIAL_PAYMENT' THEN collected_minor>0
+      WHEN 'CUSTOMER_DID_NOT_PAY' THEN collected_minor=0
+      WHEN 'APPROVED_DISCOUNT' THEN 1 WHEN 'RETURNED_ITEMS' THEN 1 ELSE 0 END
+    ELSE 0 END));
+CREATE TRIGGER IF NOT EXISTS order_cash_collection_guard BEFORE INSERT ON order_cash_collections
+WHEN NOT EXISTS(SELECT 1 FROM orders o WHERE o.id=NEW.order_id AND o.service='parcel' AND o.status='completed'
+  AND o.driver_id=NEW.actor_id AND round(o.price*100)-round(COALESCE(o.discount,0)*100)=NEW.expected_minor)
+BEGIN SELECT RAISE(ABORT,'cash collection requires completed assigned parcel and expected delivery fee'); END;
+CREATE TRIGGER IF NOT EXISTS order_cash_collections_no_update BEFORE UPDATE ON order_cash_collections
+BEGIN SELECT RAISE(ABORT,'cash collections are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS order_cash_collections_no_delete BEFORE DELETE ON order_cash_collections
+BEGIN SELECT RAISE(ABORT,'cash collections are append-only'); END;
+`);
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }

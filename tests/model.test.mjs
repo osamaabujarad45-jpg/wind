@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, parseMinorUnits, typedNumber, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, vehicleServices, vehicles } from '../src/model.ts';
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
@@ -33,6 +33,10 @@ assert.equal(servedCity({ latitude: 31.40, longitude: 34.40 }), null); // neares
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');
 assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5'), typedNumber('12')], [20, 0.5, 1.5, 12]);
+for (const [text, expected] of [['0', 0], ['-0', 0], ['1', 100], ['+1.00', 100], ['1.2', 120], ['1.23', 123], ['1,23', 123], ['١٢٫٣٤', 1234], ['۱٫۲', 120], ['-12,50', -1250], ['90071992547409.91', Number.MAX_SAFE_INTEGER], ['-90071992547409.91', -Number.MAX_SAFE_INTEGER]])
+  assert.equal(parseMinorUnits(text), expected, `exact minor units: ${text}`);
+for (const text of ['', '.', '1.', '.5', '1.005', '1.234', '1,234', '1.2.3', 'NaN', 'Infinity', '1e2', '0x10', '--1', '+-1', '1 2', '90071992547409.92', '-90071992547409.92'])
+  assert.equal(parseMinorUnits(text), null, `reject malformed/unsafe minor units: ${text}`);
 assert.deepEqual(vehicles, ['motorcycle', 'bicycle', 'car', 'van', 'truck']);
 assert.deepEqual(vehicleServices.motorcycle, ['parcel', 'ride']);
 assert.deepEqual(vehicleServices.bicycle, ['parcel']);

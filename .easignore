@@ -1,0 +1,23 @@
+.expo
+.git
+node_modules
+# Anchored: only the top-level generated native folders are excluded. An
+# unanchored "android"/"ios" also drops modules/*/android and breaks local modules.
+/android
+/ios
+.env.local
+.env.*.local
+docs
+research
+research_notes
+reports
+tests
+infra
+.artifacts
+.claude
+.commandcode
+.screens
+dist
+*.db
+*.db-shm
+*.db-wal

@@ -2,6 +2,19 @@ import type { Point } from './model.ts';
 
 const rad = (d: number) => d * Math.PI / 180;
 
+export const MERCATOR_LATITUDE_LIMIT = 85.05112878;
+/**
+ * Study §7.5: metres per pixel for 512-pixel Web Mercator tiles.
+ * Density 1 means CSS/map pixels. Pass the display density only for physical pixels.
+ */
+export function metersPerPixelAtCoordinate(latitude: number, zoom: number, density = 1): number {
+  if (![latitude, zoom, density].every(Number.isFinite) || density <= 0) throw new RangeError('invalid_map_resolution');
+  const clamped = Math.max(-MERCATOR_LATITUDE_LIMIT, Math.min(MERCATOR_LATITUDE_LIMIT, latitude));
+  const resolution = Math.cos(rad(clamped)) * 2 * Math.PI * 6_378_137 / (2 ** zoom * 512 * density);
+  if (!Number.isFinite(resolution) || resolution <= 0) throw new RangeError('invalid_map_resolution');
+  return resolution;
+}
+
 /** Compass bearing in degrees (0 = north) from a to b; used when a device reports no heading. */
 export function bearing(a: Point, b: Point): number {
   const y = Math.sin(rad(b.longitude - a.longitude)) * Math.cos(rad(b.latitude));

@@ -15,7 +15,11 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
-  const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input }))).digest('hex');
+  const hashInput = { ...input };
+  // Preserve pre-priority booking receipts while keeping the original wire payload for validation.
+  if (path === '/api/orders' && method === 'POST' && hashInput.priority === 'standard'
+    && (hashInput.service === 'parcel' || hashInput.service === undefined)) delete hashInput.priority;
+  const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: hashInput }))).digest('hex');
   await db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `${user.id}:${commandId}`);
   const saved = await db.one('SELECT * FROM command_results WHERE actor_id=? AND command_id=?', user.id, commandId);
   if (saved) {

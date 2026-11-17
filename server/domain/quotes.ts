@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { evaluateRoutingEvidence, type EvidenceQuality, type RevisionMetadata, type DirectedCrossing } from './routing-policy.ts';
 import type { DeclaredScopeInput } from './resource-scope.ts';
+import type { ParcelPriority } from '../../src/model.ts';
 
 const QUOTE_TTL_MS = 120_000;
 
@@ -36,6 +37,7 @@ export function tariffBasisPoints(settings: Record<string, unknown>): Record<str
 export function itineraryHash(body: Row): string {
   const itinerary = {
     service: body.service,
+    ...(body.priority === 'same_day' && { priority: body.priority }),
     pickupCity: body.pickupCity,
     dropoffCity: body.dropoffCity,
     pickupPoint: body.pickupPoint ?? null,
@@ -132,6 +134,7 @@ async function buildCrossings(db: Persistence, service: string, routeLine: [numb
 export type QuoteInput = {
   customerId: number;
   service: string;
+  priority?: ParcelPriority;
   pickupCity: string;
   dropoffCity: string;
   pickupLat: number | null;
@@ -191,6 +194,7 @@ export async function createQuoteRecord(db: Persistence, input: QuoteInput, feas
   const expiresAt = now + QUOTE_TTL_MS;
   const itineraryHashValue = itineraryHash({
     service: input.service,
+    priority: input.priority,
     pickupCity: input.pickupCity,
     dropoffCity: input.dropoffCity,
     pickupPoint: input.pickupLat != null ? { latitude: input.pickupLat, longitude: input.pickupLng } : null,
@@ -221,6 +225,7 @@ export async function createQuoteRecord(db: Persistence, input: QuoteInput, feas
     id,
     customer_id: input.customerId,
     service: input.service,
+    priority: input.priority ?? 'standard',
     pickup_city: input.pickupCity,
     dropoff_city: input.dropoffCity,
     pickup_lat: input.pickupLat,
@@ -265,24 +270,13 @@ export async function createQuoteRecord(db: Persistence, input: QuoteInput, feas
       pickup_note, dropoff_note, contact, pickup_contact, recipient_name, recipient_phone, detail, option, loading_help, shared, scheduled_for,
       currency, price_minor, discount_minor, commission_minor, tariff_snapshot, tariff_basis_points, tariff_version,
       graph_version, profile_version, restriction_version, provider_version, eta_min_seconds, eta_max_seconds,
-      feasibility, reasons, disclosures, lines, itinerary_hash, expires_at, created_at, declared_scope)
-     VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb)`,
+      feasibility, reasons, disclosures, lines, itinerary_hash, expires_at, created_at, declared_scope, priority)
+     VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb, ?)`,
     row.id, row.customer_id, row.service, row.pickup_city, row.dropoff_city, row.pickup_lat, row.pickup_lng, row.dropoff_lat, row.dropoff_lng,
     row.pickup_note, row.dropoff_note, row.contact, row.pickup_contact, row.recipient_name, row.recipient_phone, row.detail, row.option, row.loading_help, row.shared, row.scheduled_for,
     row.currency, row.price_minor, row.discount_minor, row.commission_minor, row.tariff_snapshot, row.tariff_basis_points, row.tariff_version,
     row.graph_version, row.profile_version, row.restriction_version, row.provider_version, row.eta_min_seconds, row.eta_max_seconds,
-    row.feasibility, row.reasons, row.disclosures, row.lines, row.itinerary_hash, row.expires_at, row.created_at, row.declared_scope
+    row.feasibility, row.reasons, row.disclosures, row.lines, row.itinerary_hash, row.expires_at, row.created_at, row.declared_scope, row.priority
   );
   return row;
-}
-
-export async function fetchQuote(db: Persistence, quoteId: string): Promise<Row | undefined> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quoteId)) return undefined;
-  return db.one('SELECT * FROM quotes WHERE id=?::uuid', quoteId);
-}
-
-export async function consumeQuote(db: Persistence, quoteId: string, orderId: number): Promise<void> {
-  const now = Date.now();
-  const result = await db.run('UPDATE quotes SET consumed_at=?, consumed_order_id=? WHERE id=?::uuid AND consumed_at IS NULL', now, orderId, quoteId);
-  if (!result.changes) throw new Error('quote already consumed');
 }

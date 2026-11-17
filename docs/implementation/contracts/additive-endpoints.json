@@ -515,6 +515,23 @@
           "method": "POST",
           "path": "/api/auth/entra",
           "anonymousStatus": 503
+        },
+        {
+          "method": "POST",
+          "path": "/api/me/delete/challenge",
+          "anonymousStatus": 401
+        }
+      ]
+    },
+    {
+      "packet": "T19-booking-receipts",
+      "source": "server/domain/booking-receipts.ts",
+      "registrar": "registerBookingReceiptRoutes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/orders/commands/([^/]+)",
+          "anonymousStatus": 401
         }
       ]
     }

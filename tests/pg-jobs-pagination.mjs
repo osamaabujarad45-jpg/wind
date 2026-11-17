@@ -54,7 +54,7 @@ try {
     call('/orders', { token: capToken, body: { ...capInput, quotedPrice: capPrice } }).then(order => order.id, error => error)));
   const created = attempts.filter(value => typeof value === 'number');
   const refused = attempts.filter(value => typeof value !== 'number');
-  assert.equal(created.length, 5, `exactly the cap of searching orders is created: ${created.length}`);
+  assert.equal(created.length, 5, `exactly the cap of searching orders is created: ${created.length}; errors: ${refused.map(error => error.message).join(' | ')}`);
   assert.ok(refused.every(error => error.message.includes('too_many_searching')), `the rest carry the cap code: ${refused.map(error => error.message.slice(0, 60)).join(' | ')}`);
   console.log('PostgreSQL driver job pages: real HTTP, six pages, scheduled boundary, release filter and the concurrent searching cap passed');
 } finally {

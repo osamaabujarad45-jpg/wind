@@ -59,7 +59,7 @@ try {
     pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'Synthetic pickup', dropoffNote: 'Synthetic dropoff', detail: 'Synthetic parcel' };
   const order = await call('/orders', { token: customer.token, body });
   await call(`/orders/${order.id}/cancel`, { token: customer.token, body: {} });
-  await call('/me/delete', { token: customer.token, body: {} });
+  await call('/me/delete', { token: customer.token, body: { password } });
   const replacement = await call('/auth/register', { body: { name: 'Replacement synthetic account', phone: phone.customer,
     email: 'synthetic-customer@example.test', password: 'Replacement-synthetic-password-123', consent: true } });
   restore('customer');

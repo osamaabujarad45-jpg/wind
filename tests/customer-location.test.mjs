@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { browserPickupWatch, cachedPickup, findPickup, pickupFromFix, withPickupPermission } from '../src/customer-location.ts';
+import { browserPickupWatch, cachedPickup, findPickup, pickupFromFix, pickupPermission, pickupErrorKey, withPickupPermission } from '../src/customer-location.ts';
 
 const now = Date.now();
 const fix = (extra = {}) => ({ timestamp: now, coords: { latitude: 32.312773, longitude: 35.048039, accuracy: 52.4 }, ...extra });
@@ -59,6 +59,27 @@ await assert.rejects(findPickup(withPickupPermission(async () => ({ granted: fal
 assert.equal(nativeStarts, 0, 'denied permission cannot start GPS');
 assert.equal((await findPickup(withPickupPermission(async () => ({ granted: true }), nativeWatch))).city, 'tulkarm');
 assert.equal(nativeStarts, 1);
+let permissionPrompts = 0;
+const requestPermission = async () => { permissionPrompts++; return { granted: true }; };
+const permissionSignal = new AbortController();
+await assert.rejects(pickupPermission(async () => ({ granted: false, canAskAgain: true }), requestPermission, false, permissionSignal.signal), /prompt/);
+assert.equal(permissionPrompts, 0, 'opening the map never prompts without the explicit location action');
+assert.equal((await pickupPermission(async () => ({ granted: false, canAskAgain: true }), requestPermission, true, permissionSignal.signal)).granted, true);
+assert.equal(permissionPrompts, 1, 'explicit action asks the operating system');
+await pickupPermission(async () => ({ granted: true }), requestPermission, false, permissionSignal.signal);
+assert.equal(permissionPrompts, 1, 'existing consent detects location without a repeated prompt');
+await assert.rejects(pickupPermission(async () => ({ granted: false, canAskAgain: false }), requestPermission, true, permissionSignal.signal), /blocked/);
+await assert.rejects(findPickup(withPickupPermission(async () => ({ granted: false, canAskAgain: false }), nativeWatch)), /blocked/);
+assert.equal(permissionPrompts, 1, 'permanent denial requires a user-chosen Settings action');
+let finishPermissionRead;
+const slowPermission = findPickup(withPickupPermission(signal => pickupPermission(() => new Promise(resolve => { finishPermissionRead = resolve; }), requestPermission, true, signal), nativeWatch), undefined, 5);
+await assert.rejects(slowPermission, /timeout/);
+finishPermissionRead({ granted: false, canAskAgain: true });
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(permissionPrompts, 1, 'permission read completing after timeout cannot show a late system prompt');
+for (const [reason, key] of [['prompt', 'locationPurpose'], ['permission', 'locationPermissionDenied'], ['blocked', 'locationPermissionBlocked'], ['disabled', 'locationServicesDisabled'], ['timeout', 'locationTimeout'], ['inaccurate', 'locationInaccurate']]) {
+  assert.equal(pickupErrorKey(new Error(reason)), key);
+}
 const cacheSignal = new AbortController();
 assert.deepEqual(await cachedPickup(async () => fix(), cacheSignal.signal), { latitude: 32.312773, longitude: 35.048039 });
 assert.equal(await cachedPickup(async () => fix({ timestamp: Date.now() - 31_000 }), cacheSignal.signal), null);

@@ -271,7 +271,7 @@ export class Eligibility {
     if (!req && !declared) this.fail(409,'measured_requirements_missing');
     const tokens=(value: unknown): string[]=>Array.isArray(value) ? value as string[]
       : typeof value==='string' ? JSON.parse(value) as string[] : [];
-    const eff: Row=req ?? (()=>{
+    const eff: Row=req ? {...req} : (()=>{
       const pieces=Number(declared!.item_count ?? 1), grams=Number(declared!.mass_grams ?? 0);
       const hasDims=declared!.length_mm!=null;
       return { revision:Number(declared!.revision), grams, pieces,
@@ -288,6 +288,10 @@ export class Eligibility {
         pickup_before:Number(declared!.pickup_promised_before ?? declared!.loading_before ?? 9007199254740991),
         dropoff_before:Number(declared!.dropoff_promised_before ?? declared!.pickup_promised_before ?? declared!.loading_before ?? 9007199254740991) };
     })();
+    // Cargo measurements do not erase seats required for the declared load crew.
+    if (order.service==='freight') eff.seats=Math.max(Number(eff.seats),Number((await declaredScopeRow(this.db,orderId))?.crew_count??0));
+    if (order.service==='freight' && req && Number(eff.seats)>0
+      && !await this.db.one('SELECT version FROM schema_migrations WHERE version=28')) this.fail(409,'measured_protocol_unavailable');
     if (expectedRequirementsRevision!==undefined && expectedRequirementsRevision!==eff.revision) this.fail(409,'requirements_changed');
     if (requested===1 && kind!=='offer_accept' && expectedRequirementsRevision===undefined) this.fail(409,'requirements_revision_required');
     if (kind==='offer') {
@@ -532,7 +536,12 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility) {
       return {count,gramsEach,lengthMm,widthMm,heightMm};
     });
     e.int(grams); e.int(cm3); e.int(pieces,0,200);
-    const seats=e.int(body.seats,0,100); if ((order.service==='ride' && (seats<Number(order.option) || seats<1 || pieces>0)) || (order.service!=='ride' && (seats!==0 || pieces<1))) fail(400,'invalid_input');
+    const seats=e.int(body.seats,0,100);
+    const crew=order.service==='freight'?Number((await declaredScopeRow(db,id))?.crew_count??0):0;
+    if (order.service==='freight' && seats>0 && !await db.one('SELECT version FROM schema_migrations WHERE version=28')) fail(409,'measured_protocol_unavailable');
+    if ((order.service==='ride' && (seats<Number(order.option) || seats<1 || pieces>0))
+      || (order.service==='parcel' && (seats!==0 || pieces<1))
+      || (order.service==='freight' && (seats<crew || pieces<1))) fail(400,'invalid_input');
     e.choice(body.rotationPolicy,['fixed_axes_no_stacking']);
     const equipment=e.list(body.equipment),routeGeometry=await e.geometry(body.route,true),seconds=e.int(body.routeSeconds,1,86400),serviceSeconds=e.int(body.serviceSeconds,0,86400);
     const after=e.int(body.pickupAfter,0,Number.MAX_SAFE_INTEGER),before=e.int(body.pickupBefore,1,Number.MAX_SAFE_INTEGER),end=e.int(body.dropoffBefore,1,Number.MAX_SAFE_INTEGER),reason=e.reason(body),ref=e.ref(body);

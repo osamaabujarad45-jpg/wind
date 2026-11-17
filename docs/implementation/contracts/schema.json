@@ -178,6 +178,18 @@
     },
     {
       "type": "table",
+      "name": "order_cash_collections",
+      "tableName": "order_cash_collections",
+      "sql": "CREATE TABLE order_cash_collections (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id),\n  expected_minor INTEGER NOT NULL CHECK(typeof(expected_minor)='integer' AND expected_minor BETWEEN 0 AND 9007199254740991),\n  collected_minor INTEGER NOT NULL CHECK(typeof(collected_minor)='integer' AND collected_minor BETWEEN 0 AND 9007199254740991),\n  variance_reason TEXT,\n  actor_id INTEGER NOT NULL REFERENCES users(id),\n  request_id TEXT NOT NULL CHECK(length(request_id)=36 AND substr(request_id,9,1)='-' AND substr(request_id,14,1)='-'\n    AND substr(request_id,19,1)='-' AND substr(request_id,24,1)='-' AND length(replace(request_id,'-',''))=32\n    AND lower(replace(request_id,'-','')) NOT GLOB '*[^0-9a-f]*'),\n  collected_at INTEGER NOT NULL CHECK(typeof(collected_at)='integer' AND collected_at BETWEEN 0 AND 9007199254740991),\n  UNIQUE(actor_id,request_id),\n  CHECK(CASE\n    WHEN collected_minor=expected_minor THEN variance_reason IS NULL\n    WHEN variance_reason IN ('INCORRECT_CASH','OTHER_ADMIN_REVIEW') THEN 1\n    WHEN collected_minor<expected_minor THEN CASE variance_reason\n      WHEN 'PARTIAL_PAYMENT' THEN collected_minor>0\n      WHEN 'CUSTOMER_DID_NOT_PAY' THEN collected_minor=0\n      WHEN 'APPROVED_DISCOUNT' THEN 1 WHEN 'RETURNED_ITEMS' THEN 1 ELSE 0 END\n    ELSE 0 END))"
+    },
+    {
+      "type": "table",
+      "name": "order_command_rejections",
+      "tableName": "order_command_rejections",
+      "sql": "CREATE TABLE order_command_rejections (\n  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,\n  error TEXT NOT NULL CHECK (error IN ('quote_expired','promo_used','priority_cutoff')), created_at INTEGER NOT NULL,\n  PRIMARY KEY(user_id, request_id))"
+    },
+    {
+      "type": "table",
       "name": "order_commands",
       "tableName": "order_commands",
       "sql": "CREATE TABLE order_commands (\n  user_id INTEGER NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, payload_hash TEXT NOT NULL,\n  order_id INTEGER NOT NULL REFERENCES orders(id), PRIMARY KEY(user_id, request_id))"
@@ -210,7 +222,7 @@
       "type": "table",
       "name": "orders",
       "tableName": "orders",
-      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL)"
+      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
     },
     {
       "type": "table",
@@ -258,7 +270,7 @@
       "type": "table",
       "name": "quotes",
       "tableName": "quotes",
-      "sql": "CREATE TABLE quotes (\n  id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),\n  pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,\n  pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, shared INTEGER NOT NULL, scheduled_for INTEGER,\n  currency TEXT NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'), price_minor INTEGER NOT NULL, discount_minor INTEGER, commission_minor INTEGER,\n  tariff_snapshot TEXT NOT NULL, tariff_basis_points TEXT NOT NULL, tariff_version TEXT NOT NULL,\n  graph_version TEXT, profile_version TEXT, restriction_version TEXT, provider_version TEXT,\n  eta_min_seconds INTEGER NOT NULL, eta_max_seconds INTEGER NOT NULL,\n  feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,\n  itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id))"
+      "sql": "CREATE TABLE quotes (\n  id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),\n  pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,\n  pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, shared INTEGER NOT NULL, scheduled_for INTEGER,\n  currency TEXT NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'), price_minor INTEGER NOT NULL, discount_minor INTEGER, commission_minor INTEGER,\n  tariff_snapshot TEXT NOT NULL, tariff_basis_points TEXT NOT NULL, tariff_version TEXT NOT NULL,\n  graph_version TEXT, profile_version TEXT, restriction_version TEXT, provider_version TEXT,\n  eta_min_seconds INTEGER NOT NULL, eta_max_seconds INTEGER NOT NULL,\n  feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,\n  itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id), priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
     },
     {
       "type": "table",
@@ -343,6 +355,24 @@
       "name": "cash_entries_no_edit",
       "tableName": "cash_entries",
       "sql": "CREATE TRIGGER cash_entries_no_edit BEFORE UPDATE ON cash_entries\n  WHEN OLD.status <> 'pending' OR NEW.amount_cents <> OLD.amount_cents OR NEW.driver_id <> OLD.driver_id OR NEW.kind <> OLD.kind\n  BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "order_cash_collection_guard",
+      "tableName": "order_cash_collections",
+      "sql": "CREATE TRIGGER order_cash_collection_guard BEFORE INSERT ON order_cash_collections\nWHEN NOT EXISTS(SELECT 1 FROM orders o WHERE o.id=NEW.order_id AND o.service='parcel' AND o.status='completed'\n  AND o.driver_id=NEW.actor_id AND round(o.price*100)-round(COALESCE(o.discount,0)*100)=NEW.expected_minor)\nBEGIN SELECT RAISE(ABORT,'cash collection requires completed assigned parcel and expected delivery fee'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "order_cash_collections_no_delete",
+      "tableName": "order_cash_collections",
+      "sql": "CREATE TRIGGER order_cash_collections_no_delete BEFORE DELETE ON order_cash_collections\nBEGIN SELECT RAISE(ABORT,'cash collections are append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "order_cash_collections_no_update",
+      "tableName": "order_cash_collections",
+      "sql": "CREATE TRIGGER order_cash_collections_no_update BEFORE UPDATE ON order_cash_collections\nBEGIN SELECT RAISE(ABORT,'cash collections are append-only'); END"
     }
   ],
   "tables": [
@@ -1071,6 +1101,146 @@
         },
         {
           "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "order_cash_collections",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "expected_minor",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "collected_minor",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "variance_reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "actor_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "request_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "collected_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "order_command_rejections",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "request_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        },
+        {
+          "cid": 2,
+          "name": "payload_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "error",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
           "seq": 0,
           "table": "users",
           "from": "user_id",
@@ -1816,6 +1986,14 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 42,
+          "name": "priority",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'standard'",
+          "pk": 0
         }
       ],
       "foreignKeys": [
@@ -2540,6 +2718,14 @@
           "type": "INTEGER",
           "notnull": 0,
           "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 42,
+          "name": "priority",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'standard'",
           "pk": 0
         }
       ],

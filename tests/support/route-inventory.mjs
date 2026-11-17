@@ -18,7 +18,9 @@ export async function checkRouteInventory(installed,call) {
     assert.deepEqual(actual,module.endpoints.map(e=>`${e.method} ${e.path}`),'Additive route inventory drift');
     all.push(...actual);
     for (const endpoint of module.endpoints) {
-      await call(endpoint.path.replace(/^\/api/,'').replace(/:\w+/g,'999999999'),{
+      const path = endpoint.path.replace(/^\/api/,'').replace(/:\w+/g,'999999999')
+        .replaceAll('([^/]+)', '00000000-0000-4000-8000-000000000001');
+      await call(path,{
         method:endpoint.method,...(['POST','PATCH'].includes(endpoint.method)?{body:{}}:{}),expect:endpoint.anonymousStatus,
       });
     }

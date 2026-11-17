@@ -1,5 +1,6 @@
 // WP06 phone UI rules: truthful states, command IDs across lost acknowledgments, session-scoped storage, exact request bodies.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
   awaitingProvider, clock, codeInput, codeUsable, deliveryKey, gateOf, gateReasonKey, issueKey, latestChallenge, normalizePhoneInput,
@@ -277,6 +278,14 @@ assert.equal('currentPassword' in issueBody({ ...ids, phone: '0599123456', purpo
 // Copy parity: every phone key exists in both languages, so typecheck and tests agree.
 const phoneKeys = Object.keys(copy.ar).filter(k => k.startsWith('phone_') || k.startsWith('err_phone_') || k.startsWith('err_idempotency') || k.startsWith('err_invalid_command') || k.startsWith('err_invalid_purpose'));
 assert.ok(phoneKeys.length > 60, 'phone copy present');
+
+// Admin keeps five translated tabs; the settings-only account route must not appear as an English sixth tab.
+const adminLayout = readFileSync(new URL('../src/app/admin/_layout.tsx', import.meta.url), 'utf8');
+assert.ok(adminLayout.includes("hidden={['cash', 'account']}"), 'cash and account stay reachable by URL but hidden from the tab bar');
+const adminRoutes = [...adminLayout.matchAll(/<Tabs\.Screen name="([^"]+)"/g)].map(match => match[1]);
+const adminVisible = adminRoutes.filter(name => !['cash', 'account'].includes(name));
+assert.deepEqual(adminVisible, ['index', 'orders', 'users', 'subscriptions', 'settings'], 'exactly five tabs remain visible');
+for (const name of adminVisible) assert.ok(adminLayout.includes(`name="${name}" options={{ title: c.`), `${name} keeps a translated title`);
 for (const key of phoneKeys) assert.ok(typeof copy.en[key] === 'string' && copy.en[key].length > 0, key);
 for (const key of Object.keys(copy.en).filter(k => k.startsWith('phone_') || k.startsWith('err_phone_'))) assert.ok(copy.ar[key], key);
 // A storage failure names storage in both languages, and never claims the server or the code was sent.

@@ -1,0 +1,24 @@
+ZRO provider configured: moonmath
+396 |   writeFileSync(join(web, 'map.html'), page);
+397 |   const child = await promisify(execFile)(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
+398 |     `const { server, shutdown } = await import(${JSON.stringify(new URL('../server/main.ts', import.meta.url).href)}); server.listen(0, async () => {
+399 |       const r = await fetch('http://127.0.0.1:' + server.address().port + '/map.html'); console.log(r.status, r.headers.get('content-type'), r.headers.get('cache-control'), (await r.text()).includes('maplibre')); await shutdown(); });`],
+400 |     { env: { ...process.env, WEB_ROOT: web, DB_PATH: join(web, 'w.db') }, encoding: 'utf8' });
+401 |   assert.equal(child.stdout.trim(), '200 text/html; charset=utf-8 no-cache true', child.stderr);
+               ^
+AssertionError: Expected values to be strictly equal:
++ actual - expected
+
++ 'ZRO provider configured: moonmath\n200 text/html; charset=utf-8 no-cache true'
+- '200 text/html; charset=utf-8 no-cache true'
+
+ generatedMessage: true,
+     actual: "ZRO provider configured: moonmath\n200 text/html; charset=utf-8 no-cache true",
+   expected: "200 text/html; charset=utf-8 no-cache true",
+   operator: "strictEqual",
+       diff: "simple",
+       code: "ERR_ASSERTION"
+
+      at C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\map.test.mjs:401:10
+
+Bun v1.4.4 (Windows x64)

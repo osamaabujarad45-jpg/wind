@@ -1,4 +1,6 @@
 import { createPublicKey, verify as cryptoVerify } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
+import type { User } from '../../src/model.ts';
 
 // Microsoft Entra External ID (CIAM) ID-token verification for the BFF exchange.
 // Builtins only: the API core ships without npm dependencies. The issuer and JWKS
@@ -16,6 +18,7 @@ export type EntraClaims = {
   oid: string;
   tokenId: string;
   expiresAt: number;
+  authenticatedAt: number | null;
   subject: string;
   name: string | null;
   email: string | null;
@@ -98,7 +101,7 @@ export function resetEntraJwksCache() { jwksCache = null; lastMissAt = 0; }
 export async function verifyEntraIdToken(
   token: string,
   config: EntraConfig,
-  options: { nonce?: string; fetchImpl?: FetchImpl; now?: number } = {},
+  options: { nonce?: string; fetchImpl?: FetchImpl; now?: number; maxAuthAgeSeconds?: number } = {},
 ): Promise<EntraClaims> {
   const fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
   const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
@@ -123,6 +126,8 @@ export async function verifyEntraIdToken(
   if (typeof claims.iat !== 'number' || claims.iat > nowSeconds + 300) throw new Error('invalid_token');
   if (claims.nbf !== undefined && (typeof claims.nbf !== 'number' || claims.nbf > nowSeconds + 300)) throw new Error('invalid_token');
   if (options.nonce !== undefined && claims.nonce !== options.nonce) throw new Error('invalid_token');
+  if (options.maxAuthAgeSeconds !== undefined && (!Number.isSafeInteger(claims.auth_time)
+    || claims.auth_time > nowSeconds + 30 || claims.auth_time < nowSeconds - options.maxAuthAgeSeconds)) throw new Error('invalid_token');
   const oid = typeof claims.oid === 'string' && claims.oid ? claims.oid
     : typeof claims.sub === 'string' ? claims.sub : '';
   if (!oid) throw new Error('invalid_token');
@@ -132,6 +137,7 @@ export async function verifyEntraIdToken(
     oid,
     tokenId: typeof claims.jti === 'string' && claims.jti ? claims.jti : '',
     expiresAt: claims.exp * 1000,
+    authenticatedAt: Number.isSafeInteger(claims.auth_time) ? claims.auth_time * 1000 : null,
     subject: String(claims.sub ?? oid),
     name: typeof claims.name === 'string' && claims.name.trim() ? claims.name.trim().slice(0, 60) : null,
     email,
@@ -142,10 +148,12 @@ export async function verifyEntraIdToken(
 }
 
 type Row = Record<string, any>;
-type Register = (method: string, path: string, handler: (ctx: { body: Row }) => Promise<unknown>, isPublic?: boolean) => unknown;
+type Context = { body: Row; user: User; req: IncomingMessage };
+type Register = (method: string, path: string, handler: (ctx: Context) => Promise<unknown>, isPublic?: boolean) => unknown;
 
 // Public boundary: the ID token itself is the credential; account linking and
 // session minting stay in the API composition root (server/main.ts).
-export function registerEntraRoutes(route: Register, exchange: (ctx: { body: Row }) => Promise<unknown>) {
+export function registerEntraRoutes(route: Register, exchange: (ctx: Context) => Promise<unknown>, deleteChallenge: (ctx: Context) => Promise<unknown>) {
   route('POST', '/api/auth/entra', exchange, true);
+  route('POST', '/api/me/delete/challenge', deleteChallenge);
 }
