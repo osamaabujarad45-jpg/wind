@@ -77,10 +77,10 @@ export default function TrackScreen() {
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
         <ServiceIcon service={data.service} size={28} />
-        <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, data)}</Txt>
+        <Txt variant="h2" header style={{ flex: 1 }}>{statusText(c, data)}</Txt>
       </Row>
       <RouteLine from={from[language]} to={to[language]} ride={data.service === 'ride'} />
-      {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
+      {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName}, ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
       {location && !freshness?.stale && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaData?.eta ? [Math.ceil(etaData.eta.minSeconds / 60), Math.ceil(etaData.eta.maxSeconds / 60)] : etaRange(eta)} now={now} slow={delayed} toPickup={toPickup} /></View>}
       {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
       {location && !freshness?.stale && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}

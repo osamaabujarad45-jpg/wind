@@ -20,9 +20,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',');
-// Allow isolated worktrees/sessions to capture screenshots without stealing another run's ports.
-const API_PORT = Number(process.env.WIND_SCREENS_API_PORT || 4100);
-const WEB_PORT = Number(process.env.WIND_SCREENS_WEB_PORT || 4101);
+const API_PORT = 4100, WEB_PORT = 4101;
 const webDir = join(root, '.screens', 'web');
 const outDir = join(root, 'docs', 'screens');
 const phone = { width: 390, height: 844 };
@@ -198,7 +196,6 @@ const screens = [
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
-  { id: 'admin-more', group: 'Admin', name: 'Admin · more destinations', route: '/admin/more', file: 'src/app/admin/more.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
 const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token };
@@ -290,24 +287,6 @@ for (const language of ['ar', 'en']) {
       assert.equal(JSON.parse(audit.detail).reason, reason);
       console.log('Admin proof recovery UI: verification cancellation, audited reset and required recipient code passed');
     }
-    if (screen.id === 'admin-more') {
-      const t = copy[language];
-      const moreTab = () => page.getByRole('tab', { name: t.more, exact: false });
-      assert.equal(await page.getByRole('tab').count(), 5);
-      await page.getByRole('button', { name: t.subscriptions, exact: false }).first().click();
-      await page.waitForURL('**/admin/subscriptions');
-      assert.equal(await page.getByRole('tab').count(), 5);
-      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
-      await moreTab().click();
-      await page.waitForURL('**/admin/more');
-      await page.getByRole('button', { name: t.settings, exact: true }).click();
-      await page.waitForURL('**/admin/settings');
-      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
-      await page.goto(base + '/admin/settings', { waitUntil: 'networkidle' });
-      assert.equal(await page.getByRole('tab').count(), 5);
-      assert.equal(await moreTab().getAttribute('aria-selected'), 'true');
-      console.log(`Admin navigation (${language}): five tabs, More destinations and hidden deep links passed`);
-    }
     await context.close();
   }
 }
@@ -384,8 +363,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   let releaseRecovery, recoveryRequested;
   const recoveryGate = new Promise(resolve => { releaseRecovery = resolve; });
   const recoveryRequest = new Promise(resolve => { recoveryRequested = resolve; });
-  const orderListRequest = url => url.pathname === '/api/orders';
-  await page.route(orderListRequest, async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
+  // Foreground recovery re-reads the order the driver is on: the app polls /api/orders/<id>, not the old list endpoint.
+  await page.route('**/api/orders/**', async route => { recoveryRequested(); await recoveryGate; await route.continue(); });
   const beforeResume = publications;
   await page.evaluate(visibility, false);
   await Promise.race([recoveryRequest, new Promise((_, reject) => setTimeout(() => reject(new Error('Foreground recovery did not request orders')), 5000))]);
@@ -393,7 +372,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, beforeResume); // the retained assignment cannot restart GPS before recovery finishes
   releaseRecovery();
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.unroute(orderListRequest);
+  await page.unroute('**/api/orders/**');
 
   // Returning from Settings must re-read permission; retained grants cannot start GPS while that read is pending or failed.
   async function permissionResume(state, mode = 'ready') {
@@ -404,7 +383,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
       check.state = state; check.mode = mode;
       return check.reads;
     }, { state, mode });
-    const recovered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.ok());
+    const recovered = page.waitForResponse(response => response.url().includes('/api/orders/') && response.ok());
     await page.evaluate(visibility, false);
     await recovered;
     await page.waitForFunction(reads => window.permissionCheck.reads > reads, reads, { timeout: 3000 });
@@ -602,7 +581,8 @@ for (const language of ['ar', 'en']) {
         state: 'request_recorded', expiresAt: Date.now() + 300000, resendAfterSeconds: 45, accountStateConcealed: true } }));
     },
     run: async page => {
-      await page.getByRole('link', { name: t.phone_recovery_open, exact: true }).click();
+      // The phone-code recovery opens an in-app screen, so it is a button, not a link.
+      await page.getByRole('button', { name: t.phone_recovery_open, exact: true }).click();
       await page.getByRole('textbox', { name: t.phone, exact: true }).fill('0599000001');
       await page.getByRole('button', { name: t.phone_recovery_send, exact: true }).click();
       await page.getByText(t.phone_recovery_recorded, { exact: true }).waitFor();

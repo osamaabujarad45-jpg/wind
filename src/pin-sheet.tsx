@@ -62,11 +62,11 @@ export default function PinSheet({ title, hint, start, onClose, onConfirm, onLoc
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false); // a map that never showed must not confirm a pin nobody saw
   return <Modal visible transparent animationType={still ? 'none' : 'slide'} onRequestClose={onClose}>
-    <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
+    <Pressable style={styles.shade} onPress={onClose} accessibilityRole="button" accessibilityLabel={c.cancel} />
     <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: '92%' }]} accessibilityViewIsModal>
       <ScrollView style={{ flexShrink: 1 }}>
       <View style={styles.grip} />
-      <Txt variant="h2" style={{ marginBottom: 4 }}>{title}</Txt>
+      <Txt variant="h2" header style={{ marginBottom: 4 }}>{title}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{hint ?? c.pinHint}</Txt>
       <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
         <PinMap center={point} onChange={next => {

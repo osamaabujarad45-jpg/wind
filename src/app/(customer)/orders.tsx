@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { View } from 'react-native';
 import { MoreOrders, OrderRow, useOrders } from '../../parts';
 import { Button, Empty, ErrorText, Header, Loading, Screen, useCopy } from '../../ui';
 
@@ -8,6 +9,7 @@ export default function Orders() {
   return <Screen onRefresh={reload}>
     <Header title={c.orders} />
     <ErrorText>{error && err(error)}</ErrorText>
+    {!!error && !!data && <View style={{ marginBottom: 12 }}><Button title={c.retry} icon="refresh" variant="outline" onPress={reload} /></View>}
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
       ? <Empty icon="receipt-outline" title={c.noOrders} body={c.noOrdersDesc} action={<Button title={c.home} onPress={() => router.navigate('/')} />} />
       : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}

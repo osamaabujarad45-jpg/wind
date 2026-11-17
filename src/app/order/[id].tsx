@@ -73,8 +73,16 @@ export default function OrderScreen() {
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
   const [problem, setProblem] = useState<{ reason: ExceptionReason; note: string }>({ reason: 'absent', note: '' });
   const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
-  useDriverRecovery(polled, me?.user.id, !error && me?.user.role === 'driver' && !busy,
+  const recovery = useDriverRecovery(polled, me?.user.id, !error && me?.user.role === 'driver' && !busy,
     reload, next => { setData(next); work.update(next); }, () => { setAdvanceLocked(null); advanceAttempt.current = null; problemAttempt.current = null; });
+  // What happened to an action the driver started before the app was closed: say it, and offer the retry.
+  const recoveryKey = `${recovery.state}:${recovery.orderId ?? ''}`;
+  const [recoveryDismissed, setRecoveryDismissed] = useState('');
+  const recoveryState = recovery.state as 'rejected' | 'conflict' | 'pending' | 'other_order';
+  const showRecovery = recoveryKey !== recoveryDismissed && ['rejected', 'conflict', 'pending', 'other_order'].includes(recovery.state);
+  const recoveryCopy = {
+    rejected: c.recoveryRejected, conflict: c.recoveryConflict, pending: c.recoveryPending, other_order: c.recoveryOtherOrder,
+  } as const;
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
@@ -197,7 +205,7 @@ export default function OrderScreen() {
   const finding = order.status === 'searching' && !later;
 
   return <Screen onRefresh={reload}>
-    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
+    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? `, ${c.shared}` : ''}`} back
       right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
@@ -239,10 +247,10 @@ export default function OrderScreen() {
       <Radar color={serviceMeta[order.service].color} size={110}>
         <ServiceIcon service={order.service} size={48} />
       </Radar>
-      <Txt variant="h2" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
+      <Txt variant="h2" header center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.findingBody}</Txt>
       {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
-        <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
+        <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'} reason={c.wait_busy}
           onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
       </View>}
       {/* Uber keeps Cancel under the search animation: the bottom of the page is three screens away. */}
@@ -261,7 +269,7 @@ export default function OrderScreen() {
         <View style={{ flex: 1 }}>
           <Txt variant="title">{offer.name}</Txt>
           <Txt variant="caption">{[offer.vehicle && c[offer.vehicle], offer.rating == null ? c.newDriver : `★ ${offer.rating}`,
-            offer.priceRating != null && fill(c.priceStars, { r: offer.priceRating }), !!offer.trips && fill(c.tripsCount, { n: offer.trips })].filter(Boolean).join(' · ')}</Txt>
+            offer.priceRating != null && fill(c.priceStars, { r: offer.priceRating }), !!offer.trips && fill(c.tripsCount, { n: offer.trips })].filter(Boolean).join(language === 'ar' ? '، ' : ', ')}</Txt>
         </View>
         <View style={{ alignItems: 'center', gap: 4 }}>
           <Txt variant="h2">{money(offer.price)}</Txt>
@@ -297,11 +305,11 @@ export default function OrderScreen() {
           <Ionicons name="walk-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1, color: palette.olive }}>{fill(c.driverNearby, { m: 500 })}</Txt>
         </Row>}
-        {live && eta && location && !location.stale && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
+        {live && eta && location && !location.stale && alerts.length > 0 && <Press accessibilityRole="button" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
           onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Row gap={8}>
             <Ionicons name="warning-outline" size={16} color={palette.clayInk} />
-            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
+            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(language === 'ar' ? '، ' : ', ')}</Txt>
           </Row>
         </Press>}
         {live && <RouteCheckpoints avoids={avoids} through={through} />}
@@ -321,7 +329,7 @@ export default function OrderScreen() {
       <Card>
         <Row gap={8} style={{ marginBottom: 10 }}>
           <Pulse color={serviceMeta[order.service].color} size={8} />
-          <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
+          <Txt variant="h2" header style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
         </Row>
         <View style={[styles.progress, { flexDirection: row }]} accessibilityRole="progressbar" accessibilityLabel={c.tripProgress}
           accessibilityValue={{ min: 0, max: steps.length, now: step + 1 }}>
@@ -335,7 +343,7 @@ export default function OrderScreen() {
         {/* Uber's stage line: the times we actually recorded, nothing inferred. */}
         {(order.assignedAt || order.pickedUpAt) && <Txt variant="caption" style={{ marginTop: 6 }}>
           {[`${c.requested} ${time(order.createdAt)}`, order.assignedAt ? `${c.driverAssigned} ${time(order.assignedAt)}` : null,
-            order.pickedUpAt ? `${c.in_transit} ${time(order.pickedUpAt)}` : null].filter(Boolean).join(' · ')}
+            order.pickedUpAt ? `${c.in_transit} ${time(order.pickedUpAt)}` : null].filter(Boolean).join(language === 'ar' ? '، ' : ', ')}
         </Txt>}
         {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
           <Row gap={6} style={{ marginTop: 6 }}>
@@ -353,7 +361,7 @@ export default function OrderScreen() {
     {order.driverName && (isAdmin || ((isCustomer) && (activeStatuses.includes(order.status) || now - order.updatedAt <= 86_400_000))) ? <Appear index={3}>
       <Card>
         <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
-          sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
+          sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(language === 'ar' ? '، ' : ', ') || undefined}
           plate={order.driverPlate ?? undefined} />
       </Card>
     </Appear> : null}
@@ -378,7 +386,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.handoverHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
-            {order.handoverCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.handoverCode.split('').map((d, i) => <Text key={i} maxFontSizeMultiplier={1.35} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>
       </Card>
@@ -392,7 +400,7 @@ export default function OrderScreen() {
             <Txt variant="caption">{c.returnHint}</Txt>
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
-            {order.returnCode.split('').map((d, i) => <Text key={i} style={styles.digit}>{d}</Text>)}
+            {order.returnCode.split('').map((d, i) => <Text key={i} maxFontSizeMultiplier={1.35} style={styles.digit}>{d}</Text>)}
           </View>
         </Row>
       </Card>
@@ -491,6 +499,17 @@ export default function OrderScreen() {
 
     <ErrorText>{actionError}</ErrorText>
 
+    {showRecovery && <Card tone="clay" style={{ marginBottom: 8 }}>
+      <Row gap={8} style={{ marginBottom: 4 }}>
+        <Ionicons name="alert-circle-outline" size={20} color={palette.clayInk} />
+        <Txt variant="title" header style={{ flex: 1 }}>{c.recoveryTitle}</Txt>
+        <IconButton icon="close" label={c.close} tone="muted" onPress={() => setRecoveryDismissed(recoveryKey)} />
+      </Row>
+      <Txt variant="caption" style={{ color: palette.clayInk }}>{recoveryCopy[recoveryState]}</Txt>
+      {recovery.state === 'pending' && <Button title={c.retry} icon="refresh-outline" variant="outline" size="sm"
+        onPress={() => { void recovery.retry(); }} />}
+    </Card>}
+
     <View style={{ gap: 8 }}>
       {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
         reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
@@ -519,6 +538,7 @@ export default function OrderScreen() {
         {(order.status === 'at_pickup' || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
           <FilterChips items={exceptionReasons.map(key => ({ key, label: atPickup ? c[`pickup_${key}`] : c[`reason_${key}`] }))} value={problem.reason}
+            label={atPickup ? c.pickupProblem : c.reportProblem}
             onChange={reason => setProblem(p => ({ ...p, reason }))} />
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
           <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'} disabled={!!busy} reason={c.wait_busy}
@@ -618,7 +638,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
   return <Card tone="clay">
     <Row gap={8} style={{ marginBottom: 4 }}>
       <Ionicons name="shield-checkmark" size={22} color={palette.clayInk} />
-      <Txt variant="title" style={{ flex: 1 }}>{c.safety}</Txt>
+      <Txt variant="title" header style={{ flex: 1 }}>{c.safety}</Txt>
       <IconButton icon="close" label={c.close} onPress={() => setOpen(false)} />
     </Row>
     <Txt variant="caption" style={{ marginBottom: 10 }}>{c.safetyEmergencyHint}</Txt>
@@ -632,7 +652,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
     </View> : <>
       {report && <Txt variant="caption" style={{ marginBottom: 10 }}>{`${c.safetyResolved}: ${report.resolution ?? ''}`}</Txt>}
       <Txt variant="title" style={{ marginBottom: 8 }}>{c.safetyReport}</Txt>
-      <FilterChips items={kinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} />
+      <FilterChips items={kinds.map(key => ({ key, label: c[`safety_${key}`] }))} value={kind} onChange={setKind} label={c.safetyReport} />
       <Field label={c.problemNote} value={note} maxLength={300} multiline disabled={busy} onChangeText={setNote} />
       <Button title={c.safetySend} icon="alert-circle-outline" variant="outline" loading={busy} disabled={busy} reason={c.wait_busy}
         onPress={() => confirm(c.safetyConfirm, send, c.safetySend, c.no)} />
@@ -681,7 +701,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   return <Card>
     <Row gap={8} style={{ marginBottom: 8 }}>
       <Ionicons name="chatbubbles-outline" size={20} color={palette.olive} />
-      <Txt variant="title" style={{ flex: 1 }}>{c.messages}</Txt>
+      <Txt variant="title" header style={{ flex: 1 }}>{c.messages}</Txt>
     </Row>
     {error && !data ? <ErrorText>{err(error)}</ErrorText> : recent.length === 0
       ? <Txt variant="caption" style={{ marginBottom: 8 }}>{c.chatEmpty}</Txt>
@@ -722,7 +742,7 @@ function Person({ title, name, sub, plate, phone }: { title: string; name: strin
     <Avatar name={name} size={44} />
     <View style={{ flex: 1 }}>
       <Txt variant="micro">{title}</Txt>
-      <Txt variant="title" numberOfLines={1}>{name}</Txt>
+      <Txt variant="title" numberOfLines={2}>{name}</Txt>
       {!!sub && <Txt variant="caption">{sub}</Txt>}
       {/* the plate is what you match at the kerb: its own bold line, not buried in the caption */}
       {!!plate && <Txt variant="label" style={{ marginTop: 2, letterSpacing: 1 }}>{plate}</Txt>}
@@ -736,7 +756,7 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
   const { rtl } = useCopy();
   return <Row style={styles.detail} gap={12}>
     <Txt variant="caption">{label}</Txt>
-    <Txt variant={strong ? 'title' : 'body'} numberOfLines={3} style={{ flex: 1, color: palette.ink, textAlign: rtl ? 'left' : 'right' }}>{value}</Txt>
+    <Txt variant={strong ? 'title' : 'body'} style={{ flex: 1, color: palette.ink, textAlign: rtl ? 'left' : 'right' }}>{value}</Txt>
   </Row>;
 }
 
@@ -744,7 +764,7 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
 function RateDriver({ order, onRate }: { order: Order; onRate: (body: { rating: number } | { priceRating: number }) => void }) {
   const { c } = useCopy();
   return <Card tone="olive" style={{ marginTop: 4 }}>
-    <Txt variant="title" center>{order.rating ? c.thanks : c.rateDriver}</Txt>
+    <Txt variant="title" header center>{order.rating ? c.thanks : c.rateDriver}</Txt>
     <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
       {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.rateDriver} on={n <= (order.rating ?? 0)} disabled={!!order.rating} onPress={() => onRate({ rating: n })} />)}
     </Row>
@@ -759,7 +779,7 @@ function RateDriver({ order, onRate }: { order: Order; onRate: (body: { rating: 
 function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => void }) {
   const { c } = useCopy();
   return <Card tone="olive" style={{ marginTop: 4 }}>
-    <Txt variant="title" center>{order.customerRating ? c.thanks : c.rateCustomer}</Txt>
+    <Txt variant="title" header center>{order.customerRating ? c.thanks : c.rateCustomer}</Txt>
     <Row gap={4} style={{ justifyContent: 'center', marginTop: 8 }}>
       {[1, 2, 3, 4, 5].map(n => <IconStar key={n} n={n} label={c.rateCustomer} on={n <= (order.customerRating ?? 0)} disabled={!!order.customerRating} onPress={() => onRate(n)} />)}
     </Row>
@@ -767,8 +787,8 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 }
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.clay} />
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} accessibilityState={{ disabled }} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={on ? palette.clayInk : palette.faint} />
   </Pressable>;
 }
 

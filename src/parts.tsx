@@ -5,20 +5,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
-import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
+import { city, HISTORY_PAGE, isOpen, keepOlder, ltr, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { kmLabel } from './map-math';
 import { useSession } from './session';
 import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText } from './copy';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, confirm, Empty, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
 
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
   parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
   ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
-  freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
+  freight: { icon: 'bus-outline', color: palette.clayInk, pale: palette.clayPale },
 };
 
 export { statusText };
@@ -82,7 +82,8 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
         {!!note && <Txt variant="caption" numberOfLines={2}>{note}</Txt>}
       </View>
     </View>;
-    return onPress ? <Press accessibilityLabel={`${label}: ${place}`} onPress={onPress}>{body}</Press> : body;
+    // The stop is a tap target for the city: 44pt tall even with no note under the name.
+    return onPress ? <Press accessibilityLabel={`${label}: ${place}`} onPress={onPress} style={{ minHeight: 44 }}>{body}</Press> : body;
   };
   return <View>
     {stop(ride ? c.pickup_ride : c.pickup, from, fromNote, true, onFrom)}
@@ -169,15 +170,15 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Row style={{ justifyContent: 'space-between' }}>
-              <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+            <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+              <Txt variant="title" style={{ flexBasis: 160, flexGrow: 1, flexShrink: 1 }}>
                 {city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
-              <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(order.price)}</Txt>
+              <Txt variant="title" style={[{ flexShrink: 0 }, order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }]}>{money(order.price)}</Txt>
             </Row>
             {/* private is the default and sat on every row; only shared, the exception, is marked */}
-            <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
+            <Txt variant="caption">{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
               {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
@@ -214,7 +215,7 @@ export function PushRow() {
       AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : next === 'off' ? c.pushDisabled : c.pushDeniedHelp);
     } catch { haptic.error(); setState(await pushState().catch(() => 'off' as const)); } finally { setBusy(false); }
   }
-  return <ListRow icon="notifications-outline" label={c.pushRow} tone="blue" onPress={toggle}
+  return <ListRow icon="notifications-outline" label={c.pushRow} tone="blue" onPress={toggle} busy={busy}
     value={busy ? '…' : state === 'on' ? c.pushOn : state === 'denied' ? c.pushDenied : c.pushOff} />;
 }
 
@@ -282,8 +283,8 @@ export function PlanCard() {
     <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'clay'}>{/* waiting on support is not a call to action; the badge carries it */}
       <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}>
         <Row gap={8}>
-          <Ionicons name="sparkles" size={18} color={palette.clay} />
-          <Txt variant="title">{isPlus ? c.plusTitle : c.proTitle}</Txt>
+          <Ionicons name="sparkles" size={18} color={palette.clayInk} />
+          <Txt variant="title" header>{isPlus ? c.plusTitle : c.proTitle}</Txt>
         </Row>
         {sub && !(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.clay} />}{/* "active until" below already says it */}
       </Row>
@@ -354,11 +355,22 @@ export function VerifyEmailNudge() {
   </Press>;
 }
 
+// A driver whose account is not approved yet. The same notice on every driver tab, so "under review" never
+// reads as "no jobs yet" (the Jobs tab says one thing and the Trips tab used to say another).
+export function PendingDriverNotice({ phone }: { phone: string }) {
+  const { c } = useCopy();
+  return <Empty icon="time-outline" title={c.pendingTitle}
+    body={SUPPORT_URL ? c.pendingDesc : fill(c.pendingCallBack, { phone: ltr(phone) })}
+    action={SUPPORT_URL ? <Button title={c.whatsappSupport} icon="logo-whatsapp" variant="soft"
+      onPress={() => { void Linking.openURL(SUPPORT_URL!); }} /> : undefined} />;
+}
+
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
   const { c } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-    {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
+    {/* An in-app screen is a button; only a real URL is a link. */}
+    {help && <Press accessibilityRole="button" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
       <Txt variant="caption" style={styles.link}>{c.help}</Txt>
     </Press>}
     {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => Linking.openURL(SUPPORT_URL!)}>
@@ -411,11 +423,11 @@ export function AccountScreen() {
     <Header title={c.account} />
     <Appear>
       <Card>
-        <Press accessibilityLabel={c.editProfile} onPress={() => router.push('/profile')}>
+        <Press accessibilityLabel={`${c.editProfile}. ${user.name}. ${user.phone}`} onPress={() => router.push('/profile')}>
           <Row gap={12}>
             <Avatar name={user.name} size={52} />
             <View style={{ flex: 1, gap: 2 }}>
-              <Txt variant="h2" numberOfLines={1}>{user.name}</Txt>
+              <Txt variant="h2" numberOfLines={2}>{user.name}</Txt>
               <Txt variant="caption">{user.phone}</Txt>
               <Row gap={6} style={{ marginTop: 4 }}>
                 {/* each role has its own app, so its own account restating 'customer' or 'driver' (beside the vehicle chip) said nothing; only admin is marked */}
@@ -452,19 +464,20 @@ export function AccountScreen() {
         : <View style={{ padding: 16, gap: 8 }}>
           <Txt>{c.deleteReauth}</Txt>
           <Field label={c.currentPassword} value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" disabled={busy} maxLength={100} />
-          <Button title={c.deleteAccount} variant="danger" disabled={!password || busy} loading={busy}
+          <Button title={c.deleteAccount} variant="danger" disabled={!password || busy} loading={busy} reason={!password ? c.fieldRequired : c.wait_busy}
             onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(); }, c.deleteAccount, c.no)} />
-          {!!entraRequest && <Button title={c.deleteMicrosoft} variant="soft" disabled={busy}
+          {!!entraRequest && <Button title={c.deleteMicrosoft} variant="soft" disabled={busy} reason={c.wait_busy}
             onPress={() => confirm(c.deleteConfirm, () => { void deleteAccount(true); }, c.deleteAccount, c.no)} />}
-          {entraFailed && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => setEntraRetry(n => n + 1)} />}
-          <Button title={c.cancel} variant="ghost" disabled={busy} onPress={() => { setDeleteOpen(false); setPassword(''); setDeleteError(''); setEntraRequest(null); setEntraFailed(false); }} />
+          {entraFailed && <Button title={c.retry} variant="soft" disabled={busy} reason={c.wait_busy} onPress={() => setEntraRetry(n => n + 1)} />}
+          <Button title={c.cancel} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={() => { setDeleteOpen(false); setPassword(''); setDeleteError(''); setEntraRequest(null); setEntraFailed(false); }} />
         </View>}
     </ListGroup>
   </Screen>;
 }
 
 const styles = StyleSheet.create({
-  link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
+  // 14px of padding under a 17px line makes the link 45px tall: a 44pt target without a hit slop.
+  link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 14, minWidth: 44, textAlign: 'center' },
   stop: { alignItems: 'stretch', gap: 10 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },

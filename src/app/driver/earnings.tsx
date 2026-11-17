@@ -39,13 +39,17 @@ export default function Earnings() {
 
 // What the driver owes Wind in cash, and the cashier's handovers waiting for the driver's confirmation.
 function CashCard() {
-  const { c, money, err } = useCopy();
+  const { c, money, err, rtl } = useCopy();
   const { time } = useFormat();
   const { data, error, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
   const [shown, setShown] = useState(10); // the ledger is longer than the screen: it grows on request
-  if (!data) return null;
+  // A first load that has not answered (or failed) must not look like an empty balance: show the state and a retry.
+  if (!data) return <Card>
+    {!!error && <ErrorText>{err(error)}</ErrorText>}
+    <Loading failed={!!error} onRetry={reload} />
+  </Card>;
   async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
     setBusy(entry.id); setFailure('');
     try { await api(`/driver/cash/${entry.id}/confirm`, { decision }); haptic.success(); reload(); }
@@ -53,25 +57,25 @@ function CashCard() {
   }
   return <Card tone={data.owedCents > 0 ? 'clay' : 'card'}>
     <Row style={{ justifyContent: 'space-between' }}>
-      <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
+      <Txt variant="title" header>{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
       <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
     </Row>
     <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashOwedHint}</Txt>
     {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}
     <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
-      <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
+      <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)}${entry.reference ? `, ${entry.reference}` : ''}`}</Txt>
       <Button title={c.cashConfirm} icon="checkmark-circle-outline" loading={busy === entry.id} disabled={busy !== null} reason={c.wait_busy} onPress={() => decide(entry, 'confirm')} />
       <Button title={c.cashDispute} variant="ghost" size="sm" disabled={busy !== null} reason={c.wait_busy}
         onPress={() => confirm(c.cashDisputeConfirm, () => decide(entry, 'dispute'), c.cashDispute, c.no)} />
     </View>)}
-    {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
+    {data.entries.length > 0 && <Txt variant="title" header style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
     {data.entries.slice(0, shown).map(entry => <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
       <View style={{ flex: 1 }}>
-        <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
-        <Txt variant="micro">{entry.note ? `${time(entry.createdAt)} · ${entry.note}` : time(entry.createdAt)}</Txt>
+        <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]}, ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
+        <Txt variant="micro">{entry.note ? `${time(entry.createdAt)}, ${entry.note}` : time(entry.createdAt)}</Txt>
       </View>
-      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+      <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end', gap: 4 }}>
         <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
         <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
       </View>

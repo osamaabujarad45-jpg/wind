@@ -70,7 +70,7 @@ export default function RouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? ` · ${driverTitle ?? ''}` : ''}`}
+    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? `, ${driverTitle ?? ''}` : ''}`}
     onMapLoaded={() => setReady(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}

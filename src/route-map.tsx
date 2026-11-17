@@ -315,7 +315,7 @@ function LiveMap(props: RouteMapProps) {
       <RoutePreview {...props} plain />
     </View>}
     <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
-      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
+      accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? `, ${props.driverTitle ?? ''}` : ''}`} />
     {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
       <RoutePreview {...props} />
       <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}><Text>{c.retry}</Text></Pressable>
@@ -361,7 +361,7 @@ function MapLibrePin({ center, onChange, onGesture, onFail, onReady, height = 32
   }, [map, center.latitude, center.longitude]);
   const { c } = useCopy();
   return <View style={{ height, width: '100%' }}>
-    <View ref={host} style={StyleSheet.absoluteFill} />
+    <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image" accessibilityLabel={c.mapPickerLabel} />
     <View pointerEvents="none" style={[styles.pin, failed && { opacity: 0 }]}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>

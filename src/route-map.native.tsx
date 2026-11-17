@@ -80,7 +80,7 @@ function AppleRouteMap(props: RouteMapProps) {
   </View>;
   return <View style={{ height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
-    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? ` · ${driverTitle ?? ''}` : ''}`}
+    accessibilityLabel={`${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? `, ${driverTitle ?? ''}` : ''}`}
     onMapReady={() => setReady(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}

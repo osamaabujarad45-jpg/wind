@@ -121,7 +121,7 @@ function LiveMap(props: RouteMapProps) {
     <View style={[StyleSheet.absoluteFill, styles.cover]}><Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} /></View>
   </View>;
   return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }}
-    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
+    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? `, ${props.driverTitle ?? ''}` : ''}`} />;
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */

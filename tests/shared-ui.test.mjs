@@ -128,6 +128,21 @@ await check('Raw shared controls expose immediate pressed and disabled treatment
   }), 'Pressable');
   assert.equal(flat(typeof tab.props.style === 'function' ? tab.props.style({ pressed: true }) : tab.props.style).opacity, 0.72);
 });
+await check('Choice labels wrap inside narrow service and vehicle segments', () => {
+  const tree = render('Choices', { items: [{ key: 'motorcycle', label: 'Motorcycle' }, { key: 'car', label: 'Car' }], value: 'car', onChange() {} });
+  const label = findText(tree, 'Motorcycle');
+  assert.equal(flat(label.props.style).width, '100%');
+  assert.equal(label.props.numberOfLines, undefined);
+});
+
+await check('Shared errors announce assertively in native and web semantics', () => {
+  const tree = render('ErrorText', { children: 'Network down' });
+  const text = findText(tree, 'Network down');
+  assert.equal(text.props.accessibilityRole, 'alert');
+  assert.equal(text.props.accessibilityLiveRegion, 'assertive');
+  assert.equal(text.props['aria-live'], 'assertive');
+});
+
 await check('Text scaling is not capped and essential labels can wrap', () => {
   assert.equal(find(render('Txt', { children: 'Orders' }), 'Text').props.maxFontSizeMultiplier, undefined);
   assert.equal(findText(render('Header', { title: 'Dashboard', subtitle: 'Today' }), 'Dashboard').props.numberOfLines, undefined);

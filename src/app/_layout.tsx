@@ -69,7 +69,7 @@ function Routes() {
       <Txt>{c.offlineSavedWarning}</Txt>
       <Txt variant="caption">{fill(c.offlineSavedAt, { time: time(summary.savedAt) })}</Txt>
       {summary.orders.map(order => <View key={order.id} style={{ marginTop: 12 }}>
-        <Txt variant="title">{orderCode(order.id)} · {c[order.service]}</Txt>
+        <Txt variant="title">{`${orderCode(order.id)}, ${c[order.service]}`}</Txt>
         <Txt>{city(order.pickupCity)[language]} {rtl ? '←' : '→'} {city(order.dropoffCity)[language]}</Txt>
         <Txt variant="caption">{statusText(c, order, summary.role === 'driver')}</Txt>
       </View>)}

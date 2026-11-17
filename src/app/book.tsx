@@ -294,9 +294,10 @@ function BookForm() {
     : smart.minutes;
 
   const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
+  // Each reason gets its own line: a joined string hid the second reason behind the first on a narrow phone.
   const reasons = smart && [quoteMinutes !== null && fill(c.tripSize, { min: `${smart.estimated ? '≈ ' : ''}${quoteMinutes}` }) /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
-    .filter(Boolean).join(' · ');
+    .filter(Boolean) as string[];
   const km = distanceKm(pickupPoint ?? city(pickupCity), dropoffPoint ?? city(dropoffCity));
   // A checked code holds for the fare it was checked against; the server re-checks it on booking.
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
@@ -422,9 +423,9 @@ function BookForm() {
         <Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : c.bookingRecoveryUnknown}</Txt>
         {!!pending.payload.scheduledFor && <Txt variant="label" style={{ marginTop: 4 }}>{fill(c.scheduledFor, { t: time(pending.payload.scheduledFor) })}</Txt>}
         <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
-          <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} />
-          <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} onPress={() => { void release(true); }} />
-          <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} onPress={() => { void release(false); }} />
+          <Button title={c.retry} size="sm" variant="soft" onPress={submit} loading={busy} disabled={resolving || locating || !ready} reason={resolving ? c.bookingRecoveryChecking : c.wait_busy} />
+          <Button title={c.bookingEdit} size="sm" variant="soft" disabled={!releasable || busy || resolving} reason={!releasable ? c.bookingRecoveryWait : c.wait_busy} onPress={() => { void release(true); }} />
+          <Button title={c.bookingDiscard} size="sm" variant="ghost" disabled={!releasable || busy || resolving} reason={!releasable ? c.bookingRecoveryWait : c.wait_busy} onPress={() => { void release(false); }} />
         </Row>
         {!releasable && !resolving && <Reason>{c.bookingRecoveryWait}</Reason>}
       </Card>}
@@ -435,17 +436,19 @@ function BookForm() {
       {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
       {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
-      {/* Service switcher: the route stays, only the details change. */}
-      <Row gap={8} style={{ marginBottom: 12 }}>
-        {services.filter(s => enabledServices.includes(s)).map(s => {
-          const on = s === service;
-          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={c[s]} onPress={() => switchService(s)}
-            style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
-            <Ionicons name={serviceMeta[s].icon} size={16} color={on ? palette.lime : palette.secondary} />
-            <Text numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
-          </Press>;
-        })}
-      </Row>
+      {/* Service switcher: the route stays, only the details change. One choice, so a radiogroup. */}
+      <View accessibilityRole="radiogroup" accessibilityLabel={c.services} style={{ marginBottom: 12 }}>
+        <Row gap={8}>
+          {services.filter(s => enabledServices.includes(s)).map(s => {
+            const on = s === service;
+            return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={c[s]} onPress={() => switchService(s)}
+              style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
+              <Ionicons name={serviceMeta[s].icon} size={16} color={on ? palette.lime : palette.secondary} />
+              <Text maxFontSizeMultiplier={1.35} numberOfLines={1} style={[styles.serviceText, on && { color: palette.onFill }]}>{c[s]}</Text>
+            </Press>;
+          })}
+        </Row>
+      </View>
 
       <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
         {routeChosen && <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
@@ -497,7 +500,7 @@ function BookForm() {
 
       {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
-        {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
+        {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? `, ${r.note}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
       </Card></View>}
 
@@ -520,11 +523,11 @@ function BookForm() {
           </Row>
           : <>
             <Txt variant="label" style={{ marginBottom: 6 }}>{c.size}</Txt>
-            <Choices items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
+            <Choices items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} label={c.size} />
           </>}
         {service === 'freight' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.loadingHelp}</Txt>
-          <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} />
+          <Choices items={[{ key: 'no', label: c.no }, { key: 'yes', label: c.yes }]} value={loadingHelp ? 'yes' : 'no'} onChange={k => setLoadingHelp(k === 'yes')} disabled={locked} label={c.loadingHelp} />
           {wantsScope && !pending && <FreightScopeForm draft={freight} onChange={setFreight} disabled={locked} />}
         </>}
       </Card>
@@ -537,7 +540,7 @@ function BookForm() {
           <Txt variant="caption">{fill(c.freightWindow, { from: time(scheduledFor ?? slotBucket.at), to: time((scheduledFor ?? slotBucket.at) + loadingHours * 3_600_000) })}</Txt>
         </View>}
         <Choices items={[{ key: 'now', label: c.now }, { key: 'later', label: c.later }]} value={pending?.payload.scheduledFor ? 'later' : when}
-          onChange={setWhen} disabled={locked} />
+          onChange={setWhen} disabled={locked} label={c.whenTitle} />
         {when === 'later' && !pending && chosen !== null && <View style={{ marginTop: 10 }}>
           <SlotPicker slots={slots} value={chosen} onChange={setSlot} />
           <Txt variant="caption">{c.scheduledHint}</Txt>
@@ -555,7 +558,7 @@ function BookForm() {
         {smart.standard
           ? <Txt variant="caption" style={{ marginTop: 6 }}>{c.standardParcelHint}</Txt>
           : <>
-            {!!reasons && <Txt variant="caption" style={{ marginTop: 6 }}>{reasons}</Txt>}
+            {!!reasons && <View style={{ marginTop: 6, gap: 2 }}>{reasons.map((reason, index) => <Txt key={index} variant="caption">{reason}</Txt>)}</View>}
             <Txt variant="caption" style={{ marginTop: 4 }}>{c.offersHint}</Txt>
           </>}
         {smart.estimated && !quoting && <Txt variant="caption" style={{ marginTop: 6 }}>{c.destinationEstimated}</Txt>}
@@ -575,7 +578,7 @@ function BookForm() {
             <Ionicons name="pricetag" size={16} color={palette.olive} />
             <View style={{ flex: 1 }}>
               <Txt variant="title">{fill(c.promoApplied, { code: applied.code, d: money(applied.discount) })}</Txt>
-              <Txt variant="caption">{`${c.fare} ${money(price)} · ${c.youPayCash} ${money(pay)}`}</Txt>
+              <Txt variant="caption">{`${c.fare} ${money(price)}, ${c.youPayCash} ${money(pay)}`}</Txt>
             </View>
             {!pending && <IconButton icon="close" tone="muted" label={c.promoRemove} disabled={locked} onPress={() => { haptic.tap(); setPromo(null); AccessibilityInfo.announceForAccessibility(fill(c.promoRemoved, { p: money(price) })); }} />}
           </Row>
@@ -678,10 +681,14 @@ function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedP
   // The keyboard never resizes a modal window: lift the sheet above it, leaving the sheet's own bottom inset behind the keyboard.
   return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onShow={() => setTerm('')}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={-insets.bottom}>
-      <Pressable style={styles.shade} onPress={onClose} accessibilityLabel={c.cancel} />
+      <Pressable style={styles.shade} onPress={onClose} accessibilityRole="button" accessibilityLabel={c.cancel} />
       <SafeAreaView edges={['bottom']} style={styles.sheet} accessibilityViewIsModal>
         <View style={styles.grip} />
-        <Txt variant="h2" style={{ marginBottom: 10 }}>{title}</Txt>
+        {/* A visible way out of the sheet, not only the shade behind it. */}
+        <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <Txt variant="h2" header style={{ flex: 1 }}>{title}</Txt>
+          <IconButton icon="close" label={c.cancel} tone="muted" onPress={onClose} />
+        </Row>
         <ScrollView keyboardShouldPersistTaps="handled">
           {!term && (places.saved.length > 0 || places.recent.length > 0) && <>
             <Txt variant="label" style={{ marginTop: 6 }}>{c.yourPlaces}</Txt>
@@ -692,8 +699,8 @@ function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedP
                   <Row gap={12} style={{ minHeight: 56 }}>
                     <View style={styles.pin}><Ionicons name={p.label === 'recent' ? 'time-outline' : placeIcons[p.label]} size={15} color={palette.secondary} /></View>
                     <View style={{ flex: 1 }}>
-                      <Txt variant="title" numberOfLines={1}>{name}</Txt>
-                      <Txt variant="micro" numberOfLines={1}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}</Txt>
+                      <Txt variant="title" numberOfLines={2}>{name}</Txt>
+                      <Txt variant="micro" numberOfLines={2}>{p.label === 'recent' || p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]}, ${p.note}`}</Txt>
                     </View>
                   </Row>
                 </Pressable>
@@ -711,7 +718,7 @@ function CityPicker({ open, title, onClose, places, onPlace, onForget, selectedP
 const styles = StyleSheet.create({
   service: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, borderRadius: 22, backgroundColor: palette.card, borderWidth: 1, borderColor: palette.line, paddingHorizontal: 8 },
   serviceOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-  serviceText: { fontSize: 12, fontWeight: '700', color: palette.secondary, flexShrink: 1 },
+  serviceText: { fontSize: 12, lineHeight: 17, fontWeight: '700', color: palette.secondary, flexShrink: 1 },
   swap: { position: 'absolute', top: 20 },
   chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 44 },
   promo: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
@@ -720,7 +727,7 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: palette.paper, maxHeight: '78%', paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
   grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.line, marginBottom: 12 },
   searchBox: { alignItems: 'center', gap: 8, minHeight: 44, borderRadius: 12, backgroundColor: palette.card, paddingHorizontal: 12, marginBottom: 6 },
-  searchInput: { flex: 1, minHeight: 44, fontSize: 15, color: palette.ink },
+  searchInput: { flex: 1, minHeight: 44, fontSize: 15, lineHeight: 22, color: palette.ink },
   sheetRow: { minHeight: 56, borderBottomWidth: 1, borderBottomColor: palette.hair },
   pin: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
 });

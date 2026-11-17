@@ -49,11 +49,11 @@ export default function Roads() {
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <View style={{ flex: 1 }}>
             <Txt variant="title">{road.name}</Txt>
-            <Txt variant="caption">{road.cities.map(id => city(id)[language]).join(' · ')}</Txt>
+            <Txt variant="caption">{road.cities.map(id => city(id)[language]).join(', ')}</Txt>
           </View>
           <Badge label={road.status ? c[`road_${road.status}`] : c.roadUnknown} tone={road.status ? roadTone[road.status] : { bg: palette.muted, fg: palette.secondary }} />
         </Row>
-        {road.reportedAt && <Txt variant="caption" style={{ marginTop: 6 }}>{`${ago(road.reportedAt)} · ${fill(c.roadAgreeing, { n: road.agreeing })}`}</Txt>}
+        {road.reportedAt && <Txt variant="caption" style={{ marginTop: 6 }}>{`${ago(road.reportedAt)}, ${fill(c.roadAgreeing, { n: road.agreeing })}`}</Txt>}
         {!!road.note && <Txt style={{ marginTop: 4 }}>{road.note}</Txt>}
         {canReport && <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
           {(['open', 'slow', 'closed'] as const).map(status => <View key={status} style={{ flexGrow: 1, flexBasis: 90 }}>
