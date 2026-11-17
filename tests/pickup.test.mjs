@@ -49,6 +49,27 @@ try {
   assert.deepEqual(JSON.parse(event.detail), { reason: 'absent', note: 'No answer at the shop' });
   await call('/location', { token: driver.token, body: { latitude: 31.9, longitude: 35.2 }, expect: 409 }); // the courier is free again
 
+  // SHIP-16/17: the courier refuses a parcel at the pickup check; the sub-reason is stored on its own, never as `damaged`.
+  order = await atPickup();
+  const refuse = { expectedStatus: 'at_pickup', requestId: randomUUID(), reason: 'captain_refused_pickup', note: 'Open box' };
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: refuse, expect: 400 }); // a refusal needs its sub-reason
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...refuse, detail: 'smells_odd' }, expect: 400 });
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID(), detail: 'damaged_parcel' }, expect: 400 }); // no detail on other reasons
+  const refused = await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...refuse, detail: 'damaged_parcel' } });
+  assert.equal(refused.status, 'cancelled');
+  assert.equal(refused.exceptionReason, 'captain_refused_pickup');
+  assert.equal(refused.exceptionDetail, 'damaged_parcel');
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).exceptionDetail, 'damaged_parcel'); // the sender sees why
+  const refusal = db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'PICKUP_FAILED'").get(order.id);
+  assert.deepEqual(JSON.parse(refusal.detail), { reason: 'captain_refused_pickup', detail: 'damaged_parcel', note: 'Open box' });
+  // Only at the pickup check: once collected, a refusal is no longer possible.
+  order = await advance(driver.token, await atPickup());
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...refuse, requestId: randomUUID(), expectedStatus: 'in_transit', detail: 'prohibited_goods' }, expect: 409 });
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID(), expectedStatus: 'in_transit' } });
+  await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Clearing the courier' } });
+  const cleared = await call(`/orders/${order.id}`, { token: customer.token });
+  await advance(driver.token, cleared, { code: cleared.returnCode });
+
   // The courier gives the job back before collecting it; it returns to the pool.
   order = await atPickup();
   await call(`/orders/${order.id}/release`, { token: driver.token, body: {} });

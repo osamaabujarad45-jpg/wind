@@ -21,7 +21,7 @@ import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
 import { FreightScopeForm } from '../freight-details';
-import { Button, Card, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, sheetShadow, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Check, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, sheetShadow, Stepper, Txt, useCopy } from '../ui';
 
 export default function Book() {
   const { me } = useSession();
@@ -85,6 +85,7 @@ function BookForm() {
   const [dropoffNote, setDropoffNote] = useState('');
   const [contact, setContact] = useState(me?.user.phone ?? '');
   const [detail, setDetail] = useState('');
+  const [goodsOk, setGoodsOk] = useState(false); // SHIP-16: the sender confirms each booking holds nothing prohibited
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [option, setOption] = useState(optionsFor(service)[0]);
@@ -157,7 +158,7 @@ function BookForm() {
     finally { if (alive.current) setRefreshingAvailability(false); }
   }
   // Per-field problems, shown under each field; cleared as soon as that field is edited.
-  const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone', string>>>({});
+  const [invalid, setInvalid] = useState<Partial<Record<'pickupNote' | 'dropoffNote' | 'detail' | 'contact' | 'recipientPhone' | 'goods', string>>>({});
   const scrollRef = useRef<ScrollView>(null);
   const [promo, setPromo] = useState<{ code: string; discount: number; price: number } | null>(null);
   const [promoOpen, setPromoOpen] = useState(false);
@@ -496,6 +497,7 @@ function BookForm() {
       detail: service === 'ride' || detail.trim() ? undefined : c.fieldRequired,
       contact: isValidPhone(contact) ? undefined : err('invalid_phone'),
       recipientPhone: service === 'ride' || !recipientPhone.trim() || isValidPhone(recipientPhone) ? undefined : err('invalid_phone'),
+      goods: service === 'ride' || pending || goodsOk ? undefined : c.prohibitedNeeded, // a pending replay was confirmed when it was first sent
     };
     if (Object.values(problems).some(Boolean)) {
       haptic.error();
@@ -504,7 +506,7 @@ function BookForm() {
       setError(c.fixMarked); fixMarked.current = true;
       setSheetOpen(true);
       // The details sit near the top; the contact field is right above the button.
-      if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone) scrollRef.current?.scrollTo({ y: 0, animated: true });
+      if (problems.pickupNote || problems.dropoffNote || problems.detail || problems.recipientPhone || problems.goods) scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
     if (!pending && service === 'parcel' && priority === 'same_day' && !sameDayOpen) { setPriority('standard'); haptic.error(); setError(c.err_priority_cutoff); setSheetOpen(true); return; } // the next Request sends standard
@@ -722,6 +724,12 @@ function BookForm() {
       <Card>
         {/* What it is comes first: it is the one thing a map cannot fill in. */}
         <Field label={c[`${service}Detail`]} value={detail} onChangeText={edit('detail', setDetail)} placeholder={c[`${service}Hint`]} multiline error={invalid.detail} disabled={locked} maxLength={500} />
+        {service !== 'ride' && !locked && <View style={{ gap: 4, marginBottom: 8 }}>
+          <Txt variant="label">{c.prohibitedTitle}</Txt>
+          <Txt variant="caption">{c.prohibitedList}</Txt>
+          <Check checked={goodsOk} label={c.prohibitedConfirm} error={invalid.goods}
+            onChange={v => { setGoodsOk(v); if (v) setInvalid(i => ({ ...i, goods: undefined })); }} />
+        </View>}
         <Field label={word('pickupNote')} icon="flag-outline" value={pickupNote} onChangeText={edit('pickupNote', setPickupNote)} placeholder={c.pickupHint} error={invalid.pickupNote} disabled={locked} maxLength={200} />
         {isCustomer && pickupChosen && !locked && <SavePlace city={pickupCity} note={pickupNote} saved={places.saved} onSave={savePlace} />}
         <Field label={word('dropoffNote')} icon="location-outline" value={dropoffNote} onChangeText={edit('dropoffNote', setDropoffNote)} placeholder={c.dropoffHint} error={invalid.dropoffNote} disabled={locked} maxLength={200} />

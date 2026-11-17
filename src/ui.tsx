@@ -298,6 +298,20 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   return off && reason ? <View style={{ marginBottom: 6 }}>{press}<Reason>{reason}</Reason></View> : press;
 }
 
+/** A labelled checkbox: the whole row is the target, and a refusal reason sits under it in the error colour. */
+export function Check({ checked, onChange, label, disabled, error }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; error?: string }) {
+  return <View>
+    <Press accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked }} disabled={disabled}
+      onPress={() => onChange(!checked)} style={{ minHeight: size.control, justifyContent: 'center' }}>
+      <Row gap={8}>
+        <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={22} color={error ? palette.error : checked ? palette.olive : palette.secondary} />
+        <Txt variant="caption" style={{ flex: 1, color: palette.ink }}>{label}</Txt>
+      </Row>
+    </Press>
+    {!!error && <Txt variant="caption" style={{ color: palette.error }}>{error}</Txt>}
+  </View>;
+}
+
 // Why a control is waiting, in one plain sentence under it (design §10). Text, not a tooltip, so it reads without a long press.
 export function Reason({ children }: { children: string }) {
   return <Txt variant="body" style={{ marginTop: 6 }}>{children}</Txt>;

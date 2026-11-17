@@ -137,6 +137,10 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
     // Keep the first automatic reconciliation unknown so reload cannot race its successful navigation.
     await page.route(apiRoute('/api/orders/commands/*'), route => route.fulfill({ status: 503, json: { error: 'temporarily_unavailable' } }), { times: 1 });
   }
+  if (service !== 'ride') {
+    const prohibited = page.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true });
+    if (!(await prohibited.isChecked())) await prohibited.click();
+  }
   await button(page, new RegExp(`^${scheduled ? c.scheduleRequest : c.request}`)).click();
   if (lostResponse) {
     await page.getByText(c.bookingPending, { exact: true }).waitFor();
@@ -932,6 +936,8 @@ try {
   await field(pricePage, c.parcelDetail).fill('Sealed documents');
   await field(pricePage, c.recipientPhone).fill('0599000707');
   await field(pricePage, c.recipientName).fill('QA Recipient');
+  const prohibited = pricePage.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true });
+  if (!(await prohibited.isChecked())) await prohibited.click();
   const requestButton = button(pricePage, new RegExp(`^${c.request}`));
   await until(() => requestButton.isEnabled(), Boolean, 'Initial price was not ready');
   const bookingPath = apiRoute('/api/orders');

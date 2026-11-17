@@ -97,6 +97,11 @@ assert.equal(readDriverCommand({ ...command, payload: { code: '1234', collectedC
 for (const payload of [{ varianceReason: 'PARTIAL_PAYMENT' }, { collectedCents: 1.5 }, { collectedCents: 4000, varianceReason: 'tip' }])
   assert.throws(() => readDriverCommand({ ...command, payload: { code: '1234', ...payload } }), /invalid_pending_command/, JSON.stringify(payload));
 assert.equal(readDriverCommand({ ...command, action: 'exception', payload: { reason: 'absent', note: '' } }).action, 'exception', 'an exception with no cash stays valid');
+// SHIP-17: a saved pickup refusal keeps its sub-reason and sends it; a refusal without one, or a sub-reason on another reason, is refused.
+const refusal = readDriverCommand({ ...command, action: 'exception', payload: { reason: 'captain_refused_pickup', detail: 'damaged_parcel', note: '' } });
+assert.equal(driverCommandBody(refusal).detail, 'damaged_parcel');
+for (const payload of [{ reason: 'captain_refused_pickup', note: '' }, { reason: 'captain_refused_pickup', detail: 'smells', note: '' }, { reason: 'absent', detail: 'damaged_parcel', note: '' }])
+  assert.throws(() => readDriverCommand({ ...command, action: 'exception', payload }), /invalid_pending_command/, JSON.stringify(payload));
 for (const reason of ['rescheduled', 'access_blocked', 'damaged'])
   assert.equal(readDriverCommand({ ...command, action: 'exception', payload: { reason, note: '' } }).payload.reason, reason, `queued ${reason} stays valid`);
 assert.throws(() => readDriverCommand({ ...command, action: 'exception', payload: { reason: 'lost_in_space', note: '' } }), /invalid_pending_command/);

@@ -152,6 +152,7 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: c.freightStraps, exact: true }).isChecked(), true);
   const request = page.getByRole('button', { name: /^Request/ });
   await until(() => request.isEnabled(), 'freight quote');
+  await page.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true }).click();
   await request.click();
   await page.waitForURL(/\/order\/\d+$/);
   const freightId = Number(new URL(page.url()).pathname.split('/').at(-1));

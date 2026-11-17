@@ -209,6 +209,7 @@ try {
   await page.waitForTimeout(600);
   await shot(page, '9-parcel-details');
   await page.getByLabel(c.parcelDetail, { exact: true }).fill(language === 'ar' ? 'أوراق' : 'Documents');
+  await page.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true }).click();
   await page.getByRole('button', { name: new RegExp(`^${c.request}`) }).first().click();
   await page.waitForURL(/\/order\/\d+$/, { timeout: 20_000 });
   ok('a parcel asks only for what it is missing, then books');

@@ -46,6 +46,11 @@ export const exceptionNextAction: Record<ExceptionReason, 'reattempt' | 'return'
   absent: 'reattempt', unreachable: 'reattempt', wrong_address: 'reattempt', rescheduled: 'reattempt', access_blocked: 'reattempt',
   refused: 'return', damaged: 'return',
 };
+/** SHIP-16/17: a captain refuses a parcel at pickup (prohibited goods, or a damaged parcel seen at the pickup check). The order is
+ *  cancelled like any failed pickup, and the sub-reason is stored on its own (`exception_detail`), never as the `damaged` reason. */
+export const pickupRefusal = 'captain_refused_pickup';
+export const pickupRefusalDetails = ['prohibited_goods', 'damaged_parcel'] as const;
+export type PickupRefusalDetail = typeof pickupRefusalDetails[number];
 /** The suggestion for a stored hold reason. Holds also carry values outside the driver's list (support, scope_mismatch)
  *  and older or newer builds may send ones this build does not know: those have no suggestion. */
 export const suggestedNextAction = (reason: string | null | undefined) =>
@@ -203,7 +208,7 @@ export type Order = {
   destinationChange?: DestinationChange | null; canChangeDestination?: boolean;
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
-  returnCode: string | null; exceptionReason: ExceptionReason | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
+  returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   assignedAt?: number | null; pickedUpAt?: number | null; completedAt?: number | null; // status timeline

@@ -1,10 +1,10 @@
-import { activeStatuses, exceptionReasons, varianceReasons, type Order, type OrderStatus, type VarianceReason } from './model.ts';
+import { activeStatuses, exceptionReasons, pickupRefusal, pickupRefusalDetails, varianceReasons, type Order, type OrderStatus, type PickupRefusalDetail, type VarianceReason } from './model.ts';
 import { newRequestId } from './booking.ts';
 
 export type DriverAction = 'advance' | 'exception';
 export type DriverCommand = { schemaVersion: 1; actorId: number; orderId: number; action: DriverAction; requestId: string;
   createdAt: number; expiresAt: number; expectedStatus: OrderStatus; expectedAssignedAt: number | null;
-  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; reason?: string; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] } };
+  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] } };
 export type DriverReceipt = { schemaVersion: 1; orderId: number; requestId: string; state: 'unknown' | 'applied' | 'rejected'; error?: string; httpStatus?: number };
 export type CommandIO = { read: () => Promise<unknown>; write: (command: DriverCommand | null) => Promise<void>;
   valid: () => boolean; receipt: (command: DriverCommand) => Promise<DriverReceipt>; send: (command: DriverCommand) => Promise<Order> };
@@ -22,12 +22,14 @@ export function readDriverCommand(raw: unknown): DriverCommand | null {
     || (c.expectedAssignmentEpoch !== undefined && !integer(c.expectedAssignmentEpoch))
     || (c.expectedPinRevision !== undefined && !integer(c.expectedPinRevision))
     || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload)
-    || Object.keys(c.payload).some(key => !['code', 'reason', 'note', 'collectedCents', 'varianceReason', 'seals'].includes(key))
+    || Object.keys(c.payload).some(key => !['code', 'reason', 'detail', 'note', 'collectedCents', 'varianceReason', 'seals'].includes(key))
     || (c.payload.seals !== undefined && (!Array.isArray(c.payload.seals) || c.payload.seals.some(x => !x || !integer(x.no) || typeof x.intact !== 'boolean')))
     || (c.payload.code !== undefined && (typeof c.payload.code !== 'string' || !/^\d{4}$/.test(c.payload.code)))
     || (c.payload.collectedCents !== undefined && (c.action !== 'advance' || !integer(c.payload.collectedCents)))
     || (c.payload.varianceReason !== undefined && (c.payload.collectedCents === undefined || !varianceReasons.includes(c.payload.varianceReason)))
-    || (c.action === 'exception' && (![...exceptionReasons, 'wrong_or_missing_item'].includes(c.payload.reason as 'absent') || typeof c.payload.note !== 'string' || c.payload.note.length > 200))) throw new Error('invalid_pending_command');
+    || (c.action === 'exception' && (![...exceptionReasons, 'wrong_or_missing_item', pickupRefusal].includes(c.payload.reason as 'absent') || typeof c.payload.note !== 'string' || c.payload.note.length > 200))
+    // SHIP-17: a refusal carries its sub-reason; no other reason carries one.
+    || (c.payload.reason === pickupRefusal ? !pickupRefusalDetails.includes(c.payload.detail as PickupRefusalDetail) : c.payload.detail !== undefined)) throw new Error('invalid_pending_command');
   return c;
 }
 
