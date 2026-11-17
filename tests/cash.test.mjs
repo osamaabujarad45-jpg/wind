@@ -77,6 +77,16 @@ try {
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, amountCents: 301 }, expect: 409 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { ...retry, reason: 'Same id, other form' }, expect: 409 });
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, requestId: 'not-a-uuid' }, expect: 400 });
+  // A-01: a lost reply is recovered from the recording admin's command receipt, never by recording again.
+  assert.deepEqual((await call(`/admin/cash/commands/${retry.requestId}`, { token: admin.token, method: 'GET' })).entry?.id, wrong.id);
+  assert.deepEqual(await call(`/admin/cash/commands/${randomUUID()}`, { token: admin.token, method: 'GET' }), { entry: null }); // unknown, not refused
+  await call('/admin/cash/commands/not-a-uuid', { token: admin.token, method: 'GET', expect: 400 });
+  await call(`/admin/cash/commands/${retry.requestId}`, { token: driver.token, method: 'GET', expect: 403 });
+  const auditor = await call('/auth/register', { body: { phone: '0599300009', name: 'Second cashier', password: 'secret1' } });
+  await promote('0599300009');
+  const auditorToken = (await call('/auth/login', { body: { identifier: '0599300009', password: 'secret1' } })).token;
+  assert.deepEqual(await call(`/admin/cash/commands/${retry.requestId}`, { token: auditorToken, method: 'GET' }), { entry: null }); // another admin's receipt stays unread
+  await call('/admin/cash/remittance', { token: auditorToken, body: retry, expect: 409 }); // and cannot be replayed by them
   // A double tap sends both at once: one entry, and both replies name it.
   const tapped = { driverId: driver.user.id, amountCents: 1, requestId: randomUUID() };
   const taps = await Promise.all([1, 2, 3].map(() => call('/admin/cash/remittance', { token: admin.token, body: tapped })));
@@ -294,6 +304,13 @@ try {
     assert.throws(() => db.prepare(`UPDATE orders SET ${column} = ? WHERE id = ?`).run(value, promoted.id), /door cash is write-once/, column);
   db.prepare('UPDATE orders SET updated_at = updated_at WHERE id = ?').run(promoted.id); // other columns stay writable
 
+  // An adjustment has no reference; its receipt still names the entry for the admin who recorded it.
+  const fresh = await call('/auth/register', { body: { phone: '0599300019', name: 'Nour', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${fresh.user.id}/approve`, { token: admin.token, body: {} });
+  const adjusted = { driverId: fresh.user.id, amountCents: 200, reason: 'Fuel advance correction', requestId: randomUUID() };
+  const adjustment = await call('/admin/cash/adjustment', { token: admin.token, body: adjusted });
+  const adjustmentReceipt = (await call(`/admin/cash/commands/${adjusted.requestId}`, { token: admin.token, method: 'GET' })).entry;
+  assert.deepEqual([adjustmentReceipt.id, adjustmentReceipt.kind, adjustmentReceipt.reference], [adjustment.id, 'adjustment', null]);
   console.log('cash: ok');
 } finally {
   await shutdown();

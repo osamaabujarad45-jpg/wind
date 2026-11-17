@@ -59,6 +59,7 @@ const suites = [
   "parcel-pickup-far.test.mjs",
   "courier-block.test.mjs",
   "cash.test.mjs",
+  "admin-cash-command.test.mjs",
   "admin-assign.test.mjs",
   "share.test.mjs",
   "map.test.mjs",

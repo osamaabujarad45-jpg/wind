@@ -42,8 +42,10 @@ import { doorCash } from './domain/door-cash.ts';
 import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
+import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
 import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
+import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
 import { registerOfficeRoutes, remindOffice } from './domain/office.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
@@ -660,6 +662,7 @@ const ops = new Ops(persistence, fail);
 registerOpsRoutes(route, ops);
 registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit });
 registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
+registerCommandReceiptRoutes(route, { db: persistence, fail });
 registerCustodyRoutes(route, { db: persistence, fail });
 registerOfficeRoutes(route, { db: persistence, fail, need, text, push: (ids, kind, order) => queuePush(ids, kind, order) });
 const nativePush = new NativePush(persistence, fail);
@@ -2135,10 +2138,20 @@ route('POST', '/api/orders/:id/dispute', async ({ user, params, body }) => {
   const r = (await one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id)) ?? fail(404, 'not_found');
   const reason = text(body.reason, 1000);
   if (reason.length < 10) fail(400, 'invalid_input');
+  // One dispute per order. A double tap or a resend after a lost reply (same customer, same reason) gets the dispute it
+  // already opened, not an error, even once the reporting window has closed; only the insert that wins alerts support.
+  const resent = async () => {
+    const opened = await one('SELECT customer_id, reason FROM order_disputes WHERE order_id = ?', r.id);
+    if (!opened) return false;
+    if (opened.customer_id !== user.id || opened.reason !== reason) fail(409, 'dispute_exists');
+    return true;
+  };
+  if (await resent()) return (await getOrder(r.id, user));
   if (!finishedStatuses.includes(r.status) || Date.now() - (r.completed_at ?? r.updated_at) > 7 * DAY) fail(409, 'cannot_dispute');
-  if ((await one('SELECT id FROM order_disputes WHERE order_id = ?', r.id))) fail(409, 'dispute_exists');
-  (await run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?)', r.id, user.id, reason, Date.now()));
-  await queuePush((await adminIds()), 'attention', r.id, '/admin/orders');
+  const inserted = (await run('INSERT INTO order_disputes (order_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(order_id) DO NOTHING',
+    r.id, user.id, reason, Date.now())).changes;
+  if (!inserted) await resent(); // a concurrent tap won the insert: replay it or refuse a different reason
+  else await queuePush((await adminIds()), 'attention', r.id, '/admin/orders');
   return (await getOrder(r.id, user));
 });
 
@@ -3164,6 +3177,7 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
   reference: r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
+registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
   safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
@@ -3210,7 +3224,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
-    if (saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
+    // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
+    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
   (await persistence.exec('BEGIN IMMEDIATE'));
@@ -3219,7 +3234,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
     const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
     if (raced) {
-      if (raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount) fail(409, 'idempotency_conflict');
+      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount) fail(409, 'idempotency_conflict');
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }

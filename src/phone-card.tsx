@@ -14,7 +14,7 @@ import {
 } from './phone/flow';
 import { issueBody, proveBody, type SelfView } from './phone/requests';
 import { useSession } from './session';
-import { Badge, Button, Card, ErrorText, Field, fill, haptic, palette, Row, Txt, tones, useCopy } from './ui';
+import { Badge, Button, Card, CodeField, ErrorText, Field, fill, haptic, palette, Row, Txt, tones, useCopy } from './ui';
 import type { CopyKey } from './copy';
 
 type Purpose = 'verify' | 'change';
@@ -223,8 +223,8 @@ export function PhoneCard() {
       <Txt variant="caption" style={{ marginBottom: 2 }}>{expired ? c.phone_code_expired : fill(c.phone_code_recorded, { t: clock(secondsUntil(shown.expiresAt, now)) })}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{c[deliveryKey(liveState) as CopyKey]}</Txt>
       {!expired && <>
-        <Field label={c.phone_code_label} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad" autoComplete="one-time-code"
-          maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? prove : undefined} />
+        <CodeField label={c.phone_code_label} value={code} onChangeText={next => setCode(codeInput(next))} disabled={busy}
+          onSubmitEditing={code.length === 6 ? prove : undefined} />
         <Txt variant="caption" style={{ marginBottom: 10 }}>{fill(c.phone_attempts, { n: Math.max(0, 5 - shown.attempts) })}</Txt>
         <Button title={shown.purpose === 'change' ? c.phone_confirm_change : c.phone_confirm} icon="checkmark-outline" onPress={prove} loading={busy}
           disabled={code.length !== 6 || busy} reason={code.length !== 6 ? c.code_six_digits : c.wait_busy} />
@@ -245,7 +245,7 @@ export function PhoneCard() {
       <Txt variant="title" style={{ marginBottom: 4 }}>{c.phone_change_title}</Txt>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{c.phone_change_body}</Txt>
       <Field label={c.phone_new_number} value={form.phone} onChangeText={phone => setForm({ ...form, phone })} keyboardType="phone-pad" autoComplete="tel"
-        maxLength={20} disabled={busy} />
+        placeholder={c.phoneHint} maxLength={20} disabled={busy} />
       <Field label={c.phone_current_password} value={form.password} onChangeText={password => setForm({ ...form, password })} secureTextEntry
         autoComplete="password" maxLength={100} disabled={busy} />
       <Button title={c.phone_change_send} icon="mail-outline" onPress={() => issue('change', form.phone, form.password)} loading={busy}

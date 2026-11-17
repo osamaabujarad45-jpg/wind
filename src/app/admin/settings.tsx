@@ -119,7 +119,7 @@ export default function AdminSettings() {
       <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
       <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <ListGroup><PasswordCard /></ListGroup>
-      <Button title={c.logout} icon="log-out-outline" variant="danger" onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setError(err(e))); }, c.logout, c.no)} />
+      <Button title={c.logout} icon="log-out-outline" variant="outline" onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setError(err(e))); }, c.logout, c.no)} />
     </View>
   </Screen>;
 }

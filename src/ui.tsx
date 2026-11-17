@@ -31,7 +31,8 @@ export const palette = {
   clayPale: '#F9E9E1',
   blue: '#2F5E8C',
   bluePale: '#E6EDF6',
-  line: '#E2E1D8',
+  line: '#E2E1D8', // dividers only: 1.2:1, too faint to mark a control's edge
+  field: '#7D867F', // control edges (inputs, outline buttons, chips, unselected choices): 3.3:1 on paper, 3.8:1 on white (WCAG 1.4.11)
   hair: '#ECEBE4',
   mapWash: '#E6ECE3', // map placeholder and failure ground, before tiles draw
   dash: '#B4B3A8', // non-text marks on paper, muted or white (1.7–2.1:1): disabled button edge, sheet grip
@@ -39,6 +40,8 @@ export const palette = {
   error: '#A3392A',
   onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills
   errorPale: '#F8E6E2',
+  warn: '#8A5A00', // waiting/pending text: ochre, apart from brand clay and from error red (5.3:1 on paper)
+  warnPale: '#FBF0D9',
   shade: '#0E1F1966', // modal scrim over full-screen sheets
 };
 
@@ -68,7 +71,8 @@ export function useCopy() {
       // A failure the server logged carries its id: the first eight characters are enough for support to find it.
       return error instanceof ApiError && error.reference ? `${text} ${copy[language].errorRef} ${ltr(error.reference.slice(0, 8))}` : text;
     },
-    money: (n: number) => `${n < 0 ? '−' : ''}${copy[language].nis} ${Number.isInteger(n) ? Math.abs(n) : Math.abs(n).toFixed(2)}`,
+    // No-break space: a narrow column put the shekel sign on one line and the amount on the next.
+    money: (n: number) => `${n < 0 ? '−' : ''}${copy[language].nis} ${Number.isInteger(n) ? Math.abs(n) : Math.abs(n).toFixed(2)}`,
   };
 }
 
@@ -164,11 +168,12 @@ export function Header({ title, back = false, right, subtitle }: { title: string
 export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
-  const bg = { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
+  // Disabled looks disabled (muted fill, faint glyph), like Button: a forest "+" on a closed shop read as pressable.
+  const bg = disabled ? palette.muted : { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
     accessibilityState={{ disabled: !!disabled }}
-    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && shadow, pressed && { opacity: 0.7 }]}>
-    <Ionicons name={icon} size={iconSize.lg} color={tone === 'forest' ? palette.lime : palette.ink} />
+    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && !disabled && shadow, pressed && { opacity: 0.7 }]}>
+    <Ionicons name={icon} size={iconSize.lg} color={disabled ? palette.faint : tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
 }
 
@@ -181,13 +186,15 @@ export function Row({ children, style, gap = 10 }: { children: React.ReactNode; 
 // One family per weight file, so no fontWeight: Android would fake-bold an already bold face. Body stays the system font.
 export const headingFont = { bold: 'ReadexPro-Bold', semibold: 'ReadexPro-SemiBold' } as const;
 const textVariants = {
-  h1: { fontSize: 21, lineHeight: 30, fontFamily: headingFont.bold, color: palette.ink },
-  h2: { fontSize: 17, lineHeight: 25, fontFamily: headingFont.semibold, color: palette.ink },
-  title: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: palette.ink },
-  body: { fontSize: 14, lineHeight: 21, color: palette.secondary },
-  label: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.ink },
-  caption: { fontSize: 12, lineHeight: 17, color: palette.secondary },
-  micro: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
+  // Design review 17 Nov: the floor was 11 px and nothing was bigger than 21, so ETA, prices and shares had no weight.
+  display: { fontSize: 28, lineHeight: 34, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
+  h1: { fontSize: 22, lineHeight: 30, fontFamily: headingFont.bold, color: palette.ink },
+  h2: { fontSize: 18, lineHeight: 25, fontFamily: headingFont.semibold, color: palette.ink },
+  title: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: palette.ink },
+  body: { fontSize: 15, lineHeight: 22, color: palette.secondary },
+  label: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
+  caption: { fontSize: 13, lineHeight: 18, color: palette.secondary },
+  micro: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>;
 
 export { maxScale };
@@ -255,13 +262,13 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // Press feedback: 3% scale over 120ms on the UI thread.
 export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
-  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean };
+  accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; expanded?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
-    aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
+    aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
@@ -274,7 +281,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   const { row } = useCopy();
   const tone = {
     primary: { bg: palette.forest, fg: palette.onFill }, soft: { bg: palette.olivePale, fg: palette.olive },
-    danger: { bg: palette.errorPale, fg: palette.error }, ghost: { bg: 'transparent', fg: palette.secondary },
+    danger: { bg: palette.card, fg: palette.error }, ghost: { bg: 'transparent', fg: palette.secondary }, // danger is an error outline: a pale fill vanished on pale cards
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
   const small = s === 'sm';
@@ -283,9 +290,9 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   // muted fill vanished on muted cards. A busy button keeps its colours so the spinner reads as work in progress.
   // Callers add a <Reason> under it saying why it waits.
   const off = !!disabled && !loading;
-  const look = off ? { bg: palette.paper, fg: palette.secondary } : tone;
+  const look = off ? { bg: palette.muted, fg: palette.secondary } : tone; // solid, never dashed: a dashed edge read as an empty drop zone
   const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
-    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, off ? styles.buttonOff : variant === 'outline' && styles.outline,
+    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, off ? styles.buttonOff : variant === 'outline' ? styles.outline : variant === 'danger' && styles.dangerEdge,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
@@ -330,7 +337,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
         <Animated.View style={[motion.choice, on && motion.choiceOn]}>
-          <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.ink }]}>{item.label}</Text>
+          <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.onFill }, off && !on && { color: palette.faint }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
     })}
@@ -395,6 +402,34 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
   </Rail></View>;
 }
 
+/**
+ * A one-time code as separate cells (design review 17 Nov: six digits in one wide box were hard to check). One real TextInput
+ * lies over the cells, so typing, paste, the SMS autofill and screen readers all work on a single field; the cells only draw.
+ * Digits always run left to right, in Arabic too.
+ */
+export function CodeField({ label, value, onChangeText, length = 6, disabled, onSubmitEditing }: {
+  label: string; value: string; onChangeText: (text: string) => void; length?: number; disabled?: boolean; onSubmitEditing?: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const ref = React.useRef<TextInput>(null);
+  return <View style={styles.field}>
+    <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
+    <Pressable onPress={() => ref.current?.focus()} disabled={disabled} accessible={false} style={{ alignSelf: 'stretch' }}>
+      <View style={{ flexDirection: 'row', gap: 8, direction: 'ltr' }} importantForAccessibility="no-hide-descendants">{/* ltr: a code's digits read left to right in Arabic too */}
+        {Array.from({ length }, (_, i) => {
+          const active = focused && (i === value.length || (i === length - 1 && value.length === length));
+          return <View key={i} style={[styles.codeCell, active && styles.codeCellActive, disabled && { backgroundColor: palette.muted }]}>
+            <Text maxFontSizeMultiplier={maxScale} style={styles.codeDigit}>{value[i] ?? ''}</Text>
+          </View>;
+        })}
+      </View>
+      <TextInput ref={ref} value={value} onChangeText={onChangeText} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode"
+        maxLength={length} editable={!disabled} accessibilityLabel={label} maxFontSizeMultiplier={maxScale} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onSubmitEditing={onSubmitEditing} caretHidden style={styles.codeInput} />
+    </Pressable>
+  </View>;
+}
+
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
 export function Field({ label, value, onChangeText, onBlur, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
@@ -447,16 +482,17 @@ export function ErrorText({ children }: { children?: string }) {
 
 // ---------- display ----------
 
-const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
-  requested: { bg: palette.clayPale, fg: palette.clayInk }, // a shop order waiting on the merchant reads like a search
-  searching: { bg: palette.clayPale, fg: palette.clayInk },
+// One colour per state everywhere (badge, sheet dot, route, ETA). Waiting states are ochre `warn`, apart from brand clay and error red.
+export const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
+  requested: { bg: palette.warnPale, fg: palette.warn }, // a shop order waiting on the merchant reads like a search
+  searching: { bg: palette.warnPale, fg: palette.warn },
   assigned: { bg: palette.bluePale, fg: palette.blue },
   at_pickup: { bg: palette.bluePale, fg: palette.blue },
   in_transit: { bg: palette.olivePale, fg: palette.olive },
   completed: { bg: palette.muted, fg: palette.secondary },
   cancelled: { bg: palette.errorPale, fg: palette.error },
-  on_hold: { bg: palette.clayPale, fg: palette.clayInk },
-  returning: { bg: palette.clayPale, fg: palette.clayInk },
+  on_hold: { bg: palette.warnPale, fg: palette.warn },
+  returning: { bg: palette.warnPale, fg: palette.warn },
   returned: { bg: palette.muted, fg: palette.secondary },
 };
 const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
@@ -474,7 +510,7 @@ export function Badge({ label, status, tone, icon }: { label: string; status?: O
 export const tones = {
   olive: { bg: palette.olivePale, fg: palette.olive }, clay: { bg: palette.clayPale, fg: palette.clayInk },
   blue: { bg: palette.bluePale, fg: palette.blue }, muted: { bg: palette.muted, fg: palette.secondary },
-  error: { bg: palette.errorPale, fg: palette.error },
+  error: { bg: palette.errorPale, fg: palette.error }, warn: { bg: palette.warnPale, fg: palette.warn },
 };
 
 // Settings list: one card per group, hairline between rows. Destructive rows go in their own group at the end.
@@ -537,10 +573,11 @@ export function Empty({ icon, title, body, action }: { icon: IconName; title: st
 
 // One figure with its name; `detail` is an optional plain count beneath it (never a "label · count" string).
 export function Stat({ label, value, tone = 'card', index = 0, detail }: { label: string; value: string; tone?: 'card' | 'olive' | 'clay' | 'muted'; index?: number; detail?: string }) {
-  return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140 }}>
-    <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12 }}>
+  // Tiles in a row stretch to the same height (one with a detail line made its neighbour look short), and the figure leads.
+  return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140, alignSelf: 'stretch' }}>
+    <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12, flex: 1 }}>
       <Txt variant="caption" numberOfLines={1}>{label}</Txt>
-      <Txt variant="h2" style={{ marginTop: 2 }}>{value}</Txt>
+      <Txt variant="h1" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>{value}</Txt>
       {!!detail && <Txt variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>{detail}</Txt>}
     </Card>
   </Appear>;
@@ -571,11 +608,11 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
         }} style={styles.barItem}>
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
-        <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime }]}>
+        <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} /* the badge sits over the icon in a fixed-width tab slot */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar and must stay one line */ style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={1}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar: two lines, never a cut word */ style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;
@@ -592,11 +629,11 @@ const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
   choice: {
-    minHeight: 48, borderRadius: 12, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
-    borderWidth: 1.5, borderColor: 'transparent',
+    minHeight: 48, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
+    borderWidth: 1.5, borderColor: palette.field,
     transitionProperty: ['backgroundColor', 'borderColor'], transitionDuration: '160ms', transitionTimingFunction: EASE_OUT,
   },
-  choiceOn: { backgroundColor: palette.card, borderColor: palette.forest },
+  choiceOn: { backgroundColor: palette.forest, borderColor: palette.forest }, // selected is filled: a white tile with a hairline read as unselected
 });
 
 const styles = StyleSheet.create({
@@ -609,26 +646,31 @@ const styles = StyleSheet.create({
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },
   buttonSmall: { minHeight: size.control, borderRadius: size.control / 2, paddingHorizontal: 14 },
-  outline: { borderWidth: 1, borderColor: palette.line },
-  buttonOff: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: palette.dash },
+  outline: { borderWidth: 1, borderColor: palette.field },
+  dangerEdge: { borderWidth: 1, borderColor: palette.error },
+  buttonOff: { borderWidth: 1, borderColor: palette.line },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
-  choiceText: { color: palette.secondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3 },
+  choiceText: { color: palette.ink, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3, alignSelf: 'flex-start' }, // hugs its keys instead of a full-width bar
   stepperKey: { width: size.control, height: size.control, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontWeight: '800', color: palette.ink },
-  chip: { paddingHorizontal: 14, minHeight: size.control, borderRadius: size.control / 2, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.line },
+  chip: { paddingHorizontal: 14, minHeight: size.control, borderRadius: size.control / 2, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.field },
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-  chipText: { fontSize: 13, fontWeight: '700', color: palette.secondary },
+  chipText: { fontSize: 14, fontWeight: '700', color: palette.ink },
   field: { marginBottom: 12 },
-  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.line, borderRadius: 12, paddingHorizontal: 12, backgroundColor: palette.paper },
-  inputFocused: { borderColor: palette.forest, backgroundColor: palette.card },
+  codeCell: { flex: 1, minHeight: 56, maxWidth: 56, borderRadius: 12, borderWidth: 1, borderColor: palette.field, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  codeCellActive: { borderColor: palette.forest, borderWidth: 2 },
+  codeDigit: { fontSize: 24, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] },
+  codeInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.02, color: 'transparent' },
+  inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.field, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 1, backgroundColor: palette.card },
+  inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 0 }, // 2px focus ring; the padding keeps the text and the height still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
-  fieldError: { flex: 1, color: palette.error, fontSize: 12, fontWeight: '700' },
-  input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 15 },
+  fieldError: { flex: 1, color: palette.error, fontSize: 13, fontWeight: '700' },
+  input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
-  badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 11, fontWeight: '800' },
+  badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start', maxWidth: '100%' },
+  badgeText: { fontSize: 12, fontWeight: '800', flexShrink: 1 }, // a long English status wraps inside its card instead of running past it
   group: { backgroundColor: palette.card, borderRadius: size.radius, overflow: 'hidden', marginBottom: 12 },
   groupDivider: { borderTopWidth: 1, borderTopColor: palette.hair },
   listRow: { alignItems: 'center', gap: 12, minHeight: size.row, paddingHorizontal: 14, paddingVertical: 6 },
@@ -640,8 +682,8 @@ const styles = StyleSheet.create({
   bar: { backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair, width: '100%' },
   barRow: { maxWidth: 640, width: '100%', alignSelf: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 4 },
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
-  barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  barText: { fontSize: 11, fontWeight: '600' },
+  barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  barText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: palette.onFill, fontSize: 10, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
+  barBadgeText: { color: palette.onFill, fontSize: 12, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

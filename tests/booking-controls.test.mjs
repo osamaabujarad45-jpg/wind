@@ -34,7 +34,8 @@ const between = (source, from, to) => {
 const palette = runInNewContext(`(${literal(ui, 'export const palette =')})`);
 const size = runInNewContext(`(${literal(ui, 'export const size =')})`);
 const styles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
-  const shadow = {}; return (${literal(ui, 'const styles = StyleSheet.create(')}); })()`);
+  const shadow = {}; const headingFont = new Proxy({}, { get: (_, weight) => 'heading-' + String(weight) });
+  return (${literal(ui, 'const styles = StyleSheet.create(')}); })()`);
 const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
   const cubicBezier = () => 'ease'; const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
   return (${literal(ui, 'const motion = css.create(')}); })()`);
