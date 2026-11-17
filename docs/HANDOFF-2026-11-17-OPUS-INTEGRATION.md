@@ -17,6 +17,7 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 | Generic sender-scoped command receipt (server) | #81 | claude/command-receipts | MERGED 730bfdaa (CI green at 5af4f5ac; test PC: commands (PostgreSQL, two API processes), commands-sqlite, authz-matrix, contracts pass) |
 | Chat outbox: unsent messages survive restart (SQLite-compatible) | #82 | claude/chat-outbox | MERGED e53fb801 (Haiku: 2 high + 11 others, all fixed; CI green at 2e31f22f incl. master; test PC at 2e31f22f: chat-outbox, session-recovery, phone-ui, chat, presentation, admin-review, booking-controls, large-text, lint, tsc pass) |
 | Design system part 1 (taken over) | #78 | claude/design-system | MERGED efe3ba59 (Haiku: 11 findings fixed; CI green at 80dd1505; test PC: booking-controls, admin-recovery-ui, admin-review, presentation, large-text pass) |
+| Truthful receipt payment line (priority #2 slice) | #84 | claude/receipt-payment-truth | open: test PC rp84 receipt-payment, presentation, large-text, lint, tsc pass; Haiku review and CI running |
 | Old UI audit | #9 | claude/ui-ux-audit-2026-11-07b | closed as superseded (branch kept) |
 
 ## Process notes
