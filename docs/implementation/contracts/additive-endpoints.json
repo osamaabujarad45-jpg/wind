@@ -21,6 +21,14 @@
       ]
     },
     {
+      "packet": "command-receipts",
+      "source": "server/domain/command-receipts.ts",
+      "registrar": "registerCommandReceiptRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/commands/([^/]+)", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "a01-admin-cash-receipts",
       "source": "server/domain/cash-receipts.ts",
       "registrar": "registerCashReceiptRoutes",
