@@ -81,6 +81,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     '../../booking': { newRequestId: () => randomUUID() }, // a real UUID: a saved cash command with any other id is refused
     '../../ui': ui,
     'expo-router': { router: {} },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, `unexpected import ${name}`); return modules[name]; } };
   runInNewContext(ts.transpileModule(read(`src/app/admin/${file}.tsx`), {
@@ -326,9 +327,16 @@ for (const language of ['ar', 'en']) {
 
   // Role edits: the confirmation names the person and phone and shows old → new; nothing is sent before it.
   const user = { id: 2, name: 'Customer', phone: '0599000004', role: 'customer', status: 'active', createdAt: 1 };
-  const people = () => screen('users', language, { data: { '/admin/users?q=': [user] }, me: { user: { id: 99 }, capabilities: {} } });
+  // A user's actions open from their row (design review 17 Nov), so each check opens it first.
+  const people = async () => {
+    const view = screen('users', language, { data: { '/admin/users?q=': [user] }, me: { user: { id: 99 }, capabilities: {} } });
+    const row = nodes(view.render(), 'Press').find(props => props.accessibilityLabel?.startsWith(user.name));
+    assert.ok(row, 'user row');
+    await row.onPress();
+    return view;
+  };
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     nodes(view.render(), 'Choices').find(props => props.value === 'customer').onChange('driver');
     await tap(view, c.save);
@@ -346,7 +354,7 @@ for (const language of ['ar', 'en']) {
 
   // Cancelling the role confirmation sends nothing.
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     nodes(view.render(), 'Choices').find(props => props.value === 'customer').onChange('driver');
     await tap(view, c.save);
@@ -356,7 +364,7 @@ for (const language of ['ar', 'en']) {
 
   // An edit that keeps the role saves directly, as before.
   {
-    const view = people();
+    const view = await people();
     await tap(view, c.editUser);
     field(view.render(), c.name).onChangeText('Renamed');
     await tap(view, c.save);

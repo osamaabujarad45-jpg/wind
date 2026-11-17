@@ -204,6 +204,7 @@ try {
   const spare = await register('0599000814', 'Readiness Spare');
   await adminPage.goto(base + '/admin/users');
   await field(adminPage, c.search).fill('Readiness Spare');
+  await adminPage.getByRole('button', { name: /^Readiness Spare/ }).first().click(); // actions open from the user's row
   await button(adminPage, c.editUser).click();
   await field(adminPage, c.name).fill('Readiness Managed');
   await button(adminPage, c.save).click();

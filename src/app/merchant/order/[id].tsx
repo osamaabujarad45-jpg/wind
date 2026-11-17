@@ -94,7 +94,7 @@ export default function MerchantOrder() {
         {!p.sealed && live.map(l => <Button key={l.id} size="sm" variant={p.lineIds.includes(l.id) ? 'soft' : 'ghost'} icon={p.lineIds.includes(l.id) ? 'checkbox-outline' : 'square-outline'}
           title={name(l)} onPress={() => setPacking(packing.map((x, j) => j === i ? { ...x, lineIds: x.lineIds.includes(l.id) ? x.lineIds.filter(y => y !== l.id) : [...x.lineIds, l.id] } : x))} />)}
       </View>)}
-      <Row style={{ marginTop: 8 }}>
+      <Row style={{ marginTop: 8, marginBottom: 16 }}>{/* clear of the primary below: the two touched */}
         <Button title={c.merchantAddPackage} size="sm" variant="outline" onPress={() => setPacking([...packing, { sealed: true, lineIds: [] }])} />
         {packing.length > 1 && <Button title={c.merchantRemovePackage} size="sm" variant="ghost" onPress={() => setPacking(packing.slice(0, -1))} />}
       </Row>

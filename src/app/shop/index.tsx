@@ -22,7 +22,7 @@ export default function ShopList() {
     {data.merchants.map(m => <Press key={m.id} onPress={() => router.push(`/shop/${m.id}`)}
       accessibilityLabel={[m.name, c[`shopCat_${m.category}`], m.open ? c.shopOpen : c.shopClosed, today(m), fill(c.shopMinimum, { r: money(m.minOrderAgorot / 100) }),
         fill(c.shopDeliveryFee, { r: money(m.deliveryFeeAgorot / 100) })].filter(Boolean).join('، ')}>
-      <Card style={!m.open && { opacity: 0.7 }}>
+      <Card>{/* full opacity: a 0.7 wash dropped the closed shop's text to about 3:1; the Closed badge and hours already say it */}
         <Row style={{ justifyContent: 'space-between' }}>
           <Txt variant="title" style={{ flex: 1 }}>{m.name}</Txt>
           <Badge label={m.open ? c.shopOpen : c.shopClosed} tone={m.open ? tones.olive : tones.clay} icon={m.open ? 'checkmark-circle-outline' : 'time-outline'} />
