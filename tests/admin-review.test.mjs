@@ -2,6 +2,7 @@
 // against a stub React and stub UI, with the real copy and model code. Each test asserts the recorded
 // requests (path, method, body), so "no write before confirmation" and "only changed keys" are proven, not assumed.
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
@@ -77,7 +78,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     '../../phone/flow': { codeInput: raw => raw },
     '../../admin-cash-command': cashCommand,
     '../../storage': { storage: { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } } },
-    '../../booking': { newRequestId: () => `request-${calls.length}-${Math.random().toString(16).slice(2, 8)}` },
+    '../../booking': { newRequestId: () => randomUUID() }, // a real UUID: a saved cash command with any other id is refused
     '../../ui': ui,
     'expo-router': { router: {} },
   };
