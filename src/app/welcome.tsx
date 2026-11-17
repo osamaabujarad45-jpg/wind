@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 30 },
   art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' },
   footer: { paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.line },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.field }, // inactive dots were 1.2:1 on paper
   dotOn: { width: 24, backgroundColor: palette.olive },
   slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   // a pale tag, not the forest fill of a button: on the welcome slide it read as something to press
