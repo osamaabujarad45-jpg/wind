@@ -19,7 +19,7 @@ _Avoid_: Failed, pending (alone), lost
 ## Money
 
 **Fare receipt**:
-The document a customer sees for a trip or delivery and what was paid for it.
+The document a customer sees for a trip or delivery: what it cost and how payment is due, never a claim of payment Wind has not confirmed.
 _Avoid_: Receipt (bare), invoice
 
 **Remittance**:
