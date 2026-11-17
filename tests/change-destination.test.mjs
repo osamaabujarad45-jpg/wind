@@ -93,6 +93,8 @@ try {
   assert.deepEqual(accepted.dropoffPoint, request.point);
   assert.equal(accepted.price, 34);
   assert.equal(accepted.commission, 5.1);
+  // A parcel fare is flat: the change keeps no suggested price, so a release cannot reopen it to driver offers.
+  assert.equal(accepted.recommendedPrice, null);
   assert.equal((await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' })).price, 34);
   assert.deepEqual(customerPushes(), ['destination_accepted']);
   await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'decline' }, 409);

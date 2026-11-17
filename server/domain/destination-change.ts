@@ -158,7 +158,8 @@ export function registerDestinationRoutes(route: Register, deps: DestinationDeps
       if (desired === 'accepted') {
         await db.run(`UPDATE orders SET dropoff_city = ?, dropoff_lat = ?, dropoff_lng = ?, dropoff_note = ?, price = ?, discount = ?,
           commission = ?, recommended_price = ?, route_km = ?, updated_at = ? WHERE id = ?`,
-        p.dropoff_city, p.dropoff_lat, p.dropoff_lng, p.dropoff_note, p.price, p.discount, p.commission, p.price, p.route_km, now, id);
+        p.dropoff_city, p.dropoff_lat, p.dropoff_lng, p.dropoff_note, p.price, p.discount, p.commission,
+        r.service === 'parcel' ? null : p.price, p.route_km, now, id); // a parcel fare is flat: no suggestion, so no driver offers on release
         const updated = await db.one('SELECT * FROM orders WHERE id=?', id);
         // r is the row before the update. A malformed legacy fare (discount above price) gets no typed fare record,
         // but the accept still applies; a decline never reads fare amounts at all.
