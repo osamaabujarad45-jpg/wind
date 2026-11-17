@@ -258,6 +258,22 @@ for (const column of ['heading_city TEXT', 'heading_until INTEGER', 'entra_oid T
   if (!(db.prepare('PRAGMA table_info(users)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE users ADD COLUMN ${column}`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_entra_oid_unique ON users(entra_oid) WHERE entra_oid IS NOT NULL');
+// One pending request per user and plan (T22). A legacy duplicate is rejected, never deleted, so an activated
+// request and its price keep the paid history; the warning names the ids this migration changed.
+function migratePendingSubscriptions() {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const duplicates = db.prepare(`SELECT id FROM subscriptions p WHERE p.status = 'pending' AND p.id > (
+      SELECT MIN(q.id) FROM subscriptions q WHERE q.status = 'pending' AND q.user_id = p.user_id AND q.plan = p.plan) ORDER BY id`).all() as { id: number }[];
+    if (duplicates.length) {
+      db.prepare(`UPDATE subscriptions SET status = 'rejected' WHERE id IN (${duplicates.map(() => '?').join(',')})`).run(...duplicates.map(r => r.id));
+      console.warn(`subscriptions migration: rejected ${duplicates.length} duplicate pending request(s): ids ${duplicates.map(r => r.id).join(',')}`);
+    }
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_one_pending ON subscriptions(user_id, plan) WHERE status = 'pending'");
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+migratePendingSubscriptions();
 db.exec('BEGIN IMMEDIATE; PRAGMA user_version = 3; COMMIT');
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 

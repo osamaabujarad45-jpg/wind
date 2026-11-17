@@ -93,6 +93,15 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-audit.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(21,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 22'))) {
+      // One pending request per user and plan. A legacy duplicate is rejected, never deleted, so an activated
+      // request and its price keep the paid history; the warning names the ids this migration changed.
+      const duplicates = await database.all(`UPDATE subscriptions p SET status = 'rejected' WHERE p.status = 'pending' AND p.id > (
+        SELECT MIN(q.id) FROM subscriptions q WHERE q.status = 'pending' AND q.user_id = p.user_id AND q.plan = p.plan) RETURNING p.id`);
+      if (duplicates.length) console.warn(`subscriptions migration: rejected ${duplicates.length} duplicate pending request(s): ids ${duplicates.map(r => r.id).join(',')}`);
+      await database.run("CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_one_pending ON subscriptions(user_id, plan) WHERE status = 'pending'");
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(22,?)', Date.now());
+    }
   });
 }
 
