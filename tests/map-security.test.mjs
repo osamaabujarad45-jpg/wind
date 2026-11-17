@@ -47,3 +47,8 @@ for (const input of [5000, 7000, 30000]) {
   assert.equal(context.result, input, 'valid runtime deadlines are preserved');
 }
 console.log('Map fragment security: real parser/SVG/CSS reject color injection and preserve valid palette colors');
+{ // Review 8 Nov: the canvas told every phone user to "use arrow keys" and to place a pin, even on a route map.
+  const page = (await import('node:fs')).readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+  if (/arrow keys|مفاتيح الأسهم/.test(page)) throw new Error('map canvas label assumes a keyboard');
+  if (!/const canvasLabel = \(\) =>[\s\S]*?!pinning\(\)/.test(page) || !/drawnMode = state\.mode;[\s\S]{0,80}canvasLabel\(\);/.test(page)) throw new Error('canvas label must follow the map mode');
+}

@@ -321,6 +321,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
     assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
+    // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
+    { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+      const bookHeader = book.slice(book.indexOf('header={<View style={{ paddingBottom: 8 }}>'), book.indexOf('footer={pending ? undefined'));
+      assert.equal(book.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'the booking error is shown once');
+      assert.ok(bookHeader.includes('<ErrorText>{error}</ErrorText>'), 'in the sheet header');
+      assert.ok(book.includes("if (fixMarked.current && !Object.values(next).some(Boolean)) { fixMarked.current = false; setError(''); }") && book.includes('setError(c.fixMarked); fixMarked.current = true;'), 'and the fix-marked banner clears with the last marked field'); }
+    // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
+    assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
+    assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
     assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');

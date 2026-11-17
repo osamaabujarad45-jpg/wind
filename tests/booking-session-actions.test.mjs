@@ -43,7 +43,7 @@ function screen(pending = null) {
   active = state;
   const context = {
     useRef: value => ({ current: value }), useCallback: fn => fn, apiSessionRevision,
-    alive: { current: true }, reading: { current: false }, sending: { current: false }, settled: { current: false }, latest: { current: pending }, scrollRef: { current: null },
+    alive: { current: true }, reading: { current: false }, sending: { current: false }, settled: { current: false }, latest: { current: pending }, scrollRef: { current: null }, fixMarked: { current: false },
     savedKey: pendingKey(101), pendingOutcome, newBooking, orderRequest, isValidPhone, ApiError, errorCode,
     api: (path, body) => {
       const running = request('https://booking-race.invalid/callback?path=' + encodeURIComponent(path), body);
@@ -192,6 +192,24 @@ try {
       assert.equal(h.state.writes.length, status === 400 ? 2 : 1);
       if (status === 400) assert.equal(h.state.writes[1].value, null, 'fresh definitive refusal clears recovery');
       else assert.ok(h.state.pending, 'uncertain refusal retains recovery');
+    });
+  }
+  // A lost POST is ApiError('network'), not a plain Error: it must say "saved on this device" and arm the receipt check,
+  // or the card reads "can't reach Wind" and Edit/Discard stay locked past the deadline (review 8 Nov).
+  for (const failure of ['network', '503']) {
+    await check(`fresh ${failure} failure keeps the saved booking and asks for its receipt`, async () => {
+      const h = screen(), errors = [], outcomes = [];
+      h.context.setError = value => { errors.push(value); h.state.ui.push('Error'); };
+      h.context.setOutcome = value => { outcomes.push(value); h.state.ui.push('Outcome'); };
+      if (failure === 'network') { const down = gate(); down.reject(new Error('offline')); down.promise.catch(() => {}); h.state.transport = down; }
+      else h.state.responses['/orders'] = { answer: { error: 'server_error' }, status: 503 };
+      await h.submit();
+      await Promise.all(h.state.requests.map(r => r.catch(() => {})));
+      await new Promise(resolve => setTimeout(resolve, failure === 'network' ? 1_000 : 0)); // a failed read retries once after 800 ms
+      if (failure === 'network') assert.equal(errors.at(-1), 'bookingOfflineSaved', 'a saved command says so');
+      assert.equal(h.state.writes.length, 1, 'the command stays saved');
+      assert.ok(h.state.sent.some(s => s.body === undefined), 'the receipt is read');
+      assert.equal(outcomes.at(-1)?.state, 'unknown', 'an unknown answer arms the deadline re-check');
     });
   }
   await check('current account still submits, clears recovery and navigates', async () => {

@@ -76,7 +76,8 @@ export function createProtectedRecovery(io: IO) {
         if (revision !== io.revision() || !await same(token)) { await io.write(recordKey, null); throw new Error('session_changed'); }
       });
     },
-    /** Runs after older writes. A session that took over while it waited keeps its records. */
+    /** Runs after older writes. A session that took over while it waited keeps its records.
+     *  Checks identity only, never same(): sign-out deletes the stored token first (session.tsx forget), so same() would be false and nothing would clear. */
     clear(ended: string): Promise<void> { return serial(async () => {
       if (await io.credential() !== ended) return;
       const scope = await namespace(ended); for (const slot of slots) await io.write(key(slot, scope), null);

@@ -15,6 +15,9 @@ const restore = slice('  useEffect(() => {\n    let mounted = true;', 'storageAt
 const retry = source.match(/^  const retryStorage = [^\n]+;/m)?.[0];
 const availability = slice('  async function retryAvailability() {', '  // Per-field problems');
 
+// Screen readers hear the recovery state change (checking → until → absent) without moving focus (review 8 Nov).
+assert.match(source, /<View accessibilityLiveRegion="polite"><Txt variant="caption" style=\{\{ marginTop: 4 \}\}>\{resolving \? c\.bookingRecoveryChecking/, 'the recovery status line is a live region');
+
 // A refused retry leaves the answer unknown until the command's deadline; the card names that time and re-checks by itself.
 {
   const command = newBooking({ service: 'parcel' }, 1_000_000);

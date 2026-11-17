@@ -101,8 +101,16 @@ try {
   assert.equal((await call('/partner/orders', { partnerKey, body: Object.fromEntries(Object.entries(delivery).reverse()) })).id, partnerOrder.id);
   await call('/partner/orders', { partnerKey, body: { ...delivery, pickupNote: 'changed' }, expect: 409 });
   const partnerRace = { ...delivery, externalRef: 'listing:buyer:race' };
+  const partnerCount = () => db.prepare("SELECT count(*) n FROM orders WHERE customer_id=(SELECT id FROM users WHERE phone='partner:souq')").get().n;
+  const beforePartnerRace = partnerCount();
   const partnerRaced = await Promise.all(Array.from({ length: 4 }, () => call('/partner/orders', { partnerKey, body: partnerRace })));
   assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
+  assert.equal(partnerCount(), beforePartnerRace + 1, 'partner retries must not leave unreferenced orders');
+  db.exec("CREATE TRIGGER fail_partner_reference BEFORE INSERT ON partner_orders WHEN NEW.external_ref='reference-failure' BEGIN SELECT RAISE(ABORT, 'synthetic reference failure'); END");
+  try {
+    await call('/partner/orders', { partnerKey, body: { ...delivery, externalRef: 'reference-failure' }, expect: 500 });
+    assert.equal(partnerCount(), beforePartnerRace + 1, 'reference failure must roll back the order');
+  } finally { db.exec('DROP TRIGGER fail_partner_reference'); }
   await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
   await call(`/partner/orders/${order.id}`, { partnerKey, expect: 404 });
   assert.equal((await call(`/partner/orders/${partnerOrder.id}`, { partnerKey })).status, 'searching');

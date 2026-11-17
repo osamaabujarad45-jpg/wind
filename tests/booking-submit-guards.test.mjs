@@ -50,7 +50,7 @@ function harness(overrides = {}) {
   };
   const calls = { writes: [], posts: [], setChecking: [], setPromo: [], navigations: [] };
   const context = {
-    sending: { current: false }, settled: { current: false }, latest: { current: null }, scrollRef: { current: null },
+    sending: { current: false }, settled: { current: false }, latest: { current: null }, scrollRef: { current: null }, fixMarked: { current: false },
     alive: { current: true }, apiSessionRevision: () => 0,
     savedKey: pendingKey(101),
     storage: { set: async (key, value, secure) => { calls.writes.push({ key, value, secure }); } },

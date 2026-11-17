@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const tests = ['journey.mjs', 'db-persistence.test.mjs', 'db-api.test.mjs', 'pg-dialect.mjs', 'pg-memo.mjs',
   'pg-contracts.mjs', 'pg-import.mjs', 'pg-migration-lock.mjs', 'pg-claims.mjs', 'pg-cash.mjs', 'pg-offers.mjs', 'pg-jobs-pagination.mjs',
-  'pg-customer-rating.mjs', 'pg-email.mjs', 'pg-staff-roles.mjs', 'database-logging.test.mjs',
+  'pg-customer-rating.mjs', 'pg-email.mjs', 'pg-staff-roles.mjs', 'pg-booking-races.mjs', 'database-logging.test.mjs',
   'cross-process-claims.test.mjs', 'runtime-dependencies.test.mjs',
   'commands.mjs', 'commands-sqlite.mjs', 'events.mjs', 'outbox.mjs',
   'coverage.mjs', 'capacity.mjs', 'eligibility.mjs', 'eligibility-legacy.mjs', 'eligibility-review.mjs', 'pg-live-commit.mjs',

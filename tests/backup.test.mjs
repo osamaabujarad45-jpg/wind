@@ -88,6 +88,12 @@ try {
   writeFileSync(restored, gunzipSync(gzipSync(readFileSync(copy))));
   assert.ok(!existsSync(`${restored}-wal`), 'no journal to replay');
   // The same statement as infra/vm/wind-restore.sh: nobody's session from before the copy survives it.
+  { // Mistral review 8 Nov: an interrupt between stop and swap left the service down; the script must put back what was there.
+    const restore = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8');
+    const trap = restore.indexOf(`trap 'docker stop "$name" >/dev/null 2>&1 || true; put_back' INT TERM HUP`);
+    assert.ok(trap >= 0 && trap < restore.indexOf('docker stop "$name" >/dev/null\nswap'), 'signals put back the old database');
+    assert.ok(restore.indexOf('swap || put_back\ntrap - INT TERM HUP') > trap, 'and the trap is disarmed once the restored copy is live');
+  }
   const wipe = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8').match(/db\.exec\('(BEGIN;[^']*)'\)/)[1];
   const cleaning = new DatabaseSync(restored);
   assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 1, 'the copy holds the admin device');
