@@ -90,7 +90,13 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
   const [selected, setSelected] = useState(daily.length - 1);
   const max = Math.max(1, ...daily.map(d => d.commission + d.subscriptions));
   const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short' });
-  const pick = daily[selected];
+  const safeSelected = selected < 0 ? daily.length - 1 : Math.min(selected, daily.length - 1);
+  const pick = daily[safeSelected];
+
+  if (!pick) return <Card>
+    <Txt variant="title">{c.last14}</Txt>
+    <Txt variant="caption">{c.chartNoData}</Txt>
+  </Card>;
 
   return <Card>
     <Txt variant="title">{c.last14}</Txt>
@@ -108,7 +114,7 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
           const total = d.commission + d.subscriptions;
           return <Pressable key={d.date} style={styles.hit} onPress={() => setSelected(i)} hitSlop={4}
             accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${money(d.commission)} + ${money(d.subscriptions)}`}>
-            <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === selected ? 1 : 0.75 },
+            <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === safeSelected ? 1 : 0.75 },
               !reduced && { animationName: GROW, animationDuration: '450ms', animationDelay: `${i * 25}ms`, animationTimingFunction: EASE_OUT, animationFillMode: 'backwards' }]}>
               {d.subscriptions > 0 && <View style={[styles.segment, styles.top, { flex: d.subscriptions, backgroundColor: SERIES.subscriptions }]} />}
               {d.commission > 0 && <View style={[styles.segment, !d.subscriptions && styles.top, { flex: d.commission, backgroundColor: SERIES.commission }]} />}
