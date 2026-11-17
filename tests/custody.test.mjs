@@ -49,6 +49,17 @@ try {
   assert.deepEqual((await call(`/orders/${order.id}/custody`, { token: admin.token })).steps.length, chain.steps.length); // support sees the same
 
   await call(`/orders/${order.id}/custody`, { token: driver.token, expect: 404 }); // the courier has the job card, not the chain
+
+  // A retried delivery appends attempts instead of rewriting the status silently: two reattempts read as attempts 2 and 3.
+  let retried = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  retried = await advance(driver.token, await call(`/jobs/${retried.id}/accept`, { token: driver.token, body: {} }));
+  retried = await advance(driver.token, retried); // in_transit
+  for (let i = 0; i < 2; i++) {
+    await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+    await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' } });
+  }
+  const attempts = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
+  assert.deepEqual(attempts.map(s => [s.reason, s.attempt]), [['reattempt', 2], ['reattempt', 3]]);
   await call(`/orders/${order.id}/custody`, { token: other.token, expect: 404 });
   await call(`/orders/${order.id}/custody`, { expect: 401 });
   await call('/orders/999999/custody', { token: admin.token, expect: 404 });

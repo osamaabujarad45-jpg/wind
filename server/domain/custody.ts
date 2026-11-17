@@ -5,7 +5,7 @@ type Register = (method: string, path: string, handler: (ctx: { user: User; para
 type Deps = { db: Persistence; fail: (status: number, message: string) => never };
 
 /** One step of who held a parcel and when (SHIP-10). Reason codes only: notes are free text and can carry phone numbers. */
-export type CustodyStep = { at: number; kind: CustodyKind; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number };
+export type CustodyStep = { at: number; kind: CustodyKind; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number; attempt?: number };
 export type CustodyKind = 'booked' | 'released' | 'assigned' | 'picked_up' | 'pickup_failed' | 'held' | 'decided' | 'blocked'
   | 'delivered' | 'returned' | 'cancelled' | 'office_received' | 'office_collected' | 'office_donated' | 'office_destroyed';
 
@@ -55,6 +55,9 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned'))
       steps.push({ at: Number(o!.completed_at), kind: 'returned', by: 'support' });
     steps.sort((a, b) => a.at - b.at);
+    // A retry is a new delivery attempt, not a silent status rewrite: number each reattempt decision (the first try is attempt 1).
+    let attempt = 1;
+    for (const step of steps) if (step.kind === 'decided' && step.reason === 'reattempt') step.attempt = ++attempt;
     return { orderId: id, steps };
   });
 }
