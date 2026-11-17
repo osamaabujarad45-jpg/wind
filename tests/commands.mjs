@@ -38,6 +38,16 @@ try {
   const accept={commandId:randomUUID(),expectedVersion:await version(booked.id)};
   const assigned=await call(`/jobs/${booked.id}/accept`,{token:driver.token,body:accept});
   assert.deepEqual(await other(`/jobs/${booked.id}/accept`,{token:driver.token,body:accept}),assigned,'replay before old version and changed lease');
+  // The sender's command receipt: decision only, sender-scoped, unknown when never received or not theirs.
+  const receipt=(id,token,expect=200)=>call(`/commands/${id}`,{token,method:'GET',expect});
+  assert.deepEqual(await receipt(accept.commandId,driver.token),{schemaVersion:1,commandId:accept.commandId,state:'applied'});
+  assert.deepEqual(await other(`/commands/${commandId}`,{token:customer.token}),{schemaVersion:1,commandId,state:'applied'},'any API process reads it');
+  assert.equal((await receipt(accept.commandId,customer.token)).state,'unknown','another actor never reads it');
+  assert.equal((await receipt(randomUUID(),driver.token)).state,'unknown');
+  await receipt('not-a-command',driver.token,400);
+  const stale={commandId:randomUUID(),expectedVersion:1};
+  await call(`/orders/${booked.id}/cancel`,{token:customer.token,body:stale,expect:409});
+  assert.deepEqual(await receipt(stale.commandId,customer.token),{schemaVersion:1,commandId:stale.commandId,state:'rejected',httpStatus:409,error:'VERSION_CONFLICT'});
   await call(`/orders/${booked.id}/advance`,{token:driver.token,body:{commandId:randomUUID(),expectedVersion:1},expect:409});
   for(let i=0;i<2;i++) await call(`/orders/${booked.id}/advance`,{token:driver.token,body:{commandId:randomUUID(),expectedVersion:await version(booked.id)}});
   const failed={commandId:randomUUID(),expectedVersion:await version(booked.id),payload:{code:'not-the-code'}};

@@ -21,6 +21,14 @@
       ]
     },
     {
+      "packet": "command-receipts",
+      "source": "server/domain/command-receipts.ts",
+      "registrar": "registerCommandReceiptRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/commands/([^/]+)", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "adoption-driver-recovery",
       "source": "server/domain/driver-receipts.ts",
       "registrar": "registerDriverReceiptRoutes",
