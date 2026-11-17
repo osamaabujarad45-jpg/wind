@@ -46,6 +46,9 @@ try {
   assert.equal((await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'The box arrived wet and torn.' } })).id, order.id);
   assert.equal((await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Another complaint entirely.' }, expect: 409 })).error, 'dispute_exists');
   assert.equal((await call('/admin/disputes', { token: admin.token })).filter(d => d.orderId === order.id).length, 1);
+  // A resend after the reporting window closed still finds the dispute it opened.
+  db.prepare('UPDATE orders SET completed_at = ? WHERE id = ?').run(Date.now() - 8 * 86_400_000, order.id);
+  assert.equal((await call(`/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'The box arrived wet and torn.' } })).id, order.id);
   const [row] = await call('/admin/disputes', { token: admin.token });
   for (const creditShekels of [0, 51, 2.5, '10'])
     await call(`/admin/disputes/${row.id}/resolve`, { token: admin.token, body: { resolution: 'Sorry about that', creditShekels }, expect: 400 });
