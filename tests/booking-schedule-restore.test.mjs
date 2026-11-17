@@ -105,7 +105,7 @@ function createScreen({ slotBucketAt, saved = null, params = {} } = {}) {
     alive: { current: true }, apiSessionRevision: () => 0,
     pickupTouched: { current: false }, copied: { current: null }, invalid: {},
     service: 'parcel', option: 'small', pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Box',
-    contact: '0599123456', recipientName: '', recipientPhone: '', loadingHelp: false, declaredScope: undefined,
+    contact: '0599123456', recipientName: '', recipientPhone: '', goodsOk: true, loadingHelp: false, declaredScope: undefined,
     pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
     haptic: { error() { calls.haptic.push('error'); }, success() {}, tap() {} },
     c: new Proxy({}, { get: (_t, key) => String(key) }),
