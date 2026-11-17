@@ -74,6 +74,7 @@ function screen(file, language, { data = {}, me = {} } = {}) {
     '../../booking': { newRequestId: () => `request-${calls.length}-${Math.random().toString(16).slice(2, 8)}` },
     '../../ui': ui,
     'expo-router': { router: {} },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, `unexpected import ${name}`); return modules[name]; } };
   runInNewContext(ts.transpileModule(read(`src/app/admin/${file}.tsx`), {
