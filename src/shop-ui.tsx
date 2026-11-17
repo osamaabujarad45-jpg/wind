@@ -12,7 +12,6 @@ import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScal
 
 const WEIGHT_STEP = 250; // grams
 
-/** "1.5 kg" or "× 2", in the reader's language. */
 /** Today's opening hours in words, or null when the shop keeps none (the list and the closed shop's page). */
 // ponytail: the device's weekday; the pilot town and its customers share one time zone.
 export function todayHours(m: Pick<Merchant, 'hours' | 'open'>, c: Record<string, string>) {
@@ -22,6 +21,7 @@ export function todayHours(m: Pick<Merchant, 'hours' | 'open'>, c: Record<string
   return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : m.open ? null : c.shopClosedToday;
 }
 
+/** "1.5 kg" or "× 2", in the reader's language. */
 export function qtyLabel(qtyMilli: number, byWeight: boolean, c: Record<string, string>) {
   return byWeight ? fill(c.shopKg, { n: (qtyMilli / 1000).toFixed(qtyMilli % 1000 ? (qtyMilli % 100 ? 2 : 1) : 0) }) : fill(c.shopTimes, { n: qtyMilli / 1000 });
 }

@@ -172,7 +172,8 @@ export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pic
   const here = order.pickupCity === order.dropoffCity && !!order.pickupNote && !!order.dropoffNote;
   // Each place is isolated (FSI…PDI) and a leading mark sets the line's direction, so two Latin notes on an Arabic screen
   // still read pickup first: without them the line took the direction of its first letter and the arrow pointed backwards.
-  const place = (text: string) => `\u2068${text}\u2069`;
+  // A note's own direction marks are dropped: a stray PDI would close the isolate early.
+  const place = (text: string) => `\u2068${text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')}\u2069`;
   return `${rtl ? '\u200f' : '\u200e'}${place(here ? order.pickupNote! : city(order.pickupCity)[language])} ${rtl ? '←' : '→'} ${place(here ? order.dropoffNote! : city(order.dropoffCity)[language])}`;
 }
 
@@ -181,7 +182,8 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
   const { time } = useFormat();
   const { me } = useSession();
   const mine = me?.user.role === 'driver' && order.driverId === me.user.id;
-  const total = order.shop ? order.shop.cashAgorot / 100 : order.price; // a shop order's door cash, as on its detail page
+  // A shop order's door cash, as on its detail page; the captain's own trips keep the fare, which is what they earn from.
+  const total = order.shop && !mine ? order.shop.cashAgorot / 100 : order.price;
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}

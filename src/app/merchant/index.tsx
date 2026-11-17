@@ -1,6 +1,7 @@
 // Merchant mode (MER-01, MER-02, MER-04, MER-05): the same account and app, opened from Account. A shop applies here (ACC-06),
 // waits for approval, then works its inbox: new orders say so in words (not a sound alone), with the accept clock.
 import { useState } from 'react';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { api, errorCode, useApi } from '../../api';
 import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
@@ -76,10 +77,11 @@ function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolea
   const empty = !opens.trim() && !closes.trim();
   const ok = empty || (open < 1440 && close >= 0 && open !== close);
   async function save() {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); onSaved(false);
     try {
       await api('/merchant/settings', { hours: empty ? [] : [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close })) });
       onSaved(true);
+      if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(c.saved);
     } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
     finally { setBusy(false); }
   }
@@ -88,7 +90,7 @@ function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolea
     <Section title={c.merchantHours} />
     {/* decimal-pad has no colon on Android, so 8.30 is read as 08:30 */}
     <Field label={c.merchantOpens} value={opens} onChangeText={edit(setOpens)} keyboardType="decimal-pad" maxLength={5} />
-    {/* Go saves: on a phone the keyboard covers the button below */}
+    {/* Go saves: on a phone the keyboard covers the button below (Android and web; iOS's decimal pad has no Go key) */}
     <Field label={c.merchantCloses} value={closes} onChangeText={edit(setCloses)} keyboardType="decimal-pad" maxLength={5} onSubmitEditing={ok && !busy ? save : undefined} />
     <Txt variant="caption">{c.merchantHoursHint}</Txt>
     {!uniform && <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantHoursReplace}</Txt>}
