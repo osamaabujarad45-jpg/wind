@@ -4,6 +4,7 @@ import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
 import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
 import { statusText, useFormat } from '../../parts';
+import { paymentLine, receiptTotal } from '../../receipt-payment';
 import { useSession } from '../../session';
 import { Appear, Badge, Button, ErrorText, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -25,7 +26,7 @@ export default function Receipt() {
   const commission = order.commission ?? commissionOn(order.price, rate);
   const from = city(order.pickupCity)[language], to = city(order.dropoffCity)[language];
   const arrow = rtl ? '←' : '→';
-  const cash = order.price - order.discount; // promo discounts are paid by Wind, not in cash
+  const cash = receiptTotal(order); // promo discounts are paid by Wind; a shop order carries goods plus fees
 
   const lines: [string, string][] = [
     [c.receiptNo, ltr(orderCode(order.id))],
@@ -36,11 +37,7 @@ export default function Receipt() {
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
     ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
     ...(order.discount > 0 ? [[c.fare, money(order.price)], [c.promoDiscount, money(-order.discount)]] as [string, string][] : []),
-    // A selected or expected payment is not proof of payment: the receipt names what the driver recorded at the door
-    // (shown to the driver and admins only), and otherwise says the cash is not confirmed by Wind.
-    [c.payWith, order.collected
-      ? `${fill(c.cashCollected, { a: money(order.collected.cents / 100) })}${order.collected.reason ? ` · ${c[`variance_${order.collected.reason}`]}` : ''}`
-      : c.paymentUnconfirmed],
+    [c.payWith, paymentLine(c, role, order.collected, money, fill)],
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
