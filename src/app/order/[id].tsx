@@ -192,7 +192,7 @@ export default function OrderScreen() {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, note: problem.note.trim(), ...shopProof },
+          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.

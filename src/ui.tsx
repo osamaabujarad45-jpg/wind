@@ -298,7 +298,6 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   return off && reason ? <View style={{ marginBottom: 6 }}>{press}<Reason>{reason}</Reason></View> : press;
 }
 
-// Why a control is waiting, in one plain sentence under it (design §10). Text, not a tooltip, so it reads without a long press.
 /** A labelled checkbox: the whole row is the target, and a refusal reason sits under it in the error colour. */
 export function Check({ checked, onChange, label, disabled, error }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; error?: string }) {
   return <View>
@@ -313,6 +312,7 @@ export function Check({ checked, onChange, label, disabled, error }: { checked: 
   </View>;
 }
 
+// Why a control is waiting, in one plain sentence under it (design §10). Text, not a tooltip, so it reads without a long press.
 export function Reason({ children }: { children: string }) {
   return <Txt variant="body" style={{ marginTop: 6 }}>{children}</Txt>;
 }

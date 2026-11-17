@@ -497,7 +497,7 @@ function BookForm() {
       detail: service === 'ride' || detail.trim() ? undefined : c.fieldRequired,
       contact: isValidPhone(contact) ? undefined : err('invalid_phone'),
       recipientPhone: service === 'ride' || !recipientPhone.trim() || isValidPhone(recipientPhone) ? undefined : err('invalid_phone'),
-      goods: service === 'ride' || goodsOk ? undefined : c.prohibitedNeeded,
+      goods: service === 'ride' || pending || goodsOk ? undefined : c.prohibitedNeeded, // a pending replay was confirmed when it was first sent
     };
     if (Object.values(problems).some(Boolean)) {
       haptic.error();
