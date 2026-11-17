@@ -75,21 +75,28 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   assert.ok(book.indexOf("{step === 'search' && <TripSearch") > book.indexOf('setMapFailed(true); }} />'), 'the overlay is outside the hidden map view');
   assert.match(book, /if \(locationError && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(locationError\)/);
   const submit = book.slice(book.indexOf('  async function submit()'), book.indexOf('  async function release('));
-  assert.match(submit, /\} catch \(e\) \{\s*haptic\.error\(\);\s*setSheetOpen\(true\);/);
+  assert.match(submit, /\} catch \(e\) \{\s*if \(!current\(\)\) return;\s*haptic\.error\(\);\s*setSheetOpen\(true\);/);
   const search = readFileSync(new URL('../src/trip-search.tsx', import.meta.url), 'utf8');
   assert.match(search, /value && !query\[which\] \? `: \$\{value\}`/);
 }
 
-// Controls retain their appearance while exposing count, selection and larger hit areas.
+// Controls expose count, selection and actual Android-sized targets, without overlapping neighbours.
 {
   const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
   const stepper = ui.slice(ui.indexOf('export function Stepper'), ui.indexOf('// Horizontal scroller'));
   assert.match(stepper, /accessibilityValue=\{\{ min, max, now: value, text: String\(value\) \}\}/);
   assert.match(stepper, /previous\.current !== value && Platform\.OS !== 'web'\) AccessibilityInfo\.announceForAccessibility\(`\$\{label\}: \$\{value\}`\)/);
-  assert.equal(stepper.match(/hitSlop=\{2\}/g)?.length, 2);
-  assert.match(ui, /hitSlop=\{small \? 2 : 1\}/);
+  assert.equal(stepper.match(/style=\{styles\.stepperKey\}/g)?.length, 2);
+  const style = name => ui.match(new RegExp(`^  ${name}: \\{([^}]+)\\}`, 'm'))?.[1];
+  const control = Number(ui.match(/control: (\d+)/)?.[1]);
+  const dimension = (source, name) => source?.includes(`${name}: size.control`) ? control : Number(source?.match(new RegExp(`${name}: (\\d+)`))?.[1]);
+  for (const name of ['button', 'buttonSmall']) assert.ok(dimension(style(name), 'minHeight') >= 48, `${name} has a real 48dp target`);
+  for (const axis of ['width', 'height']) assert.ok(dimension(style('stepperKey'), axis) >= 48, `Stepper ${axis} reaches 48dp`);
+  assert.doesNotMatch(stepper, /hitSlop/, 'Stepper targets do not overlap');
   const sheet = readFileSync(new URL('../src/map-sheet.tsx', import.meta.url), 'utf8');
-  assert.match(sheet, /hitSlop=\{\{ bottom: 26 \}\}/);
+  assert.ok(Number(sheet.match(/const GRIP = (\d+)/)?.[1]) >= 48, 'the grip has a real 48dp target');
+  assert.match(sheet, /gripArea: \{ height: GRIP/);
+  assert.match(sheet, /accessibilityState=\{\{ expanded: open \}\} style=\{styles\.gripArea\}/);
   const admin = readFileSync(new URL('../src/app/admin/index.tsx', import.meta.url), 'utf8');
   assert.match(admin, /\$\{c\.commissionRevenue\} \$\{money\(d\.commission\)\}, \$\{c\.subscriptionRevenue\} \$\{money\(d\.subscriptions\)\}/);
   assert.match(admin, /accessibilityState=\{\{ selected: i === selected \}\}/);

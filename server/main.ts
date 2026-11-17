@@ -341,6 +341,15 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   };
 }
 
+async function toOrders(rows: Row[], viewer: User): Promise<Order[]> {
+  const orders: Order[] = [];
+  // Bound database-backed serialization and leave room in the pool for other readers.
+  for (let start = 0; start < rows.length; start += 4) {
+    orders.push(...await Promise.all(rows.slice(start, start + 4).map(row => toOrder(row, viewer))));
+  }
+  return orders;
+}
+
 // Driver offers (SPEC-driver-offers.md). An offer counts while it is fresh and its driver is active, free and has not
 // released the order; anything else is invisible and cannot be accepted.
 const OFFER_TTL = 10 * 60_000; // ponytail: inDrive-like window; tune from how long customers take to choose
@@ -1837,13 +1846,11 @@ route('GET', '/api/orders', async ({ user, query }) => {
   // Load more: the next page of ended orders below the oldest one the client holds. Open work is never paged.
   if (before !== null) {
     const id = /^[1-9]\d{0,14}$/.test(before) ? Number(before) : fail(400, 'invalid_input');
-    return (await Promise.all((await all(`${orderSelect} WHERE ${where}${filter} AND NOT (${open}) AND o.id < ? ORDER BY o.id DESC LIMIT ${HISTORY_PAGE}`, ...args, id))
-      .map(async r => (await toOrder(r, user)))));
+    return toOrders(await all(`${orderSelect} WHERE ${where}${filter} AND NOT (${open}) AND o.id < ? ORDER BY o.id DESC LIMIT ${HISTORY_PAGE}`, ...args, id), user);
   }
   // First page: every open order, however much newer history there is, plus the newest page of ended ones.
   const newest = `SELECT o.id FROM orders o WHERE ${where}${filter} AND NOT (${open}) ORDER BY o.id DESC LIMIT 1 OFFSET ${HISTORY_PAGE - 1}`;
-  return (await Promise.all((await all(`${orderSelect} WHERE ${where}${filter} AND (${open} OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args))
-    .map(async r => (await toOrder(r, user)))));
+  return toOrders(await all(`${orderSelect} WHERE ${where}${filter} AND (${open} OR o.id >= COALESCE((${newest}), 0)) ORDER BY o.id DESC`, ...args, ...args), user);
 });
 
 async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
@@ -3546,6 +3553,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       logServerError('http_request_failed', error, { correlationId, httpStatus: status });
   }
   if (status === 429 || status === 503) res.setHeader('Retry-After', '60');
+  if (draining) res.setHeader('Connection', 'close');
   res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));
 });
 server.requestTimeout = 30_000;

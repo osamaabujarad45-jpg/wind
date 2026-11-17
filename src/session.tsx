@@ -34,7 +34,7 @@ type Session = {
   signIn: (data: Me & { token: string }) => Promise<void>;
   signOut: () => Promise<void>;
   forget: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: (reportFailure?: boolean) => Promise<void>;
 };
 
 const Context = createContext<Session | null>(null);
@@ -103,7 +103,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [forget, endLocally]);
   const expired = useCallback(() => { void ended(); }, [ended]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (reportFailure = false) => {
     const revision = apiSessionRevision();
     try {
       // Test icons obtain real, role-scoped sessions through the regular login API.
@@ -133,6 +133,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // A failed refresh under a working screen is a blip the screen's own polling rides out: only a launch that could
       // not reach the account has nothing to show. That screen keeps trying by itself, below.
       if (!accountLoaded.current && (phoneTest || errorCode(error) === 'network' || (error instanceof ApiError && (error.status ?? 0) >= 500))) setOffline(true);
+      if (reportFailure === true) throw error;
     }
   }, [expired]);
   useEffect(() => {

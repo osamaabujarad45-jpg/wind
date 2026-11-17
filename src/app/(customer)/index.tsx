@@ -91,8 +91,8 @@ export default function Home() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* The map is the screen, the way a ride app opens: you, where you are. Everything else sits on the sheet over it. */}
-    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: 60, bottom: peek, ...(side && { right: SIDE_SHEET }) }} label={c.home} />}
-    <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
+    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: 60, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={c.home} />}
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
         <View style={[styles.hello, shadow, { flexDirection: row }]}>
           <Logo size={30} />
@@ -104,14 +104,14 @@ export default function Home() {
         <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
       </View>
     </SafeAreaView>
-    {here ? <View style={[styles.locate, rtl ? { left: 12 } : { right: 12 + (side ? SIDE_SHEET : 0) }, { bottom: peek + 12 }]}>
+    {here ? <View style={[styles.locate, rtl ? { left: 12 + (side ? SIDE_SHEET : 0) } : { right: 12 + (side ? SIDE_SHEET : 0) }, { bottom: peek + 12 }]}>
       <IconButton icon={locating ? 'hourglass-outline' : 'locate'} label={c.useLocation} disabled={locating} onPress={() => { void locate(); }} />
     </View> : <Press accessibilityLabel={c.useLocation} disabled={locating} onPress={() => { void locate(); }}
-      containerStyle={[styles.locate, { alignSelf: 'center', bottom: peek + 12 }]} style={[styles.askLocation, shadow, { flexDirection: row }]}>
+      containerStyle={[styles.locate, { alignSelf: 'center', bottom: peek + 12 }, side && { transform: [{ translateX: (rtl ? 1 : -1) * SIDE_SHEET / 2 }] }]} style={[styles.askLocation, shadow, { flexDirection: row }]}>
       <Ionicons name="navigate" size={16} color={palette.lime} />
       <Txt variant="label" style={{ color: palette.onFill }}>{locating ? c.locating : c.useLocation}</Txt>
     </Press>}
-    {!!locationNote && <View style={[styles.note, shadow, { bottom: peek + 66 }]} accessibilityLiveRegion="polite">
+    {!!locationNote && <View style={[styles.note, shadow, { bottom: peek + 66 }, side && (rtl ? { left: SIDE_SHEET + 12 } : { right: SIDE_SHEET + 12 })]} accessibilityLiveRegion="polite">
       <Txt variant="caption">{locationNote}</Txt>
     </View>}
     <MapSheet open={open} onOpenChange={setOpen} onPeek={setPeek} safeBottom={false} onRefresh={reload}

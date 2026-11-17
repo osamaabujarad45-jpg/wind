@@ -12,7 +12,7 @@ process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 process.env.SOUQ_PARTNER_KEY = 'test-partner-key-that-is-at-least-32-characters';
 process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 delete process.env.OSRM_URL;
-const { shutdown, server, db, promote } = await import('../server/main.ts');
+const { shutdown, server, db, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
@@ -94,17 +94,22 @@ try {
 
   // ---- the load limit ----
   const { PARCEL_LOAD } = await import('../src/model.ts');
-  const filler = db.prepare(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)
-    VALUES (?, 'parcel', 0, 'ramallah', 'bireh', 'a', 'b', '0599300002', '0599300002', 'x', 'small', 0, 20, 'assigned', ?, 1, 1)`);
-  for (let i = 4; i < PARCEL_LOAD; i++) filler.run(customer.user.id, courier.user.id);
+  const filler = `INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)
+    VALUES (?, 'parcel', 0, 'ramallah', 'bireh', 'a', 'b', '0599300002', '0599300002', 'x', 'small', 0, 20, 'assigned', ?, 1, 1)`;
+  // Commit bulk fixtures once: hundreds of synchronous fsyncs starve HTTP keep-alive timers on slow disks.
+  await persistence.transaction(async () => {
+    for (let i = 4; i < PARCEL_LOAD; i++) await persistence.run(filler, customer.user.id, courier.user.id);
+  }, { commandId: 'parcels-load-fixture' });
   const over = await book(near);
   await call(`/jobs/${over.id}/accept`, { token: courier.token, body: {}, expect: 409 });
 
   // ---- open work stays listed under any amount of newer history ----
   db.prepare("UPDATE orders SET status = 'completed' WHERE driver_id = ? AND id <> ? AND status = 'assigned'").run(courier.user.id, orders[0].id);
-  const done = db.prepare(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)
-    VALUES (?, 'parcel', 0, 'ramallah', 'bireh', 'a', 'b', '0599300002', '0599300002', 'x', 'small', 0, 20, 'completed', ?, 1, 1)`);
-  for (let i = 0; i < 250; i++) done.run(customer.user.id, courier.user.id);
+  const done = `INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, driver_id, created_at, updated_at)
+    VALUES (?, 'parcel', 0, 'ramallah', 'bireh', 'a', 'b', '0599300002', '0599300002', 'x', 'small', 0, 20, 'completed', ?, 1, 1)`;
+  await persistence.transaction(async () => {
+    for (let i = 0; i < 250; i++) await persistence.run(done, customer.user.id, courier.user.id);
+  }, { commandId: 'parcels-history-fixture' });
   const listed = await call('/orders', { token: courier.token });
   assert.ok(listed.some(o => o.id === orders[0].id && o.status === 'assigned'));
   assert.equal(listed.filter(o => o.status === 'completed').length, 200);

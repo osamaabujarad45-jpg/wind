@@ -86,7 +86,7 @@ try {
   $env:EXPO_NO_GIT_STATUS = '1'
   # Windows MAX_PATH: the Scoop Gradle home put a prefab header past 260 characters when CMake
   # regenerated the ARM64 objects. Keep the cache on a short root; 250 leaves room for suffixes.
-  $env:GRADLE_USER_HOME = Join-Path $env:SystemDrive 'wq-gradle'
+  $env:GRADLE_USER_HOME = Join-Path $phoneBuild 'g'
   $env:CMAKE_OBJECT_PATH_MAX = '250'
   $env:EXPO_PUBLIC_API_URL = [string]$phoneProvision.apiUrl
   $env:WIND_LOCAL_TEST = '1'

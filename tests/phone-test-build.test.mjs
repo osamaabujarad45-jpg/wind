@@ -128,7 +128,9 @@ try {
   try { assert.throws(build, /baseline map/, 'phone test apps cannot opt into Google renderers'); }
   finally { delete process.env.WIND_TEST_IDENTIFIER; delete process.env.WIND_TEST_PASSWORD; }
 
-  console.log('Phone build boundaries passed: isolated role IDs, loopback-only Debug policy, embedded bundle and intact Release guards; Google opt-in fails early without a restricted platform key and never leaks key strings into public config');
+  const buildScript = readFileSync(new URL('../scripts/build-phone-tests.ps1', import.meta.url), 'utf8');
+  assert.match(buildScript, /\$env:GRADLE_USER_HOME = Join-Path \$phoneBuild /, 'Gradle files stay inside the marked build directory, never another session’s cache');
+  console.log('Phone build boundaries passed: isolated role IDs/cache, loopback-only Debug policy, embedded bundle and intact Release guards; Google opt-in fails early without a restricted platform key and never leaks key strings into public config');
 } finally {
   for (const key of variables) {
     if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];

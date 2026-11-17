@@ -54,18 +54,29 @@ const revoked=new OoredooCommunication(config,async(url)=>{if(!url.endsWith('/to
 assert.deepEqual(await revoked.send('+970599000000','123456','synthetic-revoked',async()=>false),{state:'obsolete',attempted:false});assert.equal(transmitted,false);
 const badToken=new OoredooCommunication(config,async()=>Response.json({access_token:'untrusted\nheader',token_type:'Bearer',expires_in:600}));
 assert.deepEqual(await badToken.send('+970599000000','123456','synthetic-token',async()=>true),{state:'failed',attempted:false});
-let stallToken=false,timeoutSends=0;
+let stallToken=false,timeoutSends=0,sendArrived;
 const stalled=createServer((req,res)=>{
   if(req.url.endsWith('/token')) {if(!stallToken)res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({access_token:'synthetic',token_type:'Bearer',expires_in:600}));}
-  else timeoutSends++;
+  else {timeoutSends++;sendArrived?.();}
 });
 await new Promise(resolve=>stalled.listen(0,'127.0.0.1',resolve));
 try {
-  const bounded={...config,baseUrl:`http://127.0.0.1:${stalled.address().port}`,tokenTimeoutMs:100,sendTimeoutMs:30};
+  const bounded={...config,baseUrl:`http://127.0.0.1:${stalled.address().port}`,sendTimeoutMs:30};
   const timedOut=await new OoredooCommunication(bounded).send('+970599000000','123456','synthetic-timeout',async()=>true);
-  assert.equal(timedOut.state,'unknown');assert.equal(timeoutSends,1,'real local HTTP timeout does not replay an uncertain send');
+  assert.deepEqual(timedOut,{state:'unknown',attempted:true});assert.ok(timeoutSends<=1,'timeout may precede HTTP arrival, but must never replay');
+  const before=timeoutSends,abort=new AbortController();
+  const arrived=new Promise(resolve=>{sendArrived=resolve;});
+  // A separate real HTTP send is aborted only after arrival: no assumption about CI dispatch speed.
+  const held=new OoredooCommunication(bounded,async(url,options)=>{
+    if(url.endsWith('/token'))return fetch(url,options);
+    assert.ok(options.signal);assert.equal(options.redirect,'error');
+    return fetch(url,{...options,signal:abort.signal});
+  }).send('+970599000000','123456','synthetic-arrived-timeout',async()=>true);
+  await Promise.race([arrived,held.then(()=>{throw new Error('Provider send completed before HTTP arrival');})]);abort.abort();
+  assert.deepEqual(await held,{state:'unknown',attempted:true});assert.equal(timeoutSends,before+1,'an arrived uncertain send is never replayed');
+  sendArrived=undefined;
   stallToken=true;
-  assert.deepEqual(await new OoredooCommunication(bounded).send('+970599000000','123456','synthetic-token-timeout',async()=>true),{state:'failed',attempted:false});assert.equal(timeoutSends,1);
+  assert.deepEqual(await new OoredooCommunication({...bounded,tokenTimeoutMs:100}).send('+970599000000','123456','synthetic-token-timeout',async()=>true),{state:'failed',attempted:false});assert.equal(timeoutSends,before+1);
 }finally{stalled.closeAllConnections();await new Promise(resolve=>stalled.close(resolve));}
 const dir=await mkdtemp(join(tmpdir(),'fastship-wp06-sqlite-')),sqlite=await startApiProcess({DB_PATH:join(dir,'legacy.sqlite')});
 try {

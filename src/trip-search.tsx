@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   fieldRow: { alignItems: 'center', gap: 10 },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: palette.forest, backgroundColor: palette.card },
   square: { width: 12, height: 12, borderRadius: 2, backgroundColor: palette.forest },
-  input: { flex: 1, minHeight: 44, borderRadius: 10, paddingHorizontal: 12, backgroundColor: palette.paper, fontSize: 16, fontWeight: '600', color: palette.ink },
+  input: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 12, backgroundColor: palette.paper, fontSize: 16, fontWeight: '600', color: palette.ink },
   inputOn: { backgroundColor: palette.muted },
   rowWrap: { alignItems: 'center', gap: 4, borderBottomWidth: 1, borderBottomColor: palette.hair },
   row: { alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: 8 },

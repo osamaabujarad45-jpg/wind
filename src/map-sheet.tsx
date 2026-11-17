@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from './motion';
 import { palette, useCopy } from './ui';
 
-const GRIP = 22;
+const GRIP = 48;
 const nativeDriver = Platform.OS !== 'web';
 /** A sideways phone has no height to spare: the sheet stands beside the map instead of over it. */
 export const SIDE_SHEET = 340;
@@ -26,7 +26,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   expandedRatio?: number;
   onRefresh?: () => Promise<unknown>;
 }) {
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const still = useReducedMotion();
   const { height: screen } = useWindowDimensions();
   const side = useSideSheet();
@@ -34,6 +34,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   const [headerHeight, setHeaderHeight] = useState(0), [footerHeight, setFooterHeight] = useState(0);
   // The footer carries the bottom inset itself; a sheet without one must still clear the system navigation bar.
   const padBottom = safeBottom ? insets.bottom : 0;
+  const sideStyle = side && (rtl ? styles.sideLeft : styles.side);
   const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
   const [room, setRoom] = useState(0); // the height above the keyboard, so an open sheet's top stays below the status bar
   const expanded = Math.min((room || screen) - insets.top, side ? screen : Math.max(peek, Math.round(screen * expandedRatio)));
@@ -73,9 +74,9 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   }));
   return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding">
     <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }} onLayout={e => setRoom(Math.floor(e.nativeEvent.layout.height))}>
-      <Animated.View style={[styles.sheet, side && styles.side, { height: expanded, transform: [{ translateY: y }] }]}>
+      <Animated.View style={[styles.sheet, sideStyle, { height: expanded, transform: [{ translateY: y }] }]}>
         <View {...pan.panHandlers} style={styles.handleArea}>
-          <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} hitSlop={{ bottom: 26 }} style={styles.gripArea}>
+          <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} accessibilityState={{ expanded: open }} style={styles.gripArea}>
             <View style={styles.grip} />
           </Pressable>
           <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
@@ -88,7 +89,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
           {children}
         </ScrollView>
       </Animated.View>
-      {footer && <View style={[styles.footer, side && styles.side, { paddingBottom: 10 + (keyboardUp ? 0 : padBottom) }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
+      {footer && <View style={[styles.footer, sideStyle, { paddingBottom: 10 + (keyboardUp ? 0 : padBottom) }]} onLayout={e => setFooterHeight(Math.ceil(e.nativeEvent.layout.height))}>{footer}</View>}
     </View>
   </KeyboardAvoidingView>;
 }
@@ -97,6 +98,7 @@ const styles = StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' },
   side: { left: 'auto', right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
+  sideLeft: { left: 0, right: 'auto', width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,
   gripArea: { height: GRIP, alignItems: 'center', justifyContent: 'center' },
   grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#C9C8BE' },

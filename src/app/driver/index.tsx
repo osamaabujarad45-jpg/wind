@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
 import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
-import { MapSheet } from '../../map-sheet';
+import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { DriverMap } from '../../driver-map';
 import { pickupLocation } from '../../pickup-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +23,7 @@ type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 export default function Jobs() {
   const { me, refresh } = useSession();
   const { c, money, err, language, rtl } = useCopy();
+  const side = useSideSheet();
   const { time } = useFormat();
   const active = me?.user.status === 'active';
   // A cursor is valid only for this driver and destination filter; changing either returns to the first page.
@@ -178,7 +179,7 @@ export default function Jobs() {
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* A driver's work starts on the map, where they are; going online and the offers sit on the sheet over it. */}
     {focused && <DriverMap active={work.presenceState === 'online' || assigned || locateOn} bottom={peek} label={c.jobs} onHere={setHere} />}
-    <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}>
+    <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]}>
       <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between', alignItems: 'flex-start' }} pointerEvents="box-none">
         <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
         <View style={{ gap: 8 }}>
