@@ -3,17 +3,18 @@
 import { useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode, useApi } from '../../api';
 import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
 import { useCountdown } from '../../shop-ui';
-import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, Press, Row, Screen, Section, Stat, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, palette, Press, Row, Screen, Section, Stat, tones, Txt, useCopy } from '../../ui';
 
 type Statement = { balanceAgorot: number; payableAgorot: number; entries: { id: number; orderId: number | null; kind: string; amountAgorot: number; note: string; reference: string | null; createdAt: number }[] };
 
 export default function MerchantHome() {
-  const { c, money } = useCopy();
+  const { c, money, rtl } = useCopy();
   const mine = useApi<{ merchant: Merchant | null }>('/merchant');
   const merchant = mine.data?.merchant;
   const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(merchant && merchant.status !== 'pending' ? '/merchant/orders' : null, 10_000);
@@ -36,7 +37,13 @@ export default function MerchantHome() {
   }
   return <Screen onRefresh={async () => { await mine.reload(); await inbox.reload(); await statement.reload(); }}>
     <Header title={merchant.name} back subtitle={merchant.status === 'paused' ? c.merchantLicencePaused : merchant.pausedNew ? c.merchantPausedNew : merchant.open ? c.shopOpen : c.shopClosed} />
-    {fresh.length > 0 && <Card tone="clay"><Txt variant="label" accessibilityLabel={fill(c.merchantNewOrders, { n: fresh.length })}>{fill(c.merchantNewOrders, { n: fresh.length })}</Txt></Card>}
+    {/* The banner opens the first new order: it named the work but led nowhere (design review 17 Nov). */}
+    {fresh.length > 0 && <Press onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} accessibilityLabel={fill(c.merchantNewOrders, { n: fresh.length })}>
+      <Card tone="clay"><Row style={{ justifyContent: 'space-between' }}>
+        <Txt variant="label" style={{ flex: 1 }}>{fill(c.merchantNewOrders, { n: fresh.length })}</Txt>
+        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clayInk} />
+      </Row></Card>
+    </Press>}
     <Row style={{ flexWrap: 'wrap' }}>
       <Stat label={c.merchantOpenOrders} value={String(open.length)} />
       <Stat label={c.merchantBalance} value={money((statement.data?.balanceAgorot ?? 0) / 100)} index={1} detail={fill(c.merchantPayable, { r: money((statement.data?.payableAgorot ?? 0) / 100) })} />
@@ -49,7 +56,8 @@ export default function MerchantHome() {
     </ListGroup>
     <Section title={c.merchantInbox} />
     {!orders.length && <Empty icon="file-tray-outline" title={c.merchantNoOrders} />}
-    {orders.map(o => <InboxRow key={o.id} order={o} />)}
+    {/* orders waiting on the shop come first; the rest keep the server's order */}
+    {[...fresh, ...orders.filter(o => !fresh.includes(o))].map(o => <InboxRow key={o.id} order={o} />)}
     {/* a setting touched rarely: below the inbox, which is the shop's main work */}
     <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} saved={hoursSaved} onSaved={done => { setHoursSaved(done); if (done) mine.reload(); }} />
     {!!statement.data?.entries.length && <Card>
