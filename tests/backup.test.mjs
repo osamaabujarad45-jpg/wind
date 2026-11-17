@@ -87,6 +87,12 @@ try {
   const restored = join(dir, 'restored.db');
   writeFileSync(restored, gunzipSync(gzipSync(readFileSync(copy))));
   assert.ok(!existsSync(`${restored}-wal`), 'no journal to replay');
+  // An interrupt between stop and swap must not leave the service down with the old database parked aside.
+  { const restore = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8');
+    const trap = restore.indexOf(`trap 'docker stop "$name" >/dev/null 2>&1 || true; put_back' INT TERM HUP`);
+    assert.ok(trap >= 0 && trap < restore.indexOf('docker stop "$name" >/dev/null\nswap'), 'signals put back the old database');
+    assert.ok(restore.indexOf('swap || put_back\ntrap - INT TERM HUP') > trap, 'and the trap is disarmed once the restored copy is live');
+  }
   // The same statement as infra/vm/wind-restore.sh: nobody's session from before the copy survives it.
   const wipe = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8').match(/db\.exec\('(BEGIN;[^']*)'\)/)[1];
   const cleaning = new DatabaseSync(restored);

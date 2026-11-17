@@ -47,3 +47,36 @@ for (const input of [5000, 7000, 30000]) {
   assert.equal(context.result, input, 'valid runtime deadlines are preserved');
 }
 console.log('Map fragment security: real parser/SVG/CSS reject color injection and preserve valid palette colors');
+{ // Strict review 8 Nov: the canvas must describe the actual mode, not assume a keyboard or pin placement everywhere.
+  assert.doesNotMatch(page, /arrow keys|مفاتيح الأسهم/, 'map canvas label assumes a keyboard');
+  assert.match(page, /const canvasLabel = \(\) =>[\s\S]*?!pinning\(\)/, 'canvas label is mode-aware');
+  assert.match(page, /drawnMode = state\.mode;[\s\S]{0,80}canvasLabel\(\);/, 'canvas label follows mode changes');
+  assert.match(page, /baseTileLoaded = window\.windBaseTile = true/, 'capture readiness requires a real basemap tile');
+  assert.match(page, /e\.tile\?\.state === 'errored'\) window\.windTileFailed = true/, 'a later tile error invalidates earlier success');
+}
+{ // Execute the real readiness listeners: old success must not hide a failed camera generation.
+  const start = page.indexOf('let mapLoaded ='), end = page.indexOf("map.once('load'", start);
+  const handlers = {}, context = { window: {}, failed: false, timer: null, clearTimeout() {}, send() {},
+    document: { querySelector: () => null }, map: { on: (name, fn) => { handlers[name] = fn; } } };
+  runInNewContext(page.slice(start, end), context);
+  const tile = state => ({ source: { type: 'vector' }, coord: {}, tile: { state } });
+  handlers.sourcedata(tile('loaded'));
+  assert.equal(context.window.windBaseTile, true);
+  handlers.sourcedata(tile('errored'));
+  assert.equal(context.window.windTileFailed, true, 'an error after an earlier success fails capture readiness');
+  handlers.movestart();
+  assert.equal(context.window.windBaseTile, false, 'a new camera cannot reuse the old tile success');
+  assert.equal(context.window.windTileFailed, false, 'a new camera generation gets a fresh verdict');
+  handlers.sourcedata(tile('errored'));
+  handlers.resize();
+  assert.equal(context.window.windTileFailed, false, 'resize also starts a new tile verdict');
+}
+{ // Blank maps and unquoted forms are failed captures, never release evidence.
+  const screens = readFileSync(new URL('../scripts/screens.mjs', import.meta.url), 'utf8');
+  assert.match(screens, /async function mapsReady\(page, where\)/, 'captures wait for map frames');
+  assert.match(screens, /window\.windBaseTile === true && window\.windTileFailed === false && window\.windMap\?\.loaded\(\) && window\.windMap\.areTilesLoaded\(\)/, 'and for actual loaded tiles without later errors');
+  assert.ok((screens.match(/await mapsReady\(page,/g) ?? []).length >= 3, 'ordinary, interactive and narrow captures all use the guard');
+  assert.match(screens, /getByText\(t\.quote_calculating, \{ exact: true \}\)\.first\(\)\.waitFor\(\{ state: 'hidden'/, 'narrow booking captures wait for a settled quote');
+  assert.match(screens, /getByText\(t\.quote_failed, \{ exact: true \}\)\.count\(\), 0/, 'and reject a failed quote');
+  assert.match(screens, /view\.id\.startsWith\('book-'\)\) assert\.notEqual\(await target\.getAttribute\('aria-disabled'\), 'true'/, 'specific quote errors cannot leave a disabled Request button in evidence');
+}

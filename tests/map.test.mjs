@@ -325,6 +325,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
     assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
+    // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
+    { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
+      const bookHeader = book.slice(book.indexOf('header={<View style={{ paddingBottom: 8 }}>'), book.indexOf('footer={pending ? undefined'));
+      assert.equal(book.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'the booking error is shown once');
+      assert.ok(bookHeader.includes('<ErrorText>{error}</ErrorText>'), 'in the sheet header');
+      assert.ok(book.includes("if (fixMarked.current && !Object.values(next).some(Boolean)) { fixMarked.current = false; setError(''); }") && book.includes('setError(c.fixMarked); fixMarked.current = true;'), 'and the fix-marked banner clears with the last marked field'); }
+    // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
+    assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
+    assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
     assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
@@ -352,7 +361,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(webEntry.match(/<MapProviderBoundary platform="web"/g)?.length, 2, 'web route and pin maps must resolve through the boundary');
   // Android: the page labels its own map, so the WebView is not wrapped in an accessible group that would hide Recenter.
   const androidMap = readFileSync(new URL('../src/route-map.android.tsx', import.meta.url), 'utf8'), mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
-  assert.ok(!androidMap.includes('accessible={!!label}') && readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8').includes('label={`${c.routeOnMap}'), 'the route label travels in the page update');
+  const sceneMap = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
+  assert.ok(!androidMap.includes('accessible={!!label}') && sceneMap.includes('label={`${c.routeOnMap}'), 'the route label travels in the page update');
+  assert.ok(sceneMap.includes("${rtl ? '←' : '→'}"), 'the baseline route arrow follows the selected language direction');
   assert.ok(mapPage.includes('right: calc(var(--inset-right) + 10px)') && mapPage.includes('.maplibregl-ctrl-bottom-right { right: var(--inset-right)'), 'map controls clear a side sheet, or recenter is unreachable under it');
   const appleSource = readFileSync(new URL('../src/route-map.native.tsx', import.meta.url), 'utf8');
   assert.ok(appleSource.includes('!props.follow && stop') && appleSource.includes('fitToCoordinates([driver, stop]'), 'iOS frames the car with its next stop for anyone not driving');

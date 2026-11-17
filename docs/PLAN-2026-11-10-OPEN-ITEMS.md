@@ -15,6 +15,52 @@ The owner delegated recommendations to the lead. Ordinary choices below no longe
 another preference interview. Actual credentials, contracts, legal/field evidence and specific
 paid-resource, migration, activation and data-deletion authorizations remain prerequisites.
 
+## Selective strict-review integration — 11 November 2026
+
+The working tree on `integrate/strict-review-20261111-master` starts at canonical `origin/master`
+`445fc7afbe5553fe863d6b7a1c117f56f7ab4101`; the dirty 8 November strict-review tree is a donor,
+not a replacement baseline. The integrated candidate remains uncommitted, unpushed and undeployed.
+This addendum dispositions the donor findings without changing the 48 row numbers below.
+
+- **Booking and partner writes:** duplicate taps reuse the in-flight request; missing action IDs
+  return `request_id_required`; authorized request-ID replay precedes changed-payload conflicts.
+  Unknown-outcome customer and partner `COMMIT` failures return an unexpected 500 with a support
+  `reference`, while the durable receipt remains available for an exact retry. Partner projection
+  and replay reads require that partner's key. SQLite partner creation is atomic, PostgreSQL
+  booking/customer-lock paths serialize concurrent writers, and admin user locks no longer hold a
+  database transaction across password hashing.
+- **Recovery and presentation:** booking failures retain or clear pending state according to whether
+  the command may have committed, and the displayed freight window matches its declared scope;
+  disabled actions explain missing request IDs; retry/status updates use existing live
+  regions. Help and trip ordering preserve newer request-ID/recovery behavior, remove duplicate
+  customer contacts, use pin-specific copy, retain Hebrew-label filtering, and keep the donor's
+  intentional repeated driver tap in Step 2. The 48 dp target, layout and navigation changes were
+  integrated without discarding newer design/icon/font/token or native-map work.
+- **Reset and restore:** Firebase reset deletes only earlier `wind-` accounts; a foreign account
+  survives and makes creation fail closed. Documentation now distinguishes verified-email
+  Cloudflare reset from the pilot-only unverified-email Firebase policy. Restore interruption traps
+  return the old database during the swap. Production reset policy, a replacement-host restore and
+  provider evidence remain open under rows 9, 21, 22 and 48.
+- **Map/capture evidence:** canvas labels follow ride versus parcel mode, RTL route arrows keep
+  their direction, `windBaseTile` prevents a route-only canvas from proving map readiness, and
+  screenshot capture waits for settled prices and real base tiles where applicable. These are source
+  fixes; only newly generated and inspected artifacts can close their evidence gaps.
+- **Fresh local fallback gates:** `npx expo lint`, `npm run typecheck` (client and server), all
+  **130** `npm test` suites, and the unfiltered `npm run test:persistence` suite passed on this working tree with
+  PostgreSQL 18. The persistence run includes 24 booking-race checks covering actual outer-commit
+  injection, durable customer/partner receipts, and same/changed-payload replay across logout and
+  support-reset revocation. Fresh local `test:scenarios`, `test:location`, `test:jobs-ui`, `test:access`
+  and `test:readiness` runs also passed; real-road Tulkarm passed 11 checks in each language using the
+  public OSRM test endpoint. `k5` was unreachable (`192.168.1.6:22` timed out), so none of this is remote
+  evidence. Donor screenshots/APKs/hashes remain historical and are not reused for this candidate.
+- **Still open:** Step 3's device-local insecure-HTTP lock gap is conditionally deferred, not claimed
+  fixed. A same-provider review found two capture-readiness gaps (stale tile success and specific quote
+  errors); both were fixed and their regressions passed, but this does not satisfy the independent
+  second-vendor review. Cross-provider delegation returned `Unknown tool 'orchestrator_capabilities'`.
+  Final-source screenshots/APKs, CI, native and physical
+  acceptance, external cloud/provider/legal/production checks and every other applicable exit gate
+  below remain separate from these local passes.
+
 ## One queue
 
 | ID | Item and evidence | Severity / phase | Current disposition and next acceptance |

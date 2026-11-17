@@ -138,9 +138,9 @@ export function Car({ driver, title, approach, still, stale }: { driver: NonNull
 }
 
 const styles = StyleSheet.create({
-  recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
+  recenter: { position: 'absolute', bottom: 34, width: 48, height: 48, borderRadius: 24, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
-  retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
+  retry: { minWidth: 48, minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
 });
 
 export function PinMap(props: PinMapProps) {
