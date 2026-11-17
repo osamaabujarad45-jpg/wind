@@ -9,7 +9,7 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { useDriverWork } from '../../driver-work';
 import { activeStatuses, canTake, city, commissionOn, crowKm, exceptionReasons, finishedStatuses, orderCode, roadAlerts, safetyKinds, statusFlow, type ExceptionReason, type Order, type Point, type Road, type SafetyKind } from '../../model';
-import { EtaLine, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { EtaLine, MapStage, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
 import { FreightDetails } from '../../freight-details';
@@ -207,9 +207,16 @@ export default function OrderScreen() {
   const later = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor - 30 * 60_000 ? order.scheduledFor : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
 
-  return <Screen onRefresh={reload}>
+  // Uber's layout: the map is the screen's fixed top, big while a car moves on it, and everything else scrolls under it.
+  return <Screen onRefresh={reload} top={<>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
       right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={c[order.status]} status={order.status} />} />
+    <MapStage ratio={live && order.driverLocation ? 0.46 : 0.3}>{height =>
+      <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
+        driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed}
+        stale={!!location?.stale} height={height} />}
+    </MapStage>
+  </>}>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
 
@@ -282,12 +289,10 @@ export default function OrderScreen() {
       </Row>)}
     </Card>}
 
-    <Appear index={1}>
-      <View style={styles.map}>
-        <RouteMap pickup={pickup} dropoff={dropoff} focus={['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-          driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed}
-          stale={!!location?.stale} height={live && order.driverLocation ? 300 : undefined} />
-        {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
+    {/* The live lines under the map: driver freshness, ETA, run and checkpoint notes. Nothing to say, no empty card. */}
+    {live && (!!order.driverId || avoids.length > 0 || through.length > 0) && <Appear index={1}>
+      <View style={[styles.map, { paddingTop: 9 }]}>
+        {!!order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 9 }}>
           {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
           <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.clayInk : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
@@ -315,9 +320,9 @@ export default function OrderScreen() {
             <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
           </Row>
         </Press>}
-        {live && <RouteCheckpoints avoids={avoids} through={through} />}
+        <RouteCheckpoints avoids={avoids} through={through} />
       </View>
-    </Appear>
+    </Appear>}
 
     {order.scheduledFor && (order.status === 'assigned' || order.status === 'at_pickup') && <Card tone="olive" style={{ paddingVertical: 10 }}>
       <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>

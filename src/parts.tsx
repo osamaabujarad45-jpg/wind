@@ -1,6 +1,6 @@
 // Pieces shared by the customer, driver and admin screens.
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Keyboard, Linking, Platform, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, errorCode, PRIVACY_URL, SUPPORT_URL, useApi } from './api';
@@ -11,8 +11,32 @@ import { kmLabel } from './map-math';
 import { useSession } from './session';
 import { statusText } from './copy';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, IconButton, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
 } from './ui';
+
+/**
+ * Uber's map-first stage: a big map in Screen's fixed `top` (no scroll view around it, so pan, pinch and rotate all reach
+ * the map), with one tap to a near full-screen map and back. While the keyboard is up the map folds away so the form
+ * keeps its room; it stays mounted, so it does not reload.
+ */
+export function MapStage({ ratio = 0.42, children }: { ratio?: number; children: (height: number) => React.ReactNode }) {
+  const { height } = useWindowDimensions();
+  const { c } = useCopy();
+  const [full, setFull] = useState(false);
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setTyping(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setTyping(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+  const mapHeight = Math.round(Math.max(240, height * (full ? 0.78 : ratio)));
+  return <View style={[styles.stage, typing && !full ? styles.folded : { height: mapHeight }]}>
+    {children(mapHeight)}
+    <View style={styles.expand}>
+      <IconButton icon={full ? 'contract-outline' : 'expand-outline'} label={full ? c.mapSmaller : c.mapBigger} onPress={() => { haptic.tap(); setFull(f => !f); }} />
+    </View>
+  </View>;
+}
 
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
   parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
@@ -433,6 +457,9 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
+  stage: { borderRadius: 16, overflow: 'hidden', backgroundColor: '#E6ECE3', marginBottom: 12 },
+  folded: { height: 0, marginBottom: 0 },
+  expand: { position: 'absolute', top: 10, right: 10 },
   link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
   stop: { alignItems: 'stretch', gap: 10 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },

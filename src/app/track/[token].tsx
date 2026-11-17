@@ -9,7 +9,7 @@ import { deadlineSeconds } from '../../api-clock';
 import type { JourneyEta } from '../../journey-contracts';
 import { etaRange, fromDriver } from '../../map-math';
 import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
-import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
+import { EtaLine, MapStage, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
 import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -67,15 +67,16 @@ export default function TrackScreen() {
   const location = data.driverLocation && freshness ? { ...data.driverLocation, ageSeconds: freshness.ageSeconds } : null;
   // The leg the driver is on: towards the pickup until it is collected, towards the dropoff after that.
   const toPickup = ['assigned', 'at_pickup', 'returning'].includes(data.status);
-  return <Screen>
+  return <Screen top={<>
     <Header title={c.trackTitle} subtitle={ltr(data.orderCode)} />{/* the card below heads with the status; a header badge only echoed it */}
-    {error && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.updatesPaused}</Txt>}
-    <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-      {/* Anonymous tracking draws the free baseline only: a Google-keyed build still makes zero paid calls here (T15). */}
+    <MapStage ratio={location ? 0.46 : 0.3}>{height =>
+      // Anonymous tracking draws the free baseline only: a Google-keyed build still makes zero paid calls here (T15).
       <RouteMap forceBaseline pickup={from} dropoff={to} focus={toPickup ? 'pickup' : 'dropoff'} pickupTitle={from[language]} dropoffTitle={to[language]}
-        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={location ? 300 : undefined}
-        stale={!!freshness?.stale} approach={location && etaCurrent && etaData?.approach ? fromDriver(etaData.approach, location) : null} />
-    </View>
+        driver={location} driverTitle={data.driver?.firstName} road={etaData?.road} height={height}
+        stale={!!freshness?.stale} approach={location && etaCurrent && etaData?.approach ? fromDriver(etaData.approach, location) : null} />}
+    </MapStage>
+  </>}>
+    {error && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.updatesPaused}</Txt>}
     <Card>
       <Row gap={10} style={{ marginBottom: 10 }}>
         <ServiceIcon service={data.service} size={28} />

@@ -57,7 +57,7 @@ export default function RouteMap(props: RouteMapProps) {
   const [moved, setMoved] = useState(false);
   const movedRef = useRef(false);
   const terminal = useRef(false);
-  const points = routeFramePoints({ pickup, dropoff, driver, focus: props.focus, road: props.road, approach: props.approach });
+  const points = routeFramePoints({ pickup, dropoff, driver, me: props.me, focus: props.focus, road: props.road, approach: props.approach });
   const roadKey = JSON.stringify([props.road, props.approach, props.stale]);
   const closedKey = (props.closed ?? []).map(p => `${p.latitude},${p.longitude}`).join('|');
   const driverKey = driver ? `${driver.latitude},${driver.longitude},${driver.heading},${driver.accuracy},${props.focus}` : '';
@@ -74,7 +74,7 @@ export default function RouteMap(props: RouteMapProps) {
       (host.current as unknown as HTMLElement).appendChild(el);
       const map = new maps.Map(el, {
         center: { lat: pickup.latitude, lng: pickup.longitude }, zoom: 12,
-        gestureHandling: 'cooperative', mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+        gestureHandling: 'greedy', mapTypeControl: false, // outside the page scroll: one finger pans streetViewControl: false, fullscreenControl: false,
         clickableIcons: false, keyboardShortcuts: false,
       });
       const s = state.current;
@@ -96,8 +96,9 @@ export default function RouteMap(props: RouteMapProps) {
         strokeColor: palette.blue, strokeOpacity: 0.3, strokeWeight: 1, clickable: false });
       s.driver = new maps.Marker({ map, position: toLng(maps, pickup), clickable: false, icon: symbol(ARROW, palette.blue) });
       s.driver.setVisible(false);
-      for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay]] as const)
-        new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
+      // ponytail: the user's dot is drawn where it was when this map was created; Google web is an opt-in renderer.
+      for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay], [props.me, DOT, palette.blue]] as const)
+        if (p) new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
       latest.current.drawLines(); latest.current.drawClosed(); latest.current.drawDriver();
     }).catch(() => { if (!disposed) { terminal.current = true; setFailed(true); } });
     return () => {
@@ -199,7 +200,7 @@ export default function RouteMap(props: RouteMapProps) {
   }
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
-    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle}${dropoff ? ` → ${props.dropoffTitle}` : ''}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
     {!ready && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <RoutePreview {...props} plain />

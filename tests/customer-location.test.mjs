@@ -71,4 +71,33 @@ const closedPicker = new AbortController();
 const cancelledCache = cachedPickup(() => new Promise(() => {}), closedPicker.signal);
 closedPicker.abort();
 assert.equal(await cancelledCache, null);
+// Edge paths (branch coverage of src/customer-location.ts): every exit settles once and stops collection.
+const preAborted = AbortSignal.abort();
+assert.equal(await cachedPickup(async () => fix(), preAborted), null, 'a closed picker never reads the cache');
+await assert.rejects(findPickup(async () => { throw new Error('never started'); }, preAborted), /cancelled/, 'a closed form never starts GPS');
+const quickExit = new AbortController();
+let quickStarts = 0;
+const quick = findPickup(async () => { quickStarts++; return { remove() {} }; }, quickExit.signal);
+quickExit.abort(); // before the watch is scheduled
+await assert.rejects(quick, /cancelled/);
+assert.equal(quickStarts, 0, 'leaving before setup never starts the watch');
+let late = 0;
+assert.equal((await findPickup(async receive => { receive(fix()); receive(fix({ coords: { latitude: 31.9, longitude: 35.2, accuracy: 5 } })); late++; return { remove() {} }; })).city, 'tulkarm',
+  'a second fix after the first usable one is ignored');
+assert.equal(late, 1);
+await assert.rejects(findPickup(async receive => { receive(fix({ coords: { latitude: 0, longitude: 0, accuracy: 5 } })); return { remove() {} }; }), /outside/);
+await assert.rejects(findPickup(async receive => { receive(fix({ coords: { ...fix().coords, accuracy: 400 } })); return { remove() {} }; }, undefined, 5), /inaccurate/,
+  'only city-scale fixes until the deadline: inaccurate, not a generic timeout');
+await assert.rejects(findPickup(async (receive, fail) => { receive(fix({ coords: { ...fix().coords, accuracy: 400 } })); fail('timeout'); return { remove() {} }; }), /inaccurate/);
+await assert.rejects(findPickup(async (_receive, fail) => { fail('disabled'); return { remove() {} }; }), /^Error: disabled$/, 'location switched off keeps its own reason');
+await assert.rejects(findPickup(async () => { throw new Error('disabled'); }), /^Error: disabled$/, 'a refused "turn on location" dialog keeps its reason');
+assert.equal((await findPickup(async receive => { receive(fix()); return { remove() { throw new Error('native cleanup failed'); } }; })).city, 'tulkarm',
+  'a failing native cleanup cannot leave the caller pending');
+for (const [code, reason] of [[3, /timeout/], [2, /unavailable/]]) {
+  let failBrowser;
+  const watching = findPickup(browserPickupWatch({ watchPosition(_r, fail) { failBrowser = fail; return 7; }, clearWatch() {} }));
+  await new Promise(resolve => setImmediate(resolve));
+  failBrowser({ code });
+  await assert.rejects(watching, reason);
+}
 console.log('Customer pickup location: Tulkarm selection, freshness, accuracy, bounds, timeout and cancellation passed');

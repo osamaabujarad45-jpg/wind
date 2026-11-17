@@ -206,6 +206,8 @@ try {
   const way = [[35.2, 32], [35.21, 32], [35.22, 32], [35.23, 32]];
   assert.deepEqual(fromDriver(way, { latitude: 32.0001, longitude: 35.215 }), [[35.215, 32.0001], [35.22, 32], [35.23, 32]]);
   assert.deepEqual(fromDriver(way, { latitude: 32, longitude: 35.199 }), [[35.199, 32], ...way], 'before the start: nothing dropped');
+  assert.deepEqual(fromDriver([[35.2, 32]], { latitude: 32, longitude: 35.21 }), [[35.2, 32]], 'a one-point line has nothing behind the car');
+  assert.deepEqual(fromDriver([[35.2, 32], [35.2, 32], [35.21, 32]], { latitude: 32, longitude: 35.205 }), [[35.205, 32], [35.21, 32]], 'a repeated vertex is a zero-length segment, not a divide by zero');
   // Approach ETA: fresh wins; the kept one only for the same stop; a failed refresh shows none, even with cached data.
   const kept = { stop: 'o1:32,35', route: 'kept' };
   assert.equal(shownApproach('fresh', false, kept, 'o1:32,35'), 'fresh');
@@ -225,6 +227,7 @@ assert.ok(backtracks([[35.2, 32.0], [35.21, 32.0], [35.22, 32.0], [35.21, 32.0],
 assert.ok(!backtracks([[35.2, 32.0], [35.201, 32.0], [35.2, 32.0001], [35.19, 32.0]]), '~190 m loop: a U-turn, not a spur');
 assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   assert.equal(roadPath({ latitude: 31.90381, longitude: 35.20341 }, { latitude: 32.2211, longitude: 35.2544 }), '/route?from=31.904,35.203&to=32.22110,35.25440');
+  assert.equal(roadPath({ latitude: 31.9, longitude: 35.2 }, { latitude: 32.2, longitude: 35.25 }, 3, 355), '/route?from=31.900,35.200&to=32.20000,35.25000&heading=0', 'heading rounds to 15° and wraps at 360');
   assert.deepEqual(labelField('en'), ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']]);
 
   // T06: renderer capability and route provenance (tasks/maps-contract.md).
@@ -393,6 +396,9 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
   const frames = [{ pickup: a, dropoff: b, road: line }, { pickup: a, dropoff: b, driver: d, focus: 'pickup', road: line, approach: line },
     { pickup: a, dropoff: b, driver: d, focus: 'dropoff', approach: null }, { pickup: a, dropoff: b, driver: d }];
   assert.deepEqual(frames.map(routeFramePoints), [[a, b, bend], [d, a, bend], [d, b], [d, a, b]]);
+  // Before a destination: the pickup and the user's own GPS position; `me` never widens a chosen route or a live trip.
+  frames.push({ pickup: a, me: d }, { pickup: a, dropoff: null }, { pickup: a, dropoff: b, me: d }, { pickup: a, dropoff: null, driver: d, focus: 'dropoff' });
+  assert.deepEqual(frames.slice(4).map(routeFramePoints), [[a, d], [a], [a, b], [d]]);
   for (const f of frames) assert.deepEqual(copy.routeFramePoints(f), routeFramePoints(f));
   // Served from the web root like the rest of the app (the APK loads it from the API origin).
   const web = join(dir, 'web');

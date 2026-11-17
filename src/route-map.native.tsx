@@ -70,12 +70,12 @@ function AppleRouteMap(props: RouteMapProps) {
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
-  <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
+  <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={region} pitchEnabled={false} showsUserLocation={!!props.me}
     onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
-    <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
+    {dropoff && <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />}
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name="remove-circle" size={24} color={palette.error} />
     </Marker>)}
@@ -138,8 +138,22 @@ export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="ios" pin={props} google={GooglePinMap} baseline={ApplePin} />;
 }
 
+/** The sheet can move the pin (locate me, a late GPS fix): follow it unless it is where the map already reported.
+ *  Exported for the Google renderer (google-map.native.tsx). */
+export function usePinCenter(view: React.RefObject<MapView | null>, center: { latitude: number; longitude: number }) {
+  const shown = useRef(center);
+  useEffect(() => {
+    if (Math.abs(shown.current.latitude - center.latitude) + Math.abs(shown.current.longitude - center.longitude) <= 0.000001) return;
+    shown.current = center;
+    view.current?.animateCamera({ center }, { duration: 600 });
+  }, [center.latitude, center.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (point: { latitude: number; longitude: number }) => { shown.current = point; };
+}
+
 function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const view = useRef<MapView>(null);
+  const reported = usePinCenter(view, center);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -159,8 +173,8 @@ function ApplePin({ center, onChange, onFail, onReady, height = 320 }: PinMapPro
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
-      pitchEnabled={false} rotateEnabled={false} onMapReady={() => setReady(true)} onRegionChangeComplete={r => onChange({ latitude: r.latitude, longitude: r.longitude })} />
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+      pitchEnabled={false} onMapReady={() => setReady(true)} onRegionChangeComplete={r => { const p = { latitude: r.latitude, longitude: r.longitude }; reported(p); onChange(p); }} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>

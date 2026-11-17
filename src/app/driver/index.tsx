@@ -154,20 +154,22 @@ export default function Jobs() {
     <VerifyEmailNudge />
 
     {/* Active-job tracking: its own purpose and transport, shown only while a job is assigned. */}
-    {assigned && work.known && <Card tone="forest" style={{ paddingVertical: 12 }}>
+    {/* Dark only while sharing works; a missing GPS is a plain warning card, not a pale pill on a dark slab. */}
+    {assigned && work.known && <Card tone={located ? 'forest' : 'clay'} style={{ paddingVertical: 12 }}>
       <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
-        <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.clayPale }]}>
+        <Row gap={8} style={[styles.location, located && { backgroundColor: 'rgba(211,242,122,0.14)' }]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.clayInk} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.clayInk }}>
             {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
         </Row>
       </Press>
-      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayInk }}>{c.backgroundTrackingWarn}</Txt>}
+      {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.clayPale }}>{c.backgroundTrackingWarn}</Txt>}
     </Card>}
 
-    {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
-    <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
+    {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount.
+        Hidden during a job: presence pauses then, and the card would only explain why it cannot start. */}
+    <View style={{ marginTop: assigned && work.known ? 12 : 0, display: assigned && work.known ? 'none' : 'flex' }}>
       <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
         requestsOn={work.presenceState === 'online' && matching.data?.eligibleForMatching === true}
         pending={work.presencePending} error={work.presenceError ? err(work.presenceError) : null}
@@ -271,6 +273,6 @@ export default function Jobs() {
 }
 
 const styles = StyleSheet.create({
-  location: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
+  location: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   note: { alignItems: 'flex-start', marginTop: 10, backgroundColor: palette.muted, borderRadius: 10, padding: 8 },
 });

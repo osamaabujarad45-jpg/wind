@@ -37,7 +37,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
   const { c } = useCopy();
   if (choice.renderer) {
     const Map = (choice.renderer === 'google' ? Google : Baseline) as ComponentType<RouteMapProps & PinMapProps>;
-    if (route) return <Map key={`${route.pickup.latitude},${route.pickup.longitude},${route.dropoff.latitude},${route.dropoff.longitude}:${attemptKey}`}
+    if (route) return <Map key={`${route.pickup.latitude},${route.pickup.longitude},${route.dropoff?.latitude},${route.dropoff?.longitude}:${attemptKey}`}
       {...route as RouteMapProps & PinMapProps} onFail={fail} />;
     if (pin) return <Map key={attemptKey} {...pin as RouteMapProps & PinMapProps} onFail={fail}
       onReady={() => { if (current()) callbacks.current?.onReady?.(); }}

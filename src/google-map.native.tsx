@@ -9,7 +9,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { routeFramePoints } from './map-math';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
-import { Car } from './route-map.native';
+import { Car, usePinCenter } from './route-map.native';
 import { palette, shadow, useCopy } from './ui';
 
 export type { PinMapProps, RouteMapProps };
@@ -68,14 +68,14 @@ export default function RouteMap(props: RouteMapProps) {
     </View>
   </View>;
   return <View style={{ height, width: '100%' }}>
-  <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
+  <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} showsUserLocation={!!props.me}
     onMapLoaded={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}
     // A pinch the native recogniser claims before React sees the touch still reports a gesture-driven region change.
     onRegionChangeStart={(_, details) => { if (details?.isGesture) setMoved(true); }}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
     {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
     <Marker coordinate={pickup} title={pickupTitle} pinColor="#34765A" />
-    <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />
+    {dropoff && <Marker coordinate={dropoff} title={dropoffTitle} pinColor="#CB6845" />}
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
       <Ionicons name="remove-circle" size={24} color={palette.error} />
     </Marker>)}
@@ -89,8 +89,10 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
-export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+export function PinMap({ center, me, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
+  const view = useRef<MapView>(null);
+  const reported = usePinCenter(view, center);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -108,10 +110,10 @@ export function PinMap({ center, onChange, onFail, onReady, height = 320 }: PinM
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE}
       initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-      pitchEnabled={false} rotateEnabled={false} onMapLoaded={() => setReady(true)}
-      onRegionChangeComplete={r => callbacks.current.onChange({ latitude: r.latitude, longitude: r.longitude })} />
+      pitchEnabled={false} showsUserLocation={!!me} onMapLoaded={() => setReady(true)}
+      onRegionChangeComplete={r => { const p = { latitude: r.latitude, longitude: r.longitude }; reported(p); callbacks.current.onChange(p); }} />
     <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 }}>
       <Ionicons name="location-sharp" size={44} color={palette.clay} />
     </View>

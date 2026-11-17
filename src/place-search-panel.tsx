@@ -67,15 +67,18 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
     {!term && <Txt variant="caption" style={styles.note}>{text.empty}</Txt>}
     {!online && <Txt variant="caption" style={styles.note}>{text.offline}</Txt>}
     <ErrorText>{outside ? c.pinOutsideArea : undefined}</ErrorText>
-    {!!term && !result.choices.length && !canSearchMap && <Txt variant="caption" center style={styles.note}>{c.noCities}</Txt>}
-    {result.choices.map(row)}
-    {canSearchMap && (!shown || !shown.choices || shown.failed) && <View style={styles.note}>
-      <Button title={c.searchMap.replace('{q}', () => term)} icon="map-outline" variant="outline" loading={!!shown && !shown.choices} onPress={searchMap} />
-    </View>}
-    <ErrorText>{shown?.failed}</ErrorText>
-    {shown?.choices && !shown.failed && !shown.choices.length && <Txt variant="caption" center style={styles.note}>{c.searchMapNone}</Txt>}
-    {shown?.choices?.map(row)}
-    {!!shown?.choices?.length && <Txt variant="micro" style={styles.note}>{c.mapCredit}</Txt>}
+    {/* A tapped place replaces the list: its Confirm sits under the field, never below the sheet's fold. Cancel brings the list back. */}
+    {!proposal && <>
+      {!!term && !result.choices.length && !canSearchMap && <Txt variant="caption" center style={styles.note}>{c.noCities}</Txt>}
+      {result.choices.map(row)}
+      {canSearchMap && (!shown || !shown.choices || shown.failed) && <View style={styles.note}>
+        <Button title={c.searchMap.replace('{q}', () => term)} icon="map-outline" variant="outline" loading={!!shown && !shown.choices} onPress={searchMap} />
+      </View>}
+      <ErrorText>{shown?.failed}</ErrorText>
+      {shown?.choices && !shown.failed && !shown.choices.length && <Txt variant="caption" center style={styles.note}>{c.searchMapNone}</Txt>}
+      {shown?.choices?.map(row)}
+      {!!shown?.choices?.length && <Txt variant="micro" style={styles.note}>{c.mapCredit}</Txt>}
+    </>}
     {proposal && choice && <Card tone="olive" style={styles.proposal}>
       <View accessibilityLiveRegion="polite">
         <Txt variant="title">{name(choice)}</Txt>
@@ -87,6 +90,7 @@ export function PlaceSearch({ saved, selected = null, online = true, outside = f
         <Button title={c.cancel} variant="outline" onPress={() => setChoice(null)} />
       </Row>
     </Card>}
+    {proposal && choice?.detail !== undefined && <Txt variant="micro" style={styles.note}>{c.mapCredit}</Txt>}
   </View>;
 }
 

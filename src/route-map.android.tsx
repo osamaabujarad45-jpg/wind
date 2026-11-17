@@ -72,20 +72,21 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 function LiveMap(props: RouteMapProps) {
-  const { pickup, dropoff, driver, height = 220 } = props;
+  const { pickup, dropoff = null, driver, me, height = 220 } = props;
   const { c, language } = useCopy();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const config = { mode: 'route', language, pickup, dropoff, driver: driver ?? null, recenter: c.recenter,
+  const spot = me ? { latitude: me.latitude, longitude: me.longitude, accuracy: me.accuracy ?? null } : null;
+  const config = { mode: 'route', language, pickup, dropoff, driver: driver ?? null, me: spot, recenter: c.recenter,
     padding: Math.round(Math.min(56, height / 5)) }; // markers clear of the edges without zooming a short map out
   const update = { driver: driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null,
-    road: props.road ?? null, approach: props.approach ?? null, closed: props.closed ?? [], focus: props.focus, stale: !!props.stale };
+    me: spot, road: props.road ?? null, approach: props.approach ?? null, closed: props.closed ?? [], focus: props.focus, stale: !!props.stale };
   if (failed) return <View>
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}><Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} /></View>
   </View>;
   return <MapPage key={`${language}:${attempt}`} config={config} height={height} update={update} onFail={() => { setFailed(true); props.onFail?.(); }}
-    label={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
+    label={`${c.routeDiagram}: ${props.pickupTitle}${dropoff ? ` → ${props.dropoffTitle}` : ''}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />;
 }
 
 /** Fixed centre pin over a draggable map; reports the centre when the map stops moving. */
@@ -93,7 +94,7 @@ export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="android" pin={props} google={GooglePinMap} baseline={MapLibrePin} />;
 }
 
-function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function MapLibrePin({ center, me, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -101,7 +102,9 @@ function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMap
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E6ECE3' }}>
     <Retry onPress={() => { setFailed(false); setAttempt(n => n + 1); }} />
   </View>;
-  return <MapPage key={`${language}:${attempt}`} config={{ mode: 'pin', language, center }} height={height} onCenter={onChange}
+  // The page keeps its first centre; later centres (locate me, a late GPS fix) and the user's dot arrive as updates.
+  return <MapPage key={`${language}:${attempt}`} config={{ mode: 'pin', language, center, me: me ?? null }} height={height} onCenter={onChange}
+    update={{ center: { latitude: center.latitude, longitude: center.longitude }, me: me ? { latitude: me.latitude, longitude: me.longitude, accuracy: null } : null }}
     onReady={onReady} onFail={() => { setFailed(true); onFail?.(); }} />;
 }
 

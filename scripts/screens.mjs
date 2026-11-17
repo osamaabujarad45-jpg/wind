@@ -103,7 +103,7 @@ await call(`/orders/${completed.id}/rate`, layla.token, { rating: 5 });
 await call(`/jobs/${inTransit.id}/accept`, ahmad.token, {});
 await call(`/orders/${inTransit.id}/advance`, ahmad.token, {});
 await call(`/orders/${inTransit.id}/advance`, ahmad.token, {});
-await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
+await call('/location', ahmad.token, { latitude: 31.9065, longitude: 35.2160 }); // Al-Bireh, on the route out of Ramallah
 
 // A separate driver carries one parcel with locked code attempts for the admin recovery flow.
 const recoveryDriver = await register('0599000006', 'يوسف عودة', { role: 'driver', vehicle: 'van' });
@@ -237,7 +237,7 @@ for (const language of ['ar', 'en']) {
     }
 
     // The server drops a driver fix after 120 s; send a fresh one so the live screen never depends on run time.
-    if (screen.fix) await call('/location', ahmad.token, { latitude: 31.80, longitude: 35.21 });
+    if (screen.fix) await call('/location', ahmad.token, { latitude: 31.9065, longitude: 35.2160 }); // Al-Bireh, on the route out of Ramallah
     await page.goto(base + screen.route, { waitUntil: 'networkidle' });
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
     for (const click of screen.clicks ?? []) {

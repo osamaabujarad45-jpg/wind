@@ -25,7 +25,8 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ['geolocation'], reducedMotion: 'reduce' });
   await context.addInitScript(({ token }) => {
     localStorage.setItem('token', token); localStorage.setItem('onboarded', '1'); localStorage.setItem('language', 'en');
-    window.locationReview = { mode: 'success', active: new Set(), next: 0 };
+    // The mode survives navigation in this tab: the booking form asks for a fix as soon as it opens.
+    window.locationReview = { mode: sessionStorage.getItem('gpsMode') ?? 'failure', active: new Set(), next: 0 };
     navigator.geolocation.watchPosition = (success, fail) => {
       const id = ++window.locationReview.next;
       window.locationReview.active.add(id);
@@ -42,6 +43,10 @@ try {
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base + '/book');
   await page.getByText(c.chooseCity, { exact: true }).first().waitFor();
+  // The automatic first fix failed: nothing is invented, and no error appears for a fix nobody asked for.
+  await page.waitForFunction(() => window.locationReview.next > 0 && window.locationReview.active.size === 0);
+  await page.getByText(c.useLocation, { exact: true }).waitFor();
+  assert.equal(await page.getByText(c.locationManual, { exact: true }).count(), 0, 'a failed automatic fix stays silent');
   assert.equal(await page.getByText(c.chooseCity, { exact: true }).count(), 2);
   assert.equal(await page.getByText('Ramallah', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Nablus', { exact: true }).count(), 0);
@@ -56,8 +61,20 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0, 'request with unchosen cities opens the place search instead of booking');
   await page.screenshot({ path: '.expo/location-review/choose-cities.png', fullPage: true });
 
+  // A fresh form with GPS: the pickup is where the customer is, before any tap, with the blue dot on the map.
+  await page.evaluate(() => sessionStorage.setItem('gpsMode', 'success'));
+  await page.goto(base + '/book');
+  await page.getByText('Tulkarm', { exact: true }).waitFor();
+  await page.getByText(/approximate accuracy ±53 m/).waitFor();
+  assert.equal(await page.getByText(c.chooseCity, { exact: true }).count(), 1, 'only the destination is left to choose');
+  await page.waitForFunction(() => document.querySelectorAll(".maplibregl-marker").length >= 2, null, { timeout: 15000 }).catch(async e => { await page.screenshot({ path: ".expo/location-review/debug.png", fullPage: true }); console.log("markers", await page.evaluate(() => document.querySelectorAll(".maplibregl-marker").length), errors); throw e; }); // pickup + your dot
+  assert.equal(await page.evaluate(() => window.locationReview.active.size), 0, 'the automatic fix stops collecting');
+  await page.screenshot({ path: '.expo/location-review/auto-located.png', fullPage: true });
+
+  // A linked route keeps its pickup: no automatic fix replaces a choice.
   await page.goto(base + '/book?from=ramallah&to=nablus');
   await page.getByText(c.destinationEstimated, { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.locationReview.next), 0, 'no automatic fix over a chosen pickup');
   // If the quote is road-routed, the fallback warning must disappear as well.
   await page.route(/\/api\/price(?:\?|$)/, async route => { // the client appends ?journeyProtocol=1
     const response = await route.fetch();
@@ -77,16 +94,17 @@ try {
   await page.locator('.maplibregl-marker').first().waitFor({ timeout: 15000 });
   await page.screenshot({ path: '.expo/location-review/tulkarm-pickup.png', fullPage: true });
 
+  await page.evaluate(() => sessionStorage.setItem('gpsMode', 'failure'));
   await page.goto(base + '/book');
   await page.getByText(c.chooseCity, { exact: true }).first().waitFor();
-  await page.evaluate(() => { window.locationReview.mode = 'failure'; });
+  await page.waitForFunction(() => window.locationReview.next > 0 && window.locationReview.active.size === 0);
   await page.getByRole('button', { name: c.useLocation, exact: true }).click();
   await page.getByText(c.locationManual, { exact: true }).waitFor();
   assert.equal(await page.getByText(c.chooseCity, { exact: true }).count(), 2, 'failed GPS never becomes Ramallah/Nablus');
   assert.equal(await page.evaluate(() => window.locationReview.active.size), 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM orders').get().n, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS browser: no default route, saved-place city gate, route required before booking (place search opens), Tulkarm GPS pickup, old landmark cleared, accuracy shown, collection stopped, provider failure, zero orders, no page errors');
+  console.log('PASS browser: no default route, silent failed auto-fix, automatic GPS pickup with your dot, linked pickup kept, saved-place city gate, route required before booking (place search opens), Tulkarm GPS pickup, old landmark cleared, accuracy shown, collection stopped, provider failure, zero orders, no page errors');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

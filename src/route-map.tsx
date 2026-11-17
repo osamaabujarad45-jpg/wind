@@ -78,10 +78,14 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
       created = new ml.Map({
         container, style: STYLE, bounds: fitBounds(first.current.points),
         fitBoundsOptions: { padding: first.current.padding, maxZoom: 15 }, attributionControl: { compact: true },
-        // Embedded maps let the page scroll (two fingers / ctrl+wheel to move the map); the picker owns all gestures.
-        cooperativeGestures: !first.current.picker, dragRotate: false, pitchWithRotate: false, maxZoom: 18,
+        // Maps sit outside the page scroll (Screen's fixed top, the pin sheet), so one finger pans, a pinch zooms and a
+        // twist rotates; tilt stays off. The compass shows only once the map is turned, and a tap puts north back up.
+        pitchWithRotate: false, maxZoom: 18,
       });
-      created.touchZoomRotate.disableRotation();
+      created.touchPitch.disable();
+      created.addControl(new ml.NavigationControl({ showZoom: false, visualizePitch: false }), 'top-left');
+      const north = () => { const corner = container?.querySelector<HTMLElement>('.maplibregl-ctrl-top-left'); if (corner) corner.style.display = Math.abs(created!.getBearing()) > 0.5 ? '' : 'none'; };
+      created.on('rotate', north); north();
       const announceReady = () => {
         if (disposed || terminalFailure || !mapLoaded || !baseTileLoaded || announcedReady) return;
         announcedReady = true;
@@ -121,7 +125,13 @@ function useMap(host: React.RefObject<View | null>, points: Point[], language: '
 
 function dot(color: string, square = false) {
   const el = document.createElement('div');
-  el.style.cssText = `width:18px;height:18px;border-radius:${square ? 5 : 9}px;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)`;
+  el.style.cssText = `width:18px;height:18px;border-radius:${square ? 5 : 9}px;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);z-index:2`;
+  return el;
+}
+// The user's own position: larger than a stop and beneath it, so a pickup at your position sits inside your ring.
+function meDot() {
+  const el = document.createElement('div');
+  el.style.cssText = `width:26px;height:26px;border-radius:13px;background:${palette.blue};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);z-index:1`;
   return el;
 }
 // Closed checkpoint: a no-entry sign, the same everywhere drivers look.
@@ -136,7 +146,7 @@ function driverIcon(arrow: boolean) {
   el.classList.add('driver-marker');
   el.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="${palette.blue}" stroke="#fff" stroke-width="3"/>${
     arrow ? '<path d="M19 9 L26 26 L19 22 L12 26 Z" fill="#fff"/>' : '<circle cx="19" cy="19" r="5" fill="#fff"/>'}</svg>`;
-  el.style.cssText = 'width:38px;height:38px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))';
+  el.style.cssText = 'width:38px;height:38px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));z-index:3'; // the car passes over the stops
   return el;
 }
 // Accuracy halo radius in pixels for `meters` at every zoom (web-mercator metres per pixel halve per zoom level).
@@ -144,6 +154,20 @@ const halo = (meters: number, lat: number) => {
   const base = meters / metersPerPixelAtCoordinate(lat, 0); // MapLibre circles use CSS pixels, independent of display density.
   return ['interpolate', ['exponential', 2], ['zoom'], 0, base, 22, base * 2 ** 22];
 };
+// The user's own position: a blue dot over its accuracy halo, beneath every other marker (same as public/map.html).
+function addMeLayer(m: MlMap) {
+  m.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  m.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-color': palette.blue, 'circle-opacity': 0.12, 'circle-stroke-color': palette.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
+}
+function drawMe(m: MlMap, ml: Lib, marker: Marker | undefined, me: (Point & { accuracy?: number | null }) | null | undefined) {
+  const source = m.getSource('me') as GeoJSONSource | undefined;
+  if (!me) { marker?.remove(); source?.setData({ type: 'FeatureCollection', features: [] }); return undefined; }
+  const at: [number, number] = [me.longitude, me.latitude];
+  const next = marker?.setLngLat(at) ?? new ml.Marker({ element: meDot() }).setLngLat(at).addTo(m); // a marker needs its place before addTo
+  source?.setData(me.accuracy != null ? { type: 'Feature', geometry: { type: 'Point', coordinates: [me.longitude, me.latitude] }, properties: {} } : { type: 'FeatureCollection', features: [] });
+  if (me.accuracy != null) m.setPaintProperty('me', 'circle-radius', halo(me.accuracy, me.latitude) as ExpressionSpecification);
+  return next;
+}
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 /** Read live at each animation: the user can change the setting while the map is open. */
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -158,7 +182,7 @@ function LiveMap(props: RouteMapProps) {
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c, language } = useCopy();
   const host = useRef<View>(null);
-  const markers = useRef<{ ml?: Lib; driver?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
+  const markers = useRef<{ ml?: Lib; driver?: Marker; me?: Marker; arrow?: boolean; shown?: Point; frame?: number; closed?: Marker[];
     at?: number; rotation?: number; approach?: [number, number][] | null; lineAt?: number; haloAt?: number; stale?: boolean; moved?: boolean }>({});
   const [moved, setMoved] = useState(false);
   const points = routeFramePoints(props);
@@ -170,7 +194,8 @@ function LiveMap(props: RouteMapProps) {
     markers.current = { ml };
     setMoved(false);
     new ml.Marker({ element: dot(palette.olive) }).setLngLat([pickup.longitude, pickup.latitude]).addTo(m);
-    new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
+    if (dropoff) new ml.Marker({ element: dot(palette.clay, true) }).setLngLat([dropoff.longitude, dropoff.latitude]).addTo(m);
+    addMeLayer(m);
     // Lines follow roads only (OSRM geometry); a straight pickup→dropoff line would cut through buildings.
     for (const [id, color] of [['road', palette.forest], ['approach', palette.blue]] as const) {
       m.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -181,6 +206,7 @@ function LiveMap(props: RouteMapProps) {
     m.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': palette.blue, 'circle-opacity': 0.12, 'circle-stroke-color': palette.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });
     m.on('dragstart', () => { markers.current.moved = true; setMoved(true); });
     m.on('zoomstart', e => { if ((e as { originalEvent?: unknown }).originalEvent) { markers.current.moved = true; setMoved(true); } });
+    m.on('rotatestart', e => { if ((e as { originalEvent?: unknown }).originalEvent) { markers.current.moved = true; setMoved(true); } });
   });
 
   // A terminal failure goes to the provider boundary, which owns fallback and retry for this attempt.
@@ -205,6 +231,13 @@ function LiveMap(props: RouteMapProps) {
     state.closed?.forEach(m => m.remove());
     state.closed = (props.closed ?? []).map(p => new state.ml!.Marker({ element: noEntry() }).setLngLat([p.longitude, p.latitude]).addTo(map));
   }, [map, closedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const me = props.me;
+  const meKey = me ? `${me.latitude},${me.longitude},${me.accuracy}` : '';
+  useEffect(() => {
+    const state = markers.current;
+    if (map && state.ml) state.me = drawMe(map, state.ml, state.me, me);
+  }, [map, meKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Driver: glide from the shown position to each new fix over the gap between fixes, so the marker is still moving
   // when the next one lands (no hop-and-wait), turn smoothly, and keep the approach line starting under the marker.
@@ -303,7 +336,7 @@ function LiveMap(props: RouteMapProps) {
   }
 
   return <View style={{ height, width: '100%' }} accessible accessibilityRole="image"
-    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
+    accessibilityLabel={`${c.routeDiagram}: ${props.pickupTitle}${dropoff ? ` → ${props.dropoffTitle}` : ''}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`}>
     {/* The diagram shows while the real map loads: never a blank box. It is decoration there: no words,
         no announcement, no gestures. Once the map is up it covers the placeholder. */}
     {!loaded && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
@@ -327,17 +360,21 @@ export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="web" pin={props} google={GooglePinMap} baseline={MapLibrePin} />;
 }
 
-function MapLibrePin({ center, onChange, onFail, onReady, height = 320 }: PinMapProps) {
+function MapLibrePin({ center, me, onChange, onFail, onReady, height = 320 }: PinMapProps) {
   const { language } = useCopy();
   const host = useRef<View>(null);
   const callbacks = useRef({ onChange, onFail, onReady });
   useEffect(() => { callbacks.current = { onChange, onFail, onReady }; });
-  const { map, failed, loaded, retry } = useMap(host, [center], language, { padding: 0, picker: true }, m => {
+  const lib = useRef<{ ml?: Lib; me?: Marker }>({});
+  const { map, failed, loaded, retry } = useMap(host, [center], language, { padding: 0, picker: true }, (m, ml) => {
+    lib.current = { ml };
+    addMeLayer(m);
     m.jumpTo({ center: [center.longitude, center.latitude], zoom: 16 });
     m.on('moveend', () => { const p = m.getCenter(); callbacks.current.onChange({ latitude: p.lat, longitude: p.lng }); });
   });
   useEffect(() => { if (failed) callbacks.current.onFail?.(); }, [failed]);
   useEffect(() => { if (loaded && !failed) callbacks.current.onReady?.(); }, [loaded, failed]);
+  useEffect(() => { if (map && lib.current.ml) lib.current.me = drawMe(map, lib.current.ml, lib.current.me, me); }, [map, me?.latitude, me?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!map) return;
     const p = map.getCenter();

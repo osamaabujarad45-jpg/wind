@@ -4,8 +4,11 @@ import type { Point } from './model';
 import { palette, useCopy } from './ui';
 
 export type RouteMapProps = {
-  pickup: Point; dropoff: Point; pickupTitle: string; dropoffTitle: string;
+  /** No dropoff yet (booking before a destination): the map shows the pickup and the user's position. */
+  pickup: Point; dropoff?: Point | null; pickupTitle: string; dropoffTitle?: string;
   driver?: (Point & { heading?: number | null; accuracy?: number | null }) | null; driverTitle?: string;
+  /** The user's own live GPS position: a blue dot with its accuracy halo, never followed by the camera. */
+  me?: (Point & { accuracy?: number | null }) | null;
   /** The fix is old (lost signal): the marker fades so it reads as "last seen here", not live. */
   stale?: boolean;
   /** Which stop the live view frames with the driver: pickup before collection, dropoff after. */
@@ -22,13 +25,15 @@ export type RouteMapProps = {
   onFail?: () => void;
 };
 export type PinMapProps = { center: Point; onChange: (point: Point) => void; onLoading?: () => void; onReady?: () => void; onFail?: () => void; height?: number;
+  /** The user's own GPS position, drawn as a blue dot under the pin. */
+  me?: Point | null;
   /** Public surfaces draw the baseline renderer only. */
   forceBaseline?: boolean };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not
 // announce the city names twice or repeat them on screen.
-export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false }: RouteMapProps & { plain?: boolean }) {
+export default function RoutePreview({ pickupTitle, dropoffTitle, dropoff, plain = false }: RouteMapProps & { plain?: boolean }) {
   const { rtl, c, language } = useCopy();
   const [w, setW] = useState(0);
   const h = 156;
@@ -36,19 +41,19 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
   const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   return <View style={[styles.preview, plain && styles.fill]} onLayout={e => setW(e.nativeEvent.layout.width)} accessible={!plain}
-    accessibilityLabel={plain ? undefined : `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}`}>
+    accessibilityLabel={plain ? undefined : dropoff ? `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}` : `${c.routeDiagram}: ${pickupTitle}`}>
     <View style={[styles.road, { top: h * 0.22, left: -20, right: -20, height: 10 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
     <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
     {!plain && <Text style={styles.diagram}>{c.routeDiagram}</Text>}
     {w > 0 && <>
-      <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
+      {dropoff && <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />}
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
-      <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
+      {dropoff && <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />}
       {!plain && <>
         <Text key={`pickup-${language}`} numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text key={`dropoff-${language}`} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+        {dropoff && <Text key={`dropoff-${language}`} numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>}
       </>}
     </>}
   </View>;

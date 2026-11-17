@@ -16,7 +16,7 @@ import { PlaceSearch, type PlaceSearchText } from '../place-search-panel';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, googlePreviewPath, routeProvider, selectRenderer } from '../map-provider';
 import { useMapMode } from '../map-mode';
-import { RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
+import { MapStage, RouteLine, serviceMeta, SlotPicker, useFormat } from '../parts';
 import PinSheet from '../pin-sheet';
 import RouteMap, { canPin } from '../route-map';
 import { RouteCheckpoints, type RoadRoute } from '../road';
@@ -48,6 +48,7 @@ function BookForm() {
   const routeChosen = pickupChosen && dropoffChosen;
   const [pickupPoint, setPickupPoint] = useState<Point | null>(null);
   const [gpsPoint, setGpsPoint] = useState<Point | null>(null); // the chip says "from your location" only while the GPS fix is the pickup
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); // halo of the blue "you" dot; null for a cached hint
   const gpsAt = useRef(0);
   const pickupNow = useRef({ city: pickupCity, chosen: pickupChosen }); // read when a slow GPS fix lands, not at the tap
   useEffect(() => { pickupNow.current = { city: pickupCity, chosen: pickupChosen }; }, [pickupCity, pickupChosen]);
@@ -56,6 +57,7 @@ function BookForm() {
   const [dropoffPoint, setDropoffPoint] = useState<Point | null>(null);
   const [pinFor, setPinFor] = useState<'pickup' | 'dropoff' | null>(null);
   const [locating, setLocating] = useState(false);
+  const [finding, setFinding] = useState(false); // the automatic first fix: shown on the chip, never locks the form
   const [picker, setPicker] = useState<'pickup' | 'dropoff' | null>(params.pick === 'to' ? 'dropoff' : null);
   const [pickupNote, setPickupNote] = useState('');
   const [dropoffNote, setDropoffNote] = useState('');
@@ -159,30 +161,56 @@ function BookForm() {
     return permission;
   }
 
-  async function locate() {
+  // `auto` is the first fix on a fresh form: no lock, no Settings detour, no error text, and a pickup the customer
+  // chose meanwhile wins (the fix then only draws their dot).
+  async function locate(auto = false) {
     locationRequest.current?.abort();
     const request = new AbortController();
     locationRequest.current = request;
-    setLocating(true);
+    if (auto) setFinding(true); else setLocating(true);
     setLocationError('');
     try {
+      // Location switched off on Android: the system "turn on location" dialog, then the watch (Uber does the same).
+      const watch = async (receive: Parameters<typeof Location.watchPositionAsync>[1], fail: (reason: string) => void) => {
+        if (Platform.OS === 'android' && !(await Location.hasServicesEnabledAsync())) {
+          if (auto) throw new Error('disabled');
+          await Location.enableNetworkProviderAsync().catch(() => { throw new Error('disabled'); });
+        }
+        return Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail);
+      };
       // Permission setup shares the timeout: dismissing/backgrounding a native
       // prompt must not leave the booking form locked indefinitely.
       const result = await findPickup(Platform.OS === 'web' ? browserPickupWatch(navigator.geolocation)
-        : withPickupPermission(askLocation, (receive, fail) => Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000 }, receive, fail)), request.signal);
+        : withPickupPermission(auto ? () => Location.requestForegroundPermissionsAsync() : askLocation, watch), request.signal);
       if (request.signal.aborted) return;
+      gpsAt.current = Date.now();
+      setGpsPoint(result.point); setGpsAccuracy(result.accuracy);
+      if (auto && pickupNow.current.chosen) return;
       // Another chosen city's landmark would mislead the driver (as on the pin sheet); one typed before any city is kept.
       if (pickupNow.current.chosen && result.city !== pickupNow.current.city) setPickupNote('');
       setPickupCity(result.city); setPickupChosen(true);
-      gpsAt.current = Date.now();
-      setPickupPoint(result.point); setGpsPoint(result.point);
+      setPickupPoint(result.point);
       setLocationError(fill(c.locationAccuracy, { city: city(result.city)[language], m: Math.ceil(result.accuracy) }));
     } catch (e) {
-      if (!request.signal.aborted) setLocationError(e instanceof Error && e.message === 'outside' ? c.pinOutsideArea
-        : e instanceof Error && e.message === 'inaccurate' ? c.locationInaccurate : c.locationManual);
-    } finally { if (!request.signal.aborted) setLocating(false); }
+      const reason = e instanceof Error ? e.message : '';
+      if (!request.signal.aborted && !auto) setLocationError(reason === 'outside' ? c.pinOutsideArea : reason === 'inaccurate' ? c.locationInaccurate
+        : reason === 'disabled' ? c.locationServicesOff : reason === 'permission' ? c.locationDenied : c.locationManual);
+    } finally { if (!request.signal.aborted) { setLocating(false); setFinding(false); } }
   }
+
+  // Uber-style start: a fresh form begins where the customer is. The system asks once if it never asked; a refusal
+  // stays a refusal (the chip still works). Copied, restored and linked pickups are kept.
+  const autoLocated = useRef(false);
+  useEffect(() => {
+    if (!ready || autoLocated.current || pending || pickupNow.current.chosen) return;
+    autoLocated.current = true;
+    void (async () => {
+      const allowed = Platform.OS === 'web'
+        ? await (navigator.permissions?.query({ name: 'geolocation' }).then(p => p.state !== 'denied', () => true) ?? true)
+        : await Location.getForegroundPermissionsAsync().then(p => p.granted || p.canAskAgain, () => false);
+      if (allowed && alive.current) void locate(true);
+    })();
+  }, [ready, pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Read-only reconciliation uses the exact command receipt, never mutable order details.
   const checkPending = useCallback(async (command: PendingBooking) => {
@@ -419,13 +447,21 @@ function BookForm() {
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <Screen scrollRef={scrollRef} footer={pending ? undefined : <>
+    {/* The map is the fixed top (Uber): every gesture is the map's, and it starts at the customer's GPS pickup,
+        before any destination is chosen. */}
+    <Screen scrollRef={scrollRef} top={<>
+      <Header title={c[service]} back />
+      {(routeChosen || !!pickupPoint) && <MapStage ratio={0.36}>{height =>
+        <RouteMap height={height} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffChosen ? dropoffPoint ?? city(dropoffCity) : null}
+          pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} me={gpsPoint && { ...gpsPoint, accuracy: gpsAccuracy }}
+          road={preview?.line} closed={preview?.closed} />}
+      </MapStage>}
+    </>} footer={pending ? undefined : <>
       <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
         onPress={submit} loading={busy} disabled={!ready || locating || quoting || quoteFailed || scopeInvalid || (!available && !pending)} />
       {requestReason && <Reason>{requestReason}</Reason>}
       {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
     </>}>
-      <Header title={c[service]} back />
       {pending && <Card tone="clay">
         <Txt variant="title">{c.bookingPending}</Txt>
         <Txt variant="caption">{c.bookingRetryHint}</Txt>
@@ -457,12 +493,8 @@ function BookForm() {
         })}
       </Row>
 
-      <Card style={{ paddingTop: 0, overflow: 'hidden' }}>
-        {routeChosen && <View style={{ marginHorizontal: -16, marginBottom: 12 }}>
-          <RouteMap height={150} pickup={pickupPoint ?? city(pickupCity)} dropoff={dropoffPoint ?? city(dropoffCity)}
-            pickupTitle={city(pickupCity)[language]} dropoffTitle={city(dropoffCity)[language]} road={preview?.line} closed={preview?.closed} />
-          <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
-        </View>}
+      <Card>
+        {routeChosen && <View style={{ marginHorizontal: -12, marginBottom: 4 }}><RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} /></View>}
         <View style={rtl ? { paddingLeft: 48 } : { paddingRight: 48 }}>
           <RouteLine from={pickupChosen ? city(pickupCity)[language] : c.chooseCity} to={dropoffChosen ? city(dropoffCity)[language] : c.chooseCity} onFrom={locked ? undefined : () => setPicker('pickup')} onTo={locked ? undefined : () => setPicker('dropoff')} ride={service === 'ride'} />
           <View style={[styles.swap, rtl ? { left: 0 } : { right: 0 }]}>
@@ -475,10 +507,10 @@ function BookForm() {
           </View>
         </View>
         <Row gap={8} style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair, justifyContent: 'space-between' }}>
-          <Press accessibilityLabel={c.useLocation} onPress={locate} disabled={locating || locked}>
+          <Press accessibilityLabel={c.useLocation} onPress={() => { void locate(); }} disabled={locating || locked}>
             <Row gap={6} style={styles.chip}>
               <Ionicons name={located ? 'checkmark-circle' : 'navigate'} size={14} color={palette.olive} />
-              <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating ? c.locating : located ? c.located : c.useLocation}</Txt>
+              <Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{locating || finding ? c.locating : located ? c.located : c.useLocation}</Txt>
             </Row>
           </Press>
           {routeChosen && <Txt variant="caption">{pickupCity === dropoffCity ? c.sameCity : `${preview ? preview.km : `≈ ${km}`} ${c.km}`}</Txt>}
@@ -496,7 +528,7 @@ function BookForm() {
                   setGpsPoint(null);
                   const point = await cachedPickup(() => Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 100 }), request.signal);
                   if (request.signal.aborted) return;
-                  if (point) setGpsPoint(point); // Revalidate cached hints on every opening; only live fixes set gpsAt.
+                  if (point) { setGpsPoint(point); setGpsAccuracy(null); } // Revalidate cached hints on every opening; only live fixes set gpsAt.
                 }
               }
               if (request.signal.aborted) return;
@@ -626,7 +658,7 @@ function BookForm() {
     </Screen>
 
     {pinFor && <PinSheet title={word(pinFor === 'pickup' ? 'pickupOnMap' : 'dropoffOnMap')}
-      start={(pinFor === 'pickup' ? (pickupPoint ?? gpsPoint) : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)}
+      start={(pinFor === 'pickup' ? (pickupPoint ?? gpsPoint) : dropoffPoint) ?? city(pinFor === 'pickup' ? pickupCity : dropoffCity)} me={gpsPoint}
       onClose={() => setPinFor(null)} onConfirm={point => {
         const near = servedCity(point);
         if (!near) { setLocationError(c.pinOutsideArea); setPinFor(null); return; }

@@ -115,9 +115,12 @@ export function Logo({ size: s = 36 }: { size?: number }) {
 
 // ---------- layout ----------
 
-export function Screen({ children, onRefresh, footer, scrollRef }: {
+export function Screen({ children, onRefresh, footer, scrollRef, top }: {
   children: React.ReactNode; onRefresh?: () => Promise<unknown>; footer?: React.ReactNode;
   scrollRef?: React.RefObject<ScrollView | null>;
+  /** Fixed above the scrolling content (Uber's map-first layout): a map here owns every drag, pinch and twist,
+   *  because no scroll view sits around it to steal vertical moves. */
+  top?: React.ReactNode;
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const refresh = onRefresh && (async () => { setRefreshing(true); await onRefresh(); setRefreshing(false); });
@@ -127,6 +130,7 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
   // shrinks and Android scrolls the focused field into view, and the footer rides on the keyboard. iOS screens wrap their own.
   return <SafeAreaView edges={inTabs ? ['top'] : ['top', 'bottom']} style={styles.safe}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
+      {top && <View style={styles.top}>{top}</View>}
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
         refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}>
         {children}
@@ -540,6 +544,7 @@ const motion = css.create({
 const styles = StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
+  top: { paddingHorizontal: size.gutter, paddingTop: 8 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   logo: { backgroundColor: palette.forest, overflow: 'hidden' },
   header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: 44 },

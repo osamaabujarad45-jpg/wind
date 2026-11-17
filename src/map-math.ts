@@ -75,15 +75,16 @@ export function fitBounds(points: Point[]): [[number, number], [number, number]]
   return [[w, s], [e, n]];
 }
 
-/** Keep the actual stops and every bend of the visible road in frame, including after the trip changes phase. */
-export function routeFramePoints({ pickup, dropoff, driver, focus, road, approach }: {
-  pickup: Point; dropoff: Point; driver?: Point | null; focus?: 'pickup' | 'dropoff';
+/** Keep the actual stops and every bend of the visible road in frame, including after the trip changes phase.
+ *  Before a destination is chosen the frame is the pickup and the user's own position (`me`). */
+export function routeFramePoints({ pickup, dropoff, driver, me, focus, road, approach }: {
+  pickup: Point; dropoff?: Point | null; driver?: Point | null; me?: Point | null; focus?: 'pickup' | 'dropoff';
   road?: [number, number][] | null; approach?: [number, number][] | null;
 }): Point[] {
-  const stops = focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff];
+  const stops = (focus === 'pickup' ? [pickup] : focus === 'dropoff' ? [dropoff] : [pickup, dropoff]).filter(p => !!p) as Point[];
   const line = driver ? approach : road;
   return [
-    ...(driver ? [driver, ...stops] : [pickup, dropoff]),
+    ...(driver ? [driver, ...stops] : dropoff ? [pickup, dropoff] : me ? [pickup, me] : [pickup]),
     ...(line ?? []).map(([longitude, latitude]) => ({ latitude, longitude })),
   ];
 }

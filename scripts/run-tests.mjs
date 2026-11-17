@@ -73,6 +73,7 @@ const suites = [
   "dependencies.test.mjs",
   "clean-typecheck.test.mjs",
   "background-location.test.mjs",
+  "location-delivery.test.mjs",
   "active-gps-client.test.mjs",
   "active-gps-native.test.mjs",
   "location-web-clock.test.mjs",

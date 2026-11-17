@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { againForm, canOrderAgain, canSendAnother, newBooking, orderRequest, pickupForm, readBooking, retryIds } from '../src/booking.ts';
-import { locationState, publicFixClock, publicFixAgeMs, retainedPublicFix } from '../src/location-state.ts';
+import { locationState, newerFix, publicFixClock, publicFixAgeMs, retainedPublicFix } from '../src/location-state.ts';
 import { noteServerDate } from '../src/api-client.ts';
 import { copy, statusText } from '../src/copy.ts';
 import { isOpen, keepOlder, safetyKinds, withOlder } from '../src/model.ts';
@@ -144,6 +144,19 @@ assert.deepEqual(locationState({ ...location, ageSeconds: 130 }, 1000), { ageSec
 // A stationary driver's 15 s fix is the normal cadence, not a weak signal.
 assert.deepEqual(locationState(location, 76000), { ageSeconds: 16, stale: false, reconnecting: false });
 assert.deepEqual(locationState(location, 74000), { ageSeconds: 14, stale: false, reconnecting: false });
+// A missing or broken server age falls back to the clock; a broken fix time shows no freshness at all.
+assert.deepEqual(locationState({ ...location, ageSeconds: undefined }, 76000), { ageSeconds: 16, stale: false, reconnecting: false });
+assert.deepEqual(locationState({ ...location, ageSeconds: NaN }, 76000), { ageSeconds: 16, stale: false, reconnecting: false });
+assert.equal(locationState({ ...location, updatedAt: NaN }, 76000), null);
+assert.equal(publicFixAgeMs({ updatedAt: 60_000, ageSeconds: Infinity }, 76_000), 16_000, 'a non-finite public age never pins the marker as stale');
+// The live push and the poll report the same driver: the newer fix wins, a missing one loses, a tie keeps the push.
+const pushed = { updatedAt: 70_000 }, polled = { updatedAt: 65_000 };
+assert.equal(newerFix(pushed, polled), pushed);
+assert.equal(newerFix(polled, pushed), pushed);
+assert.equal(newerFix(null, polled), polled);
+assert.equal(newerFix(pushed, undefined), pushed);
+assert.equal(newerFix(null, null), null);
+assert.equal(newerFix(pushed, { updatedAt: 70_000 }), pushed);
 // A phone clock 2 minutes ahead (server Date header) still sees a 10 s old fix as live; small header jitter is ignored.
 noteServerDate(new Date(70_000).toUTCString(), 190_000);
 assert.deepEqual(locationState(location, 190_000), { ageSeconds: 10, stale: false, reconnecting: false });
