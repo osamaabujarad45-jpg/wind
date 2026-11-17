@@ -27,6 +27,7 @@ const modules = {
     if (path.endsWith('/identity-check')) return { at: 1, proof: '1.signature' };
     calls.push(body); if (calls.length === 1) throw new ApiError('carrying_parcels'); await new Promise(resolve => { complete = resolve; });
   } },
+  '@expo/vector-icons': { Ionicons: 'Ionicons' },
   '../../ui': { ...ui, fill: copy.fill, useCopy: () => ({ c: copy.copy.en, err: e => e.message }), palette: {}, tones: { active: {} },
     haptic: { success() {}, error() {} }, confirm: (_message, yes) => { confirmCount++; yes(); } },
 };
