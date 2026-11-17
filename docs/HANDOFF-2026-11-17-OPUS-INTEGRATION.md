@@ -15,8 +15,8 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 | A-01 admin lost-reply remittance recovery | #79 | claude/p0-command-recovery | MERGED 63fe2452 (CI image/persistence/verify green at 55b4ad43; test PC: tsc, lint, admin-cash-command, cash, admin-review, cash-ceiling, pg-cash, ledger, authz-matrix, contracts pass; the monolithic full suite is blocked by test-PC memory) |
 | Dispute resend returns the order | #80 | claude/dispute-resend | MERGED 117cf25b (CI green; test PC: tsc, lint, credit, exceptions, contracts, and url-decoder alone pass; the earlier url-decoder failure was a memory-starved spawn timeout) |
 | Generic sender-scoped command receipt (server) | #81 | claude/command-receipts | MERGED 730bfdaa (CI green at 5af4f5ac; test PC: commands (PostgreSQL, two API processes), commands-sqlite, authz-matrix, contracts pass) |
-| Chat outbox: unsent messages survive restart (SQLite-compatible) | #82 | claude/chat-outbox | Haiku review: 2 high + 11 others, all fixed; test PC at bcb67cc6: chat-outbox, session-recovery, phone-ui, chat, presentation, lint, tsc pass; CI rerunning |
-| Design system part 1 (taken over) | #78 | claude/design-system | review fixed (11 findings); gates pending |
+| Chat outbox: unsent messages survive restart (SQLite-compatible) | #82 | claude/chat-outbox | MERGED e53fb801 (Haiku: 2 high + 11 others, all fixed; CI green at 2e31f22f incl. master; test PC at 2e31f22f: chat-outbox, session-recovery, phone-ui, chat, presentation, admin-review, booking-controls, large-text, lint, tsc pass) |
+| Design system part 1 (taken over) | #78 | claude/design-system | MERGED efe3ba59 (Haiku: 11 findings fixed; CI green at 80dd1505; test PC: booking-controls, admin-recovery-ui, admin-review, presentation, large-text pass) |
 | Old UI audit | #9 | claude/ui-ux-audit-2026-11-07b | closed as superseded (branch kept) |
 
 ## Process notes
@@ -36,7 +36,7 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 - d2ag (bb81f84e, pre-review): TSC/LINT/UNIT/CASH/CONTRACTS=0; TEST=1 (old E047 test expected 409, fixed 645840be).
 - d2ah (645840be): TSC=0, LINT=0, credit test 0, exceptions test 0, CONTRACTS=0; TEST=1 on `tests/url-decoder.test.mjs` spawnSync ETIMEDOUT (3 s child timeout on the i5-4460; rerun queued).
 - CI (GitHub Actions) #80 at 645840be: image, persistence, verify all pass.
-- Queued on the test PC: a01m (c545bec1), ds78d (29ae4bcf), cr81c (d682e825), d2ah npm test rerun.
+- Monolithic `npm test` / `test:persistence` runs on the test PC were abandoned after the memory blocker below; targeted per-file runs (recorded in the slice table) replaced them, and GitHub Actions ran the full suites (image, persistence, verify) green on every merged head.
 - Reviewers: Claude Haiku 5.5 xhigh for #79, #80, #78, #81 (the #81 run paused on the weekly limit and resumed after the owner reset it; a Sonnet fallback was started and stopped unused).
 
 ## Blockers only the owner can clear
@@ -49,7 +49,7 @@ Labels: [O] observed, [I] inference, [U] unknown. Status of each gate is filled 
 - None touches the payment, cash-cap, dispatch or boarding gates.
 
 ## Not done / open
-- Phone acceptance on the A53 for the A-01 restored-form states (not run).
+- Phone acceptance on the A53 (R5CTB0FJP9Z attached) for the A-01 restored form and the chat "Not sent yet" states: NOT RUN. The phone sandbox needs a web export (several GB) and the test PC has ~0.6 GB free while the pool process holds 9.5 GB. Merges are not deploys: production still runs the 16 Nov build, so no shipped user is affected until a release.
 - Slice 3 client adoption: see `docs/SPEC-command-receipts.md` (sequencing note: production runs SQLite, so the generic `commandId` client adoption waits for PostgreSQL; the chat outbox (#82) is the SQLite-compatible piece; the driver-advance fallback is not needed).
 - Research priorities #2–#10 not started.
 - n9 native audit: not touched (a native build was running on the test PC; no APK certified).
