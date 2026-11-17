@@ -284,21 +284,6 @@ const repeatedExtglobRecursion = pattern => {
   return depth;
 };
 
-// Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026): a lone branch holding a
-// bare `*` (not `*(`, not escaped, not inside brackets) nests an unbounded quantifier inside the repeat, e.g. `+(*)` or
-// `+(*a)`, and backtracks exponentially. Such a repeat takes the existing risky path (matched literally).
-const hasBareStar = branch => {
-  let bracket = 0;
-  for (let i = 0; i < branch.length; i++) {
-    const ch = branch[i];
-    if (ch === '\\') { i++; continue; }
-    if (ch === '[') { bracket++; continue; }
-    if (ch === ']' && bracket > 0) { bracket--; continue; }
-    if (bracket === 0 && ch === '*' && branch[i + 1] !== '(') return true;
-  }
-  return false;
-};
-
 const analyzeRepeatedExtglob = (body, options) => {
   if (options.maxExtglobRecursion === false) {
     return { risky: false };
@@ -311,7 +296,11 @@ const analyzeRepeatedExtglob = (body, options) => {
 
   const branches = splitTopLevel(body).map(branch => branch.trim());
 
-  if (branches.length === 1 && hasBareStar(branches[0])) {
+  // Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026): a `*` anywhere in a
+  // repeated extglob's branch nests an unbounded quantifier inside the repeat (`+(*)`, `+(*a)`, `+(a[*)`, `+(a*(?:b))`,
+  // `+(a|*b)`) and backtracks exponentially. Only upstream's flattenable `*(x)` sequences stay; every other such
+  // repeat takes the existing risky path (matched literally). ponytail: also catches a literal `\*` or `[*]`, rare in a repeat.
+  if (branches.some(branch => branch.includes('*') && !getStarExtglobSequenceChars(branch))) {
     return { risky: true };
   }
 

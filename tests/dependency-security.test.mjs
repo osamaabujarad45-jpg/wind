@@ -115,33 +115,43 @@ test('patched Forge still verifies a valid Node RSA/SHA-256 signature and reject
 });
 
 
-// GHSA-fc5q-39xc-vjpf: picomatch <= 4.0.7 backtracks exponentially on a single-branch repeated extglob (`+(*)`, `+(*a)`).
+// GHSA-fc5q-39xc-vjpf: picomatch <= 4.0.7 backtracks exponentially on repeated extglobs whose branch holds a `*`.
 // No patched release exists; both majors in the tree are vendored with a guard (vendor/picomatch-{2,4}).
 const picomatches = { 2: require('../vendor/picomatch-2'), 4: require('../vendor/picomatch-4') };
 
-test('every installed picomatch consumer resolves the vendored ReDoS guard', () => {
-  for (const consumer of ['micromatch', 'tinyglobby', 'expo', '@expo/metro-config']) {
-    const manifest = createRequire(require.resolve(`${consumer}/package.json`))('picomatch/package.json');
-    assert.match(manifest.description, /GHSA-fc5q-39xc-vjpf/, `${consumer} resolves picomatch ${manifest.version} without the guard`);
+test('every installed picomatch consumer resolves the vendored ReDoS guard of its own major', () => {
+  const from = (base, name) => createRequire(base).resolve(name);
+  const expo = require.resolve('expo');
+  const consumers = { micromatch: [require.resolve('micromatch'), '2'], 'jest-util': [require.resolve('jest-util'), '2'],
+    tinyglobby: [require.resolve('tinyglobby'), '4'], expo: [expo, '4'], '@expo/metro-config': [require.resolve('@expo/metro-config'), '4'],
+    '@expo/cli': [from(expo, '@expo/cli'), '4'] };
+  for (const [name, [base, major]] of Object.entries(consumers)) {
+    const manifest = createRequire(base)('picomatch/package.json');
+    assert.match(manifest.description, /GHSA-fc5q-39xc-vjpf/, `${name} resolves picomatch ${manifest.version} without the guard`);
+    assert.equal(manifest.version.split('.')[0], major, `${name} needs picomatch ${major}.x`);
   }
 });
 
-test('patched picomatch refuses single-branch repeated star extglobs in bounded time and keeps ordinary globs', () => {
-  const crafted = 'a'.repeat(64) + '!';
+test('patched picomatch refuses repeated star extglobs in bounded time and keeps ordinary globs', () => {
+  // 28 repeats of each shape's own unit, then a `/` that `[^/]` cannot consume: an unguarded copy takes seconds here
+  // (about 4x per 2 units), so a regression fails instead of hanging.
+  const shapes = { '+(*)': 'a', '+(*a)': 'a', '*(*a)': 'a', '+(a*)': 'a', '+(x*a)': 'xa', '+(**)': 'a', '+(a[*)': 'a[', '+([a*)': '[a',
+    '+(a*(?:b))': 'ab', '+(a|*b)': 'b', '+(ab*|cd)': 'ab' };
   for (const [major, picomatch] of Object.entries(picomatches)) {
-    for (const glob of ['+(*)', '+(*a)', '*(*a)', '+(a*)', '+(x*a)']) {
+    for (const [glob, unit] of Object.entries(shapes)) {
       const started = performance.now();
-      assert.equal(picomatch.isMatch(crafted, glob), false, `${major} ${glob}`);
+      assert.equal(picomatch.isMatch(unit.repeat(28) + '/x', glob), false, `${major} ${glob}`);
       assert.ok(performance.now() - started < 250, `picomatch ${major}: ${glob} backtracked`);
     }
-    // Ordinary globs, multi-branch extglobs and the existing safe rewrites still match as before.
+    // Ordinary globs, multi-branch extglobs without a star and Jest's default testMatch still match as before.
     assert.equal(picomatch.isMatch('src/a.js', 'src/*.js'), true);
     assert.equal(picomatch.isMatch('a/b/c.ts', '**/*.ts'), true);
     assert.equal(picomatch.isMatch('abba', '+(a|b)'), true);
-    // 4.x flattens all-single-character star branches to one class; 2.x never matched these, and still does not.
-    assert.equal(picomatch.isMatch('aab', '+(*(a)|*(b))'), major === '4');
     assert.equal(picomatch.isMatch('foo.js', '*.+(js|ts)'), true);
     assert.equal(picomatch.isMatch('foo.md', '*.+(js|ts)'), false);
-    assert.equal(picomatch.isMatch('**', '+([*])'), true, `${major}: a star inside brackets is a literal, not a quantifier`);
+    assert.equal(picomatch.isMatch('src/a.test.tsx', '**/?(*.)+(spec|test).[jt]s?(x)'), true);
+    assert.equal(picomatch.isMatch('src/a.tsx', '**/?(*.)+(spec|test).[jt]s?(x)'), false);
+    // 4.x flattens all-single-character star branches to one class; 2.x never matched these, and still does not.
+    assert.equal(picomatch.isMatch('aab', '+(*(a)|*(b))'), major === '4');
   }
 });
