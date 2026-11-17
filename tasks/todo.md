@@ -1420,6 +1420,10 @@ Implementation children:
 
 - [ ] Complete with acceptance evidence
 
+Implementation children:
+- [x] T46.1: missed-backup alert (`checkBackupFreshness`, marker written by `scripts/backup-azure.ps1`), recovery copy sealed to an offline owner key (`scripts/backup-seal.mjs`, into `%OneDrive%\WindBackups`), isolated restore journey with provider quarantine (`scripts/check-restore.mjs`), RPO/RTO proposal and deletion replay (`docs/operations/restore.md`), tested by `tests/backup-restore.test.mjs`. Complete 30 Oct — see evidence.md "T46–T48".
+- [ ] T46.2: owner install, needs approval: generate the recovery key pair offline, set `WIND_BACKUP_MAX_AGE_HOURS=8` on the API at the next deploy, run one timed drill (`backup-azure.ps1`, then `check-restore.mjs` on the opened sealed copy) and record actual RPO/RTO. Parent stays open until then.
+
 **Description / implementation:** Prepare unattended backup alerts, retention and independent key recovery. Define RPO/RTO, restore plus deletion replay, and quarantine restored provider outbox. Interactive workstation DPAPI backup is insufficient alone.
 
 **Dependencies:** T34.
@@ -1446,6 +1450,10 @@ Implementation children:
 ## T47: Production diagnostics and service policy
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T47.1: an example or placeholder `SUPPORT_CONTACT` stops production from starting (`placeholderContact`); `check:deployment` flags one on a live origin; owner-addressed Azure log alerts per failure category (`alertEmail`, `infra/main.bicep`); alert ownership and parcel-first enablement written down (`docs/operations/incident-and-degraded-mode.md`). Complete 30 Oct.
+- [ ] T47.2: owner actions on the live VM, found 30 Oct: replace the placeholder support contact `+970-599-000-000`, set `WIND_ENABLED_SERVICES=parcel`, and redeploy. Ingress-limiter evidence needs one request through a deployed ingress (staging, T50); the live VM runs an older build, and its limiter was not probed. Parent stays open until then.
 
 **Description / implementation:** Prepare real support contact, parcel-first activation, ingress-address validation and provider/queue/backup alerts. Verify runtime VM versus staging Container App instead of trusting conflicting historical reports.
 
@@ -1474,6 +1482,10 @@ Implementation children:
 ## T48: Reconcile capabilities and docs
 
 - [ ] Complete with acceptance evidence
+
+Implementation children:
+- [x] T48.1: current capability table (built / gate / on / field / evidence) and the classification of every route without an app caller (`CAPABILITY-MAP.md`); Railway references dated and the current Azure origin given (`README.md`, `docs/IOS-ACCESS.md`, `docs/implementation/uber-parity.md`). Complete 30 Oct.
+- [ ] T48.2: re-check the "On" column after the next deploy (T47.2) and after any capability is enabled; field evidence comes from T49. Parent stays open until the live origin runs current code.
 
 **Description / implementation:** Update built/configured/enabled/field-tested distinctions, pg dependency, COD collection versus payout, native push, destination parity and origins. Classify routes without UI callers as internal, callback, admin, gated or missing before adding screens.
 

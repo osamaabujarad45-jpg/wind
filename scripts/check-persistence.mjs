@@ -15,6 +15,10 @@ const tests = ['db-persistence.test.mjs', 'db-api.test.mjs', 'pg-dialect.mjs', '
 const filter = process.argv.find(value => value.startsWith('--filter='))?.slice('--filter='.length);
 const selected = tests.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No persistence tests match the filter');
+if (!filter) {
+  const { pruneSyntheticSchemas } = await import('../tests/pg-support.mjs');
+  console.log(`Pruned ${await pruneSyntheticSchemas()} old synthetic test schemas (newest 100 kept)`);
+}
 for (const test of selected) {
   const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
     fileURLToPath(new URL(`../tests/${test}`, import.meta.url))], { stdio: 'inherit', windowsHide: true });

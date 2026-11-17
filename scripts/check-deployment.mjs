@@ -1,5 +1,6 @@
 // Read-only deployment wiring check. This does not create accounts or orders.
 import { readFile } from 'node:fs/promises';
+import { placeholderContact } from '../server/domain/diagnostics.ts';
 
 const originIndex = process.argv.indexOf('--origin');
 const rawOrigin = originIndex < 0 ? undefined : process.argv[originIndex + 1];
@@ -42,6 +43,12 @@ await check('unauthenticated tracking access', async () => {
 for (const path of ['/privacy', '/terms', '/account-deletion']) await check(path, async () => {
   const response = await get(path);
   record(path, response.status === 200 && response.type.includes('text/html') && response.body.length > 100, `HTTP ${response.status}`);
+});
+// T47: the contact printed on the public pages must be a real one, not an example left in the environment.
+await check('support contact', async () => {
+  const page = await get('/account-deletion');
+  const contact = page.body.match(/<p><b>([^<]*)<\/b><\/p>/)?.[1]?.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]);
+  record('support contact', page.status === 200 && contact !== undefined && !placeholderContact(contact), contact === undefined ? 'contact missing' : 'example or placeholder contact');
 });
 await check('current map page', async () => {
   const response = await get('/map.html');

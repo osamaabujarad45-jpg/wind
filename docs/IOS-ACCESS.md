@@ -2,9 +2,9 @@
 
 ## Available now: installable web app
 
-Open [Wind](https://wind-production-72aa.up.railway.app) in **Safari** on an iPhone, tap **Share**, then choose **Add to Home Screen**. The saved app opens in its own window and uses the same Wind account, API, role-based registration, trip history and foreground location flow as Android. Location works only while the web app is open and an active driver job is being tracked.
+Open [Wind](https://windapi236.swedencentral.cloudapp.azure.com) in **Safari** on an iPhone, tap **Share**, then choose **Add to Home Screen**. The saved app opens in its own window and uses the same Wind account, API, role-based registration, trip history and foreground location flow as Android. Location works only while the web app is open and an active driver job is being tracked.
 
-This is the free public access path. It avoids pretending that an unsigned `.ipa` download is a safe or supported way to distribute an iPhone app.
+This is the free public access path. (Until 29 October 2026 this link pointed at the superseded Railway origin `wind-production-72aa.up.railway.app`.) It avoids pretending that an unsigned `.ipa` download is a safe or supported way to distribute an iPhone app.
 
 ## Native iPhone release
 

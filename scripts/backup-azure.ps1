@@ -3,6 +3,9 @@ param(
     [string]$IdentityFile = "$env:USERPROFILE\.ssh\wind-vm_ed25519",
     [string]$ContainerName = 'wind-api',
     [string]$OutputDirectory = "$env:LOCALAPPDATA\SouqWindPrivate\backups",
+    # T46: the owner's offline recovery key (scripts/backup-seal.mjs keygen) and an off-machine folder for sealed copies.
+    [string]$RecoveryPublicKey = "$env:LOCALAPPDATA\SouqWindPrivate\backup-public.pem",
+    [string]$SealedDirectory = $(if ($env:OneDrive) { Join-Path $env:OneDrive 'WindBackups' } else { '' }),
     [switch]$VerifyLatest
 )
 
@@ -83,6 +86,16 @@ try {
 } finally { rmSync(folder, { recursive: true, force: true }); }
 '@
 
+# T46: the API's hourly check reads this marker beside the database; a missing or stale one alerts the admins.
+$markerCode = @'
+import { renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const file = join(dirname(process.env.DB_PATH), 'backup-verified.json');
+writeFileSync(file + '.tmp', JSON.stringify({ verifiedAt: new Date().toISOString(), sha256: '__SHA256__' }), { mode: 0o600 });
+renameSync(file + '.tmp', file);
+console.log('{}');
+'@
+
 if ($VerifyLatest) {
     $file = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'wind-azure-*.dpapi' | Sort-Object Name -Descending | Select-Object -First 1
     if (-not $file) { throw 'No Azure snapshot exists.' }
@@ -103,7 +116,19 @@ if ($VerifyLatest) {
 }
 $decrypted = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($readPath), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
 $result = Invoke-DatabaseTool $restoreCode ([Text.Encoding]::UTF8.GetString($decrypted)) | ConvertFrom-Json
-if (-not $VerifyLatest) { [IO.File]::Move($readPath, $destination) }
+if (-not $VerifyLatest) {
+    [IO.File]::Move($readPath, $destination)
+    # A second copy sealed to the owner's offline key opens on any machine; the DPAPI copy opens only in this account.
+    if ($SealedDirectory -and (Test-Path -LiteralPath $RecoveryPublicKey -PathType Leaf)) {
+        New-Item -ItemType Directory -Path $SealedDirectory -Force | Out-Null
+        $sealed = Join-Path $SealedDirectory ([IO.Path]::GetFileName($destination) -replace '\.dpapi$', '.sealed')
+        $privateOutput | & node (Join-Path $PSScriptRoot 'backup-seal.mjs') seal $RecoveryPublicKey $sealed
+        if ($LASTEXITCODE -ne 0) { throw 'Sealing the recovery copy failed.' }
+        $result | Add-Member -NotePropertyName sealedCopy -NotePropertyValue $sealed
+    } else { Write-Warning 'No recovery key or sealed folder: this backup opens only in this Windows account.' }
+    if ($result.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Unexpected snapshot digest.' }
+    Invoke-DatabaseTool ($markerCode.Replace('__SHA256__', $result.sha256)) | Out-Null
+}
 $result | Add-Member -NotePropertyName file -NotePropertyValue $destination
 $result | Add-Member -NotePropertyName verifiedAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
 $result | Add-Member -NotePropertyName encryption -NotePropertyValue 'Windows DPAPI CurrentUser'

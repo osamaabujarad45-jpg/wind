@@ -25,6 +25,8 @@ param postgresBackupDays int = 14
 param postgresHaMode string = 'Disabled'
 param postgresAvailabilityZone string = '1'
 param postgresStandbyAvailabilityZone string = '2'
+@description('T47: the owner address operational alerts email. Empty creates no action group or alert rules.')
+param alertEmail string = ''
 param budgetAmount int = 100
 param budgetStartDate string = '2026-01-01T00:00:00Z'
 param pubSubCapacity int = 1
@@ -445,7 +447,30 @@ resource budget 'Microsoft.Consumption/budgets@2023-05-01' = {
     notifications: { actual80: { enabled: true, operator: 'GreaterThan', threshold: 80, contactEmails: [], contactRoles: ['Owner'], thresholdType: 'Actual' }, actual100: { enabled: true, operator: 'GreaterThan', threshold: 100, contactEmails: [], contactRoles: ['Owner'], thresholdType: 'Actual' } }
   }
 }
-output imageValidation string = enableWorkloads ? '${checkedImage} ${checkedOsrmImage}' : 'Workloads disabled'
+// T47: the API and worker log one JSON line per failure ({"category": ...}, server/domain/diagnostics.ts). Each
+// category below emails the owner's address; with alertEmail empty there is no action group and no alert.
+var alertCategories = ['backup_stale', 'outbox_worker_failed', 'email_provider_failed', 'committed_effect_failed', 'maintenance_failed']
+resource opsAlerts 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(alertEmail)) {
+  name: '${prefix}-${environment}-ops-alerts'
+  location: 'global'
+  tags: commonTags
+  properties: { groupShortName: 'windops', enabled: true, emailReceivers: [{ name: 'owner', emailAddress: alertEmail, useCommonAlertSchema: true }] }
+}
+resource categoryAlerts 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = [for category in alertCategories: if (!empty(alertEmail) && enableWorkloads) {
+  name: '${prefix}-${environment}-${replace(category, '_', '-')}'
+  location: location
+  tags: commonTags
+  properties: {
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT15M'
+    windowSize: 'PT1H'
+    scopes: [logs.id]
+    criteria: { allOf: [{ query: 'ContainerAppConsoleLogs_CL | where Log_s has \'"category":"${category}"\'', timeAggregation: 'Count', operator: 'GreaterThan', threshold: 0, failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 } }] }
+    actions: { actionGroups: [opsAlerts.id] }
+  }
+}]
+output imageValidation string =enableWorkloads ? '${checkedImage} ${checkedOsrmImage}' : 'Workloads disabled'
 output workloadGate string = enableWorkloads ? 'Enabled by parameter; does not mean runtime gates passed.' : 'Disabled; workloads are not staged or running.'
 output postgresFqdn string = pg.properties.fullyQualifiedDomainName
 output acsHostName string = enableAcs ? comm!.properties.hostName : ''

@@ -222,7 +222,7 @@ EXPO_PUBLIC_API_URL=https://<api> npx expo export --platform web
 npx eas-cli@latest deploy
 ```
 
-The Railway image also exports and serves this single-page web build at the API's HTTPS origin. On iPhone, open that URL in Safari and choose **Share → Add to Home Screen**. It is the free, installable access path until an Apple Developer Program membership is available for TestFlight/App Store distribution.
+The API image also exports and serves this single-page web build at the API's HTTPS origin, today the Azure VM at <https://windapi236.swedencentral.cloudapp.azure.com> (Railway hosted it until it was superseded; that origin is history as of 29 October 2026). On iPhone, open that URL in Safari and choose **Share → Add to Home Screen**. It is the free, installable access path until an Apple Developer Program membership is available for TestFlight/App Store distribution.
 
 ### Store submission notes
 

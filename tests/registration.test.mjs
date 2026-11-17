@@ -12,7 +12,7 @@ import { hashPassword, verifyPassword, passwordKdfStatus, PasswordBusyError } fr
 const dir = mkdtempSync(join(tmpdir(), 'wind-registration-'));
 const path = join(dir, 'test.db');
 Object.assign(process.env, { NODE_ENV: 'production', WIND_IDENTITY_MODE: 'self-service', DB_PATH: path,
-  SUPPORT_CONTACT: 'Synthetic support', WIND_ENABLED_SERVICES: 'parcel' });
+  SUPPORT_CONTACT: 'Wind support +970 59 234 5678', WIND_ENABLED_SERVICES: 'parcel' });
 const password = 'Synthetic_Password123';
 const salt = 'synthetic-migration-salt';
 const stored = `${salt}:${scryptSync(password, salt, 32).toString('hex')}`;
@@ -162,7 +162,7 @@ try {
   for (const result of settled) if (result.status === 'rejected') assert.ok(result.reason instanceof PasswordBusyError, String(result.reason));
   assert.ok(healthMs < 1000, `health answers while KDFs are queued (${Math.round(healthMs)}ms)`);
   assert.equal(passwordKdfStatus().queued, 0);
-  assert.equal(await (await fetch(base + '/terms')).text().then(s => s.includes('Synthetic support')), true);
+  assert.equal(await (await fetch(base + '/terms')).text().then(s => s.includes('Wind support +970 59 234 5678')), true);
   assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
   console.log('Self-service checks passed: schema-1 upgrade, immediate email/phone login, truthfully unverified identities, pending-driver safety, admin edit/approve/block/delete, session revocation and order integrity');

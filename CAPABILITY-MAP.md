@@ -69,3 +69,43 @@ Native background GPS is now implemented; current build/device validation is tra
 
 **This session's proposal:** spec + build + review + ship `delivery-exceptions` only.
 Each later module gets its own `SPEC-<id>.md` and its own lifecycle pass.
+
+## Current status — 30 October 2026 (T48)
+
+"Built" means the code and its tests are in the repository. "On" means enabled on the live origin (the Azure VM `windapi236.swedencentral.cloudapp.azure.com`, which runs an older build than this branch; Railway is superseded). "Field" means checked on the A53 or with real users. A blank Field cell means no field evidence exists.
+
+| Capability | Built (source) | Gate | On | Field | Evidence |
+|---|---|---|---|---|---|
+| Parcel booking, tracking, handover | `server/main.ts`, `src/app/book.tsx` | `WIND_ENABLED_SERVICES` (default `parcel`) | Yes (VM: 1 user, 0 orders on 29 Oct) | A53 QA build, 21 Oct | `docs/QA-2026-10-21.md`, `reports/release-readiness-2026-10-29.md` |
+| Ride and freight | same | listed in `WIND_ENABLED_SERVICES` | **Yes: the VM sets `parcel,ride,freight`** (29 Oct), against the parcel-first rule | | `npm test` suites; owner must narrow it to `parcel` |
+| Cash settlement (driver owes Wind commission) | `src/app/admin/cash.tsx`, SPEC-cash-settlement | none | In the VM build (unused) | | T24/T25, `docs/operations/cash-controls.md` |
+| COD collection for the sender, and payout | `server/domain/payments.ts` (`/cod/*`) | PostgreSQL migration 17 (`cod_unavailable` otherwise) | No | | T31/T32 |
+| Card payments | `server/domain/payments.ts` | fake adapter only; `payments_unavailable` | No | | WP14, T28 |
+| PostgreSQL runtime (`pg` package) | `server/db/runtime.ts` | `NODE_ENV=test` + `WIND_POSTGRES_TEST_ONLY`, or `WIND_POSTGRES_STAGING` | No | | `npm run test:persistence`, T34 |
+| Dispatch v2, ride lifecycle, declared scope/custody, ledger, support ops, private objects, phone identity | `server/domain/*.ts` | PostgreSQL migrations 8–18 (`*_unavailable` on SQLite) | No | | persistence suites |
+| Destination change | `src/destination-change.tsx`, `server/domain/destination-change.ts` | storage has `destination_changes` | Unverified on the VM | | T33, `change-destination` suites |
+| Web push | `server/main.ts`, service worker | VAPID subject required (T37) | Unverified on the VM | | `push` suites |
+| Native push (Expo) | `src/native-push.ts`, `server/domain/native-push.ts` | `WIND_EXPO_PUSH_ENABLED`, migration 12, EAS projectId | No | | T37.1; device evidence is T49 |
+| Email codes | `server/main.ts`, `server/ses.ts` | Cloudflare sending domain, or `WIND_EMAIL_PROVIDER=ses` with a verified SES domain | No | | `docs/operations/provider-failures.md`, `aws-credits.md` |
+| Phone (SMS) verification | `server/domain/phone-identity.ts` | approved SMS provider | No | | WP06 suites |
+| Road routing (OSRM) | `server/main.ts` | `OSRM_URL` | No (unset on the VM, 29 Oct) | | T05; staging graph acceptance open |
+| Google map renderers | `src/google-map*.tsx` | `WIND_GOOGLE_MAPS` + restricted keys + rebuild | No | | T10–T12 |
+| Street labels under pins (Amazon Location) | `server/place-label.ts` | `WIND_LOCATION_KEY` | No | | `place-label` suite; live lookup 30 Oct |
+| Realtime (Web PubSub) | `server/domain/realtime.ts` | `WIND_PUBSUB_ENABLED` | No | | `realtime-auth` suite |
+| Missed-backup alert, sealed recovery copy, restore check | `server/main.ts`, `scripts/backup-*.ps1/.mjs`, `scripts/check-restore.mjs` | `WIND_BACKUP_MAX_AGE_HOURS`, owner recovery key | No | | T46, `backup-restore` suite |
+| Support contact on public pages | `server/*.html` | `SUPPORT_CONTACT` (placeholders refused, T47) | Placeholder | | `check:deployment` 30 Oct flagged `+970-599-000-000` |
+
+### Routes without an app caller
+
+A server route with no caller in `src/` is one of: **internal** (probes), **callback** (provider calls it), **partner** (an external system with `SOUQ_PARTNER_KEY`), **admin/operator API** (used without a screen), or **gated** (the capability is off, so a screen is not built yet). None is a missing screen for an enabled capability. The destination-change and admin cash routes are called through paths the client builds at run time.
+
+| Class | Routes | Gate |
+|---|---|---|
+| Internal | `GET /api/health`, `GET /api/ready` | none |
+| Callback | `POST /api/payments/webhook` | payments capability |
+| Partner | `GET /api/partner/config`, `POST /api/partner/quotes`, `GET /api/partner/orders/by-reference` | `SOUQ_PARTNER_KEY` |
+| Admin/operator API | `GET /api/admin/routing` | admin role |
+| Gated (PostgreSQL) | dispatch `offers/:id/decline`, `orders/:id/dispatch/retry`; eligibility (10); ledger and cash receipts (6); support cases, staff roles, approvals (9); payments and COD (7); phone review and mappings (2); private objects (4); declared scope, custody, pickup check (4); ride arrival, override, boarding reset (3); native push preferences (1) | each module's migration (`*_unavailable` until present) |
+| Gated (Web PubSub) | `GET /api/orders/:id/realtime`, `GET /api/track/:token/realtime` | `WIND_PUBSUB_ENABLED` |
+
+Screens for a gated group are built when its capability is enabled for a cohort, not before. Re-derive this list with a route/caller scan whenever routes change.

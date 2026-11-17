@@ -25,7 +25,7 @@ freight=negotiated_offer, parcel=courier_batch.
 | Surge/pricing intelligence | Correctly absent in v1 | None — do not build | WP17 gate |
 | Accessibility/i18n | AR/EN RTL landed; no capability/guest fields | MEDIUM | WP17 |
 | Observability | Minimal; App Insights provisioned in Bicep, nothing emits | HIGH | WP16 |
-| Deployment/DR | Not deployed; production still Railway SQLite; Bicep gated `enableWorkloads=false`; PG runtime test-only gated | BLOCKER (staging pilot) | WP16 |
+| Deployment/DR | Not deployed; production is SQLite on the Azure VM (`windapi236`, an older build on 30 Oct 2026; Railway superseded by 29 Oct 2026); Bicep gated `enableWorkloads=false`; PG runtime test-only gated | BLOCKER (staging pilot) | WP16 |
 
 Spanning note: live SQLite path still uses 15 km city circles + `PARCEL_LOAD=200`;
 WP05 polygons/measured capacity are PG-only behind an inactive operator policy.
@@ -76,7 +76,7 @@ External ID for consumers, Service Bus/Redis until measured.
 ## Contradictions flagged
 
 - Plan says "PostgreSQL is authoritative" but `server/db/runtime.ts` hard-gates
-  PG to test-only loopback; SQLite on Railway is still live.
+  PG to test-only loopback; SQLite is still live (on Railway when written; on the Azure VM since, as of 30 Oct 2026).
 - CAPABILITY-MAP marks routing-eta/live-map "Shipped" (web/SQLite truth), but
   there is no Azure OSRM, no corpus, and quotes are `uncertain` by design.
 - WP09-prep inventory is stale: the native-push backend half has since landed;

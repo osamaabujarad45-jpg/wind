@@ -19,6 +19,10 @@ const server = createServer((request, response) => {
   }
   if (path === '/api/auth/options') return json(defect === 'old-api' ? { registrationOpen: true } : { registrationOpen: true, emailReset: false });
   if (path === '/api/orders/1/live') { response.statusCode = defect === 'missing-route' ? 404 : 401; return json({ error: 'unauthorized' }); }
+  if (path === '/account-deletion') {
+    response.setHeader('content-type', 'text/html');
+    return response.end(`<html>${'content'.repeat(20)}<p><b>${defect === 'example-contact' ? 'Support +970 599 000 000' : 'Wind support +970 59 234 5678'}</b></p></html>`);
+  }
   if (path === '/map.html') { response.setHeader('content-type', 'text/html'); return response.end(defect === 'old-map' ? 'old map' : map); }
   if (path === '/') {
     response.setHeader('content-type', 'text/html');
@@ -39,12 +43,12 @@ try {
   assert.equal((await run()).status, 0, 'healthy deployment passes');
   for (const [name, label] of [['html-ready', '/api/ready'], ['old-api', 'authentication capabilities'],
     ['missing-route', 'unauthenticated tracking access'], ['old-map', 'current map page'], ['wrong-origin', 'web bundle API origin'],
-    ['external-script', 'web bundle API origin']]) {
+    ['external-script', 'web bundle API origin'], ['example-contact', 'support contact']]) {
     defect = name;
     const result = await run();
     assert.equal(result.status, 1, name);
     assert.ok(result.output.includes(`FAIL ${label}`), result.output);
     if (name === 'external-script') assert.ok(result.output.includes('Unexpected cross-origin URL'));
   }
-  console.log('Deployment probe: healthy fixture and six stale, unsafe or unavailable deployment failures passed');
+  console.log('Deployment probe: healthy fixture and seven stale, unsafe or unavailable deployment failures passed');
 } finally { await new Promise(resolve => server.close(resolve)); }

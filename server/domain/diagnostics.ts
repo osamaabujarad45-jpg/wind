@@ -1,5 +1,11 @@
 type Category = 'http_request_failed' | 'postgres_idle_connection_failed' | 'committed_effect_failed'
-  | 'outbox_worker_failed' | 'email_provider_failed' | 'account_command_failed' | 'maintenance_failed' | 'presence_maintenance_failed' | 'shutdown_failed';
+  | 'outbox_worker_failed' | 'email_provider_failed' | 'account_command_failed' | 'maintenance_failed' | 'presence_maintenance_failed' | 'shutdown_failed' | 'backup_stale';
+
+/** T47: an empty, example or placeholder support contact is not a real one; it is printed on the privacy, terms and
+ * deletion pages. Production refuses to start with one, and scripts/check-deployment.mjs flags one on a live origin. */
+export const placeholderContact = (value: string) => !value.trim()
+  || /\b(?:example|sample|synthetic|placeholder|dummy|change ?me|todo|tbd|test)\b|\.(?:invalid|test|example|localhost)\b|\blocalhost\b|x{3,}/i.test(value)
+  || /(\d)\1{5,}/.test(value.replace(/\D/g, ''));
 
 /** Error objects are untrusted: PostgreSQL detail/message/where can contain entire private rows. */
 export function logServerError(category: Category, error?: unknown, context: { correlationId?: string; httpStatus?: number; operatorAction?: 'cannot_change_self' | 'Verify phone ownership' } = {}) {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -113,13 +114,17 @@ try {
   const bundled=resolve(import.meta.dirname,'../.expo/implementation/postgresql18/bin');
   const bin=process.env.WIND_TEST_PG_BIN??(existsSync(join(bundled,executable('pg_dump')))?bundled:execFileSync(executable('pg_config'),['--bindir'],{encoding:'utf8',windowsHide:true}).trim());
   const archive=join(dir,'import.dump');
-  execFileSync(join(bin,executable('pg_dump')),['--dbname',connectionString,'--schema',schema,'--format=custom','--no-owner','--no-acl','--file',archive],{windowsHide:true,timeout:120_000});
+  // Async, so this process keeps serving its own pool while pg_dump waits for table locks: a synchronous call froze the
+  // event loop, and a lock this process still had to release then held pg_dump until its timeout. A timeout names the blocker.
+  await promisify(execFile)(join(bin,executable('pg_dump')),['--dbname',connectionString,'--schema',schema,'--format=custom','--no-owner','--no-acl','--file',archive],{windowsHide:true,timeout:120_000})
+    .catch(async error=>{throw new Error(`pg_dump failed; blocking sessions: ${JSON.stringify(await database.all(`SELECT pid,state,wait_event_type,left(query,120) query,pg_blocking_pids(pid) blocked_by
+      FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND (state<>'idle' OR cardinality(pg_blocking_pids(pid))>0)`))}`,{cause:error});});
   const freshDatabase=schemaName('restore');
   await database.run(`CREATE DATABASE ${freshDatabase}`);
   const restoreUrl=new URL(connectionString);restoreUrl.pathname=`/${freshDatabase}`;
   restored=new Persistence({connectionString:restoreUrl.href,pool:{options:`-c search_path=${schema},public`},statementTimeoutMs:30_000});
   await restored.run('CREATE EXTENSION postgis');
-  execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:30_000,stdio:'pipe'});
+  await promisify(execFile)(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:30_000});
   const afterRestore=await reconcile(snapshot,restored);
   assert.equal(afterRestore.ok,true,JSON.stringify(afterRestore.mismatches));
   assert.deepEqual(afterRestore.financial,report.reconciliation.financial);

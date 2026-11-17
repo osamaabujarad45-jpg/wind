@@ -25,7 +25,7 @@ import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdT
 import { registerActiveGpsRoutes } from './domain/active-gps-routes.ts';
 import { destinationAvailable, destinationEligible, pendingDestination, prefetchPendingDestinations, registerDestinationRoutes } from './domain/destination-change.ts';
 import { cashOwed } from './domain/money.ts';
-import { logServerError } from './domain/diagnostics.ts';
+import { logServerError, placeholderContact } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
@@ -63,7 +63,7 @@ const registrationOpen = selfService || (!production && process.env.WIND_IDENTIT
 const entra = (() => { try { return entraConfig(); } catch (error) { console.error('Entra disabled:', error instanceof Error ? error.message : error); return null; } })();
 if (production) {
   if (!process.env.DB_PATH || !isAbsolute(process.env.DB_PATH)) throw new Error('Production requires an absolute DB_PATH on a persistent local volume');
-  if (!process.env.SUPPORT_CONTACT?.trim()) throw new Error('Production requires a real SUPPORT_CONTACT');
+  if (placeholderContact(process.env.SUPPORT_CONTACT ?? '')) throw new Error('Production requires a real SUPPORT_CONTACT, not an empty, example or placeholder value');
   if (!['operator-verified', 'self-service'].includes(process.env.WIND_IDENTITY_MODE ?? '')) throw new Error('Production requires WIND_IDENTITY_MODE=operator-verified or self-service');
   if (process.platform !== 'win32') process.umask(0o077);
 }
@@ -1085,6 +1085,22 @@ async function dispatchOrBroadcast(service: Service, orderId: number, customerId
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
+}
+/** T46: the backup job leaves a marker beside the database after each verified restore (scripts/backup-azure.ps1).
+ * A missing or stale marker alerts the admins once per lapse; off unless WIND_BACKUP_MAX_AGE_HOURS is set. */
+let backupAlerted = false;
+export async function checkBackupFreshness(now = Date.now()) {
+  const maxHours = Number(process.env.WIND_BACKUP_MAX_AGE_HOURS);
+  if (!(maxHours > 0)) return 'disabled';
+  const marker = process.env.WIND_BACKUP_MARKER ?? resolve(dirname(process.env.DB_PATH ?? 'wind.db'), 'backup-verified.json');
+  let verifiedAt = NaN;
+  try { verifiedAt = Date.parse(JSON.parse(readFileSync(marker, 'utf8')).verifiedAt); } catch { /* missing or unreadable is stale */ }
+  if (now - verifiedAt <= maxHours * 3_600_000) { backupAlerted = false; return 'fresh'; }
+  if (backupAlerted) return 'stale';
+  backupAlerted = true;
+  logServerError('backup_stale');
+  await persistence.atomic({ purpose: 'backup_alert' }, async () => queuePush((await adminIds()), 'attention', 0, '/admin'));
+  return 'alerted';
 }
 /** T21: stale unscheduled searching demand is system-cancelled so it cannot occupy the board forever. */
 export async function expireStaleDemand(now = Date.now()) {
@@ -3236,6 +3252,7 @@ if (import.meta.main) {
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts
     setInterval(async () => { try { (await expireStaleDemand()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board
+    setInterval(async () => { try { (await checkBackupFreshness()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // T46 missed-backup alert
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

@@ -28,6 +28,14 @@ assert.match(main, /publicNetworkAccess: 'Disabled'/);
 assert.match(main, /allowBlobPublicAccess: false/);
 assert.match(main, /disableLocalAuth: true/);
 assert.match(main, /Microsoft\.Consumption\/budgets/);
+// T47: operational alerts reach the owner's address only when one is given, and each alerted log category exists.
+assert.match(main, /param alertEmail string = ''/);
+assert.match(main, /actionGroups@[\d-]+(?:-preview)?' = if \(!empty\(alertEmail\)\)/);
+assert.match(main, /scheduledQueryRules@[\d-]+(?:-preview)?' = \[for category in alertCategories: if \(!empty\(alertEmail\) && enableWorkloads\)/);
+const diagnostics = readFileSync(path.join(root, 'server/domain/diagnostics.ts'), 'utf8');
+const logged = new Set([...diagnostics.match(/type Category = ([^;]+);/)[1].matchAll(/'([a-z_]+)'/g)].map(m => m[1]));
+const alerted = [...main.match(/var alertCategories = \[([^\]]+)\]/)[1].matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+assert.ok(alerted.includes('backup_stale') && alerted.every(category => logged.has(category)), `alerted categories must be logged ones: ${alerted}`);
 assert.match(main, /Microsoft\.DBforPostgreSQL\/flexibleServers@2024-08-01/);
 assert.match(app, /Microsoft\.App\/containerApps@2024-03-01/);
 assert.match(main, /name: 'WIND_ENTRA_TENANT_NAME', value: entraTenantName/);

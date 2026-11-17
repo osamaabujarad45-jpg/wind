@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-session-idle-'));
 Object.assign(process.env, { NODE_ENV: 'production', WIND_IDENTITY_MODE: 'self-service',
-  DB_PATH: join(dir, 'test.db'), SUPPORT_CONTACT: 'Synthetic support', WIND_ENABLED_SERVICES: 'parcel' });
+  DB_PATH: join(dir, 'test.db'), SUPPORT_CONTACT: 'Wind support +970 59 234 5678', WIND_ENABLED_SERVICES: 'parcel' });
 const password = 'Synthetic_Password123';
 const { server, db, shutdown } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

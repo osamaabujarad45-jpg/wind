@@ -58,7 +58,7 @@ mkdirSync(web);
 writeFileSync(join(web, 'index.html'), '<!doctype html><title>Wind web</title><div id="root"></div>');
 writeFileSync(join(web, 'manifest.webmanifest'), '{"name":"Wind"}');
 const moduleUrl = new URL('../server/main.ts', import.meta.url).href;
-const env = { ...process.env, NODE_ENV: 'production', DB_PATH: path, SUPPORT_CONTACT: 'Synthetic support +970599001234',
+const env = { ...process.env, NODE_ENV: 'production', DB_PATH: path, SUPPORT_CONTACT: 'Wind support +970 59 234 5678',
   WIND_IDENTITY_MODE: 'operator-verified', HOST: '127.0.0.1', PORT: '0', WEB_ROOT: web };
 const flags = ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning'];
 const cli = (args, extra = {}, input) => spawnSync(process.execPath, [...flags, main, ...args], { env: { ...env, ...extra }, input, encoding: 'utf8', timeout: 10_000 });
@@ -80,6 +80,7 @@ async function call(path, token, body, expected = 200) {
 }
 try {
   for (const [extra, message] of [[{ DB_PATH: 'relative.db' }, 'absolute DB_PATH'], [{ SUPPORT_CONTACT: '' }, 'SUPPORT_CONTACT'],
+    [{ SUPPORT_CONTACT: 'help@example.com' }, 'SUPPORT_CONTACT'], [{ SUPPORT_CONTACT: 'Synthetic support +970 599 000 000' }, 'SUPPORT_CONTACT'],
     [{ WIND_IDENTITY_MODE: '' }, 'WIND_IDENTITY_MODE']]) {
     const rejected = cli([], extra); assert.notEqual(rejected.status, 0); assert.match(rejected.stderr, new RegExp(message));
   }
