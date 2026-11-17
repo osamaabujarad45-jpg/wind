@@ -44,6 +44,7 @@ try {
   assert.deepEqual(await other(`/commands/${commandId}`,{token:customer.token}),{schemaVersion:1,commandId,state:'applied'},'any API process reads it');
   assert.equal((await commandReceipt(accept.commandId,customer.token)).state,'unknown','another actor never reads it');
   assert.equal((await commandReceipt(randomUUID(),driver.token)).state,'unknown');
+  assert.equal((await commandReceipt(accept.commandId.toUpperCase(),driver.token)).state,'applied','either case');
   await commandReceipt('not-a-command',driver.token,400);
   const stale={commandId:randomUUID(),expectedVersion:1};
   await call(`/orders/${booked.id}/cancel`,{token:customer.token,body:stale,expect:409});
@@ -139,6 +140,7 @@ try {
   await db.run('UPDATE schema_migrations SET version=400 WHERE version=4');
   assert.equal((await call('/health?protocol=1')).protocol.durableEvents,false);
   await call('/orders',{token:customer.token,body:input,expect:503});
+  assert.equal((await call(`/commands/${commandId}`,{token:customer.token,expect:409})).error,'durable_protocol_unavailable');
   await db.run('UPDATE schema_migrations SET version=4 WHERE version=400');
   assert.equal((await call('/health?protocol=1')).protocol.durableEvents,true);
   console.log('WP04 commands: real two-process conflict, replay/version/proof-once, ACL/cursor/privacy, atomic failure, aborted upload passed');
