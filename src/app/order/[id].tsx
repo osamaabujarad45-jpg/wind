@@ -10,7 +10,7 @@ import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '
 import { canOrderAgain, canSendAnother, newRequestId, retryIds, scheduleSlots } from '../../booking';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
@@ -107,7 +107,7 @@ export default function OrderScreen() {
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
-  const [problem, setProblem] = useState<{ reason: ExceptionReason | 'wrong_or_missing_item'; note: string }>({ reason: 'absent', note: '' });
+  const [problem, setProblem] = useState<{ reason: ExceptionReason | 'wrong_or_missing_item' | typeof pickupRefusal; detail?: PickupRefusalDetail; note: string }>({ reason: 'absent', note: '' });
   const [seals, setSeals] = useState<Record<number, boolean>>({}); // shop: each sealed package intact or broken (DLV-14)
   const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
   useDriverRecovery(polled, me?.user.id, !error && me?.user.role === 'driver' && !busy,
@@ -403,6 +403,7 @@ export default function OrderScreen() {
       {/* only a failed pickup cancels with a reason; the status card is gone once cancelled */}
       <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.clayInk} />
         <Txt variant="title" style={{ flex: 1, color: palette.clayInk }}>{reasonLine(c.pickupFailed, `pickup_${order.exceptionReason}`)}</Txt></Row>
+      {order.exceptionDetail && <Txt style={{ marginTop: 4 }}>{c[`refusal_${order.exceptionDetail}`]}</Txt>}
     </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
       <Card>
@@ -576,14 +577,18 @@ export default function OrderScreen() {
       {mine && activeStatuses.includes(order.status) && <>
         {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
-          <FilterChips items={(order.service === 'shop' ? shopExceptionReasons : exceptionReasons).map(key => ({ key, label: atPickup ? c[`pickup_${key as ExceptionReason}`] : c[`reason_${key}`] }))} value={problem.reason}
-            onChange={reason => setProblem(p => ({ ...p, reason }))} />
+          {/* SHIP-17: at the pickup check a damaged parcel is a refusal with its own sub-reason, so `damaged` is not offered there */}
+          <FilterChips items={(order.service === 'shop' ? [...shopExceptionReasons] : atPickup ? [...exceptionReasons.filter(k => k !== 'damaged'), pickupRefusal] : exceptionReasons)
+            .map(key => ({ key, label: atPickup ? c[`pickup_${key}` as keyof typeof c] : c[`reason_${key}` as keyof typeof c] }))} value={problem.reason}
+            onChange={reason => setProblem(p => ({ ...p, reason: reason as typeof p.reason, detail: undefined }))} />
+          {problem.reason === pickupRefusal && <FilterChips items={pickupRefusalDetails.map(key => ({ key, label: c[`refusal_${key}`] }))} value={problem.detail as PickupRefusalDetail}
+            onChange={detail => setProblem(p => ({ ...p, detail: detail as PickupRefusalDetail }))} />}
           <Field label={c.problemNote} value={problem.note} maxLength={200} disabled={!!busy} onChangeText={note => setProblem(p => ({ ...p, note }))} />
           <Button title={atPickup ? c.pickupProblem : c.reportProblem} variant="outline" icon="alert-circle-outline" loading={busy === 'problem'}
-            disabled={!!busy || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
-            reason={busy ? c.wait_busy : c.shopSealsNeeded}
+            disabled={!!busy || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) || problem.reason === pickupRefusal && !problem.detail}
+            reason={busy ? c.wait_busy : problem.reason === pickupRefusal && !problem.detail ? c.refusalPick : c.shopSealsNeeded}
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
-              { reason: problem.reason, note: problem.note.trim(), ...shopProof }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
+              { reason: problem.reason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
         {(order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}

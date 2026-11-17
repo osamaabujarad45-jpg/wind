@@ -54,7 +54,7 @@ import { fileURLToPath } from 'node:url';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
+  activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
   canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
@@ -343,6 +343,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
     returnCode: viewer.id === r.customer_id && r.status === 'returning' && r.service !== 'shop' ? r.return_code ?? null : null, // the sender gives it back to the driver; a shop's goods go back to the shop
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
+    exceptionDetail: owner || assigned ? r.exception_detail ?? null : null,
     // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
     ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
@@ -2593,15 +2594,18 @@ async function reportException(user: User, id: number, body: Row) {
   const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !['at_pickup', 'in_transit'].includes(r.status) || r.service === 'ride') fail(409, 'cannot_report');
   if (body.reason === 'wrong_or_missing_item' && r.service !== 'shop') fail(400, 'invalid_input');
+  // SHIP-16/17: only a parcel or freight pickup can be refused, and only at the pickup check.
+  const refusal = body.reason === pickupRefusal;
+  if (refusal && (r.status !== 'at_pickup' || !['parcel', 'freight'].includes(r.service))) fail(409, 'cannot_report');
   await shop.guardCaptainExit(r, 'exception');
   (await safetyFree(r.id));
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const now = Date.now();
   if (r.status === 'at_pickup') {
     // Nothing was collected, so there is nothing to hold or return: the pickup fails and the sender is told why.
-    (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, updated_at = ? WHERE id = ?", body.reason, now, r.id));
+    (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, exception_detail = ?, updated_at = ? WHERE id = ?", body.reason, refusal ? body.detail : null, now, r.id));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
-      user.id, r.id, JSON.stringify({ reason: body.reason, note: text(body.note, 200, false) }), now));
+      user.id, r.id, JSON.stringify({ reason: body.reason, ...(refusal && { detail: body.detail }), note: text(body.note, 200, false) }), now));
     await queuePush([r.customer_id], 'cancelled', r.id);
     return (await getOrder(r.id, user));
   }
@@ -2616,7 +2620,7 @@ async function reportException(user: User, id: number, body: Row) {
 
 route('POST', '/api/orders/:id/exception', async ({ user, params, body }) => {
   need(user, 'driver'); needActive(user);
-  if (!shop.exceptionReasons.includes(body.reason)) fail(400, 'invalid_input');
+  if (body.reason === pickupRefusal ? !pickupRefusalDetails.includes(body.detail) : !shop.exceptionReasons.includes(body.reason) || body.detail != null) fail(400, 'invalid_input');
   text(body.note, 200, false);
   return (await driverCommand(user, Number(params[0]), body, reportException));
 });

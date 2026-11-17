@@ -13,7 +13,7 @@ import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraReques
 import { phoneApi } from '../phone/client';
 import { codeInput, gateOf, type Capabilities } from '../phone/flow';
 import { takeAuthNotice } from '../phone/notice';
-import { Appear, Button, Card, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { Appear, Button, Card, Check, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
 const HERO = FadeInUp.duration(400);
 const FORM = FadeInDown.duration(300).delay(120);
@@ -237,13 +237,7 @@ export default function Auth() {
               </View>}
             </Appear>}
             <View style={{ height: 8 }} />
-            <Press accessibilityRole="checkbox" accessibilityLabel={c.consent} accessibilityState={{ checked: consent }} disabled={busy}
-              onPress={() => setConsent(!consent)} style={{ minHeight: 44, justifyContent: 'center' }}>
-              <Row gap={8}>
-                <Ionicons name={consent ? 'checkbox' : 'square-outline'} size={22} color={consent ? palette.olive : palette.secondary} />
-                <Txt variant="caption">{c.consent}</Txt>
-              </Row>
-            </Press>
+            <Check checked={consent} onChange={setConsent} label={c.consent} disabled={busy} />
             <Row gap={16} style={{ justifyContent: 'center', marginBottom: 8 }}>
               <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(privacyUrl(language))}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
               <Press accessibilityRole="link" accessibilityLabel={c.terms} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
