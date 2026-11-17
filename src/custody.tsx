@@ -29,7 +29,7 @@ function Steps({ orderId }: { orderId: number }) {
         <View style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, backgroundColor: i === data.steps.length - 1 ? palette.olive : palette.dash }} />
         <View style={{ flex: 1 }}>
           <Txt variant="label">{s.driver ? `${what} · ${s.driver}` : what}</Txt>
-          {!!why && <Txt variant="caption">{s.attempt ? `${why} · ${fill(c.custodyAttempt, { n: s.attempt })}` : why}</Txt>}
+          {!!why && <Txt variant="caption">{s.attempt ? fill(c.custodyAttempt, { n: String(s.attempt) }) : why}</Txt>}
           {s.until != null && <Txt variant="caption">{fill(c.officeUntil, { t: time(s.until) })}</Txt>}
           <Txt variant="micro">{`${time(s.at)} · ${c[`custodyBy_${s.by}`]}`}</Txt>
         </View>

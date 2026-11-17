@@ -60,6 +60,17 @@ try {
   }
   const attempts = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
   assert.deepEqual(attempts.map(s => [s.reason, s.attempt]), [['reattempt', 2], ['reattempt', 3]]);
+  // Two resolves at once (a double submit, two admins) decide once: one succeeds, the other is refused, one event is written.
+  await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  const both = await Promise.all([1, 2].map(() => fetch(`${base}/admin/orders/${retried.id}/resolve`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${admin.token}` }, body: JSON.stringify({ action: 'reattempt', reason: 'Call before coming' }) })));
+  assert.deepEqual(both.map(r => r.status).sort(), [200, 409]);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'").get(retried.id).n, 3);
+  // Support can hold and resume an order with no failed delivery: that resume is not a new attempt.
+  db.prepare("UPDATE orders SET status = 'on_hold', exception_reason = 'support' WHERE id = ?").run(retried.id);
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Support hold released' } });
+  const decided = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
+  assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, 4, null]);
   await call(`/orders/${order.id}/custody`, { token: other.token, expect: 404 });
   await call(`/orders/${order.id}/custody`, { expect: 401 });
   await call('/orders/999999/custody', { token: admin.token, expect: 404 });
