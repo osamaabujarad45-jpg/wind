@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -13,10 +13,10 @@ const require = createRequire(import.meta.url);
 export const DECODER_SHA256 = 'e82696ecdf0ee2c25bd90169cc7915e552d2ccb82a5006c55bc17aecdb55b919';
 const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
-// vendor/picomatch-{2,4}/lib/parse.js as reviewed in the GHSA-fc5q-39xc-vjpf backport (no upstream fix released).
-export const PICOMATCH_PARSE_SHA256 = {
-  2: 'e0e5bc8dd5424da9e7493796e0638026d64ea73bc7f01fc263b71572335f420a',
-  4: '9cf9c1cdfd79db4b8c01512559d75a3665106df1307008f105dec1f504d2a91e',
+// vendor/picomatch-{2,4} as reviewed in the GHSA-fc5q-39xc-vjpf backport (no upstream fix released): every file's bytes.
+export const PICOMATCH_TREE_SHA256 = {
+  2: 'b6baae3884cf7e21d62831cdc4396e6f0734f9093aa160affeb52b830be788c5',
+  4: 'da4c181152b4dee827f21e44d679e215f853797657b2843e9022cf8730aa9571',
 };
 const picomatchAdvisory = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
 const picomatchNames = new Set(['picomatch', 'fdir', 'tinyglobby', '@expo/cli', 'expo', 'react-native', 'babel-preset-expo',
@@ -33,16 +33,39 @@ export function decoderHashes() {
   return { resolved: sourceHash(decoderPath), vendored: sourceHash(join(root, 'vendor/decode-uri-component/index.cjs')), decoderPath };
 }
 
-/** Every picomatch the lockfile installs (and both vendored sources) carries the reviewed guard; anything missing fails closed. */
-export function picomatchReviewed(lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))) {
-  const paths = Object.keys(lock?.packages ?? {}).filter(path => /(^|\/)picomatch(-[24])?$/.test(path));
-  if (!paths.some(path => path.startsWith('node_modules/'))) return false;
-  return paths.every(path => {
-    try {
-      const dir = join(root, path), major = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version.split('.')[0];
-      return sourceHash(join(dir, 'lib/parse.js')) === PICOMATCH_PARSE_SHA256[major];
-    } catch { return false; }
-  });
+/** One digest over a directory: each file's relative path and content hash, in path order. */
+export function treeHash(dir) {
+  const files = readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile())
+    .map(entry => join(entry.parentPath, entry.name).slice(dir.length + 1).replaceAll('\\', '/')).sort();
+  const digest = createHash('sha256');
+  for (const file of files) digest.update(`${file}\0${sourceHash(join(dir, file))}\n`);
+  return digest.digest('hex');
+}
+
+/**
+ * The picomatch backport is in force only when both vendored trees match their pins and every package the lockfile
+ * installs under the real name `picomatch` (aliases included) resolves to one of those trees. When npm audit's own
+ * node list is given, each audited location must be one of those copies too. Anything else fails closed.
+ */
+export function picomatchReviewed(lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), base = root, audited = undefined) {
+  try {
+    const trees = new Set(Object.entries(PICOMATCH_TREE_SHA256).map(([major, pin]) => {
+      const dir = realpathSync(join(base, `vendor/picomatch-${major}`));
+      if (treeHash(dir) !== pin) throw new Error('changed');
+      return dir;
+    }));
+    const copies = new Set();
+    for (const [path, entry] of Object.entries(lock?.packages ?? {})) {
+      if (!path || path.startsWith('vendor/')) continue;
+      if (path.split('/').includes('..') || !path.startsWith('node_modules/')) return false;
+      let name = entry?.name;
+      if (!name) try { name = JSON.parse(readFileSync(join(base, path, 'package.json'), 'utf8')).name; } catch { name = path.split('node_modules/').pop(); }
+      if (name !== 'picomatch') continue;
+      if (!trees.has(realpathSync(join(base, path)))) return false;
+      copies.add(path);
+    }
+    return copies.size > 0 && (audited === undefined || (Array.isArray(audited) && audited.every(node => copies.has(node))));
+  } catch { return false; }
 }
 
 export function parseAudit(result) {
@@ -83,7 +106,7 @@ export function evaluateAudit(audit, hashes) {
     return entry.via.every(via => typeof via === 'string' ? minor(via) || closed(via, seen) : leaf(name, via));
   }
   function reaches(name, seen) {
-    if (seen.has(name) || !entries[name]) return false;
+    if (seen.has(name) || !entries[name] || minor(name)) return false;
     seen.add(name);
     return entries[name].via.some(via => typeof via === 'string' ? reaches(via, seen) : leaf(name, via));
   }
@@ -110,7 +133,7 @@ if (import.meta.main) {
     mkdirSync(output, { recursive: true });
     writeFileSync(join(output, 'raw.json'), native.stdout ?? '');
     const audit = parseAudit(native);
-    const hashes = { ...decoderHashes(), picomatch: picomatchReviewed() };
+    const hashes = { ...decoderHashes(), picomatch: picomatchReviewed(undefined, root, audit.vulnerabilities?.picomatch?.nodes) };
     const verdict = evaluateAudit(audit, hashes);
     console.log(JSON.stringify({ ...verdict, decoderPath: hashes.decoderPath, decoderSha256: hashes.resolved }, null, 2));
     console.log('Raw audit retained at .artifacts/dependency-audit/raw.json; moderate/low entries remain reported.');

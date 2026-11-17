@@ -280,7 +280,31 @@ const repeatedExtglobRecursion = pattern => {
   return depth;
 };
 
+// Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026). A repeated extglob
+// (`+(...)`, `*(...)`) backtracks exponentially when one iteration can match the same text in more than one way:
+// a `*`, a nested group or negation (`!(a)` compiles to `[^/]*?`), braces, or overlapping alternatives. It is safe only
+// when one branch is fixed-width (plain characters, `?`, `[...]`), or every branch is a plain literal (or upstream's
+// flattenable `*(x)` sequence) and no literal is a prefix of another. Anything else takes the existing risky path
+// (matched literally). ponytail: conservative; e.g. `+([0-9]|x)` or `+(*.js)` now match literally.
+const windRiskyRepeat = branches => {
+  const flattenable = branch => !!getStarExtglobSequenceOutput(branch);
+  if (branches.length === 1) return !flattenable(branches[0]) && /[*(|{]/.test(branches[0]);
+  const literals = [];
+  for (const branch of branches) {
+    if (flattenable(branch)) continue;
+    const literal = normalizeSimpleBranch(branch);
+    if (!literal) return true;
+    literals.push(literal);
+  }
+  return literals.some((a, i) => literals.some((b, j) => i !== j && b.startsWith(a)));
+};
+
 const analyzeRepeatedExtglob = (body, options) => {
+  // Runs before the maxExtglobRecursion opt-out: the advisory guard cannot be switched off by an option.
+  if (windRiskyRepeat(splitTopLevel(body).map(branch => branch.trim()))) {
+    return { risky: true };
+  }
+
   if (options.maxExtglobRecursion === false) {
     return { risky: false };
   }
@@ -291,14 +315,6 @@ const analyzeRepeatedExtglob = (body, options) => {
       : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
 
   const branches = splitTopLevel(body).map(branch => branch.trim());
-
-  // Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026): a `*` anywhere in a
-  // repeated extglob's branch nests an unbounded quantifier inside the repeat (`+(*)`, `+(*a)`, `+(a[*)`, `+(a*(?:b))`,
-  // `+(a|*b)`) and backtracks exponentially. Only upstream's flattenable `*(x)` sequences stay; every other such
-  // repeat takes the existing risky path (matched literally). ponytail: also catches a literal `\*` or `[*]`, rare in a repeat.
-  if (branches.some(branch => branch.includes('*') && !getStarExtglobSequenceOutput(branch))) {
-    return { risky: true };
-  }
 
   if (branches.length > 1) {
     if (
