@@ -18,8 +18,9 @@ export function OfficePanel({ orderId }: { orderId: number }) {
   const [perishable, setPerishable] = useState(false);
   const [busy, setBusy] = useState('');
   const [failure, setFailure] = useState('');
+  const [now] = useState(Date.now); // read once per visit: the hold ends in hours, not seconds
   if (!data) return <Loading failed={!!error} onRetry={reload} />;
-  const office = data.office, now = Date.now();
+  const office = data.office;
   async function act(action: 'received' | 'collected' | 'donated' | 'destroyed') {
     setBusy(action); setFailure('');
     try {
@@ -58,8 +59,8 @@ export function OfficeShelf() {
   const { c } = useCopy();
   const { time } = useFormat();
   const { data } = useApi<{ items: (Office & { orderId: number })[] }>('/admin/office', 60_000);
+  const [now] = useState(Date.now);
   if (!data?.items.length) return null;
-  const now = Date.now();
   return <View style={{ marginBottom: 14 }}>
     <Section title={fill(c.officeShelf, { n: data.items.length })} />
     {data.items.map(item => {
