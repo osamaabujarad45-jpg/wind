@@ -116,6 +116,7 @@ const suites = [
   "phone-ui.test.mjs",
   "contracts-money.test.mjs",
   "contracts.test.mjs",
+  "authz-matrix.test.mjs",
   "cross-process-claims.test.mjs",
   "dependency-security.test.mjs",
   "audit-gate.test.mjs",

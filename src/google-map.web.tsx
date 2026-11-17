@@ -28,7 +28,7 @@ function loadGoogle(): Promise<any> {
 
 /** SVG path symbols with the same shapes the other renderers draw: dots, square pin, no-entry, car arrow. */
 const symbol = (path: string, color: string, opts: { rotation?: number } = {}) => ({
-  path, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3,
+  path, fillColor: color, fillOpacity: 1, strokeColor: palette.onFill, strokeWeight: 3,
   rotation: opts.rotation ?? 0,
 });
 const DOT = 'M 0 -9 A 9 9 0 1 1 -0.01 -9 Z'; // circle

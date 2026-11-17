@@ -305,11 +305,8 @@ try {
     // WP08: price now returns quote metadata (quoteId, expires, minor units, versions, ETA band) on Postgres;
     // the frozen SQLite fixture does not have those, so strip them for the Postgres comparison.
     const cleanObserved = JSON.parse(JSON.stringify(observed));
-    // Destination-change routes follow table availability on either backend, but canChangeDestination is
-    // still sent only on SQLite (server/main.ts); exclude it from the frozen SQLite fixture's comparison.
+    // Ledger row 46: canChangeDestination follows table capability on both backends and stays in the frozen comparison.
     const expectedContracts = JSON.parse(JSON.stringify(read('fixtures.json')));
-    for (const ex of [...cleanObserved.exchanges, ...expectedContracts.exchanges])
-      if (ex.response && typeof ex.response === 'object') delete ex.response.canChangeDestination;
     for (const ex of cleanObserved.exchanges) {
       // The new capability is asserted above; installed clients ignore the
       // optional PostgreSQL extension. Keep every frozen field in the comparison.
@@ -364,6 +361,22 @@ try {
     assert.equal(new Set(partnerRaced.map(o => o.id)).size, 1, 'concurrent partner retry maps to one order');
     assert.equal((await call('/partner/orders', { partnerKey, body: { ...partnerRace, detail: 'Changed scope' }, expect: 409 })).error, 'idempotency_conflict');
     await call(`/partner/orders/${partnerRaced[0].id}/cancel`, { partnerKey, body: {} });
+    // Ledger row 46: PostgreSQL customers see canChangeDestination on eligible assigned orders and complete the full proposal flow.
+    const destBooked = await call('/orders', { token: customer.token, body: { ...priced, requestId: randomUUID() } });
+    assert.equal(destBooked.canChangeDestination, false, 'searching orders cannot change destination yet');
+    const destAssigned = await call(`/jobs/${destBooked.id}/accept`, { token: spare.token, body: {} });
+    assert.equal((await call(`/orders/${destAssigned.id}`, { token: customer.token })).canChangeDestination, true,
+      'PostgreSQL customer view exposes canChangeDestination when destination_changes exists');
+    assert.equal('canChangeDestination' in destAssigned, false, 'driver view never receives customer-only canChangeDestination');
+    const destQuote = await call(`/orders/${destAssigned.id}/destination/quote`, {
+      token: customer.token,
+      body: { city: 'hebron', note: 'PG destination parity check', point: { latitude: 31.5326, longitude: 35.0998 } },
+    });
+    const destProposed = await call(`/orders/${destAssigned.id}/destination/propose`, { token: customer.token, body: { id: destQuote.id } });
+    assert.equal(destProposed.destinationChange.id, destQuote.id);
+    const destAccepted = await call(`/orders/${destAssigned.id}/destination/decision`, { token: spare.token, body: { id: destQuote.id, decision: 'accept' } });
+    assert.equal(destAccepted.dropoffCity, 'hebron');
+    await call(`/orders/${destAssigned.id}/cancel`, { token: customer.token, body: {} });
   }
   console.log(`WP03 PostgreSQL frozen contracts: ${inventory.endpoints.length} installed + ${additiveBoundaries} additive endpoint boundaries, ${transitions.size} transitions, ${observed.exchanges.length} exchanges; schema/auth/return/cash/rating/partner checks passed${recording ? ' (fixtures recorded; rerun read-only)' : ''}`);
 } finally {

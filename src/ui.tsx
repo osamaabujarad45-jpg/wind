@@ -38,6 +38,7 @@ export const palette = {
   error: '#A3392A',
   onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills
   errorPale: '#F8E6E2',
+  shade: '#0E1F1966', // modal scrim over full-screen sheets
 };
 
 // Soft lift instead of hairline borders. Small blur: large glows read as cheap on a phone.
