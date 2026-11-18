@@ -33,7 +33,8 @@
       "shopAcceptMinutes": 5,
       "shopConsentMinutes": 5,
       "shopNoCaptainMinutes": 10,
-      "shopDispatchLeadMinutes": 15
+      "shopDispatchLeadMinutes": 15,
+      "shopHandoverMinutes": 10
     },
     "units": "ILS; percentage settings are fractions in existing source",
     "fractionKeys": [

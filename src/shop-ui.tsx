@@ -245,7 +245,7 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
   const cancels = (['customer_via_support_accepted', 'no_captain', 'operational', 'merchant_request', 'handover_exception_unresolved'] as const).filter(k =>
     k === 'customer_via_support_accepted' ? s.state === 'accepted'
     : k === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(s.state ?? '') && ['requested', 'searching'].includes(order.status)
-    : k === 'handover_exception_unresolved' ? !!s.handoverException
+    : k === 'handover_exception_unresolved' ? !!s.handoverOverdue
     : k === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(s.state ?? '')
     : true);
   const before = ['requested', 'searching', 'assigned', 'at_pickup'].includes(order.status) && s.state !== 'handed_over';
@@ -262,6 +262,13 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
         onPress={() => act('cancel', `/admin/orders/${order.id}/shop/cancel`, { reason: cancels.some(k => k === reason) ? reason : 'operational', note: note.trim() })} />
       <Button title={c.adminShopResetPickup} variant="outline" size="sm" disabled={!noteOk} loading={busy === 'reset'}
         onPress={() => act('reset', `/admin/orders/${order.id}/shop/reset-pickup`, { reason: note.trim() })} />
+      {/* DLV-13: past the shop's minutes, support removes the line at fault (DLV-06 re-runs) or cancels above. */}
+      {s.handoverOverdue && <>
+        <Txt variant="label">{c.adminShopHandoverOverdue}</Txt>
+        <Choices label={c.adminShopRemoveLine} value={line} onChange={setLine} items={s.lines.filter(l => !l.removed).map(l => ({ key: String(l.id), label: lineName(l, language) }))} />
+        <Button title={c.adminShopRemoveLine} size="sm" variant="outline" disabled={!line} loading={busy === 'remove'}
+          onPress={() => act('remove', `/admin/orders/${order.id}/shop/lines/${line}/remove`, {})} />
+      </>}
     </>}
     {after && <>
       <Txt variant="label">{s.fault ? fill(c.adminShopFaultIs, { f: c[`adminFault_${s.fault}`] }) : c.adminShopFault}</Txt>

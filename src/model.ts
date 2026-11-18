@@ -145,8 +145,9 @@ export const defaultSettings = {
   orderCashCeiling: 500,
   // Shop delivery (SRS §7, ADM-06). The agreed limit is how far the weighed goods may pass the estimate without asking (DLV-04);
   // the timers are minutes: merchant accept (DLV-07), customer consent (DLV-06), wait for a captain after ready (DLV-12),
-  // and the captain's drive to the shop that dispatch starts ahead of ready (DLV-12).
-  shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10, shopDispatchLeadMinutes: 15,
+  // the captain's drive to the shop that dispatch starts ahead of ready (DLV-12), and how long a handover exception may stay
+  // open before support decides (DLV-13).
+  shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10, shopDispatchLeadMinutes: 15, shopHandoverMinutes: 10,
 };
 export type Settings = typeof defaultSettings;
 /** ADM-12: true when an order's highest reachable door cash (₪) is above the per-order ceiling. */
@@ -163,7 +164,7 @@ export const settingCeilings: Record<keyof Settings, number> = {
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
   plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
-  shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120,
+  shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120, shopHandoverMinutes: 120,
   orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
 // Returns the offending key, or null when every value is storable. `Number.isFinite`
@@ -454,6 +455,7 @@ export type ShopView = {
   /** What the captain collects at the door now: goods so far plus both fees. */
   cashAgorot: number;
   lines: ShopLine[]; change: ShopChange | null; cancelReason: ShopCancelReason | null; handoverException: HandoverException | null;
+  handoverOverdue?: boolean; // DLV-13, admin view: the exception is past the owner-set minutes
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)

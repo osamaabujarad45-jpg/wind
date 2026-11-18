@@ -7,13 +7,16 @@ import { useSession, type Me } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
-const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits'; keys: (keyof Settings)[] }[] = [
+const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
   // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
   { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
   { title: 'cashLimits', keys: ['driverCashCap', 'orderCashCeiling'] },
+  // ADM-06: shown only while the shop line is on.
+  { title: 'shopTimers', keys: ['shopAgreeLimit', 'shopAcceptMinutes', 'shopConsentMinutes', 'shopNoCaptainMinutes', 'shopDispatchLeadMinutes', 'shopHandoverMinutes'] },
 ];
+const unitless = (key: keyof Settings) => key.endsWith('Minutes'); // the label names the unit
 
 const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
 
@@ -95,7 +98,7 @@ export default function AdminSettings() {
     const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]);
     if (!keys.length) { setMessage(c.saved); return; }
     // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
-    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : `${value} ₪`;
+    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : unitless(key) ? String(value) : `${value} ₪`;
     const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
     const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
     const expected = Object.fromEntries(keys.map(key => [key, before[key]]));
@@ -104,11 +107,11 @@ export default function AdminSettings() {
 
   return <Screen>
     <Header title={c.settings} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
-    {groups.map(group => <Card key={group.title}>
+    {groups.filter(group => group.title !== 'shopTimers' || me?.capabilities?.enabledServices?.includes('shop')).map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
-        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
+        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : unitless(key) ? '' : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
         value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); setMessage(''); if (bad === key) setBad(''); }} />)}
     </Card>)}

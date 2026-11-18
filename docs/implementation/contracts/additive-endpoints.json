@@ -705,6 +705,7 @@
         { "method": "POST", "path": "/api/admin/orders/:id/shop/unsellable", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/orders/:id/shop/refund", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/orders/:id/shop/reset-pickup", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/lines/:line/remove", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/users/:id/shop-review", "anonymousStatus": 401 },
         { "method": "GET", "path": "/api/admin/shop/attention", "anonymousStatus": 401 }
       ]

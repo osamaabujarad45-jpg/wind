@@ -16,7 +16,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,shop';
 delete process.env.WIND_SHOP_TOWN;
 delete process.env.OSRM_URL;
-const { persistence, shutdown, server, promote } = await import('../server/main.ts');
+const { persistence, shutdown, server, promote, shopSweep } = await import('../server/main.ts');
 // One reader for both backends: tests/pg-shop.mjs runs this same file on PostgreSQL.
 const one = (sql, ...args) => persistence.atomic({ purpose: 'test' }, () => persistence.one(sql, ...args));
 await new Promise(resolve => server.listen(0, resolve));
@@ -195,6 +195,21 @@ try {
   assert.equal(order.shop.handoverException, 'missing_item');
   assert.equal(order.status, 'at_pickup');
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'exception_open');
+  // Inside the owner-set 10 minutes the shop fixes it: support can neither cancel for it nor remove a line, and it is not on the stuck list.
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { reason: 'handover_exception_unresolved', note: 'Synthetic early decision' } }, 409, 'cancel_refused');
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: {} }, 409, 'handover_not_overdue');
+  assert.ok(!(await call('/admin/shop/attention', { token: admin.token })).orders.some(o => o.id === order.id));
+  await shopSweep(Date.now() + 9 * 60_000);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 0, 'nothing escalates before the minutes pass');
+  // Past them, the sweep tells support once per exception and the order joins the stuck list; it never cancels by itself.
+  await persistence.atomic({ purpose: 'test' }, () => persistence.run("UPDATE shop_handover_checks SET created_at = created_at - ? WHERE order_id = ? AND result = 'exception'", 11 * 60_000, order.id));
+  await shopSweep();
+  await shopSweep();
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
+  const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
+  assert.equal(stuck?.shop.handoverOverdue, true, 'an overdue exception is on the stuck list, marked for support to decide');
+  assert.equal((await call(`/orders/${order.id}`, { token: owner.token })).shop.handoverOverdue, false, 'only support sees the overdue flag');
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).status, 'at_pickup');
   await call(`/merchant/orders/${order.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }, { sealed: false, lineIds: [labnehLine, breadLine] }] } });
   order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } });
   assert.equal(order.status, 'in_transit');

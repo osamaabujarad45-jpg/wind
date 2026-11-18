@@ -105,6 +105,14 @@ export function registerShop(route: Register, deps: ShopDeps) {
   const audit = (actor: number, order: number | null, action: string, detail: unknown = {}) =>
     db.run('INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)', actor, order, action, JSON.stringify(detail), Date.now());
   const ceilingAgorot = async () => Math.round((await settings()).orderCashCeiling * 100);
+  /** DLV-13: when the open handover exception was raised (its newest exception check). */
+  const exceptionSince = `(SELECT MAX(c.created_at) FROM shop_handover_checks c WHERE c.order_id = o.id AND c.result = 'exception')`;
+  /** DLV-13: an open handover exception older than the owner-set minutes is the operator's to decide. */
+  async function handoverOverdue(orderId: number, now = Date.now()) {
+    const row = await db.one(`SELECT ${exceptionSince} AS since FROM orders o JOIN shop_orders s ON s.order_id = o.id
+      WHERE o.id = ? AND o.status = 'at_pickup' AND s.handover_exception IS NOT NULL`, orderId);
+    return row?.since != null && Number(row.since) <= now - (await settings()).shopHandoverMinutes * MINUTE;
+  }
 
   // ---------- merchants ----------
   const merchantOf = async (userId: number) => db.one('SELECT * FROM merchants WHERE owner_user_id = ?', userId);
@@ -285,6 +293,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
       // The captain sees what to collect and how many packages, not the basket's names until they hold it.
       lines: role === 'driver' && viewer.id !== r.driver_id ? [] : lines,
       change: role === 'driver' ? null : change, cancelReason: s.cancel_reason ?? null, handoverException: s.handover_exception ?? null,
+      handoverOverdue: role === 'admin' && !!s.handover_exception && await handoverOverdue(r.id), // DLV-13: support decides now
       packages: s.packing ? JSON.parse(s.packing) : null,
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
@@ -579,10 +588,24 @@ export function registerShop(route: Register, deps: ShopDeps) {
   // MER-03 + DLV-04/05/06: a weight, a substitution or a removal, evaluated in the SRS order.
   route('POST', '/api/merchant/orders/:id/lines/:line', async ({ user, params, body }) => inTx(async () => {
     const { m, r, s } = await merchantOrder(user, Number(params[0]));
+    return changeLine(user, m, r, s, Number(params[1]), body);
+  }));
+  // DLV-13: a handover exception left unresolved past the owner-set minutes: the operator removes the line, and DLV-06
+  // evaluates the removal like any merchant change (a drop below the minimum cancels with below_minimum).
+  route('POST', '/api/admin/orders/:id/shop/lines/:line/remove', async ({ user, params }) => inTx(async () => {
+    const { r, s } = await adminOrder(user, Number(params[0]));
+    if (!(await handoverOverdue(r.id))) fail(409, 'handover_not_overdue');
+    const m = (await db.one('SELECT * FROM merchants WHERE id = ?', s.merchant_id))!;
+    const order = await changeLine(user, m, r, s, Number(params[1]), { remove: true });
+    await push([m.owner_user_id], 'shop_update', r.id, `/merchant/order/${r.id}`);
+    await push([r.customer_id], 'shop_update', r.id);
+    return order;
+  }));
+  async function changeLine(user: User, m: Row, r: Row, s: Row, lineId: number, body: Row) {
     if (s.merchant_state !== 'preparing' || !['requested', 'searching', 'assigned', 'at_pickup'].includes(r.status)) fail(409, 'shop_state');
     if (await db.one("SELECT 1 FROM shop_changes WHERE order_id = ? AND status = 'pending'", r.id)) fail(409, 'change_pending');
     const lines = await linesOf(r.id);
-    const line = lines.find(l => l.id === Number(params[1]) && !l.removed) ?? fail(404, 'not_found');
+    const line = lines.find(l => l.id === lineId && !l.removed) ?? fail(404, 'not_found');
     let p: Row;
     if (body.remove === true) p = { kind: 'removal', nameAr: line.nameAr, nameEn: line.nameEn, fromAgorot: line.finalAgorot ?? line.estimateAgorot, toAgorot: 0 };
     else if (body.weightGrams !== undefined) {
@@ -619,7 +642,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run('UPDATE orders SET updated_at = ? WHERE id = ?', now, r.id);
     await audit(user.id, r.id, 'SHOP_LINE_CHANGED', { lineId: line.id, kind: p!.kind, goods: goodsAfter });
     return getOrder(r.id, user);
-  }));
+  }
   // MER-03: ready needs every weighed line's final price and the packing record (packages, sealed or open, items in open bags).
   route('POST', '/api/merchant/orders/:id/ready', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await merchantOrder(user, Number(params[0]));
@@ -716,6 +739,18 @@ export function registerShop(route: Register, deps: ShopDeps) {
         if (!(await db.run('UPDATE shop_orders SET no_captain_alerted_at = ? WHERE order_id = ? AND no_captain_alerted_at IS NULL', now, row.id)).changes) return 0;
         await push([row.customer_id], 'shop_update', Number(row.id));
         await push([row.owner_user_id], 'shop_update', Number(row.id), `/merchant/order/${row.id}`);
+        await push(await adminIds(), 'attention', Number(row.id), '/admin/orders');
+        return 1;
+      });
+    // DLV-13: a handover exception unresolved past the owner-set minutes goes to support once per exception. Never an automatic cancel.
+    const handoverMs = (await settings()).shopHandoverMinutes * MINUTE;
+    const escalated = `EXISTS (SELECT 1 FROM security_events e WHERE e.order_id = o.id AND e.action = 'SHOP_HANDOVER_ESCALATED' AND e.created_at >= ${exceptionSince})`;
+    for (const row of await db.all(`SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'at_pickup'
+      AND s.handover_exception IS NOT NULL AND ${exceptionSince} <= ? AND NOT ${escalated} LIMIT 50`, now - handoverMs))
+      changed += await timer(async () => {
+        const r = await db.one(`SELECT id, driver_id FROM orders WHERE id = ?${forUpdate}`, row.id);
+        if (!r || r.driver_id == null || !(await handoverOverdue(Number(row.id), now)) || await db.one(`SELECT 1 FROM orders o WHERE o.id = ? AND ${escalated}`, row.id)) return 0;
+        await audit(Number(r.driver_id), Number(row.id), 'SHOP_HANDOVER_ESCALATED'); // the captain raised the exception the sweep escalates
         await push(await adminIds(), 'attention', Number(row.id), '/admin/orders');
         return 1;
       });
@@ -945,7 +980,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const state = s.merchant_state as MerchantState | null;
     const allowed = reason === 'customer_via_support_accepted' ? state === 'accepted'
       : reason === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(state ?? '') && ['requested', 'searching'].includes(r.status)
-      : reason === 'handover_exception_unresolved' ? !!s.handover_exception
+      : reason === 'handover_exception_unresolved' ? await handoverOverdue(r.id)
       : reason === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(state ?? '')
       : true; // operational: safety, legal hold or platform outage, before collection
     if (!allowed) fail(409, 'cancel_refused');
@@ -1040,10 +1075,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const now = Date.now();
     const rows = await db.all(`SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE
       (o.status = 'searching' AND s.no_captain_alerted_at IS NOT NULL)
-      OR (s.handover_exception IS NOT NULL AND o.status = 'at_pickup')
+      OR (s.handover_exception IS NOT NULL AND o.status = 'at_pickup' AND ${exceptionSince} <= ?)
       OR (s.pickup_failures >= ?)
       OR (o.status IN ('returned','on_hold') AND NOT EXISTS (SELECT 1 FROM shop_faults f WHERE f.order_id = o.id) AND o.updated_at < ?)
-      ORDER BY o.id DESC LIMIT 100`, lockedTries, now - 2 * DAY);
+      ORDER BY o.id DESC LIMIT 100`, now - (await settings()).shopHandoverMinutes * MINUTE, lockedTries, now - 2 * DAY);
     const orders = [];
     for (const row of rows) orders.push(await getOrder(Number(row.id), user));
     return { orders };
