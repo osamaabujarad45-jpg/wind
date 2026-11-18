@@ -102,7 +102,8 @@ function EmailCard() {
     <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
     <Row gap={10} style={styles.locked}>
       <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
-      <Txt variant="title" selectable style={{ flex: 1, color: palette.secondary }}>{email}</Txt>
+      {/* minWidth 0: on the web a flex text will not shrink below an unbreakable address, which pushed the badge past the field edge; it wraps instead */}
+      <Txt variant="title" selectable style={{ flex: 1, minWidth: 0, color: palette.secondary }}>{email}</Txt>
       <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.clay} /></View>
     </Row>
     {emailVerifiedAt ? <Txt variant="caption" style={{ marginTop: 8 }}>{c.emailVerifiedNote}</Txt> : canVerify && <View style={{ marginTop: 12 }}>

@@ -305,6 +305,20 @@
     "session": "customer"
   },
   {
+    "id": "track",
+    "group": "Customer",
+    "name": "Public tracking link (recipient, no sign-in)",
+    "route": "/track/{token}",
+    "file": "src/app/track/[token].tsx",
+    "ar": [
+      "ar/track.png"
+    ],
+    "en": [
+      "en/track.png"
+    ],
+    "session": null
+  },
+  {
     "id": "order-done",
     "group": "Customer",
     "name": "Order · delivered",

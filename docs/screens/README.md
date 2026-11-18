@@ -35,6 +35,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Parcel · scheduled, changing its time | `/order/4` | `src/app/order/[id].tsx` | [order-scheduled.png](ar/order-scheduled.png) | [order-scheduled.png](en/order-scheduled.png) |
 | Order · on the way | `/order/2` | `src/app/order/[id].tsx` | [order-live.png](ar/order-live.png) | [order-live.png](en/order-live.png) |
 | Parcel · awaiting handover | `/order/7` | `src/app/order/[id].tsx` | [order-parcel-live.png](ar/order-parcel-live.png) | [order-parcel-live.png](en/order-parcel-live.png) |
+| Public tracking link (recipient, no sign-in) | `/track/{token}` | `src/app/track/[token].tsx` | [track.png](ar/track.png) | [track.png](en/track.png) |
 | Order · delivered | `/order/1` | `src/app/order/[id].tsx` | [order-done.png](ar/order-done.png) | [order-done.png](en/order-done.png) |
 | Receipt | `/receipt/1` | `src/app/receipt/[id].tsx` | [receipt.png](ar/receipt.png) | [receipt.png](en/receipt.png) |
 | Account | `/account` | `src/parts.tsx (AccountScreen)` | [account.png](ar/account.png) | [account.png](en/account.png) |

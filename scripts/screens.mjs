@@ -139,6 +139,7 @@ const completed = await order(layla, true, { service: 'parcel', pickupCity: 'ram
   pickupNote: 'محل الزهراء، شارع ركب', dropoffNote: 'دوار الشهداء، بجانب الصيدلية', detail: 'صندوق ملابس وهدية', option: 'medium' });
 const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
   pickupNote: 'دوار المنارة', dropoffNote: 'ساحة المهد', option: '2', detail: 'معي عربة أطفال' });
+const shared = await call(`/orders/${inTransit.id}/share`, layla.token, {}); // the recipient's public page (no sign-in)
 // A ride: drivers offer on rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
 const searching = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
@@ -271,6 +272,7 @@ const screens = [
   { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
+  { id: 'track', group: 'Customer', name: 'Public tracking link (recipient, no sign-in)', route: shared.path, shown: '/track/{token}', file: 'src/app/track/[token].tsx', role: null }, // shown: the index must not churn on the random token
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'receipt', group: 'Customer', name: 'Receipt', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'customer' },
   { id: 'account', group: 'Customer', name: 'Account', route: '/account', file: 'src/parts.tsx (AccountScreen)', role: 'customer' },
@@ -876,7 +878,7 @@ if (!only) {
   const rows = [];
   for (const screen of screens) {
     const pick = language => shots.filter(s => s.id === screen.id && s.language === language).map(s => rel(s.file));
-    rows.push({ ...screen, ar: pick('ar'), en: pick('en') });
+    rows.push({ ...screen, route: screen.shown ?? screen.route, ar: pick('ar'), en: pick('en') });
   }
   const groups = [...new Set(rows.map(r => r.group))];
   const md = [
@@ -896,7 +898,7 @@ if (!only) {
     ]),
   ].join('\n');
   writeFileSync(join(outDir, 'README.md'), md + '\n');
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(rows.map(({ clicks, fresh, motion, frames, role, ...r }) => ({ ...r, session: role })), null, 2) + '\n');
+  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(rows.map(({ clicks, fresh, motion, frames, role, shown, ...r }) => ({ ...r, session: role })), null, 2) + '\n');
 
   const card = (label, paths) => paths.map(p => `<figure><img src="${p}" loading="lazy" alt="${label}"><figcaption>${label}</figcaption></figure>`).join('');
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
