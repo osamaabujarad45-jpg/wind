@@ -1044,7 +1044,7 @@ export async function scrubDeletedQuotes(customerId?: number) { // exported for 
 // A quote nobody booked holds a customer's notes, phones and pins for no purpose once it has expired: keep a day, then delete.
 // Only unconsumed quotes (an order or payment references consumed ones); the guard blocks UPDATE, not DELETE.
 export async function purgeExpiredQuotes(now = Date.now()) {
-  return (await run('DELETE FROM quotes WHERE id IN (SELECT id FROM quotes WHERE consumed_at IS NULL AND expires_at < ? LIMIT 500)', now - DAY)).changes;
+  return (await run('WITH due AS (SELECT id FROM quotes WHERE consumed_at IS NULL AND expires_at < ? LIMIT 500 FOR UPDATE SKIP LOCKED) DELETE FROM quotes q USING due WHERE q.id = due.id', now - DAY)).changes;
 }
 
 async function deleteAccount(user: User, actorId: number | null, proof?: { sessionHash: string; passwordHash?: string } & Partial<EntraProof>) {
@@ -1112,11 +1112,15 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
   const key = identityKey('delete-auth', user.id);
   await limit(key, 5, 10 * 60_000, false);
   const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
+  // A typed password is counted before it is checked (parallel guesses); it is tried first, so an Entra outage cannot refuse it.
+  if (typeof body.password === 'string') {
+    await limit(key, 5, 10 * 60_000);
+    if (body.password.length <= 100 && await checkPassword(body.password, current.password))
+      return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
+  }
   const proof = await entraProof('delete', token, body, current.entra_oid);
   if (proof) return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), ...proof }));
-  await limit(key, 5, 10 * 60_000); // as password change: the typed password is counted before it is checked
-  if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
-    return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
+  if (typeof body.password !== 'string') await limit(key, 5, 10 * 60_000); // a failed Entra-only attempt counts too
   fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
 });
 

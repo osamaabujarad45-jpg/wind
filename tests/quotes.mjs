@@ -206,8 +206,8 @@ try {
   await assert.rejects(persistence.run("UPDATE quotes SET contact = '0599999999' WHERE id = ?", leaverQuote.quoteId), /immutable/); // only the scrub value passes
   await call(`/orders/${leaverOrder.id}/cancel`, { token: leaver.token, body: {} });
   await call('/me/delete', { token: leaver.token, body: { password: 'secret123' } });
-  const scrubbed = await persistence.one('SELECT contact, pickup_note, dropoff_note, detail, pickup_lat, price_minor FROM quotes WHERE id = ?', leaverQuote.quoteId);
-  assert.deepEqual({ ...scrubbed, price_minor: Number(scrubbed.price_minor) }, { contact: '', pickup_note: '', dropoff_note: '', detail: '', pickup_lat: null, price_minor: leaverQuote.priceMinor });
+  const scrubbed = await persistence.one('SELECT contact, pickup_note, dropoff_note, detail, pickup_lat, itinerary_hash, price_minor FROM quotes WHERE id = ?', leaverQuote.quoteId);
+  assert.deepEqual({ ...scrubbed, price_minor: Number(scrubbed.price_minor) }, { contact: '', pickup_note: '', dropoff_note: '', detail: '', pickup_lat: null, itinerary_hash: '', price_minor: leaverQuote.priceMinor });
   assert.equal(Number((await persistence.one('SELECT COUNT(*) n FROM command_results WHERE actor_id = ?', leaver.user.id)).n), 0);
   // A quote an in-flight booking held during deletion is skipped (SKIP LOCKED) and caught by the maintenance sweep.
   const straggler = await register('0599000110', 'Straggler');
