@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
-import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashOutcome } from '../../admin-cash-command';
+import { cashCommandBody, cashCommandKey, formAfter, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -13,7 +13,7 @@ type Balance = { driverId: number; name: string; phone: string; owedCents: numbe
 // A-01: the form is saved in the admin's own secure slot before it is sent (it outlives a forced sign-out, like a pending
 // booking) and settled after a restart by this admin's command receipt or a same-id resend.
 const cashIO = (actorId: number): CashIO => ({
-  read: async () => { const raw = await storage.get(cashCommandKey(actorId), true); return raw ? JSON.parse(raw) : null; },
+  read: async () => parseCashSlot(await storage.get(cashCommandKey(actorId), true)),
   write: async command => { await storage.set(cashCommandKey(actorId), command && JSON.stringify(command), true); },
   receipt: command => api<{ entry: CashEntry | null }>(`/admin/cash/commands/${command.requestId}`),
   send: command => api<CashEntry>(`/admin/cash/${command.kind}`, cashCommandBody(command)),

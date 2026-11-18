@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
+import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, parseCashSlot, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
 import { copy } from '../src/copy.ts';
 
 // A-01: a remittance whose reply is lost survives an app restart and a forced sign-out, and is settled only by the admin's
@@ -77,6 +77,9 @@ assert.equal(refusedForGood(null), false);
   const corrupt = rig(); corrupt.stored = { ...command, amountCents: 0 };
   assert.deepEqual(await recoverCashCommand(corrupt, 7), { state: 'empty' });
   assert.equal(corrupt.stored, null);
+  const garbled = rig(); garbled.read = async () => parseCashSlot('{"type":"admin_cash",'); garbled.stored = command;
+  assert.deepEqual(await recoverCashCommand(garbled, 7), { state: 'empty' });
+  assert.equal(garbled.stored, null, 'unparseable bytes in the slot are dropped like a broken record');
   const unreadable = rig(); unreadable.stored = command; unreadable.read = async () => { throw new Error('storage_unavailable'); };
   await assert.rejects(recoverCashCommand(unreadable, 7), /storage_unavailable/);
   assert.equal(unreadable.stored, command);
@@ -103,6 +106,9 @@ for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'e
 const screen = readFileSync(new URL('../src/app/admin/cash.tsx', import.meta.url), 'utf8');
 assert.match(screen, /storage\.(get|set)\(cashCommandKey\(actorId\)/);
 assert.doesNotMatch(screen, /recoveryStorage/);
+assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(cashCommandKey\(actorId\), true\)\)/);
+assert.equal(parseCashSlot(null), null);
+assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/);
 assert.match(screen, /!open\.uncertain && <Button title=\{c\.cancel\}/);

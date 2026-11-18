@@ -22,6 +22,12 @@ const locked = <T>(io: CashIO, run: () => Promise<T>) => io.exclusive ? io.exclu
 
 /** The account's own slot (like a pending booking): it outlives the session token, so a forced sign-out keeps it. */
 export const cashCommandKey = (actorId: number) => `adminCash.${actorId}`;
+/** The admin's slot as stored. Unparseable bytes are a broken cash record: dropped like one, not an error on every visit
+ *  (no request id survives them, so nothing could be resent or looked up). */
+export function parseCashSlot(raw: string | null): unknown {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { throw new Error('invalid_pending_command'); }
+}
 
 /** The saved cash command of this admin, or null. Another record type or another admin's record is not this one. */
 export function readCashCommand(raw: unknown, actorId: number): CashCommand | null {

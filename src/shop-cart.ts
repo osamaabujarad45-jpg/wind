@@ -2,7 +2,7 @@
 // The server prices the basket again at placing; this copy only shows the estimate and remembers the choices.
 import { useSyncExternalStore } from 'react';
 import { storage } from './storage';
-import { lineAgorot, type MerchantItem, type ShopPolicy } from './model';
+import { isCity, lineAgorot, shopPolicies, type MerchantItem, type ShopPolicy } from './model';
 
 export type CartLine = { itemId: number; nameAr: string; nameEn: string; unitAgorot: number; byWeight: boolean; qtyMilli: number; policy: ShopPolicy };
 export type Cart = { merchantId: number; merchantName: string; city: string; minOrderAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number;
@@ -14,15 +14,22 @@ let loaded = false;
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 
-function valid(raw: unknown): raw is Cart {
+const text = (s: unknown) => typeof s === 'string';
+const agorot = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
+/** Every field the cart screen reads, or the saved copy is dropped: a missing fee would show as NaN and a missing policy
+ *  would place an order the server refuses, and an unknown city id makes city() undefined, so the screen's `[language]` read throws. save() never writes an empty cart.
+ *  Adding a field? Backfill it here (`saved.x ?? default`) or move to a new KEY. */
+export function readCart(raw: unknown): Cart | null {
   const c = raw as Cart;
-  return !!c && Number.isSafeInteger(c.merchantId) && typeof c.merchantName === 'string' && Array.isArray(c.lines)
-    && c.lines.every(l => Number.isSafeInteger(l.itemId) && Number.isSafeInteger(l.qtyMilli) && l.qtyMilli > 0 && Number.isSafeInteger(l.unitAgorot));
+  return !!c && Number.isSafeInteger(c.merchantId) && text(c.merchantName) && isCity(c.city)
+    && [c.minOrderAgorot, c.deliveryFeeAgorot, c.serviceFeeAgorot].every(agorot) && Array.isArray(c.lines) && c.lines.length > 0
+    && c.lines.every(l => !!l && Number.isSafeInteger(l.itemId) && text(l.nameAr) && text(l.nameEn) && agorot(l.unitAgorot)
+      && typeof l.byWeight === 'boolean' && Number.isSafeInteger(l.qtyMilli) && l.qtyMilli > 0 && shopPolicies.includes(l.policy)) ? c : null;
 }
 async function load() {
   if (loaded) return;
   loaded = true;
-  try { const saved = JSON.parse((await storage.get(KEY)) ?? 'null'); if (valid(saved)) { cart = saved; emit(); } } catch { /* a damaged copy starts empty */ }
+  try { const saved = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); if (saved) { cart = saved; emit(); } } catch { /* a damaged copy starts empty */ }
 }
 function save(next: Cart | null) {
   cart = next && next.lines.length ? next : null;
