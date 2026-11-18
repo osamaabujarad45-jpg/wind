@@ -60,7 +60,7 @@ const lineName = (l: Pick<ShopLine, 'nameAr' | 'nameEn'>, language: string) => l
 
 /** The basket with each line's price, estimate or final, and the money lines (DLV-03): goods, delivery fee, service fee, cash at the door. */
 export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsOnly?: boolean }) {
-  const { c, language, money } = useCopy();
+  const { c, language, money, rtl } = useCopy();
   const s = order.shop!;
   return <>
     {!totalsOnly && s.lines.filter(l => !l.removed).map(l => <Row key={l.id} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
