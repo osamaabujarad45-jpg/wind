@@ -309,7 +309,7 @@ const ar = {
   dashboard: 'اللوحة',
   dashboardTab: 'الرئيسية',
   users: 'المستخدمون',
-  usersTab: 'الحسابات', // one word that fits a seven-tab bar: المستخدمون broke mid-word (screens, 18 Nov)
+  usersTab: 'مستخدمون', // the screen's own word without the article: المستخدمون broke mid-word in a seven-tab bar (screens, 18 Nov)
   subscriptions: 'الاشتراكات',
   settings: 'الإعدادات',
   allOrders: 'الطلبات',
@@ -829,7 +829,7 @@ const ar = {
   call: 'اتصال',
   cancelOrder: 'إلغاء الطلب',
   cancelConfirm: 'لن يُخصم أي مبلغ. سيُلغى الطلب.',
-  rateDriver: 'قيّم السائق',
+  rateDriver: 'كيف كان السائق؟',
   thanks: 'شكراً لتقييمك',
   ratePrice: 'هل كان السعر عادلاً؟',
   thanksDriver: 'شكراً لتقييم السائق',
@@ -2474,7 +2474,7 @@ const en: Copy = {
   call: 'Call',
   cancelOrder: 'Cancel order',
   cancelConfirm: 'No payment is taken. The order is cancelled.',
-  rateDriver: 'Rate your driver',
+  rateDriver: 'How was your driver?',
   thanks: 'Thanks for rating',
   ratePrice: 'How fair was the price?',
   thanksDriver: 'Thanks for rating your driver',
