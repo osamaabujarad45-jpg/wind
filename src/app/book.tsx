@@ -855,8 +855,12 @@ function SavePlace({ city: placeCity, note, point, saved, onSave }: { city: City
   const { c, row } = useCopy();
   const [open, setOpen] = useState(false);
   const trimmed = note.trim();
-  // Already saved: offered again only to give a landmark-only place the pin it now has.
-  if (!trimmed || saved.some(p => p.city === placeCity && p.note === trimmed && (p.point || !point))) return null;
+  const existing = saved.find(p => p.city === placeCity && p.note === trimmed);
+  if (!trimmed || (existing && (existing.pinSaved || !point))) return null;
+  // Already saved without its own pin: one action that adds this pin and keeps the place's label.
+  if (existing) return <Press accessibilityLabel={c.savePin} onPress={() => void onSave(existing.label, placeCity, trimmed, point)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
+    <Row gap={6} style={styles.chip}><Ionicons name="pin-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.savePin}</Txt></Row>
+  </Press>;
   if (!open) return <Press accessibilityLabel={c.savePlace} onPress={() => setOpen(true)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
     <Row gap={6} style={styles.chip}><Ionicons name="bookmark-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.savePlace}</Txt></Row>
   </Press>;

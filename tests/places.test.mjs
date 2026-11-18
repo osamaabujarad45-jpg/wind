@@ -39,8 +39,13 @@ try {
   const manara = { latitude: 31.9038, longitude: 35.2034 };
   places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: manara } });
   assert.deepEqual(places.saved[0].point, manara);
+  assert.equal(places.saved[0].pinSaved, true);
   places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } });
   assert.deepEqual(places.saved[0].point, manara);
+  const moved = { latitude: 31.9041, longitude: 35.2041 }; // a new pin replaces the stored one (last write wins)
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: moved } });
+  assert.deepEqual(places.saved[0].point, moved);
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: manara } });
   assert.deepEqual({ ...db.prepare('SELECT lat, lng FROM saved_places WHERE note = ?').get('Al-Manara') }, { lat: 31.9038, lng: 35.2034 });
   const jenin = city('jenin');
   assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Far', point: { latitude: jenin.latitude, longitude: jenin.longitude } }, expect: 400 })).error, 'outside_area');
@@ -65,9 +70,12 @@ try {
   const order = { service: 'parcel', option: 'small', shared: false, contact: '0599600001', detail: 'Box' };
   for (const [pickupCity, pickupNote, dropoffCity, dropoffNote] of [['ramallah', 'Al-Manara', 'jenin', 'Old market'], ['bethlehem', 'Manger Square', 'jenin', 'Old market']]) {
     const input = { ...order, pickupCity, pickupNote, dropoffCity, dropoffNote };
-    await call('/orders', { token: t, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+    // The Al-Manara order is pinned elsewhere: the saved place's own pin must still win over the borrowed one.
+    const pins = pickupNote === 'Al-Manara' ? { pickupPoint: { latitude: 31.9001, longitude: 35.2001 } } : {};
+    await call('/orders', { token: t, body: { ...input, ...pins, quotedPrice: quote(defaultSettings, input) } });
   }
   places = await call('/me/places', { token: t });
+  assert.deepEqual(places.saved.find(p => p.note === 'Al-Manara').point, manara);
   assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }, { city: 'jenin', note: 'Old market' }]);
   assert.deepEqual((await call('/me/places', { token: other.token })).recent, []);
 

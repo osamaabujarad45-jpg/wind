@@ -1103,8 +1103,10 @@ ${note}`;
       if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note, ...(latitude != null && { point: { latitude, longitude } }) }); }
     }
   // The place's own pin wins (research #6); a place saved without one borrows where this customer's recent orders put it.
+  // `pinSaved` tells the app the pin is the place's own, so it can offer to save one when the pin is only borrowed.
   const located = saved.map(({ lat, lng, ...p }: Row) => {
-    const point = lat != null ? { latitude: Number(lat), longitude: Number(lng) } : pinned.get(`${p.city}
+    if (lat != null && lng != null) return { ...p, point: { latitude: Number(lat), longitude: Number(lng) }, pinSaved: true };
+    const point = pinned.get(`${p.city}
 ${p.note}`);
     return point ? { ...p, point } : p;
   });
