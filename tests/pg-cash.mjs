@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings as standard, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+import { cashLines } from '../src/cash-lines.ts';
+import { copy } from '../src/copy.ts';
 // The ledger maths below were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
 const defaultSettings = { ...standard, parcelPrice: 49 };
 
@@ -107,6 +109,10 @@ try {
   assert.equal(cash.adjustmentsCents, -200);
   assert.equal(cash.owedCents, commissionCents - 700);
   assert.deepEqual(cash.entries.map(e => [e.kind, e.status]), [['adjustment', 'confirmed'], ['remittance', 'disputed'], ['remittance', 'confirmed']]);
+  // The driver's breakdown (research #9), with an approved negative adjustment, adds up to PostgreSQL's balance.
+  const breakdown = cashLines(copy.en, cash);
+  assert.ok(breakdown.some(([label, cents]) => label === copy.en.cashAdjustments && cents === -200));
+  assert.equal(breakdown.reduce((sum, [, cents]) => sum + cents, 0), cash.owedCents);
 
   const list = await call('/admin/cash', { token: admin.token });
   assert.deepEqual(list.map(r => r.driverId), [driver.user.id, other.user.id]); // highest debt first

@@ -59,3 +59,16 @@ Closes the 17 Nov handoff's "phone acceptance NOT RUN" for A-01, the chat outbox
 - Phone update-install test (REA §5.3: `install -r` over existing data) for Fastship: NOT RUN. The shop line is off in production (D-2), and the admin cash screen is web. A release that changes a persisted shape should get one on the A53 before shipping.
 - Merges are not deploys; production is unchanged.
 - REA §6 items (map tiles in the demo apps, WindRide/WindBazaar signer mismatch) are owner-side and untouched.
+
+## 6. Research priorities #5–#10 against master (later 18 Nov, Opus)
+
+Priority map: `wind-competitors/CLAUDE-INTEGRATION.md` §2. #1–#4 shipped 17 Nov (#79/#81/#82, #84, #86, #85). `[read]` master `bb6a3d0d`:
+
+| # | Area | Verdict |
+|---|---|---|
+| 8 | Server-held proof | Already met: handover/return codes held server-side, owner-only view (`server/main.ts` `handoverCode: owner ? …`), 5 bounded guesses then `proof_locked` with an admin attention push, `PROOF_FAILED`/`PROOF_RESET` security events with reason, support identity check (`SUPPORT_PROOF_TTL`), boarding PIN revisions in `server/domain/ride-lifecycle.ts`. No slice. |
+| 7 | Scheduling | Already met: `invalid_schedule` unless integer, ≥ release window and ≤ 7 days; quote/booking mismatch `itinerary_changed`; idempotent reschedule after a lost reply; release sweep; `scheduledFor ?? null` restore. No slice. |
+| 9 | Earnings | Gap: the driver cash card showed one total though `GET /api/driver/cash` returned its parts. **#91** shows the parts (commission, shop cash, promo credits, adjustments, confirmed handovers) signed toward "owed to Wind", plus pending handovers as not counted; no breakdown when parts ≠ total. Disputed handovers are void, not totalled. |
+| 5 | Map-first home / failure states | Not started. Partial today: map page reports `fail` on load/HTTP/WebGL loss, `windTileFailed` tracked, `pinUnavailable`/`mapUnavailable` copy. Next owner: one-tap resume of an active order from home, and actionable text for permission, approximate fix, stale fix, offline routing and tile failure. UI-heavy: sequence after the 18 Nov Haiku design review lands. |
+| 6 | Addresses | Not started; read `SPEC-saved-places.md` first. |
+| 10 | Accessibility / RTL | Ongoing across slices; the 18 Nov Haiku design review feeds it. |
