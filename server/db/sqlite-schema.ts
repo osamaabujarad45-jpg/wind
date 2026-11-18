@@ -184,6 +184,10 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS cash_entries_request ON cash_entries(
 if (!(db.prepare('PRAGMA table_info(order_messages)').all() as Row[]).some(r => r.name === 'request_id'))
   db.exec('ALTER TABLE order_messages ADD COLUMN request_id TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS order_messages_request ON order_messages(sender_id, request_id) WHERE request_id IS NOT NULL');
+// Saved places keep their own pin (research priority #6). Additive and nullable: older rows stay landmark-only.
+for (const column of ['lat', 'lng'])
+  if (!(db.prepare('PRAGMA table_info(saved_places)').all() as Row[]).some(r => r.name === column))
+    db.exec(`ALTER TABLE saved_places ADD COLUMN ${column} REAL`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS orders_share_token ON orders(share_token_hash) WHERE share_token_hash IS NOT NULL');
 db.exec(`
 CREATE TABLE IF NOT EXISTS road_restriction_policy (

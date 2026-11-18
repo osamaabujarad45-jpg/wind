@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultSettings, quote } from '../src/model.ts';
+import { city, defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-places-'));
@@ -33,6 +33,19 @@ try {
   assert.deepEqual(places.saved.map(p => [p.label, p.city]), [['home', 'ramallah']]);
   places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } }); // same place relabelled
   assert.deepEqual(places.saved.map(p => [p.label, p.city, p.note]), [['work', 'ramallah', 'Al-Manara']]);
+  assert.equal(places.saved[0].point, undefined); // landmark-only
+
+  // Research #6: a place keeps its own pin, re-saving without one keeps it, and a pin must be real and inside its city.
+  const manara = { latitude: 31.9038, longitude: 35.2034 };
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: manara } });
+  assert.deepEqual(places.saved[0].point, manara);
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } });
+  assert.deepEqual(places.saved[0].point, manara);
+  assert.deepEqual(db.prepare('SELECT lat, lng FROM saved_places WHERE note = ?').get('Al-Manara'), { lat: 31.9038, lng: 35.2034 });
+  const jenin = city('jenin');
+  assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Far', point: { latitude: jenin.latitude, longitude: jenin.longitude } }, expect: 400 })).error, 'outside_area');
+  assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Bad', point: { latitude: 'x', longitude: 35 } }, expect: 400 })).error, 'invalid_location');
+  assert.equal((await call('/me/places', { token: t })).saved.length, 1); // refused pins saved nothing
 
   for (let i = 1; i <= 9; i++) places = await call('/me/places', { token: t, body: { label: 'other', city: 'hebron', note: `Shop ${i}` } });
   assert.equal(places.saved.length, 10);
