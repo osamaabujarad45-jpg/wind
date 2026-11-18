@@ -455,7 +455,7 @@ function BookForm() {
   const applied = pending ? (pending.payload.promoCode ? { code: pending.payload.promoCode, discount: pending.payload.expectedDiscount ?? 0 } : null)
     : promo && promo.price === price ? promo : null;
   const pay = price - (applied?.discount ?? 0);
-  const submitBlocked = !ready || locating || (!!pending && resolving) || (!pending && (quoting || quoteFailed || checking || !available));
+  const submitBlocked = !ready || locating || (!!pending && resolving) || (!pending && (!routeChosen || quoting || quoteFailed || checking || !available)); // no route: disabled with its reason (design review D-04)
   const promoBlocked = locked || !routeChosen || scopeInvalid || quoting || quoteFailed;
   async function applyPromo(code: string) {
     const revision = apiSessionRevision();
