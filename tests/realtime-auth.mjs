@@ -53,7 +53,9 @@ try {
   await conn.run('UPDATE sessions SET last_seen_at=? WHERE user_id=?', Date.now() - 31 * 86_400_000, customer.user.id);
   await assert.rejects(() => hub.verify(credential.token), e => e.status === 401 && e.message === 'realtime_revoked');
   await conn.run('UPDATE sessions SET last_seen_at=? WHERE user_id=?', Date.now(), customer.user.id);
-  await assert.rejects(() => hub.verify(`${credential.token.slice(0, -2)}xx`), e => e.status === 401 && e.message === 'realtime_invalid');
+  // Tamper a character inside the signature: the old "replace the last two with xx" was a no-op whenever the token already ended in xx.
+  const at = credential.token.length - 5, tampered = credential.token.slice(0, at) + (credential.token[at] === 'A' ? 'B' : 'A') + credential.token.slice(at + 1);
+  await assert.rejects(() => hub.verify(tampered), e => e.status === 401 && e.message === 'realtime_invalid');
   await assert.rejects(() => hub.verify(credential.token, credential.expiresAt + 1), e => e.status === 401 && e.message === 'realtime_expired');
   await assert.rejects(() => hub.verify('not-a-credential'), e => e.status === 401 && e.message === 'realtime_invalid');
 
