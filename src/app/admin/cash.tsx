@@ -20,7 +20,7 @@ const cashIO = (actorId: number): CashIO => ({
   exclusive: run => storage.exclusive(run, 'wind.admin.cash'),
 });
 type Form = { id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string; uncertain?: boolean };
-type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string };
+type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string; reference?: string | null };
 
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
 // one a driver cannot confirm (blocked, gone, dispute deadlock) is resolved here with a recorded reason (T25).
@@ -147,11 +147,14 @@ export default function AdminCash() {
         </Card>
       </Appear>)}
       {resolving && <Card>
-        <Txt variant="title">{c.cashResolve}</Txt>
+        {/* Which decision, for whom and how much: a dispute and a confirmation must not look alike. */}
+        <Txt variant="title">{resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}</Txt>
+        {(() => { const target = pending?.find(entry => entry.id === resolving.id);
+          return target && <Txt variant="caption" style={{ marginBottom: 8 }}>{`${target.userName} · ${money(target.amountCents / 100)}${target.reference ? ` · ${target.reference}` : ''}`}</Txt>; })()}
         <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
-          <Button title={c.cashResolveConfirm} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
+          <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
             reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolve, c.cancel)} />
           <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
         </Row>
@@ -169,13 +172,14 @@ export default function AdminCash() {
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
                 <Txt variant="h2">{money(entry.amountCents / 100)}</Txt>
                 {entry.userStatus !== 'active' && <Badge label={c[entry.userStatus as 'blocked' | 'pending']} tone={tones.muted} />}
-                <Row gap={8}>
-                  <Button title={c.entry_confirmed} size="sm" variant="soft" disabled={busy} reason={c.wait_busy}
-                    onPress={() => { setMessage(''); setFailure(''); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '' }); }} />
-                  <Button title={c.entry_disputed} size="sm" variant="outline" disabled={busy} reason={c.wait_busy}
-                    onPress={() => { setMessage(''); setFailure(''); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '' }); }} />
-                </Row>
               </View>
+            </Row>
+            {/* Actions, not statuses: the entry is still waiting until one of these is saved. */}
+            <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
+              <Button title={c.cashMarkConfirmed} size="sm" variant="soft" disabled={busy} reason={c.wait_busy}
+                onPress={() => { setMessage(''); setFailure(''); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '' }); }} />
+              <Button title={c.cashMarkDisputed} size="sm" variant="outline" disabled={busy} reason={c.wait_busy}
+                onPress={() => { setMessage(''); setFailure(''); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '' }); }} />
             </Row>
           </Card>
         </Appear>)}

@@ -452,13 +452,13 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
   }, [focused, ref]);
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
-    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
+    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, disabled && styles.inputDisabled, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
       <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
-        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
           the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
           font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
@@ -599,6 +599,8 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
+      // expo-router turns a screen's `href: null` into this style; the default bar honours it, so this one must too.
+      if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;
       const focused = state.index === index;
       const color = focused ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
@@ -666,6 +668,7 @@ const styles = StyleSheet.create({
   inputWrap: { alignItems: 'center', gap: 8, borderWidth: 1, borderColor: palette.field, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 1, backgroundColor: palette.card },
   inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 0 }, // 2px focus ring; the padding keeps the text and the height still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
+  inputDisabled: { borderColor: palette.dash, backgroundColor: palette.muted }, // a locked field must not look typeable (A53 walk, 18 Nov)
   fieldError: { flex: 1, color: palette.error, fontSize: 13, fontWeight: '700' },
   input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },

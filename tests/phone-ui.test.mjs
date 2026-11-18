@@ -453,6 +453,14 @@ for (const key of Object.keys(copy.en).filter(k => k.startsWith('phone_') || k.s
 for (const lang of ['ar', 'en']) assert.ok(copy[lang].err_storage_unavailable, lang);
 assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
 
+{ // A53 walk 18 Nov: a layout's `href: null` (expo-router -> tabBarItemStyle display none) hides the tab in our bar too,
+  // and a locked field looks locked.
+  const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
+  assert.ok(ui.includes("if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;"), 'TabBar skips hidden routes');
+  assert.match(ui, /disabled && styles\.inputDisabled/);
+  const admin = readFileSync(new URL('../src/app/admin/_layout.tsx', import.meta.url), 'utf8');
+  assert.match(admin, /name="merchants".*href: shop \? undefined : null/, 'Shops is hidden while the shop line is off');
+}
 console.log('Phone UI rules passed');
 
 // A system permission sheet pauses the app. Found on the phone: the first Accept after granting said location was off.

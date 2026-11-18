@@ -112,6 +112,13 @@ assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/);
 assert.match(screen, /!open\.uncertain && <Button title=\{c\.cancel\}/);
+// A53 walk 18 Nov: resolving a waiting handover is an action (Mark confirmed/disputed), not a status word, and the form
+// names its decision, driver and amount; the save button is not a question.
+assert.doesNotMatch(screen, /title=\{c\.entry_(confirmed|disputed)\}/);
+assert.match(screen, /resolving\.decision === 'confirm' \? c\.cashMarkConfirmed : c\.cashMarkDisputed/);
+assert.match(screen, /<Button title=\{c\.cashResolveSave\}/);
+for (const language of ['ar', 'en']) for (const key of ['cashMarkConfirmed', 'cashMarkDisputed', 'cashResolveSave', 'dashboardTab'])
+  assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 // A forced sign-out never clears the account's slot: session.tsx forgets only token-scoped records.
 assert.doesNotMatch(readFileSync(new URL('../src/session.tsx', import.meta.url), 'utf8'), /adminCash/);
 console.log('PASS: admin cash commands survive a lost reply, a restart and a sign-out, settled only by a command receipt or a definite refusal');
