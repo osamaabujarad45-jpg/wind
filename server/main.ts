@@ -1007,17 +1007,15 @@ async function spendEntraProof(proof: EntraProof) {
 
 route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
-  const passwordAttempt = !body.idToken || (typeof body.current === 'string' && body.current.length > 0);
-  // Reserve typed attempts before hashing, including requests that also carry an Entra token.
-  await limit(key, 5, 10 * 60_000, passwordAttempt);
+  (await limit(key, 5, 10 * 60_000, false));
   const account = (await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id))!;
   const stored = account.password;
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
   const proof = await entraProof('password', currentToken, body, account.entra_oid);
-  if (!proof && (!passwordAttempt || !await checkPassword(String(body.current ?? ''), stored))) {
-    if (!passwordAttempt) await limit(key, 5, 10 * 60_000);
-    fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
-  }
+  // Without a verified Entra proof the typed password decides: count the attempt before checking it, so parallel
+  // guesses (with or without a junk idToken) cannot all pass a check-only gate (release review, 18 Nov).
+  if (!proof) (await limit(key, 5, 10 * 60_000));
+  if (!proof && !await checkPassword(String(body.current ?? ''), stored)) fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
   const password = await hashPassword(newPassword(body.password));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -1039,10 +1037,16 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 const scrubQuotesSql = `UPDATE quotes SET pickup_note = '', dropoff_note = '', contact = '', pickup_contact = NULL, recipient_name = NULL,
   recipient_phone = NULL, detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, itinerary_hash = ''`; // the hash covers the phones
 export async function scrubDeletedQuotes(customerId?: number) { // exported for the quotes test
-  const target = customerId === undefined ? "customer_id IN (SELECT id FROM users WHERE status = 'blocked' AND phone = 'deleted-' || id::text)" : 'customer_id = ?';
-  return (await run(`${scrubQuotesSql} WHERE id IN (SELECT id FROM quotes WHERE ${target} AND (contact <> '' OR pickup_note <> '' OR dropoff_note <> '' OR detail <> ''
-    OR pickup_lat IS NOT NULL OR dropoff_lat IS NOT NULL OR pickup_contact IS NOT NULL OR recipient_phone IS NOT NULL OR recipient_name IS NOT NULL OR itinerary_hash <> '') LIMIT 200 FOR UPDATE SKIP LOCKED)`,
+  const target = customerId === undefined ? "customer_id IN (SELECT id FROM users WHERE phone LIKE 'deleted-%')" : 'customer_id = ?';
+  return (await run(`WITH due AS (SELECT id FROM quotes WHERE ${target} AND (contact <> '' OR pickup_note <> '' OR dropoff_note <> '' OR detail <> ''
+    OR pickup_lat IS NOT NULL OR dropoff_lat IS NOT NULL OR pickup_contact IS NOT NULL OR recipient_phone IS NOT NULL OR recipient_name IS NOT NULL OR itinerary_hash <> '')
+    LIMIT 200 FOR UPDATE SKIP LOCKED) ${scrubQuotesSql.replace('UPDATE quotes SET', 'UPDATE quotes q SET')} FROM due WHERE q.id = due.id`,
     ...(customerId === undefined ? [] : [customerId]))).changes;
+}
+// A quote nobody booked holds a customer's notes, phones and pins for no purpose once it has expired: keep a day, then delete.
+// Only unconsumed quotes (an order or payment references consumed ones); the guard blocks UPDATE, not DELETE.
+export async function purgeExpiredQuotes(now = Date.now()) {
+  return (await run('WITH due AS (SELECT id FROM quotes WHERE consumed_at IS NULL AND expires_at < ? LIMIT 500 FOR UPDATE SKIP LOCKED) DELETE FROM quotes q USING due WHERE q.id = due.id', now - DAY)).changes;
 }
 
 async function deleteAccount(user: User, actorId: number | null, proof?: { sessionHash: string; passwordHash?: string } & Partial<EntraProof>) {
@@ -1095,7 +1099,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
       }
       // A quote held by an in-flight booking is skipped, not waited on (the deletion must not stall behind it);
       // scrubDeletedQuotes() below catches it once that booking ends.
-      if ((await quotesAvailable(persistence))) await scrubDeletedQuotes(user.id);
+      if ((await quotesAvailable(persistence))) while ((await scrubDeletedQuotes(user.id)) === 200) { /* every unlocked quote of this customer, 200 at a time */ }
     }
     (await run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
@@ -1112,14 +1116,17 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
   if (user.role === 'admin') fail(409, 'cannot_change_self');
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
   const key = identityKey('delete-auth', user.id);
-  const passwordAttempt = !body.idToken || (typeof body.password === 'string' && body.password.length > 0);
-  await limit(key, 5, 10 * 60_000, passwordAttempt);
+  await limit(key, 5, 10 * 60_000, false);
   const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
-  if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
-    return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
+  // A typed password is counted before it is checked (parallel guesses); it is tried first, so an Entra outage cannot refuse it.
+  if (typeof body.password === 'string') {
+    await limit(key, 5, 10 * 60_000);
+    if (body.password.length <= 100 && await checkPassword(body.password, current.password))
+      return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
+  }
   const proof = await entraProof('delete', token, body, current.entra_oid);
   if (proof) return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), ...proof }));
-  if (!passwordAttempt) await limit(key, 5, 10 * 60_000);
+  if (typeof body.password !== 'string') await limit(key, 5, 10 * 60_000); // a failed Entra-only attempt counts too
   fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
 });
 
@@ -4022,7 +4029,10 @@ if (import.meta.main) {
     setInterval(async () => { try { (await remindOfficeJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
     // A quote an in-flight booking held when its customer was deleted is scrubbed once the lock is gone (PostgreSQL quotes only).
-    if (persistence.backend === 'postgres') setInterval(async () => { try { if (await quotesAvailable(persistence)) await scrubDeletedQuotes(); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref();
+    if (persistence.backend === 'postgres') setInterval(async () => {
+      if (draining) return;
+      try { if (await quotesAvailable(persistence)) { await scrubDeletedQuotes(); await purgeExpiredQuotes(); } } catch (error) { logServerError('maintenance_failed', error); }
+    }, 60_000).unref();
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

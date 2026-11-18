@@ -1,9 +1,9 @@
 -- Account deletion must be able to scrub a quote's personal fields (notes, phones, names, pins and the itinerary
--- hash, which hashes the phones), which the immutability guard froze with the fare. Only for a deleted
+-- hash, which hashes the phones), which the immutability guard froze with the fare. Only for a deleted (blocked)
 -- customer, and only to the scrubbed value ('' or NULL); pricing, service, cities, scope and consumption stay
 -- immutable for everyone. declared_scope (migration 15) joins the guard. Release review, 18 Nov.
 CREATE OR REPLACE FUNCTION quotes_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE scrub boolean := EXISTS (SELECT 1 FROM users WHERE id = OLD.customer_id AND status = 'blocked' AND phone = 'deleted-' || id::text);
+DECLARE scrub boolean := EXISTS (SELECT 1 FROM users WHERE id = OLD.customer_id AND status = 'blocked');
 BEGIN
   IF TG_OP='DELETE' THEN RAISE EXCEPTION 'quotes are immutable' USING ERRCODE='23514'; END IF;
   IF OLD.id IS DISTINCT FROM NEW.id OR OLD.customer_id IS DISTINCT FROM NEW.customer_id OR OLD.service IS DISTINCT FROM NEW.service

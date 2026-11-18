@@ -16,7 +16,7 @@ process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-quotes-')), 'test.db
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.SOUQ_PARTNER_KEY = 'wp08-quotes-test-partner-key-32-chars-min';
 
-const { server, db, persistence, promote, shutdown, scrubDeletedQuotes } = await import('../server/main.ts');
+const { server, db, persistence, promote, shutdown, scrubDeletedQuotes, purgeExpiredQuotes } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = () => `http://127.0.0.1:${server.address().port}/api`;
 const call = apiCaller(base);
@@ -244,8 +244,8 @@ try {
     admin.user.id, randomUUID(), 'synthetic-legacy-command', 200, '{"pickupCity": unreadable legacy response}', Date.now());
   await call(`/orders/${leaverOrder.id}/cancel`, { token: leaver.token, body: {} });
   await call('/me/delete', { token: leaver.token, body: { password: 'secret123' } });
-  const scrubbed = await persistence.one('SELECT contact, pickup_note, dropoff_note, detail, pickup_lat, price_minor FROM quotes WHERE id = ?', leaverQuote.quoteId);
-  assert.deepEqual({ ...scrubbed, price_minor: Number(scrubbed.price_minor) }, { contact: '', pickup_note: '', dropoff_note: '', detail: '', pickup_lat: null, price_minor: leaverQuote.priceMinor });
+  const scrubbed = await persistence.one('SELECT contact, pickup_note, dropoff_note, detail, pickup_lat, itinerary_hash, price_minor FROM quotes WHERE id = ?', leaverQuote.quoteId);
+  assert.deepEqual({ ...scrubbed, price_minor: Number(scrubbed.price_minor) }, { contact: '', pickup_note: '', dropoff_note: '', detail: '', pickup_lat: null, itinerary_hash: '', price_minor: leaverQuote.priceMinor });
   assert.equal(Number((await persistence.one('SELECT COUNT(*) n FROM command_results WHERE actor_id = ?', leaver.user.id)).n), 0);
   const cleanReplay = await call(`/jobs/${leaverOrder.id}/accept`, { token: driver.token, body: acceptance });
   assert.equal(cleanReplay.id, leaverOrder.id);
@@ -260,6 +260,13 @@ try {
   assert.ok((await scrubDeletedQuotes()) >= 1);
   assert.equal((await persistence.one('SELECT contact FROM quotes WHERE id = ?', stragglerQuote.quoteId)).contact, '');
   console.log('✓ account deletion scrubs quote personal fields; fare immutable; sweep catches skipped quotes');
+
+  // Expired quotes nobody booked are deleted after a day; a consumed quote (the order's fare record) stays.
+  const unused = await call('/price', { token: customer.token, body: orderInput });
+  assert.ok((await purgeExpiredQuotes(Date.now() + 2 * 86_400_000)) >= 1);
+  assert.equal(await persistence.one('SELECT id FROM quotes WHERE id = ?', unused.quoteId), undefined);
+  assert.ok(await persistence.one('SELECT id FROM quotes WHERE id = ?', leaverQuote.quoteId), 'consumed quotes are kept');
+  console.log('✓ expired unbooked quotes purged; consumed quotes kept');
 
   console.log('all quotes tests passed');
 } finally {
