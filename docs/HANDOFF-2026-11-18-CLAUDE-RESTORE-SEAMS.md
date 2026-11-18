@@ -43,7 +43,18 @@ Rule for new persisted fields (also written into `readCart`'s comment): backfill
 - Full suites: GitHub Actions on each PR head (`verify`, `persistence`, `image`).
 - Trap: this shell's heredocs collapse doubled backslashes; write scripts with the Write tool (two escaping bugs were caught that way).
 
-## 4. Not done / open
+## 4. Phone walk on the A53 (later on 18 Nov) — #90
+
+Closes the 17 Nov handoff's "phone acceptance NOT RUN" for A-01, the chat outbox and the receipt. `[phone]` physical SM-A5360, Chrome 157, phone sandbox built from master d77dadc6 on the test PC (`D:\wind-lead-1115\walk18`).
+
+- **Rig.** Another session's sandbox (PID 5156, 16 Nov) holds 4191 on the test PC and was left alone; this walk's copy listens on 4192 (`walk18-build.cmd` rewrites the port in its own copy only). Phone path: `ssh -N -L 14191:127.0.0.1:4192 k5`, `adb reverse tcp:4191 tcp:14191`, Chrome at `http://127.0.0.1:4191`. Cutting the tunnel = losing the network. `TaskStop` on the backgrounded ssh leaves `ssh.exe` alive: stop the PID (`Get-CimInstance Win32_Process` with `-L 14191`).
+- **Driving.** `uiautomator dump` is killed (exit 137) on this phone, so taps come from DevTools element rectangles (`adb forward tcp:9228 localabstract:chrome_devtools_remote`; device y = css y × dpr + (2400 − 135 − innerHeight × dpr)), typing from `adb shell input text`. Android Chrome refuses `/json/new`; reuse the active tab. Native `confirm()` blocks DevTools evaluation until tapped. Never press Back on the sign-in page (it left the app tab), and Chrome offers to save the sandbox password under the owner's Google account: never tap Save; tap page text to dismiss. Evidence: `C:\Users\osama\OneDrive\Documents\wind-evidence\walk-20261118\` (helpers `cdp.mjs`, `tap.sh`). Screens that showed the owner's private data (Messages, autofill email) were deleted.
+- **A-01 PASS.** Offline send → "Can't reach Wind", form locked, `adminCash.3` saved → reload online: restored locked, receipt empty → resend: R-000001 recorded once → Mark disputed: server `disputed`.
+- **Chat outbox PASS.** Offline send → "Not sent yet · Resend · Discard" → reload: kept, server 0 → Resend: server 1, outbox cleared → same request id re-injected: dropped on load, server still 1.
+- **Receipt PASS.** Truthful cash line (#84); no breakdown without a stored suggestion (#86).
+- **Fixed in #90:** status words as admin action buttons; resolve form that did not name its decision; Shops tab shown with shop off (custom TabBar ignored `href: null`, production-visible); "Dashboar/d" label break; disabled fields that looked typeable; Arabic names flipping English lines (receipt, tracking, assign, resolve caption, role-change sentence) via a shared `isolate()`.
+
+## 5. Not done / open
 
 - Phone update-install test (REA §5.3: `install -r` over existing data) for Fastship: NOT RUN. The shop line is off in production (D-2), and the admin cash screen is web. A release that changes a persisted shape should get one on the A53 before shipping.
 - Merges are not deploys; production is unchanged.

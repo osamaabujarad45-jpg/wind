@@ -2,7 +2,7 @@
 import { Platform, Share, StyleSheet, View } from 'react-native';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useApi } from '../../api';
-import { city, commissionOn, ltr, orderCode, type Order } from '../../model';
+import { city, commissionOn, isolate, ltr, orderCode, type Order } from '../../model';
 import { statusText, useFormat } from '../../parts';
 import { fareLines, paymentLine, receiptTotal } from '../../receipt-payment';
 import { useSession } from '../../session';
@@ -35,14 +35,15 @@ export default function Receipt() {
     [c.route, `${from} ${arrow} ${to}`],
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
-    ...(order.driverName ? [[c.driver, `${order.driverName}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
+    ...(order.driverName ? [[c.driver, `${rtl ? '\u200f' : '\u200e'}${isolate(order.driverName)}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
     ...fareLines(c, order, money),
     [c.payWith, paymentLine(c, role, order.collected, money, fill)],
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
 
   async function share() {
-    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
+    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n')
+      .replace(/[\u200e\u200f\u2066-\u2069]/g, ''); // direction marks are for the screen, not the shared text
     try { await Share.share({ message: text }); } catch { /* dismissed or unsupported */ }
   }
 

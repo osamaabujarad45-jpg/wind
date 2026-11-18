@@ -453,6 +453,20 @@ for (const key of Object.keys(copy.en).filter(k => k.startsWith('phone_') || k.s
 for (const lang of ['ar', 'en']) assert.ok(copy[lang].err_storage_unavailable, lang);
 assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
 
+{ // A53 walk 18 Nov: a layout's `href: null` (expo-router -> tabBarItemStyle display none) hides the tab in our bar too,
+  // and a locked field looks locked.
+  const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
+  assert.ok(ui.includes("if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;"), 'TabBar skips hidden routes');
+  assert.match(ui, /disabled && styles\.inputDisabled/);
+  const admin = readFileSync(new URL('../src/app/admin/_layout.tsx', import.meta.url), 'utf8');
+  assert.match(admin, /name="merchants".*href: shop \? undefined : null/, 'Shops is hidden while the shop line is off');
+  // An Arabic name leading an English line flipped it ("Van · سائق" on the receipt): names in mixed lines are isolated.
+  for (const [file, name] of [['../src/app/receipt/[id].tsx', 'order.driverName'], ['../src/app/track/[token].tsx', 'data.driver.firstName'],
+    ['../src/admin-assign.tsx', 'd.name'], ['../src/app/admin/cash.tsx', 'target.userName'], ['../src/app/admin/users.tsx', 'user.name'],
+    ['../src/app/book.tsx', 'r.name'], ['../src/app/order/[id].tsx', 'r.name'], ['../src/app/merchant/order/[id].tsx', 'name(l)'],
+    ['../src/shop-ui.tsx', 'lineName(l, language)']])
+    assert.ok(readFileSync(new URL(file, import.meta.url), 'utf8').includes(`isolate(${name})`), `${file} isolates ${name}`);
+}
 console.log('Phone UI rules passed');
 
 // A system permission sheet pauses the app. Found on the phone: the first Accept after granting said location was off.
