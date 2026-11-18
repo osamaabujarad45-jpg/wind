@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
+import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
 import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Stat, tones, Txt, useCopy } from '../../ui';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
-type Cash = { owedCents: number; pendingCents: number; discountsCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
+type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
 const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
 
 export default function Earnings() {
@@ -60,7 +61,11 @@ function CashCard() {
     {data.capCents !== undefined && data.exposureCents !== undefined && (data.capCents - data.exposureCents > 0
       ? <Txt variant="label" style={{ marginTop: 4 }}>{`${c.cashCapLeft}: ${money((data.capCents - data.exposureCents) / 100)}`}</Txt>
       : <Txt variant="title" style={{ marginTop: 6, color: tones.error.fg }}>{c.cashCapReached}</Txt>)}
-    {data.discountsCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.promoCredits}: ${money(-data.discountsCents / 100)}`}</Txt>}
+    {cashLines(c, data).map(([label, cents]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 2 }}>
+      <Txt variant="label" style={{ flex: 1 }}>{label}</Txt>
+      <Txt variant="label">{money(cents / 100)}</Txt>
+    </Row>)}
+    {data.pendingCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.cashPendingTotal}: ${money(-data.pendingCents / 100)}`}</Txt>}
     <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
       <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
