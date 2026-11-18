@@ -16,7 +16,7 @@ export const eligibilityDefaults = Object.freeze({ version: 1, boundary: 'ST_Cov
   insertionOptimization: false, identityScansCollected: false, legacyCapacityMeasured: false,
   presenceHeartbeatSeconds: 15, presenceLeaseSeconds: 60, matchingFixMaxAgeSeconds: 30,
   movingLocationSeconds: 5, stationaryLocationSeconds: 15, locationTransportMinSeconds: 2,
-  dispatchOfferSeconds: 15, dispatchMaxOffers: 3, dispatchSearchSeconds: 90, quoteSeconds: 120,
+  dispatchMaxOffers: 3, dispatchSearchSeconds: 90, quoteSeconds: 120,
   negotiatedOfferSeconds: 600, newWaitingFeeMinor: 0, newCancellationFeeMinor: 0,
   projectedCashCapMinor: 100000, cashCapActivated: false, futureDispatchActivated: false,
   otpSeconds: 300, otpAttempts: 5, otpResendSeconds: 45, otpPhoneDevicePer15Minutes: 3, otpPhoneDevicePerDay: 10,
@@ -574,9 +574,9 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     const id=e.int(Number(params[0]),1),order=await db.one('SELECT * FROM orders WHERE id=? FOR UPDATE',id)??fail(404,'not_found'); await e.lockPolicy();
     if (e.int(body.expectedVersion,1)!==order.version) fail(409,'VERSION_CONFLICT');
     const reason=e.reason(body),ref=e.ref(body),action=e.choice(body.action,['hold','return','confirm_return']);
-    if (!['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
+    if (order.service === 'ride' || !['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
     if (action==='hold') {
-      if (order.status==='returning') fail(409,'cannot_resolve');
+      if (order.status!=='in_transit') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='on_hold',exception_reason='support',updated_at=? WHERE id=?",Date.now(),id);
     } else if (action==='return') {
       if (order.status!=='returning') {

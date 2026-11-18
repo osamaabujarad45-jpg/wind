@@ -413,7 +413,8 @@ try {
   await call('/auth/login', { body: { phone: blockedPhone, password: 'bad' }, expect: 429 });
   const reopened = new DatabaseSync(process.env.DB_PATH);
   const key = `login:${createHash('sha256').update(blockedPhone).digest('hex')}`;
-  assert.equal(reopened.prepare('SELECT count FROM request_limits WHERE key = ?').get(key).count, 5);
+  // Attempts are counted when they start (release review, 18 Nov), so the refused sixth is counted too; the window is fixed, not extended.
+  assert.equal(reopened.prepare('SELECT count FROM request_limits WHERE key = ?').get(key).count, 6);
   reopened.exec('BEGIN IMMEDIATE');
   db.exec('PRAGMA busy_timeout = 20');
   await call('/me', { token: admin.token, body: { name: 'Locked write' }, expect: 503 });
@@ -426,7 +427,7 @@ try {
   const restored = new DatabaseSync(snapshot, { readOnly: true });
   assert.equal(restored.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.equal(restored.prepare('SELECT COUNT(*) count FROM orders').get().count, db.prepare('SELECT COUNT(*) count FROM orders').get().count);
-  assert.equal(restored.prepare('SELECT count FROM request_limits WHERE key = ?').get(key).count, 5);
+  assert.equal(restored.prepare('SELECT count FROM request_limits WHERE key = ?').get(key).count, 6);
   restored.close();
 
   console.log('API checks passed');

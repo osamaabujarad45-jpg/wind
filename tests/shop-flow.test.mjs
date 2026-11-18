@@ -85,8 +85,12 @@ try {
   await err('/orders', { token: customer.token, body: { ...placeBody, dropoffCity: 'nablus' } }, 409, 'shop_town_closed');
   const requestId = randomUUID();
   sends.length = 0;
-  let order = await call('/orders', { token: customer.token, body: { ...placeBody, requestId } });
-  assert.equal((await call('/orders', { token: customer.token, body: { ...placeBody, requestId } })).id, order.id, 'a retried place returns the same order');
+  const commandExpiresAt = Date.now() + 60_000;
+  const placement = { ...placeBody, requestId, commandExpiresAt };
+  let order = await call('/orders', { token: customer.token, body: placement });
+  assert.deepEqual(await call(`/orders/commands/${requestId}`, { token: customer.token }), { orderId: order.id }, 'a restarted cart recovers the committed order without posting again');
+  assert.equal((await call('/orders', { token: customer.token, body: placement })).id, order.id, 'a retried place returns the same order');
+  await err('/orders', { token: customer.token, body: { ...placement, requestId: randomUUID(), commandExpiresAt: Date.now() - 1 } }, 409, 'booking_command_expired');
   assert.equal(order.status, 'requested');
   assert.equal(order.shop.state, null);
   assert.equal(order.shop.goodsEstimateAgorot, estimate);

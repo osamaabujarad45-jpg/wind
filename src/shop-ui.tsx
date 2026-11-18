@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
 import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
-import { replaceCart } from './shop-cart';
+import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
 
@@ -105,10 +105,17 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       const r = await api<{ merchant: { id: number; name: string; city: string; minOrderAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number };
         lines: { itemId: number; qtyMilli: number; policy: ShopPolicy }[]; changes: { itemId: number; nameAr: string; nameEn: string; kind: string; toAgorot: number | null }[] }>(`/orders/${order.id}/shop/again`, {});
       const items = await api<{ items: MerchantItem[] }>(`/shop/merchants/${r.merchant.id}`);
-      replaceCart({ merchantId: r.merchant.id, merchantName: r.merchant.name, city: r.merchant.city, minOrderAgorot: r.merchant.minOrderAgorot,
+      const rebuilt = { merchantId: r.merchant.id, merchantName: r.merchant.name, city: r.merchant.city, minOrderAgorot: r.merchant.minOrderAgorot,
         deliveryFeeAgorot: r.merchant.deliveryFeeAgorot, serviceFeeAgorot: r.merchant.serviceFeeAgorot,
-        lines: r.lines.flatMap(l => { const i = items.items.find(x => x.id === l.itemId); return i ? [{ itemId: i.id, nameAr: i.nameAr, nameEn: i.nameEn, unitAgorot: i.priceAgorot, byWeight: i.byWeight, qtyMilli: l.qtyMilli, policy: l.policy }] : []; }) });
-      router.push({ pathname: '/shop/cart', params: r.changes.length ? { changes: r.changes.map(x => `${language === 'ar' ? x.nameAr : x.nameEn}: ${x.kind === 'unavailable' ? c.shopNowUnavailable : money((x.toAgorot ?? 0) / 100)}`).join('\n') } : {} });
+        lines: r.lines.flatMap(l => { const i = items.items.find(x => x.id === l.itemId); return i ? [{ itemId: i.id, nameAr: i.nameAr, nameEn: i.nameEn, unitAgorot: i.priceAgorot, byWeight: i.byWeight, qtyMilli: l.qtyMilli, policy: l.policy }] : []; }) };
+      const openCart = () => {
+        replaceCart(rebuilt);
+        router.push({ pathname: '/shop/cart', params: r.changes.length ? { changes: r.changes.map(x => `${language === 'ar' ? x.nameAr : x.nameEn}: ${x.kind === 'unavailable' ? c.shopNowUnavailable : money((x.toAgorot ?? 0) / 100)}`).join('\n') } : {} });
+      };
+      if (!rebuilt.lines.length) { setError(c.shopNoItems); return; }
+      const existing = await currentCart();
+      if (existing) confirm(fill(c.shopReplaceCart, { shop: existing.merchantName }), openCart, c.shopClearYes, c.cancel);
+      else openCart();
     } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
     finally { setBusy(''); }
   }

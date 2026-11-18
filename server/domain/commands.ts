@@ -52,6 +52,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
         else fail(404,'not_found');
       }
     }
+    if (Number.isSafeInteger(response?.redactedOrderId)) return authorizeOrder(response.redactedOrderId);
     return response;
   }
   let response: unknown, error: Failure | undefined;

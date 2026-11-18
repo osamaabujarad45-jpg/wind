@@ -70,10 +70,11 @@ try {
   assert.equal(Number((await db.one("SELECT count(*) n FROM assignment_history WHERE order_id=? AND action='assigned'", order.id)).n), 1, 'one assignment history row');
 
   // App retry replay returns the stored result before any version/expiry check.
-  const ride2 = await bookRide(f);
+  const rider2 = await f.account();
+  const ride2 = await bookRide(f, {}, rider2);
   const driver2 = await addDriver(f, { latitude: 31.9005, longitude: 35.195 });
   await assessRide(f, ride2, [driver2.vehicle]);
-  await call(`/orders/${ride2.id}/dispatch/retry`, { token: f.customer.token, body: {} });
+  await call(`/orders/${ride2.id}/dispatch/retry`, { token: rider2.token, body: {} });
   const offer2 = await myOffer(f, ride2.id, driver2.driver);
   const command = { offerId: offer2.id, leaseNonce: offer2.leaseNonce, commandId: randomUUID(), expectedVersion: Number((await db.one('SELECT order_revision FROM dispatch_offers WHERE id=?::uuid', offer2.id)).order_revision) };
   const first = await call(`/jobs/${ride2.id}/accept`, { token: driver2.driver.token, body: command });
@@ -83,10 +84,11 @@ try {
   assert.equal(Number((await db.one("SELECT count(*) n FROM assignment_history WHERE order_id=? AND action='assigned'", ride2.id)).n), 1, 'replay does not assign twice');
 
   // A vehicle edit during the lease fences the offer at acceptance.
-  const ride3 = await bookRide(f);
+  const rider3 = await f.account();
+  const ride3 = await bookRide(f, {}, rider3);
   const driver3 = await addDriver(f, { latitude: 31.9005, longitude: 35.195 });
   await assessRide(f, ride3, [driver3.vehicle]);
-  await call(`/orders/${ride3.id}/dispatch/retry`, { token: f.customer.token, body: {} });
+  await call(`/orders/${ride3.id}/dispatch/retry`, { token: rider3.token, body: {} });
   const offer3 = await myOffer(f, ride3.id, driver3.driver);
   const vehicleNow = await db.one('SELECT revision FROM vehicles WHERE id=?', driver3.vehicle.id);
   await call(`/admin/eligibility/vehicles/${driver3.vehicle.id}`, { token: f.admin.token, method: 'PATCH', body: { ...f.vehicleBody, plate: `SYN-DISP-${driver3.driver.user.id}`, ...f.evidence, expectedRevision: Number(vehicleNow.revision), seats: 3 } });
@@ -120,11 +122,12 @@ try {
   const online = await g.call('/driver/presence/online', { token: partnerDriver.token, body: { commandId: randomUUID(), deviceId, consentVersion: 1 } });
   await g.call('/driver/presence/location', { token: partnerDriver.token, body: { deviceId, sessionId: online.sessionId, seq: 1, ageMs: 0, latitude: 31.92, longitude: 35.21, accuracy: 20 } });
   const partner = { driver: partnerDriver, vehicle: shared1.vehicle };
-  const rideA = await bookRide(g), rideB = await bookRide(g);
+  const riderA = await g.account(), riderB = await g.account();
+  const rideA = await bookRide(g, {}, riderA), rideB = await bookRide(g, {}, riderB);
   await assessRide(g, rideA, [shared1.vehicle]);
   await assessRide(g, rideB, [shared1.vehicle]);
-  await g.call(`/orders/${rideA.id}/dispatch/retry`, { token: g.customer.token, body: {} });
-  await g.call(`/orders/${rideB.id}/dispatch/retry`, { token: g.customer.token, body: {} });
+  await g.call(`/orders/${rideA.id}/dispatch/retry`, { token: riderA.token, body: {} });
+  await g.call(`/orders/${rideB.id}/dispatch/retry`, { token: riderB.token, body: {} });
   const offerA = await myOffer(g, rideA.id, shared1.driver);
   const offerB = await myOffer(g, rideB.id, partner.driver);
   assert.ok(offerA && offerB, 'both drivers hold offers on the shared vehicle for different rides');
@@ -165,15 +168,16 @@ try {
 
   // Cancel vs accept also has exactly one winner.
   const driver2 = await addDriver(h, { latitude: 31.9005, longitude: 35.195 });
-  const ride2 = await bookRide(h);
+  const rider2 = await h.account();
+  const ride2 = await bookRide(h, {}, rider2);
   await assessRide(h, ride2, [driver2.vehicle]);
-  await h.call(`/orders/${ride2.id}/dispatch/retry`, { token: h.customer.token, body: {} });
+  await h.call(`/orders/${ride2.id}/dispatch/retry`, { token: rider2.token, body: {} });
   const offer2 = await myOffer(h, ride2.id, driver2.driver);
   assert.ok(offer2, 'cancel vs accept requires a live offer');
   {
     await Promise.allSettled([
       raw(h.a.base, `/jobs/${ride2.id}/accept`, driver2.driver.token, { offerId: offer2.id, leaseNonce: offer2.leaseNonce }),
-      raw(h.b.base, `/orders/${ride2.id}/cancel`, h.customer.token, {}),
+      raw(h.b.base, `/orders/${ride2.id}/cancel`, rider2.token, {}),
     ]);
     const after = await h.db.one('SELECT status,driver_id FROM orders WHERE id=?', ride2.id);
     assert.ok(after.status === 'cancelled' || (after.status === 'assigned' && Number(after.driver_id) === driver2.driver.user.id),
@@ -183,9 +187,10 @@ try {
 
   // The absolute 90-second deadline exhausts even with an unanswered offer.
   const driver3 = await addDriver(h, { latitude: 31.9005, longitude: 35.195 });
-  const ride3 = await bookRide(h);
+  const rider3 = await h.account();
+  const ride3 = await bookRide(h, {}, rider3);
   await assessRide(h, ride3, [driver3.vehicle]);
-  await h.call(`/orders/${ride3.id}/dispatch/retry`, { token: h.customer.token, body: {} });
+  await h.call(`/orders/${ride3.id}/dispatch/retry`, { token: rider3.token, body: {} });
   await h.db.run("UPDATE dispatch_rounds SET deadline_at=? WHERE order_id=? AND state='open'", Date.now() - 1, ride3.id);
   await h.db.run("UPDATE dispatch_offers SET expires_at=? WHERE order_id=? AND state='open'", Date.now() - 1, ride3.id);
   await new DurableWorker(h.db).processDispatchExpiries();

@@ -137,7 +137,26 @@ try {
   assert.equal(Number((await h.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', order.id)).failures), 0);
   assert.equal((await advance(h, who.driver.token, order.id, 'at_pickup', { boardingCode: code })).status, 'in_transit', 'an audited reset recovers boarding');
   assert.equal(await h.db.one('SELECT failures FROM proof_attempts WHERE order_id=?', order.id), undefined);
-  console.log('WP11 ride-lifecycle: five-miss boarding lock and audited recovery passed');
+  const boardedEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', order.id)).assignment_epoch);
+  assert.equal((await h.call(`/orders/${order.id}/ride/no-show`, { token: who.driver.token, body: { reason: 'absent', expectedAssignmentEpoch: boardedEpoch }, expect: 409 })).error, 'cannot_arrive');
+  await advance(h, who.driver.token, order.id, 'in_transit');
+  const missedOrder = await dispatchAssigned(h, who, await bookRide(h));
+  await h.call(`/orders/${missedOrder.id}/arrive`, { token: who.driver.token, body: {} });
+  const noShow = (token, body, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/no-show`, { token, body, expect });
+  const epoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
+  const missed = { reason: 'absent', expectedAssignmentEpoch: epoch };
+  assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active');
+  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 301_000, missedOrder.id);
+  assert.equal((await noShow(h.d2.token, missed, 404)).error, 'not_found');
+  assert.equal((await noShow(who.driver.token, { ...missed, expectedAssignmentEpoch: epoch - 1 }, 409)).error, 'assignment_changed');
+  assert.equal((await noShow(who.driver.token, missed)).ok, true);
+  assert.equal((await noShow(who.driver.token, missed)).ok, true);
+  const ended = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
+  assert.equal(ended.status, 'cancelled');
+  assert.equal((await h.db.one('SELECT commission FROM orders WHERE id=?', missedOrder.id)).commission, null);
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_NO_SHOW'", missedOrder.id)).n), 1);
+  assert.ok(await h.db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='order.changed' AND payload->>'status'='cancelled'", missedOrder.id));
+  console.log('WP11 ride-lifecycle: boarding lock, audited recovery and fee-free no-show passed');
 } finally { await h.close(); }
 
 // --- Release clears custody of the challenge; a stale epoch cannot start ----

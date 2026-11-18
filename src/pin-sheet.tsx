@@ -22,17 +22,17 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
   const request = useRef<AbortController | null>(null);
   const shown = useRef(start);
   const cameraTarget = useRef<Point | null>(null);
-  const [positioning, setPositioning] = useState(false);
+  const [positioning, setPositioning] = useState<'gps' | 'gesture' | false>(false);
   const locateCallback = useRef(onLocate);
   useEffect(() => { locateCallback.current = onLocate; });
   const [locating, setLocating] = useState(autoLocate);
   const [locationError, setLocationError] = useState('');
   const [selected, setSelected] = useState(!autoLocate);
   useEffect(() => {
-    if (!positioning || locating) return;
+    if (positioning !== 'gps' || locating) return;
     const target = cameraTarget.current;
     const timer = setTimeout(() => {
-      if (!target || cameraTarget.current !== target) return;
+      if (cameraTarget.current !== target) return;
       cameraTarget.current = null; setPositioning(false); setSelected(false); setLocationError(c.pinPositionFailed);
     }, mapReadyMs());
     return () => clearTimeout(timer);
@@ -47,7 +47,7 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
       const found = await locateCallback.current(next.signal, canRequest);
       if (!next.signal.aborted) {
         cameraTarget.current = Math.abs(shown.current.latitude - found.latitude) + Math.abs(shown.current.longitude - found.longitude) > 0.000001 ? found : null;
-        setPositioning(!!cameraTarget.current); setPoint(found); setSelected(true);
+        setPositioning(cameraTarget.current ? 'gps' : false); setPoint(found); setSelected(true);
       }
     } catch (error) {
       if (!next.signal.aborted) setSelected(before);
@@ -74,8 +74,9 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
           const target = cameraTarget.current;
           if (target && Math.abs(target.latitude - next.latitude) + Math.abs(target.longitude - next.longitude) > 0.000001) return;
           cameraTarget.current = null; shown.current = next; setPositioning(false); setPoint(next);
+          if (dragged.current) { setSelected(true); setLocationError(''); }
         }} onGesture={() => {
-          dragged.current = true; request.current?.abort(); cameraTarget.current = null; setPositioning(false); setLocating(false); setLocationError(''); setSelected(true);
+          dragged.current = true; request.current?.abort(); cameraTarget.current = null; setPositioning('gesture'); setLocating(false); setLocationError('');
         }} onLoading={() => { setReady(false); setFailed(false); }} onReady={() => { setReady(true); setFailed(false); }} onFail={() => { setReady(false); setFailed(true); }} height={Math.min(360, Math.max(150, height * 0.45))} />
       </View>
       {onLocate && <>
@@ -86,7 +87,7 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
       {Platform.OS !== 'web' && [c.locationPermissionBlocked, c.locationInaccurate, c.locationServicesDisabled].includes(locationError) &&
         <Button title={c.presence_open_settings} variant="ghost" onPress={() => { void (Platform.OS === 'android' && locationError === c.locationServicesDisabled ? Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : Linking.openSettings()).catch(() => setLocationError(c.locationSettingsFailed)); }} />}
       {failed ? <Txt variant="caption" style={{ marginBottom: 12 }}>{unavailable ?? c.pinSheetUnavailable}</Txt>
-        : <Button title={c.confirmPin} icon="checkmark" disabled={!ready || locating || positioning || !selected} reason={locating ? c.locating : !selected ? c.locationChooseOnMap : c.pin_wait} onPress={() => { if (ready && !locating && !positioning && selected) onConfirm(point); }} />}
+        : <Button title={c.confirmPin} icon="checkmark" disabled={!ready || locating || !!positioning || !selected} reason={locating ? c.locating : !selected ? c.locationChooseOnMap : c.pin_wait} onPress={() => { if (ready && !locating && !positioning && selected) onConfirm(point); }} />}
       <Button title={c.cancel} variant="ghost" onPress={onClose} />
       </ScrollView>
     </SafeAreaView>

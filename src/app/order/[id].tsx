@@ -182,6 +182,9 @@ export default function OrderScreen() {
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
+  const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
+    && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
+    && order.recovery?.assignmentEpoch != null && secondsUntil(waitingEndsAt, now, order.journey) <= 0;
   const fareChange = order.journey?.lastFareChange;
   const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
@@ -754,6 +757,9 @@ export default function OrderScreen() {
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
+        {rideNoShow && <Button title={c.rideNoShow} variant="outline" disabled={!!busy} loading={busy === 'no-show'}
+          onPress={() => confirm(c.rideNoShowConfirm, () => act('no-show', `/orders/${order.id}/ride/no-show`,
+            { reason: 'absent', expectedAssignmentEpoch: order.recovery?.assignmentEpoch }, () => { void work.reload(); }), c.rideNoShow, c.no)} />}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
           openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)

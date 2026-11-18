@@ -240,9 +240,9 @@ export default function Auth() {
             </Appear>}
             <View style={{ height: 8 }} />
             <Check checked={consent} onChange={setConsent} label={c.consent} disabled={busy} />
-            <Row gap={16} style={{ justifyContent: 'center', marginBottom: 8 }}>
-              <Press accessibilityRole="link" accessibilityLabel={c.privacy} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(privacyUrl(language))}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
-              <Press accessibilityRole="link" accessibilityLabel={c.terms} hitSlop={{ top: 12, bottom: 12 }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
+            <Row gap={16} style={{ paddingStart: 32, flexWrap: 'wrap', marginBottom: 8 }}>
+              <Press accessibilityRole="link" accessibilityLabel={c.privacy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => Linking.openURL(privacyUrl(language))}><Txt variant="caption" style={{ color: palette.olive }}>{c.privacy}</Txt></Press>
+              <Press accessibilityRole="link" accessibilityLabel={c.terms} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}

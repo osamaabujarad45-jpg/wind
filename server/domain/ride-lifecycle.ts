@@ -42,6 +42,7 @@ export class RideLifecycle {
   private db: Persistence;
   private fail: Fail;
   onBoardingLocked?: (orderId: number) => Promise<void>;
+  onNoShow?: (orderId: number, customerId: number) => Promise<void>;
   constructor(db: Persistence, fail: Fail) { this.db = db; this.fail = fail; }
   async metadataAvailable() {
     return await this.available() && !!await this.db.one('SELECT version FROM schema_migrations WHERE version=29');
@@ -185,6 +186,31 @@ export class RideLifecycle {
     return { ok: true, orderId, ride: await this.summary(orderId, { id: driverId, role: 'driver' }, order) };
   }
 
+  async noShow(user: Actor, orderId: number, body: Row) {
+    if (user.role !== 'driver') this.fail(403, 'forbidden');
+    if (user.status !== 'active') this.fail(403, 'blocked');
+    await this.requireAvailable();
+    this.fields(body, ['reason', 'expectedAssignmentEpoch']);
+    if (body.reason !== 'absent' || !Number.isSafeInteger(body.expectedAssignmentEpoch)) this.fail(400, 'invalid_input');
+    const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');
+    if (order.service !== 'ride' || Number(order.driver_id) !== user.id) this.fail(404, 'not_found');
+    if (Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
+    if (order.status === 'cancelled' && await this.db.one("SELECT 1 FROM security_events WHERE order_id=? AND actor_id=? AND action='RIDE_NO_SHOW'", orderId, user.id))
+      return { ok: true, orderId };
+    if (!['assigned', 'at_pickup'].includes(String(order.status))) this.fail(409, 'cannot_arrive');
+    if (await this.db.one("SELECT 1 FROM safety_incidents WHERE order_id=? AND status='open' LIMIT 1", orderId)) this.fail(409, 'safety_hold');
+    const ride = await this.db.one('SELECT assignment_epoch, driver_id, arrived_at FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId) ?? this.fail(409, 'arrival_required');
+    if (Number(ride.assignment_epoch) !== Number(order.assignment_epoch) || Number(ride.driver_id) !== user.id || ride.arrived_at == null)
+      this.fail(409, 'arrival_required');
+    const now = Date.now();
+    if (now < Number(ride.arrived_at) + RIDE_GRACE_MS) this.fail(409, 'ride_grace_active');
+    await this.db.run("UPDATE orders SET status='cancelled', commission=NULL, updated_at=? WHERE id=?", now, orderId);
+    await this.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'RIDE_NO_SHOW',?,?)",
+      user.id, orderId, JSON.stringify({ reason: body.reason, assignmentEpoch: body.expectedAssignmentEpoch }), now);
+    await this.onNoShow?.(orderId, Number(order.customer_id));
+    return { ok: true, orderId };
+  }
+
   private reason(body: Row) {
     const value = body?.reason;
     if (typeof value !== 'string' || value.trim().length < 5 || value.trim().length > 500) this.fail(400, 'reason_required');
@@ -273,6 +299,7 @@ export class RideLifecycle {
 
 export function registerRideLifecycleRoutes(route: Register, service: RideLifecycle) {
   route('POST', '/api/orders/:id/arrive', ctx => service.arrive(ctx.user, Number(ctx.params[0]), ctx.body));
+  route('POST', '/api/orders/:id/ride/no-show', ctx => service.noShow(ctx.user, Number(ctx.params[0]), ctx.body));
   route('POST', '/api/admin/orders/:id/arrival/override', ctx => service.overrideArrival(ctx.user, Number(ctx.params[0]), ctx.body));
   route('POST', '/api/admin/orders/:id/boarding-reset', ctx => service.resetBoarding(ctx.user, Number(ctx.params[0]), ctx.body, ctx.query?.get('journeyProtocol') === '1'));
 }

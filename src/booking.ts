@@ -46,8 +46,8 @@ export function orderRequest(command: PendingBooking) {
 }
 
 // Order again (SPEC-order-again.md): a customer's ended order refills the booking form.
-export const canOrderAgain = (order: Pick<Order, 'status'>, role: Role | undefined) =>
-  role === 'customer' && ['completed', 'returned', 'cancelled'].includes(order.status);
+export const canOrderAgain = (order: Pick<Order, 'status' | 'service'>, role: Role | undefined) =>
+  role === 'customer' && order.service !== 'shop' && ['completed', 'returned', 'cancelled'].includes(order.status);
 /** The route and item of an old order. Never its price, promo, time or request ID: those belong to the new booking. */
 export function againForm(order: Order) {
   return {

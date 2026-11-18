@@ -117,9 +117,10 @@ assert.deepEqual(againForm({ ...old, service: 'ride', option: 'large', contact: 
   { ...againForm(old), service: 'ride', option: '1', contact: '', dropoffPoint: null }); // stale option → first valid one
 const again = newBooking({ ...againForm(old), shared: false, quotedPrice: 99 });
 assert.equal(readBooking(JSON.stringify(again)).payload.quotedPrice, 99); // the refilled form makes a valid, fresh command
-for (const status of ['completed', 'returned', 'cancelled']) assert.ok(canOrderAgain({ status }, 'customer'), status);
-for (const status of ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning']) assert.ok(!canOrderAgain({ status }, 'customer'), status);
-for (const role of ['driver', 'admin', undefined]) assert.ok(!canOrderAgain({ status: 'completed' }, role), String(role));
+for (const status of ['completed', 'returned', 'cancelled']) assert.ok(canOrderAgain({ status, service: 'parcel' }, 'customer'), status);
+for (const status of ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning']) assert.ok(!canOrderAgain({ status, service: 'parcel' }, 'customer'), status);
+assert.ok(!canOrderAgain({ status: 'completed', service: 'shop' }, 'customer'), 'Shop orders reopen the shop cart through their own flow');
+for (const role of ['driver', 'admin', undefined]) assert.ok(!canOrderAgain({ status: 'completed', service: 'parcel' }, role), String(role));
 // Send another (SPEC-send-another.md): only the pickup carries over; the last buyer's drop-off, phone and item never do.
 assert.deepEqual(pickupForm({ ...old, service: 'parcel', option: 'small' }),
   { service: 'parcel', option: 'small', pickupCity: 'hebron', pickupPoint: old.pickupPoint, pickupNote: 'مخزن' });

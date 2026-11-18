@@ -9,6 +9,7 @@ import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-block-'));
 process.env.DB_PATH = join(dir, 'test.db');
+process.env.WIND_ENABLED_SERVICES = 'parcel,ride';
 const { shutdown, server, db, promote } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -81,7 +82,17 @@ try {
   await call(senderPath, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } });
   await call(`/orders/${openOrder.id}`, { token: sender.token, expect: 401 });
 
-  console.log('courier-block: ok');
+  const captain = await call('/auth/register', { body: { phone: '0599300006', name: 'Rami', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${captain.user.id}/approve`, { token: admin.token, body: {} });
+  const rideInput = { ...input, service: 'ride', option: '1' };
+  let trip = await call('/orders', { token: customer.token, body: { ...rideInput, quotedPrice: quote(defaultSettings, rideInput) } });
+  trip = await call(`/jobs/${trip.id}/accept`, { token: captain.token, body: {} });
+  trip = await advance(captain.token, await advance(captain.token, trip));
+  assert.equal(trip.status, 'in_transit');
+  await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  assert.equal((await call(`/orders/${trip.id}`, { token: customer.token })).status, 'cancelled');
+  assert.deepEqual({ ...db.prepare('SELECT return_code, commission FROM orders WHERE id = ?').get(trip.id) }, { return_code: null, commission: null });
+  console.log('courier-block: parcels recover through custody and boarded rides end unpaid');
 } finally {
   await shutdown();
   rmSync(dir, { recursive: true, force: true });

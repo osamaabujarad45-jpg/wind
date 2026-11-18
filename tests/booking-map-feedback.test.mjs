@@ -84,7 +84,7 @@ assert.match(book, /side && \(rtl \? \{ left: SIDE_SHEET, right: 0 \} : \{ right
 assert.match(book, /<Button title=\{c.searchLabel\}[^\n]*setField\(pinFor\)[^\n]*setStep\('search'\)/, 'search stays reachable from pin placement, including a failed map');
 assert.match(book, /setSwapNotice\(fill\(c.swapDone/);
 assert.match(book, /<View accessibilityLiveRegion="polite"[^\n]*<Txt[^\n]*swapNotice/, 'swap feedback uses a native live-region host, not an unsupported Txt prop');
-assert.match(book, /!pending && routeChosen && !scopeInvalid && <Card style=\{\{ paddingVertical: 10, minHeight: 112 \}\}/, 'quote space survives loading, failure and success');
+assert.match(book, /!pending && routeChosen && !scopeIncomplete && <Card style=\{\{ paddingVertical: 10, minHeight: 112 \}\}/, 'quote space survives loading, failure and success');
 // The failure sentence lives once, under the Request button; the card keeps its space with a dash.
 assert.match(book, /quoting \? c.quote_calculating : quoteFailed \? '—' : smart \? money\(smart.price\)/, 'loading cannot display an old price');
 const ar = copy.slice(copy.indexOf('const ar = {'), copy.indexOf('const en: Copy = {'));

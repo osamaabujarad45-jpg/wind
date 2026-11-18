@@ -55,7 +55,7 @@ function screen(pending = null) {
       if (state.storageGate?.at === at) { state.storageArrived.resolve(); await state.storageGate.promise; }
     } },
     get pending() { return state.pending; },
-    submitBlocked: false, scopeInvalid: false, routeChosen: true, scheduledFor: null, service: 'parcel', priority: 'standard', sameDayOpen: true,
+    submitBlocked: false, scopeIncomplete: false, routeChosen: true, scheduledFor: null, service: 'parcel', priority: 'standard', sameDayOpen: true,
     pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null, dropoffPoint: null, pickupNote: 'Gate', dropoffNote: 'Door',
     contact: '0599123456', detail: 'Box', option: 'small', loadingHelp: false, price: 20, declaredScope: null,
     recipientPhone: '', recipientName: '', goodsOk: true, applied: null, smart: null, busy: false, releasable: true,

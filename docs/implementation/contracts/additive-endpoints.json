@@ -363,6 +363,11 @@
       "endpoints": [
         {
           "method": "POST",
+          "path": "/api/driver/ride-offer-settings",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
           "path": "/api/offers/([0-9a-f-]{36})/decline",
           "anonymousStatus": 404
         },
@@ -381,6 +386,11 @@
         {
           "method": "POST",
           "path": "/api/orders/:id/arrive",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/:id/ride/no-show",
           "anonymousStatus": 401
         },
         {

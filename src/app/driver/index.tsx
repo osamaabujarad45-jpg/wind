@@ -17,6 +17,7 @@ import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-prese
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
+import { OfferClock } from '../../driver-offer-clock';
 import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
@@ -280,9 +281,8 @@ export default function Jobs() {
             </Row>}
             <RouteLine from={order.pickupArea || city(order.pickupCity)[language]} to={order.dropoffArea || city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             <FreightDetails order={order} />
-            {order.dispatch?.myOffer && <Txt variant="label" style={{ marginTop: 8 }}>
-              {fill(c.dispatchOfferClock, { n: secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey) })}
-            </Txt>}
+            {order.dispatch?.myOffer && <OfferClock key={order.dispatch.myOffer.offerId} focused={focused}
+              seconds={secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey)} />}
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
               <Txt variant="caption" numberOfLines={2} style={{ flex: 1 }}>{order.detail}</Txt>

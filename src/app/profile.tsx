@@ -8,7 +8,7 @@ import { useFormat } from '../parts';
 import { PhoneCard } from '../phone-card';
 import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
-import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
+import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, FilterChips, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
 
 export default function Profile() {
   const { me, refresh } = useSession();
@@ -16,6 +16,7 @@ export default function Profile() {
   const { date } = useFormat();
   const [name, setName] = useState(me?.user.name ?? '');
   const [busy, setBusy] = useState(false);
+  const [savingOffer, setSavingOffer] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   if (!me) return null;
@@ -35,6 +36,20 @@ export default function Profile() {
       setError(err(e));
     }
     setBusy(false);
+  }
+
+  async function saveOffer(seconds: '20' | '30' | '40') {
+    if (savingOffer || Number(seconds) === me?.rideOfferSeconds) return;
+    setSavingOffer(true);
+    setError('');
+    try {
+      await api('/driver/ride-offer-settings', { seconds: Number(seconds) });
+      await refresh();
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      setError(err(e));
+    } finally { setSavingOffer(false); }
   }
 
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -57,6 +72,12 @@ export default function Profile() {
       </Appear>
       <Appear index={2}><PhoneCard key={user.id} /></Appear>
       {user.email && <Appear index={3}><EmailCard /></Appear>}
+      {me.rideOfferSeconds !== undefined && <Card>
+        <Txt variant="title" header>{c.dispatchOfferSettings}</Txt>
+        <FilterChips label={c.dispatchOfferSettings} disabled={savingOffer}
+          items={(['20', '30', '40'] as const).map(key => ({ key, label: fill(c.dispatchOfferSeconds, { n: key }) }))}
+          value={String(me.rideOfferSeconds) as '20' | '30' | '40'} onChange={seconds => { void saveOffer(seconds); }} />
+      </Card>}
       <Appear index={4}>
         <Card tone="muted">
           <Row style={{ justifyContent: 'space-between' }}>

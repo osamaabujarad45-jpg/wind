@@ -30,6 +30,7 @@ try {
   assert.equal(gated.error, 'dispatch_unavailable');
   assert.equal((await call(`/offers/${offerId}/decline`, { token: driver.token, body: {}, expect: 409 })).error, 'dispatch_unavailable');
   assert.equal((await call(`/orders/${order.id}/dispatch/retry`, { token: customer.token, body: {}, expect: 409 })).error, 'dispatch_unavailable');
+  assert.equal((await call('/driver/ride-offer-settings', { token: driver.token, body: { seconds: 40 }, expect: 409 })).error, 'dispatch_unavailable');
   assert.equal((await call('/driver/presence', { token: driver.token, expect: 409 })).error, 'presence_protocol_unavailable', 'presence never claims matching on SQLite');
 
   // The legacy no-offer accept is byte-for-byte the old behaviour.

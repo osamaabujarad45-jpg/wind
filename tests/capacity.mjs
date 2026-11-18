@@ -48,6 +48,7 @@ try {
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);
   // Vacated shared vehicle no longer blocks a different eligible driver.
+  await call(`/orders/${ride.id}/cancel`, {token:f.customer.token,body:{}});
   const seats=await f.book({service:'ride',option:'1'});await f.assess(seats,{items:[],seats:5});
   assert.equal((await call(`/jobs/${seats.id}/accept`,{token:loserDriver.token,body:{},expect:409})).error,'seats_unavailable');
   await f.assess(seats,{items:[],seats:1});

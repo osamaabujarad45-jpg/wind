@@ -145,6 +145,14 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-saved-place-points.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(35,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 36'))) {
+      await database.run(readFileSync(new URL('./postgres-quote-privacy.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(36,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 37'))) {
+      await database.run('ALTER TABLE users ADD COLUMN ride_offer_seconds INTEGER NOT NULL DEFAULT 20 CHECK(ride_offer_seconds IN (20,30,40))');
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(37,?)', Date.now());
+    }
   });
 }
 

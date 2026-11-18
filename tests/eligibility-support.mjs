@@ -52,7 +52,7 @@ export async function fixture(label='eligibility',extraEnv={}) {
     for(const kind of ['vehicle_registration','vehicle_inspection']) await check(kind,{vehicleId});
     await enroll(driver);
   };
-  const book=async(extra={})=>call('/orders',{token:customer.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,contact:'0598700999',detail:'Synthetic sealed item',pickupNote:'Synthetic pickup',dropoffNote:'Synthetic dropoff',pickupPoint:{longitude:pickup[0],latitude:pickup[1]},dropoffPoint:{longitude:dropoff[0],latitude:dropoff[1]},...extra}});
+  const book=async(extra={},actor=customer)=>call('/orders',{token:actor.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,contact:'0598700999',detail:'Synthetic sealed item',pickupNote:'Synthetic pickup',dropoffNote:'Synthetic dropoff',pickupPoint:{longitude:pickup[0],latitude:pickup[1]},dropoffPoint:{longitude:dropoff[0],latitude:dropoff[1]},...extra}});
   const approach=async(order,extra={},expect=200)=>{
     const req=await db.one('SELECT revision FROM order_requirements WHERE order_id=?',order.id);
     const v=await db.one('SELECT revision FROM vehicles WHERE id=?',extra.vehicleId??vehicle.id);

@@ -247,8 +247,9 @@ async function checkPassword(password: string, stored: string) {
 // An unknown identifier costs the same scrypt as a known one: it is checked against a decoy hash made once, lazily.
 // decoyChecks lets a test see the unknown path reached the hash (a timing assertion would be flaky).
 let decoyHash: Promise<string> | undefined;
-export const loginCheck = { decoyChecks: 0 };
+export const loginCheck = { decoyChecks: 0, delayMs: 0 }; // delayMs: test seam so parallel sign-ins really interleave
 async function checkLoginPassword(password: string, stored: string | undefined) {
+  if (loginCheck.delayMs) await new Promise(resolve => setTimeout(resolve, loginCheck.delayMs));
   if (stored !== undefined) return checkPassword(password, stored);
   loginCheck.decoyChecks++;
   await checkPassword(password, await (decoyHash ??= createPasswordHash(randomBytes(32).toString('hex'))));
@@ -754,7 +755,9 @@ route('POST', '/api/auth/login', async ({ body }) => {
   const identifier = String(body.identifier ?? body.phone ?? '').trim();
   const phone = normalizePhone(identifier), email = normalizeEmail(identifier);
   const key = identityKey('login', phone ?? phoneIdentity.loginThrottleKey(identifier) ?? email ?? identifier.toLowerCase());
-  (await limit(key, 5, 10 * 60_000, false));
+  // Counted when the attempt starts, not after it fails: checking first let dozens of parallel guesses pass the check
+  // before the first failure was recorded (release review, 18 Nov). A successful sign-in clears the count below.
+  (await limit(key, 5, 10 * 60_000));
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
   let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
@@ -788,10 +791,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
       if (valid) r = await one('SELECT * FROM users WHERE id = ?', r.id);
     }
   }
-  if (!r || !valid) {
-    (await limit(key, 5, 10 * 60_000));
-    fail(401, 'wrong_credentials');
-  }
+  if (!r || !valid) fail(401, 'wrong_credentials');
   (await run('DELETE FROM request_limits WHERE key = ?', key));
   if (r!.status === 'blocked') fail(403, 'blocked');
   if (!contactAllowed(r!)) fail(403, 'verification_required');
@@ -807,7 +807,8 @@ async function startSession(userId: number) {
 }
 
 async function me(user: User) {
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), rideOfferSeconds, capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -1006,12 +1007,17 @@ async function spendEntraProof(proof: EntraProof) {
 
 route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
-  (await limit(key, 5, 10 * 60_000, false));
+  const passwordAttempt = !body.idToken || (typeof body.current === 'string' && body.current.length > 0);
+  // Reserve typed attempts before hashing, including requests that also carry an Entra token.
+  await limit(key, 5, 10 * 60_000, passwordAttempt);
   const account = (await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id))!;
   const stored = account.password;
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
   const proof = await entraProof('password', currentToken, body, account.entra_oid);
-  if (!proof && !await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, body.idToken ? 'invalid_token' : 'wrong_password'); }
+  if (!proof && (!passwordAttempt || !await checkPassword(String(body.current ?? ''), stored))) {
+    if (!passwordAttempt) await limit(key, 5, 10 * 60_000);
+    fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
+  }
   const password = await hashPassword(newPassword(body.password));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -1029,6 +1035,16 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
+// Migration 36 lets the quote guard accept only this scrub: personal fields to ''/NULL, the fare untouched.
+const scrubQuotesSql = `UPDATE quotes SET pickup_note = '', dropoff_note = '', contact = '', pickup_contact = NULL, recipient_name = NULL,
+  recipient_phone = NULL, detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, itinerary_hash = ''`; // the hash covers the phones
+export async function scrubDeletedQuotes(customerId?: number) { // exported for the quotes test
+  const target = customerId === undefined ? "customer_id IN (SELECT id FROM users WHERE status = 'blocked' AND phone = 'deleted-' || id::text)" : 'customer_id = ?';
+  return (await run(`${scrubQuotesSql} WHERE id IN (SELECT id FROM quotes WHERE ${target} AND (contact <> '' OR pickup_note <> '' OR dropoff_note <> '' OR detail <> ''
+    OR pickup_lat IS NOT NULL OR dropoff_lat IS NOT NULL OR pickup_contact IS NOT NULL OR recipient_phone IS NOT NULL OR recipient_name IS NOT NULL OR itinerary_hash <> '') LIMIT 200 FOR UPDATE SKIP LOCKED)`,
+    ...(customerId === undefined ? [] : [customerId]))).changes;
+}
+
 async function deleteAccount(user: User, actorId: number | null, proof?: { sessionHash: string; passwordHash?: string } & Partial<EntraProof>) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -1062,6 +1078,25 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
     (await run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id));
+    // Release review, 18 Nov: four more places held a deleted customer's words, phones or positions.
+    (await run("UPDATE order_disputes SET reason = '—' WHERE customer_id = ?", user.id));
+    (await run("UPDATE safety_incidents SET note = '', lat = NULL, lng = NULL WHERE reporter_id = ?", user.id));
+    if (persistence.backend === 'postgres') {
+      if ((await one("SELECT to_regclass('command_results') AS t"))?.t) {
+        (await run('DELETE FROM command_results WHERE actor_id = ?', user.id)); // replies hold full order JSON
+        // A replay keeps its decision and rereads the redacted order through current authorization.
+        (await run(`WITH order_replies AS MATERIALIZED (
+          SELECT actor_id, command_id, CASE WHEN pg_input_is_valid(response, 'jsonb') THEN response::jsonb END AS body
+          FROM command_results WHERE http_status = 200 AND response LIKE '%"pickupCity"%'
+        )
+        UPDATE command_results c SET response = json_build_object('redactedOrderId', o.id)::text
+        FROM orders o JOIN order_replies r ON r.body ->> 'id' = o.id::text
+        WHERE o.customer_id = ? AND r.body ->> 'pickupCity' IS NOT NULL AND c.actor_id = r.actor_id AND c.command_id = r.command_id`, user.id));
+      }
+      // A quote held by an in-flight booking is skipped, not waited on (the deletion must not stall behind it);
+      // scrubDeletedQuotes() below catches it once that booking ends.
+      if ((await quotesAvailable(persistence))) await scrubDeletedQuotes(user.id);
+    }
     (await run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
     if (actorId !== null && actorId !== user.id) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'ACCOUNT_DELETED_BY_ADMIN', ?, ?)`,
@@ -1077,13 +1112,14 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
   if (user.role === 'admin') fail(409, 'cannot_change_self');
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
   const key = identityKey('delete-auth', user.id);
-  await limit(key, 5, 10 * 60_000, false);
+  const passwordAttempt = !body.idToken || (typeof body.password === 'string' && body.password.length > 0);
+  await limit(key, 5, 10 * 60_000, passwordAttempt);
   const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
   if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
     return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
   const proof = await entraProof('delete', token, body, current.entra_oid);
   if (proof) return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), ...proof }));
-  await limit(key, 5, 10 * 60_000);
+  if (!passwordAttempt) await limit(key, 5, 10 * 60_000);
   fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
 });
 
@@ -1273,6 +1309,7 @@ const queuePush = async (userIds: (number | null)[], kind: PushKind, order: numb
 };
 dispatch.onOffer = async (driverId, orderId) => { await queuePush([driverId], 'offer', orderId); };
 rideLifecycle.onBoardingLocked = async orderId => { await queuePush((await adminIds()), 'attention', orderId, '/admin/orders'); };
+rideLifecycle.onNoShow = async (orderId, customerId) => { await queuePush([customerId], 'cancelled', orderId); };
 const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")).map(a => a.id as number);
 const flushPush = () => persistence.flushEffects();
 // T46: the nightly job touches this marker after its off-VM copy succeeds. Silence is the failure, so the API watches for it.
@@ -1501,6 +1538,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   // WP12: a quote may carry the customer-declared scope it will commit.
   const declaredScope = body.declaredScope === undefined || body.declaredScope === null ? null
     : validateDeclaredScope(service, body.declaredScope, fail);
+  if (service === 'freight' && declaredScope && (!pickupPin || !dropoffPin)) fail(400, 'freight_pins_required');
   const input = {
     customerId: user.id,
     service,
@@ -1564,14 +1602,40 @@ route('POST', '/api/price', async ({ user, body }) => {
 // T21: a customer's unscheduled searching demand is capped so spam cannot bury matching supply, and stale
 // unclaimed demand stops occupying the board. Both are policy bounds, not money: assigned custody and
 // not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
-const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
+const positiveInt = (value: string | undefined, fallback: number) => { const n = Math.floor(Number(value)); return Number.isFinite(n) && n >= 1 ? n : fallback; };
+const SEARCHING_LIMIT = positiveInt(process.env.WIND_SEARCHING_LIMIT, 5);
 const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 86_400_000, 3_600_000); // 24 h
+// Booked-ahead orders do not count toward the cap above (a customer may plan the week), but each one releases to
+// drivers when due, so they get their own bound (release review, 18 Nov). Same message: too many open orders.
+const SCHEDULED_LIMIT = positiveInt(process.env.WIND_SCHEDULED_LIMIT, 10);
+async function guardScheduledCap(customerId: number) {
+  const n = Number(((await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NOT NULL", customerId)) as { n: number }).n);
+  if (n >= SCHEDULED_LIMIT) fail(409, 'too_many_searching');
+}
+
+async function guardOpenRide(customerId: number, service: Service) {
+  if (service === 'ride' && await one(`SELECT id FROM orders WHERE customer_id=? AND service='ride'
+    AND (status IN (${activeSql}) OR (status='searching' AND scheduled_for IS NULL)) LIMIT 1`, customerId))
+    fail(409, 'ride_already_active');
+}
+
+async function lockCustomerDemand(customerId: number) {
+  if (persistence.backend === 'postgres') await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", customerId);
+}
+
+async function guardRideAssignment(orderId: number) {
+  const ride = await one("SELECT customer_id FROM orders WHERE id=? AND service='ride'", orderId);
+  if (!ride) return;
+  await lockCustomerDemand(Number(ride.customer_id));
+  if (await one(`SELECT 1 FROM orders WHERE customer_id=? AND id<>? AND service='ride' AND status IN (${activeSql}) LIMIT 1`, ride.customer_id, orderId))
+    fail(409, 'rider_ride_active');
+}
 
 async function createOrder(user: User, body: Row, smart?: { price: number; km: number }, authorize?: () => Promise<User>) {
   // T21: the cap check and the insert share the caller's write transaction — every booking path enters
   // createOrder inside BEGIN IMMEDIATE (SQLite) or persistence.atomic (PostgreSQL), and PostgreSQL takes a
   // per-customer advisory lock so concurrent creates cannot slip past the count under READ COMMITTED.
-  if (persistence.backend === 'postgres') (await run("SELECT pg_advisory_xact_lock(hashtextextended('wind_searching_cap', ?))", user.id));
+  await lockCustomerDemand(user.id);
   // A placed shop order counts while it waits on the shop too, or one customer could queue baskets without end.
   const searching = (await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NULL", user.id)) as { n: number };
   if (Number(searching.n) >= SEARCHING_LIMIT) fail(409, 'too_many_searching');
@@ -1617,11 +1681,15 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
       if (quoted && supplied !== quoted) fail(409, 'itinerary_changed');
       return quoted || supplied;
     };
+    const flatFare = quoted.service === 'parcel'; // a parcel's price does not depend on where its pins are
     const fillPoint = (quotedLat: unknown, quotedLng: unknown, bodyValue: unknown, cityId: unknown) => {
       const quoted = quotedLat != null ? { latitude: Number(quotedLat), longitude: Number(quotedLng) } : null;
       if (bodyValue === undefined || bodyValue === null) return quoted;
       const supplied = bookedPoint(bodyValue, cityId as CityId);
       if (!supplied) return quoted;
+      // A ride or load is priced by distance: a pin its quote never saw would redraw the route at the old fare
+      // (a 4 km city-centre quote booked as a 40 km trip). The app always quotes with its pins (release review, 18 Nov).
+      if (!quoted && !flatFare) fail(409, 'itinerary_changed');
       if (quoted && (Math.abs(supplied.latitude - quoted.latitude) > 1e-4 || Math.abs(supplied.longitude - quoted.longitude) > 1e-4)) fail(409, 'itinerary_changed');
       return quoted ?? supplied;
     };
@@ -1669,6 +1737,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     if (promo && body.expectedDiscount != null && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
     const scheduledFor = quoted.scheduled_for as number | null;
     if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= nowTs + RELEASE_BEFORE && scheduledFor <= nowTs + 7 * DAY)) fail(400, 'invalid_schedule');
+    if (scheduledFor !== null) await guardScheduledCap(user.id);
+    else await guardOpenRide(user.id, service);
     // Promo last-budget race: lock the promo row when applicable.
     if (promo?.id) {
       const promoRow = (await one('SELECT * FROM promo_codes WHERE id=? FOR UPDATE', promo.id)) ?? fail(409, 'promo_used');
@@ -1708,6 +1778,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
         : validateDeclaredScope(service, body.declaredScope, fail);
       if (quotedScope && bookingScope && scopePayloadHash(quotedScope) !== scopePayloadHash(bookingScope)) fail(409, 'itinerary_changed');
       const committedScope = quotedScope ?? bookingScope;
+      if (service === 'freight' && committedScope && (!point || !dropoff)) fail(400, 'freight_pins_required');
       if (committedScope) await saveDeclaredScope(persistence, fail, id, service, committedScope);
     }
     // Mark quote consumed atomically within the same order transaction.
@@ -1724,6 +1795,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
   const point = bookedPoint(body.pickupPoint, body.pickupCity), dropoff = bookedPoint(body.dropoffPoint, body.dropoffCity);
+  if (service === 'freight' && body.declaredScope != null && (!point || !dropoff)) fail(400, 'freight_pins_required');
   apartPins(body.pickupPoint, body.dropoffPoint);
   const shared = !!body.shared, loadingHelp = service === 'freight' && !!body.loadingHelp;
   // Who receives a parcel or load (SPEC-parcel-recipient.md); optional, never on a ride.
@@ -1749,6 +1821,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   }
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  if (scheduledFor !== null) await guardScheduledCap(user.id);
+  else await guardOpenRide(user.id, service);
   checkPriorityCutoff(priority, fail);
   if (authorize) user = await authorize();
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
@@ -2422,7 +2496,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   if (!freshDriver || freshDriver.role !== 'driver' || freshDriver.status !== 'active') fail(403, 'blocked');
   user.vehicle = freshDriver!.vehicle;
   if (body.offerId !== undefined || body.leaseNonce !== undefined) {
-    const dispatched = await dispatch.acceptOffer({ driverId: user.id, orderId: Number(params[0]), offerId: body.offerId, leaseNonce: body.leaseNonce, capacityProtocol: body.capacityProtocol, expectedRequirementsRevision: body.expectedRequirementsRevision }, async () => {
+    const dispatched = await dispatch.acceptOffer({ driverId: user.id, orderId: Number(params[0]), offerId: body.offerId, leaseNonce: body.leaseNonce, capacityProtocol: body.capacityProtocol, expectedRequirementsRevision: body.expectedRequirementsRevision }, guardRideAssignment, async () => {
       const offered = (await getOrder(Number(params[0]), user));
       if (!enabledServices.includes(offered.service)) fail(409, 'service_unavailable');
       if (!servesFor(user.vehicle).includes(offered.service)) fail(409, 'wrong_vehicle');
@@ -2458,6 +2532,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE },
     { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor }, freshDriver!, rate);
   if (refused) fail(409, refused);
+  await guardRideAssignment(order.id);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
@@ -2511,6 +2586,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     const f = (await one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
+    await guardRideAssignment(r.id);
     await guardCashCeiling(Number(f.price), r.id); // lowered since the driver offered, or a goods COD added since
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
@@ -2660,11 +2736,15 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const to = { reattempt: 'in_transit', return: 'returning', confirm_return: 'returned' }[String(body.action)] as PushKind;
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
   const id = Number(params[0]);
-  await shop.guardResolve(id, String(body.action));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    const order = (await one('SELECT id, customer_id, driver_id, status, service FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
+    const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
+    await shop.guardResolve(id, String(body.action));
+    if (body.action === 'reattempt' && (order.service === 'parcel' || order.service === 'freight') && exceptionReasons.includes(order.exception_reason)) {
+      const attempts = await one("SELECT COUNT(*) AS n FROM security_events WHERE order_id = ? AND action = 'DELIVERY_EXCEPTION'", id);
+      if (Number(attempts?.n) >= 3) fail(409, 'reattempt_limit');
+    }
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
@@ -3188,7 +3268,7 @@ registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queue
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
-  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
+  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), guardRideAssignment, ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
   permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, eligibility, measured: () => measuredCapability(persistence) });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
@@ -3434,6 +3514,11 @@ const editUser: Handler = async ({ user, params, body }) => {
           job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, backPrice, backDiscount, now, now, o.id));
         await rideLifecycle.clearAssignment(Number(o.id));
       }
+      else if (o.service === 'ride') {
+        await run("UPDATE orders SET status = 'cancelled', commission = NULL, return_code = NULL, updated_at = ? WHERE id = ?", now, o.id);
+        await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', ?, ?)",
+          user.id, o.id, JSON.stringify({ reason: 'courier_block' }), now);
+      }
       else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
         (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
         (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
@@ -3445,6 +3530,7 @@ const editUser: Handler = async ({ user, params, body }) => {
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   for (const o of carrying) {
     if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); await reofferReleased(o.service as Service, Number(o.id), Number(o.customer_id), target.id); }
+    else if (o.service === 'ride') await queuePush([o.customer_id], 'cancelled', o.id);
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
@@ -3682,11 +3768,13 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+  let url: URL;
+  try { url = new URL(req.url ?? '/', 'http://localhost'); }
+  catch { res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'invalid_request_target' })); return; }
   let status = 200, payload: unknown;
   const correlationId = randomUUID();
   try {
     await persistence.scope(async () => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
     if (draining) fail(503, 'unavailable');
     if (url.pathname.startsWith('/api/') && clientUpdateRequired(req.headers['x-wind-client'])) fail(426, 'client_update_required');
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
@@ -3801,10 +3889,9 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     status = error instanceof HttpError ? error.status : databaseUnavailable(error) ? 503 : 500;
     const code = error instanceof HttpError ? error.message : 'server_error';
     payload = { error: code };
-    const failedUrl = new URL(req.url ?? '/', 'http://localhost');
-    const verb = /^\/api\/jobs\/\d+\/accept$/.test(failedUrl.pathname) ? 'accept'
-      : /^\/api\/offers\/[a-f0-9-]+\/decline$/i.test(failedUrl.pathname) ? 'decline' : undefined;
-    if (verb && failedUrl.searchParams.get('journeyProtocol') === '1') payload = { error: code, offerFailure: offerFailure(verb, code, status) };
+    const verb = /^\/api\/jobs\/\d+\/accept$/.test(url.pathname) ? 'accept'
+      : /^\/api\/offers\/[a-f0-9-]+\/decline$/i.test(url.pathname) ? 'decline' : undefined;
+    if (verb && url.searchParams.get('journeyProtocol') === '1') payload = { error: code, offerFailure: offerFailure(verb, code, status) };
     if (status >= 500 && !(error instanceof HttpError && ['route_unavailable', 'email_unavailable'].includes(error.message))) {
       logServerError('http_request_failed', error, { correlationId, httpStatus: status });
       // An unexpected failure tells the person its log id, so a report to support finds this line.
@@ -3934,6 +4021,8 @@ if (import.meta.main) {
     setInterval(async () => { try { (await shopSweep()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // shop accept, consent, dispatch and licence timers
     setInterval(async () => { try { (await remindOfficeJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
+    // A quote an in-flight booking held when its customer was deleted is scrubbed once the lock is gone (PostgreSQL quotes only).
+    if (persistence.backend === 'postgres') setInterval(async () => { try { if (await quotesAvailable(persistence)) await scrubDeletedQuotes(); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref();
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }

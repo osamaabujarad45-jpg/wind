@@ -18,6 +18,7 @@ type Deps = RefusalDeps & {
   commissionOn: (price: number, rate: number) => number;
   safetyFree: (orderId: number) => Promise<void>;
   hasOpenOffer: (orderId: number) => Promise<boolean>;
+  guardRideAssignment: (orderId: number) => Promise<void>;
   ensureAssignment: (orderId: number, driverId: number, source: 'legacy') => Promise<void>;
   getOrder: (id: number, viewer: never) => Promise<unknown>;
   queuePush: (ids: any[], kind: any, order: number, path?: string) => Promise<void>;
@@ -80,6 +81,7 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         // Every driver refusal is a 409 here: the admin is the authorized caller and the named driver is the ineligible one.
         // The driver's own accept answers 403 for its account state (blocked, pending), its own state rather than the order's.
         if (refused) fail(409, refused);
+        await deps.guardRideAssignment(orderId);
         // A reassign of a measured order would strand its reservation, which moves only through the release flow.
         if (order.status !== 'searching' && await deps.measured()
           && await one('SELECT 1 FROM capacity_reservations WHERE order_id = ?', orderId)) fail(409, 'measured_reassign_unsupported');
