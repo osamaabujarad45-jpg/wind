@@ -76,10 +76,11 @@ export default function Jobs() {
   const blocked = (order: Order) => !canTake(carrying, order.service);
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
+    : presenceOn && !assigned && work.presenceState !== 'online' ? c.accept_go_online // the presence card says offline captains take no jobs
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
-    if (busy !== null || blocked(order) || !work.known) return;
+    if (acceptReason(order) !== null) return;
     setBusy(order.id);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
@@ -301,11 +302,11 @@ export default function Jobs() {
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })}</Txt>{/* the range is said once (D-29): by the field error once typed, by the reason before */}
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
                   onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
-                {!ok && !offering.text && <Reason>{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Reason>}
+                {!ok && !offering.text && <Txt variant="caption">{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Txt>}{/* information, not an error (H-11) */}
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
-              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(order.price) }) : c.accept} icon="checkmark-circle-outline"
+              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"
                 onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
               {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
                 onPress={() => decline(order)} />}

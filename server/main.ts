@@ -353,6 +353,9 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
+    // SHIP-08: a parcel or freight delivery failure may be reattempted twice; a support hold is not a delivery attempt.
+    ...(viewer.role === 'admin' && r.status === 'on_hold' && (r.service === 'parcel' || r.service === 'freight') && exceptionReasons.includes(r.exception_reason)
+      && { reattemptAllowed: Number((await one("SELECT COUNT(*) AS n FROM security_events WHERE order_id = ? AND action = 'DELIVERY_EXCEPTION'", r.id))?.n) < 3 }),
     // DRV-17: support sees a courier block's review on the order it ended (PostgreSQL migration 39).
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),

@@ -281,7 +281,7 @@ export default function OrderScreen() {
   // Near the door the customer needs this at a glance, so it leaves the sheet's body for the header a closed sheet still shows.
   const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
   const codes = <>
-    {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
+    {isCustomer && order.handoverCode && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
       <Card tone="clay">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
@@ -532,8 +532,9 @@ export default function OrderScreen() {
         {fill(c.suggestedNext, { a: suggested === 'return' ? c.returnToSender : c.reattempt })}</Txt>}
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
-          variant={action === (suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
-          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
+          variant={action === (order.reattemptAllowed === false ? 'return' : suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
+          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5 || (action === 'reattempt' && order.reattemptAllowed === false)}
+          reason={action === 'reattempt' && order.reattemptAllowed === false ? c.err_reattempt_limit : busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}
       </View>

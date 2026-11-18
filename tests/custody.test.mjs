@@ -70,6 +70,8 @@ try {
   db.prepare("UPDATE orders SET status = 'on_hold', exception_reason = 'support' WHERE id = ?").run(retried.id);
   await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Support hold released' } });
   await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  assert.equal((await call(`/orders/${retried.id}`, { token: admin.token })).reattemptAllowed, false, 'the admin sees the limit before submitting (SHIP-08)');
+  assert.equal((await call(`/orders/${retried.id}`, { token: customer.token })).reattemptAllowed, undefined);
   const refused = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' }, expect: 409 });
   assert.equal(refused.error, 'reattempt_limit');
   const decided = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');

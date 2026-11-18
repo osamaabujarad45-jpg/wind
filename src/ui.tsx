@@ -615,9 +615,9 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
         <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
           {options.tabBarIcon?.({ focused, color, size: 21 })}
-          {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} /* the badge sits over the icon in a fixed-width tab slot */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
+          {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; the badge's minWidth grows with it */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar: two lines, never a cut word */ style={[styles.barText, dense && { fontSize: 11 }, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; two lines in the shared bar, which grows (minHeight) */ style={[styles.barText, dense && { fontSize: 11 }, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;

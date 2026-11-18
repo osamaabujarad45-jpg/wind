@@ -210,6 +210,7 @@ export type Order = {
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
   returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
+  reattemptAllowed?: boolean; // SHIP-08, admin view of a held parcel or freight order
   blockReview?: { dueAt: number; tripPayCents: number; decidedAt: number | null; cleared: boolean | null; paidCents: number | null; blockedBy: number }; // DRV-17, admin only
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;

@@ -5,9 +5,8 @@ import { fill, Txt, useCopy } from './ui';
 export function OfferClock({ seconds, focused }: { seconds: number; focused: boolean }) {
   const { c } = useCopy();
   const clock = seconds === 0 ? c.dispatchExpired : fill(c.dispatchOfferClock, { n: seconds });
-  const announcement = seconds > 5
-    ? fill(c.dispatchOfferTimeAtMost, { n: Math.ceil(seconds / 10) * 10 })
-    : clock;
+  const announcement = seconds > 5 ? fill(c.dispatchOfferTimeAtMost, { n: Math.ceil(seconds / 10) * 10 })
+    : seconds > 0 ? fill(c.dispatchOfferTimeAtMost, { n: 5 }) : clock; // one warning before expiry, not five
   useEffect(() => {
     if (focused && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(announcement);
   }, [announcement, focused]);

@@ -121,7 +121,7 @@ function InboxRow({ order }: { order: Order }) {
         <Badge label={step} tone={!s.state && order.status === 'requested' ? tones.clay : statusFlow.includes(order.status) ? tones.olive : tones.muted} />
       </Row>
       <Txt variant="caption" style={{ marginTop: 4 }}>{fill(c.merchantLines, { n: s.lines.filter(l => !l.removed).length, r: money(s.goodsAgorot / 100) })}</Txt>
-      {!s.state && order.status === 'requested' && <Txt variant="caption" style={{ marginTop: 2 }}>{fill(c.shopAcceptTimer, { t: clock.text })}</Txt>}
+      {!s.state && order.status === 'requested' && <Txt variant="caption" style={{ marginTop: 2 }}>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>}
     </Card>
   </Press>;
 }

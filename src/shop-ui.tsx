@@ -45,14 +45,15 @@ export function QtyControl({ item, qtyMilli, name, onChange }: { item: Pick<Merc
 }
 
 /** Remaining minutes and seconds, announced once a minute and at 60 s and 15 s (A11Y-08). */
-export function useCountdown(until: number | null, label: string) {
+export function useCountdown(until: number | null, label: string, expired?: string) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (!until) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [until]);
   const left = until ? Math.max(0, Math.round((until - now) / 1000)) : 0;
   useEffect(() => {
     if (!until || Platform.OS === 'web') return;
     if (left > 0 && (left % 60 === 0 || left === 15)) AccessibilityInfo.announceForAccessibility(`${label} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
-  }, [left, until, label]);
+    else if (left === 0 && expired) AccessibilityInfo.announceForAccessibility(expired); // A11Y-08: say the timer acted, once
+  }, [left, until, label, expired]);
   return { left, text: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` };
 }
 
@@ -91,7 +92,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
   const s = order.shop!;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const consent = useCountdown(s.change?.expiresAt ?? null, c.shopConsentLeft);
+  const consent = useCountdown(s.change?.expiresAt ?? null, c.shopConsentLeft, c.shopConsentExpired);
   async function act(key: string, path: string, body: object = {}) {
     if (busy) return;
     setBusy(key); setError('');
@@ -133,7 +134,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
         ? fill(c.shopConsentWeight, { item: lineName(s.change, language), from: money(s.change.fromAgorot / 100), to: money(s.change.toAgorot / 100) })
         : fill(c.shopConsentSub, { item: lineName(s.change, language), to: money(s.change.toAgorot / 100) })}</Txt>
       <Txt style={{ marginTop: 4 }}>{fill(c.shopConsentTotal, { r: money(s.change.goodsAfterAgorot / 100) })}</Txt>
-      <Txt variant="caption" accessibilityLabel={fill(c.shopConsentTimer, { t: consent.text })} style={{ marginTop: 4 }}>{fill(c.shopConsentTimer, { t: consent.text })}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4 }}>{consent.left === 0 ? c.shopConsentExpired : fill(c.shopConsentTimer, { t: consent.text })}</Txt>
       <Row style={{ marginTop: 8, flexWrap: 'wrap' }}>
         <Button title={c.shopApprove} loading={busy === 'approve'} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
         <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
@@ -157,8 +158,8 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
 
 function AcceptClock({ until }: { until: number }) {
   const { c } = useCopy();
-  const t = useCountdown(until, c.shopAcceptLeft);
-  return <Txt variant="caption" accessibilityLabel={fill(c.shopAcceptTimer, { t: t.text })}>{fill(c.shopAcceptTimer, { t: t.text })}</Txt>;
+  const t = useCountdown(until, c.shopAcceptLeft, c.shopAcceptExpired);
+  return <Txt variant="caption">{t.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: t.text })}</Txt>;
 }
 
 /** The captain at the shop (DLV-13): check the packages and bags, then enter the shop's code, or report what is wrong. */

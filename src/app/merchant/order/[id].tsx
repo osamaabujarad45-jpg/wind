@@ -15,7 +15,7 @@ export default function MerchantOrder() {
   const { data: order, error, reload, setData } = useApi<Order>(`/orders/${Number(id)}`, 10_000);
   const catalogue = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [prep, setPrep] = useState(20);
-  const [reject, setReject] = useState<(typeof merchantRejects)[number]>('out_of_stock');
+  const [reject, setReject] = useState<(typeof merchantRejects)[number] | null>(null); // never pre-selected: the reason decides DLV-23 money
   const [busy, setBusy] = useState('');
   const [actionError, setActionError] = useState('');
   const [editing, setEditing] = useState<number | null>(null);
@@ -44,15 +44,15 @@ export default function MerchantOrder() {
     <Header title={code} back subtitle={step} />
     {!s.state && order.status === 'requested' && <Card tone="clay">
       <Txt variant="label">{c.merchantStateNew}</Txt>
-      <Txt accessibilityLabel={fill(c.shopAcceptTimer, { t: clock.text })}>{fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
+      <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
       <Stepper value={prep} min={5} max={120} label={c.merchantPrepMinutes} onChange={n => setPrep(Math.round(n / 5) * 5 || 5)} />
       <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
       {!s.acceptExtended && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
-      <Choices label={c.merchantRejectWhy} value={reject} onChange={setReject} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
-      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'}
-        onPress={() => confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
+      <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
+      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject} reason={reject ? undefined : c.merchantRejectChoose}
+        onPress={() => reject && confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
     </Card>}
     {s.state === 'accepted' && <Button title={c.merchantStartPreparing} icon="construct-outline" loading={busy === 'prep'} onPress={() => act('prep', `/merchant/orders/${order.id}/preparing`)} />}
     {s.handoverException && s.state === 'preparing' && <Card tone="clay"><Txt>{fill(c.merchantFixHandover, { problem: c[`handover_${s.handoverException}`] })}</Txt></Card>}
