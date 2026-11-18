@@ -11,7 +11,7 @@ import { etaRange, fromDriver } from '../../map-math';
 import { city, isolate, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
-import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number; scheduledFor?: number | null;
   driver: { firstName: string; vehicle: Vehicle | null; ref: string } | null;
@@ -90,5 +90,7 @@ export default function TrackScreen() {
       {location && !freshness?.stale && <Button title={c.navigate} icon="map-outline" variant="soft"
         onPress={() => { void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`).catch(() => undefined); }} />}
     </Card>
+    {/* The recipient may never have used Wind: say whose page this is (design review D-41). */}
+    <Row gap={8} style={{ justifyContent: 'center', marginTop: 16 }}><Logo size={24} /><Txt variant="title">{c.brand}</Txt></Row>
   </Screen>;
 }
