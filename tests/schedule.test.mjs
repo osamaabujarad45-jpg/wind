@@ -100,6 +100,15 @@ try {
   assert.equal((await call(`/orders/${later.id}/cancel`, { token: customer.token, body: {} })).status, 'cancelled');
   assert.ok(copy.en.scheduledHint.includes('until pickup') && copy.ar.scheduledHint.includes('قبل الاستلام'), 'the scheduled hint matches when cancel really stops');
 
+  // Release review, 18 Nov: booked-ahead orders have their own cap (10 open), so one customer cannot queue releases without end.
+  const open = () => Number(db.prepare("SELECT COUNT(*) n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NOT NULL").get(customer.user.id).n);
+  const queued = [];
+  while (open() < 10) queued.push(await book({ scheduledFor: Date.now() + DAY + queued.length * MIN }));
+  assert.equal((await book({ scheduledFor: Date.now() + 2 * DAY }, 409)).error, 'too_many_searching');
+  await book({}); // an order for now is still allowed: the two caps are separate
+  await call(`/orders/${queued[0].id}/cancel`, { token: customer.token, body: {} });
+  await book({ scheduledFor: Date.now() + 2 * DAY }); // a freed slot is usable again
+
   console.log('schedule: ok');
 } finally {
   await shutdown();

@@ -754,7 +754,9 @@ route('POST', '/api/auth/login', async ({ body }) => {
   const identifier = String(body.identifier ?? body.phone ?? '').trim();
   const phone = normalizePhone(identifier), email = normalizeEmail(identifier);
   const key = identityKey('login', phone ?? phoneIdentity.loginThrottleKey(identifier) ?? email ?? identifier.toLowerCase());
-  (await limit(key, 5, 10 * 60_000, false));
+  // Counted when the attempt starts, not after it fails: checking first let dozens of parallel guesses pass the check
+  // before the first failure was recorded (release review, 18 Nov). A successful sign-in clears the count below.
+  (await limit(key, 5, 10 * 60_000));
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
   let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
@@ -788,10 +790,7 @@ route('POST', '/api/auth/login', async ({ body }) => {
       if (valid) r = await one('SELECT * FROM users WHERE id = ?', r.id);
     }
   }
-  if (!r || !valid) {
-    (await limit(key, 5, 10 * 60_000));
-    fail(401, 'wrong_credentials');
-  }
+  if (!r || !valid) fail(401, 'wrong_credentials');
   (await run('DELETE FROM request_limits WHERE key = ?', key));
   if (r!.status === 'blocked') fail(403, 'blocked');
   if (!contactAllowed(r!)) fail(403, 'verification_required');
@@ -1006,7 +1005,7 @@ async function spendEntraProof(proof: EntraProof) {
 
 route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
-  (await limit(key, 5, 10 * 60_000, false));
+  (await limit(key, 5, 10 * 60_000, false)); // a signed-in session is required here; only wrong current passwords count
   const account = (await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id))!;
   const stored = account.password;
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
@@ -1062,6 +1061,14 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
     (await run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id));
+    // Release review, 18 Nov: four more places held a deleted customer's words, phones or positions.
+    (await run("UPDATE order_disputes SET reason = '—' WHERE customer_id = ?", user.id));
+    (await run("UPDATE safety_incidents SET note = '', lat = NULL, lng = NULL WHERE reporter_id = ?", user.id));
+    if (persistence.backend === 'postgres') {
+      if ((await one("SELECT to_regclass('command_results') AS t"))?.t) (await run('DELETE FROM command_results WHERE actor_id = ?', user.id)); // replies hold full order JSON
+      if ((await quotesAvailable(persistence))) (await run(`UPDATE quotes SET pickup_note = '', dropoff_note = '', contact = '', pickup_contact = NULL, recipient_name = NULL,
+        recipient_phone = NULL, detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?`, user.id)); // migration 36 allows only this scrub
+    }
     (await run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
     if (actorId !== null && actorId !== user.id) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'ACCOUNT_DELETED_BY_ADMIN', ?, ?)`,
@@ -1566,6 +1573,13 @@ route('POST', '/api/price', async ({ user, body }) => {
 // not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
 const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
 const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 86_400_000, 3_600_000); // 24 h
+// Booked-ahead orders do not count toward the cap above (a customer may plan the week), but each one releases to
+// drivers when due, so they get their own bound (release review, 18 Nov). Same message: too many open orders.
+const SCHEDULED_LIMIT = Number(process.env.WIND_SCHEDULED_LIMIT) || 10;
+async function guardScheduledCap(customerId: number) {
+  const n = Number(((await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NOT NULL", customerId)) as { n: number }).n);
+  if (n >= SCHEDULED_LIMIT) fail(409, 'too_many_searching');
+}
 
 async function createOrder(user: User, body: Row, smart?: { price: number; km: number }, authorize?: () => Promise<User>) {
   // T21: the cap check and the insert share the caller's write transaction — every booking path enters
@@ -1617,11 +1631,15 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
       if (quoted && supplied !== quoted) fail(409, 'itinerary_changed');
       return quoted || supplied;
     };
+    const flatFare = quoted.service === 'parcel'; // a parcel's price does not depend on where its pins are
     const fillPoint = (quotedLat: unknown, quotedLng: unknown, bodyValue: unknown, cityId: unknown) => {
       const quoted = quotedLat != null ? { latitude: Number(quotedLat), longitude: Number(quotedLng) } : null;
       if (bodyValue === undefined || bodyValue === null) return quoted;
       const supplied = bookedPoint(bodyValue, cityId as CityId);
       if (!supplied) return quoted;
+      // A ride or load is priced by distance: a pin its quote never saw would redraw the route at the old fare
+      // (a 4 km city-centre quote booked as a 40 km trip). The app always quotes with its pins (release review, 18 Nov).
+      if (!quoted && !flatFare) fail(409, 'itinerary_changed');
       if (quoted && (Math.abs(supplied.latitude - quoted.latitude) > 1e-4 || Math.abs(supplied.longitude - quoted.longitude) > 1e-4)) fail(409, 'itinerary_changed');
       return quoted ?? supplied;
     };
@@ -1669,6 +1687,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     if (promo && body.expectedDiscount != null && Number(body.expectedDiscount) !== promo.discount) fail(409, 'promo_changed');
     const scheduledFor = quoted.scheduled_for as number | null;
     if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= nowTs + RELEASE_BEFORE && scheduledFor <= nowTs + 7 * DAY)) fail(400, 'invalid_schedule');
+    if (scheduledFor !== null) await guardScheduledCap(user.id);
     // Promo last-budget race: lock the promo row when applicable.
     if (promo?.id) {
       const promoRow = (await one('SELECT * FROM promo_codes WHERE id=? FOR UPDATE', promo.id)) ?? fail(409, 'promo_used');
@@ -1749,6 +1768,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   }
   const scheduledFor = body.scheduledFor ?? null;
   if (scheduledFor !== null && !(Number.isInteger(scheduledFor) && scheduledFor >= now + RELEASE_BEFORE && scheduledFor <= now + 7 * DAY)) fail(400, 'invalid_schedule');
+  if (scheduledFor !== null) await guardScheduledCap(user.id);
   checkPriorityCutoff(priority, fail);
   if (authorize) user = await authorize();
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,

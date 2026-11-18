@@ -92,6 +92,14 @@ try {
   const tapped = await finished(customer.token);
   await Promise.all([1, 2].map(() => call(`/orders/${tapped.id}/dispute`, { token: customer.token, body: { reason: 'Double tapped complaint' } })));
   assert.equal((await call('/admin/disputes', { token: admin.token })).filter(d => d.orderId === tapped.id).length, 1);
+
+  // Release review, 18 Nov: deleting the account blanks the customer's dispute words and safety reports (note and position).
+  db.prepare("INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at) VALUES (?, ?, 'customer', 'other', 'Near my home gate', 31.9, 35.2, ?)")
+    .run(tapped.id, customer.user.id, Date.now());
+  await call(`/orders/${booked.id}/cancel`, { token: customer.token, body: {} }); // open orders block deletion
+  await call('/me/delete', { token: customer.token, body: { password: 'secret1' } });
+  assert.deepEqual(db.prepare('SELECT DISTINCT reason FROM order_disputes WHERE customer_id = ?').all(customer.user.id).map(r => r.reason), ['—']);
+  assert.deepEqual({ ...db.prepare('SELECT note, lat, lng FROM safety_incidents WHERE reporter_id = ?').get(customer.user.id) }, { note: '', lat: null, lng: null });
   console.log('credit: ok');
 } finally {
   await shutdown();

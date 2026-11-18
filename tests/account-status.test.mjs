@@ -72,7 +72,14 @@ try {
   const back = await login('0599810003', 'secret1', 200);
   assert.ok(back.token, 'an unblocked user gets a session');
   await call('/me', { token: back.token });
-  console.log('Account status checks passed: approval push, blocked code, enumeration policy, unblock.');
+
+  // Release review, 18 Nov: the sign-in limit counts an attempt when it starts, so parallel guesses cannot all pass a
+  // check-only gate before the first failure is recorded. Ten at once: at most five are judged, the rest are refused.
+  const burst = await Promise.all(Array.from({ length: 10 }, () => realFetch(`${base}/auth/login`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0599810077', password: 'guess-pass' }) }).then(r => r.status)));
+  assert.ok(burst.filter(status => status === 401).length <= 5, `at most five guesses judged: ${burst}`);
+  assert.equal(burst.filter(status => status === 429).length + burst.filter(status => status === 401).length, 10);
+  console.log('Account status checks passed: approval push, blocked code, enumeration policy, unblock, parallel guess limit.');
 } finally {
   globalThis.fetch = realFetch;
   await shutdown();

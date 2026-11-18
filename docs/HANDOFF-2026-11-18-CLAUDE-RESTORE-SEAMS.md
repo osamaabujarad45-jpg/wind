@@ -80,3 +80,22 @@ Source: `docs/DESIGN-REVIEW-2026-11-18.md` in worktree `review-continue-session-
 - **#93** applies D-04, D-05, D-12, D-16, D-26, D-29, D-36 and a new Arabic admin tab fix (المستخدمون → الحسابات in a seven-tab bar), with the full `npm run screens` set regenerated on the test PC.
 - Already met on master: D-01 (old-lineage T3/OpenCode slides), D-03, D-07, D-08 (privacy link), D-11, D-14, D-23, D-24, D-25, D-35.
 - Open: D-02 (keep-alive reset seen by the capture harness), D-06 (tile data), D-09, D-10 (product decision), D-13, D-15, D-17–D-22, D-27, D-28, D-31–D-34, D-37–D-40, and the third pass D-41–D-65 (not yet verified on master). The seven-tab Arabic admin bar (shop line on) is tight: الاشتراكات and الإعدادات nearly touch; production shows six tabs.
+
+## 8. Release-readiness pass (later 18 Nov, Opus)
+
+Owner instruction this session: run tests on the dev PC ("use this pc insted this time") — the test PC is mid-reinstall (IP now 192.168.1.19, data drive empty, Windows install USB as D:). This worktree now has its own `npm ci` install (the old junction to the main checkout's `node_modules` resolved unvendored picomatch and failed `dependency-security` and `check:audit` locally).
+
+Merged: #93 (design fixes still valid on master; seven-tab bar uses the 11 pt floor), #94 (tracking-page brand footer, profile email wrap, new `track` screenshot; D-21 reverted after review).
+
+Logic review (Haiku 5.5, read-only) of auth, booking, dispatch, cash, authorization and validation on master `5b19fd3d`; each finding verified in code. Fixed in **#95**:
+- High: a ride/freight quote priced on city centres accepted pins at booking and kept the old fare (4 km quote booked as 40 km). Late pins now join only flat-fare parcels; red run fails on master (`quotes.mjs:134`).
+- Medium: account deletion left personal data in quotes, command replies, dispute reasons and safety reports. Scrubbed; PostgreSQL migration 36 lets the quote guard accept only the scrub (fare fields stay immutable).
+- Medium: booked-ahead orders had no per-customer cap. Now 10 open (`WIND_SCHEDULED_LIMIT`), same refusal message.
+- Low: sign-in counted attempts only after failure (parallel guesses passed a check-only gate). Now counted at entry; success still clears it. Password change unchanged (needs a session; counting every attempt broke legitimate Entra steps).
+Recorded, not changed: disputed handovers are void by product rule (cashier re-records); returned parcels owe commission by `SPEC-delivery-exceptions.md` (sender pays); driver pickup failures are audited (`PICKUP_FAILED`); positive cash adjustments need no second approver (governance choice); SQLite has no forgiveness path (fail-closed).
+
+Other checks: no secrets in the repo (one regex hit is base64 WebAssembly in `public/vendor/mapbox-gl-rtl-text.js`); the 19 `npm audit` advisories are Expo/React Native build tooling, accepted by `check:audit` on a clean install; production Caddy upstream keepalive (4 s) is below Node's 5 s (`infra/vm/Caddyfile`), so the review's keep-alive note (D-02) is handled for the VM — the 16 Nov student host's Caddy config is not in the repo and is unverified.
+
+Slice #5 (map-first home and failure states) is already met on master: home lists the current order first (one tap), map load/tile failure becomes a retry state (`map.html` fail → `map-provider-boundary.tsx` retry), approximate/inaccurate location, stale driver fix ("Last known location") and estimated-route copy exist.
+
+Still open: D-06 (Arabic street names: tile data), D-10 (design-packet features need backend contracts), D-17, D-18, D-20 label clipping, D-22, D-23 remaining literal sizes, D-27/D-28/D-33/D-34/D-38/D-40/D-50 (minor); D-09 is recorded as fixed in the old-lineage review doc but was declined on master (no product rule for "next stop"). Device passes (A53, TalkBack/VoiceOver, 200 % text) not done this session; the phone update-install test is still not run.
