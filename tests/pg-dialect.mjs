@@ -32,6 +32,11 @@ try{
   await call('/me/places',{token:customer.token,body:{label:'home',city:'ramallah',note:'Synthetic first home'}});
   const places=await call('/me/places',{token:customer.token,body:{label:'home',city:'bireh',note:'Synthetic replacement home'}});
   assert.equal(places.saved.filter(p=>p.label==='home').length,1,'nullable IS NOT parameter preserves only the replacement place');
+  // Research #6 on PostgreSQL: the pin is stored, and COALESCE keeps it when the place is re-saved without one.
+  const pin={latitude:31.9105,longitude:35.2156};
+  await call('/me/places',{token:customer.token,body:{label:'home',city:'bireh',note:'Synthetic replacement home',point:pin}});
+  const kept=await call('/me/places',{token:customer.token,body:{label:'home',city:'bireh',note:'Synthetic replacement home'}});
+  assert.deepEqual(kept.saved.find(p=>p.label==='home').point,pin,'saved place pin survives a pinless re-save');
   const subscription=await call('/subscriptions',{token:switcher.token,body:{}});
   assert.equal(subscription.subscription.status,'pending');
   const pending=await call('/admin/subscriptions',{token:admin.token});

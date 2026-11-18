@@ -1090,7 +1090,7 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
 // Saved and recent places (SPEC-saved-places.md): landmarks are the address here, so a repeat booking reuses them.
 const MAX_PLACES = 10;
 async function places(user: User) {
-  const saved = (await all("SELECT id, label, city, note FROM saved_places WHERE user_id = ? ORDER BY CASE label WHEN 'home' THEN 0 WHEN 'work' THEN 1 ELSE 2 END, id", user.id));
+  const saved = (await all("SELECT id, label, city, note, lat, lng FROM saved_places WHERE user_id = ? ORDER BY CASE label WHEN 'home' THEN 0 WHEN 'work' THEN 1 ELSE 2 END, id", user.id));
   const seen = new Set(saved.map(p => `${p.city}
 ${p.note}`));
   const recent: { city: string; note: string; point?: Point }[] = [];
@@ -1102,7 +1102,10 @@ ${note}`;
       if (latitude != null && !pinned.has(key)) pinned.set(key, { latitude, longitude });
       if (note && !seen.has(key) && recent.length < 5) { seen.add(key); recent.push({ city, note, ...(latitude != null && { point: { latitude, longitude } }) }); }
     }
-  const located = saved.map((p: Row) => {
+  // The place's own pin wins (research #6); a place saved without one borrows where this customer's recent orders put it.
+  // `pinSaved` tells the app the pin is the place's own, so it can offer to save one when the pin is only borrowed.
+  const located = saved.map(({ lat, lng, ...p }: Row) => {
+    if (lat != null && lng != null) return { ...p, point: { latitude: Number(lat), longitude: Number(lng) }, pinSaved: true };
     const point = pinned.get(`${p.city}
 ${p.note}`);
     return point ? { ...p, point } : p;
@@ -1114,14 +1117,16 @@ route('POST', '/api/me/places', async ({ user, body }) => {
   need(user, 'customer');
   if (!['home', 'work', 'other'].includes(body.label) || !isCity(body.city)) fail(400, 'invalid_input');
   const note = text(body.note, 200);
+  const point = bookedPoint(body.point, body.city); // optional; a pin must sit inside the city it is saved under
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     const existing = (await one('SELECT id FROM saved_places WHERE user_id = ? AND city = ? AND note = ?', user.id, body.city, note));
     if (body.label !== 'other') (await run('DELETE FROM saved_places WHERE user_id = ? AND label = ? AND id IS NOT ?', user.id, body.label, existing?.id ?? null)); // one Home, one Work
-    if (existing) (await run('UPDATE saved_places SET label = ? WHERE id = ?', body.label, existing.id));
+    // Re-saving without a pin keeps the pin the place already has.
+    if (existing) (await run('UPDATE saved_places SET label = ?, lat = COALESCE(?, lat), lng = COALESCE(?, lng) WHERE id = ?', body.label, point?.latitude ?? null, point?.longitude ?? null, existing.id));
     else {
       if ((await one('SELECT COUNT(*) n FROM saved_places WHERE user_id = ?', user.id))!.n >= MAX_PLACES) fail(409, 'places_full');
-      (await run('INSERT INTO saved_places (user_id, label, city, note, created_at) VALUES (?, ?, ?, ?, ?)', user.id, body.label, body.city, note, Date.now()));
+      (await run('INSERT INTO saved_places (user_id, label, city, note, lat, lng, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', user.id, body.label, body.city, note, point?.latitude ?? null, point?.longitude ?? null, Date.now()));
     }
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }

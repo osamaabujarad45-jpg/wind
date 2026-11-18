@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultSettings, quote } from '../src/model.ts';
+import { city, defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-places-'));
@@ -33,6 +33,24 @@ try {
   assert.deepEqual(places.saved.map(p => [p.label, p.city]), [['home', 'ramallah']]);
   places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } }); // same place relabelled
   assert.deepEqual(places.saved.map(p => [p.label, p.city, p.note]), [['work', 'ramallah', 'Al-Manara']]);
+  assert.equal(places.saved[0].point, undefined); // landmark-only
+
+  // Research #6: a place keeps its own pin, re-saving without one keeps it, and a pin must be real and inside its city.
+  const manara = { latitude: 31.9038, longitude: 35.2034 };
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: manara } });
+  assert.deepEqual(places.saved[0].point, manara);
+  assert.equal(places.saved[0].pinSaved, true);
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } });
+  assert.deepEqual(places.saved[0].point, manara);
+  const moved = { latitude: 31.9041, longitude: 35.2041 }; // a new pin replaces the stored one (last write wins)
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: moved } });
+  assert.deepEqual(places.saved[0].point, moved);
+  places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara', point: manara } });
+  assert.deepEqual({ ...db.prepare('SELECT lat, lng FROM saved_places WHERE note = ?').get('Al-Manara') }, { lat: 31.9038, lng: 35.2034 });
+  const jenin = city('jenin');
+  assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Far', point: { latitude: jenin.latitude, longitude: jenin.longitude } }, expect: 400 })).error, 'outside_area');
+  assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Bad', point: { latitude: 'x', longitude: 35 } }, expect: 400 })).error, 'invalid_location');
+  assert.equal((await call('/me/places', { token: t })).saved.length, 1); // refused pins saved nothing
 
   for (let i = 1; i <= 9; i++) places = await call('/me/places', { token: t, body: { label: 'other', city: 'hebron', note: `Shop ${i}` } });
   assert.equal(places.saved.length, 10);
@@ -48,14 +66,23 @@ try {
   assert.equal(places.saved.length, 9);
   await call(`/me/places/${id}`, { token: t, method: 'DELETE', expect: 404 });
 
+  // A landmark-only place lends the pin of the customer's order there, without claiming it as its own.
+  await call('/me/places', { token: t, body: { label: 'other', city: 'jenin', note: 'Old market' } });
   // Recent places come from the customer's own orders, de-duplicated and excluding saved ones.
   const order = { service: 'parcel', option: 'small', shared: false, contact: '0599600001', detail: 'Box' };
   for (const [pickupCity, pickupNote, dropoffCity, dropoffNote] of [['ramallah', 'Al-Manara', 'jenin', 'Old market'], ['bethlehem', 'Manger Square', 'jenin', 'Old market']]) {
     const input = { ...order, pickupCity, pickupNote, dropoffCity, dropoffNote };
-    await call('/orders', { token: t, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+    // The Al-Manara order is pinned elsewhere: the saved place's own pin must still win over the borrowed one.
+    const market = { latitude: jenin.latitude + 0.001, longitude: jenin.longitude + 0.001 };
+    const pins = pickupNote === 'Al-Manara' ? { pickupPoint: { latitude: 31.9001, longitude: 35.2001 }, dropoffPoint: market } : {};
+    await call('/orders', { token: t, body: { ...input, ...pins, quotedPrice: quote(defaultSettings, input) } });
   }
   places = await call('/me/places', { token: t });
-  assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }, { city: 'jenin', note: 'Old market' }]);
+  assert.deepEqual(places.saved.find(p => p.note === 'Al-Manara').point, manara);
+  const lent = places.saved.find(p => p.note === 'Old market');
+  assert.deepEqual(lent.point, { latitude: jenin.latitude + 0.001, longitude: jenin.longitude + 0.001 });
+  assert.equal(lent.pinSaved, undefined); // borrowed, so the app may still offer to save a pin the customer places
+  assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }]); // Old market is saved now
   assert.deepEqual((await call('/me/places', { token: other.token })).recent, []);
 
   // Account deletion removes them (open orders block deletion, so cancel first).

@@ -50,7 +50,7 @@ sqlite.prepare("INSERT INTO driver_locations(driver_id,lat,lng,updated_at) VALUE
 sqlite.prepare("INSERT INTO checkpoints(name,cities,created_by,created_at,lat,lng) VALUES('حاجز تجريبي','[\"ramallah\"]',?,?,31.9,35.2)").run(admin,now);
 const checkpoint=sqlite.prepare('SELECT max(id) id FROM checkpoints').get().id;
 sqlite.prepare("INSERT INTO checkpoint_reports(checkpoint_id,reporter_id,status,note,created_at) VALUES(?,?,'slow','تجربة',?)").run(checkpoint,driver,now);
-sqlite.prepare("INSERT INTO saved_places(user_id,label,city,note,created_at) VALUES(?,'other','ramallah','العنوان التجريبي',?)").run(user,now);
+sqlite.prepare("INSERT INTO saved_places(user_id,label,city,note,lat,lng,created_at) VALUES(?,'other','ramallah','العنوان التجريبي',31.9,35.2,?)").run(user,now);
 sqlite.prepare("INSERT INTO promo_codes(code,amount,max_uses,expires_at,created_by,created_at) VALUES('WP03X',1,10,?,?,?)").run(now+86400000,admin,now);
 const promo=sqlite.prepare("SELECT id FROM promo_codes WHERE code='WP03X'").get().id;
 sqlite.prepare('INSERT INTO promo_owners(promo_id,user_id) VALUES(?,?)').run(promo,user);

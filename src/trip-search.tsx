@@ -130,7 +130,7 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
       <Row icon="pin-outline" title={c.setOnMap} onPress={() => { Keyboard.dismiss(); haptic.tap(); onMap(field); }} />
       {!term && <>
         {places.saved.map(p => <Row key={`s${p.id}`} icon={p.label === 'home' ? 'home-outline' : p.label === 'work' ? 'briefcase-outline' : 'star-outline'} title={placeName(p.label, p.note)}
-          detail={p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} onForget={() => onForget(p.id)} />)}
+          detail={`${p.point ? '' : `${c.placeNoPin} · `}${p.label === 'other' ? city(p.city)[language] : `${city(p.city)[language]} · ${p.note}`}`} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} onForget={() => onForget(p.id)} />)}
         {places.recent.map((p, i) => <Row key={`r${i}`} icon="time-outline" title={p.note} detail={city(p.city)[language]} onPress={() => pick({ city: p.city, point: p.point ?? null, note: p.note })} />)}
         {!places.saved.length && !places.recent.length && cities.map(item => <Row key={item.id} icon="business-outline" title={item[language]} onPress={() => pick({ city: item.id, point: null, note: '' })} />)}
       </>}
