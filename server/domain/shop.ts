@@ -843,7 +843,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     void actor;
   }
   /** After a completed or returned shop order commits its status: the money rows (DLV-15, DLV-25, DRV-17). */
-  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}) {
+  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}, supportCollected = false) {
     if (r.service !== 'shop') return;
     if (next === 'completed') await recordSeals(r, body, 'deliver', actor);
     const s = (await shopRow(r.id))!;
@@ -872,9 +872,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     // DRV-17: after a courier block support collected the goods; the trip so far is paid only by a cleared block review.
     if (db.backend === 'postgres' && (await db.one("SELECT to_regclass('courier_block_reviews') AS t"))?.t
       && await db.one('SELECT 1 FROM courier_block_reviews WHERE order_id = ?', r.id)) return;
-    const pay = 2 * Number(s.delivery_fee_agorot);
+    // After a custody recovery support collected the goods: the captain is paid the trip so far (one fee), no return leg.
+    const pay = (supportCollected ? 1 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
-      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
+      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, supportCollected ? 'Trip so far, support recovered the goods' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }

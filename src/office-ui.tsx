@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
-import { api, errorCode, useApi } from './api';
+import { api, useApi } from './api';
 import { orderCode } from './model';
 import { useFormat } from './parts';
 import { Button, Card, Check, confirm, ErrorText, Field, fill, Loading, Press, Row, Section, Txt, useCopy } from './ui';
@@ -18,7 +18,7 @@ type Office = { receivedAt: number; perishable: boolean; until: number; closed: 
 
 /** On a returned parcel's page, for support. */
 export function OfficePanel({ orderId }: { orderId: number }) {
-  const { c } = useCopy();
+  const { c, err } = useCopy();
   const { time } = useFormat();
   const { data, error, reload, setData } = useApi<{ office: Office | null }>(`/admin/orders/${orderId}/office`);
   const [note, setNote] = useState('');
@@ -33,7 +33,7 @@ export function OfficePanel({ orderId }: { orderId: number }) {
     try {
       setData(await api<{ office: Office }>(`/admin/orders/${orderId}/office`, { action, note: note.trim(), ...(action === 'received' && { perishable }) }));
       setNote('');
-    } catch (e) { setFailure(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setFailure(err(e)); }
     finally { setBusy(''); }
   }
   const noted = note.trim().length >= 5;

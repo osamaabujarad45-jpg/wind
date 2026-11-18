@@ -13,6 +13,9 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   if (!user) fail(401, 'unauthorized');
   if (typeof body.commandId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.commandId)) fail(400, 'invalid_command_id');
   if (!/^\/api\/(orders(?:\/|$)|jobs\/|admin\/orders\/|admin\/cash(?:\/|$)|driver\/cash(?:\/|$))/.test(path)) fail(400, 'unsupported_command');
+  // Ride lifecycle steps replay on their own state (arrival, no-show event, one-shot grace) and take strict bodies with no
+  // envelope fields: refuse the envelope before anything is stored rather than record an invalid_input (review 19 Nov).
+  if (/^\/api\/orders\/\d+\/(?:arrive|ride\/no-show|ride\/grace-extension)$/.test(path)) fail(400, 'unsupported_command');
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
@@ -53,6 +56,9 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
       }
     }
     if (Number.isSafeInteger(response?.redactedOrderId)) return authorizeOrder(response.redactedOrderId);
+    // A reply scrubbed by the 18 Nov release kept only {id, status} of the deleted customer's order: re-read it the same way.
+    if (target && response && Object.keys(response).length === 2 && response.id === Number(target[1]) && typeof response.status === 'string')
+      return authorizeOrder(response.id);
     return response;
   }
   let response: unknown, error: Failure | undefined;

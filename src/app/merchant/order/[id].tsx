@@ -4,14 +4,14 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { api, errorCode, useApi } from '../../../api';
+import { api, useApi } from '../../../api';
 import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
 
 export default function MerchantOrder() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { c, language, money, rtl } = useCopy();
+  const { c, language, money, rtl, err } = useCopy();
   const { data: order, error, reload, setData } = useApi<Order>(`/orders/${Number(id)}`, 10_000);
   const catalogue = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [prep, setPrep] = useState(20);
@@ -30,7 +30,7 @@ export default function MerchantOrder() {
     if (busy) return;
     setBusy(key); setActionError('');
     try { setData(await api<Order>(path, body)); setEditing(null); setGrams(''); setSubstitute(''); }
-    catch (e) { setActionError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setActionError(err(e)); }
     finally { setBusy(''); }
   }
   const code = `W-${String(order.id).padStart(5, '0')}`;
@@ -115,12 +115,12 @@ export default function MerchantOrder() {
 }
 
 function RateCustomer({ order, onDone }: { order: Order; onDone: (o: Order) => void }) {
-  const { c } = useCopy();
+  const { c, err } = useCopy();
   const [error, setError] = useState('');
   return <Card>
     <Txt variant="label">{c.merchantRateCustomer}</Txt>
     <Row style={{ marginTop: 4, flexWrap: 'wrap' }}>{[1, 2, 3, 4, 5].map(n => <Button key={n} size="sm" variant="ghost" title={String(n)} label={fill(c.shopStars, { n })}
-      onPress={async () => { try { onDone(await api<Order>(`/orders/${order.id}/shop/rate`, { rating: n })); } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); } }} />)}</Row>
+      onPress={async () => { try { onDone(await api<Order>(`/orders/${order.id}/shop/rate`, { rating: n })); } catch (e) { setError(err(e)); } }} />)}</Row>
     <ErrorText>{error}</ErrorText>
   </Card>;
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, errorCode, useApi } from '../../api';
+import { api, useApi } from '../../api';
 import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
@@ -14,7 +14,7 @@ import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Li
 type Statement = { balanceAgorot: number; payableAgorot: number; entries: { id: number; orderId: number | null; kind: string; amountAgorot: number; note: string; reference: string | null; createdAt: number }[] };
 
 export default function MerchantHome() {
-  const { c, money, rtl } = useCopy();
+  const { c, money, rtl, err } = useCopy();
   const mine = useApi<{ merchant: Merchant | null }>('/merchant');
   const merchant = mine.data?.merchant;
   const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(merchant && merchant.status !== 'pending' ? '/merchant/orders' : null, 10_000);
@@ -32,7 +32,7 @@ export default function MerchantHome() {
   async function pause(paused: boolean) {
     setBusy(true); setError('');
     try { await api('/merchant/settings', { paused }); await mine.reload(); }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }
   return <Screen onRefresh={async () => { await mine.reload(); await inbox.reload(); await statement.reload(); }}>
@@ -72,7 +72,7 @@ export default function MerchantHome() {
 
 /** MER-02 / DLV-01: one opening range for every day (the pilot's need); empty means open whenever not paused. */
 function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolean; onSaved: (done: boolean) => void }) {
-  const { c } = useCopy();
+  const { c, err } = useCopy();
   const first = merchant.hours[0];
   // The editor writes one range for every day; hours stored per day (by support) are replaced on save, and it says so.
   const uniform = !merchant.hours.length || (merchant.hours.length === 7 && new Set(merchant.hours.map(h => h.weekday)).size === 7
@@ -90,7 +90,7 @@ function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolea
       await api('/merchant/settings', { hours: empty ? [] : [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close })) });
       onSaved(true);
       if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(c.saved);
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }
   const edit = (set: (text: string) => void) => (text: string) => { set(text); if (saved) onSaved(false); };
@@ -128,7 +128,7 @@ function InboxRow({ order }: { order: Order }) {
 
 /** ACC-06: shop name, category, pin, phone, trade licence and its expiry. An admin approves it (MER-08). */
 function Apply({ onDone }: { onDone: () => void }) {
-  const { c, language } = useCopy();
+  const { c, language, err } = useCopy();
   const { me } = useSession();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<ShopCategory>('grocery');
@@ -147,7 +147,7 @@ function Apply({ onDone }: { onDone: () => void }) {
   async function apply() {
     setBusy(true); setError('');
     try { await api('/merchant/apply', { name: name.trim(), category, city: town, point, phone, licenceNo: licence.trim(), licenceExpiresAt: expiresAt }); onDone(); }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }
   const centre = cities.find(x => x.id === town)!;

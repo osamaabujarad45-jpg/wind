@@ -74,6 +74,9 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
       // A double submit (or a second admin choosing the same driver) finds the work already done.
       if (order.driver_id === driverId && ['assigned', 'at_pickup'].includes(order.status as string)) { /* nothing to do */ } else {
         if (!ASSIGNABLE.includes(order.status as string)) fail(409, 'cannot_assign');
+        // DRV-17: custody is never re-queued; a shop order handed to its captain stays with them even while still at_pickup.
+        if (order.service === 'shop' && order.driver_id != null
+          && await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", orderId)) fail(409, 'cannot_release');
         if ((body.expectedStatus !== undefined && body.expectedStatus !== order.status)
           || (body.expectedDriverId !== undefined && (body.expectedDriverId ?? null) !== (order.driver_id ?? null))) fail(409, 'order_changed');
         const rate = await deps.driverRate(driverId);

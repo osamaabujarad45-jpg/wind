@@ -567,8 +567,13 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
 export const eligibility = new Eligibility(persistence, fail); // exported for the admin-assign test seam
-registerEligibilityRoutes(route, eligibility, async (order, action) => {
-  if (action === 'confirm_return') await postOrderJournals(order.id);
+registerEligibilityRoutes(route, eligibility, async (order, action, actorId) => {
+  if (action === 'confirm_return') {
+    // DRV-17: a custody recovery settles a shop order like any return, but support carried the goods back: trip so far only.
+    const row = await one('SELECT * FROM orders WHERE id = ?', order.id);
+    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, true);
+    await postOrderJournals(order.id);
+  }
   await queuePush([order.driver_id], 'decided', order.id);
   await queuePush([order.customer_id], ({ hold: 'on_hold', return: 'returning', confirm_return: 'returned' } as const)[action], order.id);
 });
@@ -2750,6 +2755,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   try {
     const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
+    if (order.service === 'ride') fail(409, 'cannot_resolve'); // SRS §2.1: rides never hold or return
     await shop.guardResolve(id, String(body.action));
     if (body.action === 'reattempt' && (order.service === 'parcel' || order.service === 'freight') && exceptionReasons.includes(order.exception_reason)) {
       const attempts = await one("SELECT COUNT(*) AS n FROM security_events WHERE order_id = ? AND action = 'DELIVERY_EXCEPTION'", id);
@@ -3476,6 +3482,10 @@ const editUser: Handler = async ({ user, params, body }) => {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     // Re-checked inside the write transaction: a job accepted after the reads above must not be stranded by this edit.
+    // The driver's active orders lock before the driver row: an advance holds its order and the assignment trigger then wants the
+    // driver row, so locking the driver first could deadlock against it (review 19 Nov).
+    if (persistence.backend === 'postgres' && target.role === 'driver')
+      await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, target.id);
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', target.id);
     // Every decision below came from the read before the lock: another admin's block or approval in between must not be silently reverted.
     const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
@@ -3519,7 +3529,9 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
-      if (o.status === 'assigned' || o.status === 'at_pickup') { // not collected yet: back to the pool, as a release would
+      const handedOver = o.service === 'shop' && (await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", o.id));
+      o.requeued = (o.status === 'assigned' || o.status === 'at_pickup') && !handedOver;
+      if (o.requeued) { // not collected yet: back to the pool, as a release would
         const backPrice = await restoredFare(Number(o.id), (o.recommended_price ?? o.price) as number, o.price as number); // ADM-12, as a release
         const backDiscount = (await restoredDiscount(Number(o.id), backPrice, o.discount as number | null));
         (await run(`UPDATE orders SET driver_id = NULL, commission = NULL, price = ?, discount = ?, status = 'searching',
@@ -3549,7 +3561,7 @@ const editUser: Handler = async ({ user, params, body }) => {
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   for (const o of carrying) {
-    if (o.status === 'assigned' || o.status === 'at_pickup') { await queuePush([o.customer_id], 'released', o.id); await reofferReleased(o.service as Service, Number(o.id), Number(o.customer_id), target.id); }
+    if (o.requeued) { await queuePush([o.customer_id], 'released', o.id); await reofferReleased(o.service as Service, Number(o.id), Number(o.customer_id), target.id); }
     else if (o.service === 'ride') await queuePush([o.customer_id], 'cancelled', o.id);
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
@@ -3864,6 +3876,9 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const customerOffer = /^\/api\/orders\/(\d+)\/offers\/(\d+)\/accept$/.exec(url.pathname);
       if (req.method === 'POST' && driverWork) {
         need(user!, 'driver'); needActive(user!);
+        // Lock order everywhere: order row (above), then the rider's ride fence, then the eligibility policy row (Dispatch.acceptOffer
+        // and admin assign do the same). The fence also refuses before eligibility.guard writes any reservation (review 19 Nov).
+        if (driverWork[2] === 'accept') await guardRideAssignment(Number(driverWork[1]));
         const work = await getOrder(Number(driverWork[1]), user!);
         // Before eligibility.guard writes reservations: a cash-cap refusal must leave nothing behind (the handler checks again).
         if (driverWork[2] === 'accept' && body.offerId === undefined && body.leaseNonce === undefined) await guardCashCap(user!.id, work.price, await driverRate(user!.id));
@@ -3871,6 +3886,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
         const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
+        await guardRideAssignment(Number(order.id)); // same lock order and refuse-before-write as a driver accept
         if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
         const offer = await one('SELECT price FROM order_offers WHERE order_id=? AND driver_id=?', Number(customerOffer[1]), Number(customerOffer[2]));
         if (offer) await guardCashCap(Number(customerOffer[2]), Number(offer.price), await driverRate(Number(customerOffer[2])), 'offer_expired');

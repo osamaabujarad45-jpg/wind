@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, errorCode } from './api';
+import { api } from './api';
 import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
@@ -87,7 +87,7 @@ function Money({ label, value, strong }: { label: string; value: string; strong?
 
 /** The customer's part of a shop order: the actor-named step, the consent card, cancel while free, rating and order again. */
 export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language, money } = useCopy();
+  const { c, language, money, err } = useCopy();
   const s = order.shop!;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -96,7 +96,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
     if (busy) return;
     setBusy(key); setError('');
     try { onChange(await api<Order>(path, body)); haptic.success(); }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   async function again() {
@@ -116,7 +116,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       const existing = await currentCart();
       if (existing) confirm(fill(c.shopReplaceCart, { shop: existing.merchantName }), openCart, c.shopClearYes, c.cancel);
       else openCart();
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   // After a failed delivery (DLV-20) the order status says where the goods are, not the last shop step.
@@ -163,7 +163,7 @@ function AcceptClock({ until }: { until: number }) {
 
 /** The captain at the shop (DLV-13): check the packages and bags, then enter the shop's code, or report what is wrong. */
 export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language } = useCopy();
+  const { c, language, err } = useCopy();
   const s = order.shop!;
   const [code, setCode] = useState('');
   const [problem, setProblem] = useState<(typeof handoverExceptions)[number]>('missing_item');
@@ -181,7 +181,7 @@ export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: 
         ...(check.result === 'ok' && { code: latinDigits(code) }) }));
       attempt.current = null;
       haptic.success();
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   if (s.state !== 'ready') return <Card tone="muted"><Txt>{s.handoverException ? fill(c.shopWaitFix, { problem: c[`handover_${s.handoverException}`] }) : c.shopWaitReady}</Txt></Card>;
@@ -222,7 +222,7 @@ export const sealsReady = (order: Order, value: Record<number, boolean>) => (ord
 /** Support's shop actions on one order (DLV-13, DLV-22, DLV-23, DLV-25): a typed cancel with a note, the fault result,
  * unsellable credit, a refund, and the audited pickup-code reset. The server enforces when each is allowed. */
 export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language } = useCopy();
+  const { c, language, err } = useCopy();
   const s = order.shop!;
   const [reason, setReason] = useState<string>('operational');
   const [note, setNote] = useState('');
@@ -236,7 +236,7 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
     if (busy) return;
     setBusy(key); setError('');
     try { onChange(await api<Order>(path, body)); setNote(''); if (key === 'refund') { setRefund(''); setRefundId(newRequestId()); } }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   const noteOk = note.trim().length >= 5;

@@ -291,6 +291,7 @@ export class ResourceScope {
     if (Object.keys(body).some(k => k !== 'actual')) this.fail(400, 'invalid_input');
     const order = await this.orderFor(orderId);
     if (Number(order.driver_id) !== actor.id) this.fail(404, 'not_found');
+    if (order.service === 'ride') this.fail(409, 'not_a_ride'); // SRS §2.1: a ride never enters on_hold
     if (order.status !== 'at_pickup') this.fail(409, 'cannot_check_pickup');
     if (await this.db.one("SELECT id FROM safety_incidents WHERE order_id=? AND status='open' LIMIT 1", orderId)) this.fail(409, 'safety_hold');
     const effective = await this.effective(orderId);
