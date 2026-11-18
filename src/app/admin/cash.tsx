@@ -13,7 +13,12 @@ type Balance = { driverId: number; name: string; phone: string; owedCents: numbe
 // A-01: the form is saved in the admin's own secure slot before it is sent (it outlives a forced sign-out, like a pending
 // booking) and settled after a restart by this admin's command receipt or a same-id resend.
 const cashIO = (actorId: number): CashIO => ({
-  read: async () => { const raw = await storage.get(cashCommandKey(actorId), true); return raw ? JSON.parse(raw) : null; },
+  read: async () => {
+    const raw = await storage.get(cashCommandKey(actorId), true);
+    if (!raw) return null;
+    // Unparseable bytes in this admin's own slot are a broken cash record: dropped like one, not an error on every visit.
+    try { return JSON.parse(raw); } catch { throw new Error('invalid_pending_command'); }
+  },
   write: async command => { await storage.set(cashCommandKey(actorId), command && JSON.stringify(command), true); },
   receipt: command => api<{ entry: CashEntry | null }>(`/admin/cash/commands/${command.requestId}`),
   send: command => api<CashEntry>(`/admin/cash/${command.kind}`, cashCommandBody(command)),
