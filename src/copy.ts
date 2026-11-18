@@ -309,6 +309,7 @@ const ar = {
   dashboard: 'اللوحة',
   dashboardTab: 'الرئيسية',
   users: 'المستخدمون',
+  usersTab: 'الحسابات', // one word that fits a seven-tab bar: المستخدمون broke mid-word (screens, 18 Nov)
   subscriptions: 'الاشتراكات',
   settings: 'الإعدادات',
   allOrders: 'الطلبات',
@@ -858,7 +859,7 @@ const ar = {
   offerRange: 'من {lo} إلى {hi}',
   offerWhole: 'أدخل مبلغاً صحيحاً من {lo} إلى {hi}.',
   recommendedIs: 'السعر المقترح {p}',
-  acceptAt: 'قبول · يدفع الزبون {p}',
+  acceptAt: 'قبول بسعر {p}',
   liveDriver: 'موقع السائق، قبل {s}',
   liveYou: 'موقعك، قبل {s}',
   courierRun: 'المندوب يوصّل طروداً أخرى في جولته. تابع موقعه على الخريطة.',
@@ -1958,6 +1959,7 @@ const en: Copy = {
   dashboard: 'Dashboard',
   dashboardTab: 'Home', // seven admin tabs share 411 dp: "Dashboard" broke mid-word on the A53
   users: 'Users',
+  usersTab: 'Users',
   subscriptions: 'Plans',
   settings: 'Settings',
   allOrders: 'Orders',
@@ -2502,7 +2504,7 @@ const en: Copy = {
   offerRange: 'From {lo} to {hi}',
   offerWhole: 'Enter a whole amount from {lo} to {hi}.',
   recommendedIs: 'Recommended {p}',
-  acceptAt: 'Accept · customer pays {p}',
+  acceptAt: 'Accept at {p}',
   liveDriver: 'Driver location, {s} ago',
   liveYou: 'Your location, {s} ago',
   courierRun: 'The courier is delivering other parcels on this run. Follow them on the map.',
