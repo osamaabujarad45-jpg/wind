@@ -3,7 +3,7 @@ import { useSession } from '../../session';
 import { ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api, ApiError, useApi } from '../../api';
-import { vehicles, type Role, type User, type Vehicle } from '../../model';
+import { isolate, ltr, vehicles, type Role, type User, type Vehicle } from '../../model';
 import { useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import {
@@ -152,7 +152,7 @@ export default function Users() {
                 <View style={{ flex: 1 }}><Button title={c.save} loading={busy === user.id} onPress={() => {
                   const save = () => action(user, '', { name: editing.name, email: editing.email || null, phone: editing.phone, role: editing.role, expectedRole: user.role, vehicle: editing.vehicle, plate: editing.plate.trim() || null }, 'PATCH');
                   // A role change moves the account to another app: name the person, phone and both roles first. Otherwise save as before.
-                  if (editing.role !== user.role) confirm(fill(c.userRoleChangeConfirm, { name: `${user.name} · ${user.phone}`, from: c[user.role], to: c[editing.role] }), save, c.save, c.cancel);
+                  if (editing.role !== user.role) confirm(fill(c.userRoleChangeConfirm, { name: `${isolate(user.name)} · ${ltr(user.phone)}`, from: c[user.role], to: c[editing.role] }), save, c.save, c.cancel);
                   else void save();
                 }} /></View>
                 <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>

@@ -3,14 +3,14 @@ import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useApi } from './api';
 import { newRequestId } from './booking';
-import type { Order } from './model';
+import { isolate, type Order } from './model';
 import { Button, Card, Field, Loading, Txt, confirm, fill, useCopy } from './ui';
 
 type Candidate = { id: number; name: string; phone: string; vehicle: string | null; plate: string | null; eligible: boolean; reason: string | null };
 type Act = (key: string, path: string, body?: object, after?: () => void) => Promise<void>;
 
 export function AdminAssign({ order, busy, act }: { order: Order; busy: boolean; act: Act }) {
-  const { c } = useCopy();
+  const { c, rtl } = useCopy();
   const words = c as Record<string, string | undefined>;
   const reassign = order.status !== 'searching';
   const { data, error, reload } = useApi<Candidate[]>(`/admin/orders/${order.id}/assignable-drivers`);
@@ -36,7 +36,7 @@ export function AdminAssign({ order, busy, act }: { order: Order; busy: boolean;
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Txt variant="caption">{c.assignNoDrivers}</Txt>
       : <View style={{ gap: 8, marginBottom: 12 }}>
         {data.map(d => <Button key={d.id} size="sm" variant={picked === d.id ? 'primary' : 'outline'} icon="car-outline"
-          title={`${d.name} · ${(d.vehicle && words[d.vehicle]) || d.vehicle || ''}`} trailing={d.plate ?? undefined}
+          title={`${rtl ? '\u200f' : '\u200e'}${isolate(d.name)} · ${(d.vehicle && words[d.vehicle]) || d.vehicle || ''}`} trailing={d.plate ?? undefined}
           disabled={!!busy || !d.eligible} reason={`${c.assignBlockedPrefix} ${(d.reason && words[`assign_no_${d.reason}`]) || d.reason || ''}`}
           onPress={() => setPicked(d.id)} />)}
       </View>}

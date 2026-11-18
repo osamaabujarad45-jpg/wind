@@ -8,7 +8,7 @@ import { locationState, newerFix, publicFixAgeMs, publicFixClock, retainedPublic
 import { deadlineSeconds } from '../../api-clock';
 import type { JourneyEta } from '../../journey-contracts';
 import { etaRange, fromDriver } from '../../map-math';
-import { city, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
+import { city, isolate, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
 import { Button, Card, Empty, fill, Header, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
@@ -19,7 +19,7 @@ type Tracking = { orderCode: string; status: OrderStatus; service: Service; pick
 
 export default function TrackScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
-  const { c, language } = useCopy();
+  const { c, language, rtl } = useCopy();
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');
   const { data: polled, error, reload } = useApi<Tracking>(valid ? `/track/${token}` : null, 10_000);
   // Driver position over the live push; the 10 s poll carries status and revocation.
@@ -82,7 +82,7 @@ export default function TrackScreen() {
         <Txt variant="h2" style={{ flex: 1 }}>{statusText(c, data)}</Txt>
       </Row>
       <RouteLine from={from[language]} to={to[language]} ride={data.service === 'ride'} />
-      {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${data.driver.firstName} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
+      {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${rtl ? '\u200f' : '\u200e'}${isolate(data.driver.firstName)} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
       {location && !freshness?.stale && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaData?.eta ? [Math.ceil(etaData.eta.minSeconds / 60), Math.ceil(etaData.eta.maxSeconds / 60)] : etaRange(eta)} now={now} slow={delayed} toPickup={toPickup} /></View>}
       {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
       {location && !freshness?.stale && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
