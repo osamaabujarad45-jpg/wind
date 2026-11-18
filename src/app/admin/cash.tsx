@@ -156,7 +156,7 @@ export default function AdminCash() {
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
           <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
-            reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolve, c.cancel)} />
+            reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
           <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
         </Row>
       </Card>}

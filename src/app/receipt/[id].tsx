@@ -42,7 +42,8 @@ export default function Receipt() {
   ];
 
   async function share() {
-    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n');
+    const text = [`${c.brand} · ${c.receipt}`, ...lines.map(([k, v]) => `${k}: ${v}`), `${c.total}: ${money(cash)}`].join('\n')
+      .replace(/[\u200e\u200f\u2066-\u2069]/g, ''); // direction marks are for the screen, not the shared text
     try { await Share.share({ message: text }); } catch { /* dismissed or unsupported */ }
   }
 

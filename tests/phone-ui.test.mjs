@@ -462,7 +462,9 @@ assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
   assert.match(admin, /name="merchants".*href: shop \? undefined : null/, 'Shops is hidden while the shop line is off');
   // An Arabic name leading an English line flipped it ("Van · سائق" on the receipt): names in mixed lines are isolated.
   for (const [file, name] of [['../src/app/receipt/[id].tsx', 'order.driverName'], ['../src/app/track/[token].tsx', 'data.driver.firstName'],
-    ['../src/admin-assign.tsx', 'd.name'], ['../src/app/admin/cash.tsx', 'target.userName'], ['../src/app/admin/users.tsx', 'user.name']])
+    ['../src/admin-assign.tsx', 'd.name'], ['../src/app/admin/cash.tsx', 'target.userName'], ['../src/app/admin/users.tsx', 'user.name'],
+    ['../src/app/book.tsx', 'r.name'], ['../src/app/order/[id].tsx', 'r.name'], ['../src/app/merchant/order/[id].tsx', 'name(l)'],
+    ['../src/shop-ui.tsx', 'lineName(l, language)']])
     assert.ok(readFileSync(new URL(file, import.meta.url), 'utf8').includes(`isolate(${name})`), `${file} isolates ${name}`);
 }
 console.log('Phone UI rules passed');

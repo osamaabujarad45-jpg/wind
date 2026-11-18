@@ -9,7 +9,7 @@ import { api, ApiError, apiSessionRevision, errorCode, storage, useApi } from '.
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pendingSettlesAt, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
 import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
-import { city, CLOSED_MINUTES, isCity, isValidPhone, optionsFor, orderCode, quote, roadAlerts, sameDayBookingOpen, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type ParcelPriority, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { city, CLOSED_MINUTES, isCity, isolate, isValidPhone, optionsFor, orderCode, quote, roadAlerts, sameDayBookingOpen, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type ParcelPriority, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
@@ -716,7 +716,7 @@ function BookForm() {
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8 }}>{locationError}</Txt>}
       {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
-        {alerts.map(r => <Txt key={r.id} variant="caption">{`${r.name}: ${c[`road_${r.status!}`]}${r.note ? ` · ${r.note}` : ''}`}</Txt>)}
+        {alerts.map(r => <Txt key={r.id} variant="caption">{`${rtl ? '\u200f' : '\u200e'}${isolate(r.name)}: ${c[`road_${r.status!}`]}${r.note ? ` · ${isolate(r.note)}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
       </Card></View>}
 

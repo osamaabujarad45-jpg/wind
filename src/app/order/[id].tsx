@@ -12,7 +12,7 @@ import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } fro
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
 import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
@@ -393,7 +393,7 @@ export default function OrderScreen() {
           onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Row gap={8}>
             <Ionicons name="warning-outline" size={16} color={palette.clayInk} />
-            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{alerts.map(r => `${r.name}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
+            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{(rtl ? '\u200f' : '\u200e') + alerts.map(r => `${isolate(r.name)}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
           </Row>
         </Press>}
         {live && <RouteCheckpoints avoids={avoids} through={through} />}

@@ -452,9 +452,9 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
   }, [focused, ref]);
   return <View style={styles.field}>
     <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
-    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, !!error && styles.inputError, disabled && styles.inputDisabled, multiline && { alignItems: 'flex-start' }]}>
+    <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, disabled && styles.inputDisabled, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.faint}
+      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
@@ -599,7 +599,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
-      // expo-router turns a screen's `href: null` into this style; the default bar honours it, so this one must too.
+      // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
       if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;
       const focused = state.index === index;
       const color = focused ? palette.forest : palette.secondary;

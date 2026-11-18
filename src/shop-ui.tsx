@@ -5,7 +5,7 @@ import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
-import { handoverExceptions, hhmm, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
+import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
@@ -64,7 +64,7 @@ export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsO
   const s = order.shop!;
   return <>
     {!totalsOnly && s.lines.filter(l => !l.removed).map(l => <Row key={l.id} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
-      <Txt style={{ flex: 1 }}>{`${lineName(l, language)} ${qtyLabel(l.qtyMilli, l.byWeight, c)}`}{l.substituteFor ? ` · ${c.shopSubstitute}` : ''}</Txt>
+      <Txt style={{ flex: 1 }}>{`${rtl ? '\u200f' : '\u200e'}${isolate(lineName(l, language))} ${qtyLabel(l.qtyMilli, l.byWeight, c)}`}{l.substituteFor ? ` · ${c.shopSubstitute}` : ''}</Txt>
       <Txt style={{ writingDirection: 'ltr' }}>{`${money((l.finalAgorot ?? l.estimateAgorot) / 100)}${l.byWeight && l.finalAgorot == null ? ` ${c.shopEstimateShort}` : ''}`}</Txt>
     </Row>)}
     {!totalsOnly && s.lines.some(l => l.removed && !s.lines.some(x => x.substituteFor === l.id)) &&

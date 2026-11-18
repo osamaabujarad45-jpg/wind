@@ -5,13 +5,13 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { api, errorCode, useApi } from '../../../api';
-import { merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
+import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
 
 export default function MerchantOrder() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { c, language, money } = useCopy();
+  const { c, language, money, rtl } = useCopy();
   const { data: order, error, reload, setData } = useApi<Order>(`/orders/${Number(id)}`, 10_000);
   const catalogue = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [prep, setPrep] = useState(20);
@@ -61,7 +61,7 @@ export default function MerchantOrder() {
       <Section title={c.shopItems} />
       {live.map(l => <View key={l.id} style={{ borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 }}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt style={{ flex: 1 }}>{`${name(l)} ${qtyLabel(l.qtyMilli, l.byWeight, c)} · ${c[`shopPolicy_${l.policy}`]}`}</Txt>
+          <Txt style={{ flex: 1 }}>{`${rtl ? '\u200f' : '\u200e'}${isolate(name(l))} ${qtyLabel(l.qtyMilli, l.byWeight, c)} · ${c[`shopPolicy_${l.policy}`]}`}</Txt>
           <Txt style={{ writingDirection: 'ltr' }}>{money((l.finalAgorot ?? l.estimateAgorot) / 100)}</Txt>
         </Row>
         {s.state === 'preparing' && !s.change && editing !== l.id && <Button title={c.merchantEditLine} size="sm" variant="ghost" label={fill(c.merchantEditLineOf, { item: name(l) })} onPress={() => setEditing(l.id)} />}
