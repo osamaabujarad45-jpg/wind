@@ -343,7 +343,8 @@ for (const language of ['ar', 'en']) {
     assert.equal(view.calls.length, 0, 'no write before the role change is confirmed');
     assert.equal(view.dialogs.length, 1);
     const [review] = view.dialogs;
-    assert.equal(review.message, fill(c.userRoleChangeConfirm, { name: `${user.name} · ${user.phone}`, from: c.customer, to: c.driver }));
+    // The name and phone are isolated inside the sentence, so a Latin name cannot reorder an Arabic one (A53 walk).
+    assert.equal(review.message, fill(c.userRoleChangeConfirm, { name: `${model.isolate(user.name)} · ${model.ltr(user.phone)}`, from: c.customer, to: c.driver }));
     assert.equal(review.yesLabel, c.save);
     review.yes(); await flush();
     assert.deepEqual(view.calls, [{
