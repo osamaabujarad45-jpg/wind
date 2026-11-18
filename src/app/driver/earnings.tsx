@@ -57,15 +57,15 @@ function CashCard() {
       <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
       <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
     </Row>
-    <Txt variant="caption" style={{ marginTop: 4 }}>{c.cashBreakdownHint}</Txt>
-    {data.capCents !== undefined && data.exposureCents !== undefined && (data.capCents - data.exposureCents > 0
-      ? <Txt variant="label" style={{ marginTop: 4 }}>{`${c.cashCapLeft}: ${money((data.capCents - data.exposureCents) / 100)}`}</Txt>
-      : <Txt variant="title" style={{ marginTop: 6, color: tones.error.fg }}>{c.cashCapReached}</Txt>)}
+    <Txt variant="caption" style={{ marginTop: 4, marginBottom: 4 }}>{c.cashBreakdownHint}</Txt>
     {cashLines(c, data).map(([label, cents]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 2 }}>
-      <Txt variant="label" style={{ flex: 1 }}>{label}</Txt>
-      <Txt variant="label">{money(cents / 100)}</Txt>
+      <Txt style={{ flex: 1 }}>{label}</Txt>
+      <Txt>{money(cents / 100)}</Txt>
     </Row>)}
-    {data.pendingCents > 0 && <Txt variant="label" style={{ marginTop: 4 }}>{`${c.cashPendingTotal}: ${money(data.pendingCents / 100)}`}</Txt>}
+    {data.pendingCents > 0 && <Txt variant="caption" style={{ marginTop: 4 }}>{`${c.cashPendingTotal}: ${money(data.pendingCents / 100)}`}</Txt>}
+    {data.capCents !== undefined && data.exposureCents !== undefined && (data.capCents - data.exposureCents > 0
+      ? <Txt variant="label" style={{ marginTop: 8 }}>{`${c.cashCapLeft}: ${money((data.capCents - data.exposureCents) / 100)}`}</Txt>
+      : <Txt variant="title" style={{ marginTop: 8, color: tones.error.fg }}>{c.cashCapReached}</Txt>)}
     <ErrorText>{failure || (error && err(error))}</ErrorText>{/* a failed poll keeps the last balance: say so */}
     {data.entries.filter(e => e.status === 'pending').map(entry => <View key={entry.id} style={{ marginTop: 12, gap: 8 }}>
       <Txt variant="title">{`${c.cashPending}: ${money(entry.amountCents / 100)} · ${entry.reference}`}</Txt>
