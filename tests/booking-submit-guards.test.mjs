@@ -96,6 +96,12 @@ await check('submit while a fresh quote is calculating: zero storage writes, zer
 await check('submit after a failed quote: zero storage writes, zero POSTs', async () => { const h = harness({ quoteFailed: true }); await h.submit(); noWrites(h); });
 await check('submit while a promo check runs: zero storage writes, zero POSTs', async () => { const h = harness({ checking: true }); await h.submit(); noWrites(h); });
 await check('submit while locating: zero storage writes, zero POSTs', async () => { const h = harness({ locating: true }); await h.submit(); noWrites(h); });
+// Design review D-04: Request is disabled until both stops are chosen, so the guard itself refuses (no picker detour, no send).
+await check('submit without a chosen route: blocked by submitBlocked, zero storage writes, zero POSTs', async () => {
+  const h = harness({ routeChosen: false });
+  const steps = []; h.context.setStep = step => steps.push(step); // the old picker detour would set the search step
+  await h.submit(); noWrites(h); assert.deepEqual(steps, [], 'the guard returns before the picker detour');
+});
 await check('SHIP-16: a parcel without the prohibited-goods confirmation: zero storage writes, zero POSTs', async () => { const h = harness({ goodsOk: false }); await h.submit(); noWrites(h); });
 await check('pending replay while locating: zero storage writes, zero POSTs (retry button is disabled then)', async () => {
   const cmd = pendingCommand(), h = harness({ pending: cmd, scheduledFor: pastSlot, locating: true }); await h.submit(); noWrites(h);
