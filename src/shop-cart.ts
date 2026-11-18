@@ -17,7 +17,7 @@ const emit = () => { for (const l of listeners) l(); };
 const text = (s: unknown) => typeof s === 'string';
 const agorot = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
 /** Every field the cart screen reads, or the saved copy is dropped: a missing fee would show as NaN and a missing policy
- *  would place an order the server refuses, and an unknown city id throws in city(). save() never writes an empty cart.
+ *  would place an order the server refuses, and an unknown city id makes city() undefined, so the screen's `[language]` read throws. save() never writes an empty cart.
  *  Adding a field? Backfill it here (`saved.x ?? default`) or move to a new KEY. */
 export function readCart(raw: unknown): Cart | null {
   const c = raw as Cart;
