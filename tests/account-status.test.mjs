@@ -75,6 +75,7 @@ try {
 
   // Release review, 18 Nov: the sign-in limit counts an attempt when it starts, so parallel guesses cannot all pass a
   // check-only gate before the first failure is recorded. Ten at once: at most five are judged, the rest are refused.
+  // Bound check: SQLite serializes these requests, so the race itself shows only on PostgreSQL; this cannot fail on old code.
   const burst = await Promise.all(Array.from({ length: 10 }, () => realFetch(`${base}/auth/login`, { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0599810077', password: 'guess-pass' }) }).then(r => r.status)));
   assert.ok(burst.filter(status => status === 401).length <= 5, `at most five guesses judged: ${burst}`);

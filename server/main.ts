@@ -1005,12 +1005,12 @@ async function spendEntraProof(proof: EntraProof) {
 
 route('POST', '/api/me/password', async ({ user, body, req }) => {
   const key = identityKey('password', user.id);
-  (await limit(key, 5, 10 * 60_000, false)); // a signed-in session is required here; only wrong current passwords count
+  (await limit(key, 5, 10 * 60_000, !body.idToken)); // a typed current password counts at entry (parallel guesses); Entra step-ups count on failure
   const account = (await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id))!;
   const stored = account.password;
   const currentToken = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')![1];
   const proof = await entraProof('password', currentToken, body, account.entra_oid);
-  if (!proof && !await checkPassword(String(body.current ?? ''), stored)) { (await limit(key, 5, 10 * 60_000)); fail(401, body.idToken ? 'invalid_token' : 'wrong_password'); }
+  if (!proof && !await checkPassword(String(body.current ?? ''), stored)) { if (body.idToken) (await limit(key, 5, 10 * 60_000)); fail(401, body.idToken ? 'invalid_token' : 'wrong_password'); }
   const password = await hashPassword(newPassword(body.password));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -1028,6 +1028,16 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
 });
 
 // Store rules require in-app account deletion. Orders stay for accounting, stripped of personal data.
+// Migration 36 lets the quote guard accept only this scrub: personal fields to ''/NULL, the fare untouched.
+const scrubQuotesSql = `UPDATE quotes SET pickup_note = '', dropoff_note = '', contact = '', pickup_contact = NULL, recipient_name = NULL,
+  recipient_phone = NULL, detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, itinerary_hash = ''`; // the hash covers the phones
+export async function scrubDeletedQuotes(customerId?: number) { // exported for the quotes test
+  const target = customerId === undefined ? "customer_id IN (SELECT id FROM users WHERE phone LIKE 'deleted-%')" : 'customer_id = ?';
+  return (await run(`${scrubQuotesSql} WHERE id IN (SELECT id FROM quotes WHERE ${target} AND (contact <> '' OR pickup_note <> '' OR dropoff_note <> '' OR detail <> ''
+    OR pickup_lat IS NOT NULL OR dropoff_lat IS NOT NULL OR pickup_contact IS NOT NULL OR recipient_phone IS NOT NULL OR recipient_name IS NOT NULL) LIMIT 200 FOR UPDATE SKIP LOCKED)`,
+    ...(customerId === undefined ? [] : [customerId]))).changes;
+}
+
 async function deleteAccount(user: User, actorId: number | null, proof?: { sessionHash: string; passwordHash?: string } & Partial<EntraProof>) {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -1065,9 +1075,15 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run("UPDATE order_disputes SET reason = '—' WHERE customer_id = ?", user.id));
     (await run("UPDATE safety_incidents SET note = '', lat = NULL, lng = NULL WHERE reporter_id = ?", user.id));
     if (persistence.backend === 'postgres') {
-      if ((await one("SELECT to_regclass('command_results') AS t"))?.t) (await run('DELETE FROM command_results WHERE actor_id = ?', user.id)); // replies hold full order JSON
-      if ((await quotesAvailable(persistence))) (await run(`UPDATE quotes SET pickup_note = '', dropoff_note = '', contact = '', pickup_contact = NULL, recipient_name = NULL,
-        recipient_phone = NULL, detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL WHERE customer_id = ?`, user.id)); // migration 36 allows only this scrub
+      if ((await one("SELECT to_regclass('command_results') AS t"))?.t) {
+        (await run('DELETE FROM command_results WHERE actor_id = ?', user.id)); // replies hold full order JSON
+        // A driver's or admin's stored reply about this customer's (finished) orders keeps only id and status for replay.
+        (await run(`UPDATE command_results c SET response = json_build_object('id', o.id, 'status', o.status)::text FROM orders o
+          WHERE o.customer_id = ? AND c.response LIKE '{%' AND c.response::jsonb ->> 'pickupCity' IS NOT NULL AND c.response::jsonb ->> 'id' = o.id::text`, user.id));
+      }
+      // A quote held by an in-flight booking is skipped, not waited on (the deletion must not stall behind it);
+      // scrubDeletedQuotes() below catches it once that booking ends.
+      if ((await quotesAvailable(persistence))) await scrubDeletedQuotes(user.id);
     }
     (await run("DELETE FROM subscriptions WHERE user_id = ? AND status = 'pending'", user.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
@@ -1084,13 +1100,13 @@ route('POST', '/api/me/delete', async ({ user, body, req }) => {
   if (user.role === 'admin') fail(409, 'cannot_change_self');
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
   const key = identityKey('delete-auth', user.id);
-  await limit(key, 5, 10 * 60_000, false);
+  await limit(key, 5, 10 * 60_000, !body.idToken); // as password change: typed passwords count at entry
   const current = await one('SELECT password,entra_oid FROM users WHERE id=?', user.id) ?? fail(401, 'unauthorized');
   if (typeof body.password === 'string' && body.password.length <= 100 && await checkPassword(body.password, current.password))
     return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), passwordHash: current.password }));
   const proof = await entraProof('delete', token, body, current.entra_oid);
   if (proof) return persistence.atomic({ id: user.id }, () => deleteAccount(user, user.id, { sessionHash: sha(token), ...proof }));
-  await limit(key, 5, 10 * 60_000);
+  if (body.idToken) await limit(key, 5, 10 * 60_000);
   fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
 });
 
@@ -1571,11 +1587,12 @@ route('POST', '/api/price', async ({ user, body }) => {
 // T21: a customer's unscheduled searching demand is capped so spam cannot bury matching supply, and stale
 // unclaimed demand stops occupying the board. Both are policy bounds, not money: assigned custody and
 // not-yet-due scheduled orders are never touched. Operators may tune the cap; the expiry stays >= 1 hour.
-const SEARCHING_LIMIT = Number(process.env.WIND_SEARCHING_LIMIT) || 5;
+const positiveInt = (value: string | undefined, fallback: number) => { const n = Math.floor(Number(value)); return Number.isFinite(n) && n >= 1 ? n : fallback; };
+const SEARCHING_LIMIT = positiveInt(process.env.WIND_SEARCHING_LIMIT, 5);
 const SEARCH_EXPIRY_MS = Math.max(Number(process.env.WIND_SEARCH_EXPIRY_MS) || 86_400_000, 3_600_000); // 24 h
 // Booked-ahead orders do not count toward the cap above (a customer may plan the week), but each one releases to
 // drivers when due, so they get their own bound (release review, 18 Nov). Same message: too many open orders.
-const SCHEDULED_LIMIT = Number(process.env.WIND_SCHEDULED_LIMIT) || 10;
+const SCHEDULED_LIMIT = positiveInt(process.env.WIND_SCHEDULED_LIMIT, 10);
 async function guardScheduledCap(customerId: number) {
   const n = Number(((await one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND status IN ('searching','requested') AND scheduled_for IS NOT NULL", customerId)) as { n: number }).n);
   if (n >= SCHEDULED_LIMIT) fail(409, 'too_many_searching');
@@ -3954,6 +3971,8 @@ if (import.meta.main) {
     setInterval(async () => { try { (await shopSweep()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // shop accept, consent, dispatch and licence timers
     setInterval(async () => { try { (await remindOfficeJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // SHIP-19 daily office reminders
     setInterval(async () => { try { const n = (await expireStaleDemand()); if (n) console.log(`T21: ${n} stale searching orders expired`); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // T21 stale searching demand leaves the board, at most 50 a minute
+    // A quote an in-flight booking held when its customer was deleted is scrubbed once the lock is gone (PostgreSQL quotes only).
+    if (persistence.backend === 'postgres') setInterval(async () => { try { if (await quotesAvailable(persistence)) await scrubDeletedQuotes(); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref();
     process.once('SIGTERM', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
     process.once('SIGINT', async () => { shutdown().catch(error => { logServerError('shutdown_failed', error); process.exitCode = 1; }); });
   }
