@@ -567,7 +567,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
-    {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} onDone={reload} />}
+    {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
     {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
     {!live && <ErrorText>{actionError}</ErrorText>}
@@ -1030,7 +1030,7 @@ const styles = StyleSheet.create({
 });
 
 /** DRV-17: a second admin records whether a courier block's review cleared the captain; only then is the trip so far paid. */
-function BlockReviewCard({ order, review, me, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; onDone: () => unknown }) {
+function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
   const { c, err } = useCopy();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
@@ -1048,7 +1048,7 @@ function BlockReviewCard({ order, review, me, onDone }: { order: Order; review: 
     <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
   </Card>;
   const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
-  return <Card tone={review.dueAt < Date.now() ? 'clay' : undefined}>
+  return <Card tone={review.dueAt < now ? 'clay' : undefined}>
     <Txt variant="title">{c.blockReview}</Txt>
     <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
     {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>

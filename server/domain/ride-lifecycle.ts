@@ -120,7 +120,7 @@ export class RideLifecycle {
     if (existing && Number(existing.assignment_epoch) === epoch && Number(existing.driver_id) === driverId) return existing;
     const required = this.enabled() || (await this.dispatchAssigned(Number(order.id), driverId)) || !!existing?.boarding_required;
     const now = Date.now();
-    const row = await this.db.one(`INSERT INTO ride_lifecycle(order_id,driver_id,assignment_epoch,boarding_code,boarding_required,created_at,updated_at)
+    await this.db.one(`INSERT INTO ride_lifecycle(order_id,driver_id,assignment_epoch,boarding_code,boarding_required,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET driver_id=excluded.driver_id,assignment_epoch=excluded.assignment_epoch,
       arrived_at=NULL,arrival_source=NULL,arrival_actor_id=NULL,boarding_code=excluded.boarding_code,boarding_required=excluded.boarding_required,updated_at=excluded.updated_at RETURNING *`,
       order.id, driverId, epoch, required ? newBoardingCode() : null, required ? 1 : 0, now, now);
