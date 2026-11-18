@@ -120,9 +120,9 @@ export const logoHoleStyle = (s: number): ViewStyle => {
     borderRadius: h * s / 100, backgroundColor: palette.forest };
 };
 
-export function Logo({ size: s = 36 }: { size?: number }) {
+export function Logo({ size: s = 36, decorative }: { size?: number; decorative?: boolean /* the name is written beside it: one stop for screen readers */ }) {
   const { c } = useCopy(); // the name is read in the reader's language: ويند in Arabic
-  return <View accessibilityRole="image" accessibilityLabel={c.brand} style={[styles.logo, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
+  return <View {...decorative ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const } : { accessibilityRole: 'image' as const, accessibilityLabel: c.brand }} style={[styles.logo, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
     {logoMark.bars.map((bar, i) => <View key={i} style={logoBarStyle(s, bar)} />)}
     <View style={logoPinStyle(s)} />
     <View style={logoHoleStyle(s)} />

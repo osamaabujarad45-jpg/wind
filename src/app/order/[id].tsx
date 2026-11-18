@@ -793,8 +793,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
     }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
-  // Soft, not outline: Safety must not read as a peer of "Change destination" beside it (design review D-21).
-  if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="soft" onPress={() => setOpen(true)} />;
+  if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="outline" onPress={() => setOpen(true)} />;
   return <Card tone="clay">
     <Row gap={8} style={{ marginBottom: 4 }}>
       <Ionicons name="shield-checkmark" size={22} color={palette.clayInk} />

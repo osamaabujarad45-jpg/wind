@@ -139,6 +139,7 @@ const completed = await order(layla, true, { service: 'parcel', pickupCity: 'ram
   pickupNote: 'محل الزهراء، شارع ركب', dropoffNote: 'دوار الشهداء، بجانب الصيدلية', detail: 'صندوق ملابس وهدية', option: 'medium' });
 const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
   pickupNote: 'دوار المنارة', dropoffNote: 'ساحة المهد', option: '2', detail: 'معي عربة أطفال' });
+const shared = await call(`/orders/${inTransit.id}/share`, layla.token, {}); // the recipient's public page (no sign-in)
 // A ride: drivers offer on rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
 const searching = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
@@ -271,6 +272,7 @@ const screens = [
   { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
+  { id: 'track', group: 'Customer', name: 'Public tracking link (recipient, no sign-in)', route: shared.path, file: 'src/app/track/[token].tsx', role: null },
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'receipt', group: 'Customer', name: 'Receipt', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'customer' },
   { id: 'account', group: 'Customer', name: 'Account', route: '/account', file: 'src/parts.tsx (AccountScreen)', role: 'customer' },

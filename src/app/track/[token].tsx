@@ -91,6 +91,6 @@ export default function TrackScreen() {
         onPress={() => { void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`).catch(() => undefined); }} />}
     </Card>
     {/* The recipient may never have used Wind: say whose page this is (design review D-41). */}
-    <Row gap={8} style={{ justifyContent: 'center', marginTop: 16 }}><Logo size={24} /><Txt variant="title">{c.brand}</Txt></Row>
+    <Row gap={8} style={{ justifyContent: 'center', marginTop: 16 }}><Logo size={28} decorative /><Txt variant="h2">{c.brand}</Txt></Row>
   </Screen>;
 }
