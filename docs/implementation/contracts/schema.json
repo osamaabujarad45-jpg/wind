@@ -390,7 +390,7 @@
       "type": "table",
       "name": "saved_places",
       "tableName": "saved_places",
-      "sql": "CREATE TABLE saved_places (\n  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),\n  city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, city, note))"
+      "sql": "CREATE TABLE saved_places (\n  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL CHECK (label IN ('home','work','other')),\n  city TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, lat REAL, lng REAL, UNIQUE(user_id, city, note))"
     },
     {
       "type": "table",
@@ -3955,6 +3955,22 @@
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "lat",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "lng",
+          "type": "REAL",
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         }

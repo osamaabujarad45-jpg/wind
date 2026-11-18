@@ -41,7 +41,7 @@ try {
   assert.deepEqual(places.saved[0].point, manara);
   places = await call('/me/places', { token: t, body: { label: 'work', city: 'ramallah', note: 'Al-Manara' } });
   assert.deepEqual(places.saved[0].point, manara);
-  assert.deepEqual(db.prepare('SELECT lat, lng FROM saved_places WHERE note = ?').get('Al-Manara'), { lat: 31.9038, lng: 35.2034 });
+  assert.deepEqual({ ...db.prepare('SELECT lat, lng FROM saved_places WHERE note = ?').get('Al-Manara') }, { lat: 31.9038, lng: 35.2034 });
   const jenin = city('jenin');
   assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Far', point: { latitude: jenin.latitude, longitude: jenin.longitude } }, expect: 400 })).error, 'outside_area');
   assert.equal((await call('/me/places', { token: t, body: { label: 'other', city: 'ramallah', note: 'Bad', point: { latitude: 'x', longitude: 35 } }, expect: 400 })).error, 'invalid_location');
