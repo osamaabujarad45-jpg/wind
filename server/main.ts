@@ -619,7 +619,7 @@ const postOrderJournals = async (orderId: number) => {
   const commission = Number(o.commission_minor ?? 0), discount = Number(o.discount_minor ?? 0);
   if (commission > 0) await ledger.postJournal({ businessRef: `order:${o.id}:commission`, kind: 'commission_accrual', orderId: o.id as number,
     entries: [{ accountId: receivable.id as number, debitMinor: commission }, { accountId: revenue.id as number, creditMinor: commission }] });
-  if (discount > 0) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
+  if (discount > 0 && o.status !== 'returned') await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
     entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
 };
 // Shop door cash on PostgreSQL: the captain owes the goods (the shop's money) and the service fee (Wind's), so a remittance relieves a
@@ -2696,7 +2696,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
     if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
       door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
-      next, r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
+      next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, // DRV-17: a return earns no commission door?.varianceReason ?? null,
       door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
@@ -2766,7 +2766,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
     if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (body.action === 'confirm_return') {
-      moved((await run("UPDATE orders SET status = 'returned', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes);
+      moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await shop.afterFinish(order, 'returned', user.id);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
@@ -3215,8 +3215,8 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
 route('GET', '/api/driver/earnings', async ({ user }) => {
   need(user, 'driver');
   const since = async (from: number) => {
-    // A returned shop order earns its failed-trip pay from the shop ledger, not its fare (DRV-17).
-    const r = (await one(`SELECT COUNT(*) jobs, COALESCE(SUM(CASE WHEN service = 'shop' AND status = 'returned' THEN 0 ELSE price END), 0) gross, COALESCE(SUM(commission), 0) commission
+    // A returned order collected no fare (DRV-17); a shop return's failed-trip pay comes from the shop ledger.
+    const r = (await one(`SELECT COUNT(*) jobs, COALESCE(SUM(CASE WHEN status = 'returned' THEN 0 ELSE price END), 0) gross, COALESCE(SUM(commission), 0) commission
       FROM orders WHERE driver_id = ? AND status IN (${finishedSql}) AND completed_at >= ?`, user.id, from))!;
     const trip = await shopTables(persistence) ? Number((await one(`SELECT COALESCE(SUM(amount_agorot), 0) n FROM shop_ledger WHERE book = 'captain' AND driver_id = ? AND created_at >= ?`, user.id, from))!.n) / 100 : 0;
     const gross = Math.round((Number(r.gross) + trip) * 100) / 100;
@@ -3235,8 +3235,11 @@ const cashMinor = (column: 'commission' | 'discount') => persistence.backend ===
 // less captain pay from the shop ledger (DRV-17).
 const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 ELSE COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot END)
     FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
+// DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. Returns from this release carry
+// commission 0; earlier returns keep the commission and discount they were booked with, so no live balance moves on deploy.
+// ponytail: commission 0 marks the new rule; reconciling older returns is a finance decision (correcting adjustments).
 const owedColumns = (shop = false) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
-    COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) discounts,
+    COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND (status = 'completed' OR (status = 'returned' AND COALESCE(commission, 0) <> 0))), 0) discounts,
     ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
 async function cashBalances(where: string, ...params: SQLInputValue[]) {
   const shopTablesReady = await shopTables(persistence);

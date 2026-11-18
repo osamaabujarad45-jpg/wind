@@ -41,6 +41,6 @@ Tests, typecheck, lint, screenshots; browser check of applying a code and the dr
 
 ## Known limits (ship review)
 
-- A returned order counts its discount like it counts commission (`finishedSql`); revisit both once the return-fare policy in SYSTEM.md is decided.
+- A returned order collects no fare: from 19 Nov (SRS DRV-17) it is booked with commission 0 and its discount no longer relieves what the captain owes. Older returns keep their booked commission and discount.
 - A `searching` order that never matches keeps its code use until the customer cancels it.
 - When promos outweigh commission, Wind owes the driver; admins settle with "Pay driver" (a payout adjustment).

@@ -42,8 +42,8 @@ try {
   assert.equal(returning.driver_id,snapshot.driver_id);assert.equal(returning.price,snapshot.price);assert.ok(returning.return_code);
   assert.equal((await call(`/orders/${winner.id}`,{token:f.customer.token})).returnCode,returning.return_code);
   await recover('confirm_return');const returned=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
-  assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(returned.commission,snapshot.commission);
-  assert.ok(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),'the cash screen and the ledger agree on this return');
+  assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(Number(returned.commission),0,'a recovered return owes no commission (SRS DRV-17)');
+  assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
   for (const kind of ['decided','returned']) assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='notification.requested' AND payload->>'kind'=?",winner.id,kind),kind+' reaches its party');
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);

@@ -9,8 +9,11 @@ Wind its commission. Today earnings are calculations only (SYSTEM.md §10: "not
 evidence of paid or settled cash"). Careem runs this as a driver cash balance
 that the driver settles with a cashier. Add the same for Wind:
 
-1. **Driver** sees what they owe Wind: commission on finished jobs (completed or
-   returned) minus confirmed remittances, ± admin adjustments. They also see
+1. **Driver** sees what they owe Wind: commission on completed jobs minus
+   confirmed remittances, ± admin adjustments. A return collects no fare, so
+   from 19 Nov (SRS DRV-17) it is booked with commission 0 and no promo relief;
+   returns booked earlier keep what they were booked with until finance decides
+   on correcting adjustments. They also see
    pending remittances waiting for their confirmation.
 2. **Admin (cashier)** sees every driver's balance (highest debt first), records a
    cash handover with a numbered receipt (`R-000123`), and records adjustments
