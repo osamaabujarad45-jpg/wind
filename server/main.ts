@@ -353,6 +353,9 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
+    // DRV-17: support sees a courier block's review on the order it ended (PostgreSQL migration 39).
+    ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
+      && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
       ? (await one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id)) as Order['safetyReport'] ?? null
       : null,
@@ -3433,6 +3436,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
     backupStale: backupStale(),
+    // DRV-17: block reviews past their 2 working days; their trip pay stays unposted until a second admin decides.
+    ...(await blockReviewsAvailable() ? { blockReviewsOverdue: Number((await one('SELECT COUNT(*) n FROM courier_block_reviews WHERE decided_at IS NULL AND due_at < ?', Date.now()))!.n) } : {}),
     daily,
   };
 });
@@ -3522,11 +3527,19 @@ const editUser: Handler = async ({ user, params, body }) => {
         await rideLifecycle.clearAssignment(Number(o.id));
       }
       else if (o.service === 'ride') {
+        // SRS §2.1: the rider pays nothing; the captain's trip so far waits on the block review.
+        // ponytail: trip so far = half the booked fare; measured distance comes with the active GPS route.
+        if (await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+          VALUES (?, ?, ?, 'ride', ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status,
+          Math.floor(Math.round((Number(o.price) - Number(o.discount ?? 0)) * 100) / 2), now, twoWorkingDays(now));
         await run("UPDATE orders SET status = 'cancelled', commission = NULL, return_code = NULL, updated_at = ? WHERE id = ?", now, o.id);
         await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', ?, ?)",
           user.id, o.id, JSON.stringify({ reason: 'courier_block' }), now);
       }
       else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
+        // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's.
+        if (o.service === 'shop' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+          SELECT ?, ?, ?, 'shop', ?, delivery_fee_agorot, ?, ? FROM shop_orders WHERE order_id = ? ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status, now, twoWorkingDays(now), o.id);
         (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
         (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
       }
@@ -3543,6 +3556,51 @@ const editUser: Handler = async ({ user, params, body }) => {
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
   return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found')));
 };
+// DRV-17 / SRS §2.1 block review (PostgreSQL migration 39). Rides and shop orders run on PostgreSQL; a parcel's trip pay follows
+// SPEC-delivery-exceptions.md and needs no review. Without the table a block records nothing and posts no pay (fail-closed).
+const blockReviewsAvailable = async () => persistence.backend === 'postgres'
+  && persistence.memo('blockReviews', async () => !!(await one('SELECT version FROM schema_migrations WHERE version = 39')));
+/** Two working days, Friday and Saturday off. ponytail: UTC weekdays; a block near midnight can land a few hours early or late. */
+const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (![5, 6].includes(new Date(t).getUTCDay())) n++; } return t; };
+const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
+  cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
+route('POST', '/api/admin/orders/:id/block-review', async ({ user, params, body }) => {
+  need(user, 'admin');
+  if (!(await blockReviewsAvailable())) fail(409, 'block_review_unavailable');
+  if (typeof body.cleared !== 'boolean') fail(400, 'invalid_input');
+  const note = text(body.note, 500);
+  if (note.length < 5) fail(400, 'invalid_input');
+  const id = Number(params[0]);
+  const review = (await one('SELECT * FROM courier_block_reviews WHERE order_id = ? FOR UPDATE', id)) ?? fail(404, 'not_found');
+  if (review.decided_at != null) {
+    if (!!review.cleared === body.cleared && Number(review.decided_by) === user.id) return blockReviewView(review); // a lost reply replays
+    fail(409, 'review_decided');
+  }
+  // The admin who blocked does not also judge the block: a second admin decides, as a forgiven debt needs a second approver.
+  if (Number(review.blocked_by) === user.id) fail(409, 'second_admin_required');
+  const now = Date.now(), driverId = Number(review.driver_id), pay = Number(review.trip_pay_cents);
+  let paid = 0;
+  if (body.cleared && pay > 0) {
+    if (review.service === 'shop') { await shop.blockTripPay(id, driverId, pay, user.id); paid = pay; }
+    else {
+      // A cash-only captain is paid by relieving what they owe Wind; a payout is out of scope, so any rest stays visible as owed.
+      await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
+      const balance = (await cashBalances('u.id = ?', driverId))[0];
+      paid = Math.min(pay, Math.max(0, Number(balance?.owedCents ?? 0) - Number(balance?.pendingCents ?? 0)));
+      if (paid) {
+        const entry = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at)
+          VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?)`, driverId, -paid, `Trip so far, courier block review cleared (order ${id})`, user.id, now)).lastInsertRowid);
+        await postCashJournal(entry);
+      }
+    }
+  }
+  await run('UPDATE courier_block_reviews SET decided_at = ?, decided_by = ?, cleared = ?, paid_cents = ?, note = ? WHERE order_id = ? AND decided_at IS NULL',
+    now, user.id, body.cleared, paid, note, id);
+  await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_DECIDED', ?, ?)",
+    user.id, id, JSON.stringify({ driverId, cleared: body.cleared, tripPayCents: pay, paidCents: paid }), now);
+  if (paid) await queuePush([driverId], 'cash', 0, '/driver/earnings');
+  return blockReviewView((await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', id))!);
+});
 route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
 route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => {

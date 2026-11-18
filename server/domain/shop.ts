@@ -869,12 +869,21 @@ export function registerShop(route: Register, deps: ShopDeps) {
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
+    // DRV-17: after a courier block support collected the goods; the trip so far is paid only by a cleared block review.
+    if (db.backend === 'postgres' && (await db.one("SELECT to_regclass('courier_block_reviews') AS t"))?.t
+      && await db.one('SELECT 1 FROM courier_block_reviews WHERE order_id = ?', r.id)) return;
     const pay = 2 * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }
+  }
+  /** DRV-17: a cleared block review pays the trip so far from operating expenses, once. */
+  async function blockTripPay(orderId: number, driverId: number, pay: number, actor: number) {
+    await ledger('captain', { driver: driverId, order: orderId }, 'trip_pay', pay, 'Trip so far, courier block review cleared', actor, `shop-block-trip-${orderId}`);
+    await ledger('wind', { driver: driverId, order: orderId }, 'opex_trip', -pay, 'Captain pay, courier block review cleared', actor, `shop-block-opex-${orderId}`);
+    await deps.journal(orderId, driverId, 'trip', { trip: pay });
   }
   /** DLV-23 money: an assigned captain is paid the trip so far from operating expenses when the order stops before collection. */
   async function postCancel(r: Row, s: Row, reason: ShopCancelReason, actor: number) {
@@ -1084,6 +1093,6 @@ export function registerShop(route: Register, deps: ShopDeps) {
     return { orders };
   });
 
-  return { place, view, merchantSees, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve,
+  return { place, view, merchantSees, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve, blockTripPay,
     recordSeals, exceptionReasons: shopExceptionReasons as readonly string[] };
 }

@@ -567,6 +567,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
+    {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} onDone={reload} />}
     {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
     {!live && <ErrorText>{actionError}</ErrorText>}
@@ -1027,3 +1028,34 @@ const styles = StyleSheet.create({
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
 });
+
+/** DRV-17: a second admin records whether a courier block's review cleared the captain; only then is the trip so far paid. */
+function BlockReviewCard({ order, review, me, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; onDone: () => unknown }) {
+  const { c, err } = useCopy();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
+  const [error, setError] = useState('');
+  const pay = `${(review.tripPayCents / 100).toFixed(2)} ₪`;
+  async function decide(cleared: boolean) {
+    if (busy) return;
+    setBusy(cleared ? 'yes' : 'no'); setError('');
+    try { await api(`/admin/orders/${order.id}/block-review`, { cleared, note: note.trim() }); await onDone(); }
+    catch (e) { setError(err(e)); }
+    finally { setBusy(''); }
+  }
+  if (review.decidedAt != null) return <Card>
+    <Txt variant="title">{c.blockReview}</Txt>
+    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
+  </Card>;
+  const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
+  return <Card tone={review.dueAt < Date.now() ? 'clay' : undefined}>
+    <Txt variant="title">{c.blockReview}</Txt>
+    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
+    {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>
+      <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
+      <Button title={c.blockReviewClear} size="sm" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'yes'} onPress={() => decide(true)} />
+      <Button title={c.blockReviewKeep} size="sm" variant="outline" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'no'} onPress={() => decide(false)} />
+    </>}
+    <ErrorText>{error}</ErrorText>
+  </Card>;
+}

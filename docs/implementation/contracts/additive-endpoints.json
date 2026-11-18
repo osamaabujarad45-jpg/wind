@@ -400,6 +400,11 @@
         },
         {
           "method": "POST",
+          "path": "/api/admin/orders/:id/block-review",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
           "path": "/api/admin/orders/:id/arrival/override",
           "anonymousStatus": 401
         },

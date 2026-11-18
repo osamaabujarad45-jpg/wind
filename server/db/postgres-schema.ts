@@ -158,6 +158,10 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run('ALTER TABLE ride_lifecycle ADD COLUMN IF NOT EXISTS grace_extended_at BIGINT');
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(38,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 39'))) {
+      await database.run(readFileSync(new URL('./postgres-block-reviews.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(39,?)', Date.now());
+    }
   });
 }
 

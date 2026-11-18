@@ -9,11 +9,12 @@ import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
 import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { fill } from '../../copy';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean;
+  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
@@ -34,6 +35,10 @@ export default function Dashboard() {
       {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Txt variant="title">{c.backupStaleTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.backupStaleBody}</Txt>
+      </Card></View>}
+      {!!data.blockReviewsOverdue && <View accessibilityLiveRegion="polite"><Card tone="clay">
+        <Txt variant="title">{fill(c.blockReviewsOverdue, { n: data.blockReviewsOverdue })}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{c.blockReviewsOverdueBody}</Txt>
       </Card></View>}
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}

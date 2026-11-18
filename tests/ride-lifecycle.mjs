@@ -113,7 +113,29 @@ try {
   const view = await g.call(`/orders/${order.id}`, { token: g.customer.token });
   assert.equal((await advance(g, who.driver.token, order.id, 'assigned')).status, 'at_pickup');
   assert.equal((await advance(g, who.driver.token, order.id, 'at_pickup', { boardingCode: view.ride.boardingCode })).status, 'in_transit');
-  console.log('WP11 ride-lifecycle: far/stale/missing fix rejection and audited operator override passed');
+  // SRS §2.1 / DRV-17: a courier block ends the boarded ride unpaid for the rider; the captain's trip so far waits on a second admin's review.
+  await g.call(`/admin/users/${who.driver.user.id}`, { token: g.admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  assert.equal((await g.call(`/orders/${order.id}`, { token: g.customer.token })).status, 'cancelled');
+  const review = (await g.call(`/orders/${order.id}`, { token: g.admin.token })).blockReview;
+  const fare = Number((await g.db.one('SELECT price, discount FROM orders WHERE id=?', order.id)).price);
+  assert.equal(review.tripPayCents, Math.floor(Math.round(fare * 100) / 2), 'trip so far is half the booked fare');
+  assert.equal(review.decidedAt, null);
+  assert.ok(review.dueAt >= Date.now() + 2 * 86_400_000 - 5_000, 'two working days at least');
+  assert.equal((await g.call(`/orders/${order.id}`, { token: g.customer.token })).blockReview, undefined, 'only support sees the review');
+  const reviewPath = `/admin/orders/${order.id}/block-review`;
+  assert.equal((await g.call(reviewPath, { token: g.admin.token, body: { cleared: true, note: 'Synthetic same admin' }, expect: 409 })).error, 'second_admin_required');
+  const auditor = await g.account('admin');
+  assert.equal((await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'no' }, expect: 400 })).error, 'invalid_input');
+  await g.db.run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, 'adjustment', ?, 'Synthetic owed commission', 'confirmed', ?, ?)`,
+    who.driver.user.id, 100, g.admin.user.id, Date.now());
+  const decided = await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } });
+  assert.equal(decided.cleared, true);
+  assert.equal(decided.paidCents, Math.min(100, review.tripPayCents), 'pay relieves what the captain owes, never a payout');
+  assert.deepEqual(await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } }), decided, 'a lost reply replays');
+  assert.equal((await g.call(reviewPath, { token: auditor.token, body: { cleared: false, note: 'Synthetic change of mind' }, expect: 409 })).error, 'review_decided');
+  assert.equal(Number((await g.db.one("SELECT COALESCE(SUM(amount_cents),0) s FROM cash_entries WHERE driver_id=? AND note LIKE 'Trip so far%'", who.driver.user.id)).s), -decided.paidCents);
+  assert.equal(Number((await g.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='BLOCK_REVIEW_DECIDED'", order.id)).n), 1);
+  console.log('WP11 ride-lifecycle: far/stale/missing fix rejection, audited operator override and courier block review passed');
 } finally { await g.close(); }
 
 // --- Five boarding misses lock; an audited admin reset recovers --------------
