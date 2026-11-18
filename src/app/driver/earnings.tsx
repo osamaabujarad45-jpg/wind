@@ -47,6 +47,7 @@ function CashCard() {
   const [failure, setFailure] = useState('');
   const [shown, setShown] = useState(10); // the ledger is longer than the screen: it grows on request
   if (!data) return null;
+  const lines = cashLines(c, data);
   async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
     setBusy(entry.id); setFailure('');
     try { await api(`/driver/cash/${entry.id}/confirm`, { decision }); haptic.success(); reload(); }
@@ -57,8 +58,8 @@ function CashCard() {
       <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
       <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
     </Row>
-    <Txt variant="caption" style={{ marginTop: 4, marginBottom: 4 }}>{c.cashBreakdownHint}</Txt>
-    {cashLines(c, data).map(([label, cents]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 2 }}>
+    {lines.length > 0 && <Txt variant="caption" style={{ marginTop: 4, marginBottom: 4 }}>{c.cashBreakdownHint}</Txt>}
+    {lines.map(([label, cents]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 2 }}>
       <Txt style={{ flex: 1 }}>{label}</Txt>
       <Txt>{money(cents / 100)}</Txt>
     </Row>)}
