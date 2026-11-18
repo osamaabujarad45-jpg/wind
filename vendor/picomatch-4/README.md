@@ -554,8 +554,9 @@ console.log(pm.isMatch('foo.bar', '!(!(foo)).!(!(bar))')); // true
 console.log(pm.makeRe('+(a|aa)'));
 //=> /^(?:\+\(a\|aa\))$/
 
-// increase the limit to allow a small amount of nested quantified extglobs
-console.log(pm.isMatch('aaa', '+(+(a))', { maxExtglobRecursion: 1 })); // true
+// Wind backport (GHSA-fc5q-39xc-vjpf): a nested group inside a repeat is always matched literally,
+// whatever the limit
+console.log(pm.isMatch('aaa', '+(+(a))', { maxExtglobRecursion: 1 })); // false
 ```
 
 #### POSIX brackets

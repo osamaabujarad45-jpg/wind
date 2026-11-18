@@ -15,8 +15,8 @@ const advisory = 'https://github.com/advisories/GHSA-qr28-fpjm-wq7f';
 const allowedNames = new Set(['decode-uri-component', 'query-string', 'expo-router']);
 // vendor/picomatch-{2,4} as reviewed in the GHSA-fc5q-39xc-vjpf backport (no upstream fix released): every file's bytes.
 export const PICOMATCH_TREE_SHA256 = {
-  2: 'c814adc70d6973fc0c3259dc1286ca2767f2fab9b221e7fb97c624613a82c78a',
-  4: '8ed5e59048b6ab137b9d640246795c97b51d9ea6b88cbb65b7d6a9c0c537cd28',
+  2: 'a45683f2fcfd9a82caa6d651c189c121dfee33079d5afec162126160120b404e',
+  4: '4c29a7f0071a701dfa1d66ff4b2295019e40ff061b2943d235d56adb7db0c891',
 };
 const picomatchAdvisory = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
 const picomatchNames = new Set(['picomatch', 'fdir', 'tinyglobby', '@expo/cli', 'expo', 'react-native', 'babel-preset-expo',

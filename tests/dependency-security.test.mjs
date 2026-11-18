@@ -144,7 +144,9 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
     ['+(*(a)|b)', 'a', 28, { maxExtglobRecursion: false }], ['+(*a)', 'a', 28, { maxExtglobRecursion: false }],
     // Second review: a `+` inside one branch, a regex `+` on a group (no extglob guard sees it), uppercase-only folds.
     ['+(a+)', 'a'], ['*(a+)', 'a'], ['(a|a)+', 'a'], ['@(a|a)+', 'a'], ['{a,a}+', 'a'], ['!(a)+', 'b'],
-    ['+(σ|ς)', 'σ', 28, { nocase: true }], ['+(σ|ς)', 'σ', 28, { flags: 'i' }]];
+    ['+(σ|ς)', 'σ', 28, { nocase: true }], ['+(σ|ς)', 'σ', 28, { flags: 'i' }],
+    // Third review: escaped classes are not literals; any truthy nocase compiles with `i`.
+    ['+(\\d|1)', '1'], ['+(\\w|a)', 'a'], ['+(\\d?|1)', '1', 40], ['+(k|K)', 'k', 28, { nocase: 1 }], ['+(k|K)', 'k', 28, { nocase: 'yes' }]];
   for (const [major, picomatch] of Object.entries(picomatches)) {
     for (const [glob, unit, count = 28, options] of shapes) {
       const started = performance.now();
@@ -170,6 +172,7 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
     for (const [file, glob, options] of [['a.png', '*.+(png|jp?g)'], ['a.jpeg', '*.+(png|jp?g)'], ['aA', '+(a|A)'],
       ['AA', '+(a|b)', { nocase: true }], ['a123.js', 'a[0-9]+.js']]) assert.equal(picomatch.isMatch(file, glob, options), true, `${major} ${glob} ${file}`);
     assert.equal(picomatch.isMatch('aA', '+(a|A)', { nocase: true }), false, 'a|A folds together under nocase: literal');
+    assert.equal(picomatch.isMatch('123', '+(\\d)'), true, 'a single escaped class still repeats');
     // A `+` after a group is now a literal plus.
     assert.equal(picomatch.isMatch('ab+', '(ab)+'), true);
     assert.equal(picomatch.isMatch('abab', '(ab)+'), false);

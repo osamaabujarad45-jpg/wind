@@ -132,7 +132,8 @@ const normalizeSimpleBranch = branch => {
     }
   }
 
-  if (!isPlainBranch(value)) {
+  // Wind backport (GHSA-fc5q-39xc-vjpf): `\d`, `\w`, `\s`, `\S` compile to classes, so they are not literals.
+  if (/\\[A-Za-z0-9]/.test(value) || !isPlainBranch(value)) {
     return;
   }
 
@@ -314,11 +315,13 @@ const windRiskyRepeat = (branches, options) => {
   if (branches.length === 1) return !flattenable(branches[0]) && !fixed(branches[0]);
   const rest = branches.filter(branch => !flattenable(branch));
   if (!rest.every(fixed)) return true;
-  const folds = options.nocase === true || /i/.test(String(options.flags ?? ''))
+  // Mirrors picomatch.js: `flags` wins, otherwise any truthy `nocase` compiles with `i`.
+  const folds = (options.flags ? /i/.test(String(options.flags)) : !!options.nocase)
     ? [text => text.toLowerCase(), text => text.toUpperCase()] : [text => text];
   const literals = rest.map(normalizeSimpleBranch);
   if (literals.every(Boolean)) return folds.some(fold => !windUniquelyDecodable(literals.map(fold)));
-  const first = branch => branch[0] === '\\' ? branch[1] : branch[0] === '?' || branch[0] === '[' ? undefined : branch[0];
+  const first = branch => branch[0] === '\\' ? (/[A-Za-z0-9]/.test(branch[1] ?? '') ? undefined : branch[1])
+    : branch[0] === '?' || branch[0] === '[' ? undefined : branch[0];
   const starts = rest.map(first);
   return starts.some(start => !start) || folds.some(fold => new Set(starts.map(fold)).size !== starts.length);
 };
