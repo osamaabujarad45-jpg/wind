@@ -26,7 +26,7 @@ assert.match(txt, /maxFontSizeMultiplier=\{maxScale\}/, 'Txt caps at maxScale');
 assert.match(txt, /numberOfLines=\{lines\}/, 'Txt wires its line limit');
 assert.match(txt, /const lines = clamp \?\? scaled;/, 'a clamp is kept at every scale');
 assert.match(ui, /export function useLines\(n\?: number\) \{ return linesFor\(n, useWindowDimensions\(\)\.fontScale\); \}/);
-assert.match(ui, /maxFontSizeMultiplier=\{1\.3\} \/\* tab labels/, 'tab label cap is explained');
+assert.match(ui, /maxFontSizeMultiplier=\{maxScale\} \/\* A11Y-03: 200%; two lines in the shared bar/, 'tab labels follow the 200% floor (A11Y-03, design review H-08)');
 
 // 3. Every JSX <Text> and <TextInput> under src, found whatever order its attributes come in and however many lines
 // the tag spans. The tag ends at the first '>' outside braces, so arrow functions inside attributes do not end it early.
