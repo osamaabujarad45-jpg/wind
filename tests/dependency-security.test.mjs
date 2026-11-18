@@ -167,7 +167,7 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
     assert.equal(picomatch.isMatch('abac', '+(a?)'), true);
     assert.equal(picomatch.isMatch('**', '+([*])'), false);
     // Branches that start differently, or differ only in case without nocase, decode one way and keep matching.
-    for (const [file, glob, options] of [['a.png', '*.+(png|jpe?g)'], ['a.jpeg', '*.+(png|jpe?g)'], ['aA', '+(a|A)'],
+    for (const [file, glob, options] of [['a.png', '*.+(png|jp?g)'], ['a.jpeg', '*.+(png|jp?g)'], ['aA', '+(a|A)'],
       ['AA', '+(a|b)', { nocase: true }], ['a123.js', 'a[0-9]+.js']]) assert.equal(picomatch.isMatch(file, glob, options), true, `${major} ${glob} ${file}`);
     assert.equal(picomatch.isMatch('aA', '+(a|A)', { nocase: true }), false, 'a|A folds together under nocase: literal');
     // A `+` after a group is now a literal plus.
