@@ -386,6 +386,12 @@ export function ltr(text: string): string {
   return `\u2066${text}\u2069`;
 }
 
+/** First-strong isolate (FSI\u2026PDI) for free text of either direction (a name, a note) inside a line of the other.
+ *  Its own direction marks are dropped: a stray PDI would close the isolate early. */
+export function isolate(text: string): string {
+  return `\u2068${text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')}\u2069`;
+}
+
 // Run sheet (SPEC-run-sheet.md): a courier's active orders as courier companies print them, by stage then city.
 export type RunStage = 'pickup' | 'deliver' | 'return';
 export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 'dropoffCity'>>(orders: T[]) {

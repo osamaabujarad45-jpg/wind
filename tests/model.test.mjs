@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles, exceptionReasons, exceptionNextAction, suggestedNextAction } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles, exceptionReasons, exceptionNextAction, suggestedNextAction, isolate } from '../src/model.ts';
+// Free text is isolated and cannot carry its own marks: a stray PDI or override would close or flip the line around it.
+assert.equal(isolate('سائق'), '\u2068سائق\u2069');
+assert.equal(isolate('a\u2069\u202eb\u200f'), '\u2068ab\u2069');
 
 for (const ok of ['0599123456', '056-912-3456', '+970599123456', '00970569123456', '٠٥٩٩١٢٣٤٥٦']) assert.equal(normalizePhone(ok)?.length, 10, ok);
 for (const bad of ['', '0521234567', '059912345', '+9705991234567']) assert.equal(normalizePhone(bad), null, bad);
 // +970 and +972 are the same West Bank line: every written form signs in to one account.
-for (const same of ['0597127547', '+972597127547', '+970597127547', '00972597127547', '972597127547', '+972 (59) 712.7547', '‎+972 59 712 7547‏', '٠٥٩٧١٢٧٥٤٧', String.fromCharCode(0x200b) + '0597127547' + String.fromCharCode(0xfeff)])
+for (const same of ['0597127547', '+972597127547', '+970597127547', '00972597127547', '972597127547', '+972 (59) 712.7547', '\u200e+972 59 712 7547\u200f', '٠٥٩٧١٢٧٥٤٧', String.fromCharCode(0x200b) + '0597127547' + String.fromCharCode(0xfeff)])
   assert.equal(normalizePhone(same), '0597127547', same);
 for (const bad of ['+972541234567', '+9725971275470', '+971597127547']) assert.equal(normalizePhone(bad), null, bad); // Israeli carrier, too long, wrong country
 

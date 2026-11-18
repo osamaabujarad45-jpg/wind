@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
-import { city, HISTORY_PAGE, isOpen, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
+import { city, HISTORY_PAGE, isOpen, isolate, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { arrivingNow, etaBucket, kmLabel } from './map-math';
 import { useSession } from './session';
@@ -172,8 +172,7 @@ export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pic
   const here = order.pickupCity === order.dropoffCity && !!order.pickupNote && !!order.dropoffNote;
   // Each place is isolated (FSI…PDI) and a leading mark sets the line's direction, so two Latin notes on an Arabic screen
   // still read pickup first: without them the line took the direction of its first letter and the arrow pointed backwards.
-  // A note's own direction marks are dropped: a stray PDI would close the isolate early.
-  const place = (text: string) => `\u2068${text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')}\u2069`;
+  const place = isolate;
   return `${rtl ? '\u200f' : '\u200e'}${place(here ? order.pickupNote! : city(order.pickupCity)[language])} ${rtl ? '←' : '→'} ${place(here ? order.dropoffNote! : city(order.dropoffCity)[language])}`;
 }
 

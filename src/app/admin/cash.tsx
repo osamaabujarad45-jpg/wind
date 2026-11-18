@@ -3,7 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { cashCommandBody, cashCommandKey, formAfter, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
-import { minorFromText } from '../../model';
+import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { storage } from '../../storage';
@@ -25,7 +25,7 @@ type PendingEntry = { id: number; amountCents: number; createdAt: number; userNa
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
 // one a driver cannot confirm (blocked, gone, dispute deadlock) is resolved here with a recorded reason (T25).
 export default function AdminCash() {
-  const { c, money, err } = useCopy();
+  const { c, money, err, rtl } = useCopy();
   const { date } = useFormat();
   const { me } = useSession();
   const actorId = me?.user.id;
@@ -150,7 +150,8 @@ export default function AdminCash() {
         {/* Which decision, for whom and how much: a dispute and a confirmation must not look alike. */}
         <Txt variant="title">{resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}</Txt>
         {(() => { const target = pending?.find(entry => entry.id === resolving.id);
-          return target && <Txt variant="caption" style={{ marginBottom: 8 }}>{`${target.userName} · ${money(target.amountCents / 100)}${target.reference ? ` · ${target.reference}` : ''}`}</Txt>; })()}
+          // The screen's direction leads, the name is isolated: an Arabic name first would flip an English line (A53 walk).
+          return target && <Txt variant="caption" style={{ marginBottom: 8 }}>{`${rtl ? '\u200f' : '\u200e'}${isolate(target.userName)} · ${money(target.amountCents / 100)}${target.reference ? ` · ${ltr(target.reference)}` : ''}`}</Txt>; })()}
         <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
