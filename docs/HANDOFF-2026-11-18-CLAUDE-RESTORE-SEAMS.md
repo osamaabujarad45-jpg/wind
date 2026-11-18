@@ -72,3 +72,11 @@ Priority map: `wind-competitors/CLAUDE-INTEGRATION.md` §2. #1–#4 shipped 17 N
 | 5 | Map-first home / failure states | Not started. Partial today: map page reports `fail` on load/HTTP/WebGL loss, `windTileFailed` tracked, `pinUnavailable`/`mapUnavailable` copy. Next owner: one-tap resume of an active order from home, and actionable text for permission, approximate fix, stale fix, offline routing and tile failure. UI-heavy: sequence after the 18 Nov Haiku design review lands. |
 | 6 | Addresses | Gap: saved places stored only city + landmark text; the pin came back only if one of the customer's last 30 orders used the same landmark. **#92** stores an optional pin (`saved_places.lat/lng`, SQLite additive ALTER, PostgreSQL migration 35), validated like a booking pin (`bookedPoint`), kept by a pinless re-save (COALESCE); GET marks a place's own pin (`pinSaved`) so a pin borrowed from recent orders does not hide "Save this pin" (keeps the label); pinless saved rows lead with "No pin". `docs/SPEC-saved-places.md` is cited in code but does not exist. |
 | 10 | Accessibility / RTL | Ongoing across slices; the 18 Nov Haiku design review feeds it. |
+
+## 7. 18 Nov Haiku design review folded in (Opus)
+
+Source: `docs/DESIGN-REVIEW-2026-11-18.md` in worktree `review-continue-session-e13b27` (session "Design system extraction", Haiku 5.5). That worktree is on the old local-master lineage `b6092295` (lacks #78–#92); its uncommitted source edits and PNGs were not used. Every finding was re-checked on `origin/master`.
+
+- **#93** applies D-04, D-05, D-12, D-16, D-26, D-29, D-36 and a new Arabic admin tab fix (المستخدمون → الحسابات in a seven-tab bar), with the full `npm run screens` set regenerated on the test PC.
+- Already met on master: D-01 (old-lineage T3/OpenCode slides), D-03, D-07, D-08 (privacy link), D-11, D-14, D-23, D-24, D-25, D-35.
+- Open: D-02 (keep-alive reset seen by the capture harness), D-06 (tile data), D-09, D-10 (product decision), D-13, D-15, D-17–D-22, D-27, D-28, D-31–D-34, D-37–D-40, and the third pass D-41–D-65 (not yet verified on master). The seven-tab Arabic admin bar (shop line on) is tight: الاشتراكات and الإعدادات nearly touch; production shows six tabs.
