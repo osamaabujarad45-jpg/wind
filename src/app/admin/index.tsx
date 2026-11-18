@@ -8,8 +8,7 @@ import { OfficeShelf } from '../../office-ui';
 import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
 import type { OrderStatus } from '../../model';
-import { useSession } from '../../session';
-import { Appear, Badge, Card, ErrorText, fill, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
@@ -23,13 +22,12 @@ type Stats = {
 const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
-  const { me } = useSession();
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<Stats>('/admin/stats', 30_000);
 
   return <Screen onRefresh={reload}>
     <Header title={c.dashboard} />
-    <Txt style={{ marginTop: -12, marginBottom: 14 }}>{fill(c.hello, { name: me?.user.name ?? '' })}</Txt>
+    <Txt style={{ marginTop: -12, marginBottom: 14 }}>{c.helloAdmin /* never the account name: a seeded Arabic name read "Hi إدارة ويند" in English (design review D-26) */}</Txt>
     {pushSupported() && <ListGroup><PushRow /></ListGroup>}
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : <>

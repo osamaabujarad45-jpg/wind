@@ -298,10 +298,10 @@ export default function Jobs() {
                 <Field label={`${c.offerPrice} (₪)`} icon="cash-outline" keyboardType="number-pad" value={offering.text} maxLength={4}
                   onChangeText={text => setOffering({ id: order.id, text: latinDigits(text).replace(/\D/g, '') })}
                   error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
-                <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })} · {fill(c.offerRange, { lo: money(lo), hi: money(hi) })}</Txt>
+                <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })}</Txt>{/* the range is said once (D-29): by the field error once typed, by the reason before */}
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
                   onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
-                {!ok && <Reason>{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Reason>}
+                {!ok && !offering.text && <Reason>{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Reason>}
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>

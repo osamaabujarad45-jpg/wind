@@ -112,6 +112,9 @@ export default function Auth() {
     }
   }
 
+  // Create account waits with the first missing field as its reason (design review D-05); submit still checks on tap.
+  const upMissing = mode !== 'up' ? null : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone'
+    : role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2 ? 'invalid_plate' : password.length < 12 || password.length > 100 ? 'weak_password' : !consent ? 'consent_required' : null;
   async function submit() {
     if (busy) return;
     if (mode === 'reset') return reset();
@@ -245,7 +248,7 @@ export default function Auth() {
           {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
           {blocked && !!error && SUPPORT_URL && <Button title={c.support} icon="mail-outline" variant="soft" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
-          <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} />
+          <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} disabled={!!upMissing} reason={upMissing ? err(upMissing) : undefined} />
           {entraConfigured && <Button title={entraPrepareFailed ? c.entraRetry : c.entraSignIn} variant="ghost"
             disabled={busy || (!entraRequest && !entraPrepareFailed)} reason={c.wait_busy}
             onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}

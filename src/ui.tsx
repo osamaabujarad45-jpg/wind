@@ -596,11 +596,14 @@ export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () =>
 // Custom so tab order follows the in-app language (OS RTL flipping is off).
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { row, language } = useCopy();
+  // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
+  const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
+  // Seven tabs (admin with the shop line on) leave ~55 pt each: one Arabic word (مستخدمون) split mid-word at 12 pt. 11 pt is the floor.
+  const dense = state.routes.filter(route => !hidden(route.key)).length >= 7;
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
-      // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
-      if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;
+      if (hidden(route.key)) return null;
       const focused = state.index === index;
       const color = focused ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
@@ -614,7 +617,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={1.3} /* the badge sits over the icon in a fixed-width tab slot */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar: two lines, never a cut word */ style={[styles.barText, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={1.3} /* tab labels share a fixed-width bar: two lines, never a cut word */ style={[styles.barText, dense && { fontSize: 11 }, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;

@@ -456,7 +456,8 @@ assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
 { // A53 walk 18 Nov: a layout's `href: null` (expo-router -> tabBarItemStyle display none) hides the tab in our bar too,
   // and a locked field looks locked.
   const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
-  assert.ok(ui.includes("if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;"), 'TabBar skips hidden routes');
+  assert.ok(ui.includes("StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none'") && ui.includes('if (hidden(route.key)) return null;'), 'TabBar skips hidden routes');
+  assert.ok(ui.includes('state.routes.filter(route => !hidden(route.key)).length >= 7') && ui.includes('dense && { fontSize: 11 }'), 'a seven-tab bar uses the 11 pt floor so one word never splits');
   assert.match(ui, /disabled && styles\.inputDisabled/);
   const admin = readFileSync(new URL('../src/app/admin/_layout.tsx', import.meta.url), 'utf8');
   assert.match(admin, /name="merchants".*href: shop \? undefined : null/, 'Shops is hidden while the shop line is off');
