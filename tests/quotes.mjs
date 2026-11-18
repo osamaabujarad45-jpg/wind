@@ -16,7 +16,7 @@ process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-quotes-')), 'test.db
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
 process.env.SOUQ_PARTNER_KEY = 'wp08-quotes-test-partner-key-32-chars-min';
 
-const { server, db, persistence, promote, shutdown, scrubDeletedQuotes } = await import('../server/main.ts');
+const { server, db, persistence, promote, shutdown, scrubDeletedQuotes, purgeExpiredQuotes } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = () => `http://127.0.0.1:${server.address().port}/api`;
 const call = apiCaller(base);
@@ -217,6 +217,13 @@ try {
   assert.ok((await scrubDeletedQuotes()) >= 1);
   assert.equal((await persistence.one('SELECT contact FROM quotes WHERE id = ?', stragglerQuote.quoteId)).contact, '');
   console.log('✓ account deletion scrubs quote personal fields; fare immutable; sweep catches skipped quotes');
+
+  // Expired quotes nobody booked are deleted after a day; a consumed quote (the order's fare record) stays.
+  const unused = await call('/price', { token: customer.token, body: orderInput });
+  assert.ok((await purgeExpiredQuotes(Date.now() + 2 * 86_400_000)) >= 1);
+  assert.equal(await persistence.one('SELECT id FROM quotes WHERE id = ?', unused.quoteId), undefined);
+  assert.ok(await persistence.one('SELECT id FROM quotes WHERE id = ?', leaverQuote.quoteId), 'consumed quotes are kept');
+  console.log('✓ expired unbooked quotes purged; consumed quotes kept');
 
   console.log('all quotes tests passed');
 } finally {
