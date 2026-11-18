@@ -226,7 +226,7 @@ export type Order = {
   customerStats?: { rating: number | null; trips: number }; // drivers only; rating from 3 ratings (SPEC-customer-rating.md)
   dispatch?: { roundId: string; state: string; closeReason: string | null; offersIssued: number; deadlineAt: number; startedAt: number;
     myOffer?: { id: string; offerId: string; expiresAt: number; issuedAt: number; leaseNonce: string | null; pickupEtaSeconds: number; idleSeconds: number; idleCreditSeconds: number; rankScore: number; etaEstimated: boolean } | null } | null; // WP10 additive
-  ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string } | null; // WP11 additive
+  ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string; graceExtended?: boolean } | null; // WP11 additive; graceExtended: RIDE-06 (absent before PG migration 38)
   measuredScope?: { requirementsRevision: number; grams: number; cm3: number; pieces: number; seats: number } | null;
   declaredScope?: { orderId: number; service: string; revision: number; itemCount: number | null; lengthMm: number | null; widthMm: number | null; heightMm: number | null;
     massGrams: number | null; volumeCm3: number | null; declaredValueMinor: number | null; equipment: string[]; crewCount: number | null;

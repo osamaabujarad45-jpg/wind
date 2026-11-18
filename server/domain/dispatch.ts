@@ -57,15 +57,19 @@ export class Dispatch {
   }
   enabled() { return dispatchEnabled(); }
   async available() { return dispatchAvailable(this.db); }
+  /** Migration 37. The API never migrates PostgreSQL itself, so a new API on an older schema keeps the fixed 20 s window. */
+  private async offerSettingsAvailable() {
+    return await this.available() && this.db.memo('rideOfferSettings', async () => !!await this.db.one('SELECT version FROM schema_migrations WHERE version=37'));
+  }
   async offerSeconds(driverId: number) {
-    if (!this.enabled() || !(await this.available())) return undefined;
+    if (!this.enabled() || !(await this.offerSettingsAvailable())) return undefined;
     return (await this.db.one('SELECT ride_offer_seconds FROM users WHERE id=?', driverId))?.ride_offer_seconds;
   }
   async setOfferSeconds(user: Actor, seconds: unknown) {
     if (user.role !== 'driver') this.fail(403, 'forbidden');
     if (user.status === 'blocked') this.fail(403, 'blocked');
     if (!this.enabled()) this.fail(409, 'dispatch_unavailable');
-    await this.requireAvailable();
+    if (!(await this.offerSettingsAvailable())) this.fail(409, 'dispatch_unavailable');
     if (seconds !== 20 && seconds !== 30 && seconds !== 40) this.fail(400, 'invalid_input');
     await this.db.run('UPDATE users SET ride_offer_seconds=? WHERE id=?', seconds, user.id);
     return { rideOfferSeconds: seconds };
@@ -125,7 +129,7 @@ export class Dispatch {
     const check = (kind: string, vehicle: boolean) => `COALESCE((SELECT c.outcome='approved' AND c.valid_from<=${now} AND c.expires_at>${now}${vehicle ? ' AND c.vehicle_revision=v.revision' : ''}
       FROM verification_checks c WHERE ${vehicle ? 'c.vehicle_id=v.id' : 'c.driver_id=u.id'} AND c.kind='${kind}' AND c.permit_key='' ORDER BY c.id DESC LIMIT 1),false)`;
     return this.db.all(`SELECT u.id AS driver_id, s.id AS session_id, s.started_at, s.auth_session_hash,
-        l.lat, l.lng, u.ride_offer_seconds, d.vehicle_id, d.revision AS driver_revision, v.revision AS vehicle_revision,
+        l.lat, l.lng, ${await this.offerSettingsAvailable() ? 'u.ride_offer_seconds' : '20 AS ride_offer_seconds'}, d.vehicle_id, d.revision AS driver_revision, v.revision AS vehicle_revision,
         p.revision AS policy_revision, vr.revision AS run_revision
       FROM driver_presence_sessions s
       JOIN users u ON u.id=s.driver_id AND u.role='driver' AND u.status='active'

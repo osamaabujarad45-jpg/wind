@@ -83,6 +83,26 @@ try {
   assert.equal(lateDecline.dispatch.closeReason, 'deadline', 'the round never shortens a captain’s chosen window');
   assert.equal(Number(lateDecline.dispatch.offersIssued), 1);
 
+  // Rollout order: the API never migrates PostgreSQL, so a new API can run on a schema-36 database without
+  // users.ride_offer_seconds. Dispatch must keep the fixed 20 s window there, not fail every round.
+  await db.run('DELETE FROM schema_migrations WHERE version=37');
+  await db.run('ALTER TABLE users DROP COLUMN ride_offer_seconds');
+  try {
+    assert.equal((await call('/me', { token: third.driver.token })).rideOfferSeconds, undefined, 'no setting is offered before migration 37');
+    assert.equal((await call('/driver/ride-offer-settings', { token: third.driver.token, body: { seconds: 30 }, expect: 409 })).error, 'dispatch_unavailable');
+    const oldSchemaRider = await f.account();
+    const oldSchemaOrder = await bookRide(f, {}, oldSchemaRider);
+    await assessRide(f, oldSchemaOrder, [third.vehicle]);
+    const oldSchemaRound = await call(`/orders/${oldSchemaOrder.id}/dispatch/retry`, { token: oldSchemaRider.token, body: {} });
+    assert.equal(oldSchemaRound.dispatch.offersIssued, 1);
+    const oldSchemaOffer = await myOffer(f, oldSchemaOrder.id, third.driver);
+    assert.equal(oldSchemaOffer.expiresAt - oldSchemaOffer.issuedAt, 20_000, 'schema 36 keeps the default window');
+    await call(`/offers/${oldSchemaOffer.id}/decline`, { token: third.driver.token, body: {} });
+  } finally {
+    await db.run('ALTER TABLE users ADD COLUMN ride_offer_seconds INTEGER NOT NULL DEFAULT 20 CHECK(ride_offer_seconds IN (20,30,40))');
+    await db.run('INSERT INTO schema_migrations(version,applied_at) VALUES(37,?)', Date.now());
+  }
+
   const lonelyRider = await f.account();
   const lonely = await bookRide(f, {}, lonelyRider);
   await assessRide(f, lonely, []);

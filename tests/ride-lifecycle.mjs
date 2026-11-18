@@ -141,12 +141,26 @@ try {
   assert.equal((await h.call(`/orders/${order.id}/ride/no-show`, { token: who.driver.token, body: { reason: 'absent', expectedAssignmentEpoch: boardedEpoch }, expect: 409 })).error, 'cannot_arrive');
   await advance(h, who.driver.token, order.id, 'in_transit');
   const missedOrder = await dispatchAssigned(h, who, await bookRide(h));
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: {}, expect: 409 })).error, 'ride_grace_not_running', 'no extension before the captain arrives');
   await h.call(`/orders/${missedOrder.id}/arrive`, { token: who.driver.token, body: {} });
   const noShow = (token, body, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/no-show`, { token, body, expect });
   const epoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
   const missed = { reason: 'absent', expectedAssignmentEpoch: epoch };
   assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active');
-  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 301_000, missedOrder.id);
+  // RIDE-06/A11Y-08: the rider adds 2 minutes once, during the grace; the captain's no-show waits for the new end.
+  const extend = (token, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token, body: {}, expect });
+  assert.equal((await extend(who.driver.token, 403)).error, 'forbidden');
+  const before = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
+  assert.equal(before.ride.graceExtended, false);
+  const extended = await extend(h.customer.token);
+  assert.equal(extended.ride.graceExtended, true);
+  assert.equal(extended.ride.graceUntil, before.ride.graceUntil + 120_000);
+  assert.equal((await extend(h.customer.token)).ride.graceUntil, extended.ride.graceUntil, 'a repeated request is a replay, not a second extension');
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_GRACE_EXTENDED'", missedOrder.id)).n), 1);
+  assert.equal((await h.call(`/orders/${missedOrder.id}`, { token: who.driver.token })).ride.graceUntil, extended.ride.graceUntil, 'the captain sees the new end time');
+  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 302_000, missedOrder.id);
+  assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active', 'the extension holds the no-show past the base 5 minutes');
+  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 422_000, missedOrder.id);
   assert.equal((await noShow(h.d2.token, missed, 404)).error, 'not_found');
   assert.equal((await noShow(who.driver.token, { ...missed, expectedAssignmentEpoch: epoch - 1 }, 409)).error, 'assignment_changed');
   assert.equal((await noShow(who.driver.token, missed)).ok, true);
@@ -156,7 +170,7 @@ try {
   assert.equal((await h.db.one('SELECT commission FROM orders WHERE id=?', missedOrder.id)).commission, null);
   assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_NO_SHOW'", missedOrder.id)).n), 1);
   assert.ok(await h.db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='order.changed' AND payload->>'status'='cancelled'", missedOrder.id));
-  console.log('WP11 ride-lifecycle: boarding lock, audited recovery and fee-free no-show passed');
+  console.log('WP11 ride-lifecycle: boarding lock, audited recovery, rider grace extension and fee-free no-show passed');
 } finally { await h.close(); }
 
 // --- Release clears custody of the challenge; a stale epoch cannot start ----

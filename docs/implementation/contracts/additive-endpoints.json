@@ -395,6 +395,11 @@
         },
         {
           "method": "POST",
+          "path": "/api/orders/:id/ride/grace-extension",
+          "anonymousStatus": 401
+        },
+        {
+          "method": "POST",
           "path": "/api/admin/orders/:id/arrival/override",
           "anonymousStatus": 401
         },
