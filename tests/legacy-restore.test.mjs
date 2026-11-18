@@ -1,6 +1,6 @@
 // An app update keeps what the old version saved (`adb install -r`; a fresh install never has an old copy). Each blob below
-// is written as an earlier version wrote it, without the fields added since, and must either restore with a default at
-// the load boundary or be dropped there — never reach a screen that reads a missing field.
+// is written as an earlier version wrote it, without the fields added since. It must be dropped at the load boundary,
+// restored with a default there, or restored as-is where every reader treats the missing field as optional.
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { readOfflineSummary } from '../src/offline-summary.ts';
@@ -14,12 +14,13 @@ const oldSummary = { schemaVersion: 1, actorId: 4, role: 'customer', savedAt: 10
   orders: [{ id: 9, service: 'parcel', status: 'assigned', pickupCity: 'ramallah', dropoffCity: 'nablus' }] };
 assert.equal(readOfflineSummary(oldSummary, 2000, 60_000).orders[0].scheduledFor, null);
 
-// Driver command before 15 Nov (wp01 cash, SHIP-17 refusal, seals): no collectedCents, detail or seals.
+// Driver command before 15 Nov (wp01 cash, SHIP-17 refusal, seals): no collectedCents, detail or seals. All optional to
+// every reader; a shop door advance without collectedCents is refused by the server (server/domain/shop.ts).
 const oldCommand = { schemaVersion: 1, actorId: 9, orderId: 5, action: 'advance', requestId: uuid, createdAt: 1000, expiresAt: 61_000,
   expectedStatus: 'in_transit', expectedAssignedAt: 100, payload: { code: '1234' } };
 assert.deepEqual(readDriverCommand(oldCommand), oldCommand);
 
-// Pending booking before 15 Nov (A12 priority) and the recipient/pricing fields: still readable; book.tsx defaults them.
+// Pending booking before 15 Nov (A12 priority) and the recipient/pricing fields: restored as-is; book.tsx defaults them.
 const oldBooking = { requestId: uuid, payload: { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null,
   pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599123456', detail: 'Box', option: 'small', loadingHelp: false, shared: false, quotedPrice: 48 } };
 assert.equal(readBooking(JSON.stringify(oldBooking)).payload.priority, undefined);
@@ -55,6 +56,8 @@ try {
     assert.equal(readCart({ ...cart, lines: [without(line, key)] }), null, `a line without ${key} is dropped`);
   assert.equal(readCart({ ...cart, lines: [{ ...line, policy: 'keep' }] }), null, 'an unknown policy is dropped');
   assert.equal(readCart({ ...cart, lines: [null] }), null);
+  assert.equal(readCart({ ...cart, city: 'nowhere' }), null, 'an unknown city id is dropped: city() would throw on screen');
+  assert.equal(readCart({ ...cart, lines: [] }), null, 'save() never writes an empty cart');
 
   saved.set('wind.shopCart.v1', JSON.stringify(without(cart, 'deliveryFeeAgorot')));
   const { useCart } = await import('../src/shop-cart.ts?old');
@@ -65,4 +68,4 @@ try {
   fresh.useCart(); await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(fresh.useCart(), cart, 'a complete saved cart comes back');
 } finally { hooks.deregister(); delete globalThis.__legacyCart; }
-console.log('PASS: blobs saved by earlier versions restore with defaults or are dropped at the load boundary');
+console.log('PASS: blobs saved by earlier versions are dropped, defaulted or read as optional at the load boundary');
