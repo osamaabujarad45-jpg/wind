@@ -284,14 +284,15 @@ const repeatedExtglobRecursion = pattern => {
   return depth;
 };
 
-// Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 17 Nov 2026). A repeated extglob
+// Wind backport (GHSA-fc5q-39xc-vjpf, CVE-2026-112366; no patched release as of 18 Nov 2026). A repeated extglob
 // (`+(...)`, `*(...)`) backtracks exponentially when one iteration can match the same text in more than one way:
-// a `*`, a nested group or negation (`!(a)` compiles to `[^/]*?`), braces, quotes, or alternatives that do not decode
-// uniquely (`a|aa`, `ab|ab`; case-folded, since `nocase` folds them). It is safe only when its one branch is
-// fixed-width (plain characters, `?`, `[...]`), or every branch is a plain literal (or, unless the recursion opt-out
-// skips upstream's flattening, a flattenable `*(x)` sequence) and the literals form a uniquely decodable code
-// (Sardinas-Patterson), so `js|jsx` and `ts|tsx` stay safe. Anything else takes the existing risky path (matched literally).
-// ponytail: conservative; e.g. `+([0-9]|x)`, `+({a,b})` or `+(*.js)` now match literally.
+// a `*` or `+`, a nested group or negation (`!(a)` compiles to `[^/]*?`), braces, quotes, or alternatives that do not
+// decode uniquely (`a|aa`, `ab|ab`; under `nocase` or an `i` flag, compared in both folded cases, so `σ|ς` counts).
+// It is safe only when every branch is fixed-width (plain characters, `?`, `[...]`) or, unless the recursion opt-out
+// skips upstream's flattening, a flattenable `*(x)` sequence; and one branch, or plain literals forming a uniquely
+// decodable code (Sardinas-Patterson: `js|jsx`, `md|mdx` stay safe), or branches whose first characters are pairwise
+// distinct literals (`png|jpe?g`), so each iteration has one way to start. Anything else takes the existing risky
+// path (matched literally). ponytail: conservative; e.g. `+([0-9]|x)`, `+({a,b})`, `+(@(a))` or `+(*.js)` match literally.
 const windUniquelyDecodable = words => {
   const code = new Set(words);
   if (code.size !== words.length) return false;
@@ -311,22 +312,24 @@ const windUniquelyDecodable = words => {
   return true;
 };
 
-const windRiskyRepeat = (branches, optOut) => {
-  const flattenable = branch => !optOut && !!getStarExtglobSequenceChars(branch);
-  if (branches.length === 1) return !flattenable(branches[0]) && /[*(|{"]/.test(branches[0]);
-  const literals = [];
-  for (const branch of branches) {
-    if (flattenable(branch)) continue;
-    const literal = branch.includes('"') ? undefined : normalizeSimpleBranch(branch);
-    if (!literal) return true;
-    literals.push(literal.toLowerCase());
-  }
-  return !windUniquelyDecodable(literals);
+const windRiskyRepeat = (branches, options) => {
+  const flattenable = branch => options.maxExtglobRecursion !== false && !!getStarExtglobSequenceChars(branch);
+  const fixed = branch => !/[*+(|{"]/.test(branch);
+  if (branches.length === 1) return !flattenable(branches[0]) && !fixed(branches[0]);
+  const rest = branches.filter(branch => !flattenable(branch));
+  if (!rest.every(fixed)) return true;
+  const folds = options.nocase === true || /i/.test(String(options.flags ?? ''))
+    ? [text => text.toLowerCase(), text => text.toUpperCase()] : [text => text];
+  const literals = rest.map(normalizeSimpleBranch);
+  if (literals.every(Boolean)) return folds.some(fold => !windUniquelyDecodable(literals.map(fold)));
+  const first = branch => branch[0] === '\\' ? branch[1] : branch[0] === '?' || branch[0] === '[' ? undefined : branch[0];
+  const starts = rest.map(first);
+  return starts.some(start => !start) || folds.some(fold => new Set(starts.map(fold)).size !== starts.length);
 };
 
 const analyzeRepeatedExtglob = (body, options) => {
   // Runs before the maxExtglobRecursion opt-out: the advisory guard cannot be switched off by an option.
-  if (windRiskyRepeat(splitTopLevel(body).map(branch => branch.trim()), options.maxExtglobRecursion === false)) {
+  if (windRiskyRepeat(splitTopLevel(body).map(branch => branch.trim()), options)) {
     return { risky: true };
   }
 
@@ -1124,7 +1127,11 @@ const parse = (input, options) => {
         continue;
       }
 
-      if ((prev && (prev.type === 'bracket' || prev.type === 'paren' || prev.type === 'brace')) || state.parens > 0) {
+      // Wind backport (GHSA-fc5q-39xc-vjpf): a regex `+` on a group, `(a|a)+`, `@(a|a)+`, `{a,a}+` or `!(a)+`, nests an
+      // ambiguous repeat that no extglob guard sees. After `)` or `}` it is a literal `+`; after `[...]` (one character
+      // per step) it stays a quantifier. ponytail: `(js|ts)+` as a regex repeat no longer works; none is used here.
+      const group = prev && (prev.type === 'paren' || prev.type === 'brace');
+      if ((prev && prev.type === 'bracket') || (state.parens > 0 && !group)) {
         push({ type: 'plus', value });
         continue;
       }

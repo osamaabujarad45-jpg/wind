@@ -319,7 +319,7 @@ The following options may be used with the main `picomatch()` function or any of
 | `literalBrackets`     | `boolean`      | `undefined` | When `true`, brackets in the glob pattern will be escaped so that only literal brackets will be matched. |
 | `matchBase`           | `boolean`      | `false`     | Alias for `basename` |
 | `maxLength`           | `number`      | `65536`     | Limit the max length of the input string. An error is thrown if the input string is longer than this value. |
-| `maxExtglobRecursion` | `number\|boolean` | `0` | Limit nested quantified extglobs and other risky repeated extglob forms. When the limit is exceeded, the extglob is treated as a literal string instead of being compiled to regex. Set to `false` to disable this safeguard. |
+| `maxExtglobRecursion` | `number\|boolean` | `0` | Limit nested quantified extglobs and other risky repeated extglob forms. When the limit is exceeded, the extglob is treated as a literal string instead of being compiled to regex. Set to `false` to disable the depth limit; the Wind backport's ambiguity guard (GHSA-fc5q-39xc-vjpf) still applies. |
 | `nobrace`             | `boolean`      | `false`     | Disable brace matching, so that `{a,b}` and `{1..3}` would be treated as literal characters. |
 | `nobracket`           | `boolean`      | `undefined` | Disable matching with regex brackets. |
 | `nocase`              | `boolean`      | `false`     | Make matching case-insensitive. Equivalent to the regex `i` flag. Note that this option is overridden by the `flags` option. |

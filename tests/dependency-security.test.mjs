@@ -141,7 +141,10 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
     ['+(!(a))', 'b'], ['+(!(a)|b)', 'b'], ['+(@(+(a)))', 'a'], ['+([a-z]|a)', 'a'], ['+(ab|ab)', 'ab'], ['+(a?|a)', 'a'],
     ['+("a"|a)', 'a'], ['+(a|"a")', 'a'], ['+({a,aa})', 'a', 40], ['+(@(a|aa))', 'a', 40], ['+("a"|aa)', 'a', 40],
     ['+(a|A)', 'a', 28, { nocase: true }], ['+(*(a))', 'a', 28, { maxExtglobRecursion: false }],
-    ['+(*(a)|b)', 'a', 28, { maxExtglobRecursion: false }], ['+(*a)', 'a', 28, { maxExtglobRecursion: false }]];
+    ['+(*(a)|b)', 'a', 28, { maxExtglobRecursion: false }], ['+(*a)', 'a', 28, { maxExtglobRecursion: false }],
+    // Second review: a `+` inside one branch, a regex `+` on a group (no extglob guard sees it), uppercase-only folds.
+    ['+(a+)', 'a'], ['*(a+)', 'a'], ['(a|a)+', 'a'], ['@(a|a)+', 'a'], ['{a,a}+', 'a'], ['!(a)+', 'b'],
+    ['+(σ|ς)', 'σ', 28, { nocase: true }], ['+(σ|ς)', 'σ', 28, { flags: 'i' }]];
   for (const [major, picomatch] of Object.entries(picomatches)) {
     for (const [glob, unit, count = 28, options] of shapes) {
       const started = performance.now();
@@ -163,6 +166,13 @@ test('patched picomatch refuses repeated star extglobs in bounded time and keeps
       ['README.mdx', '*.+(md|mdx)'], ['x.json5', '*.+(json|json5)'], ['ababb', '+(a|ab|bb)']]) assert.equal(picomatch.isMatch(file, glob), true, `${major} ${glob} ${file}`);
     assert.equal(picomatch.isMatch('abac', '+(a?)'), true);
     assert.equal(picomatch.isMatch('**', '+([*])'), false);
+    // Branches that start differently, or differ only in case without nocase, decode one way and keep matching.
+    for (const [file, glob, options] of [['a.png', '*.+(png|jpe?g)'], ['a.jpeg', '*.+(png|jpe?g)'], ['aA', '+(a|A)'],
+      ['AA', '+(a|b)', { nocase: true }], ['a123.js', 'a[0-9]+.js']]) assert.equal(picomatch.isMatch(file, glob, options), true, `${major} ${glob} ${file}`);
+    assert.equal(picomatch.isMatch('aA', '+(a|A)', { nocase: true }), false, 'a|A folds together under nocase: literal');
+    // A `+` after a group is now a literal plus.
+    assert.equal(picomatch.isMatch('ab+', '(ab)+'), true);
+    assert.equal(picomatch.isMatch('abab', '(ab)+'), false);
     // 4.x flattens all-single-character star branches to one class; 2.x never matched these, and still does not.
     assert.equal(picomatch.isMatch('aab', '+(*(a)|*(b))'), major === '4');
   }
