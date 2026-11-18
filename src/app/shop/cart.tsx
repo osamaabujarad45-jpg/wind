@@ -11,7 +11,7 @@ import { basketIdentity, newShopCheckout, readShopCheckout, shopCheckoutKey, typ
 import { city, goodsCapFor, shopPolicies, type Order, type Point, type ShopPolicy } from '../../model';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
-import { cartGoods, clearCart, currentCart, setPolicy, setQuantity, useCart } from '../../shop-cart';
+import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
@@ -36,7 +36,7 @@ export default function ShopCart() {
   const visible = useRef(false);
   const finish = useCallback(async (command: ShopCheckout, orderId: number, current: () => boolean) => {
     if (!key || !current()) return;
-    const contents = await currentCart();
+    const contents = await storedCart(); // the persisted basket, not this tab's copy (review M2)
     if (!current()) return;
     if (contents && basketIdentity(contents) === command.basket) await clearCart(true);
     if (!current()) return;

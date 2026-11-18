@@ -50,6 +50,15 @@ export const cartGoods = (c: Cart | null) => (c?.lines ?? []).reduce((sum, l) =>
 /** Another shop's item: the caller asks before clearing (DLV-02). */
 export const otherShop = (merchantId: number) => !!cart && cart.merchantId !== merchantId;
 export async function currentCart(): Promise<Cart | null> { await load(); return cart; }
+/** What storage holds now, after this tab's queued writes: another tab may have changed the basket since this one loaded it.
+ *  ponytail: no cross-tab lock, so a write landing between this read and the clear can still be lost; add a revision if that shows up. */
+export async function storedCart(): Promise<Cart | null> {
+  await load(); await writes;
+  let stored: Cart | null = null;
+  try { stored = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); } catch { /* damaged: treat as empty */ }
+  if (JSON.stringify(stored) !== JSON.stringify(cart)) { cart = stored; emit(); }
+  return stored;
+}
 /** Sets an item's quantity (0 removes it). A weighed item steps by 250 g, a counted one by one. */
 export function setQuantity(shop: Omit<Cart, 'lines'>, item: MerchantItem, qtyMilli: number) {
   const base: Cart = cart && cart.merchantId === shop.merchantId ? { ...cart, ...shop } : { ...shop, lines: [] };
