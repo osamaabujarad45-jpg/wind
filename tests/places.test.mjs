@@ -66,17 +66,23 @@ try {
   assert.equal(places.saved.length, 9);
   await call(`/me/places/${id}`, { token: t, method: 'DELETE', expect: 404 });
 
+  // A landmark-only place lends the pin of the customer's order there, without claiming it as its own.
+  await call('/me/places', { token: t, body: { label: 'other', city: 'jenin', note: 'Old market' } });
   // Recent places come from the customer's own orders, de-duplicated and excluding saved ones.
   const order = { service: 'parcel', option: 'small', shared: false, contact: '0599600001', detail: 'Box' };
   for (const [pickupCity, pickupNote, dropoffCity, dropoffNote] of [['ramallah', 'Al-Manara', 'jenin', 'Old market'], ['bethlehem', 'Manger Square', 'jenin', 'Old market']]) {
     const input = { ...order, pickupCity, pickupNote, dropoffCity, dropoffNote };
     // The Al-Manara order is pinned elsewhere: the saved place's own pin must still win over the borrowed one.
-    const pins = pickupNote === 'Al-Manara' ? { pickupPoint: { latitude: 31.9001, longitude: 35.2001 } } : {};
+    const market = { latitude: jenin.latitude + 0.001, longitude: jenin.longitude + 0.001 };
+    const pins = pickupNote === 'Al-Manara' ? { pickupPoint: { latitude: 31.9001, longitude: 35.2001 }, dropoffPoint: market } : {};
     await call('/orders', { token: t, body: { ...input, ...pins, quotedPrice: quote(defaultSettings, input) } });
   }
   places = await call('/me/places', { token: t });
   assert.deepEqual(places.saved.find(p => p.note === 'Al-Manara').point, manara);
-  assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }, { city: 'jenin', note: 'Old market' }]);
+  const lent = places.saved.find(p => p.note === 'Old market');
+  assert.deepEqual(lent.point, { latitude: jenin.latitude + 0.001, longitude: jenin.longitude + 0.001 });
+  assert.equal(lent.pinSaved, undefined); // borrowed, so the app may still offer to save a pin the customer places
+  assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }]); // Old market is saved now
   assert.deepEqual((await call('/me/places', { token: other.token })).recent, []);
 
   // Account deletion removes them (open orders block deletion, so cancel first).

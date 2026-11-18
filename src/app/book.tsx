@@ -187,8 +187,8 @@ function BookForm() {
   const osrmPreview = useApi<RoadRoute>(routeChosen ? roadPath(previewFrom, previewTo, 5) : null);
   const preview = osrmPreview.data && canShowOnRenderer(routeProvider(osrmPreview.data.provider), 'maplibre') ? osrmPreview.data : undefined;
   // The pin goes with the landmark when there is one (research #6), so the place reopens exactly where it was.
-  const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string, point: Point | null) => api<Places>('/me/places', { label, city: placeCity, note: note.trim(), ...(point && { point }) })
-    .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(c.placeSaved); }).catch(e => setError(err(e)));
+  const savePlace = (label: SavedPlace['label'], placeCity: CityId, note: string, point: Point | null, pinOnly = false) => api<Places>('/me/places', { label, city: placeCity, note: note.trim(), ...(point && { point }) })
+    .then(next => { setPlaces(next); haptic.success(); AccessibilityInfo.announceForAccessibility(pinOnly ? c.pinSaved : c.placeSaved); }).catch(e => setError(err(e)));
 
   const describe = (point: Point) => api<{ name: string; detail: string }>(`/places/reverse?at=${point.latitude.toFixed(6)},${point.longitude.toFixed(6)}&lang=${language}`);
   // Where the customer is becomes the pickup until they choose another, like every ride app. A note they typed stays.
@@ -851,14 +851,16 @@ function BookForm() {
 const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'star-outline' } as const;
 
 // "Save to my places" under a landmark field: one tap reveals Home / Work / Other.
-function SavePlace({ city: placeCity, note, point, saved, onSave }: { city: CityId; note: string; point: Point | null; saved: SavedPlace[]; onSave: (label: SavedPlace['label'], city: CityId, note: string, point: Point | null) => Promise<void> }) {
+function SavePlace({ city: placeCity, note, point, saved, onSave }: { city: CityId; note: string; point: Point | null; saved: SavedPlace[]; onSave: (label: SavedPlace['label'], city: CityId, note: string, point: Point | null, pinOnly?: boolean) => Promise<void> }) {
   const { c, row } = useCopy();
   const [open, setOpen] = useState(false);
   const trimmed = note.trim();
   const existing = saved.find(p => p.city === placeCity && p.note === trimmed);
-  if (!trimmed || (existing && (existing.pinSaved || !point))) return null;
-  // Already saved without its own pin: one action that adds this pin and keeps the place's label.
-  if (existing) return <Press accessibilityLabel={c.savePin} onPress={() => void onSave(existing.label, placeCity, trimmed, point)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
+  // Offered for an already-saved place only when it has no pin of its own and the customer placed one (not the pin it lent).
+  const lent = !!point && !!existing?.point && existing.point.latitude === point.latitude && existing.point.longitude === point.longitude;
+  if (!trimmed || (existing && (existing.pinSaved || !point || lent))) return null;
+  // One action that adds this pin and keeps the place's label.
+  if (existing) return <Press accessibilityLabel={c.savePin} onPress={() => void onSave(existing.label, placeCity, trimmed, point, true)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
     <Row gap={6} style={styles.chip}><Ionicons name="pin-outline" size={14} color={palette.olive} /><Txt variant="label" style={{ color: palette.olive, fontSize: 12 }}>{c.savePin}</Txt></Row>
   </Press>;
   if (!open) return <Press accessibilityLabel={c.savePlace} onPress={() => setOpen(true)} style={{ alignSelf: 'flex-start', marginTop: -6, marginBottom: 8 }}>
