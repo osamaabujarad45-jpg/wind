@@ -181,16 +181,24 @@ docker run --rm --network host --entrypoint sh \
   done
   # A package file rewritten in place shares its inode with the cache: the run is not evidence, and the entry is dropped.
   # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
+  # An invalid entry leaves the reusable path first (one rename, under the volume lock), then is deleted: a removal that
+  # stops halfway can never look like a cache hit (Sol R13-L3).
+  drop() {
+    if mv -T "/cache/nm/$KEY" "/cache/nm/trash.$$"; then rm -rf "/cache/nm/trash.$$"; echo "entry $KEY dropped; the next run reinstalls" >> /logs/summary.txt
+    else echo "could not drop dependency cache entry $KEY (its in-use marker remains): remove it by hand" >> /logs/summary.txt; fi
+  }
   # The branch follows the exit status of the scan and of reading its result: an unreadable cache is not a clean one, and
   # only a clean, readable scan releases the entry (Sol R10-M2, R12-L4).
   if find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     && changed=$(head -3 "$RUN/changed"); then
     if [ -n "$changed" ]; then
-      { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
-      rm -rf "/cache/nm/$KEY"; status=1
-    else rm -f "/cache/nm/$KEY/.in-use"; fi
+      { echo "dependency cache changed in place:"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
+      drop; status=1
+    elif ! rm -f "/cache/nm/$KEY/.in-use"; then
+      echo "could not release dependency cache entry $KEY (its in-use marker remains)" >> /logs/summary.txt; status=1
+    fi
   else
-    echo "dependency cache scan failed (entry dropped, the next run reinstalls)" >> /logs/summary.txt
-    rm -rf "/cache/nm/$KEY"; status=1
+    echo "dependency cache scan failed" >> /logs/summary.txt
+    drop; status=1
   fi
   exit $status'
 STATUS=$?

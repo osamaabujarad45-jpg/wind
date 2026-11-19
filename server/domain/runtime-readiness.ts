@@ -40,7 +40,8 @@ export function clientConfiguration(env: NodeJS.ProcessEnv = process.env, now = 
 
 /** Forced-upgrade gate: a client that reports a build below WIND_MIN_CLIENT_BUILD gets 426 and shows the update screen. */
 export function clientUpdateRequired(sent: string | string[] | undefined, env: NodeJS.ProcessEnv = process.env) {
-  // ponytail: no header passes (installs up to 1.0.13, scripts, public pages); only builds that send it can be gated.
+  // ponytail: no header passes (builds before the forced-upgrade gate, scripts, public pages); only builds that send it can
+  // be gated here. Production cash writes have their own gate below (cashClientFenced).
   // A repeated header arrives joined ("10012, 10013"); the first value is what the client sent. Empty or 0 is below any minimum.
   const min = Number(env.WIND_MIN_CLIENT_BUILD || 0), build = Number(typeof sent === 'string' ? sent.split(',')[0].trim() : NaN);
   return Number.isSafeInteger(min) && min > 0 && Number.isSafeInteger(build) && build < min;
