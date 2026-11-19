@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, apiSessionRevision, useApi } from '../../api';
 import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { isolate, ltr, minorFromText } from '../../model';
@@ -65,8 +65,10 @@ export default function AdminCash() {
   // again, so a second saved command is never left without a form (Sol R10-M1).
   // Each recovery run belongs to one signed-in admin: a run started for another one never touches this screen (Haiku r9 L1).
   const generation = useRef(0);
-  async function recover(id: number, run = generation.current) { // `recovering` is already true: the initial state, or set by the caller
-    const live = { get current() { return generation.current === run; } };
+  // A run is alive while its effect generation and the API session it started under are current: a sign-in switches the
+  // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1).
+  async function recover(id: number, run = generation.current, session = apiSessionRevision()) { // `recovering` is already true
+    const live = { get current() { return generation.current === run && apiSessionRevision() === session; } };
     try {
       for (const legacy of [true, false]) {
         if (!live.current) return; // superseded: stop before the next lookup
@@ -83,7 +85,8 @@ export default function AdminCash() {
   }
   useEffect(() => {
     const run = ++generation.current;
-    if (actorId) void Promise.resolve().then(() => recover(actorId, run)); // from a callback, as the lookup itself is: no state set in the effect body
+    const session = apiSessionRevision();
+    if (actorId) void Promise.resolve().then(() => recover(actorId, run, session)); // from a callback, as the lookup itself is: no state set in the effect body
     return () => { generation.current++; }; // eslint-disable-line react-hooks/exhaustive-deps -- the bump is the point: it ends the run above
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
@@ -91,16 +94,19 @@ export default function AdminCash() {
     if (!open || !actorId || inFlight.current) return;
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
+    const run = generation.current, session = apiSessionRevision();
+    const alive = () => generation.current === run && apiSessionRevision() === session;
     try {
-      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain);
+      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
+      if (!alive()) return; // another admin signed in meanwhile: nothing of this send belongs on their screen
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
       reload(); reloadPending();
-      if (open.origin && outcome.state !== 'unconfirmed') { setRecovering(true); await recover(actorId); } // the other slot may hold a command too
+      if (open.origin && outcome.state !== 'unconfirmed') { setRecovering(true); await recover(actorId, run, session); } // the other slot may hold a command too
     } catch (e) {
       fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
-      if (e instanceof Error && e.message === 'cash_command_pending') { setRecovering(true); await recover(actorId); } // show the command that holds the slot
+      if (e instanceof Error && e.message === 'cash_command_pending' && alive()) { setRecovering(true); await recover(actorId, run, session); } // show the command that holds the slot
     } finally { inFlight.current = false; setBusy(false); }
   }
 

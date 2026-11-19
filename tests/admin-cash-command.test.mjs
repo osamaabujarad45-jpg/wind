@@ -75,12 +75,22 @@ for (const status of [400, 404]) { // the server refused this request id before 
   // Sol R12-M1 / Haiku r10 M1: a fresh form's Retry after a lost reply is a retry too (its slot was cleared elsewhere).
   const fresh = rig(); fresh.stored = null;
   assert.deepEqual([(await sendCashCommand(fresh, command, true)).error, fresh.sends], ['cash_command_settled', 0]);
+  // Sol R13-M2: when neither the clear nor the marker can be written, it is a storage failure, never a resendable entry.
+  const broken = rig({ send: failing(400) }); broken.write = async c => { if (c === null || c.refused) throw new Error('disk'); broken.stored = c; };
+  assert.deepEqual([(await sendCashCommand(broken, command)).state, (await sendCashCommand(rig({ send: failing(400) }), command)).state], ['refused', 'refused']);
+  assert.equal((await sendCashCommand(Object.assign(rig({ send: failing(400) }), { write: async c => { if (c === null || c?.refused) throw new Error('disk'); } }), command)).error, 'cash_storage_failed');
+  // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
+  const switched = rig();
+  assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
+  // Sol R13-L2: a receipt missing its kind or note settles nothing, for a current or an installed record.
+  assert.equal(receiptMatches({ id: 1, amountCents: 1250, note: 'Office handover' }, command), undefined);
+  assert.equal(receiptMatches({ id: 1, kind: 'remittance', amountCents: 1250 }, command), undefined);
   // Sol R12-L2: a recovery that another admin's sign-in superseded stops before its lookup and leaves the slot alone.
   const superseded = rig(); superseded.stored = command;
   assert.deepEqual(await recoverCashCommand(superseded, 7, () => false), { state: 'empty' });
   assert.deepEqual([superseded.receipts, superseded.stored], [0, command]);
 }
-for (const language of ['ar', 'en']) for (const key of ['err_cash_command_settled', 'cashPendingElsewhere']) assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
+for (const language of ['ar', 'en']) for (const key of ['err_cash_command_settled', 'cashPendingElsewhere', 'err_cash_storage_failed']) assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 { // Sol R10-H1: a refused restored form closes. It would only ever send its saved record, so an edit could not be what is sent.
   const restored = { requestId: command.requestId, uncertain: true, origin: command, legacy: true };
   assert.equal(formAfter(restored, { state: 'refused', command, error: 'invalid_amount' }), null);
@@ -144,12 +154,16 @@ assert.equal(refusedForGood(null), false);
   assert.equal(unreadable.stored, command);
   assert.throws(() => readCashCommand({ ...command, requestId: 'nope' }, 7), /invalid_pending_command/);
 }
-{ // Only the form that was sent changes: recorded closes it, unconfirmed locks it, refused unlocks it; another form keeps its input.
+{ // Only the form that was sent changes: recorded closes it, unconfirmed locks it, a refused first send unlocks it, a refused
+  // uncertain form closes (its request id is spent); another form keeps its input.
   const form = { id: 42, kind: 'remittance', amount: '12.5', note: 'Office handover', requestId: command.requestId, uncertain: true };
   const other = { id: 43, kind: 'adjustment', amount: '3', note: 'typed', requestId: 'f'.repeat(8) + '-0000-4000-8000-' + '0'.repeat(12) };
   assert.equal(formAfter(form, { state: 'recorded', command, entry: { id: 1 } }), null);
   assert.equal(formAfter({ ...form, uncertain: false }, { state: 'unconfirmed', command }).uncertain, true);
-  assert.equal(formAfter(form, { state: 'refused', command, error: {} }).uncertain, false, 'a refused resend is editable again');
+  assert.equal(formAfter({ ...form, uncertain: false }, { state: 'refused', command, error: {} }).uncertain, false, 'a refused first send is editable again');
+  // Sol R13-M1 / Haiku r11 N-M2: an uncertain form refused (settled elsewhere, or any refusal) closes: never Record again under its id.
+  assert.equal(formAfter(form, { state: 'refused', command, error: 'cash_command_settled' }), null);
+  assert.equal(formAfter(form, { state: 'refused', command, error: {} }), null);
   for (const state of ['recorded', 'unconfirmed', 'refused']) assert.equal(formAfter(other, { state, command, entry: { id: 1 } }), other, state);
   assert.equal(formAfter(null, { state: 'recorded', command, entry: { id: 1 } }), null);
 }
@@ -172,6 +186,8 @@ assert.equal(legacyCashCommandKey(7), 'adminCash.7');
   // Its receipt settles it under either meaning, when amount, kind and note match (Sol R12-L1).
   const booked = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8', kind: 'adjustment', amountCents: 2000, note: legacy.note, source: 'payout' } }) }); booked.stored = legacy;
   assert.equal((await recoverCashCommand(booked, 7)).state, 'recorded');
+  const noNote = rig({ receipt: async () => ({ entry: { id: 8, kind: 'adjustment', amountCents: 2000 } }) }); noNote.stored = legacy;
+  assert.deepEqual([(await recoverCashCommand(noNote, 7)).state, noNote.stored], ['unconfirmed', legacy], 'a receipt missing its note settles nothing');
   const thinLegacy = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8' } }) }); thinLegacy.stored = legacy;
   assert.deepEqual([(await recoverCashCommand(thinLegacy, 7)).state, thinLegacy.stored], ['unconfirmed', legacy], 'a receipt naming only its id settles nothing');
   const otherAmount = rig({ receipt: async () => ({ entry: { id: 8, kind: 'adjustment', amountCents: 999, note: legacy.note } }) }); otherAmount.stored = legacy;
@@ -208,7 +224,10 @@ assert.doesNotMatch(screen, /recoveryStorage/);
 assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(\(legacy \? legacyCashCommandKey : cashCommandKey\)\(actorId\), true\)\)/);
 // A retry resends the restored record itself, from its own slot, never one rebuilt from the form (Sol R9-H1).
 assert.match(screen, /sendCashCommand\(cashIO\(actorId, !!open\.legacy\), open\.origin \?\? newCashCommand\(/);
-assert.match(screen, /, !!open\.uncertain\);/); // every uncertain form's send is a retry, fresh or restored (Sol R12-M1, Haiku r10 M1)
+assert.match(screen, /, !!open\.uncertain, alive\);/); // every uncertain form's send is a retry, fresh or restored (Sol R12-M1, Haiku r10 M1)
+// Haiku r11 N-M1 / Sol R13-L1: a send and its follow-on drain stop if another admin's session replaced theirs.
+assert.match(screen, /const alive = \(\) => generation\.current === run && apiSessionRevision\(\) === session;/);
+assert.match(screen, /await recover\(actorId, run, session\)/);
 // Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
 assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
 assert.equal(parseCashSlot(null), null);
