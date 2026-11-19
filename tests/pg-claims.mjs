@@ -29,9 +29,12 @@ try {
   const bookingSql = `INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,
     detail,option,loading_help,price,status,created_at,updated_at) VALUES(?,?,0,'ramallah','bireh','Synthetic pickup','Synthetic destination',
     '0597000000','Synthetic trip',?,0,20,'searching',?,?)`;
-  const book = async (service='ride') => Number((await inspect.run(bookingSql,actors[0].id,service,service==='ride'?'1':'small',now,now)).lastInsertRowid);
+  // One active ride per rider (SRS ride fence): each raced ride below has its own synthetic rider.
+  const riders = [];
+  for (let index = 1; index <= 4; index++) riders.push(Number((await user.run(`059${String(7_100_000 + index)}`, `Synthetic rider ${index}`, '', 'customer', 'active', null, now, now, now)).lastInsertRowid));
+  const book = async (service='ride', rider=actors[0].id) => Number((await inspect.run(bookingSql,rider,service,service==='ride'?'1':'small',now,now)).lastInsertRowid);
   const orderId = await book();
-  const otherId = await book();
+  const otherId = await book('ride', riders[3]);
   second = await startApiProcess(storage);
   const servers = [first, second];
   async function accept(id, actor, target) {
@@ -56,10 +59,10 @@ try {
   assert.equal((await accept(otherId, winner, second)).status, 409, 'an exclusively committed driver cannot claim a second ride');
   assert.equal((await inspect.one('SELECT driver_id,status FROM orders WHERE id=?',otherId)).status, 'searching');
   const available = actors.slice(1).filter(actor => actor !== winner);
-  const rides = [await book(), await book()];
+  const rides = [await book('ride', riders[0]), await book('ride', riders[1])];
   const exclusive = await Promise.all(rides.map((id, index) => accept(id, available[0], servers[index])));
-  assert.equal(exclusive.filter(result => result.status === 200).length, 1, 'one driver racing for two rides gets one commitment');
-  const mixedOrders = [await book(), await book('parcel')];
+  assert.equal(exclusive.filter(result => result.status === 200).length, 1, `one driver racing for two rides gets one commitment: ${JSON.stringify(exclusive)}`);
+  const mixedOrders = [await book('ride', riders[2]), await book('parcel')];
   const mixed = await Promise.all(mixedOrders.map((id, index) => accept(id, available[1], servers[index])));
   assert.equal(mixed.filter(result => result.status === 200).length, 1, 'ride-versus-parcel race cannot create mixed work');
   const parcels = [await book('parcel'), await book('parcel')];

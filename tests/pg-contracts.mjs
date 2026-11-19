@@ -216,7 +216,7 @@ try {
   await exchange('returned-dispute', 'customer', `/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Synthetic return handling review' } });
   await exchange('finished-cash', 'driver', '/driver/cash', { token: driver.token });
   const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
-    body: { driverId: driver.user.id, amountCents: 600, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
+    body: { driverId: driver.user.id, amountCents: 300, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
   await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
   await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });

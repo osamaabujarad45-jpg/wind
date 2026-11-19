@@ -400,11 +400,6 @@
         },
         {
           "method": "POST",
-          "path": "/api/admin/orders/:id/block-review",
-          "anonymousStatus": 401
-        },
-        {
-          "method": "POST",
           "path": "/api/admin/orders/:id/arrival/override",
           "anonymousStatus": 401
         },
@@ -699,6 +694,7 @@
         { "method": "POST", "path": "/api/merchant/orders/:id/reject", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/merchant/orders/:id/preparing", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/merchant/orders/:id/lines/:line", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/orders/:id/shop/lines/:line/remove", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/merchant/orders/:id/ready", "anonymousStatus": 401 },
         { "method": "GET", "path": "/api/merchant/statement", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/orders/:id/shop/handover", "anonymousStatus": 401 },
@@ -710,9 +706,16 @@
         { "method": "POST", "path": "/api/admin/orders/:id/shop/unsellable", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/orders/:id/shop/refund", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/orders/:id/shop/reset-pickup", "anonymousStatus": 401 },
-        { "method": "POST", "path": "/api/admin/orders/:id/shop/lines/:line/remove", "anonymousStatus": 401 },
         { "method": "POST", "path": "/api/admin/users/:id/shop-review", "anonymousStatus": 401 },
         { "method": "GET", "path": "/api/admin/shop/attention", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "DRV-17",
+      "source": "server/domain/block-review.ts",
+      "registrar": "registerBlockReviewRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/admin/orders/:id/block-review", "anonymousStatus": 401 }
       ]
     }
   ]

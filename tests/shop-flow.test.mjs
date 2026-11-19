@@ -202,13 +202,16 @@ try {
   await shopSweep(Date.now() + 9 * 60_000);
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 0, 'nothing escalates before the minutes pass');
   // Past them, the sweep tells support once per exception and the order joins the stuck list; it never cancels by itself.
-  await persistence.atomic({ purpose: 'test' }, () => persistence.run("UPDATE shop_handover_checks SET created_at = created_at - ? WHERE order_id = ? AND result = 'exception'", 11 * 60_000, order.id));
+  // Handover checks are append-only, so the clock moves instead of the row (the API runs in this process).
+  const realNow = Date.now;
+  Date.now = () => realNow() + 11 * 60_000;
   await shopSweep();
   await shopSweep();
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
   const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
   assert.equal(stuck?.shop.handoverOverdue, true, 'an overdue exception is on the stuck list, marked for support to decide');
   assert.equal((await call(`/orders/${order.id}`, { token: owner.token })).shop.handoverOverdue, false, 'only support sees the overdue flag');
+  Date.now = realNow;
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).status, 'at_pickup');
   await call(`/merchant/orders/${order.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }, { sealed: false, lineIds: [labnehLine, breadLine] }] } });
   order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } });

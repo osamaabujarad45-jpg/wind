@@ -15,6 +15,7 @@ import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
 import { etaProjection, journeyOrder, offerFailure } from './domain/journey.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
+import { registerBlockReviewRoutes } from './domain/block-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
 import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
@@ -2699,7 +2700,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
     if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
       door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
-      next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), now, now, door?.collectedCents ?? null, // DRV-17: a return earns no commission door?.varianceReason ?? null,
+      next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), // DRV-17: a return earns no commission
+      now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
       door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
     if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
     else (await rewardReferral(r.id, now));
@@ -3582,7 +3584,7 @@ const blockReviewsAvailable = async () => persistence.backend === 'postgres'
 const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (![5, 6].includes(new Date(t).getUTCDay())) n++; } return t; };
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
   cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
-route('POST', '/api/admin/orders/:id/block-review', async ({ user, params, body }) => {
+registerBlockReviewRoutes(route, async ({ user, params, body }) => {
   need(user, 'admin');
   if (!(await blockReviewsAvailable())) fail(409, 'block_review_unavailable');
   if (typeof body.cleared !== 'boolean') fail(400, 'invalid_input');
