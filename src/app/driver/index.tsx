@@ -74,9 +74,11 @@ export default function Jobs() {
   const assigned = carrying.length > 0;
   // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
   const blocked = (order: Order) => !canTake(carrying, order.service);
+  // With presence on, an offline idle captain takes no work from any surface: accept, offer or detail (H-02, Sol R2-M5).
+  const offline = presenceOn && !assigned && work.presenceState !== 'online';
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
-    : presenceOn && !assigned && work.presenceState !== 'online' ? c.accept_go_online // the presence card says offline captains take no jobs
+    : offline ? c.accept_go_online // the presence card says offline captains take no jobs
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
 
   async function accept(order: Order) {
@@ -118,7 +120,7 @@ export default function Jobs() {
 
   // Driver offers (SPEC-driver-offers.md): any whole price in the band around the recommendation; the customer chooses.
   async function offer(order: Order, price: number) {
-    if (busy !== null || blocked(order) || !work.known || order.dispatch) return;
+    if (busy !== null || blocked(order) || !work.known || order.dispatch || offline) return;
     setBusy(order.id);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
@@ -301,7 +303,7 @@ export default function Jobs() {
                   error={offering.text && !ok ? fill(c.offerRange, { lo: money(lo), hi: money(hi) }) : undefined} />
                 <Txt variant="caption" style={{ marginBottom: 8 }}>{fill(c.recommendedIs, { p: money(order.recommendedPrice) })}</Txt>{/* the range is said once (D-29): by the field error once typed, by the reason before */}
                 <Button title={fill(c.sendOffer, { p: ok ? money(n) : '' })} icon="paper-plane-outline" variant="soft"
-                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known} />
+                  onPress={() => offer(order, n)} loading={busy === order.id} disabled={!ok || busy !== null || blocked(order) || !work.known || offline} reason={offline ? c.accept_go_online : undefined} />
                 {!ok && !offering.text && <Txt variant="caption">{fill(c.offerWhole, { lo: money(lo), hi: money(hi) })}</Txt>}{/* information, not an error (H-11) */}
               </View>;
             })()}

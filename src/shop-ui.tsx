@@ -136,9 +136,9 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       <Txt style={{ marginTop: 4 }}>{fill(c.shopConsentTotal, { r: money(s.change.goodsAfterAgorot / 100) })}</Txt>
       <Txt variant="caption" style={{ marginTop: 4 }}>{consent.left === 0 ? c.shopConsentExpired : fill(c.shopConsentTimer, { t: consent.text })}</Txt>
       <Row style={{ marginTop: 8, flexWrap: 'wrap' }}>
-        <Button title={c.shopApprove} loading={busy === 'approve'} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
-        <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
-        {!s.change.extended && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
+        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} reason={consent.left === 0 ? c.shopConsentExpired : undefined} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
+        <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} disabled={consent.left === 0} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
+        {!s.change.extended && consent.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
       </Row>
     </Card>}
     <View style={{ marginTop: 8 }}><ShopLines order={order} /></View>
@@ -267,8 +267,8 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
       {s.handoverOverdue && <>
         <Txt variant="label">{c.adminShopHandoverOverdue}</Txt>
         <Choices label={c.adminShopRemoveLine} value={line} onChange={setLine} items={s.lines.filter(l => !l.removed).map(l => ({ key: String(l.id), label: lineName(l, language) }))} />
-        <Button title={c.adminShopRemoveLine} size="sm" variant="outline" disabled={!line} loading={busy === 'remove'}
-          onPress={() => act('remove', `/admin/orders/${order.id}/shop/lines/${line}/remove`, {})} />
+        <Button title={c.adminShopRemoveLine} size="sm" variant="outline" disabled={!line || !noteOk} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'remove'}
+          onPress={() => act('remove', `/admin/orders/${order.id}/shop/lines/${line}/remove`, { exceptionAt: s.handoverExceptionAt, note: note.trim() })} />
       </>}
     </>}
     {after && <>

@@ -81,7 +81,8 @@ export default function OrderScreen() {
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
     ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
-  const suggested = suggestedNextAction(order ? order.exceptionReason : null);
+  // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
+  const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
   const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
   useEffect(() => {
     if (!order || !me) return;
@@ -186,6 +187,8 @@ export default function OrderScreen() {
     && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
     && order.recovery?.assignmentEpoch != null && secondsUntil(waitingEndsAt, now, order.journey) <= 0;
   const fareChange = order.journey?.lastFareChange;
+  // Same rule as the jobs board (H-02, Sol R2-M5): with presence on, an offline idle captain goes online first.
+  const offlineIdle = me?.capabilities?.driverPresence !== false && !work.orders.length && work.presenceState !== 'online';
   const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
@@ -532,7 +535,7 @@ export default function OrderScreen() {
         {fill(c.suggestedNext, { a: suggested === 'return' ? c.returnToSender : c.reattempt })}</Txt>}
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
-          variant={action === (order.reattemptAllowed === false ? 'return' : suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
+          variant={action === (suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5 || (action === 'reattempt' && order.reattemptAllowed === false)}
           reason={action === 'reattempt' && order.reattemptAllowed === false ? c.err_reattempt_limit : busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
@@ -574,22 +577,22 @@ export default function OrderScreen() {
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
-        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
+      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service)}
+        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
       {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
       {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
-      {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
-        {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
-      </Txt>}
+      {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
+        && <GraceClock left={secondsUntil(waitingEndsAt!, now, order.journey)} extended={!!order.ride?.graceExtended} />}
       {isCustomer && order.ride?.graceExtended && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
         && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Txt variant="caption">{c.rideGraceExtended}</Txt>}
       {/* RIDE-06/A11Y-08: once, while the waiting grace runs; the server owns the new end time. */}
       {isCustomer && order.ride?.graceExtended === false && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
         && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Button title={c.rideGraceExtend} icon="time-outline" variant="outline"
-          disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`)} />}
+          disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`,
+            order.recovery?.assignmentEpoch != null ? { expectedAssignmentEpoch: order.recovery.assignmentEpoch } : {})} />}{/* the assignment the rider saw (Sol R2-M2) */}
       {mine && activeStatuses.includes(order.status) && <>
         {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
@@ -1059,4 +1062,14 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
     </>}
     <ErrorText>{error}</ErrorText>
   </Card>;
+}
+
+/** A11Y-08 (Sol R2-M2): the waiting clock speaks when it crosses 2 min, 1 min and 30 s, at the end, and when an extension lands. */
+function GraceClock({ left, extended }: { left: number; extended: boolean }) {
+  const { c } = useCopy();
+  const text = left > 0 ? fill(c.rideGrace, { n: left }) : c.rideGraceEnded;
+  const step = left > 120 ? 4 : left > 60 ? 3 : left > 30 ? 2 : left > 0 ? 1 : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- speak on a step or extension change, not every second
+  useEffect(() => { AccessibilityInfo.announceForAccessibility(text); }, [step, extended]);
+  return <Txt variant="caption">{text}</Txt>;
 }

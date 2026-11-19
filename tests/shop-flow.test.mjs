@@ -209,6 +209,9 @@ try {
   await shopSweep();
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
   const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
+  // A removal binds to the exception episode support saw, with a reason (Sol R2-M3).
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt - 1, note: 'Synthetic stale decision' } }, 409, 'exception_changed');
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt } }, 400, 'invalid_input');
   assert.equal(stuck?.shop.handoverOverdue, true, 'an overdue exception is on the stuck list, marked for support to decide');
   assert.equal((await call(`/orders/${order.id}`, { token: owner.token })).shop.handoverOverdue, false, 'only support sees the overdue flag');
   Date.now = realNow;
@@ -267,6 +270,33 @@ try {
   const again = await call(`/orders/${order.id}/shop/again`, { token: customer.token, body: {} });
   assert.deepEqual(again.changes.map(c => c.kind).sort(), ['price', 'unavailable']);
   assert.equal(again.lines.length, 2);
+
+  // ---- DLV-13 removal past the minutes: above the minimum the order goes on, a retry replays, below it cancels (Sol R2-H6) ----
+  const second = [{ itemId: labneh.id, qtyMilli: 1000, policy: 'remove' }, { itemId: cheese.id, qtyMilli: 1000, policy: 'remove' }, { itemId: bread.id, qtyMilli: 2000, policy: 'remove' }];
+  let o2 = await call('/orders', { token: customer.token, body: { ...placeBody, lines: second, expectedGoodsAgorot: 2000 + 2500 + 1200, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 } });
+  await call(`/merchant/orders/${o2.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
+  o2 = await call(`/merchant/orders/${o2.id}/preparing`, { token: owner.token, body: {} });
+  const line2 = id => o2.shop.lines.find(l => l.itemId === id && !l.removed).id;
+  const cheese2 = line2(cheese.id), labneh2 = line2(labneh.id);
+  await call(`/merchant/orders/${o2.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+  await call(`/jobs/${o2.id}/accept`, { token: captain.token, body: {} });
+  await call(`/orders/${o2.id}/advance`, { token: captain.token, body: { expectedStatus: 'assigned', requestId: randomUUID() } });
+  await call(`/orders/${o2.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
+  const realNow2 = Date.now;
+  Date.now = () => realNow2() + 11 * 60_000;
+  try {
+    const episode = (await call(`/orders/${o2.id}`, { token: admin.token })).shop.handoverExceptionAt;
+    const remove = (line, expect) => call(`/admin/orders/${o2.id}/shop/lines/${line}/remove`, { token: admin.token, body: { exceptionAt: episode, note: 'Synthetic: the shop has none left' }, expect });
+    o2 = await remove(cheese2);
+    assert.ok(o2.shop.lines.find(l => l.id === cheese2).removed, 'the line at fault comes off');
+    assert.equal(o2.status, 'at_pickup', 'above the minimum the order goes on');
+    assert.equal((await remove(cheese2)).id, o2.id, 'a retry of the same decision replays');
+    assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT'", o2.id)).n), 1, 'and records one decision');
+    assert.match((await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT'", o2.id)).detail, /Synthetic: the shop has none left/, 'with the operator reason');
+    o2 = await remove(labneh2);
+    assert.equal(o2.status, 'cancelled', 'below the minimum the removal cancels (DLV-06)');
+    assert.equal(o2.shop.cancelReason, 'below_minimum');
+  } finally { Date.now = realNow2; }
 
   console.log('Shop flow: place, edit, accept, weighed and substituted lines with consent, ceiling, packing, pickup code lockout and reset, handover exception, sealed delivery with door cash, money rows, captain cash, payout after handover, ratings and order-again passed');
 } finally {

@@ -10,6 +10,7 @@
 // PostgreSQL, off-host backup and a restore drill are in place.
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { needStaff, staffActor } from './ops.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
   varianceAllowed, doorCashMaxCents, latinDigits,
@@ -108,10 +109,15 @@ export function registerShop(route: Register, deps: ShopDeps) {
   /** DLV-13: when the open handover exception was raised (its newest exception check). */
   const exceptionSince = `(SELECT MAX(c.created_at) FROM shop_handover_checks c WHERE c.order_id = o.id AND c.result = 'exception')`;
   /** DLV-13: an open handover exception older than the owner-set minutes is the operator's to decide. */
-  async function handoverOverdue(orderId: number, now = Date.now()) {
+  /** The open exception's identity: when its newest exception check was recorded (null when none is open). */
+  async function openExceptionAt(orderId: number) {
     const row = await db.one(`SELECT ${exceptionSince} AS since FROM orders o JOIN shop_orders s ON s.order_id = o.id
       WHERE o.id = ? AND o.status = 'at_pickup' AND s.handover_exception IS NOT NULL`, orderId);
-    return row?.since != null && Number(row.since) <= now - (await settings()).shopHandoverMinutes * MINUTE;
+    return row?.since == null ? null : Number(row.since);
+  }
+  async function handoverOverdue(orderId: number, now = Date.now()) {
+    const since = await openExceptionAt(orderId);
+    return since != null && since <= now - (await settings()).shopHandoverMinutes * MINUTE;
   }
 
   // ---------- merchants ----------
@@ -294,6 +300,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
       lines: role === 'driver' && viewer.id !== r.driver_id ? [] : lines,
       change: role === 'driver' ? null : change, cancelReason: s.cancel_reason ?? null, handoverException: s.handover_exception ?? null,
       handoverOverdue: role === 'admin' && !!s.handover_exception && await handoverOverdue(r.id), // DLV-13: support decides now
+      ...(role === 'admin' && s.handover_exception ? { handoverExceptionAt: await openExceptionAt(r.id) } : {}), // the episode a decision binds to
       packages: s.packing ? JSON.parse(s.packing) : null,
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
@@ -592,11 +599,22 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }));
   // DLV-13: a handover exception left unresolved past the owner-set minutes: the operator removes the line, and DLV-06
   // evaluates the removal like any merchant change (a drop below the minimum cancels with below_minimum).
-  route('POST', '/api/admin/orders/:id/shop/lines/:line/remove', async ({ user, params }) => inTx(async () => {
+  // The decision binds to the exception episode the operator saw (exceptionAt) and keeps their reason (Sol R2-M3); support or
+  // dispatch duty decides it on duty-scoped PostgreSQL (Sol R2-H7, ADM-10).
+  route('POST', '/api/admin/orders/:id/shop/lines/:line/remove', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await adminOrder(user, Number(params[0]));
+    needStaff(await staffActor(db, user as never), fail, 'support', 'dispatcher');
+    const lineId = Number(params[1]);
+    const episode = Number.isSafeInteger(body.exceptionAt) ? body.exceptionAt as number : null;
+    // A retry of a removal that already happened for this episode and line replays the current order.
+    if (episode != null && await db.one("SELECT 1 FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT' AND detail LIKE ?",
+      r.id, `{"exceptionAt":${episode},"lineId":${lineId},%`)) return getOrder(r.id, user);
     if (!(await handoverOverdue(r.id))) fail(409, 'handover_not_overdue');
+    if (episode == null || typeof body.note !== 'string' || body.note.trim().length < 5 || body.note.length > 500) fail(400, 'invalid_input');
+    if (await openExceptionAt(r.id) !== episode) fail(409, 'exception_changed');
     const m = (await db.one('SELECT * FROM merchants WHERE id = ?', s.merchant_id))!;
-    const order = await changeLine(user, m, r, s, Number(params[1]), { remove: true });
+    const order = await changeLine(user, m, r, s, lineId, { remove: true });
+    await audit(user.id, r.id, 'SHOP_LINE_REMOVED_BY_SUPPORT', { exceptionAt: episode, lineId, note: (body.note as string).trim() });
     await push([m.owner_user_id], 'shop_update', r.id, `/merchant/order/${r.id}`);
     await push([r.customer_id], 'shop_update', r.id);
     return order;
@@ -869,13 +887,16 @@ export function registerShop(route: Register, deps: ShopDeps) {
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
-    // DRV-17: after a courier block support collected the goods; the trip so far is paid only by a cleared block review.
-    if (db.backend === 'postgres' && (await db.one("SELECT to_regclass('courier_block_reviews') AS t"))?.t
-      && await db.one('SELECT 1 FROM courier_block_reviews WHERE order_id = ?', r.id)) return;
-    // After a custody recovery support collected the goods: the captain is paid the trip so far (one fee), no return leg.
-    const pay = (supportCollected ? 1 : 2) * Number(s.delivery_fee_agorot);
+    // Pay follows how custody entered the return, whichever route closes it (Sol R2-H3), from the order's own audit:
+    // DRV-17: the captain holding it was blocked: the trip so far is paid only by a cleared block review (none on a schema without one).
+    const history = await db.all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'ELIGIBILITY_CUSTODY_RECOVERY')", r.id);
+    const said = (row: Row) => { try { return JSON.parse(String(row.detail ?? '{}')); } catch { return {}; } };
+    if (history.some(e => e.action === 'COURIER_BLOCKED' && Number(said(e).driverId) === Number(r.driver_id))) return;
+    // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
+    const recovered = supportCollected || history.some(e => e.action === 'ELIGIBILITY_CUSTODY_RECOVERY' && said(e).action === 'return');
+    const pay = (recovered ? 1 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
-      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, supportCollected ? 'Trip so far, support recovered the goods' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
+      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, recovered ? 'Trip so far, support recovered the goods' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }

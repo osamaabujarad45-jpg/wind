@@ -174,7 +174,9 @@ try {
   assert.equal((await extend(who.driver.token, 403)).error, 'forbidden');
   const before = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
   assert.equal(before.ride.graceExtended, false);
-  const extended = await extend(h.customer.token);
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: epoch + 1 }, expect: 409 })).error,
+    'assignment_changed', 'a tap from another assignment never extends this one (Sol R2-M2)');
+  const extended = await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: epoch } });
   assert.equal(extended.ride.graceExtended, true);
   assert.equal(extended.ride.graceUntil, before.ride.graceUntil + 120_000);
   assert.equal((await extend(h.customer.token)).ride.graceUntil, extended.ride.graceUntil, 'a repeated request is a replay, not a second extension');

@@ -18,9 +18,9 @@ import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecy
 import { registerBlockReviewRoutes } from './domain/block-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
-import { Ledger, ledgerAvailable, registerLedgerRoutes } from './domain/ledger.ts';
+import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_POLICY_KEY } from './domain/ledger.ts';
 import { codGoodsMinor, createPayments, registerPaymentsRoutes } from './domain/payments.ts';
-import { Ops, registerOpsRoutes } from './domain/ops.ts';
+import { needStaff, Ops, registerOpsRoutes, staffActor } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
@@ -220,6 +220,7 @@ function logAccountCommandFailure(error: unknown) {
 
 async function settings(): Promise<Settings> {
   const stored = Object.fromEntries((await all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
+  delete stored[RETURN_POLICY_KEY]; // an internal fact, not an owner setting
   return { ...defaultSettings, ...(enabledServices.includes('shop') && { driverCashCap: 1000 }), ...stored };
 }
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
@@ -606,6 +607,16 @@ registerResourceScopeRoutes(route, resourceScope);
 const privateObjects = createPrivateObjects(persistence, fail);
 registerPrivateObjectRoutes(route, privateObjects);
 const ledger = new Ledger(persistence, fail);
+/** The DRV-17 return cutover (see owedColumns): read, or recorded once in this transaction when absent. Never cached across requests,
+ * so a rolled-back first write is simply written again. */
+async function returnPolicyFrom() {
+  return persistence.memo('returnPolicyFrom', async () => {
+    const read = async () => (await one('SELECT value FROM settings WHERE key = ?', RETURN_POLICY_KEY))?.value;
+    let at = await read();
+    if (at == null) { await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', RETURN_POLICY_KEY, Date.now()); at = await read(); }
+    return Number(at);
+  });
+}
 
 // T29/T30: live ledger posting on the PostgreSQL capability. Journals reuse importLegacy's stable business
 // references, so a later import meets the posted journals and dedupes on the business_ref instead of
@@ -644,7 +655,8 @@ async function postShopJournal(orderId: number, driverId: number, kind: 'collect
         ...(overpay ? [{ accountId: overpay.id as number, creditMinor: over }] : [])] });
   } else if (amounts.trip) {
     const expense = await ledger.ensureAccount('platform:operating_expense', 'operating_expense', null);
-    await ledger.postJournal({ businessRef: `order:${orderId}:shop_trip`, kind: 'adjustment', orderId,
+    // An adjustment journal must say why (ledger_journals CHECK): without it every PostgreSQL shop trip pay failed the request.
+    await ledger.postJournal({ businessRef: `order:${orderId}:shop_trip`, kind: 'adjustment', orderId, reason: 'Captain trip pay, shop order not delivered',
       entries: [{ accountId: expense.id as number, debitMinor: amounts.trip }, { accountId: receivable.id as number, creditMinor: amounts.trip }] });
   }
 }
@@ -3240,16 +3252,18 @@ const cashMinor = (column: 'commission' | 'discount') => persistence.backend ===
 // less captain pay from the shop ledger (DRV-17).
 const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 ELSE COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot END)
     FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
-// DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. Returns from this release carry
-// commission 0; earlier returns keep the commission and discount they were booked with, so no live balance moves on deploy.
-// ponytail: commission 0 marks the new rule; reconciling older returns is a finance decision (correcting adjustments).
-const owedColumns = (shop = false) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
-    COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND (status = 'completed' OR (status = 'returned' AND COALESCE(commission, 0) <> 0))), 0) discounts,
+// DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. Returns finished from the cutover
+// instant (stored once, on the first balance read of this release) carry commission 0 and no discount relief; earlier returns keep the
+// commission and discount they were booked with, so no live balance moves on deploy (Sol R2-H5). The ledger import and the migration
+// reconciliation read the same instant. Rolling back to a release without it gives returns since the cutover their discount relief again.
+const owedColumns = (shop: boolean, returnCutoff: number) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+    COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND (status = 'completed'
+      OR (status = 'returned' AND COALESCE(completed_at, updated_at) < ${Math.trunc(returnCutoff)}))), 0) discounts,
     ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
 async function cashBalances(where: string, ...params: SQLInputValue[]) {
   const shopTablesReady = await shopTables(persistence);
   return (await all(`SELECT u.id, u.name, u.phone,
-    ${owedColumns(shopTablesReady)},
+    ${owedColumns(shopTablesReady, await returnPolicyFrom())},
     ${cashSum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
     FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params))
@@ -3266,7 +3280,7 @@ async function cashExposureCents(driverId: number) {
   // One statement, so PostgreSQL reads owed and in-hand from one snapshot: a job finishing between two reads cannot vanish from both.
   const shopReady = await shopTables(persistence);
   // A shop job in hand also holds the most cash its door can collect for Wind and the shop: the goods cap and the service fee.
-  const r = (await one(`SELECT ${owedColumns(shopReady)},
+  const r = (await one(`SELECT ${owedColumns(shopReady, await returnPolicyFrom())},
     COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${activeSql})), 0) active,
     ${shopReady ? `COALESCE((SELECT SUM(s.goods_cap_agorot + s.service_fee_agorot) FROM shop_orders s JOIN orders o ON o.id = s.order_id
       WHERE o.driver_id = u.id AND o.status IN (${activeSql})), 0)` : '0'} shop_hold
@@ -3486,14 +3500,14 @@ const editUser: Handler = async ({ user, params, body }) => {
   const identityOrRoleChange = identityChanged || roleChanged || vehicleChanged || (status !== target.status && status === 'pending');
   if (selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
   if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at) fail(409, 'pending_approval');
-  let carrying: Row[] = [];
+  let carrying: Row[] = [], prelocked: number[] = [];
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     // Re-checked inside the write transaction: a job accepted after the reads above must not be stranded by this edit.
     // The driver's active orders lock before the driver row: an advance holds its order and the assignment trigger then wants the
     // driver row, so locking the driver first could deadlock against it (review 19 Nov).
     if (persistence.backend === 'postgres' && target.role === 'driver')
-      await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, target.id);
+      prelocked = (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, target.id)).map(r => Number(r.id));
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', target.id);
     // Every decision below came from the read before the lock: another admin's block or approval in between must not be silently reverted.
     const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
@@ -3506,6 +3520,9 @@ const editUser: Handler = async ({ user, params, body }) => {
       && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('requested','searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
+      // An assignment that committed between the order locks above and the captain lock is not waited on while holding the
+      // captain row (its advance would wait on that row: a deadlock, Sol R2-H1); the admin retries and the scan above takes it.
+      if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
       carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
       if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
@@ -3556,12 +3573,15 @@ const editUser: Handler = async ({ user, params, body }) => {
         await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', ?, ?)",
           user.id, o.id, JSON.stringify({ reason: 'courier_block' }), now);
       }
-      else if (o.status !== 'returning') { // in custody: support recovers it and confirms the return to the sender
-        // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's.
+      else { // in custody: support recovers it and confirms the return to the sender
+        // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's. A captain
+        // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
         if (o.service === 'shop' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
           SELECT ?, ?, ?, 'shop', ?, delivery_fee_agorot, ?, ? FROM shop_orders WHERE order_id = ? ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status, now, twoWorkingDays(now), o.id);
-        (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
-        (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
+        if (o.status !== 'returning') {
+          (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
+          (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
+        }
       }
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
         user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status }), now));
@@ -3580,13 +3600,17 @@ const editUser: Handler = async ({ user, params, body }) => {
 // SPEC-delivery-exceptions.md and needs no review. Without the table a block records nothing and posts no pay (fail-closed).
 const blockReviewsAvailable = async () => persistence.backend === 'postgres'
   && persistence.memo('blockReviews', async () => !!(await one('SELECT version FROM schema_migrations WHERE version = 39')));
-/** Two working days, Friday and Saturday off. ponytail: UTC weekdays; a block near midnight can land a few hours early or late. */
-const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (![5, 6].includes(new Date(t).getUTCDay())) n++; } return t; };
+/** Two working days on the operating calendar (Asia/Hebron), Friday and Saturday off (Sol R2-L1).
+ * ponytail: 24 h steps, so a daylight-saving change in between moves the deadline by its hour. */
+const hebronWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Hebron', weekday: 'short' });
+const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (!['Fri', 'Sat'].includes(hebronWeekday.format(t))) n++; } return t; };
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
   cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
 registerBlockReviewRoutes(route, async ({ user, params, body }) => {
   need(user, 'admin');
   if (!(await blockReviewsAvailable())) fail(409, 'block_review_unavailable');
+  // The decision posts money, so on duty-scoped PostgreSQL it is a finance (or platform admin) decision (Sol R2-H7, ADM-10).
+  needStaff(await staffActor(persistence, user as never), fail, 'finance');
   if (typeof body.cleared !== 'boolean') fail(400, 'invalid_input');
   const note = text(body.note, 500);
   if (note.length < 5) fail(400, 'invalid_input');
@@ -3600,6 +3624,9 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
   if (Number(review.blocked_by) === user.id) fail(409, 'second_admin_required');
   const now = Date.now(), driverId = Number(review.driver_id), pay = Number(review.trip_pay_cents);
   let paid = 0;
+  // One rollback boundary: a ledger or cash refusal after the local inserts leaves the review pending with nothing posted (Sol R2-H4).
+  await persistence.exec('BEGIN IMMEDIATE');
+  try {
   if (body.cleared && pay > 0) {
     if (review.service === 'shop') { await shop.blockTripPay(id, driverId, pay, user.id); paid = pay; }
     else {
@@ -3618,6 +3645,8 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
     now, user.id, body.cleared, paid, note, id);
   await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_DECIDED', ?, ?)",
     user.id, id, JSON.stringify({ driverId, cleared: body.cleared, tripPayCents: pay, paidCents: paid }), now);
+  await persistence.exec('COMMIT');
+  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
   if (paid) await queuePush([driverId], 'cash', 0, '/driver/earnings');
   return blockReviewView((await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', id))!);
 });
@@ -3882,28 +3911,39 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       }
       const driverWork = /^\/api\/jobs\/(\d+)\/(accept|offer)$/.exec(url.pathname);
       const customerOffer = /^\/api\/orders\/(\d+)\/offers\/(\d+)\/accept$/.exec(url.pathname);
+      // Sol R2-H2: the HTTP envelope commits handled refusals, so the measured preflight writes (reservation, run revision, stops)
+      // and the handler share one savepoint: any refusal after them, in the preflight or the handler, rolls all of them back.
+      const boundary = persistence.backend === 'postgres' && req.method === 'POST' && !!(driverWork || customerOffer);
+      if (boundary) await persistence.exec('BEGIN IMMEDIATE');
+      try {
       if (req.method === 'POST' && driverWork) {
         need(user!, 'driver'); needActive(user!);
         // Lock order everywhere: order row (above), then the rider's ride fence, then the eligibility policy row (Dispatch.acceptOffer
         // and admin assign do the same). The fence also refuses before eligibility.guard writes any reservation (review 19 Nov).
+        const work = await getOrder(Number(driverWork[1]), user!); // authorize first: a hidden ride answers 404, never the fence (Sol R2-M1)
         if (driverWork[2] === 'accept') await guardRideAssignment(Number(driverWork[1]));
-        const work = await getOrder(Number(driverWork[1]), user!);
         // Before eligibility.guard writes reservations: a cash-cap refusal must leave nothing behind (the handler checks again).
         if (driverWork[2] === 'accept' && body.offerId === undefined && body.leaseNonce === undefined) await guardCashCap(user!.id, work.price, await driverRate(user!.id));
+        // One resource order on every assignment path: order, rider fence, captain row, then the policy row (Sol R2-H1).
+        if (persistence.backend === 'postgres' && body.offerId === undefined && body.leaseNonce === undefined) await one('SELECT id FROM users WHERE id = ? FOR UPDATE', user!.id);
         if (body.offerId === undefined && body.leaseNonce === undefined) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
         const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
-        await guardRideAssignment(Number(order.id)); // same lock order and refuse-before-write as a driver accept
         if (!enabledServices.includes(order.service)) fail(409, 'service_unavailable');
+        await guardRideAssignment(Number(order.id)); // same lock order and refuse-before-write as a driver accept
         const offer = await one('SELECT price FROM order_offers WHERE order_id=? AND driver_id=?', Number(customerOffer[1]), Number(customerOffer[2]));
         if (offer) await guardCashCap(Number(customerOffer[2]), Number(offer.price), await driverRate(Number(customerOffer[2])), 'offer_expired');
+        if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id = ? FOR UPDATE', Number(customerOffer[2])); // captain before policy (Sol R2-H1)
         await eligibility.guard(Number(customerOffer[2]), Number(customerOffer[1]), 'offer_accept', body.capacityProtocol, undefined, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && url.pathname === '/api/orders' && body.capacityProtocol !== undefined) {
         // An installed booking may be measured by an operator; it cannot assert its own verified load.
         await eligibility.available(); fail(409, 'operator_order_assessment_required');
       }
-      return await match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
+      const result = await match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
+      if (boundary) await persistence.exec('COMMIT');
+      return result;
+      } catch (error) { if (boundary) await persistence.exec('ROLLBACK'); throw error; }
     };
     if (req.method === 'POST' && /^\/api\/driver\/presence\//.test(url.pathname)) {
       need(user!,'driver');

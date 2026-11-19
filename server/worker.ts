@@ -92,7 +92,9 @@ export class DurableWorker {
       if (kind==='job' || kind==='offer') {
         if (order.status!=='searching' || (order.scheduled_for && (order.scheduled_for<=Date.now() || order.scheduled_for>Date.now()+30*60_000))) return;
         if (kind==='job' && user.role!=='driver') return;
-      } else if (user.role!=='admin' && userId!==order.customer_id && userId!==order.driver_id) return;
+      } else if (user.role!=='admin' && userId!==order.customer_id && userId!==order.driver_id
+        // a shop order's merchant owner is a party to it (DLV-13 removal, MER-03 updates); shop orders imply the shop tables
+        && !(order.service==='shop' && await this.db.one('SELECT 1 FROM shop_orders s JOIN merchants m ON m.id=s.merchant_id WHERE s.order_id=? AND m.owner_user_id=?',order.id,userId))) return;
       if (kind==='offer_accepted' && (order.status!=='assigned' || userId!==order.driver_id)) return;
       if (['assigned','at_pickup','in_transit','completed','returned','on_hold','returning','cancelled'].includes(kind) && order.status!==kind) return;
     }

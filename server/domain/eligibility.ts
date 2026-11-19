@@ -84,6 +84,12 @@ export class Eligibility {
   reason(body: Row) { const s=this.str(body.reason,500); if (s.length<5) this.fail(400,'reason_required'); return s; }
   ref(body: Row) { const s=this.str(body.evidenceRef); if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,159}$/.test(s)) this.fail(400,'invalid_evidence_ref'); return s; }
   async available() { if (!(await measuredCapability(this.db))) this.fail(409,'measured_protocol_unavailable'); }
+  /** Timed dispatch locks captain, vehicle and run before the policy row; the measured guard takes the vehicle and its run first too, so
+   * two captains sharing a vehicle cannot hold them in opposite orders (Sol R2-H1). base() re-reads them under the same locks. */
+  async lockResources(vehicleId: number) {
+    await this.db.one('SELECT id FROM vehicles WHERE id=? FOR UPDATE',vehicleId);
+    await this.db.one('SELECT vehicle_id FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE',vehicleId);
+  }
   async lockPolicy(mode:'update'|'share'='update') { await this.available(); return (await this.db.one(`SELECT * FROM eligibility_policy WHERE id=1 FOR ${mode==='share'?'SHARE':'UPDATE'}`))!; }
   async audit(actor: number, action: string, subject: number, reason: string, evidence: string | null = null) {
     await this.db.run('INSERT INTO eligibility_audit(actor_id,action,subject_id,reason,evidence_ref,created_at) VALUES(?,?,?,?,?,?)',actor,action,subject,reason,evidence,Date.now());
@@ -246,8 +252,8 @@ export class Eligibility {
     if (!cohort?.enrolled && requested===undefined && !req && !declaredEarly && !oldOffer) {
       // Linked installed clients may retain their flow, but cannot add unknown work to a measured/shared exclusive run.
       if (cohort) {
+        await this.lockResources(cohort.vehicle_id);
         await this.lockPolicy();
-        await this.db.one('SELECT id FROM vehicles WHERE id=? FOR UPDATE',cohort.vehicle_id);
         const busy=await this.db.one(`SELECT o.id FROM orders o JOIN driver_vehicles dv ON dv.driver_id=o.driver_id
           JOIN driver_eligibility selected ON selected.driver_id=dv.driver_id AND selected.vehicle_id=dv.vehicle_id
           WHERE dv.vehicle_id=? AND o.id<>? AND o.status IN ${active}
@@ -257,6 +263,7 @@ export class Eligibility {
       }
       return;
     }
+    if (cohort?.vehicle_id != null) await this.lockResources(cohort.vehicle_id);
     const policy=await this.lockPolicy();
     // A scope assessment may have committed while this request waited for the policy lock.
     req=await this.db.one('SELECT * FROM order_requirements WHERE order_id=? FOR SHARE',orderId);

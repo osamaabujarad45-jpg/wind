@@ -47,7 +47,7 @@ export default function MerchantOrder() {
       <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
       <Stepper value={prep} min={5} max={120} label={c.merchantPrepMinutes} onChange={n => setPrep(Math.round(n / 5) * 5 || 5)} />
-      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
+      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} disabled={clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : undefined} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
       {!s.acceptExtended && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
       <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />

@@ -156,15 +156,19 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
   };
   if (stable(financial) !== stable(targetFinancial)) mismatches.push({ table: 'financial', reason: 'minor-unit totals differ' });
   const obligations: Row[] = [];
+  // DRV-17 cutover instant from the source settings (main.ts owedColumns); without one every return keeps its promo relief.
+  const returnCutoff = Math.trunc(Number((snapshot.rows.settings ?? []).find((r: Row) => r.key === 'returnPolicyFrom')?.value ?? Number.MAX_SAFE_INTEGER));
   for (const driver of new Set([...orders.map(r => r.driver_id), ...cash.map(r => r.driver_id), ...snapshot.rows.users.filter(r => r.role === 'driver').map(r => r.id)].filter(v => v !== null))) {
     const sourceOrders = orders.filter(r => r.driver_id === driver && ['completed','returned'].includes(r.status));
+    const relieved = sourceOrders.filter(r => r.status === 'completed' || Number(r.completed_at ?? r.updated_at) < returnCutoff); // DRV-17 cutover
     const sourceCash = cash.filter(r => r.driver_id === driver);
-    const owed = BigInt(sum(sourceOrders, 'commission', true)) - BigInt(sum(sourceOrders, 'discount', true))
+    const owed = BigInt(sum(sourceOrders, 'commission', true)) - BigInt(sum(relieved, 'discount', true))
       + BigInt(sum(sourceCash.filter(r => r.kind === 'adjustment'), 'amount_cents'))
       - BigInt(sum(sourceCash.filter(r => r.kind === 'remittance' && r.status === 'confirmed'), 'amount_cents'));
-    const pg = (await database.one(`SELECT COALESCE((SELECT SUM(COALESCE(commission_minor,0)-COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND status IN ('completed','returned')),0)
+    const pg = (await database.one(`SELECT COALESCE((SELECT SUM(COALESCE(commission_minor,0)) FROM orders WHERE driver_id=? AND status IN ('completed','returned')),0)
+      -COALESCE((SELECT SUM(COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND (status='completed' OR (status='returned' AND COALESCE(completed_at,updated_at)<${returnCutoff}))),0)
       +COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='adjustment'),0)
-      -COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='remittance' AND status='confirmed'),0) owed`, driver, driver, driver))!;
+      -COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='remittance' AND status='confirmed'),0) owed`, driver, driver, driver, driver))!;
     if (BigInt(pg.owed) !== owed) mismatches.push({ table: 'financial', key: hash(String(driver)), reason: 'driver open obligation differs' });
     obligations.push({ driverKey: hash(String(driver)), owedCents: owed.toString(), targetOwedCents: String(pg.owed),
       pendingCents: sum(sourceCash.filter(r => r.status === 'pending'), 'amount_cents') });

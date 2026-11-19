@@ -9,6 +9,8 @@ type Register = (method: string, path: string, handler: (ctx: Context) => Promis
 type Entry = { accountId: number; debitMinor?: number; creditMinor?: number };
 type Journal = { businessRef: string; kind: string; entries: Entry[]; currency?: string; orderId?: number | null; cashEntryId?: number | null; actorId?: number | null; reason?: string | null; rateBps?: number | null; reversesJournalId?: string | null };
 
+/** settings key of the DRV-17 return cutover instant (main.ts owedColumns): returns finished from it get no promo relief. */
+export const RETURN_POLICY_KEY = 'returnPolicyFrom';
 export const PROJECTED_CASH_CAP_MINOR = 100000;
 export function ledgerConfig() { return { projectedCashCapMinor: PROJECTED_CASH_CAP_MINOR, cashCapActivated: false }; }
 export async function ledgerAvailable(db: Persistence) {
@@ -72,11 +74,13 @@ export class Ledger {
       let journals = 0;
       const post = async (input: Journal) => { const exists = await this.db.one('SELECT id FROM ledger_journals WHERE business_ref=?', input.businessRef); await this.postJournal(input); if (!exists) journals++; };
       const orders = await this.db.all("SELECT * FROM orders WHERE driver_id IS NOT NULL AND status IN ('completed','returned') ORDER BY id");
+      // DRV-17 cutover: a return finished from the stored instant got no promo relief live, so the import posts none either (Sol R2-H5).
+      const cutoff = Number((await this.db.one('SELECT value FROM settings WHERE key=?', RETURN_POLICY_KEY))?.value ?? Number.MAX_SAFE_INTEGER);
       for (const order of orders) {
         const receivable = await this.ensureAccount(`driver:${order.driver_id}:receivable`, 'driver_receivable', Number(order.driver_id));
         const commission = Number(order.commission_minor ?? 0), discount = Number(order.discount_minor ?? 0);
         if (commission > 0) await post({ businessRef: `order:${order.id}:commission`, kind: 'commission_accrual', orderId: Number(order.id), entries: [{ accountId: receivable.id, debitMinor: commission }, { accountId: revenue.id, creditMinor: commission }] });
-        if (discount > 0) await post({ businessRef: `order:${order.id}:discount`, kind: 'discount_funding', orderId: Number(order.id), entries: [{ accountId: promo.id, debitMinor: discount }, { accountId: receivable.id, creditMinor: discount }] });
+        if (discount > 0 && (order.status !== 'returned' || Number(order.completed_at ?? order.updated_at) < cutoff)) await post({ businessRef: `order:${order.id}:discount`, kind: 'discount_funding', orderId: Number(order.id), entries: [{ accountId: promo.id, debitMinor: discount }, { accountId: receivable.id, creditMinor: discount }] });
       }
       const cash = await this.db.all("SELECT * FROM cash_entries WHERE kind='adjustment' OR (kind='remittance' AND status='confirmed') ORDER BY id");
       for (const entry of cash) {
