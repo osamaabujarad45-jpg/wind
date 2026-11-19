@@ -53,6 +53,8 @@ export function clientUpdateRequired(sent: string | string[] | undefined, env: N
  *  production a request without the header is a script or a test, not a cashier. Digits only (Haiku r10 N2). */
 export const cashProtocolBuild = 10105;
 export function cashClientFenced(sent: string | string[] | undefined, production: boolean) {
+  // An omitted header is a pre-gate bundle (production) or a script or test (elsewhere); an explicitly empty one is a
+  // build below any minimum, fenced everywhere, as in the global gate (Sol R15-L3).
   if (sent === undefined) return production;
   const first = (Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim();
   return !(/^\d{1,9}$/.test(first) && Number(first) >= cashProtocolBuild);

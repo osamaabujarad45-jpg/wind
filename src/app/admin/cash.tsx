@@ -68,8 +68,10 @@ export default function AdminCash() {
   // This device could not keep a refused entry's state: no more cash entries on this screen (Sol R14-M1; deploy.md).
   const storageBroken = useRef(false);
   const [storageFailed, setStorageFailed] = useState(false);
+  const stopEntries = () => { storageBroken.current = true; setStorageFailed(true); };
   // A run is alive while its effect generation and the API session it started under are current: a sign-in switches the
-  // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1).
+  // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1). Liveness gates
+  // receipt lookups and screen messages; this admin's own slot is device state and is settled whatever the session.
   async function recover(id: number, run = generation.current, session = apiSessionRevision()) { // `recovering` is already true
     const live = { get current() { return generation.current === run && apiSessionRevision() === session; } };
     try {
@@ -78,18 +80,17 @@ export default function AdminCash() {
         const outcome = await recoverCashCommand(cashIO(id, legacy), id, () => live.current);
         if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
+        if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); return; }
         if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
         const { command } = outcome;
         setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
         return;
       }
     } catch (e) { if (live.current) fail(err(e)); } // the saved command stays on the device for the next attempt
-    finally {
-      if (live.current) setRecovering(false);
-      // Cancelled by a new API session for the same admin (a sign-out that did not complete): the screen is still theirs, so
-      // the drain starts again under the new session instead of leaving every entry blocked (Sol R14-M3).
-      else if (generation.current === run && !storageBroken.current) void Promise.resolve().then(() => recover(id, run, apiSessionRevision()));
-    }
+    // A run cancelled by a new session stops blocking this screen (Sol R14-M3) and is never restarted on its own: a
+    // restart could ask as a replacement admin (Sol R15-M1). A record it left in the slot surfaces on the next entry,
+    // through cash_command_pending and a drain under that entry's own session.
+    finally { if (generation.current === run) setRecovering(false); }
   }
   useEffect(() => {
     const run = ++generation.current;
@@ -99,20 +100,27 @@ export default function AdminCash() {
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
   async function submit() {
-    if (!open || !actorId || inFlight.current) return;
+    if (!open || !actorId || inFlight.current || storageBroken.current) return; // a pending confirmation honours the stop too
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     const run = generation.current, session = apiSessionRevision();
     const alive = () => generation.current === run && apiSessionRevision() === session;
     try {
       const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
-      if (!alive()) return; // another admin signed in meanwhile: nothing of this send belongs on their screen
-      if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { storageBroken.current = true; setStorageFailed(true); }
+      // This device's own facts apply to this screen whatever the session (Sol R15-M2): a storage failure stops entries and
+      // shows its warning, and a closed form stays closed. Everything else waits for a live session.
+      if (generation.current === run) {
+        if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); }
+        setOpen(o => formAfter(o, outcome));
+      }
+      if (!alive()) return; // another admin signed in meanwhile: nothing else of this send belongs on their screen
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(err(outcome.error));
-      setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
+      else if (outcome.state !== 'empty' && outcome.error !== 'cash_storage_failed') fail(err(outcome.error));
       reload(); reloadPending();
-      if (open.origin && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session); } // the other slot may hold a command too
+      // A restored form's settlement, or a refusal whose record stays in the slot, drains the slots before the next entry:
+      // the other slot may hold a command, and a marked refusal is settled now, not on the next form (Sol R15-L1).
+      const kept = outcome.state === 'refused' && outcome.kept;
+      if ((open.origin || kept) && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session); }
     } catch (e) {
       if (!alive()) return; // a failure of another session's work is not shown on this one (Sol R14-M2)
       fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent

@@ -88,7 +88,10 @@ async function settleByReceipt(io: CashIO, command: CashCommand, alive: () => bo
     // Clear only this command: another tab may have settled it and a different command may hold the slot now.
     const now = await io.read().then(raw => readCashCommand(raw, command.actorId)).catch(() => null);
     if (!alive()) return { state: 'empty' }; // superseded during the read: the slot is left alone (Haiku r11 L-2)
-    if (now?.requestId === command.requestId) await clear(io);
+    // A record that cannot be cleared stays and is reported as a storage failure: the screen then stops taking entries
+    // instead of meeting the same record on every new one (Sol R15-L1).
+    if (now?.requestId === command.requestId && !(await io.write(null).then(() => true, () => false)))
+      return { state: 'refused', command, error: storageFailed, kept: true };
     if (entry) return match ? { state: 'recorded', command, entry } : { state: 'refused', command, error: conflict };
     return { state: 'refused', command, error: legacy ? ambiguous : settledElsewhere };
   } catch (error) { return { state: 'unconfirmed', command, error }; }
@@ -140,12 +143,14 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
       }
       // A refusal whose slot could not be cleared is marked refused, so a restart or a Retry settles it by receipt only and
       // never sends it again (Sol R12-M2). If even that write fails, storage is broken: it stays unconfirmed.
-      if (!alive()) return { state: 'empty' };
+      // The refusal is final whoever is signed in now: this admin's own slot is cleared or marked either way, so it never
+      // comes back as resendable (Haiku r13 N1). Only receipt lookups need this admin's session.
       if (!(await io.write(null).then(() => true, () => false))) {
         // The record stays in the slot either way, so the form closes (`kept`): a new entry gets a new request id.
         if (await io.write({ ...command, refused: true }).then(() => true, () => false)) return { state: 'refused', command, error, kept: true };
-        // Neither write took: this device cannot keep the refusal. It is a storage failure, never a resendable entry; the
-        // screen stops taking cash entries and the cashier reconciles from another device (Sol R13-M2, R14-M1; deploy.md).
+        // Neither write took: this device cannot keep the refusal. It is a storage refusal (`cash_storage_failed`), never a
+        // resendable entry; the screen stops taking cash entries and the cashier reconciles from another device
+        // (Sol R13-M2, R14-M1; deploy.md).
         return { state: 'refused', command, error: storageFailed, kept: true };
       }
       return { state: 'refused', command, error };
@@ -181,7 +186,9 @@ export function recoverCashCommand(io: CashIO, actorId: number, alive: () => boo
 }
 
 /** The open form after an outcome. Only the form that was sent changes; a form opened meanwhile for another driver keeps
- *  its input. Recorded closes it, unconfirmed locks it, refused unlocks it (nothing was recorded under this id). */
+ *  its input. Recorded closes it and unconfirmed locks it. A refusal closes it when the form was uncertain or restored,
+ *  when its record stays in the slot (`kept`), or when it was an installed build's ambiguous entry; only a clean refusal
+ *  of a first send unlocks it for editing (nothing was recorded under this id). */
 export function formAfter<F extends { requestId: string; uncertain?: boolean; origin?: unknown }>(form: F | null, outcome: CashOutcome): F | null {
   if (!form || outcome.state === 'empty' || form.requestId !== outcome.command.requestId) return form;
   // An installed build's unknowable entry closes too: the cashier enters a payout or a charge afresh, never this form again.

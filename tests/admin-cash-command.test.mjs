@@ -91,6 +91,21 @@ for (const status of [400, 404]) { // the server refused this request id before 
   let live = true;
   const late = rig({ send: async () => { live = false; throw Object.assign(new Error('remittance_pending'), { status: 409 }); } });
   assert.deepEqual([(await sendCashCommand(late, command, false, () => live)).state, late.receipts, late.stored?.requestId], ['empty', 0, command.requestId]);
+  // Haiku r13 N1: a definitive refusal clears this admin's own slot even when the session changed during the POST, so it
+  // never comes back as resendable after the next sign-in.
+  let on = true;
+  const signedOut = rig({ send: async () => { on = false; throw Object.assign(new Error('invalid_amount'), { status: 400 }); } });
+  const superseded400 = await sendCashCommand(signedOut, command, false, () => on);
+  assert.deepEqual([superseded400.state, signedOut.stored], ['refused', null]);
+  // Sol R15-L1: a record that a receipt settlement cannot clear is a storage failure, not a loop on every new entry.
+  const stuckMarker = rig(); stuckMarker.stored = { ...command, refused: true };
+  stuckMarker.write = async c => { if (c === null) throw new Error('disk'); stuckMarker.stored = c; };
+  const settledStuck = await recoverCashCommand(stuckMarker, 7);
+  assert.deepEqual([settledStuck.state, settledStuck.error, settledStuck.kept], ['refused', 'cash_storage_failed', true]);
+  // Sol R15-L2: liveness lost during the receipt lookup leaves the slot alone (checked after the await, not only before).
+  let still = true;
+  const midLookup = rig({ receipt: async () => { still = false; return { entry: null }; } }); midLookup.stored = { ...command, refused: true };
+  assert.deepEqual([(await recoverCashCommand(midLookup, 7, () => still)).state, midLookup.stored?.requestId], ['empty', command.requestId]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -242,7 +257,12 @@ assert.match(screen, /const alive = \(\) => generation\.current === run && apiSe
 assert.match(screen, /await recover\(actorId, run, session\)/);
 // Sol R14-M1: a storage failure stops cash entry on this screen; R14-M3: a drain cancelled by a same-admin session change restarts.
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain \|\| storageFailed;/);
-assert.match(screen, /else if \(generation\.current === run && !storageBroken\.current\) void Promise\.resolve\(\)\.then\(\(\) => recover\(id, run, apiSessionRevision\(\)\)\);/);
+// Sol R15-M1: a cancelled drain only stops blocking; it is never restarted on its own (a restart could ask as another admin).
+assert.match(screen, /finally \{ if \(generation\.current === run\) setRecovering\(false\); \}/);
+assert.doesNotMatch(screen, /then\(\(\) => recover\(id, run, apiSessionRevision\(\)\)\)/);
+// Sol R15-M2: a storage failure stops entries on this screen before the session check, and a pending confirmation honours it.
+assert.match(screen, /if \(generation\.current === run\) \{\n\s+if \(outcome\.state === 'refused' && outcome\.error === 'cash_storage_failed'\) \{ stopEntries\(\);/);
+assert.match(screen, /inFlight\.current \|\| storageBroken\.current\) return;/);
 // Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
 assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
 assert.equal(parseCashSlot(null), null);
