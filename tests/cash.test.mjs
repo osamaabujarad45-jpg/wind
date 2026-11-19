@@ -15,7 +15,9 @@ const defaultSettings = { ...standard, parcelPrice: 49 };
 const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote, liveWatcherCount } = await import('../server/main.ts');
+const { shutdown, server, promote, liveWatcherCount, installedPayoutNotes } = await import('../server/main.ts');
+// The server recognizes an installed admin build's Pay-driver by its exact note, in both languages (R5-H3): pin it to the copy.
+assert.deepEqual(installedPayoutNotes, [copy.ar.cashPayoutNote, copy.en.cashPayoutNote]);
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -204,7 +206,7 @@ try {
 
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
   const enNote = 'Promo credits paid to the driver in cash';
-  const arNote = 'دفع رصيد خصمات الأكواد للسائق نقداً';
+  const arNote = copy.ar.cashPayoutNote; // the installed admin build's exact Arabic note
   const chargeId = randomUUID();
   const chargeBody = { driverId: driver.user.id, amountCents: 100, reason: 'Damage fee collected in cash', requestId: chargeId };
   const charge = await call('/admin/cash/adjustment', { token: admin.token, body: chargeBody });

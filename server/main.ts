@@ -3539,6 +3539,8 @@ route('GET', '/api/admin/cash', async ({ user }) => {
 });
 
 
+// The exact notes an installed admin build's Pay-driver sends (src/copy.ts cashPayoutNote, ar and en); tests pin them to the copy.
+export const installedPayoutNotes = ['دفع رصيد خصومات الأكواد للسائق نقداً', 'Promo credits paid to the driver in cash'];
 async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   need(user, 'admin');
   const amount = body.amountCents;
@@ -3548,7 +3550,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   const payout = kind === 'adjustment' && body.source === 'payout';
   if (body.source !== undefined && !payout) fail(400, 'invalid_input');
   // Installed Pay-driver (base 3b102aad) sends kind adjustment, no source, and one of these notes (src/copy.ts cashPayoutNote).
-  const legacyPayoutNote = note === 'دفع رصيد خصمات الأكواد للسائق نقداً' || note === 'Promo credits paid to the driver in cash';
+  const legacyPayoutNote = installedPayoutNotes.includes(note);
   const payoutIntent = payout || (kind === 'adjustment' && amount > 0 && legacyPayoutNote);
   // A retried form replays the entry it already recorded instead of booking the cash twice.
   // ponytail: optional on ordinary adjustments so an older admin build still records; a payout must name its request.
