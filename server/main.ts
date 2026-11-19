@@ -2971,7 +2971,9 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
           const metadata = await recoveryMetadata(id);
           if (Date.now() >= input.attemptExpiresAt) fail(409, 'command_expired');
           if (input.expectedAssignedAt !== (current.assigned_at ?? null)
-            || (metadata.assignmentEpoch !== null && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
+            // SQLite gained assignment_epoch in this release; installed captain apps there never send it, so it binds only when sent.
+            || (metadata.assignmentEpoch !== null && (persistence.backend === 'postgres' || input.expectedAssignmentEpoch !== undefined)
+              && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
             || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
         }
         result = (await apply(user, id, input, requestId));
@@ -3507,7 +3509,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
     // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
-    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount || (saved.source ?? null) !== (payout ? 'payout' : null) || (payout && saved.note !== note)) fail(409, 'idempotency_conflict');
+    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount || (saved.source ?? null) !== (payout || (saved.source === 'payout' && kind === 'adjustment' && amount > 0) ? 'payout' : null) || (payout && saved.note !== note)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
   (await persistence.exec('BEGIN IMMEDIATE'));
@@ -3516,7 +3518,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
     const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
     if (raced) {
-      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount || (raced.source ?? null) !== (payout ? 'payout' : null) || (payout && raced.note !== note)) fail(409, 'idempotency_conflict');
+      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount || (raced.source ?? null) !== (payout || (raced.source === 'payout' && kind === 'adjustment' && amount > 0) ? 'payout' : null) || (payout && raced.note !== note)) fail(409, 'idempotency_conflict');
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }
@@ -3524,7 +3526,13 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     const available = balance.owedCents - balance.pendingCents;
     if (kind === 'remittance' && (amount < 0 || amount > available)) fail(400, 'invalid_amount');
     if (payout && (amount < 0 || amount > -available)) fail(400, 'invalid_amount');
-    if (kind === 'adjustment' && !payout && (available + amount < 0 || (available < 0 && amount > 0))) fail(400, 'invalid_amount');
+    // An installed admin build pays a captain's credit with a plain positive adjustment: it is a payout, typed as one and bounded
+    // by what Wind owes, so it books to clearing and two cashiers cannot turn a settled credit into new debt.
+    const legacyPayout = kind === 'adjustment' && !payout && amount > 0 && available < 0;
+    if (legacyPayout && amount > -available) fail(400, 'invalid_amount');
+    if (kind === 'adjustment' && !payout && !legacyPayout && (available + amount < 0 || (available < 0 && amount > 0))) fail(400, 'invalid_amount');
+    const typedPayout = payout || (legacyPayout && await captainPayAvailable());
+    const entryRequestId = typedPayout ? requestId ?? randomUUID() : requestId; // the payout CHECK needs a request id
     // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
     // finance approver, never to the recording admin; a backend that cannot host the approval protocol
     // rejects instead of forgiving. Amount/subject binding re-checks happen in T24's atomic execution.
@@ -3544,8 +3552,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
         !(await run("UPDATE financial_approvals SET consumed_at = ? WHERE id = ? AND status = 'approved' AND consumed_at IS NULL", Date.now(), approvalId)).changes)
         fail(409, 'approval_used');
     }
-    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${payout ? ', source' : ''})
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?${payout ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);
+    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${typedPayout ? ', source' : ''})
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?${typedPayout ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), entryRequestId)).lastInsertRowid);
     if (kind === 'adjustment') await postCashJournal(id); // T30: adjustments settle as they are recorded
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     (await persistence.exec('COMMIT'));
@@ -3723,7 +3731,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       else if (o.service === 'ride') {
         // SRS §2.1: the rider pays nothing; the captain's trip so far waits on the block review.
         // ponytail: trip so far = half the booked fare; measured distance comes with the active GPS route.
-        if (await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+        if (persistence.backend === 'postgres' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
           VALUES (?, ?, ?, 'ride', ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status,
           Math.floor(Math.round((Number(o.price) - Number(o.discount ?? 0)) * 100) / 2), now, twoWorkingDays(now));
         await run("UPDATE orders SET status = 'cancelled', commission = NULL, return_code = NULL, updated_at = ? WHERE id = ?", now, o.id);
@@ -3733,7 +3741,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       else { // in custody: support recovers it and confirms the return to the sender
         // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's. A captain
         // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
-        if (o.service === 'shop' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+        if (o.service === 'shop' && persistence.backend === 'postgres' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
           SELECT ?, ?, ?, 'shop', ?, delivery_fee_agorot, ?, ? FROM shop_orders WHERE order_id = ? ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status, now, twoWorkingDays(now), o.id);
         // DRV-17: a parcel or freight captain's trip so far (one leg, the booked fare) waits on the same review.
         if (shippingOrder(o) && await captainPayAvailable()) await createShippingBlockReview(o, target.id, user.id, o.status, now);

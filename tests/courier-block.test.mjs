@@ -74,7 +74,9 @@ try {
   // A retained audit without its row is recovered when another API process opens this database.
   db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(carried.id);
   for (let start = 0; start < 2; start++) {
-    const api = await startApiProcess({ DB_PATH: process.env.DB_PATH });
+    // Under the PostgreSQL legacy harness the second process must open the same schema (the helper strips database env).
+    const api = await startApiProcess({ DB_PATH: process.env.DB_PATH, ...(process.env.WIND_DATABASE_URL && { WIND_DATABASE_URL: process.env.WIND_DATABASE_URL,
+      WIND_POSTGRES_TEST_ONLY: process.env.WIND_POSTGRES_TEST_ONLY, WIND_POSTGRES_TEST_SCHEMA: process.env.WIND_POSTGRES_TEST_SCHEMA }) });
     try {
       const recovered = await apiCaller(() => api.base)(`/orders/${carried.id}`, { token: admin.token });
       assert.deepEqual(recovered.blockReview, returned.blockReview);
