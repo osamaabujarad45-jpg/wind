@@ -163,14 +163,16 @@ try {
   assert.equal((await h.call(`/orders/${order.id}/ride/no-show`, { token: who.driver.token, body: { reason: 'absent', expectedAssignmentEpoch: boardedEpoch }, expect: 409 })).error, 'cannot_arrive');
   await advance(h, who.driver.token, order.id, 'in_transit');
   const missedOrder = await dispatchAssigned(h, who, await bookRide(h));
-  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: {}, expect: 409 })).error, 'ride_grace_not_running', 'no extension before the captain arrives');
+  const seenEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: {}, expect: 400 })).error, 'invalid_input', 'the extension names the assignment the rider saw (Haiku M2)');
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: seenEpoch }, expect: 409 })).error, 'ride_grace_not_running', 'no extension before the captain arrives');
   await h.call(`/orders/${missedOrder.id}/arrive`, { token: who.driver.token, body: {} });
   const noShow = (token, body, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/no-show`, { token, body, expect });
   const epoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
   const missed = { reason: 'absent', expectedAssignmentEpoch: epoch };
   assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active');
   // RIDE-06/A11Y-08: the rider adds 2 minutes once, during the grace; the captain's no-show waits for the new end.
-  const extend = (token, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token, body: {}, expect });
+  const extend = (token, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token, body: { expectedAssignmentEpoch: epoch }, expect });
   assert.equal((await extend(who.driver.token, 403)).error, 'forbidden');
   const before = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
   assert.equal(before.ride.graceExtended, false);

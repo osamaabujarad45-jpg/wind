@@ -607,8 +607,8 @@ registerResourceScopeRoutes(route, resourceScope);
 const privateObjects = createPrivateObjects(persistence, fail);
 registerPrivateObjectRoutes(route, privateObjects);
 const ledger = new Ledger(persistence, fail);
-/** The DRV-17 return cutover (see owedColumns): read, or recorded once in this transaction when absent. Never cached across requests,
- * so a rolled-back first write is simply written again. */
+/** The DRV-17 return cutover (see owedColumns): recorded once when the release starts (import.meta.main) or, failing that, in the first
+ * transaction that needs it. Never cached across requests, so a rolled-back first write is simply written again. */
 async function returnPolicyFrom() {
   return persistence.memo('returnPolicyFrom', async () => {
     const read = async () => (await one('SELECT value FROM settings WHERE key = ?', RETURN_POLICY_KEY))?.value;
@@ -634,7 +634,8 @@ const postOrderJournals = async (orderId: number) => {
   const commission = Number(o.commission_minor ?? 0), discount = Number(o.discount_minor ?? 0);
   if (commission > 0) await ledger.postJournal({ businessRef: `order:${o.id}:commission`, kind: 'commission_accrual', orderId: o.id as number,
     entries: [{ accountId: receivable.id as number, debitMinor: commission }, { accountId: revenue.id as number, creditMinor: commission }] });
-  if (discount > 0 && o.status !== 'returned') await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
+  // DRV-17 cutover, the same predicate as owedColumns and the import: a return before the stored instant keeps its promo relief.
+  if (discount > 0 && (o.status !== 'returned' || Number(o.completed_at ?? o.updated_at) < await returnPolicyFrom())) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
     entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
 };
 // Shop door cash on PostgreSQL: the captain owes the goods (the shop's money) and the service fee (Wind's), so a remittance relieves a
@@ -1113,6 +1114,8 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
       if ((await one("SELECT to_regclass('command_results') AS t"))?.t) {
         (await run('DELETE FROM command_results WHERE actor_id = ?', user.id)); // replies hold full order JSON
         // A replay keeps its decision and rereads the redacted order through current authorization.
+        // ponytail: scans every stored order reply (captains, admins and merchants all hold some); deletion is rare. Add an order_id
+        // column to command_results if this ever shows in deletion latency.
         (await run(`WITH order_replies AS MATERIALIZED (
           SELECT actor_id, command_id, CASE WHEN pg_input_is_valid(response, 'jsonb') THEN response::jsonb END AS body
           FROM command_results WHERE http_status = 200 AND response LIKE '%"pickupCity"%'
@@ -4145,6 +4148,8 @@ if (import.meta.main) {
   } else {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     (await pruneExpired());
+    // DRV-17: the return cutover is the release start (the first balance read records it too, for a process started otherwise).
+    try { await persistence.atomic({ purpose: 'release_start' }, () => returnPolicyFrom()); } catch (error) { logServerError('maintenance_failed', error); }
     setInterval(async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));

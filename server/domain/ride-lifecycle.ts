@@ -230,11 +230,11 @@ export class RideLifecycle {
     if (user.role !== 'customer') this.fail(403, 'forbidden');
     if (!(await this.graceExtensionAvailable())) this.fail(409, 'ride_lifecycle_unavailable');
     this.fields(body, ['expectedAssignmentEpoch']);
-    if (body.expectedAssignmentEpoch !== undefined && !Number.isSafeInteger(body.expectedAssignmentEpoch)) this.fail(400, 'invalid_input');
+    if (!Number.isSafeInteger(body.expectedAssignmentEpoch)) this.fail(400, 'invalid_input'); // the assignment the rider saw, as the no-show
     const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');
     if (order.service !== 'ride' || Number(order.customer_id) !== user.id) this.fail(404, 'not_found');
     // A tap or retry from before a reassignment never extends the next captain's grace (Sol R2-M2).
-    if (body.expectedAssignmentEpoch !== undefined && Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
+    if (Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
     const viewer = { id: user.id, role: user.role };
     if (!['assigned', 'at_pickup'].includes(String(order.status)) || order.driver_id == null) this.fail(409, 'ride_grace_not_running');
     const ride = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId);

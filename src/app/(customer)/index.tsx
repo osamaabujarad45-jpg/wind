@@ -70,7 +70,8 @@ export default function Home() {
     {recent.length > 0 && <>
       <Section title={c.recent} action={c.seeAll} onAction={() => router.navigate('/orders')} />
       <ListGroup>
-        {recent.map(o => <Press key={o.id} accessibilityLabel={`${c.request} ${city(o.pickupCity)[language]} ${city(o.dropoffCity)[language]}`}
+        {recent.map(o => <Press key={o.id} accessibilityLabel={o.service === 'shop' ? `${tripTitle(o, language, rtl)}, ${c[o.service]}` // a shop row opens the order, it does not book again
+          : `${c.request} ${city(o.pickupCity)[language]} ${city(o.dropoffCity)[language]}`}
           onPress={() => o.service === 'shop' ? router.push(`/order/${o.id}`) : book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
           <View style={styles.clock}><Ionicons name="time-outline" size={iconSize.md} color={palette.secondary} /></View>
           <View style={{ flex: 1 }}>

@@ -589,10 +589,9 @@ export default function OrderScreen() {
       {isCustomer && order.ride?.graceExtended && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
         && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Txt variant="caption">{c.rideGraceExtended}</Txt>}
       {/* RIDE-06/A11Y-08: once, while the waiting grace runs; the server owns the new end time. */}
-      {isCustomer && order.ride?.graceExtended === false && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
+      {isCustomer && order.ride?.graceExtended === false && waitingEndsAt != null && order.recovery?.assignmentEpoch != null && ['assigned', 'at_pickup'].includes(order.status)
         && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Button title={c.rideGraceExtend} icon="time-outline" variant="outline"
-          disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`,
-            order.recovery?.assignmentEpoch != null ? { expectedAssignmentEpoch: order.recovery.assignmentEpoch } : {})} />}{/* the assignment the rider saw (Sol R2-M2) */}
+          disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`, { expectedAssignmentEpoch: order.recovery!.assignmentEpoch })} />}{/* the assignment the rider saw (Sol R2-M2) */}
       {mine && activeStatuses.includes(order.status) && <>
         {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
