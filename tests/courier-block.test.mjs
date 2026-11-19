@@ -116,7 +116,9 @@ try {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'BLOCK_REVIEW_RECOVERED'").get(carried.id).n, 1);
   const realNow = Date.now;
   try {
-    Date.now = () => recoveredReview.dueAt + 1;
+    // Each review recovered by a later start is due two working days after its own recovery: move past the latest one.
+    const latestDue = Number(db.prepare('SELECT MAX(due_at) d FROM courier_block_reviews WHERE order_id IN (?, ?)').get(carried.id, denied.id).d);
+    Date.now = () => Math.max(recoveredReview.dueAt, latestDue) + 1;
     assert.equal((await call('/admin/stats', { token: admin.token })).blockReviewsOverdue, 2);
   } finally { Date.now = realNow; }
   const decision = { cleared: true, note: 'Second admin cleared the captain' };
