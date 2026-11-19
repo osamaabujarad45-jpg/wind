@@ -68,6 +68,11 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     captains. Stop scheduled and manual finance ledger imports. Record the time the freeze began and retain it throughout rollback.
     An older binary can restore promo relief in its balance view for a discounted `RETURN_NO_FARE` return and classify newer
     entries differently during import. Keep the database and any orders written during rollback.
+  - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
+    protocol and would book a current tab's payout as an ordinary adjustment. Freeze cash writes and close every open Cash
+    tab before stopping the service, keep them frozen while the previous API runs, and reopen them only after re-release.
+    A cashier bundle older than 1.1.5 gets the update screen for new cash writes on this release (same-id replay still
+    answers it), so after a client-only rollback the office also waits for re-release before recording cash.
   - **After re-release**, reconcile the captains on orders marked `RETURN_NO_FARE` or linked to a `trip_pay` cash entry. Compare
     booked fares, discounts, credits, payouts and any pending handovers with the office receipts and current cash balances.
     For PostgreSQL, also compare captain receivables and operating-expense journals to those entries before resuming imports.
