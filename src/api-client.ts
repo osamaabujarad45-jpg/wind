@@ -68,10 +68,10 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
       updateRequired = true;
       for (const listener of updateListeners) listener();
     }
-    // The reply belongs to a session that is gone. What the server said is kept (servedStatus/servedCode) for a caller that
-    // must settle its own device state, as a cash command refused for good (Sol R16-M1); nothing else reads it.
+    // The reply belongs to a session that is gone. Its status is kept (servedStatus) for a caller that must settle its own
+    // device state, as a cash command refused for good (Sol R16-M1); nothing else reads it.
     if (requestToken !== token || requestRevision !== sessionRevision)
-      throw Object.assign(new ApiError('session_changed', 401), { servedStatus: res.status, servedCode: typeof data?.error === 'string' ? data.error : undefined });
+      throw Object.assign(new ApiError('session_changed', 401), { servedStatus: res.status });
     noteServerDate(res.headers.get('date'), receivedAt, Math.max(0, receivedAt - startedAt));
     if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();
     if (!res.ok) {

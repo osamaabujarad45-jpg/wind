@@ -57,7 +57,7 @@ try {
   const lateRefusal = request('https://test.invalid/api/admin/cash/remittance', { driverId: 1, amountCents: 5 });
   invalidateApiSessionActions();
   finish(new Response(JSON.stringify({ error: 'invalid_amount' }), { status: 400 }));
-  await assert.rejects(lateRefusal, error => error.message === 'session_changed' && error.servedStatus === 400 && error.servedCode === 'invalid_amount');
+  await assert.rejects(lateRefusal, error => error.message === 'session_changed' && error.servedStatus === 400);
 
   globalThis.setTimeout = (fn, delay) => originalTimer(fn, delay === 20_000 ? 1 : delay);
   globalThis.fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));

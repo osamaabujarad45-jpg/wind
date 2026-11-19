@@ -72,29 +72,30 @@ export default function AdminCash() {
   // A run is alive while its effect generation and the API session it started under are current: a sign-in switches the
   // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1). Liveness gates
   // receipt lookups and screen messages; this admin's own slot is device state and is settled whatever the session.
-  async function recover(id: number, run = generation.current, session = apiSessionRevision(), quiet?: string) { // `recovering` is already true
+  // Returns true when it restored a saved form (`recovering` is already true: the initial state, or set by the caller).
+  async function recover(id: number, run = generation.current, session = apiSessionRevision(), quiet?: string): Promise<boolean> {
     const live = { get current() { return generation.current === run && apiSessionRevision() === session; } };
     try {
       for (const legacy of [true, false]) {
-        if (!live.current) return; // superseded: stop before the next lookup
+        if (!live.current) return false; // superseded: stop before the next lookup
         const outcome = await recoverCashCommand(cashIO(id, legacy), id, () => live.current);
-        // A device storage failure stops entries on this screen whatever the session (Sol R16-L1).
-        if (generation.current === run && outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); return; }
-        if (generation.current === run && (outcome.state === 'recorded' || outcome.state === 'refused') && outcome.stop) stopEntries();
+        // A device storage failure stops entries on this screen whatever the session, next to any verdict (Sol R16-L1, R18-M2/M3).
+        if (generation.current === run && outcome.stop) { stopEntries(); fail(err('cash_storage_failed')); }
         if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { setFailure(''); recorded(outcome.entry); reload(); reloadPending(); continue; }
         // The marker of a refusal just shown keeps that refusal's own reason on screen (Sol R17-L3).
         if (outcome.state === 'refused' && outcome.command.requestId === quiet) continue;
-        if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
+        if (outcome.state === 'refused') { if (!outcome.stop) fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
         const { command } = outcome;
         setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
-        return;
+        return true;
       }
     } catch (e) { if (live.current) fail(err(e)); } // the saved command stays on the device for the next attempt
     // A run cancelled by a new session stops blocking this screen (Sol R14-M3) and is never restarted on its own: a
     // restart could ask as a replacement admin (Sol R15-M1). A record it left in the slot surfaces on the next entry,
     // through cash_command_pending and a drain under that entry's own session.
     finally { if (generation.current === run) setRecovering(false); }
+    return false;
   }
   useEffect(() => {
     const run = ++generation.current;
@@ -118,21 +119,23 @@ export default function AdminCash() {
       if (!open.uncertain && !open.legacy && legacyState === 'failed') { if (alive()) { stopEntries(); fail(err('cash_storage_failed')); } return; }
       if (!open.uncertain && !open.legacy && legacyState === 'held') {
         if (!alive()) return;
-        fail(err('cash_command_pending'));
-        setRecovering(true); await recover(actorId, run, session);
+        // The typed form closes: it may repeat the entry being settled, and it never posts after that settlement. The
+        // cashier opens a new form once the saved entry is shown (Sol R18-M4, Haiku r16 L1).
+        setOpen(null); setMessage(c.cashSettledFirst);
+        setRecovering(true);
+        if (!(await recover(actorId, run, session)) && !storageBroken.current) setFailure(''); // nothing to act on: no pending warning (Sol R18-L1)
         return;
       }
       const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
       // This device's own facts apply to this screen whatever the session (Sol R15-M2): a storage failure stops entries and
       // shows its warning, and a closed form stays closed. Everything else waits for a live session.
       if (generation.current === run) {
-        if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); }
-        else if ((outcome.state === 'recorded' || outcome.state === 'refused') && outcome.stop) stopEntries();
+        if (outcome.stop) { stopEntries(); fail(err('cash_storage_failed')); }
         setOpen(o => formAfter(o, outcome));
       }
       if (!alive()) return; // another admin signed in meanwhile: nothing else of this send belongs on their screen
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
-      else if (outcome.state !== 'empty' && outcome.error !== 'cash_storage_failed') fail(err(outcome.error));
+      else if (outcome.state !== 'empty' && !outcome.stop) fail(err(outcome.error));
       reload(); reloadPending();
       // A restored form's settlement, or a refusal whose record stays in the slot, drains the slots before the next entry:
       // the other slot may hold a command, and a marked refusal is settled now, not on the next form (Sol R15-L1).
@@ -173,7 +176,7 @@ export default function AdminCash() {
       <Txt variant="title">{fill(c.cashPendingElsewhere, { a: money(cents(open.amount) / 100) })}</Txt>
       {!!open.note && <Txt variant="caption">{open.note}</Txt>}
       <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : c.cashUncertain}</Txt>
-      <Button title={c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
+      <Button title={open.origin?.refused ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
     </Card>}
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="cash-outline" title={c.cashNoDrivers} />
       : data.map((row, i) => <Appear key={row.driverId} index={i}>
@@ -203,7 +206,7 @@ export default function AdminCash() {
             {open.uncertain && <>
               {/* The balance already counts this entry's own pending copy, so the same-id resend is the one way to settle it. */}
               <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : c.cashUncertain}</Txt>
-              <Button title={c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
+              <Button title={open.origin?.refused ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
             </>}
             {/* An unconfirmed entry is never dismissed: only its receipt or a same-id resend settles it. */}
             {!open.uncertain && <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />}
