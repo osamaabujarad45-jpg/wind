@@ -3555,11 +3555,17 @@ route('GET', '/api/admin/cash', async ({ user }) => {
 });
 
 
-async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
+// Cashier protocol (Sol R10-H2): from client build 10105 a pending command lives in its own slot and every positive
+// adjustment says payout or charge. An older bundle cannot see this build's pending request id, so it could re-enter the
+// same handover under a new one: its fresh writes get the update screen it already understands. Same-id replay still
+// answers it. A request without the header (scripts, the API itself) is not a cashier bundle and is not gated here.
+const cashProtocolBuild = 10105;
+async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment', client?: string | string[]) {
   need(user, 'admin');
   await needCashFinance(user);
   const amount = body.amountCents;
   if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 1_000_000) fail(400, 'invalid_amount');
+  // `source: 'payout'` is this build's own typed-form alias for a payout; the installed bundle never sends a source (Haiku r8 N5).
   const legacyPayout = kind === 'adjustment' && body.source === 'payout';
   if (body.source !== undefined && (!legacyPayout || (body.intent !== undefined && body.intent !== 'payout'))) fail(400, 'invalid_input');
   const intent = legacyPayout ? 'payout' : body.intent;
@@ -3581,6 +3587,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     if (!sameEntry(saved)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
+  const build = Number((Array.isArray(client) ? client[0] : client)?.split(',')[0].trim());
+  if (client !== undefined && !(Number.isSafeInteger(build) && build >= cashProtocolBuild)) fail(426, 'client_update_required');
   // After replay, so a saved entry still answers its own request id (Haiku r7 N-1): every new adjustment, payout included, names its reason.
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
   (await persistence.exec('BEGIN IMMEDIATE'));
@@ -3634,8 +3642,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', id))!);
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
 }
-route('POST', '/api/admin/cash/remittance', async ({ user, body }) => (await recordCash(user, body, 'remittance')));
-route('POST', '/api/admin/cash/adjustment', async ({ user, body }) => (await recordCash(user, body, 'adjustment')));
+route('POST', '/api/admin/cash/remittance', async ({ user, body, req }) => (await recordCash(user, body, 'remittance', req.headers['x-wind-client'])));
+route('POST', '/api/admin/cash/adjustment', async ({ user, body, req }) => (await recordCash(user, body, 'adjustment', req.headers['x-wind-client'])));
 
 // Subscriptions: requested in-app, paid in cash / bank transfer, activated by an admin.
 route('POST', '/api/subscriptions', async ({ user }) => {

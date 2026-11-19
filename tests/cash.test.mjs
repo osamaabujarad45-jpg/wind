@@ -235,6 +235,18 @@ try {
   // Haiku r6 F3: the same request id with another reason is a conflict, not a replay of the old note.
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...chargeInCredit, reason: 'Office fuel charge, corrected' }, expect: 409 })).error, 'idempotency_conflict');
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, creditBeforeCharge + 100);
+  // Sol R10-H2: a cashier bundle older than the cash protocol (build 10105) cannot see this build's pending request ids,
+  // so its fresh writes get the update screen; the current build writes; same-id replay still answers the old bundle.
+  const withBuild = (build, body) => fetch(`${base}/admin/cash/adjustment`, { method: 'POST',
+    headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json', 'X-Wind-Client': build }, body: JSON.stringify(body) });
+  const oldBundle = await withBuild('10104', { ...chargeInCredit, requestId: randomUUID() });
+  assert.deepEqual([oldBundle.status, (await oldBundle.json()).error], [426, 'client_update_required']);
+  assert.equal((await withBuild('10104', chargeInCredit)).status, 200, 'same-id replay answers an old bundle');
+  const current = await withBuild('10105', { ...chargeInCredit, amountCents: 1, requestId: randomUUID() });
+  assert.equal(current.status, 200);
+  const remitOld = await fetch(`${base}/admin/cash/remittance`, { method: 'POST', headers: { Authorization: `Bearer ${admin.token}`,
+    'Content-Type': 'application/json', 'X-Wind-Client': '10104' }, body: JSON.stringify({ driverId: driver.user.id, amountCents: 1, requestId: randomUUID() }) });
+  assert.equal(remitOld.status, 426, 'remittances too: an old bundle cannot re-enter a pending handover under a new id');
   // Haiku r6 F2: a payout names its reason like every adjustment.
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 50, intent: 'payout', reason: '', requestId: randomUUID() }, expect: 400 })).error, 'invalid_input');
   const oldForm = { driverId: driver.user.id, amountCents: 100, reason: 'Payout for receipt 12', requestId: randomUUID() };
@@ -270,6 +282,8 @@ try {
   assert.equal(payout.note, payoutBody.reason);
   assert.match(payout.reference, /^P-/);
   assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: bodies[winner].body }), payout);
+  // Haiku r8 N7: a payout resent under its id with another reason is a different request too.
+  assert.equal((await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: { ...bodies[winner].body, reason: 'Office paid trip earnings, corrected' }, expect: 409 })).error, 'idempotency_conflict');
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   const stale = { ...payoutBody, requestId: randomUUID() };
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: stale, expect: 400 })).error, 'invalid_amount');

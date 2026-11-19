@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, newCashCommand, parseCashSlot, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
+import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, newCashCommand, receiptMatches, parseCashSlot, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
 import { copy } from '../src/copy.ts';
 
 // A-01: a remittance whose reply is lost survives an app restart and a forced sign-out, and is settled only by the admin's
@@ -30,11 +30,27 @@ for (const status of [400, 404]) { // the server refused this request id before 
   assert.equal((await sendCashCommand(io, command)).state, 'refused', String(status));
   assert.equal(io.stored, null);
 }
-{ // Haiku r7 L-4: a receipt for the same id with another amount or note is a conflict, never shown as recorded.
-  const io = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5', amountCents: 1250, note: 'Another note' } }) });
+{ // Haiku r7 L-4 / Sol R10-L1: a receipt for the same id under another kind, amount, note or payout meaning is a conflict.
+  const entry = { id: 5, reference: 'R-5', kind: 'remittance', amountCents: 1250, note: 'Office handover' };
+  const io = rig({ send: failing(409), receipt: async () => ({ entry: { ...entry, note: 'Another note' } }) });
   assert.deepEqual(await sendCashCommand(io, command), { state: 'refused', command, error: 'idempotency_conflict' });
-  const same = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5', amountCents: 1250, note: 'Office handover' } }) });
+  const same = rig({ send: failing(409), receipt: async () => ({ entry }) });
   assert.equal((await sendCashCommand(same, command)).state, 'recorded');
+  // The server's explicit conflict stands, whatever a receipt shows.
+  const explicit = rig({ send: async () => { throw Object.assign(new Error('idempotency_conflict'), { status: 409 }); }, receipt: async () => ({ entry }) });
+  assert.equal((await sendCashCommand(explicit, command)).state, 'refused');
+  assert.equal(explicit.receipts, 0);
+  const payout = newCashCommand(7, 42, 'payout', 1250, 'Cash balance paid to the captain');
+  assert.equal(receiptMatches({ id: 6, kind: 'adjustment', amountCents: 1250, note: payout.note }, payout), false, 'a charge is not this payout');
+  assert.equal(receiptMatches({ id: 6, kind: 'adjustment', amountCents: 1250, note: payout.note, source: 'payout' }, payout), true);
+  // Recovery after a restart checks the receipt the same way.
+  const cold = rig({ receipt: async () => ({ entry: { ...entry, amountCents: 999 } }) }); cold.stored = command;
+  assert.deepEqual(await recoverCashCommand(cold, 7), { state: 'refused', command, error: 'idempotency_conflict' });
+}
+{ // Sol R10-H1: a refused restored form closes. It would only ever send its saved record, so an edit could not be what is sent.
+  const restored = { requestId: command.requestId, uncertain: true, origin: command, legacy: true };
+  assert.equal(formAfter(restored, { state: 'refused', command, error: 'invalid_amount' }), null);
+  assert.deepEqual(formAfter(restored, { state: 'unconfirmed', command }), restored, 'still uncertain: kept with its record');
 }
 { // 409 may be this admin's own entry with other fields: the receipt decides, and only an empty receipt means refused.
   const own = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5' } }) });

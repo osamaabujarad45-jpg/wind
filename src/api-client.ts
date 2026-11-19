@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 /** app.json version as major·10000 + minor·100 + patch; tests keep the two equal. The server gates on it (426). */
-export const CLIENT_BUILD = 10104;
+export const CLIENT_BUILD = 10105;
 let updateRequired = false;
 const updateListeners = new Set<() => void>();
 export const clientUpdateRequired = () => updateRequired;

@@ -2,6 +2,7 @@
 // recent routes to book again, and short cards that explain saving and safety.
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { wrapAbove } from '../../text-scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -20,8 +21,8 @@ const book = (params: { service: Service; from?: string; to?: string; pick?: 'to
 export default function Home() {
   const { me } = useSession();
   const { c, row, rtl, language } = useCopy();
-  // At 150% text and up a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
-  const stacked = useWindowDimensions().fontScale >= 1.5;
+  // Past the wrap threshold a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
+  const stacked = useWindowDimensions().fontScale > wrapAbove;
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
   // A newer booked-ahead order hid a live trip or a search running now behind "See all". Stable sort keeps newest first per rank.
@@ -137,7 +138,7 @@ export default function Home() {
             <Press accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>
               <ServiceIcon service={service} size={28} />
               {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
-              <Txt variant="label" numberOfLines={stacked ? 3 : 2} center={stacked} style={stacked ? { alignSelf: 'stretch', fontSize: 12 } : { flex: 1, fontSize: 12 }}>{c[service]}</Txt>
+              <Txt variant="label" numberOfLines={2} center={stacked} style={stacked ? { alignSelf: 'stretch', fontSize: 12 } : { flex: 1, fontSize: 12 }}>{c[service]}</Txt>
             </Press>
           </Appear>)}
         </Row>

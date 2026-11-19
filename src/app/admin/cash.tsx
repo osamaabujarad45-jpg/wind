@@ -60,24 +60,29 @@ export default function AdminCash() {
 
   const recorded = (entry: CashEntry) => setMessage(entry.reference ? fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded);
   // After a restart the saved form comes back locked until this admin's command receipt or a same-id resend settles it.
-  useEffect(() => {
-    if (!actorId) return;
-    let live = true;
-    // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
-    // form at a time: a second unconfirmed command stays saved and comes back once the first is settled.
-    (async () => {
+  // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
+  // form at a time; whenever a restored form settles (or a send meets another pending command) the slots are drained
+  // again, so a second saved command is never left without a form (Sol R10-M1).
+  const live = useRef(true);
+  async function recover(id: number) {
+    setRecovering(true);
+    try {
       for (const legacy of [true, false]) {
-        const outcome = await recoverCashCommand(cashIO(actorId, legacy), actorId);
-        if (!live || outcome.state === 'empty') continue;
+        const outcome = await recoverCashCommand(cashIO(id, legacy), id);
+        if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
         if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
         const { command } = outcome;
         setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
         return;
       }
-    })().catch(e => { if (live) fail(err(e)); }) // the saved command stays on the device for the next attempt
-      .finally(() => { if (live) setRecovering(false); });
-    return () => { live = false; };
+    } catch (e) { if (live.current) fail(err(e)); } // the saved command stays on the device for the next attempt
+    finally { if (live.current) setRecovering(false); }
+  }
+  useEffect(() => {
+    live.current = true;
+    if (actorId) void recover(actorId);
+    return () => { live.current = false; };
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
   async function submit() {
@@ -90,8 +95,11 @@ export default function AdminCash() {
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
       reload(); reloadPending();
-    } catch (e) { fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); } // not saved, so nothing was sent
-    finally { inFlight.current = false; setBusy(false); }
+      if (open.origin && outcome.state !== 'unconfirmed') await recover(actorId); // the other slot may hold a command too
+    } catch (e) {
+      fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
+      if (e instanceof Error && e.message === 'cash_command_pending') await recover(actorId); // show the command that holds the slot
+    } finally { inFlight.current = false; setBusy(false); }
   }
 
   // T25: the resolution is deliberate (a confirmation dialog), names a reason and an optional evidence

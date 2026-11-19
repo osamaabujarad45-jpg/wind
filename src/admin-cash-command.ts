@@ -7,7 +7,7 @@ export type CashKind = 'remittance' | 'adjustment' | 'payout';
 // build's record, whose Pay driver also saved a positive 'adjustment': its intent is unknowable (Sol R8-H1).
 export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
-export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string };
+export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string; source?: string };
 export type CashIO = { read: () => Promise<unknown>; write: (command: CashCommand | null) => Promise<void>;
   receipt: (command: CashCommand) => Promise<{ entry: CashEntry | null }>; send: (command: CashCommand) => Promise<CashEntry>;
   /** One command at a time across tabs: without it a second tab overwrites a saved unconfirmed command. */
@@ -26,7 +26,8 @@ const locked = <T>(io: CashIO, run: () => Promise<T>) => io.exclusive ? io.exclu
  *  Schema 2 has its own slot: an installed bundle reads only the legacy one and clears a record it cannot parse, which
  *  would erase this build's pending request id (Sol R9-H2), and a rolled-back bundle never sees it either (Haiku r7 L-5). */
 export const cashCommandKey = (actorId: number) => `adminCash.v2.${actorId}`;
-/** The installed build's slot, read so its pending command is settled by its own receipt; this build never writes it. */
+/** The installed build's slot, read so its pending command is settled by its own receipt. This build never creates a
+ *  record there; it only re-saves or clears the installed build's own record while settling it. */
 export const legacyCashCommandKey = (actorId: number) => `adminCash.${actorId}`;
 /** The admin's slot as stored. Unparseable bytes are a broken cash record: dropped like one, not an error on every visit
  *  (no request id survives them, so nothing could be resent or looked up). */
@@ -51,6 +52,16 @@ export const newCashCommand = (actorId: number, driverId: number, kind: CashKind
  *  meaning; only its own receipt settles it, and without one the cashier checks the balance and enters it again. */
 export const ambiguousLegacy = (c: CashCommand) => c.schemaVersion === 1 && c.kind === 'adjustment' && c.amountCents > 0;
 const ambiguous = 'cash_command_ambiguous';
+/** Does a receipt hold this exact request? A receipt names its kind, amount and note (and a payout its source), so the
+ *  same id under another meaning is a conflict, never a success (Sol R10-L1, Haiku r8 N2). Driver and owner are fixed by
+ *  the owner-scoped receipt and the form's request id. */
+export function receiptMatches(entry: CashEntry, command: CashCommand) {
+  if (entry.amountCents === undefined) return true; // a minimal receipt (older server): only its id is known
+  const kind = command.kind === 'payout' ? 'adjustment' : command.kind;
+  return entry.kind === kind && entry.amountCents === command.amountCents && (entry.note ?? '') === command.note
+    && (entry.source === 'payout') === (command.kind === 'payout');
+}
+const conflict = 'idempotency_conflict';
 async function settleAmbiguous(io: CashIO, command: CashCommand): Promise<CashOutcome> {
   try {
     const { entry } = await io.receipt(command);
@@ -88,14 +99,11 @@ export function sendCashCommand(io: CashIO, command: CashCommand): Promise<CashO
       return { state: 'recorded', command, entry };
     } catch (error) {
       if (!refusedForGood(error)) return { state: 'unconfirmed', command, error };
-      if (status(error) === 409) { // 409 can also mean this admin's own entry exists: only its receipt can tell
+      // The server said this id holds another request: that is the answer, whatever a receipt shows (Sol R10-L1).
+      if (status(error) === 409 && (error as Error).message !== conflict) { // another 409: only its receipt can tell
         try {
           const { entry } = await io.receipt(command);
-          // The same id with another amount or note is a different request (Haiku r7 L-4): never shown as recorded.
-          if (entry && entry.amountCents !== undefined && (entry.amountCents !== command.amountCents || (entry.note ?? '') !== command.note)) {
-            await clear(io);
-            return { state: 'refused', command, error: 'idempotency_conflict' };
-          }
+          if (entry && !receiptMatches(entry, command)) { await clear(io); return { state: 'refused', command, error: conflict }; }
           if (entry) { await clear(io); return { state: 'recorded', command, entry }; }
         } catch { return { state: 'unconfirmed', command, error }; }
       }
@@ -122,16 +130,17 @@ export function recoverCashCommand(io: CashIO, actorId: number): Promise<CashOut
       const { entry } = await io.receipt(command);
       if (!entry) return { state: 'unconfirmed', command }; // a point-in-time read, never proof the first send cannot land
       await clear(io);
-      return { state: 'recorded', command, entry };
+      return receiptMatches(entry, command) ? { state: 'recorded', command, entry } : { state: 'refused', command, error: conflict };
     } catch (error) { return { state: 'unconfirmed', command, error }; }
   });
 }
 
 /** The open form after an outcome. Only the form that was sent changes; a form opened meanwhile for another driver keeps
  *  its input. Recorded closes it, unconfirmed locks it, refused unlocks it (nothing was recorded under this id). */
-export function formAfter<F extends { requestId: string; uncertain?: boolean }>(form: F | null, outcome: CashOutcome): F | null {
+export function formAfter<F extends { requestId: string; uncertain?: boolean; origin?: unknown }>(form: F | null, outcome: CashOutcome): F | null {
   if (!form || outcome.state === 'empty' || form.requestId !== outcome.command.requestId) return form;
   // An installed build's unknowable entry closes too: the cashier enters a payout or a charge afresh, never this form again.
-  if (outcome.state === 'recorded' || (outcome.state === 'refused' && outcome.error === ambiguous)) return null;
+  // So does a refused restored form: it sends only its saved record, so an edit would not be what is sent (Sol R10-H1).
+  if (outcome.state === 'recorded' || (outcome.state === 'refused' && (outcome.error === ambiguous || form.origin))) return null;
   return { ...form, uncertain: outcome.state === 'unconfirmed' };
 }
