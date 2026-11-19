@@ -46,6 +46,17 @@ export function clientUpdateRequired(sent: string | string[] | undefined, env: N
   return Number.isSafeInteger(min) && min > 0 && Number.isSafeInteger(build) && build < min;
 }
 
+/** Cashier protocol (Sol R10-H2, Haiku r9 M2): from client build 10105 a pending cash command lives in its own slot and
+ *  every positive adjustment says payout or charge. A fresh cash write from an older bundle, or in production from a
+ *  bundle that sends no build at all (installs up to 1.0.13), is refused with the update screen. Outside production a
+ *  request without the header is a script or a test, not a cashier. */
+export const cashProtocolBuild = 10105;
+export function cashClientFenced(sent: string | string[] | undefined, production: boolean) {
+  if (sent === undefined) return production;
+  const build = Number((Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim());
+  return !(Number.isSafeInteger(build) && build >= cashProtocolBuild);
+}
+
 /** Additive operator detail; bare legacy /ready remains a storage probe, not a feature activation claim. */
 export function registerRuntimeRoutes(route: Register, deps: { db: Persistence; need: (user: User, role: 'admin') => void;
   needActive: (user: User) => void; fail: (status: number, message: string) => never; limit: (key: string, count: number, window: number) => Promise<unknown> }) {

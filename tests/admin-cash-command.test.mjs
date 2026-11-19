@@ -47,14 +47,37 @@ for (const status of [400, 404]) { // the server refused this request id before 
   const cold = rig({ receipt: async () => ({ entry: { ...entry, amountCents: 999 } }) }); cold.stored = command;
   assert.deepEqual(await recoverCashCommand(cold, 7), { state: 'refused', command, error: 'idempotency_conflict' });
 }
+{ // Haiku r9 M1: a retry from a restored form whose slot another tab already settled and cleared is never sent again.
+  const gone = rig(); gone.stored = null;
+  const stale = await sendCashCommand(gone, command, true);
+  assert.deepEqual([stale.state, stale.error, gone.sends, gone.stored], ['refused', 'cash_command_settled', 0, null]);
+  const booked = rig({ receipt: async () => ({ entry: { id: 9, reference: 'R-9', kind: 'remittance', amountCents: 1250, note: 'Office handover' } }) });
+  booked.stored = null;
+  assert.equal((await sendCashCommand(booked, command, true)).state, 'recorded');
+  assert.equal(booked.sends, 0);
+  // While its slot still holds it, a retry is the same-id resend as before.
+  const held = rig(); held.stored = command;
+  assert.equal((await sendCashCommand(held, command, true)).state, 'recorded');
+  assert.equal(held.sends, 1);
+  // Sol R11-L1: a receipt that says only that the id exists settles nothing.
+  const thin = rig({ receipt: async () => ({ entry: { id: 9, reference: 'R-9' } }) }); thin.stored = command;
+  assert.equal((await recoverCashCommand(thin, 7)).state, 'unconfirmed');
+  assert.equal(thin.stored, command);
+  // A refusal whose slot cannot be cleared stays unconfirmed, never resendable after a restart.
+  const stuck = rig({ send: failing(400) }); stuck.write = async c => { if (c === null) throw new Error('disk'); stuck.stored = c; };
+  assert.equal((await sendCashCommand(stuck, command)).state, 'unconfirmed');
+}
+for (const language of ['ar', 'en']) for (const key of ['err_cash_command_settled', 'cashPendingElsewhere']) assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 { // Sol R10-H1: a refused restored form closes. It would only ever send its saved record, so an edit could not be what is sent.
   const restored = { requestId: command.requestId, uncertain: true, origin: command, legacy: true };
   assert.equal(formAfter(restored, { state: 'refused', command, error: 'invalid_amount' }), null);
   assert.deepEqual(formAfter(restored, { state: 'unconfirmed', command }), restored, 'still uncertain: kept with its record');
 }
 { // 409 may be this admin's own entry with other fields: the receipt decides, and only an empty receipt means refused.
-  const own = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5' } }) });
+  const own = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5', kind: 'remittance', amountCents: 1250, note: 'Office handover' } }) });
   assert.equal((await sendCashCommand(own, command)).state, 'recorded');
+  const thin = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5' } }) }); // only the id: settles nothing
+  assert.equal((await sendCashCommand(thin, command)).state, 'unconfirmed');
   const other = rig({ send: failing(409) });
   assert.equal((await sendCashCommand(other, command)).state, 'refused');
   assert.equal(other.stored, null);
@@ -73,9 +96,10 @@ for (const status of [400, 404]) { // the server refused this request id before 
 assert.equal(refusedForGood(null), false);
 
 { // Restart with a saved command whose first send committed: the receipt names the entry and nothing is sent again.
-  const io = rig({ receipt: async c => { assert.equal(c.requestId, command.requestId); return { entry: { id: 99, reference: 'R-99' } }; } });
+  const full = { id: 99, reference: 'R-99', kind: 'remittance', amountCents: 1250, note: 'Office handover' }; // a receipt names what it holds
+  const io = rig({ receipt: async c => { assert.equal(c.requestId, command.requestId); return { entry: full }; } });
   io.stored = command;
-  assert.deepEqual(await recoverCashCommand(io, 7), { state: 'recorded', command, entry: { id: 99, reference: 'R-99' } });
+  assert.deepEqual(await recoverCashCommand(io, 7), { state: 'recorded', command, entry: full });
   assert.equal(io.sends, 0, 'recovery never records again');
   assert.equal(io.stored, null);
 }
@@ -166,6 +190,9 @@ assert.doesNotMatch(screen, /recoveryStorage/);
 assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(\(legacy \? legacyCashCommandKey : cashCommandKey\)\(actorId\), true\)\)/);
 // A retry resends the restored record itself, from its own slot, never one rebuilt from the form (Sol R9-H1).
 assert.match(screen, /sendCashCommand\(cashIO\(actorId, !!open\.legacy\), open\.origin \?\? newCashCommand\(/);
+assert.match(screen, /, !!open\.origin\);/); // a restored form's send is a retry (Haiku r9 M1)
+// Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
+assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
 assert.equal(parseCashSlot(null), null);
 assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);

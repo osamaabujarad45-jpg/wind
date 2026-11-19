@@ -63,8 +63,10 @@ export default function AdminCash() {
   // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
   // form at a time; whenever a restored form settles (or a send meets another pending command) the slots are drained
   // again, so a second saved command is never left without a form (Sol R10-M1).
-  const live = useRef(true);
-  async function recover(id: number) { // `recovering` is already true: the initial state, or set by the caller
+  // Each recovery run belongs to one signed-in admin: a run started for another one never touches this screen (Haiku r9 L1).
+  const generation = useRef(0);
+  async function recover(id: number, run = generation.current) { // `recovering` is already true: the initial state, or set by the caller
+    const live = { get current() { return generation.current === run; } };
     try {
       for (const legacy of [true, false]) {
         const outcome = await recoverCashCommand(cashIO(id, legacy), id);
@@ -79,9 +81,9 @@ export default function AdminCash() {
     finally { if (live.current) setRecovering(false); }
   }
   useEffect(() => {
-    live.current = true;
-    if (actorId) void Promise.resolve(actorId).then(recover); // from a callback, as the lookup itself is: no state set in the effect body
-    return () => { live.current = false; };
+    const run = ++generation.current;
+    if (actorId) void Promise.resolve().then(() => recover(actorId, run)); // from a callback, as the lookup itself is: no state set in the effect body
+    return () => { generation.current++; }; // eslint-disable-line react-hooks/exhaustive-deps -- the bump is the point: it ends the run above
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
   async function submit() {
@@ -89,7 +91,7 @@ export default function AdminCash() {
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     try {
-      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId));
+      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.origin);
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
@@ -123,6 +125,14 @@ export default function AdminCash() {
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{message}</Txt></View>}
+    {/* A saved entry for a captain no longer on the list (an account deleted meanwhile) still needs its Retry: without it
+        every new entry stays blocked (Sol R11-H1). The same-id resend settles it: replay, or a refusal that closes it. */}
+    {open?.uncertain && data && !data.some(row => row.driverId === open.id) && <Card style={{ marginBottom: 12 }}>
+      <Txt variant="title">{fill(c.cashPendingElsewhere, { a: money(cents(open.amount) / 100) })}</Txt>
+      {!!open.note && <Txt variant="caption">{open.note}</Txt>}
+      <Txt variant="caption" style={{ marginTop: 8 }}>{c.cashUncertain}</Txt>
+      <Button title={c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy} reason={c.wait_busy} onPress={() => void submit()} />
+    </Card>}
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="cash-outline" title={c.cashNoDrivers} />
       : data.map((row, i) => <Appear key={row.driverId} index={i}>
         <Card>

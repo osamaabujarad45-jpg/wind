@@ -45,7 +45,7 @@ import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
-import { clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
@@ -3555,11 +3555,6 @@ route('GET', '/api/admin/cash', async ({ user }) => {
 });
 
 
-// Cashier protocol (Sol R10-H2): from client build 10105 a pending command lives in its own slot and every positive
-// adjustment says payout or charge. An older bundle cannot see this build's pending request id, so it could re-enter the
-// same handover under a new one: its fresh writes get the update screen it already understands. Same-id replay still
-// answers it. A request without the header (scripts, the API itself) is not a cashier bundle and is not gated here.
-const cashProtocolBuild = 10105;
 async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment', client?: string | string[]) {
   need(user, 'admin');
   await needCashFinance(user);
@@ -3587,8 +3582,9 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     if (!sameEntry(saved)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
-  const build = Number((Array.isArray(client) ? client[0] : client)?.split(',')[0].trim());
-  if (client !== undefined && !(Number.isSafeInteger(build) && build >= cashProtocolBuild)) fail(426, 'client_update_required');
+  // An older cashier bundle cannot see this build's pending request ids and could re-enter a handover under a new one:
+  // its fresh writes get the update screen it already shows. Same-id replay above still answers it.
+  if (cashClientFenced(client, production)) fail(426, 'client_update_required');
   // After replay, so a saved entry still answers its own request id (Haiku r7 N-1): every new adjustment, payout included, names its reason.
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
   (await persistence.exec('BEGIN IMMEDIATE'));
