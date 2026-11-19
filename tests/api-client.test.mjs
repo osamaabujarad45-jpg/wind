@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { ApiError, apiSessionRevision, CLIENT_BUILD, clientUpdateRequired, configureApi, invalidateApiSessionActions, noteServerDate, request, serverOffset, subscribeClientUpdate } from '../src/api-client.ts';
 
@@ -76,3 +77,6 @@ try {
   globalThis.setTimeout = originalTimer;
   configureApi(null, () => {});
 }
+
+// Sol R16-M1: a reply that outlives its session keeps what the server said, for cash settlement.
+assert.match(readFileSync(new URL('../src/api-client.ts', import.meta.url), 'utf8'), /servedStatus: res\.status/);

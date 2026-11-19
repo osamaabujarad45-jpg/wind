@@ -187,7 +187,7 @@ docker run --rm --network host --entrypoint sh \
     if mv -T "/cache/nm/$KEY" "$RUN/dropped"; then
       if rm -rf "$RUN/dropped"; then echo "entry $KEY dropped; the next run reinstalls" >> /logs/summary.txt
       else echo "entry $KEY moved out of the cache; deleting it failed ($RUN/dropped goes with the run directory)" >> /logs/summary.txt; fi
-    else echo "could not drop dependency cache entry $KEY (its in-use marker remains): remove it by hand" >> /logs/summary.txt; fi
+    else echo "could not drop dependency cache entry $KEY (its in-use marker remains). When no run is active: docker run --rm -v wind-test-cache:/cache alpine rm -rf /cache/nm/$KEY" >> /logs/summary.txt; fi
   }
   # The branch follows the exit status of the scan and of reading its result: an unreadable cache is not a clean one, and
   # only a clean, readable scan releases the entry (Sol R10-M2, R12-L4).
@@ -196,7 +196,7 @@ docker run --rm --network host --entrypoint sh \
       { echo "dependency cache changed in place:"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
       drop; status=1
     elif ! rm -f "/cache/nm/$KEY/.in-use"; then
-      echo "could not release dependency cache entry $KEY (its in-use marker remains)" >> /logs/summary.txt; status=1
+      echo "could not release dependency cache entry $KEY (its in-use marker remains). When no run is active: docker run --rm -v wind-test-cache:/cache alpine rm -f /cache/nm/$KEY/.in-use" >> /logs/summary.txt; status=1
     fi
   else
     echo "dependency cache scan failed" >> /logs/summary.txt

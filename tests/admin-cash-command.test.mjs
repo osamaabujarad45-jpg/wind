@@ -106,6 +106,23 @@ for (const status of [400, 404]) { // the server refused this request id before 
   let still = true;
   const midLookup = rig({ receipt: async () => { still = false; return { entry: null }; } }); midLookup.stored = { ...command, refused: true };
   assert.deepEqual([(await recoverCashCommand(midLookup, 7, () => still)).state, midLookup.stored?.requestId], ['empty', command.requestId]);
+  // Sol R16-M1: the API client turns a reply that arrives after a session change into session_changed (401) but keeps what
+  // the server said: a served 400 or 404 still settles this admin's own slot for good; a served 409 needs a receipt.
+  const late400 = rig({ send: async () => { throw Object.assign(new Error('session_changed'), { status: 401, servedStatus: 400, servedCode: 'invalid_amount' }); } });
+  assert.deepEqual([(await sendCashCommand(late400, command)).state, late400.stored], ['refused', null]);
+  const late409 = rig({ send: async () => { throw Object.assign(new Error('session_changed'), { status: 401, servedStatus: 409 }); } });
+  assert.deepEqual([(await sendCashCommand(late409, command)).state, late409.stored?.requestId], ['unconfirmed', command.requestId]);
+  // Sol R16-L2: a mismatching receipt after a 409 spends the id through the same final refusal (closes, kept if not cleared).
+  const mismatch = rig({ send: failing(409), receipt: async () => ({ entry: { id: 3, kind: 'remittance', amountCents: 99, note: 'x' } }) });
+  mismatch.write = async c => { if (c === null) throw new Error('disk'); mismatch.stored = c; };
+  const mismatchOutcome = await sendCashCommand(mismatch, command);
+  assert.deepEqual([mismatchOutcome.error, mismatchOutcome.kept, formAfter({ requestId: command.requestId }, mismatchOutcome)], ['idempotency_conflict', true, null]);
+  // Sol R16-L1: a slot that cannot be read after the receipt lookup is a storage stop, not a quiet settlement.
+  let reads = 0;
+  const unreadable = rig(); unreadable.stored = { ...command, refused: true };
+  unreadable.read = async () => { if (++reads > 1) throw new Error('disk'); return unreadable.stored; };
+  const unreadableOutcome = await recoverCashCommand(unreadable, 7);
+  assert.deepEqual([unreadableOutcome.error, unreadableOutcome.kept], ['cash_storage_failed', true]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -255,7 +272,8 @@ assert.match(screen, /, !!open\.uncertain, alive\);/); // every uncertain form's
 // Haiku r11 N-M1 / Sol R13-L1: a send and its follow-on drain stop if another admin's session replaced theirs.
 assert.match(screen, /const alive = \(\) => generation\.current === run && apiSessionRevision\(\) === session;/);
 assert.match(screen, /await recover\(actorId, run, session\)/);
-// Sol R14-M1: a storage failure stops cash entry on this screen; R14-M3: a drain cancelled by a same-admin session change restarts.
+// Sol R14-M1: a storage failure stops cash entry on this screen. Sol R16-M2: a fresh entry first settles the installed build's slot.
+assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyHeld\)/);
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain \|\| storageFailed;/);
 // Sol R15-M1: a cancelled drain only stops blocking; it is never restarted on its own (a restart could ask as another admin).
 assert.match(screen, /finally \{ if \(generation\.current === run\) setRecovering\(false\); \}/);
@@ -268,7 +286,6 @@ assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driv
 assert.equal(parseCashSlot(null), null);
 assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);
-assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/); // (plus a storage failure, below)
 assert.match(screen, /!open\.uncertain && <Button title=\{c\.cancel\}/);
 // A53 walk 18 Nov: resolving a waiting handover is an action (Confirm/Dispute handover), not a status word, and the form
 // names its decision, driver and amount; the save button is not a question.

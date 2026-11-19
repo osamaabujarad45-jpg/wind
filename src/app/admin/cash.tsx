@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, apiSessionRevision, useApi } from '../../api';
-import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
+import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, readCashCommand, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -78,9 +78,10 @@ export default function AdminCash() {
       for (const legacy of [true, false]) {
         if (!live.current) return; // superseded: stop before the next lookup
         const outcome = await recoverCashCommand(cashIO(id, legacy), id, () => live.current);
+        // A device storage failure stops entries on this screen whatever the session (Sol R16-L1).
+        if (generation.current === run && outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); return; }
         if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
-        if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { stopEntries(); fail(err(outcome.error)); return; }
         if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
         const { command } = outcome;
         setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
@@ -106,6 +107,15 @@ export default function AdminCash() {
     const run = generation.current, session = apiSessionRevision();
     const alive = () => generation.current === run && apiSessionRevision() === session;
     try {
+      // A fresh entry first looks at the installed build's slot: a record left there by an interrupted drain is settled
+      // before anything new is saved or posted (Sol R16-M2). This build's own slot is checked inside the send.
+      const legacyHeld = await cashIO(actorId, true).read().then(raw => { try { return !!readCashCommand(raw, actorId); } catch { return true; } }, () => false);
+      if (!open.uncertain && !open.legacy && legacyHeld) { // an unreadable record goes to recovery too, which clears it
+        if (!alive()) return;
+        fail(err('cash_command_pending'));
+        setRecovering(true); await recover(actorId, run, session);
+        return;
+      }
       const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
       // This device's own facts apply to this screen whatever the session (Sol R15-M2): a storage failure stops entries and
       // shows its warning, and a closed form stays closed. Everything else waits for a live session.
