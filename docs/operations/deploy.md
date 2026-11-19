@@ -69,6 +69,12 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     or by an earlier tree during a rollback, keeps exactly what it was booked with, and no captain's balance moves at deploy,
     rollback or re-release. An earlier tree reading the database gives this release's returns their promo relief again while it
     runs (their commission stays 0); check `/admin/cash` for those captains after a rollback.
+  - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the captain the booked fare per leg (trip and return
+    leg; one leg after a custody recovery; after a courier block only through a cleared block review, PostgreSQL), and a
+    shipping order cancelled before pickup pays the km from the captain's position at acceptance to the pickup x the owner
+    setting `pickupPayPerKm`, capped at the fare. It is recorded as a `DRV-17`/`DRV-18` cash adjustment, so `/admin/cash` can
+    show a negative balance: Wind owes that captain, settled at the office cash handover.
+  - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
   - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:

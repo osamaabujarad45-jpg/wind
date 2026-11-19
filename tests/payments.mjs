@@ -122,6 +122,9 @@ try {
     assert.equal((await h.call(`/orders/${hOrder.id}/payments`, { token: h.customer.token })).status, 'captured');
     assert.equal((await h.call(`/orders/${hOrder.id}/payments/refund`, { token: h.admin.token, body: { amountMinor: hPrice, reason: 'test reason', requestId: randomUUID() } })).status, 'requested');
   } finally { await h.close(); }
+  delete process.env.WIND_GOODS_COD; // G-COD: off by default whatever the schema allows (Sol R3-H6)
+  await assert.rejects(pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000}), /cod_unavailable/);
+  process.env.WIND_GOODS_COD = 'on';
   await pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000});
   assert.equal((await pay.collectCod(driver,order.id,{amountMinor:400})).status,'partial');
   await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:601}), e => e.status === 400);
