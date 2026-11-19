@@ -43,7 +43,9 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Test device and heavy work (owner rule, 29 Oct 2026)
 
 - **Never use an emulator.** All acceptance and UI testing uses the connected physical Android phone (`SM-A5360`, adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask instead of starting one.
-- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 30 Oct 2026 `ssh k5` works (Windows, i5-4460, no Node/Git/PostgreSQL installed); a portable copy lives in `C:\wq-k5` and runs every gate except the browser suites (setup and the two workarounds: `docs/HANDOFF-2026-10-30-phone-acceptance.md`). Several sessions can use k5 at once: each needs its own folder and PostgreSQL port (e.g. `C:\wq-k5b` on 55474 with `WIND_TEST_DATABASE_URL`), and must never start, stop or copy files into another session's folder. Sharing `C:\wq-k5`/55473 overwrote files and stopped the database mid-run.
+- **Run every test on the Docker test device** (owner rule, 19 Nov 2026; replaces the k5 / test-PC rule). From Git Bash in any checkout:
+  `MSYS_NO_PATHCONV=1 wsl.exe -e sh /mnt/c/<path-to-checkout>/scripts/test-device.sh [--serial] [typecheck lint unit persistence export parity]`
+  It copies the checkout read-only into `sandbox-node24:local` (built by `infra/test-device/Dockerfile` from the owner's `sandbox-node:local`: Node 24.12, PostgreSQL 16 and 18 clients), reuses `node_modules` per `package-lock.json` hash from the `wind-test-cache` volume, runs typecheck+lint and then unit+persistence side by side, the full persistence suite on a fresh PostgreSQL 18 sidecar (`sandbox-pg18-host`, port 55474, 1 GB shm), and `parity` on the owner's PostgreSQL 16 device (`sandbox-pg-host`, 55473). Logs: `.expo/test-device/<UTC>/summary.txt`; the exit code is non-zero on any failure. Local Windows runs are for quick single-file checks only and are never gate evidence.
 - Keep the phone's test backend on `adb reverse` (the QA sandbox binds `127.0.0.1`), and do not clear the phone's Chrome profile.
 
 ## Agent recovery and provider failover (owner rule, 10 Nov 2026)
