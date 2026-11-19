@@ -196,6 +196,20 @@ for (const status of [400, 404]) { // the server refused this request id before 
   const oneCall = failClear(rig({ receipt: async () => ({ entry: matched }) })); oneCall.stored = command;
   const oneCallOutcome = await recoverCashCommand(oneCall, 7);
   assert.deepEqual([oneCallOutcome.state, oneCallOutcome.stop], ['recorded', true]);
+  // Sol R21-L1: a matched receipt whose reread fails keeps its verdict and stops entries.
+  let rereads = 0;
+  const failedReread = rig({ receipt: async () => ({ entry: matched }) }); failedReread.stored = command;
+  failedReread.read = async () => { if (++rereads > 1) throw new Error('disk'); return failedReread.stored; };
+  const failedRereadOutcome = await recoverCashCommand(failedReread, 7);
+  assert.deepEqual([failedRereadOutcome.state, failedRereadOutcome.stop, failedReread.stored], ['recorded', true, command]);
+  // Sol R21-L1: a session that ends during the 409 receipt lookup leaves the slot alone and shows nothing.
+  let during409 = true;
+  const lookup409 = rig({ send: failing(409), receipt: async () => { during409 = false; return { entry: matched }; } });
+  assert.deepEqual([(await sendCashCommand(lookup409, command, false, () => during409)).state, lookup409.stored?.requestId], ['empty', command.requestId]);
+  // Sol R21-L1: a session that ends while the save completes sends nothing; the saved record waits for its own admin.
+  let duringSave = true;
+  const saving = rig(); saving.write = async c => { saving.stored = c; duringSave = false; };
+  assert.deepEqual([(await sendCashCommand(saving, command, false, () => duringSave)).state, saving.sends, saving.stored?.requestId], ['empty', 0, command.requestId]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -330,7 +344,7 @@ assert.equal(legacyCashCommandKey(7), 'adminCash.7');
   assert.equal((await sendCashCommand(remit, { ...command, schemaVersion: 1 })).state, 'recorded');
   assert.equal(remit.sends, 1);
 }
-for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending', 'err_cash_command_ambiguous', 'err_captain_pay_schema_required', 'err_invalid_request_id'])
+for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_ambiguous', 'err_captain_pay_schema_required', 'err_invalid_request_id'])
   assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 
 // The screen keeps the command in the admin's own secure slot (not the token-scoped recovery store a forced sign-out wipes),
@@ -368,7 +382,12 @@ assert.doesNotMatch(screen, /setFailure\(''\); recorded\(outcome\.entry\)/);
 assert.match(screen, /setOpen\(o => o\?\.uncertain && o\.requestId !== command\.requestId \? o/);
 assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 // Sol R18-M4 / Haiku r16 L1: settling a saved installed-build entry closes the typed fresh form and says why.
-assert.match(screen, /setOpen\(null\); setMessage\(c\.cashSettledFirst\);/);
+assert.match(screen, /setOpen\(null\); note\(c\.cashSettledFirst\);/);
+// Sol R21-M1/M2, Haiku r19 N19-1/N19-2: notices are added within one action, drained entries name their captain, and every
+// settled uncertain form drains the other slot. The behaviour is exercised in tests/admin-review.test.mjs.
+assert.match(screen, /const fail = \(message: string\) => \{ setFailure\(add\(message\)\);/);
+assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
+assert.doesNotMatch(copy.en.err_cash_command_pending ?? '', /./, 'the resend instruction is gone (Haiku r19 N19-4)');
 // Sol R18-L1: a marked refusal is checked, not resent.
 assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);
 assert.match(screen, /inFlight\.current \|\| storageBroken\.current\) return;/);

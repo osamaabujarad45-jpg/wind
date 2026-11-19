@@ -42,7 +42,11 @@ export default function AdminCash() {
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
   const list = useRef<ScrollView>(null);
-  const fail = (message: string) => { setFailure(message); list.current?.scrollTo({ y: 0 }); };
+  // One action (a send and its drain, or a recovery) can settle several entries: each notice is added, never replaced, so
+  // no captain's receipt or instruction is lost to the next one (Sol R21-M1, R21-M2, Haiku r19 N19-2). Each action clears them first.
+  const add = (text: string) => (shown: string) => !shown || shown === text ? text : `${shown}\n${text}`;
+  const fail = (message: string) => { setFailure(add(message)); list.current?.scrollTo({ y: 0 }); };
+  const note = (message: string) => setMessage(add(message));
   // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
   const cents = minorFromText;
   const inFlight = useRef(false); // a confirm built in an earlier render sees a stale `busy`: this one is current
@@ -58,7 +62,15 @@ export default function AdminCash() {
     return null;
   };
 
-  const recorded = (entry: CashEntry) => setMessage(entry.reference ? fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded);
+  const receiptText = (entry: CashEntry) => entry.reference ? fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded;
+  const recorded = (entry: CashEntry) => note(receiptText(entry));
+  // An entry settled by a drain names its captain and amount: it may not be the one the cashier just asked about (Sol R21-M1).
+  const rows = useRef(data);
+  useEffect(() => { rows.current = data; }, [data]);
+  const about = (command: CashCommand, text: string) => {
+    const name = rows.current?.find(row => row.driverId === command.driverId)?.name;
+    return `${name ? `${name} · ` : ''}${money(command.amountCents / 100)}: ${text}`;
+  };
   // After a restart the saved form comes back locked until this admin's command receipt or a same-id resend settles it.
   // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
   // form at a time; whenever a restored form settles (or a send meets another pending command) the slots are drained
@@ -87,10 +99,10 @@ export default function AdminCash() {
         if (generation.current === run && outcome.stop) stopEntries();
         if (!live.current || outcome.state === 'empty') continue;
         // A recorded receipt sits next to any instruction an earlier slot left (check the balance, a conflict): it never clears it (Sol R20-M2).
-        if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
+        if (outcome.state === 'recorded') { note(about(outcome.command, receiptText(outcome.entry))); reload(); reloadPending(); continue; }
         // The marker of a refusal just shown keeps that refusal's own reason on screen (Sol R17-L3).
         if (outcome.state === 'refused' && outcome.command.requestId === quiet) continue;
-        if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // its own reason, next to any storage banner
+        if (outcome.state === 'refused') { fail(about(outcome.command, err(outcome.error))); continue; } // its own reason, next to any storage banner
         const { command } = outcome;
         // An uncertain form already open for another entry is never replaced: its own Retry settles it first (Haiku r18 N-A).
         setOpen(o => o?.uncertain && o.requestId !== command.requestId ? o
@@ -128,7 +140,7 @@ export default function AdminCash() {
         if (!alive()) return;
         // The typed form closes: it may repeat the entry being settled, and it never posts after that settlement. Recovery
         // then shows its own outcome (recorded, refused with its instruction, or the restored form) (Sol R18-M4, R19-M4).
-        setOpen(null); setMessage(c.cashSettledFirst);
+        setOpen(null); note(c.cashSettledFirst);
         setRecovering(true);
         await recover(actorId, run, session);
         return;
@@ -144,17 +156,18 @@ export default function AdminCash() {
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       reload(); reloadPending();
-      // A restored form's settlement, or a refusal whose record stays in the slot, drains the slots before the next entry:
-      // the other slot may hold a command, and a marked refusal is settled now, not on the next form (Sol R15-L1).
+      // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
+      // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled
+      // now, not on the next form (Sol R15-L1, R21-M1, Haiku r19 N19-1).
       const kept = outcome.state === 'refused' && outcome.kept;
-      if ((open.origin || kept) && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session, open.requestId); }
+      if ((open.uncertain || kept) && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session, open.requestId); }
     } catch (e) {
       if (!alive()) return; // a failure of another session's work is not shown on this one (Sol R14-M2)
       // A saved entry holds this build's slot: the typed draft closes before it is shown, as with the installed build's slot,
       // so it can never post after that entry settles; recovery then says what comes next (Sol R19-M5, R20-L1). An uncertain
       // form is never dismissed: its own Retry settles it by receipt (Haiku r18 N-A).
       if (e instanceof Error && e.message === 'cash_command_pending') {
-        if (!open.uncertain) { setOpen(null); setMessage(c.cashSettledFirst); }
+        if (!open.uncertain) { setOpen(null); note(c.cashSettledFirst); }
         setRecovering(true); await recover(actorId, run, session);
       } else fail(err(e)); // not saved, so nothing was sent
     } finally { inFlight.current = false; setBusy(false); }

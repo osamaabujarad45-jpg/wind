@@ -23,7 +23,7 @@ for (const language of ['ar', 'en']) {
 // One screen rendered with a stub React: hooks are slots kept in call order, as React keeps them.
 // `me` is the session's user record; for settings it carries the server settings the form starts from.
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
-// `receipt` is what GET /admin/cash/commands/:id answers.
+// `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id.
 function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
@@ -63,7 +63,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       if (lost) throw new Error('network');
       return payroll ? payrollView(serverSettings) : { ...serverSettings };
     }
-    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: receipt }; }
+    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? receipt(path.split('/').pop()) : receipt }; }
     if (lost) throw new Error('network');
     return { reference: 'REF-1' };
   };
@@ -71,7 +71,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   const ui = new Proxy({
     fill, palette: {}, tones: {}, haptic: { success() {}, error() {} },
     confirm: (message, yes, yesLabel, noLabel) => dialogs.push({ message, yes, yesLabel, noLabel }),
-    useCopy: () => ({ c, err: e => e.message, money: n => String(n), largeText: false }),
+    useCopy: () => ({ c, err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
   }, { get: (target, name) => name in target ? target[name] : String(name) });
   const session = { me, refresh: async () => {}, signOut: async () => {}, language, setLanguage() {} };
   class ApiError extends Error {}
@@ -474,3 +474,53 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 0, `${language}: the settled command is cleared`);
 }
 console.log('Admin cash entry survives a restart and is settled only by its command receipt');
+
+// Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
+// tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both
+// receipts stay on screen, Y names its captain, and nothing is posted again.
+for (const language of ['ar', 'en']) for (const restored of [false, true]) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  const receipts = {};
+  const options = { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null };
+  let view = screen('cash', language, options);
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  if (restored) { view = screen('cash', language, options); view.render(); await flush(); }
+  assert.ok(shows(view.render(), c.cashUncertain), `${language}: X is uncertain`);
+  const y = { ...x, requestId: randomUUID(), driverId: 8, amountCents: 300, note: '' };
+  store.set(key, JSON.stringify(y)); // the other tab: X settled, Y saved and its reply lost
+  receipts[x.requestId] = { id: 51, kind: 'remittance', reference: 'R-201', amountCents: x.amountCents, note: x.note };
+  receipts[y.requestId] = { id: 52, kind: 'remittance', reference: 'R-202', amountCents: 300, note: '' };
+  const posts = view.calls.filter(call => call.path === '/admin/cash/remittance').length;
+  await tap(view, c.cashRetrySame); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, 'R-201') && shows(tree, 'R-202'), `${language}/${restored}: both receipts stay on screen`);
+  assert.ok(shows(tree, 'Other · 3: '), `${language}/${restored}: the drained receipt names its captain and amount`);
+  assert.equal(view.calls.filter(call => call.path === '/admin/cash/remittance').length, posts, `${language}/${restored}: nothing is posted again`);
+  assert.equal(store.size, 0, `${language}/${restored}: both slots are settled`);
+  assert.ok(!shows(tree, c.cashUncertain), `${language}/${restored}: no form is left open`);
+}
+console.log('Admin cash Retry drains another saved entry and keeps both receipts');
+
+// Sol R21-M2, Haiku r19 N19-2: the installed build's positive adjustment and this build's refused record for another captain,
+// neither with a receipt. Both instructions stay on screen, each naming its captain.
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 100, 'Promo credits paid in cash'), schemaVersion: 1 };
+  const marked = { ...cashCommand.newCashCommand(1, 8, 'remittance', 300, ''), refused: true };
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, 'Driver · 1: cash_command_ambiguous'), `${language}: the installed build's instruction names its captain`);
+  assert.ok(shows(tree, 'Other · 3: cash_command_settled'), `${language}: the second refusal is added, not swapped in`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+  assert.ok(view.calls.every(call => !call.path.startsWith('/admin/cash/remittance') && !call.path.startsWith('/admin/cash/adjustment')), `${language}: nothing is posted`);
+}
+console.log('Admin cash recovery keeps every instruction of one drain');
