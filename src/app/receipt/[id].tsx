@@ -5,6 +5,7 @@ import { useApi } from '../../api';
 import { city, commissionOn, isolate, ltr, orderCode, type Order } from '../../model';
 import { statusText, useFormat } from '../../parts';
 import { fareLines, paymentLine, receiptTotal } from '../../receipt-payment';
+import { qtyLabel } from '../../shop-ui';
 import { useSession } from '../../session';
 import { Appear, Badge, Button, ErrorText, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
 
@@ -36,7 +37,14 @@ export default function Receipt() {
     [order.service === 'ride' ? c.passengers : c.size, order.service === 'ride' ? order.option : c[order.option as 'small']],
     ...(order.loadingHelp ? [[c.loadingHelp, c.yes] as [string, string]] : []),
     ...(order.driverName ? [[c.driver, `${rtl ? '\u200f' : '\u200e'}${isolate(order.driverName)}${order.driverVehicle ? ` · ${c[order.driverVehicle]}` : ''}${order.driverPlate ? ` · ${ltr(order.driverPlate)}` : ''}`] as [string, string]] : []),
-    ...fareLines(c, order, money),
+    // TRK-07 (review M10): a shop receipt itemizes the final basket and fees that make up the cash at the door.
+    ...(order.shop ? [
+      ...order.shop.lines.filter(l => !l.removed).map(l => [`${isolate(language === 'ar' ? l.nameAr : l.nameEn)} ${qtyLabel(l.qtyMilli, l.byWeight, c)}`,
+        money((l.finalAgorot ?? l.estimateAgorot) / 100)] as [string, string]),
+      [c.shopGoods, money(order.shop.goodsAgorot / 100)] as [string, string],
+      [c.shopDeliveryFeeLine, money(order.shop.deliveryFeeAgorot / 100)] as [string, string],
+      ...(order.shop.serviceFeeAgorot > 0 ? [[c.shopServiceFee, money(order.shop.serviceFeeAgorot / 100)] as [string, string]] : []),
+    ] : fareLines(c, order, money)),
     [c.payWith, paymentLine(c, role, order.collected, money, fill)],
     [c.proof, order.service === 'ride' ? c.proofRide : c.proofCode],
   ];
