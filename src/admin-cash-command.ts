@@ -3,7 +3,9 @@ import { newRequestId } from './command-id.ts';
 // A-01: an admin's remittance or adjustment is saved before it is sent, so a lost reply survives an app restart and a
 // forced sign-out, and is settled by the admin's own command receipt or by resending the same request id; never by guessing.
 export type CashKind = 'remittance' | 'adjustment' | 'payout';
-export type CashCommand = { type: 'admin_cash'; schemaVersion: 1; actorId: number; requestId: string; driverId: number;
+// schemaVersion 2 (this build): a positive 'adjustment' is a charge and a payout is its own kind. Version 1 is the installed
+// build's record, whose Pay driver also saved a positive 'adjustment': its intent is unknowable (Sol R8-H1).
+export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
 export type CashEntry = { id: number; kind?: CashKind; reference?: string | null };
 export type CashIO = { read: () => Promise<unknown>; write: (command: CashCommand | null) => Promise<void>;
@@ -33,13 +35,25 @@ export function parseCashSlot(raw: string | null): unknown {
 export function readCashCommand(raw: unknown, actorId: number): CashCommand | null {
   const c = raw as CashCommand | null;
   if (!c || typeof c !== 'object' || c.type !== 'admin_cash' || c.actorId !== actorId) return null;
-  if (c.schemaVersion !== 1 || !uuid.test(String(c.requestId)) || !id(c.driverId) || !['remittance', 'adjustment', 'payout'].includes(c.kind)
+  if ((c.schemaVersion !== 1 && c.schemaVersion !== 2) || !uuid.test(String(c.requestId)) || !id(c.driverId) || !['remittance', 'adjustment', 'payout'].includes(c.kind)
     || !Number.isSafeInteger(c.amountCents) || c.amountCents === 0 || typeof c.note !== 'string' || c.note.length > 500) throw new Error('invalid_pending_command');
   return c;
 }
 
 export const newCashCommand = (actorId: number, driverId: number, kind: CashKind, amountCents: number, note: string, requestId = newRequestId()): CashCommand =>
-  ({ type: 'admin_cash', schemaVersion: 1, actorId, requestId, driverId, kind, amountCents, note });
+  ({ type: 'admin_cash', schemaVersion: 2, actorId, requestId, driverId, kind, amountCents, note });
+
+/** An installed build's saved positive adjustment: a payout or a charge, nobody can tell. It is never resent under either
+ *  meaning; only its own receipt settles it, and without one the cashier checks the balance and enters it again. */
+export const ambiguousLegacy = (c: CashCommand) => c.schemaVersion === 1 && c.kind === 'adjustment' && c.amountCents > 0;
+const ambiguous = 'cash_command_ambiguous';
+async function settleAmbiguous(io: CashIO, command: CashCommand): Promise<CashOutcome> {
+  try {
+    const { entry } = await io.receipt(command);
+    await clear(io);
+    return entry ? { state: 'recorded', command, entry } : { state: 'refused', command, error: ambiguous };
+  } catch (error) { return { state: 'unconfirmed', command, error }; }
+}
 
 export function cashCommandBody({ kind, driverId, amountCents, note, requestId }: CashCommand) {
   const body = { driverId, amountCents, requestId };
@@ -58,6 +72,7 @@ export function sendCashCommand(io: CashIO, command: CashCommand): Promise<CashO
   return locked(io, async () => {
     const saved = readCashCommand(await io.read(), command.actorId);
     if (saved && saved.requestId !== command.requestId) throw new Error('cash_command_pending');
+    if (saved && ambiguousLegacy(saved)) return settleAmbiguous(io, saved); // a retry of it rebuilds the form: never send
     await io.write(command); // before the request: a reply lost after this point is still recoverable
     try {
       const entry = await io.send(command);
@@ -89,6 +104,7 @@ export function recoverCashCommand(io: CashIO, actorId: number): Promise<CashOut
       return { state: 'empty' };
     }
     if (!command) return { state: 'empty' };
+    if (ambiguousLegacy(command)) return settleAmbiguous(io, command);
     try {
       const { entry } = await io.receipt(command);
       if (!entry) return { state: 'unconfirmed', command }; // a point-in-time read, never proof the first send cannot land
@@ -102,6 +118,7 @@ export function recoverCashCommand(io: CashIO, actorId: number): Promise<CashOut
  *  its input. Recorded closes it, unconfirmed locks it, refused unlocks it (nothing was recorded under this id). */
 export function formAfter<F extends { requestId: string; uncertain?: boolean }>(form: F | null, outcome: CashOutcome): F | null {
   if (!form || outcome.state === 'empty' || form.requestId !== outcome.command.requestId) return form;
-  if (outcome.state === 'recorded') return null;
+  // An installed build's unknowable entry closes too: the cashier enters a payout or a charge afresh, never this form again.
+  if (outcome.state === 'recorded' || (outcome.state === 'refused' && outcome.error === ambiguous)) return null;
   return { ...form, uncertain: outcome.state === 'unconfirmed' };
 }

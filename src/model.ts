@@ -168,6 +168,9 @@ export const settingCeilings: Record<keyof Settings, number> = {
   shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120, shopHandoverMinutes: 120,
   orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
+/** DRV-18: pickup pay for a distance at the recorded rate (₪/km), capped at the booked fare. The server pays it and the
+ *  review card shows it before the grant (Sol R8-L1), so both use this one formula. */
+export const pickupPayCents = (fareCents: number, km: number, rate: number) => Math.min(fareCents, Math.round(km * rate * 100));
 // A zero pickup pay rate disables DRV-18 pay. All other settings require a positive value.
 export function invalidSetting(values: Record<string, number>): keyof Settings | null {
   for (const [key, value] of Object.entries(values)) {

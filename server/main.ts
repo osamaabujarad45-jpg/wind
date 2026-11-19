@@ -60,7 +60,7 @@ import { fileURLToPath } from 'node:url';
 import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  activeStatuses, cities, city, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
+  activeStatuses, cities, city, pickupPayCents as pickupPayFor, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
   canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
@@ -758,7 +758,7 @@ async function assignmentEvidence(order: Row, action: 'ASSIGNED_FROM' | 'CUSTODY
   const events = await all('SELECT detail FROM security_events WHERE order_id = ? AND action = ? ORDER BY id DESC', order.id, action);
   return events.map(auditDetail).find(detail => detail.assignmentEpoch === order.assignment_epoch && detail.driverId === order.driver_id);
 }
-const pickupPayCents = (order: Row, km: number, rate: number) => Math.min(fareCents(order), Math.round(km * rate * 100));
+const pickupPayCents = (order: Row, km: number, rate: number) => pickupPayFor(fareCents(order), km, rate);
 // DRV-18 evidence informs a support decision even when both fixes are available.
 async function pickupPay(order: Row, actorId: number, reason: NonNullable<Order['pickupPayReview']>['reason']) {
   if (!shippingOrder(order) || order.driver_id == null) return;
@@ -3567,12 +3567,13 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   const positiveAdjustment = kind === 'adjustment' && amount > 0;
   const payout = intent === 'payout';
   const note = kind === 'adjustment' ? text(body.reason, 500, false) : text(body.note, 200, false);
-  if ((intent === 'charge' || (kind === 'adjustment' && amount < 0)) && note.length < 5) fail(400, 'invalid_input');
+  if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input'); // every adjustment, payout included, names its reason
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
   // A completed request can replay across the admin app update, even if its original form did not send intent.
   const sameEntry = (saved: Row) => saved.recorded_by === user.id && saved.driver_id === Number(body.driverId) && saved.kind === kind
-    && saved.amount_cents === amount && (!positiveAdjustment || saved.note === note)
+    // A same-id resend with another note is a different request, not a silent success (Haiku r6 F3).
+    && saved.amount_cents === amount && (saved.note ?? '') === note
     && (intent === undefined || payout === (saved.source === 'payout'));
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
@@ -3590,7 +3591,9 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }
-    if (positiveAdjustment && intent === undefined) fail(409, 'admin_update_required');
+    // An installed admin build cannot say payout or charge. 426 is the refusal it already understands: its update screen
+    // (Sol R8-M1). This build always sends an intent. Same-request replay above still answers first.
+    if (positiveAdjustment && intent === undefined) fail(426, 'client_update_required');
     const balance = (await cashBalances('u.id = ?', Number(body.driverId)))[0] ?? fail(404, 'not_found');
     const { owedCents: owed, pendingCents: pending } = balance;
     const available = owed - pending;

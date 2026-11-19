@@ -230,14 +230,18 @@ try {
   const charged = await call('/admin/cash/adjustment', { token: admin.token, body: chargeInCredit });
   assert.equal(charged.source, undefined);
   assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: chargeInCredit }), charged);
+  // Haiku r6 F3: the same request id with another reason is a conflict, not a replay of the old note.
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...chargeInCredit, reason: 'Office fuel charge, corrected' }, expect: 409 })).error, 'idempotency_conflict');
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, creditBeforeCharge + 100);
+  // Haiku r6 F2: a payout names its reason like every adjustment.
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 50, intent: 'payout', reason: '', requestId: randomUUID() }, expect: 400 })).error, 'invalid_input');
   const oldForm = { driverId: driver.user.id, amountCents: 100, reason: 'Payout for receipt 12', requestId: randomUUID() };
-  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: oldForm, expect: 409 })).error, 'admin_update_required');
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: oldForm, expect: 426 })).error, 'client_update_required');
   const { requestId: _id, ...noRequestId } = oldForm;
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...noRequestId, intent: 'payout' }, expect: 400 })).error, 'payout_request_id_required');
   for (const language of ['ar', 'en']) {
     assert.ok(copy[language].err_payout_request_id_required);
-    assert.ok(copy[language].err_admin_update_required);
+    assert.ok(copy[language].err_client_update_required);
   }
   // A receipt saved without a source can still replay after the admin app update.
   const retained = { ...oldForm, amountCents: 1, requestId: randomUUID() };
@@ -267,7 +271,7 @@ try {
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   const stale = { ...payoutBody, requestId: randomUUID() };
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: stale, expect: 400 })).error, 'invalid_amount');
-  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...oldForm, requestId: randomUUID() }, expect: 409 })).error, 'admin_update_required');
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...oldForm, requestId: randomUUID() }, expect: 426 })).error, 'client_update_required');
   const { intent: _intent, ...withAlias } = bodies[winner].body;
   assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: { ...withAlias, source: 'payout' } }), payout);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave

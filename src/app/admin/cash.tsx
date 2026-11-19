@@ -64,6 +64,7 @@ export default function AdminCash() {
     recoverCashCommand(cashIO(actorId), actorId).then(outcome => {
       if (!live || outcome.state === 'empty') return;
       if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); return; }
+      if (outcome.state === 'refused') { fail(err(outcome.error)); return; } // an installed build's unknowable entry: enter it again
       const { command } = outcome;
       setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true });
     }).catch(e => { if (live) fail(err(e)); }) // the saved command stays on the device for the next attempt

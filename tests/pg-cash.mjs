@@ -350,7 +350,7 @@ try {
   assert.ok((await journalFor(replayEntry.id)).some(row => row.code === 'platform:revenue' && row.credit_minor === 1));
   assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
     driverId: driver.user.id, amountCents: 1, reason: 'Older admin form', requestId: randomUUID(),
-  }, expect: 409 })).error, 'admin_update_required');
+  }, expect: 426 })).error, 'client_update_required');
   assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
     ...payoutBody, requestId: randomUUID(),
   }, expect: 400 })).error, 'invalid_amount');
@@ -373,7 +373,7 @@ try {
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
     driverId: driver.user.id, amountCents: 1, reason: 'Edited old payout form', requestId: randomUUID(),
-  }, expect: 409 })).error, 'admin_update_required');
+  }, expect: 426 })).error, 'client_update_required');
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----

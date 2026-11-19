@@ -12,7 +12,7 @@ import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } fro
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
 import { acceptPosition, useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, typedNumber, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { activeStatuses, bookedAhead, pickupPayCents, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, typedNumber, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
@@ -573,7 +573,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
-    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} assignedAt={order.assignedAt} review={order.pickupPayReview} onDone={reload} />}
+    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} fareCents={Math.round(order.price * 100)} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
     {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
@@ -1035,7 +1035,7 @@ const styles = StyleSheet.create({
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
 });
 
-function PickupPayReviewCard({ orderId, assignedAt, review, onDone }: { orderId: number; assignedAt?: number | null; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
+function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: number; fareCents: number; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
   const { c, money, err } = useCopy();
   const { time } = useFormat();
   const [km, setKm] = useState(review.drivenKm?.toFixed(2) ?? '');
@@ -1056,15 +1056,14 @@ function PickupPayReviewCard({ orderId, assignedAt, review, onDone }: { orderId:
     finally { inFlight.current = false; setBusy(false); }
   }
   const { decision, originKm, currentKm, originFixAt, currentFixAt, suggestedCents, drivenKm } = review;
-  const originAge = originFixAt == null || assignedAt == null ? null : Math.ceil((assignedAt - originFixAt) / 1000);
   const distanceText = (km: number | null | undefined) => km == null ? c.pickupPayEvidenceUnavailable : fill(c.pickupPayDistance, { km: km.toFixed(2) });
   return <Card>
     <Txt variant="title">{c.pickupPayReview}</Txt>
     <Txt variant="caption">{c[`pickup_${review.reason}`]}</Txt>
     <Txt variant="caption">{fill(c.pickupPayOrigin, { distance: distanceText(originKm), time: originFixAt == null ? c.pickupPayEvidenceUnavailable : time(originFixAt) })}</Txt>
     <Txt variant="caption">{fill(c.pickupPayCurrent, { distance: distanceText(currentKm), time: currentFixAt == null ? c.pickupPayEvidenceUnavailable : time(currentFixAt) })}</Txt>
-    {originAge == null && <Txt variant="caption">{c.pickupPayWeakOrigin}</Txt>}
-    {originAge != null && originAge > 0 && <Txt variant="caption">{fill(c.pickupPayBeforeAssignment, { seconds: originAge })}</Txt>}
+    {/* The origin fix is read just before the assignment by design (within 120 s): only a missing fix time is weak (Haiku r6 F1). */}
+    {originFixAt == null && <Txt variant="caption">{c.pickupPayWeakOrigin}</Txt>}
     <Txt variant="caption">{suggestedCents == null ? c.pickupPayNoSuggestion : fill(c.pickupPaySuggestion, { pay: money(suggestedCents / 100) })}</Txt>
     {decision ? <>
       <Txt>{decision.granted ? fill(c.pickupPayCredited, { pay: money(decision.paidCents / 100) }) : c.pickupPayDenied}</Txt>
@@ -1072,6 +1071,7 @@ function PickupPayReviewCard({ orderId, assignedAt, review, onDone }: { orderId:
     </> : <>
       {drivenKm != null && <Txt variant="caption">{c.pickupPayDistanceBasis}</Txt>}
       <Field label={c.pickupPayKm} value={km} onChangeText={setKm} keyboardType="decimal-pad" disabled={busy} />
+      {canGrant && <Txt variant="caption">{fill(c.pickupPayGrantAmount, { pay: money(pickupPayCents(fareCents, distance, review.rate) / 100) })}</Txt>}
       <Field label={c.cashReason} value={reason} onChangeText={setReason} maxLength={500} disabled={busy} />
       <ErrorText>{failure}</ErrorText>
       <Row gap={8} style={{ flexWrap: 'wrap' }}>

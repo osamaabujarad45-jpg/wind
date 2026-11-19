@@ -99,7 +99,31 @@ assert.deepEqual(cashCommandBody(command), { driverId: 42, amountCents: 1250, no
 assert.deepEqual(cashCommandBody({ ...command, kind: 'adjustment' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'charge' });
 assert.deepEqual(cashCommandBody({ ...command, kind: 'payout' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'payout', source: 'payout' });
 assert.equal(cashCommandKey(7), 'adminCash.7');
-for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending', 'err_admin_update_required', 'err_captain_pay_schema_required', 'err_invalid_request_id'])
+
+// Sol R8-H1: the installed build saved its Pay driver as a positive 'adjustment' (schema 1). This build would send that as a
+// charge, so it is never sent: its receipt settles it, no receipt refuses it for good (enter it again), an unreadable receipt
+// keeps it unconfirmed. A retry from the restored form (same request id) takes the same path.
+{
+  const legacy = { ...newCashCommand(7, 42, 'adjustment', 2000, 'Promo credits paid to the driver in cash', '1b8f6a52-6c1e-4f7a-9d2b-3e4f5a6b7c8d'), schemaVersion: 1 };
+  assert.equal(newCashCommand(7, 42, 'adjustment', 2000, 'x').schemaVersion, 2);
+  const none = rig(); none.stored = legacy;
+  assert.deepEqual(await recoverCashCommand(none, 7), { state: 'refused', command: legacy, error: 'cash_command_ambiguous' });
+  assert.equal(none.sends, 0); assert.equal(none.stored, null);
+  const booked = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8' } }) }); booked.stored = legacy;
+  assert.equal((await recoverCashCommand(booked, 7)).state, 'recorded');
+  const unknown = rig({ receipt: failing(503) }); unknown.stored = legacy;
+  assert.equal((await recoverCashCommand(unknown, 7)).state, 'unconfirmed');
+  assert.equal(unknown.stored, legacy, 'kept for the next receipt lookup');
+  const retry = rig(); retry.stored = legacy; // the restored form resubmits as this build's command with the same id
+  const outcome = await sendCashCommand(retry, newCashCommand(7, 42, 'adjustment', 2000, legacy.note, legacy.requestId));
+  assert.deepEqual([outcome.state, outcome.error, retry.sends, retry.stored], ['refused', 'cash_command_ambiguous', 0, null]);
+  assert.equal(formAfter({ requestId: legacy.requestId, uncertain: true }, outcome), null, 'its form closes: never resubmitted as a charge');
+  // Schema 1 remittances, negative adjustments and this build's charges are unambiguous and go through as before.
+  const remit = rig(); remit.stored = { ...command, schemaVersion: 1 };
+  assert.equal((await sendCashCommand(remit, { ...command, schemaVersion: 1 })).state, 'recorded');
+  assert.equal(remit.sends, 1);
+}
+for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending', 'err_cash_command_ambiguous', 'err_captain_pay_schema_required', 'err_invalid_request_id'])
   assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 
 // The screen keeps the command in the admin's own secure slot (not the token-scoped recovery store a forced sign-out wipes),
