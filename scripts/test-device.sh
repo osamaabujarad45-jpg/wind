@@ -2,72 +2,101 @@
 # Wind's test gates on the owner's Docker test device (owner rule, 19 Nov 2026: every test runs here).
 #
 # From Git Bash on Windows (Docker runs inside WSL):
-#   MSYS_NO_PATHCONV=1 wsl.exe -e sh /mnt/c/<repo>/scripts/test-device.sh [--serial] [suite ...]
+#   MSYS_NO_PATHCONV=1 wsl.exe -e sh /mnt/c/<checkout>/scripts/test-device.sh [--serial] [suite ...]
 # From WSL or Linux:
 #   sh scripts/test-device.sh [--serial] [suite ...]
 #
 # Suites: typecheck lint unit persistence export parity (default: typecheck lint unit persistence export)
-#   persistence  the full PostgreSQL suite (the repo requires PostgreSQL 18) on sandbox-pg18-host, restarted fresh per run
-#   parity       eleven PostgreSQL suites on sandbox-pg-host (PostGIS 16, the production infrastructure's major)
+#   persistence  the full PostgreSQL suite (the repo requires PostgreSQL 18) on a run-owned PostgreSQL 18 sidecar
+#   parity       eleven PostgreSQL suites on the owner's PostGIS 16 device (sandbox-pg-host, the production major)
 #   export       the production web export with the deploy build arguments
-# The checkout under test is the repository this script lives in, copied read-only; nothing in it is written.
-# Logs: <repo>/.expo/test-device/<UTC time>/ (summary.txt first). The exit code is non-zero when any suite fails.
+# The checkout is copied read-only (local .env files excluded); nothing in it is written except the log folder.
+# Logs: <checkout>/.expo/test-device/<UTC time>/ (summary.txt first). Exit 0 only when every requested suite ran and passed.
 #
-# Speed: node_modules is installed once per package-lock.json hash into the volume wind-test-cache and hard-linked into each
-# run (no npm ci when the lockfile is unchanged); typecheck+lint+export, then unit+persistence+parity, run side by side (--serial runs one
-# suite at a time on a busy machine).
+# Speed: node_modules is installed once per (package-lock.json, image) into the volume wind-test-cache and hard-linked into
+# each run (no npm ci when neither changed); typecheck+lint+export, then unit+persistence+parity, run side by side
+# (--serial runs one suite at a time). Runs on one device are serialized by a lock; a second run waits for the first.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SERIAL=0
 if [ "${1:-}" = "--serial" ]; then SERIAL=1; shift; fi
 SUITES=${*:-typecheck lint unit persistence export}
+for s in $SUITES; do case $s in typecheck|lint|unit|persistence|export|parity) ;; *) echo "unknown suite: $s (typecheck lint unit persistence export parity)" >&2; exit 2 ;; esac; done
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 LOGS="$REPO/.expo/test-device/$STAMP"
-mkdir -p "$LOGS"
-IMAGE=sandbox-node24:local
+mkdir -p "$LOGS" || exit 2
+SUMMARY="$LOGS/summary.txt"
+fail_setup() { echo "setup failed: $1" | tee -a "$SUMMARY" >&2; exit 2; }
+
+# One run at a time on this device: the PostgreSQL 18 sidecar and the dependency cache are shared resources.
+exec 9>/tmp/wind-test-device.lock
+flock 9 || fail_setup "lock"
 
 # The image: the owner's sandbox-node:local plus Node 24.12 (CI/production runtime) and PostgreSQL 16/18 clients.
+# Tagged by the Dockerfile's hash, so an edit to it builds a new image instead of reusing a stale one.
+IMAGE_TAG=$(sha256sum "$REPO/infra/test-device/Dockerfile" | cut -c1-12)
+IMAGE="sandbox-node24:$IMAGE_TAG"
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  docker build -q -t "$IMAGE" "$REPO/infra/test-device" >/dev/null || { echo "image build failed" | tee "$LOGS/summary.txt"; exit 2; }
+  docker build -q -t "$IMAGE" -t sandbox-node24:local "$REPO/infra/test-device" >/dev/null || fail_setup "image build"
 fi
 
-# PostgreSQL. PG16 is the owner's device; PG18 is a sidecar the persistence suite needs, recreated per run on a fresh tmpfs
-# with 1 GB of shared memory (the 64 MB default makes pg_dump fail).
+# PostgreSQL. PG16 is the owner's long-lived device; PG18 is a sidecar this run owns (port 55475; 55474 stays free for ad-hoc checks) (label wind.test-device), recreated on a
+# fresh tmpfs with 1 GB of shared memory (the 64 MB default makes pg_dump fail) and removed when the run ends.
+PG18=wind-test-pg18
+cleanup() { docker ps -aq --filter "name=^${PG18}$" --filter label=wind.test-device=1 | xargs -r docker rm -f >/dev/null 2>&1; }
+ready() { # container port: TCP readiness, as the tests connect (the image's init server listens on the socket only)
+  i=0; until docker exec "$1" pg_isready -h 127.0.0.1 -p "$2" -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && return 1; sleep 1; done; }
 case " $SUITES " in *" parity "*)
-  docker ps --format '{{.Names}}' | grep -qx sandbox-pg-host || docker start sandbox-pg-host >/dev/null
-  i=0; until docker exec sandbox-pg-host pg_isready -p 55473 -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && { echo "sandbox-pg-host not ready after 300 s" >> "$LOGS/summary.txt"; break; }; sleep 1; done ;;
+  docker ps --format '{{.Names}}' | grep -qx sandbox-pg-host || docker start sandbox-pg-host >/dev/null || fail_setup "start sandbox-pg-host"
+  ready sandbox-pg-host 55473 || fail_setup "sandbox-pg-host not ready over TCP after 300 s" ;;
 esac
 case " $SUITES " in *" persistence "*|*" unit "*)
-  docker rm -f sandbox-pg18-host >/dev/null 2>&1
-  docker run -d --name sandbox-pg18-host --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g \
-    -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT=55474 \
-    postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off >/dev/null
-  i=0; until docker exec sandbox-pg18-host pg_isready -p 55474 -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && { echo "sandbox-pg18-host not ready after 300 s" >> "$LOGS/summary.txt"; break; }; sleep 1; done ;;
+  if docker ps -aq --filter "name=^${PG18}$" | grep -q .; then
+    docker ps -aq --filter "name=^${PG18}$" --filter label=wind.test-device=1 | grep -q . || fail_setup "a container named $PG18 exists that this runner does not own; remove or rename it"
+    cleanup
+  fi
+  trap cleanup EXIT
+  docker run -d --name "$PG18" --label wind.test-device=1 --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g \
+    -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT=55475 \
+    postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off >/dev/null || fail_setup "start $PG18"
+  ready "$PG18" 55475 || fail_setup "$PG18 not ready over TCP after 300 s" ;;
 esac
+
+# WSL's git cannot read a worktree whose .git points at a Windows path; Windows git (interop) can.
+g() { git -C "$REPO" "$@" 2>/dev/null || git.exe -C "$(wslpath -w "$REPO" 2>/dev/null)" "$@" 2>/dev/null; }
+REV=$(g rev-parse --short HEAD) || REV=unknown
+DIRTY=$(g status --porcelain | wc -l | tr -d ' ')
+echo "checkout $REV (+$DIRTY uncommitted) | image $IMAGE | suites: $SUITES" > "$LOGS/env.txt"
 
 docker run --rm --network host --entrypoint sh \
   -v "$REPO":/src:ro -v "$LOGS":/logs -v wind-test-cache:/cache \
-  -e SUITES="$SUITES" -e SERIAL="$SERIAL" \
+  -e SUITES="$SUITES" -e SERIAL="$SERIAL" -e IMAGE_TAG="$IMAGE_TAG" \
   -e PG16_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55473/fastship_test \
-  -e PG18_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55474/fastship_test \
+  -e PG18_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55475/fastship_test \
   "$IMAGE" -c '
   set -u
-  # Workspace on the cache volume so node_modules can be hard-linked in.
-  mkdir -p /cache/runs /cache/nm
-  RUN=$(mktemp -d /cache/runs/run.XXXXXX)
-  case "$RUN" in /cache/runs/run.??????) ;; *) echo "bad run dir" > /logs/summary.txt; exit 2 ;; esac
-  APP="$RUN/app"; mkdir -p "$APP"
+  die() { echo "setup failed: $1" >> /logs/summary.txt; exit 2; }
+  mkdir -p /cache/runs /cache/nm || die "cache volume"
+  RUN=$(mktemp -d /cache/runs/run.XXXXXX) || die "run dir"
+  case "$RUN" in /cache/runs/run.??????) ;; *) die "unexpected run dir" ;; esac
+  trap "rm -rf \"$RUN\"" EXIT
+  APP="$RUN/app"; mkdir -p "$APP" || die "app dir"
   tar -C /src -cf - --exclude=./node_modules --exclude=./.git --exclude=./.expo --exclude=./dist --exclude="*.db" \
-    --exclude="*.db-wal" --exclude="*.db-shm" . | tar -C "$APP" -xf -
-  HASH=$(sha256sum "$APP/package-lock.json" | cut -c1-16)
-  if [ ! -d "/cache/nm/$HASH/node_modules" ]; then
-    # First run for this lockfile: install in the full copy (install scripts may read repo files), then keep it.
-    (cd "$APP" && npm ci --no-audit --no-fund > /logs/npm-ci.log 2>&1) || { echo "npm ci failed (see npm-ci.log)" > /logs/summary.txt; exit 2; }
-    mkdir -p "/cache/nm/$HASH.tmp" && mv "$APP/node_modules" "/cache/nm/$HASH.tmp/node_modules" && mv "/cache/nm/$HASH.tmp" "/cache/nm/$HASH"
+    --exclude="*.db-wal" --exclude="*.db-shm" --exclude=./.env --exclude="./.env.*" . | tar -C "$APP" -xf - || die "copy checkout"
+  [ -f "$APP/package-lock.json" ] || die "copy checkout (no package-lock.json)"
+  KEY=$(sha256sum < "$APP/package-lock.json" | cut -c1-16)-$IMAGE_TAG
+  if [ ! -d "/cache/nm/$KEY/node_modules" ]; then
+    # First run for this lockfile and image: install in the full copy (install scripts may read repo files), then publish.
+    (cd "$APP" && npm ci --no-audit --no-fund > /logs/npm-ci.log 2>&1) || die "npm ci (see npm-ci.log)"
+    STAGE=$(mktemp -d /cache/nm/stage.XXXXXX) || die "stage dir"
+    mv "$APP/node_modules" "$STAGE/node_modules" && mv "$STAGE" "/cache/nm/$KEY" || die "publish node_modules"
   fi
-  cp -al "/cache/nm/$HASH/node_modules" "$APP/node_modules"
+  # ponytail: hard links, so a tool that rewrites a package file in place would reach the cache; none of the suites do.
+  # Their caches live in node_modules/.cache, which each run gets fresh. Switch to cp -a if that ever changes.
+  cp -al "/cache/nm/$KEY/node_modules" "$APP/node_modules" || die "link node_modules"
+  rm -rf "$APP/node_modules/.cache" && mkdir "$APP/node_modules/.cache" || die "private cache dir"
   cd "$APP"
-  echo "node $(node -v) | lockfile $HASH | suites: $SUITES" > /logs/env.txt
+  echo "node $(node -v) | deps $KEY" >> /logs/env.txt
   suite() {
     case $1 in
       typecheck) npx tsc --noEmit ;;
@@ -79,23 +108,26 @@ docker run --rm --network host --entrypoint sh \
       parity) rc=0; for f in pg-dialect pg-contracts pg-cash pg-claims pg-shop pg-import ride-lifecycle dispatch eligibility ledger payments; do
           if WIND_TEST_DATABASE_URL=$PG16_URL WIND_TEST_PG_BIN=/usr/lib/postgresql/16/bin node tests/$f.mjs; then echo "PASS $f"; else echo "FAIL $f"; rc=1; fi
         done; return $rc ;;
-      *) echo "unknown suite $1"; return 2 ;;
     esac
   }
   run() { start=$(date +%s); suite "$1" > "/logs/$1.log" 2>&1; rc=$?; echo "$1 exit $rc ($(( $(date +%s) - start ))s)" >> /logs/summary.txt
     if [ $rc -ne 0 ]; then grep -vE "^\{\"category\"" "/logs/$1.log" | grep -m3 -E "AssertionError|Error:|^FAIL|✖" | sed "s/^/  /" >> /logs/summary.txt
       grep -m2 -E "at (async )?file:" "/logs/$1.log" | sed "s/^/  /" >> /logs/summary.txt; fi; return $rc; }
   status=0
-  # Two waves of independent suites side by side; anything else in order.
   for wave in "typecheck lint export" "unit persistence parity"; do
     pids=""
     for s in $wave; do case " $SUITES " in *" $s "*)
       if [ "$SERIAL" = 1 ]; then run "$s" || status=1; else run "$s" & pids="$pids $!"; fi ;; esac; done
     for p in $pids; do wait "$p" || status=1; done
   done
-  rm -rf "$RUN"
   exit $status'
 STATUS=$?
-cat "$LOGS/summary.txt" 2>/dev/null
+# Every requested suite must have reported a pass, whatever the exit code says.
+for s in $SUITES; do
+  grep -q "^$s exit 0 " "$SUMMARY" 2>/dev/null && continue
+  [ $STATUS -eq 0 ] && STATUS=1
+  grep -q "^$s exit" "$SUMMARY" 2>/dev/null || echo "$s did not run" >> "$SUMMARY"
+done
+cat "$LOGS/env.txt" "$SUMMARY" 2>/dev/null
 echo "logs: $LOGS"
 exit $STATUS
