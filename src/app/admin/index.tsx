@@ -15,6 +15,7 @@ type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
   pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pickupPayReviewsOpen: number;
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
@@ -40,6 +41,13 @@ export default function Dashboard() {
         <Txt variant="title">{fill(c.blockReviewsOverdue, { n: data.blockReviewsOverdue })}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.blockReviewsOverdueBody}</Txt>
       </Card></View>}
+      {!!data.pickupPayReviewsOpen && <Press accessibilityLabel={fill(c.pickupPayReviewsOpen, { n: data.pickupPayReviewsOpen })}
+        onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'cancelled' } })}>
+        <Card tone="clay">
+          <Txt variant="title">{fill(c.pickupPayReviewsOpen, { n: data.pickupPayReviewsOpen })}</Txt>
+          <Txt variant="caption" style={{ marginTop: 4 }}>{c.pickupPayReviewsOpenBody}</Txt>
+        </Card>
+      </Press>}
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>

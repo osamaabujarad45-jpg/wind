@@ -1043,6 +1043,7 @@
           "gross": 0,
           "commission": 0,
           "net": 0,
+          "earnedNet": 0,
           "tripPayCents": 0
         },
         "week": {
@@ -1050,6 +1051,7 @@
           "gross": 0,
           "commission": 0,
           "net": 0,
+          "earnedNet": 0,
           "tripPayCents": 0
         },
         "all": {
@@ -1057,6 +1059,7 @@
           "gross": 0,
           "commission": 0,
           "net": 0,
+          "earnedNet": 0,
           "tripPayCents": 0
         }
       }
@@ -3095,7 +3098,7 @@
             "id": 2,
             "kind": "adjustment",
             "amountCents": -4000,
-            "note": "DRV-17 trip pay order 3",
+            "note": "Trip pay · أجر الرحلة · order 3",
             "status": "confirmed",
             "reference": null,
             "createdAt": "<server-timestamp>",

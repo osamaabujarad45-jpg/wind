@@ -118,7 +118,7 @@ try {
   // Do not lower PARCEL_LOAD for the test: stale cancelled load must fail a real new HTTP acceptance.
   while (replacements <= PARCEL_LOAD) await freshAcceptance(`A load cycle ${++replacements}`);
   assert.ok(replacements > PARCEL_LOAD);
-  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0, tripPayCents: 0 }); // no location at acceptance, so no DRV-18 pay
+  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0, earnedNet: 0, tripPayCents: 0 }); // no location at acceptance, so no DRV-18 pay
 
   // B: real assigned -> at_pickup flow. Parcel pickup needs no PIN; delivery needs the sender's handover code.
   for (const [round, mode] of modes.entries()) {

@@ -159,13 +159,23 @@ try {
   const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
     quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });
   const beforePickup = { latitude: 31.875, longitude: pinned.pickupPoint.longitude };
+  // The origin is a validated fix, and an idle captain cannot upload one. Seed it on another parcel, then accept this one.
+  const carrier = await call('/orders', { token: customer.token, body: { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) } });
+  await call(`/jobs/${carrier.id}/accept`, { token: driver.token, body: {} });
+  assert.equal((await call('/location', { token: driver.token, body: { ...beforePickup, accuracy: 5 } })).accepted, true);
   await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: { position: { ...beforePickup, at: Date.now(), accuracy: 5 } } });
   const pinnedJob = await call(`/orders/${pinnedOrder.id}`, { token: driver.token });
   assert.deepEqual([pinnedJob.pickupPoint, pinnedJob.dropoffPoint], [pinned.pickupPoint, pinned.dropoffPoint]);
-  assert.equal((await call('/location', { token: driver.token, body: pinned.pickupPoint })).accepted, true);
+  const realNow = Date.now;
   const partnerCancel = () => call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
-  assert.equal((await partnerCancel()).status, 'cancelled');
-  assert.equal((await partnerCancel()).status, 'cancelled');
+  try {
+    Date.now = () => realNow() + 60_000;
+    assert.equal((await call('/location', { token: driver.token, body: pinned.pickupPoint })).accepted, true);
+    assert.equal((await partnerCancel()).status, 'cancelled');
+    assert.equal((await partnerCancel()).status, 'cancelled');
+  } finally { Date.now = realNow; }
+  await call(`/orders/${carrier.id}/cancel`, { token: customer.token, body: {} });
+  await call(`/admin/orders/${carrier.id}/pickup-pay-review`, { token: admin.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
   const partnerPay = Math.round(crowKm(beforePickup, pinned.pickupPoint) * defaultSettings.pickupPayPerKm * 100);
   assert.deepEqual(db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?').all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents), [-partnerPay]);
   // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
@@ -253,7 +263,8 @@ try {
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 1);
   assert.equal(earnings.all.tripPayCents, partnerPay);
-  assert.equal(earnings.all.net, (Math.round((order.price - done.commission) * 100) + partnerPay) / 100);
+  assert.equal(earnings.all.net, Math.round((order.price - done.commission) * 100) / 100);
+  assert.equal(earnings.all.earnedNet, (Math.round((order.price - done.commission) * 100) + partnerPay) / 100);
 
   // Subscriptions: request, admin activates, plan applies
   const pending = await call('/subscriptions', { token: driver.token, body: {} });

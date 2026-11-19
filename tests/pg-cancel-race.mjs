@@ -115,7 +115,7 @@ try {
   }
   while (replacements <= PARCEL_LOAD) await freshAcceptance(`A load cycle ${++replacements}`);
   assert.ok(replacements > PARCEL_LOAD, 'new successful accept/cancel cycles exceed the actual parcel-load limit');
-  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0, tripPayCents: 0 }); // no location at acceptance, so no DRV-18 pay
+  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0, earnedNet: 0, tripPayCents: 0 }); // no location at acceptance, so no DRV-18 pay
 
   // B: establish pickup via HTTP, not private status writes. Parcel pickup has no boarding PIN.
   for (const [round, mode] of modes.entries()) {

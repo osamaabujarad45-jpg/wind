@@ -721,15 +721,19 @@ async function currentPickupKm(order: Row, driverId: number, since: number) {
 async function recordAssignedFrom(orderId: number, driverId: number, actorId: number, position?: Row) {
   const order = (await one('SELECT assignment_epoch, pickup_lat, pickup_lng FROM orders WHERE id = ?', orderId))!;
   const now = Date.now();
-  let km: number | undefined;
-  if (position === undefined) {
-    const active = await one(`SELECT MIN(COALESCE(assigned_at, 0)) AS since FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId);
-    if (active?.since != null) km = await currentPickupKm(order, driverId, active.since);
-  } else if (position && finite(position.latitude, 90) && finite(position.longitude, 180)
-    && (position.latitude !== 0 || position.longitude !== 0)
-    && finite(position.accuracy, 200, 0) && finite(position.at, now + pickupFixAge, now - pickupFixAge)) {
-    km = pickupDistance(order, { latitude: position.latitude, longitude: position.longitude });
+  // The origin is server evidence only: the captain's validated fix, fresh at acceptance (Haiku r3 R3-1). A client-sent position
+  // is corroboration, never the origin: one that disagrees with the validated fix (or arrives without one) records no origin, and
+  // DRV-18 then goes to a support review instead of paying.
+  const fix = await one(`SELECT good_lat, good_lng, good_acc FROM driver_locations WHERE driver_id = ?
+    AND good_at BETWEEN ? AND ? AND good_acc BETWEEN 0 AND 200`, driverId, now - pickupFixAge, now);
+  if (fix?.good_lat == null || fix.good_lng == null) return;
+  const validated = { latitude: Number(fix.good_lat), longitude: Number(fix.good_lng) };
+  if (position !== undefined) {
+    const sent = position && finite(position.latitude, 90) && finite(position.longitude, 180) && finite(position.accuracy, 200, 0)
+      && finite(position.at, now + pickupFixAge, now - pickupFixAge) ? { latitude: position.latitude, longitude: position.longitude } : null;
+    if (!sent || crowKm(sent, validated) > 0.15 + (Number(position.accuracy) + Number(fix.good_acc)) / 1000) return;
   }
+  const km = pickupDistance(order, validated);
   if (km === undefined) return;
   await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ASSIGNED_FROM', ?, ?)`,
     actorId, orderId, JSON.stringify({ km, driverId, assignmentEpoch: Number(order.assignment_epoch) + 1 }), now);
@@ -3385,7 +3389,9 @@ route('GET', '/api/driver/earnings', async ({ user }) => {
     const gross = Math.round((Number(r.gross) + trip) * 100) / 100;
     const tripPayCents = await captainPayAvailable() ? Number((await one(`SELECT -COALESCE(SUM(amount_cents), 0) n FROM cash_entries WHERE driver_id = ?
       AND source IN ('trip_pay', 'pickup_pay') AND created_at >= ?`, user.id, from))!.n) : 0;
-    return { jobs: r.jobs, gross, commission: r.commission, net: (Math.round((gross - r.commission) * 100) + tripPayCents) / 100, tripPayCents };
+    // `net` stays gross − commission for installed captain builds. `earnedNet` adds trip and pickup pay for this build (R5-L3).
+    const netCents = Math.round((gross - Number(r.commission)) * 100);
+    return { jobs: r.jobs, gross, commission: r.commission, net: netCents / 100, earnedNet: (netCents + tripPayCents) / 100, tripPayCents };
   };
   const midnight = new Date().setHours(0, 0, 0, 0);
   return { today: (await since(midnight)), week: (await since(Date.now() - 7 * DAY)), all: (await since(0)) };
@@ -3440,12 +3446,56 @@ async function guardCashCap(driverId: number, price: number, rate: number, code 
   const hold = orderId === undefined ? 0 : await shop.holdCents(orderId); // a shop job adds its door cash (CON-05)
   if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) + hold > cap) fail(409, code);
 }
-// A driver leaves the ledger (deletion or role change) only once nothing is owed or waiting for confirmation.
+// Latest pickup-pay review and decision per order. Pilot volume: one pass in JS, same on both engines (R5-L1 stays per order).
+async function pickupPayIndex() {
+  const events = await all(`SELECT order_id, action, detail FROM security_events
+    WHERE action IN ('PICKUP_PAY_REVIEW', 'PICKUP_PAY_DECIDED') ORDER BY id DESC`);
+  const review = new Map<number, Row>();
+  const decided = new Set<number>();
+  for (const event of events) {
+    const id = Number(event.order_id);
+    if (event.action === 'PICKUP_PAY_DECIDED') { decided.add(id); continue; }
+    if (!review.has(id)) review.set(id, event);
+  }
+  return { review, decided };
+}
+async function pendingPickupPay(driverId: number) {
+  const { review, decided } = await pickupPayIndex();
+  for (const [orderId, event] of review) {
+    if (decided.has(orderId)) continue;
+    if (Number(auditDetail(event).driverId) === driverId) return true;
+  }
+  return false;
+}
+async function openPickupPayReviews() {
+  const { review, decided } = await pickupPayIndex();
+  const ids = [...review.keys()].filter(id => !decided.has(id));
+  if (!ids.length) return 0;
+  const orders = await all(`SELECT id, driver_id, assignment_epoch FROM orders WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
+  const current = new Map(orders.map(order => [Number(order.id), order]));
+  let open = 0;
+  for (const id of ids) {
+    const order = current.get(id);
+    const detail = auditDetail(review.get(id)!);
+    if (order && Number(detail.driverId) === Number(order.driver_id) && Number(detail.assignmentEpoch) === Number(order.assignment_epoch)) open++;
+  }
+  return open;
+}
+// A driver leaves the ledger (deletion or role change) only once nothing is owed in either direction, nothing is waiting
+// for confirmation, and no block review or pickup-pay review is still undecided (R5-H2). A decided review, including a denial, does not fence.
 async function cashSettled(userId: number) {
   const balance = (await cashBalances('u.id = ?', userId))[0];
   if (balance && (balance.owedCents !== 0 || balance.pendingCents > 0)) fail(409, 'cash_outstanding');
+  if (await blockReviewsAvailable() && await one('SELECT 1 n FROM courier_block_reviews WHERE driver_id = ? AND decided_at IS NULL', userId)) fail(409, 'review_pending');
+  if (await pendingPickupPay(userId)) fail(409, 'review_pending');
 }
-const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: r.note, status: r.status,
+// Installed apps show `note` and ignore `source`. Trip and pickup pay keep the machine note in the ledger; the response carries both languages.
+function cashEntryNote(r: Row) {
+  if (r.source === 'trip_pay') return `Trip pay · أجر الرحلة · order ${r.order_id}`;
+  if (r.source === 'pickup_pay') return `Pickup trip pay · أجر التوجّه إلى الاستلام · order ${r.order_id}`;
+  return r.note;
+}
+const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_cents, note: cashEntryNote(r), status: r.status,
   ...(r.source != null && { source: r.source }),
   reference: r.source === 'payout' ? `P-${String(r.id).padStart(6, '0')}` : r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
@@ -3497,19 +3547,25 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
   const payout = kind === 'adjustment' && body.source === 'payout';
   if (body.source !== undefined && !payout) fail(400, 'invalid_input');
-  if (payout) {
-    needStaff(await staffActor(persistence, user), fail, 'finance');
-    if (!(await captainPayAvailable())) fail(503, 'captain_pay_schema_required');
-  }
+  // Installed Pay-driver (base 3b102aad) sends kind adjustment, no source, and one of these notes (src/copy.ts cashPayoutNote).
+  const legacyPayoutNote = note === 'دفع رصيد خصمات الأكواد للسائق نقداً' || note === 'Promo credits paid to the driver in cash';
+  const payoutIntent = payout || (kind === 'adjustment' && amount > 0 && legacyPayoutNote);
   // A retried form replays the entry it already recorded instead of booking the cash twice.
-  // ponytail: optional so an older admin build still records; require it once every admin runs this one.
+  // ponytail: optional on ordinary adjustments so an older admin build still records; a payout must name its request.
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
-  if (payout && requestId === null) fail(400, 'invalid_request_id');
+  if (payoutIntent) {
+    needStaff(await staffActor(persistence, user), fail, 'finance'); // typed and legacy notes share the duty (R5-M3)
+    if (!(await captainPayAvailable())) fail(503, 'captain_pay_schema_required'); // never store an untyped payout (R3-5)
+    if (requestId === null) fail(400, 'invalid_request_id');
+  }
+  const expectedSource = payoutIntent ? 'payout' : null;
+  const sameEntry = (saved: Row) => saved.recorded_by === user.id && saved.driver_id === Number(body.driverId) && saved.kind === kind
+    && saved.amount_cents === amount && (saved.source ?? null) === expectedSource && (!payoutIntent || saved.note === note);
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
     // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
-    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount || (saved.source ?? null) !== (payout || (saved.source === 'payout' && kind === 'adjustment' && amount > 0) ? 'payout' : null) || (payout && saved.note !== note)) fail(409, 'idempotency_conflict');
+    if (!sameEntry(saved)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
   (await persistence.exec('BEGIN IMMEDIATE'));
@@ -3518,21 +3574,19 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
     const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
     if (raced) {
-      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount || (raced.source ?? null) !== (payout || (raced.source === 'payout' && kind === 'adjustment' && amount > 0) ? 'payout' : null) || (payout && raced.note !== note)) fail(409, 'idempotency_conflict');
+      if (!sameEntry(raced)) fail(409, 'idempotency_conflict');
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }
     const balance = (await cashBalances('u.id = ?', Number(body.driverId)))[0] ?? fail(404, 'not_found');
     const available = balance.owedCents - balance.pendingCents;
     if (kind === 'remittance' && (amount < 0 || amount > available)) fail(400, 'invalid_amount');
-    if (payout && (amount < 0 || amount > -available)) fail(400, 'invalid_amount');
-    // An installed admin build pays a captain's credit with a plain positive adjustment: it is a payout, typed as one and bounded
-    // by what Wind owes, so it books to clearing and two cashiers cannot turn a settled credit into new debt.
-    const legacyPayout = kind === 'adjustment' && !payout && amount > 0 && available < 0;
-    if (legacyPayout && amount > -available) fail(400, 'invalid_amount');
-    if (kind === 'adjustment' && !payout && !legacyPayout && (available + amount < 0 || (available < 0 && amount > 0))) fail(400, 'invalid_amount');
-    const typedPayout = payout || (legacyPayout && await captainPayAvailable());
-    const entryRequestId = typedPayout ? requestId ?? randomUUID() : requestId; // the payout CHECK needs a request id
+    // A payout (typed source or the installed Pay-driver note) cannot exceed the credit, and a stale one — including when
+    // Wind owes nothing — is refused, so it never creates debt. Any other positive adjustment is a charge and is allowed
+    // while the captain is in credit (R5-H3, R5-M1).
+    if (payoutIntent && (amount <= 0 || amount > -available)) fail(400, 'invalid_amount');
+    if (kind === 'adjustment' && !payoutIntent && amount < 0 && available + amount < 0) fail(400, 'invalid_amount');
+    const entryRequestId = requestId; // a payout's CHECK needs the request id required above
     // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
     // finance approver, never to the recording admin; a backend that cannot host the approval protocol
     // rejects instead of forgiving. Amount/subject binding re-checks happen in T24's atomic execution.
@@ -3552,8 +3606,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
         !(await run("UPDATE financial_approvals SET consumed_at = ? WHERE id = ? AND status = 'approved' AND consumed_at IS NULL", Date.now(), approvalId)).changes)
         fail(409, 'approval_used');
     }
-    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${typedPayout ? ', source' : ''})
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?${typedPayout ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), entryRequestId)).lastInsertRowid);
+    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${payoutIntent ? ', source' : ''})
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?${payoutIntent ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), entryRequestId)).lastInsertRowid);
     if (kind === 'adjustment') await postCashJournal(id); // T30: adjustments settle as they are recorded
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     (await persistence.exec('COMMIT'));
@@ -3631,6 +3685,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     backupStale: backupStale(),
     // DRV-17: block reviews past their 2 working days; their trip pay stays unposted until a second admin decides.
     ...(await blockReviewsAvailable() ? { blockReviewsOverdue: Number((await one('SELECT COUNT(*) n FROM courier_block_reviews WHERE decided_at IS NULL AND due_at < ?', Date.now()))!.n) } : {}),
+    // Undecided pickup-pay reviews whose driver and assignment still match the order (R5-M2).
+    pickupPayReviewsOpen: await openPickupPayReviews(),
     daily,
   };
 });
@@ -3771,9 +3827,9 @@ const blockReviewsAvailable = async () => persistence.backend === 'sqlite'
 const hebronWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Hebron', weekday: 'short' });
 const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (!['Fri', 'Sat'].includes(hebronWeekday.format(t))) n++; } return t; };
 const custodyStatuses = ['in_transit', 'on_hold', 'returning'];
-async function createShippingBlockReview(order: Row, driverId: number, blockerId: number, from: string, at: number) {
-  await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, fareCents(order), at, twoWorkingDays(at));
+async function createShippingBlockReview(order: Row, driverId: number, blockerId: number, from: string, blockedAt: number, dueAt = twoWorkingDays(blockedAt)) {
+  return (await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, fareCents(order), blockedAt, dueAt)).changes;
 }
 // Best effort: a database this release cannot read yet (a legacy file mid-migration) logs and starts; nothing is lost, the next start retries.
 await persistence.scope(async () => {
@@ -3784,11 +3840,17 @@ await persistence.scope(async () => {
     WHERE e.action = 'COURIER_BLOCKED' AND o.service IN ('parcel','freight') AND o.driver_id IS NOT NULL
       AND o.status IN ('returning','returned') AND NOT EXISTS (SELECT 1 FROM courier_block_reviews b WHERE b.order_id = o.id)
     ORDER BY e.id DESC`);
+  const recoveredAt = Date.now();
+  const dueAt = twoWorkingDays(recoveredAt); // from the recovery, not the original block (R5-L2)
   for (const order of missing) {
     const detail = auditDetail(order);
     if (Number(detail.driverId) === order.driver_id && custodyStatuses.includes(detail.from)
-      && (detail.assignmentEpoch == null || detail.assignmentEpoch === order.assignment_epoch))
-      await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at);
+      && (detail.assignmentEpoch == null || detail.assignmentEpoch === order.assignment_epoch)) {
+      // blocked_at stays the original COURIER_BLOCKED time. The audit row exists only when this start inserted the review.
+      const inserted = await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
+      if (inserted) await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_RECOVERED', ?, ?)`,
+        order.actor_id, order.id, JSON.stringify({ driverId: order.driver_id, dueAt, recoveredAt }), recoveredAt);
+    }
   }
 }).catch(error => logServerError('maintenance_failed', error));
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),

@@ -70,22 +70,33 @@ try {
   assert.equal(returned.blockReview.decidedAt, null);
   assert.equal(db.prepare("SELECT id FROM cash_entries WHERE source = 'trip_pay' AND order_id = ?").get(carried.id), undefined);
   await call(`/admin/orders/${denied.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Office received denied parcel' } });
+  // Undecided block reviews fence deletion and a role change. The balance is still zero, so this is not the cash fence.
+  assert.equal((await call(path, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'review_pending');
+  assert.equal((await call('/me/delete', { token: blocked.token, body: { password: 'secret1' }, expect: 401 })).error, 'unauthorized'); // a block already ended the session
+  assert.equal((await call(path, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'review_pending');
 
   // A retained audit without its row is recovered when another API process opens this database.
   db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(carried.id);
+  let recoveredReview;
   for (let start = 0; start < 2; start++) {
     // Under the PostgreSQL legacy harness the second process must open the same schema (the helper strips database env).
     const api = await startApiProcess({ DB_PATH: process.env.DB_PATH, ...(process.env.WIND_DATABASE_URL && { WIND_DATABASE_URL: process.env.WIND_DATABASE_URL,
       WIND_POSTGRES_TEST_ONLY: process.env.WIND_POSTGRES_TEST_ONLY, WIND_POSTGRES_TEST_SCHEMA: process.env.WIND_POSTGRES_TEST_SCHEMA }) });
     try {
       const recovered = await apiCaller(() => api.base)(`/orders/${carried.id}`, { token: admin.token });
-      assert.deepEqual(recovered.blockReview, returned.blockReview);
+      recoveredReview = recovered.blockReview;
+      assert.equal(recoveredReview.tripPayCents, returned.blockReview.tripPayCents);
+      assert.equal(recoveredReview.decidedAt, null);
+      assert.equal(recoveredReview.cleared, null);
+      assert.equal(recoveredReview.blockedBy, returned.blockReview.blockedBy);
+      assert.ok(recoveredReview.dueAt > returned.blockReview.dueAt, 'recovery is due two working days after the recovery, not the block');
     } finally { await api.stop(); }
   }
   assert.equal(db.prepare('SELECT COUNT(*) n FROM courier_block_reviews WHERE order_id = ?').get(carried.id).n, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'BLOCK_REVIEW_RECOVERED'").get(carried.id).n, 1);
   const realNow = Date.now;
   try {
-    Date.now = () => returned.blockReview.dueAt + 1;
+    Date.now = () => recoveredReview.dueAt + 1;
     assert.equal((await call('/admin/stats', { token: admin.token })).blockReviewsOverdue, 2);
   } finally { Date.now = realNow; }
   const decision = { cleared: true, note: 'Second admin cleared the captain' };
@@ -103,6 +114,36 @@ try {
   } });
   assert.match(payout.reference, /^P-/);
   assert.equal((await call('/admin/cash', { token: admin.token })).find(row => row.driverId === blocked.user.id).owedCents, 0);
+
+  // An undecided pickup-pay review fences the same way. A credit left by a granted review fences as cash, in that direction.
+  const departing = await call('/auth/register', { body: { phone: '0599300011', name: 'Hadi', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${departing.user.id}/approve`, { token: admin.token, body: {} });
+  const departPath = `/admin/users/${departing.user.id}`;
+  let departOrder = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  departOrder = await call(`/jobs/${departOrder.id}/accept`, { token: departing.token, body: {} });
+  await call(`/orders/${departOrder.id}/cancel`, { token: customer.token, body: {} });
+  const openBefore = (await call('/admin/stats', { token: admin.token })).pickupPayReviewsOpen;
+  assert.ok(openBefore >= 1);
+  assert.equal((await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'review_pending');
+  assert.equal((await call('/me/delete', { token: departing.token, body: { password: 'secret1' }, expect: 409 })).error, 'review_pending');
+  assert.equal((await call(departPath, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'review_pending');
+  await call(`/admin/orders/${departOrder.id}/pickup-pay-review`, { token: reviewer.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
+  assert.equal((await call('/admin/stats', { token: admin.token })).pickupPayReviewsOpen, openBefore - 1);
+  await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' } });
+  await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'driver', vehicle: 'car' } });
+  await call(departPath, { token: admin.token, method: 'DELETE' });
+
+  const credited = await call('/auth/register', { body: { phone: '0599300012', name: 'Nada', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${credited.user.id}/approve`, { token: admin.token, body: {} });
+  let creditOrder = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  creditOrder = await call(`/jobs/${creditOrder.id}/accept`, { token: credited.token, body: {} });
+  await call(`/orders/${creditOrder.id}/cancel`, { token: customer.token, body: {} });
+  const granted = await call(`/admin/orders/${creditOrder.id}/pickup-pay-review`, { token: reviewer.token, body: { granted: true, km: 1, reason: 'Grant one kilometre' } });
+  assert.ok(granted.paidCents > 0);
+  assert.ok((await call('/driver/cash', { token: credited.token })).owedCents < 0);
+  const creditPath = `/admin/users/${credited.user.id}`;
+  assert.equal((await call(creditPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'cash_outstanding');
+  assert.equal((await call(creditPath, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'cash_outstanding');
   const events = db.prepare("SELECT order_id, detail FROM security_events WHERE action = 'COURIER_BLOCKED' ORDER BY order_id").all();
   assert.deepEqual(events.map(e => JSON.parse(e.detail).from), ['assigned', 'at_pickup', 'in_transit', 'in_transit']);
 

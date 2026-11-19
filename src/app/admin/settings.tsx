@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
@@ -27,13 +27,13 @@ export default function AdminSettings() {
   const { c } = useCopy();
   const { me } = useSession();
   const { data, error, reload } = useApi<SettingsResponse>('/me?payroll=1');
-  // The form opens at once from the session's settings; the payroll rate (a separate field older admin builds never see) remounts
-  // it when it arrives, so a slow request never hides Save.
+  // The form opens at once from the session's settings. Payroll arrives as a separate field older builds never see;
+  // it fills untouched inputs in place, so a slow response cannot wipe what the admin already typed (R3-12).
   if (!data && !me?.settings) return <Screen><Header title={c.settings} /><Loading failed={!!error} onRetry={reload} /></Screen>;
-  return <AdminSettingsForm key={data ? 'payroll' : 'session'} initial={data ? payrollSettings(data) : { ...defaultSettings, ...me!.settings }} />;
+  return <AdminSettingsForm initial={{ ...defaultSettings, ...(me?.settings ?? {}) }} payroll={data ?? null} />;
 }
 
-function AdminSettingsForm({ initial }: { initial: Settings }) {
+function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: SettingsResponse | null }) {
   const { me, refresh, signOut, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [values, setValues] = useState(() => toText(initial));
@@ -44,6 +44,21 @@ function AdminSettingsForm({ initial }: { initial: Settings }) {
   // so the next comparison reads /me first instead of trusting an old copy.
   const [baseline, setBaseline] = useState<Settings | null>(initial);
   const [busy, setBusy] = useState(false);
+  const payrollApplied = useRef(false);
+  const touchedRef = useRef(touched);
+  // payrollSettings() is a new object every render; apply the first payload once, and only onto keys not yet typed.
+  useEffect(() => {
+    if (!payroll || payrollApplied.current) return;
+    payrollApplied.current = true;
+    const next = payrollSettings(payroll);
+    const typed = touchedRef.current;
+    setValues(current => {
+      const merged = toText(next);
+      for (const key of Object.keys(typed) as (keyof Settings)[]) merged[key] = current[key];
+      return merged;
+    });
+    setBaseline(current => current ? next : current); // a failed save left this unknown: do not invent a baseline
+  }, [payroll]);
   const inFlight = useRef(false); // a confirm built before this render must not send a second write
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -64,6 +79,7 @@ function AdminSettingsForm({ initial }: { initial: Settings }) {
       setBaseline(saved);
       setValues(toText(saved));
       setTouched({});
+      touchedRef.current = {};
       await refresh();
       haptic.success();
       setBad('');
@@ -126,7 +142,7 @@ function AdminSettingsForm({ initial }: { initial: Settings }) {
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : unitless(key) ? '' : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
-        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); setMessage(''); if (bad === key) setBad(''); }} />)}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); touchedRef.current = { ...touchedRef.current, [key]: true }; setTouched(touchedRef.current); setMessage(''); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>

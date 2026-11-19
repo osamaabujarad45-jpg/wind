@@ -5,7 +5,7 @@ import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
 import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
-type Bucket = { jobs: number; gross: number; commission: number; net: number; tripPayCents?: number };
+type Bucket = { jobs: number; gross: number; commission: number; net: number; earnedNet?: number; tripPayCents?: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string; source?: 'trip_pay' | 'pickup_pay' | 'payout';
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
 type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
@@ -23,7 +23,7 @@ export default function Earnings() {
         const tripPayCents = bucket.tripPayCents ?? 0;
         const lines: [string, number][] = bucket === data.all ? [[c.gross, bucket.gross], [c.commission, -bucket.commission]] : [];
         if (tripPayCents > 0) lines.push([c.tripPay, tripPayCents / 100]);
-        lines.push([c.earnedPay, bucket.net]);
+        lines.push([c.earnedPay, bucket.earnedNet ?? bucket.net]);
         return <Card key={title}>
           <Txt variant="title">{title}</Txt>
           <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: bucket.jobs })}</Txt>

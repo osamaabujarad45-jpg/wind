@@ -179,7 +179,7 @@ try {
   assert.equal(cash.commissionCents, 735 * 2, 'a return collected no fare, so it adds no commission (SRS DRV-17)');
   const returnPay = 2 * Math.round(returned.price * 100);
   assert.equal(cash.owedCents, -returnPay, 'the return uses the undiscounted fare');
-  const tripEntries = (balance, order) => balance.entries.filter(e => e.note === `DRV-17 trip pay order ${order.id}`);
+  const tripEntries = (balance, order) => balance.entries.filter(e => e.note === `Trip pay · أجر الرحلة · order ${order.id}`);
   const codePay = tripEntries(cash, returned);
   assert.deepEqual(codePay.map(e => [e.kind, e.amountCents, e.status]), [['adjustment', -returnPay, 'confirmed']]);
   let supportReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
@@ -254,6 +254,7 @@ try {
   await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
   await call('/admin/settings?payroll=1', { token: approver.token, body: { pickupPayPerKm: 1 }, expect: 403 });
   await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody, expect: 403 });
+  await call('/admin/cash/adjustment', { token: approver.token, body: { driverId: driver.user.id, amountCents: -credit, reason: 'Promo credits paid to the driver in cash', requestId: randomUUID() }, expect: 403 });
   await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
   const payout = await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody });
   assert.deepEqual(await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody }), payout);
@@ -267,6 +268,7 @@ try {
   ]);
   assert.equal((await call('/admin/ledger/import', { token: admin.token, body: {} })).journals, 0, 'import agrees with the live payout journal');
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  await call('/admin/cash/adjustment', { token: approver.token, body: { driverId: driver.user.id, amountCents: 100, reason: 'Promo credits paid to the driver in cash', requestId: randomUUID() }, expect: 400 });
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----
