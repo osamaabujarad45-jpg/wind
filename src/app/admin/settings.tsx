@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
-import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
+import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
@@ -25,9 +25,12 @@ const payrollSettings = ({ settings, pickupPayPerKm }: SettingsResponse): Settin
 
 export default function AdminSettings() {
   const { c } = useCopy();
+  const { me } = useSession();
   const { data, error, reload } = useApi<SettingsResponse>('/me?payroll=1');
-  if (!data) return <Screen><Header title={c.settings} /><Loading failed={!!error} onRetry={reload} /></Screen>;
-  return <AdminSettingsForm initial={payrollSettings(data)} />;
+  // The form opens at once from the session's settings; the payroll rate (a separate field older admin builds never see) remounts
+  // it when it arrives, so a slow request never hides Save.
+  if (!data && !me?.settings) return <Screen><Header title={c.settings} /><Loading failed={!!error} onRetry={reload} /></Screen>;
+  return <AdminSettingsForm key={data ? 'payroll' : 'session'} initial={data ? payrollSettings(data) : { ...defaultSettings, ...me!.settings }} />;
 }
 
 function AdminSettingsForm({ initial }: { initial: Settings }) {

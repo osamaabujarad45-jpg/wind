@@ -38,13 +38,17 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     useEffect(run) { const index = cursor++; if (effects && !(index in slots)) { slots[index] = true; run(); } },
   };
   // The server side of the stub. A "lost" call still reaches the server first (the write commits) and then the reply is dropped.
-  const api = async (path, body, method) => {
+  // The settings screen negotiates the payroll rate with ?payroll=1 (older admin builds never see it); calls log the bare path.
+  const payrollView = settings => { const { pickupPayPerKm = 1, ...legacy } = settings ?? {}; return { settings: legacy, pickupPayPerKm }; };
+  const openedWith = serverSettings ? payrollView(serverSettings) : null; // what the screen fetched when it opened
+  const api = async (rawPath, body, method) => {
+    const payroll = rawPath.endsWith('?payroll=1'), path = rawPath.replace('?payroll=1', '');
     calls.push(JSON.parse(JSON.stringify({ path, body: body ?? null, method: method ?? null })));
     const lost = loseNext;
     loseNext = false;
     if (path === '/me') {
       if (lost) throw new Error('network');
-      return { ...me, settings: { ...serverSettings } };
+      return payroll ? payrollView(serverSettings) : { ...me, settings: { ...serverSettings } };
     }
     if (path === '/admin/settings') {
       // The server's compare-and-set: refuse, before anything is written, if a reviewed value has moved.
@@ -53,7 +57,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       serverSettings = { ...serverSettings, ...writes };
       if (holding) { holding = false; await new Promise(resolve => { releaseHeld = resolve; }); }
       if (lost) throw new Error('network');
-      return { ...serverSettings };
+      return payroll ? payrollView(serverSettings) : { ...serverSettings };
     }
     if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: receipt }; }
     if (lost) throw new Error('network');
@@ -71,7 +75,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': new Proxy({}, { get: (_, name) => String(name) }),
-    '../../api': { api, ApiError, useApi: path => ({ data: data[path] ?? [], error: undefined, reload: async () => {} }) },
+    '../../api': { api, ApiError, useApi: path => ({ data: path === '/me?payroll=1' ? openedWith : data[path] ?? [], error: undefined, reload: async () => {} }) },
     '../../model': model,
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
@@ -89,7 +93,11 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   }).outputText, context);
   return {
     calls, dialogs, store,
-    render() { cursor = 0; return context.exports.default(); },
+    // UI components are mocked as string types; a function-typed element is the screen's own component, rendered inline
+    // with the shared hook cursor as React would render it.
+    render() { cursor = 0; const expand = node => !node || typeof node !== 'object' ? node : typeof node.type === 'function' ? expand(node.type(node.props))
+      : node.props?.children === undefined ? node : { ...node, props: { ...node.props, children: [node.props.children].flat(Infinity).map(expand) } };
+      return expand(context.exports.default()); },
     server: () => serverSettings,
     // The next call (a write or a read) commits or answers on the server, then its reply is lost.
     loseNextCall() { loseNext = true; },
