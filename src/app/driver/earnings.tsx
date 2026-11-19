@@ -20,10 +20,12 @@ export default function Earnings() {
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> :
       ([[c.today, data.today], [c.week, data.week], [c.allTime, data.all]] as const).map(([title, bucket]) => {
-        const tripPayCents = bucket.tripPayCents ?? 0;
-        const lines: [string, number][] = bucket === data.all ? [[c.gross, bucket.gross], [c.commission, -bucket.commission]] : [];
-        if (tripPayCents > 0) lines.push([c.tripPay, tripPayCents / 100]);
-        lines.push([c.earnedPay, bucket.earnedNet ?? bucket.net]);
+        const lines: [string, number][] = [
+          [c.gross, bucket.gross],
+          [c.commission, -bucket.commission],
+          [c.tripPay, (bucket.tripPayCents ?? 0) / 100],
+          [c.earnedPay, bucket.earnedNet ?? bucket.net],
+        ];
         return <Card key={title}>
           <Txt variant="title">{title}</Txt>
           <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: bucket.jobs })}</Txt>

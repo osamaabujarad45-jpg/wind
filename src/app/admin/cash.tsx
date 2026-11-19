@@ -45,13 +45,15 @@ export default function AdminCash() {
   const cents = minorFromText;
   const inFlight = useRef(false); // a confirm built in an earlier render sees a stale `busy`: this one is current
   // Why the amount cannot be recorded, or null. The server stays authoritative; this only spares a confirm that would fail.
-  const amountProblem = (kind: CashKind, text: string, room: number) => {
+  const amountProblem = (kind: CashKind, text: string, { owedCents, pendingCents }: Balance) => {
     const value = cents(text);
     if (Number.isNaN(value)) return c.cash_amount_format;
     if (value === 0) return c.cash_amount_needed;
-    if (kind === 'remittance' && (value < 0 || value > room)) return c.err_invalid_amount;
-    if (kind === 'payout' && (value < 0 || value > -room)) return c.err_invalid_amount;
+    if (kind === 'remittance' && (value < 0 || value > owedCents - pendingCents)) return c.err_invalid_amount;
+    if (kind === 'payout' && pendingCents > 0) return c.err_remittance_pending;
+    if (kind === 'payout' && (value < 0 || value > -owedCents)) return c.err_invalid_amount;
     if (kind === 'adjustment' && value < 0) return c.err_approval_required; // forgiving debt needs a second finance approver
+    if (kind === 'adjustment' && owedCents < 0) return c.cashSettleCreditFirst;
     return null;
   };
 
@@ -127,8 +129,8 @@ export default function AdminCash() {
             <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500}
               onChangeText={note => setOpen({ ...open, note })} disabled={busy || !!open.uncertain} />
             {!open.uncertain && <Button title={open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
-              disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind !== 'remittance' && open.note.trim().length < 5)}
-              reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}
+              disabled={busy || !!amountProblem(open.kind, open.amount, row) || (open.kind !== 'remittance' && open.note.trim().length < 5)}
+              reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row) ?? c.reason_min5}
               onPress={() => confirm(fill(open.kind === 'payout' ? c.cashReviewPayout : open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
                 () => void submit(), open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />}
             {open.uncertain && <>
@@ -141,9 +143,9 @@ export default function AdminCash() {
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={blocked || row.owedCents - row.pendingCents <= 0} reason={blocked ? blockedReason : c.cash_none_owed}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
-            {row.owedCents - row.pendingCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked} reason={blockedReason}
-              onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'payout', amount: String((row.pendingCents - row.owedCents) / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
-            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
+            {row.owedCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked || row.pendingCents > 0} reason={blocked ? blockedReason : c.err_remittance_pending}
+              onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'payout', amount: String(-row.owedCents / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
+            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked || row.owedCents < 0} reason={blocked ? blockedReason : c.cashSettleCreditFirst} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
           </Row>}
         </Card>
       </Appear>)}

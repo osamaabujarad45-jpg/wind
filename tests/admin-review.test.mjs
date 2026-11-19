@@ -24,7 +24,7 @@ for (const language of ['ar', 'en']) {
 // `me` is the session's user record; for settings it carries the server settings the form starts from.
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
 // `receipt` is what GET /admin/cash/commands/:id answers.
-function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null } = {}) {
+function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
   let loseNext = false, holding = false, releaseHeld = null;
@@ -35,12 +35,16 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
     },
     useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; },
-    useEffect(run) { const index = cursor++; if (effects && !(index in slots)) { slots[index] = true; run(); } },
+    useEffect(run, deps) {
+      const index = cursor++, previous = slots[index];
+      if (effects && (!deps || !previous || deps.some((dep, i) => !Object.is(dep, previous[i])))) { slots[index] = deps; run(); }
+    },
   };
   // The server side of the stub. A "lost" call still reaches the server first (the write commits) and then the reply is dropped.
   // The settings screen negotiates the payroll rate with ?payroll=1 (older admin builds never see it); calls log the bare path.
   const payrollView = settings => { const { pickupPayPerKm = 1, ...legacy } = settings ?? {}; return { settings: legacy, pickupPayPerKm }; };
   const openedWith = serverSettings ? payrollView(serverSettings) : null; // what the screen fetched when it opened
+  let payrollData = delayPayroll ? null : openedWith;
   const api = async (rawPath, body, method) => {
     const payroll = rawPath.endsWith('?payroll=1'), path = rawPath.replace('?payroll=1', '');
     calls.push(JSON.parse(JSON.stringify({ path, body: body ?? null, method: method ?? null })));
@@ -75,7 +79,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': new Proxy({}, { get: (_, name) => String(name) }),
-    '../../api': { api, ApiError, useApi: path => ({ data: path === '/me?payroll=1' ? openedWith : data[path] ?? [], error: undefined, reload: async () => {} }) },
+    '../../api': { api, ApiError, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : data[path] ?? [], error: undefined, reload: async () => {} }) },
     '../../model': model,
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
@@ -93,6 +97,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   }).outputText, context);
   return {
     calls, dialogs, store,
+    deliverPayroll() { payrollData = openedWith; },
     // UI components are mocked as string types; a function-typed element is the screen's own component, rendered inline
     // with the shared hook cursor as React would render it.
     render() { cursor = 0; const expand = node => !node || typeof node !== 'object' ? node : typeof node.type === 'function' ? expand(node.type(node.props))
@@ -195,6 +200,22 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
+  }
+
+  // The initial payroll response can arrive before or after the first confirmed save.
+  for (const arrivesAfterSave of [false, true]) {
+    const config = screen('settings', language, { me: { settings: settingsBase }, effects: true, delayPayroll: true });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    if (!arrivesAfterSave) { config.deliverPayroll(); config.render(); }
+    assert.equal(field(config.render(), c.set_parcelPrice).value, typed12, 'an early response preserves the touched value');
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    if (arrivesAfterSave) { config.deliverPayroll(); config.render(); }
+    assert.equal(field(config.render(), c.set_parcelPrice).value, '12');
+    field(config.render(), c.set_parcelPrice).onChangeText(typed14);
+    await tap(config, c.save);
+    config.dialogs[1].yes(); await flush();
+    assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 14, expected: { parcelPrice: 12 } });
   }
 
   // Same setting changed by another admin after this form opened: the server refuses the reviewed write, nothing is

@@ -120,7 +120,10 @@ try {
  assert.equal(currentFix.accepted,true);
  assert.equal((await call(`/orders/${another.id}/cancel`,{token:customer.token,body:{}})).status,'cancelled');
  assert.equal(await database.one('SELECT driver_id FROM driver_locations WHERE driver_id=?',driver.user.id),undefined);
- const pickupPay=Math.min(2000,Math.round(JSON.parse(assignedFrom.detail).km*defaultSettings.pickupPayPerKm*100));
- assert.equal((await database.one('SELECT amount_cents FROM cash_entries WHERE note=?',`DRV-18 pickup pay order ${another.id}`)).amount_cents,-pickupPay);
+ const originKm=JSON.parse(assignedFrom.detail).km;
+ const pickupPay=Math.min(2000,Math.round(originKm*defaultSettings.pickupPayPerKm*100));
+ const review=JSON.parse((await database.one("SELECT detail FROM security_events WHERE order_id=? AND action='PICKUP_PAY_REVIEW'",another.id)).detail);
+ assert.deepEqual([review.originKm,review.currentKm,review.suggestedCents],[originKm,0,pickupPay]);
+ assert.equal(await database.one("SELECT id FROM cash_entries WHERE source='pickup_pay' AND order_id=?",another.id),undefined);
  console.log('Active GPS CAS, replay, assignment set, device, legacy exclusion and logout passed');
 } finally {await child.stop();await shutdown();await database.close();}

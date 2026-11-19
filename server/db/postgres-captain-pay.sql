@@ -1,5 +1,5 @@
 -- Migration 40: widen reviews on schemas that already applied 39 and identify generated cash entries.
-ALTER TABLE courier_block_reviews DROP CONSTRAINT courier_block_reviews_service_check;
+ALTER TABLE courier_block_reviews DROP CONSTRAINT IF EXISTS courier_block_reviews_service_check;
 ALTER TABLE courier_block_reviews ADD CONSTRAINT courier_block_reviews_service_check CHECK (service IN ('ride','shop','parcel','freight'));
 
 ALTER TABLE cash_entries ADD COLUMN order_id BIGINT REFERENCES orders(id) DEFERRABLE INITIALLY DEFERRED;

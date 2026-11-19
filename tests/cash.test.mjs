@@ -16,8 +16,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 const { shutdown, server, promote, liveWatcherCount, installedPayoutNotes } = await import('../server/main.ts');
-// The server recognizes an installed admin build's Pay-driver by its exact note, in both languages (R5-H3): pin it to the copy.
-assert.deepEqual(installedPayoutNotes, [copy.ar.cashPayoutNote, copy.en.cashPayoutNote]);
+assert.deepEqual(installedPayoutNotes, [copy.ar.cashPayoutNote, copy.en.cashPayoutNote]); // pinned to the installed admin copy
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -166,6 +165,14 @@ try {
   const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  const charge = await call('/admin/cash/adjustment', { token: admin.token, body: {
+    driverId: driver.user.id, amountCents: 100, reason: 'Office fuel charge', requestId: randomUUID(),
+  } });
+  assert.equal(charge.source, undefined, 'with no credit, a positive adjustment is a charge');
+  const handovers = [];
+  for (let i = 0; i < 2; i++) handovers.push(await call('/admin/cash/remittance', {
+    token: admin.token, body: { driverId: driver.user.id, amountCents: 50 },
+  }));
   // DRV-17: Wind pays two legs for a captain's return, including an office handback.
   let returned = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   returned = await call(`/jobs/${returned.id}/accept`, { token: driver.token, body: {} });
@@ -181,7 +188,15 @@ try {
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2, 'a return collected no fare, so it adds no commission (SRS DRV-17)');
   const returnPay = 2 * Math.round(returned.price * 100);
-  assert.equal(cash.owedCents, -returnPay);
+  assert.equal(cash.owedCents, 100 - returnPay);
+  assert.equal(cash.pendingCents, 100);
+  const blockedPayout = { driverId: driver.user.id, amountCents: 100 - cash.owedCents, reason: 'Office paid driver', requestId: randomUUID() };
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: blockedPayout, expect: 409 })).error, 'remittance_pending');
+  await call(`/driver/cash/${handovers[0].id}/confirm`, { token: driver.token, body: { decision: 'dispute' } });
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...blockedPayout, amountCents: 1 }, expect: 409 })).error, 'remittance_pending');
+  await call(`/driver/cash/${handovers[1].id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.deepEqual([cash.owedCents, cash.pendingCents], [50 - returnPay, 0]);
   const tripEntries = (balance, order) => balance.entries.filter(e => e.note === `Trip pay · أجر الرحلة · order ${order.id}`);
   const codePay = tripEntries(cash, returned);
   assert.deepEqual(codePay.map(e => [e.kind, e.amountCents, e.status]), [['adjustment', -returnPay, 'confirmed']]);
@@ -198,29 +213,40 @@ try {
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2);
   const officePay = 2 * Math.round(supportReturn.price * 100);
-  assert.equal(cash.owedCents, -returnPay - officePay);
+  assert.equal(cash.owedCents, 50 - returnPay - officePay);
   assert.deepEqual(tripEntries(cash, supportReturn).map(e => e.amountCents), [-officePay]);
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 4);
   assert.equal(earnings.all.tripPayCents, returnPay + officePay);
 
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
-  const enNote = 'Promo credits paid to the driver in cash';
-  const arNote = copy.ar.cashPayoutNote; // the installed admin build's exact Arabic note
-  const chargeId = randomUUID();
-  const chargeBody = { driverId: driver.user.id, amountCents: 100, reason: 'Damage fee collected in cash', requestId: chargeId };
-  const charge = await call('/admin/cash/adjustment', { token: admin.token, body: chargeBody });
-  assert.equal(charge.source, undefined, 'a positive adjustment that is not the payout note is a charge, even in credit');
-  assert.equal(charge.note, chargeBody.reason);
-  assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: chargeBody }), charge);
   const owing = (await call('/driver/cash', { token: driver.token })).owedCents;
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -owing + 1, reason: enNote, requestId: randomUUID() }, expect: 400 });
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, reason: enNote }, expect: 400 });
-  const arId = randomUUID();
-  const arBody = { driverId: driver.user.id, amountCents: 1, reason: arNote, requestId: arId };
-  const arPay = await call('/admin/cash/adjustment', { token: admin.token, body: arBody });
-  assert.equal(arPay.source, 'payout');
-  assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: arBody }), arPay);
+  const installed = { driverId: driver.user.id, amountCents: -owing - 2,
+    reason: `${copy.en.cashPayoutNote} (receipt 12)`, requestId: randomUUID() };
+  const { requestId: _id, ...noRequestId } = installed;
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: noRequestId, expect: 400 })).error, 'payout_request_id_required');
+  for (const language of ['ar', 'en']) assert.ok(copy[language].err_payout_request_id_required);
+  const installedPay = await call('/admin/cash/adjustment', { token: admin.token, body: installed });
+  assert.equal(installedPay.source, 'payout');
+  assert.equal(installedPay.note, installed.reason);
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: installed }), installedPay);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...installed, requestId: randomUUID() }, expect: 400 });
+  // A second cashier's untouched installed form (exact Pay-driver note, fresh request id) after the credit is settled is a
+  // stale payout, refused in both languages, never a charge that creates captain debt (lead decision, round 6).
+  for (const language of ['ar', 'en']) await call('/admin/cash/adjustment', { token: admin.token, expect: 400,
+    body: { driverId: driver.user.id, amountCents: 100, reason: copy[language].cashPayoutNote, requestId: randomUUID() } });
+
+  // The base binary saved a Pay-driver adjustment without a source. Its lost reply survives this upgrade.
+  const retained = { ...installed, amountCents: 1, requestId: randomUUID(), reason: copy.ar.cashPayoutNote };
+  const retainedId = Number((await persistence.run(`INSERT INTO cash_entries
+    (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id)
+    VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?, ?)`, retained.driverId, retained.amountCents, retained.reason,
+    admin.user.id, Date.now(), retained.requestId)).lastInsertRowid);
+  const replay = await call('/admin/cash/adjustment', { token: admin.token, body: retained });
+  assert.equal(replay.id, retainedId);
+  assert.equal(replay.source, undefined);
+  assert.deepEqual(await call(`/admin/cash/commands/${retained.requestId}`, { token: admin.token }), { entry: replay });
+
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
   const payoutBody = { driverId: driver.user.id, source: 'payout', amountCents: -credit, reason: 'Office paid trip earnings' };
   await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, amountCents: -credit + 1, requestId: randomUUID() }, expect: 400 });
@@ -236,7 +262,6 @@ try {
   assert.match(payout.reference, /^P-/);
   assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: bodies[winner].body }), payout);
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 100, reason: enNote, requestId: randomUUID() }, expect: 400 });
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----

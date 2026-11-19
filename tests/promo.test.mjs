@@ -97,7 +97,7 @@ try {
   assert.equal(cash.discountsCents, 1000);
   // The promo outweighs the commission: Wind owes the driver, and an admin settles it with a payout adjustment.
   assert.ok(cash.owedCents < 0);
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -cash.owedCents, reason: 'Promo credits paid in cash' } });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -cash.owedCents, reason: 'Promo credits paid in cash', requestId: randomUUID() } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   // Wind's profit counts the promo it funded.
   const stats = await call('/admin/stats', { token: admin.token });

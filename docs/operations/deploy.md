@@ -74,9 +74,11 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     The finance lead records any differences and resolves them before reopening payouts and import.
   - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the booked fare per leg. Support custody recovery pays
     one leg. A courier block waits for a second admin's clearing review on either database. On API startup, missing shipping
-    reviews are recovered from custody-block audits with the original block time and deadline. Pre-pickup cancellation pays
-    for the validated distance driven toward pickup, capped at the booked fare. Support can decide the credit when GPS evidence
-    is unavailable or the cancellation needs confirmation. The office records disbursements with the Pay driver action.
+    reviews are recovered from custody-block audits for drivers who can still settle cash. The review keeps the original
+    block time and is due two working days after recovery. The API logs skipped reviews for departed drivers. Every pre-pickup
+    cancellation after assignment and every failed pickup goes to support review. Validated distance informs the suggested
+    credit, capped at the booked fare. A support or finance decision grants or denies the credit. The office records
+    disbursements with the Pay driver action after pending handovers are resolved.
   - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.

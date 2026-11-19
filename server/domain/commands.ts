@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 import { priorityIdentity } from './priority.ts';
+import { needStaff, staffActor } from './ops.ts';
 type Failure = Error & { status: number };
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -43,6 +44,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     if ((driverAction || customerAction) && actor.status !== 'active')
       fail(403,actor.status === 'pending' ? 'pending_approval' : 'blocked');
     if (driverAction && policy.requirePermanentDriverApproval && !actor.approved_at) fail(403,'pending_approval');
+    if (path === '/api/admin/cash/adjustment') needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
     if (saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
     const response = JSON.parse(saved.response);
     const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(path);

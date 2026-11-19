@@ -76,6 +76,7 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
     try {
       // The reply is the server's settings after this write: it becomes the comparison baseline.
       const saved = payrollSettings(await api<SettingsResponse>('/admin/settings?payroll=1', { ...patch, expected }, 'POST'));
+      payrollApplied.current = true; // The save response supersedes the initial payroll request.
       setBaseline(saved);
       setValues(toText(saved));
       setTouched({});

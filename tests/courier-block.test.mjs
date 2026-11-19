@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultSettings, quote } from '../src/model.ts';
+import { defaultSettings, orderCode, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 import { startApiProcess } from './support/api-process.mjs';
 
@@ -74,14 +74,25 @@ try {
   assert.equal((await call(path, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'review_pending');
   assert.equal((await call('/me/delete', { token: blocked.token, body: { password: 'secret1' }, expect: 401 })).error, 'unauthorized'); // a block already ended the session
   assert.equal((await call(path, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'review_pending');
+  await assert.rejects(() => promote('0599300003'), { message: 'review_pending' });
 
   // A retained audit without its row is recovered when another API process opens this database.
   db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(carried.id);
+  const sqlite = !process.env.WIND_DATABASE_URL;
+  if (sqlite) {
+    db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(denied.id);
+    db.prepare(`UPDATE security_events SET id = (SELECT MAX(id) + 1 FROM security_events)
+      WHERE action = 'COURIER_BLOCKED' AND order_id = ?`).run(denied.id);
+    db.exec(`CREATE TRIGGER recovery_audit_failure BEFORE INSERT ON security_events
+      WHEN NEW.order_id = ${denied.id} AND NEW.action = 'BLOCK_REVIEW_RECOVERED'
+      BEGIN SELECT RAISE(ABORT, 'synthetic recovery audit failure'); END;`);
+  }
+  const restart = () => startApiProcess({ DB_PATH: process.env.DB_PATH, ...(process.env.WIND_DATABASE_URL && { WIND_DATABASE_URL: process.env.WIND_DATABASE_URL,
+    WIND_POSTGRES_TEST_ONLY: process.env.WIND_POSTGRES_TEST_ONLY, WIND_POSTGRES_TEST_SCHEMA: process.env.WIND_POSTGRES_TEST_SCHEMA }) });
   let recoveredReview;
   for (let start = 0; start < 2; start++) {
     // Under the PostgreSQL legacy harness the second process must open the same schema (the helper strips database env).
-    const api = await startApiProcess({ DB_PATH: process.env.DB_PATH, ...(process.env.WIND_DATABASE_URL && { WIND_DATABASE_URL: process.env.WIND_DATABASE_URL,
-      WIND_POSTGRES_TEST_ONLY: process.env.WIND_POSTGRES_TEST_ONLY, WIND_POSTGRES_TEST_SCHEMA: process.env.WIND_POSTGRES_TEST_SCHEMA }) });
+    const api = await restart();
     try {
       const recovered = await apiCaller(() => api.base)(`/orders/${carried.id}`, { token: admin.token });
       recoveredReview = recovered.blockReview;
@@ -90,7 +101,16 @@ try {
       assert.equal(recoveredReview.cleared, null);
       assert.equal(recoveredReview.blockedBy, returned.blockReview.blockedBy);
       assert.ok(recoveredReview.dueAt > returned.blockReview.dueAt, 'recovery is due two working days after the recovery, not the block');
+      if (sqlite && start === 0) {
+        assert.ok(api.diagnostics().includes('"category":"maintenance_failed"'));
+        assert.ok(api.diagnostics().includes(`"orderId":${denied.id}`));
+      }
     } finally { await api.stop(); }
+    if (sqlite && start === 0) {
+      assert.equal(db.prepare('SELECT order_id FROM courier_block_reviews WHERE order_id = ?').get(denied.id), undefined,
+        'a failed audit rolls back its review while a separate row recovers');
+      db.exec('DROP TRIGGER recovery_audit_failure');
+    }
   }
   assert.equal(db.prepare('SELECT COUNT(*) n FROM courier_block_reviews WHERE order_id = ?').get(carried.id).n, 1);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'BLOCK_REVIEW_RECOVERED'").get(carried.id).n, 1);
@@ -122,13 +142,30 @@ try {
   let departOrder = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   departOrder = await call(`/jobs/${departOrder.id}/accept`, { token: departing.token, body: {} });
   await call(`/orders/${departOrder.id}/cancel`, { token: customer.token, body: {} });
-  const openBefore = (await call('/admin/stats', { token: admin.token })).pickupPayReviewsOpen;
+  const stats = () => call('/admin/stats', { token: admin.token });
+  const { pickupPayReviewsOpen: openBefore, pickupPayReviews } = await stats();
   assert.ok(openBefore >= 1);
+  assert.deepEqual(pickupPayReviews.find(row => row.orderId === departOrder.id), {
+    orderId: departOrder.id, orderCode: orderCode(departOrder.id), driverName: 'Hadi', suggestedCents: null, reason: 'customer_cancelled',
+  });
   assert.equal((await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'review_pending');
   assert.equal((await call('/me/delete', { token: departing.token, body: { password: 'secret1' }, expect: 409 })).error, 'review_pending');
   assert.equal((await call(departPath, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'review_pending');
-  await call(`/admin/orders/${departOrder.id}/pickup-pay-review`, { token: reviewer.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
-  assert.equal((await call('/admin/stats', { token: admin.token })).pickupPayReviewsOpen, openBefore - 1);
+  await assert.rejects(() => promote('0599300011'), { message: 'review_pending' });
+  const pickupPath = `/admin/orders/${departOrder.id}/pickup-pay-review`;
+  const denial = { granted: false, km: 0, reason: 'No validated origin' };
+  await call(pickupPath, { token: reviewer.token, body: denial });
+  assert.equal((await stats()).pickupPayReviewsOpen, openBefore - 1);
+  assert.ok(!(await stats()).pickupPayReviews.some(row => row.orderId === departOrder.id));
+  const savedEvidence = JSON.parse(db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'PICKUP_PAY_REVIEW'").get(departOrder.id).detail);
+  const recordReview = async evidence => db.prepare(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at)
+    VALUES (?, ?, 'PICKUP_PAY_REVIEW', ?, ?)`).run(customer.user.id, departOrder.id, JSON.stringify(evidence), Date.now());
+  await recordReview({ ...savedEvidence, assignmentEpoch: savedEvidence.assignmentEpoch - 1 });
+  assert.equal((await stats()).pickupPayReviewsOpen, openBefore - 1);
+  await recordReview(savedEvidence);
+  assert.equal((await stats()).pickupPayReviewsOpen, openBefore);
+  await assert.rejects(() => promote('0599300011'), { message: 'review_pending' });
+  await call(pickupPath, { token: reviewer.token, body: denial });
   await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' } });
   await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'driver', vehicle: 'car' } });
   await call(departPath, { token: admin.token, method: 'DELETE' });
@@ -144,6 +181,7 @@ try {
   const creditPath = `/admin/users/${credited.user.id}`;
   assert.equal((await call(creditPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' }, expect: 409 })).error, 'cash_outstanding');
   assert.equal((await call(creditPath, { token: admin.token, method: 'DELETE', expect: 409 })).error, 'cash_outstanding');
+  await assert.rejects(() => promote('0599300012'), { message: 'cash_outstanding' });
   const events = db.prepare("SELECT order_id, detail FROM security_events WHERE action = 'COURIER_BLOCKED' ORDER BY order_id").all();
   assert.deepEqual(events.map(e => JSON.parse(e.detail).from), ['assigned', 'at_pickup', 'in_transit', 'in_transit']);
 
@@ -185,6 +223,34 @@ try {
   await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
   assert.equal((await call(`/orders/${trip.id}`, { token: customer.token })).status, 'cancelled');
   assert.deepEqual({ ...db.prepare('SELECT return_code, commission FROM orders WHERE id = ?').get(trip.id) }, { return_code: null, commission: null });
+  // A retained rollback audit points at a driver who left before recovery.
+  const departed = await call('/auth/register', { body: { phone: '0599300013', name: 'Former driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  const departedPath = `/admin/users/${departed.user.id}`;
+  await call(`${departedPath}/approve`, { token: admin.token, body: {} });
+  const retainedOrders = [];
+  for (let i = 0; i < 2; i++) {
+    const order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+    const accepted = await call(`/jobs/${order.id}/accept`, { token: departed.token, body: {} });
+    retainedOrders.push(await advance(departed.token, await advance(departed.token, accepted)));
+  }
+  await call(departedPath, { token: admin.token, body: { status: 'blocked', recovery: 'return' } });
+  for (const order of retainedOrders) await call(`/admin/orders/${order.id}/resolve`, {
+    token: admin.token, body: { action: 'confirm_return', reason: 'Office received retained parcel' },
+  });
+  const [missingReview, existingReview] = retainedOrders;
+  db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(missingReview.id);
+  db.prepare("UPDATE users SET role = 'customer', vehicle = NULL WHERE id = ?").run(departed.user.id);
+  const restarted = await restart();
+  try {
+    const recovered = await apiCaller(() => restarted.base)(`/orders/${missingReview.id}`, { token: admin.token });
+    assert.equal(recovered.blockReview, undefined);
+    assert.ok(restarted.diagnostics().includes('"category":"block_review_driver_departed"'));
+    assert.ok(restarted.diagnostics().includes(`"driverId":${departed.user.id}`));
+  } finally { await restarted.stop(); }
+  assert.equal((await call(`/admin/orders/${existingReview.id}/block-review`, {
+    token: reviewer.token, body: decision, expect: 409,
+  })).error, 'driver_departed');
+  assert.equal(db.prepare("SELECT id FROM cash_entries WHERE driver_id = ? AND source = 'trip_pay'").get(departed.user.id), undefined);
   console.log('courier-block: parcels recover through custody and boarded rides end unpaid');
 } finally {
   await shutdown();

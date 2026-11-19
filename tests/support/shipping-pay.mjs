@@ -25,14 +25,17 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     body: { expectedStatus: 'at_pickup', requestId, reason: 'absent', ...body } });
   const from = order => persistence.one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'ASSIGNED_FROM'", order.id);
   const cancel = (order, actor = customer) => call(`/orders/${order.id}/cancel`, { token: actor.token, body: {} });
-  const review = async (order, reason, granted, distance = 0, cents = 0) => {
+  const review = async (order, reason, granted, distance = 0, cents = 0, evidence) => {
     const before = (await call(`/orders/${order.id}`, { token: admin.token })).pickupPayReview;
     assert.equal(before.reason, reason);
     assert.equal(before.decision, null);
+    if (evidence) assert.deepEqual({ originKm: before.originKm, currentKm: before.currentKm, suggestedCents: before.suggestedCents }, evidence);
+    await checkEntry(order, 0);
     assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).pickupPayReview, undefined);
     const path = `/admin/orders/${order.id}/pickup-pay-review`;
     const body = { granted, km: distance, reason: 'Reviewed pickup evidence' };
     await call(path, { token: customer.token, body, expect: 403 });
+    await call(path, { token: admin.token, body: { ...body, km: 200.01 }, expect: 400 });
     const first = await call(path, { token: admin.token, body });
     assert.equal(first.paidCents, cents);
     assert.deepEqual(await call(path, { token: admin.token, body }), first, 'a lost reply replays the same decision');
@@ -54,12 +57,12 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
       order = await accept(await book(), initial);
       assert.equal(await from(order), undefined, 'an idle accept has no server origin');
       await cancel(order);
-      await review(order, 'missing_position', false);
+      await review(order, 'customer_cancelled', false, 0, 0, { originKm: null, currentKm: null, suggestedCents: null });
     }
     order = await accept(await book(null), position(0.05));
     assert.equal(await from(order), undefined);
     await cancel(order);
-    await review(order, 'missing_position', false);
+    await review(order, 'customer_cancelled', false);
 
     // POST /location needs a job already in hand. That fix is the origin of the next accept.
     const carrier = await accept(await book());
@@ -74,7 +77,7 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     assert.equal((await upload(0.05)).accepted, true);
     assert.equal((await report(order)).status, 'cancelled');
     await checkEntry(order, 0);
-    assert.equal((await call(`/orders/${order.id}`, { token: admin.token })).pickupPayReview, undefined, 'zero movement is measured evidence');
+    await review(order, 'absent', false, 0, 0, { originKm: km(0.05), currentKm: km(0.05), suggestedCents: 0 });
 
     const driven = km(0.05) - km(0.02);
     const distancePay = Math.round(driven * 125);
@@ -92,27 +95,27 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     const requestId = randomUUID();
     assert.equal((await report(order, {}, requestId)).status, 'cancelled');
     assert.equal((await report(order, {}, requestId)).status, 'cancelled');
-    await checkEntry(order, distancePay, driver);
+    await review(order, 'absent', true, driven, distancePay, { originKm: km(0.05), currentKm: km(0.02), suggestedCents: distancePay });
 
     // Far client position, validated fix left where it was: no origin, review, no pay.
     order = await accept(await book(), position(0));
     assert.equal(await from(order), undefined, 'a far client position does not become the origin');
     await cancel(order);
-    await review(order, 'missing_position', false);
+    await review(order, 'customer_cancelled', false);
     await checkEntry(order, 0);
 
     // A client position that disagrees with the validated fix is not an origin either.
     order = await accept(await book(), position(0.05));
     assert.equal(await from(order), undefined, 'a position that disagrees with the validated fix records no origin');
     await cancel(order);
-    await review(order, 'missing_position', false);
+    await review(order, 'customer_cancelled', false);
 
     await park(0.05);
     order = await accept(await book(), position(0.05));
     assert.ok(await from(order));
     jump(121_000);
     await cancel(order);
-    await review(order, 'missing_position', false);
+    await review(order, 'customer_cancelled', false, 0, 0, { originKm: km(0.05), currentKm: null, suggestedCents: null });
 
     // Dispatch reads the same validated fix while the captain is already carrying the seed parcel.
     await park(0.05);
@@ -123,9 +126,9 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     assert.equal((await upload(0.02)).accepted, true);
     assert.equal((await cancel(order)).status, 'cancelled');
     assert.equal((await cancel(order)).status, 'cancelled');
-    await checkEntry(order, distancePay, customer);
+    await review(order, 'customer_cancelled', true, driven, distancePay, { originKm: km(0.05), currentKm: km(0.02), suggestedCents: distancePay });
     await cancel(carrier);
-    await review(carrier, 'missing_position', false);
+    await review(carrier, 'customer_cancelled', false);
 
     // A legacy negotiable parcel caps approved pickup pay at the accepted offer price.
     await setRate(10);
@@ -136,7 +139,7 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     await arrive(order);
     assert.equal((await cancel(order, admin)).status, 'cancelled');
     const cappedPay = 4500;
-    await review(order, 'support_cancelled', true, 10, cappedPay);
+    await review(order, 'support_cancelled', true, 200, cappedPay);
 
     order = await accept(await book(), position(0.05));
     const first = await call(`/orders/${order.id}?liveProtocol=1`, { token: customer.token });
@@ -151,7 +154,7 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     assert.deepEqual(await held, { driverLocation: null, driverKey: String(driver.user.id), driverChanged: true });
     assert.ok((await call(live, { token: customer.token })).driverLocation, 'driver-only live requests still read the current fix');
     await cancel(order);
-    await review(order, 'missing_position', false); // The first assignment's accept position cannot price the third one.
+    await review(order, 'customer_cancelled', false); // The first assignment's accept position cannot price the third one.
 
     const total = 3 * distancePay + cappedPay;
     assert.equal((await cash()).owedCents, before.owedCents - total);

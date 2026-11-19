@@ -366,7 +366,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
     ...(viewer.role === 'admin' && r.status === 'cancelled' && shippingOrder(r)
-      && await (async () => { const review = await pickupReview(r.id); return review ? { pickupPayReview: review } : {}; })()),
+      && await (async () => { const review = await pickupReview(r.id); return review && currentPickupReview(r, review) ? { pickupPayReview: review } : {}; })()),
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
       ? (await one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id)) as Order['safetyReport'] ?? null
       : null,
@@ -722,8 +722,7 @@ async function recordAssignedFrom(orderId: number, driverId: number, actorId: nu
   const order = (await one('SELECT assignment_epoch, pickup_lat, pickup_lng FROM orders WHERE id = ?', orderId))!;
   const now = Date.now();
   // The origin is server evidence only: the captain's validated fix, fresh at acceptance (Haiku r3 R3-1). A client-sent position
-  // is corroboration, never the origin: one that disagrees with the validated fix (or arrives without one) records no origin, and
-  // DRV-18 then goes to a support review instead of paying.
+  // is corroboration only. The recorded origin is evidence for the support review.
   const fix = await one(`SELECT good_lat, good_lng, good_acc FROM driver_locations WHERE driver_id = ?
     AND good_at BETWEEN ? AND ? AND good_acc BETWEEN 0 AND 200`, driverId, now - pickupFixAge, now);
   if (fix?.good_lat == null || fix.good_lng == null) return;
@@ -743,28 +742,26 @@ async function assignmentEvidence(order: Row, action: 'ASSIGNED_FROM' | 'CUSTODY
   return events.map(auditDetail).find(detail => detail.assignmentEpoch === order.assignment_epoch && detail.driverId === order.driver_id);
 }
 const pickupPayCents = (order: Row, km: number, rate: number) => Math.min(fareCents(order), Math.round(km * rate * 100));
-// DRV-18 pays the reduction in distance to pickup. Staff verify refusals and operational cancels even when GPS exists.
-async function pickupPay(order: Row, actorId: number, reviewReason?: string) {
+// DRV-18 evidence informs a support decision even when both fixes are available.
+async function pickupPay(order: Row, actorId: number, reason: NonNullable<Order['pickupPayReview']>['reason']) {
   if (!shippingOrder(order) || order.driver_id == null) return;
   const from = await assignmentEvidence(order, 'ASSIGNED_FROM');
-  const kmNow = await currentPickupKm(order, order.driver_id, order.assigned_at ?? 0);
-  const drivenKm = from && kmNow !== undefined ? Math.max(0, from.km - kmNow) : null;
+  const originKm = from && Number.isFinite(from.km) ? from.km : null;
+  const currentKm = await currentPickupKm(order, order.driver_id, order.assigned_at ?? 0) ?? null;
+  const drivenKm = originKm != null && currentKm != null ? Math.max(0, originKm - currentKm) : null;
   const rate = (await settings()).pickupPayPerKm;
-  if (!reviewReason && drivenKm != null) {
-    await captainPay(order.id, order.driver_id, pickupPayCents(order, drivenKm, rate), 'pickup_pay', actorId);
-    return;
-  }
+  const suggestedCents = drivenKm == null ? null : pickupPayCents(order, drivenKm, rate);
   await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_PAY_REVIEW', ?, ?)`,
-    actorId, order.id, JSON.stringify({ reason: reviewReason ?? 'missing_position', rate, drivenKm, driverId: order.driver_id,
+    actorId, order.id, JSON.stringify({ reason, rate, originKm, currentKm, drivenKm, suggestedCents, driverId: order.driver_id,
       assignmentEpoch: order.assignment_epoch }), Date.now());
 }
 type PickupReview = NonNullable<Order['pickupPayReview']>;
 async function pickupReview(orderId: number): Promise<PickupReview | undefined> {
-  const events = await all(`SELECT action, detail FROM security_events WHERE order_id = ?
+  const events = await all(`SELECT id, action, detail FROM security_events WHERE order_id = ?
     AND action IN ('PICKUP_PAY_REVIEW', 'PICKUP_PAY_DECIDED') ORDER BY id DESC`, orderId);
   const review = events.find(event => event.action === 'PICKUP_PAY_REVIEW');
-  const decision = events.find(event => event.action === 'PICKUP_PAY_DECIDED');
   if (!review) return;
+  const decision = events.find(event => event.action === 'PICKUP_PAY_DECIDED' && event.id > review.id);
   return { ...auditDetail(review), decision: decision ? auditDetail(decision) : null } as PickupReview;
 }
 registerPickupPayRoutes(route, async ({ user, params, body }) => {
@@ -772,13 +769,13 @@ registerPickupPayRoutes(route, async ({ user, params, body }) => {
   needStaff(await staffActor(persistence, user), fail, 'finance', 'support');
   const { granted, km } = body;
   const reason = text(body.reason, 500);
-  if (typeof granted !== 'boolean' || !finite(km, 20_016, 0) || reason.length < 5) fail(400, 'invalid_input');
+  if (typeof granted !== 'boolean' || !finite(km, 200, 0) || reason.length < 5) fail(400, 'invalid_input');
   const id = Number(params[0]);
   await persistence.exec('BEGIN IMMEDIATE');
   try {
     const order = await one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
     const review = await pickupReview(id) ?? fail(404, 'not_found');
-    if (!shippingOrder(order) || order.status !== 'cancelled' || review.driverId !== order.driver_id || review.assignmentEpoch !== order.assignment_epoch)
+    if (!shippingOrder(order) || order.status !== 'cancelled' || !currentPickupReview(order, review))
       fail(409, 'order_changed');
     if (review.decision) {
       const saved = review.decision;
@@ -786,6 +783,7 @@ registerPickupPayRoutes(route, async ({ user, params, body }) => {
       await persistence.exec('COMMIT');
       return saved;
     }
+    if (!(await settleableDriver(order.driver_id))) fail(409, 'driver_departed');
     const paidCents = granted ? pickupPayCents(order, km, review.rate) : 0;
     if (granted) await captainPay(id, order.driver_id, paidCents, 'pickup_pay', user.id);
     const decision = { granted, km, reason, paidCents, decidedBy: user.id, decidedAt: Date.now() };
@@ -2186,7 +2184,7 @@ route('GET', '/api/partner/orders/by-reference', async ({ req, query }) => {
 route('GET', '/api/partner/orders/:id', async ({ req, params }) => (await partnerOrder(req, Number(params[0]))), true);
 // Until the courier holds the parcel the order can still be called off; at_pickup included, or a no-show strands both sides.
 const cancellable = ['searching', 'assigned', 'at_pickup'];
-async function cancelBeforePickup(id: number, actorId?: number, reviewReason?: string) {
+async function cancelBeforePickup(id: number, reviewReason: PickupReview['reason'], actorId?: number) {
   const row = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
   if (!cancellable.includes(row.status)) fail(409, 'cannot_cancel');
   // On PostgreSQL the active GPS trigger can delete the validated fix when the order leaves the active set.
@@ -2202,7 +2200,7 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   return (await persistence.atomic({ purpose: 'partner_api', correlationId: randomUUID() }, async () => {
     await persistence.exec('BEGIN IMMEDIATE');
     try {
-      await cancelBeforePickup(order.id);
+      await cancelBeforePickup(order.id, 'partner_cancelled');
       const cancelled = await partnerOrder(req, order.id);
       if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
       await persistence.exec('COMMIT');
@@ -2268,7 +2266,7 @@ route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
   if (!allowed) fail(409, 'cannot_cancel');
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    await cancelBeforePickup(order.id, user.id, user.role === 'admin' ? 'support_cancelled' : undefined);
+    await cancelBeforePickup(order.id, user.role === 'admin' ? 'support_cancelled' : 'customer_cancelled', user.id);
     if (user.role === 'admin') (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', '{}', ?)`, user.id, order.id, Date.now()));
     const cancelled = (await getOrder(order.id, user));
     if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
@@ -2878,7 +2876,7 @@ async function reportException(user: User, id: number, body: Row) {
   if (r.status === 'at_pickup') {
     // Nothing was collected, so there is nothing to hold or return: the pickup fails and the sender is told why.
     await persistence.savepoint(async () => {
-      await pickupPay(r, user.id, refusal ? 'captain_refused_pickup' : undefined);
+      await pickupPay(r, user.id, body.reason);
       (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, exception_detail = ?, updated_at = ? WHERE id = ?", body.reason, refusal ? body.detail : null, now, r.id));
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
         user.id, r.id, JSON.stringify({ reason: body.reason, ...(refusal && { detail: body.detail }), note: text(body.note, 200, false) }), now));
@@ -3446,40 +3444,24 @@ async function guardCashCap(driverId: number, price: number, rate: number, code 
   const hold = orderId === undefined ? 0 : await shop.holdCents(orderId); // a shop job adds its door cash (CON-05)
   if ((await cashExposureCents(driverId)) + Math.round(commissionOn(price, rate) * 100) + hold > cap) fail(409, code);
 }
-// Latest pickup-pay review and decision per order. Pilot volume: one pass in JS, same on both engines (R5-L1 stays per order).
-async function pickupPayIndex() {
-  const events = await all(`SELECT order_id, action, detail FROM security_events
-    WHERE action IN ('PICKUP_PAY_REVIEW', 'PICKUP_PAY_DECIDED') ORDER BY id DESC`);
-  const review = new Map<number, Row>();
-  const decided = new Set<number>();
-  for (const event of events) {
-    const id = Number(event.order_id);
-    if (event.action === 'PICKUP_PAY_DECIDED') { decided.add(id); continue; }
-    if (!review.has(id)) review.set(id, event);
-  }
-  return { review, decided };
+function currentPickupReview(order: Row, review: Row) {
+  return order.driver_id != null && review.driverId === order.driver_id && review.assignmentEpoch === order.assignment_epoch;
 }
-async function pendingPickupPay(driverId: number) {
-  const { review, decided } = await pickupPayIndex();
-  for (const [orderId, event] of review) {
-    if (decided.has(orderId)) continue;
-    if (Number(auditDetail(event).driverId) === driverId) return true;
-  }
-  return false;
-}
-async function openPickupPayReviews() {
-  const { review, decided } = await pickupPayIndex();
-  const ids = [...review.keys()].filter(id => !decided.has(id));
-  if (!ids.length) return 0;
-  const orders = await all(`SELECT id, driver_id, assignment_epoch FROM orders WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
-  const current = new Map(orders.map(order => [Number(order.id), order]));
-  let open = 0;
-  for (const id of ids) {
-    const order = current.get(id);
-    const detail = auditDetail(review.get(id)!);
-    if (order && Number(detail.driverId) === Number(order.driver_id) && Number(detail.assignmentEpoch) === Number(order.assignment_epoch)) open++;
-  }
-  return open;
+async function openPickupPayReviews(driverId?: number) {
+  const events = await all(`SELECT o.id, o.driver_id, o.assignment_epoch, u.name AS driver_name, e.detail
+    FROM orders o JOIN security_events e ON e.order_id = o.id LEFT JOIN users u ON u.id = o.driver_id
+    WHERE o.status = 'cancelled' AND o.service IN ('parcel','freight') AND o.driver_id IS NOT NULL
+      ${driverId === undefined ? '' : 'AND o.driver_id = ?'}
+      AND e.action = 'PICKUP_PAY_REVIEW' AND NOT EXISTS (
+        SELECT 1 FROM security_events newer WHERE newer.order_id = o.id AND newer.id > e.id
+          AND newer.action IN ('PICKUP_PAY_REVIEW','PICKUP_PAY_DECIDED'))
+    ORDER BY e.id`, ...(driverId === undefined ? [] : [driverId]));
+  return events.flatMap(event => {
+    const review = auditDetail(event);
+    if (!currentPickupReview(event, review)) return [];
+    return [{ orderId: Number(event.id), orderCode: orderCode(Number(event.id)), driverName: event.driver_name as string | null,
+      suggestedCents: (review.suggestedCents ?? null) as number | null, reason: review.reason as PickupReview['reason'] }];
+  });
 }
 // A driver leaves the ledger (deletion or role change) only once nothing is owed in either direction, nothing is waiting
 // for confirmation, and no block review or pickup-pay review is still undecided (R5-H2). A decided review, including a denial, does not fence.
@@ -3487,7 +3469,7 @@ async function cashSettled(userId: number) {
   const balance = (await cashBalances('u.id = ?', userId))[0];
   if (balance && (balance.owedCents !== 0 || balance.pendingCents > 0)) fail(409, 'cash_outstanding');
   if (await blockReviewsAvailable() && await one('SELECT 1 n FROM courier_block_reviews WHERE driver_id = ? AND decided_at IS NULL', userId)) fail(409, 'review_pending');
-  if (await pendingPickupPay(userId)) fail(409, 'review_pending');
+  if ((await openPickupPayReviews(userId)).length) fail(409, 'review_pending');
 }
 // Installed apps show `note` and ignore `source`. Trip and pickup pay keep the machine note in the ledger; the response carries both languages.
 function cashEntryNote(r: Row) {
@@ -3501,6 +3483,10 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
 async function lockCashDriver(driverId: number) {
   if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
+}
+async function settleableDriver(driverId: number) {
+  return !!(await one(`SELECT id FROM users WHERE id = ? AND role = 'driver' AND phone NOT LIKE 'deleted-%'
+    ${persistence.backend === 'postgres' ? 'FOR UPDATE' : ''}`, driverId));
 }
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal, lockCashDriver });
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
@@ -3539,31 +3525,23 @@ route('GET', '/api/admin/cash', async ({ user }) => {
 });
 
 
-// The exact notes an installed admin build's Pay-driver sends (src/copy.ts cashPayoutNote, ar and en); tests pin them to the copy.
+// The exact notes an installed admin build's Pay-driver sends (src/copy.ts cashPayoutNote, ar and en); cash.test pins them to the copy.
 export const installedPayoutNotes = ['دفع رصيد خصومات الأكواد للسائق نقداً', 'Promo credits paid to the driver in cash'];
 async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustment') {
   need(user, 'admin');
+  if (kind === 'adjustment') needStaff(await staffActor(persistence, user), fail, 'finance');
   const amount = body.amountCents;
   if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 1_000_000) fail(400, 'invalid_amount');
   const note = kind === 'adjustment' ? text(body.reason, 500) : text(body.note, 200, false);
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
-  const payout = kind === 'adjustment' && body.source === 'payout';
-  if (body.source !== undefined && !payout) fail(400, 'invalid_input');
-  // Installed Pay-driver (base 3b102aad) sends kind adjustment, no source, and one of these notes (src/copy.ts cashPayoutNote).
-  const legacyPayoutNote = installedPayoutNotes.includes(note);
-  const payoutIntent = payout || (kind === 'adjustment' && amount > 0 && legacyPayoutNote);
-  // A retried form replays the entry it already recorded instead of booking the cash twice.
-  // ponytail: optional on ordinary adjustments so an older admin build still records; a payout must name its request.
+  const explicitPayout = kind === 'adjustment' && body.source === 'payout';
+  if (body.source !== undefined && !explicitPayout) fail(400, 'invalid_input');
+  if (explicitPayout && amount < 0) fail(400, 'invalid_amount');
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
-  if (payoutIntent) {
-    needStaff(await staffActor(persistence, user), fail, 'finance'); // typed and legacy notes share the duty (R5-M3)
-    if (!(await captainPayAvailable())) fail(503, 'captain_pay_schema_required'); // never store an untyped payout (R3-5)
-    if (requestId === null) fail(400, 'invalid_request_id');
-  }
-  const expectedSource = payoutIntent ? 'payout' : null;
+  // Replay the stored classification before reading the balance: this entry may have settled the credit.
   const sameEntry = (saved: Row) => saved.recorded_by === user.id && saved.driver_id === Number(body.driverId) && saved.kind === kind
-    && saved.amount_cents === amount && (saved.source ?? null) === expectedSource && (!payoutIntent || saved.note === note);
+    && saved.amount_cents === amount && (!explicitPayout || saved.source === 'payout') && (saved.source !== 'payout' || saved.note === note);
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
     // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
@@ -3581,14 +3559,21 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
       return cashEntry(raced);
     }
     const balance = (await cashBalances('u.id = ?', Number(body.driverId)))[0] ?? fail(404, 'not_found');
-    const available = balance.owedCents - balance.pendingCents;
+    const { owedCents: owed, pendingCents: pending } = balance;
+    const available = owed - pending;
     if (kind === 'remittance' && (amount < 0 || amount > available)) fail(400, 'invalid_amount');
-    // A payout (typed source or the installed Pay-driver note) cannot exceed the credit, and a stale one — including when
-    // Wind owes nothing — is refused, so it never creates debt. Any other positive adjustment is a charge and is allowed
-    // while the captain is in credit (R5-H3, R5-M1).
-    if (payoutIntent && (amount <= 0 || amount > -available)) fail(400, 'invalid_amount');
-    if (kind === 'adjustment' && !payoutIntent && amount < 0 && available + amount < 0) fail(400, 'invalid_amount');
-    const entryRequestId = requestId; // a payout's CHECK needs the request id required above
+    const payout = kind === 'adjustment' && amount > 0 && owed < 0;
+    // The installed Pay-driver note on a captain who is no longer in credit is a stale payout (a second cashier, an old
+    // form), never a charge: refusing it keeps a settled credit from turning into captain debt. Editing the note away is
+    // a deliberate charge (lead decision, round 6).
+    const stalePayoutNote = kind === 'adjustment' && amount > 0 && !payout && installedPayoutNotes.includes(note);
+    if (payout || explicitPayout || stalePayoutNote) {
+      if (requestId === null) fail(400, 'payout_request_id_required');
+      if (pending > 0) fail(409, 'remittance_pending');
+      if (!payout || amount > -owed) fail(400, 'invalid_amount');
+      if (!(await captainPayAvailable())) fail(503, 'captain_pay_schema_required');
+    }
+    if (kind === 'adjustment' && amount < 0 && available + amount < 0) fail(400, 'invalid_amount');
     // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
     // finance approver, never to the recording admin; a backend that cannot host the approval protocol
     // rejects instead of forgiving. Amount/subject binding re-checks happen in T24's atomic execution.
@@ -3608,8 +3593,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
         !(await run("UPDATE financial_approvals SET consumed_at = ? WHERE id = ? AND status = 'approved' AND consumed_at IS NULL", Date.now(), approvalId)).changes)
         fail(409, 'approval_used');
     }
-    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${payoutIntent ? ', source' : ''})
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?${payoutIntent ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), entryRequestId)).lastInsertRowid);
+    const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id${payout ? ', source' : ''})
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?${payout ? ", 'payout'" : ''})`, balance.driverId, kind, amount, note, kind === 'remittance' ? 'pending' : 'confirmed', user.id, Date.now(), requestId)).lastInsertRowid);
     if (kind === 'adjustment') await postCashJournal(id); // T30: adjustments settle as they are recorded
     await queuePush([balance.driverId], 'cash', 0, '/driver/earnings');
     (await persistence.exec('COMMIT'));
@@ -3673,6 +3658,7 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY bucket`, ...params);
   for (const row of commissions) daily[Number(row.bucket)].commission = Number(row.amount);
   for (const row of subscriptions) daily[Number(row.bucket)].subscriptions = Number(row.amount);
+  const pickupPayReviews = await openPickupPayReviews();
   return {
     gmv: orders.gmv, commission: orders.commission, subscriptions: subs.revenue, discounts: orders.discounts,
     // Promo discounts are Wind's cost (the driver's ledger credits them), so they come off the profit.
@@ -3688,7 +3674,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     // DRV-17: block reviews past their 2 working days; their trip pay stays unposted until a second admin decides.
     ...(await blockReviewsAvailable() ? { blockReviewsOverdue: Number((await one('SELECT COUNT(*) n FROM courier_block_reviews WHERE decided_at IS NULL AND due_at < ?', Date.now()))!.n) } : {}),
     // Undecided pickup-pay reviews whose driver and assignment still match the order (R5-M2).
-    pickupPayReviewsOpen: await openPickupPayReviews(),
+    pickupPayReviewsOpen: pickupPayReviews.length,
+    pickupPayReviews: pickupPayReviews.slice(0, 20),
     daily,
   };
 });
@@ -3846,12 +3833,22 @@ await persistence.scope(async () => {
   const dueAt = twoWorkingDays(recoveredAt); // from the recovery, not the original block (R5-L2)
   for (const order of missing) {
     const detail = auditDetail(order);
-    if (Number(detail.driverId) === order.driver_id && custodyStatuses.includes(detail.from)
-      && (detail.assignmentEpoch == null || detail.assignmentEpoch === order.assignment_epoch)) {
-      // blocked_at stays the original COURIER_BLOCKED time. The audit row exists only when this start inserted the review.
-      const inserted = await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
-      if (inserted) await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_RECOVERED', ?, ?)`,
-        order.actor_id, order.id, JSON.stringify({ driverId: order.driver_id, dueAt, recoveredAt }), recoveredAt);
+    if (Number(detail.driverId) !== order.driver_id || !custodyStatuses.includes(detail.from)
+      || (detail.assignmentEpoch != null && detail.assignmentEpoch !== order.assignment_epoch)) continue;
+    const context = { orderId: order.id, driverId: order.driver_id };
+    try {
+      await persistence.exec('BEGIN IMMEDIATE');
+      if (!(await settleableDriver(order.driver_id))) logServerError('block_review_driver_departed', undefined, context);
+      else {
+        // blocked_at stays the original audit time. The recovered marker commits with the review.
+        const inserted = await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
+        if (inserted) await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_RECOVERED', ?, ?)`,
+          order.actor_id, order.id, JSON.stringify({ driverId: order.driver_id, dueAt, recoveredAt }), recoveredAt);
+      }
+      await persistence.exec('COMMIT');
+    } catch (error) {
+      if (persistence.inTransaction) await persistence.exec('ROLLBACK');
+      logServerError('maintenance_failed', error, context);
     }
   }
 }).catch(error => logServerError('maintenance_failed', error));
@@ -3876,6 +3873,7 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
       }
       fail(409, 'review_decided');
     }
+    if (!(await settleableDriver(review.driver_id))) fail(409, 'driver_departed');
     // The admin who blocked does not also judge the block: a second admin decides, as a forgiven debt needs a second approver.
     if (Number(review.blocked_by) === user.id) fail(409, 'second_admin_required');
     const now = Date.now(), driverId = Number(review.driver_id), pay = Number(review.trip_pay_cents);
@@ -4348,10 +4346,23 @@ export async function shutdown() {
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.
 export async function promote(input: string) {
   const phone = normalizePhone(input) ?? fail(400, 'invalid_phone');
-  if (production && !(await one('SELECT phone_verified_at FROM users WHERE phone = ?', phone))?.phone_verified_at) fail(409, 'verify phone ownership through operator enrollment first');
-  if (!(await run("UPDATE users SET role = 'admin', status = 'active', vehicle = NULL WHERE phone = ?", phone)).changes)
-    fail(404, 'register this number in the app first');
-  return phone;
+  return persistence.scope(async () => {
+    await persistence.exec('BEGIN IMMEDIATE');
+    try {
+      const target = await one(`SELECT id, role, phone_verified_at FROM users WHERE phone = ?
+        ${persistence.backend === 'postgres' ? 'FOR UPDATE' : ''}`, phone)
+        ?? (production ? fail(409, 'verify phone ownership through operator enrollment first') : fail(404, 'register this number in the app first'));
+      if (production && !target.phone_verified_at) fail(409, 'verify phone ownership through operator enrollment first');
+      if (target.role === 'driver') {
+        if (await one(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) LIMIT 1`, target.id))
+          fail(409, 'active_orders');
+        await cashSettled(target.id);
+      }
+      await run("UPDATE users SET role = 'admin', status = 'active', vehicle = NULL WHERE id = ?", target.id);
+      await persistence.exec('COMMIT');
+      return phone;
+    } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  });
 }
 
 if (import.meta.main) {

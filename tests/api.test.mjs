@@ -176,8 +176,18 @@ try {
   } finally { Date.now = realNow; }
   await call(`/orders/${carrier.id}/cancel`, { token: customer.token, body: {} });
   await call(`/admin/orders/${carrier.id}/pickup-pay-review`, { token: admin.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
-  const partnerPay = Math.round(crowKm(beforePickup, pinned.pickupPoint) * defaultSettings.pickupPayPerKm * 100);
-  assert.deepEqual(db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?').all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents), [-partnerPay]);
+  const partnerKm = crowKm(beforePickup, pinned.pickupPoint);
+  const partnerPay = Math.round(partnerKm * defaultSettings.pickupPayPerKm * 100);
+  const partnerReview = (await call(`/orders/${pinnedOrder.id}`, { token: admin.token })).pickupPayReview;
+  assert.deepEqual([partnerReview.reason, partnerReview.originKm, partnerReview.currentKm, partnerReview.suggestedCents],
+    ['partner_cancelled', partnerKm, 0, partnerPay]);
+  const partnerEntries = () => db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?')
+    .all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents);
+  assert.deepEqual(partnerEntries(), []);
+  await call(`/admin/orders/${pinnedOrder.id}/pickup-pay-review`, {
+    token: admin.token, body: { granted: true, km: partnerKm, reason: 'Confirmed partner pickup distance' },
+  });
+  assert.deepEqual(partnerEntries(), [-partnerPay]);
   // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
   const souq = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get();
   assert.ok(!(await call('/admin/users?q=partner', { token: admin.token })).some(u => u.id === souq.id));

@@ -1044,7 +1044,7 @@ function PickupPayReviewCard({ orderId, review, onDone }: { orderId: number; rev
   const inFlight = useRef(false);
   const [failure, setFailure] = useState('');
   const distance = km.trim() ? typedNumber(km) : NaN;
-  const canGrant = Number.isFinite(distance) && distance >= 0 && distance <= 20_016;
+  const canGrant = Number.isFinite(distance) && distance >= 0 && distance <= 200;
   async function decide(granted: boolean) {
     if (inFlight.current) return;
     inFlight.current = true;

@@ -209,7 +209,8 @@ export type Order = {
   collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
   returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   reattemptAllowed?: boolean; // SHIP-08, admin view of a held parcel or freight order
-  pickupPayReview?: { reason: 'captain_refused_pickup' | 'support_cancelled' | 'missing_position'; rate: number; drivenKm: number | null;
+  pickupPayReview?: { reason: ExceptionReason | typeof pickupRefusal | 'support_cancelled' | 'customer_cancelled' | 'partner_cancelled' | 'missing_position';
+    rate: number; drivenKm: number | null; originKm?: number | null; currentKm?: number | null; suggestedCents?: number | null;
     driverId: number; assignmentEpoch: number; decision: { granted: boolean; km: number; reason: string; paidCents: number; decidedBy: number; decidedAt: number } | null };
   assignmentEpoch?: number; // negotiated live tracking
   blockReview?: { dueAt: number; tripPayCents: number; decidedAt: number | null; cleared: boolean | null; paidCents: number | null; blockedBy: number }; // DRV-17, admin only
