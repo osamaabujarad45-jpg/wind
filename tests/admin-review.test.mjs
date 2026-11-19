@@ -23,7 +23,8 @@ for (const language of ['ar', 'en']) {
 // One screen rendered with a stub React: hooks are slots kept in call order, as React keeps them.
 // `me` is the session's user record; for settings it carries the server settings the form starts from.
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
-// `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id.
+// `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id (which may
+// return a promise, to hold the lookup open).
 function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
@@ -63,7 +64,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       if (lost) throw new Error('network');
       return payroll ? payrollView(serverSettings) : { ...serverSettings };
     }
-    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? receipt(path.split('/').pop()) : receipt }; }
+    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? await receipt(path.split('/').pop()) : receipt }; }
     if (lost) throw new Error('network');
     return { reference: 'REF-1' };
   };
@@ -573,3 +574,52 @@ for (const language of ['ar', 'en']) {
   assert.ok(shows(view.render(), `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the captured name stays`);
 }
 console.log('Admin cash drained line keeps a departed captain\'s name');
+
+// Sol R23-L2: the installed build's adjustment has no receipt (check the balance), then this build's entry has a matching
+// receipt. The receipt is added beside the instruction, never in its place.
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 100, 'Promo credits paid in cash'), schemaVersion: 1 };
+  const current = cashCommand.newCashCommand(1, 8, 'remittance', 300, '');
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(current));
+  const receipts = { [current.requestId]: { id: 81, kind: 'remittance', reference: 'R-81', amountCents: 300, note: '' } };
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null });
+  view.render(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, `${model.ltr('0599000102')} · 1: cash_command_ambiguous`), `${language}: the instruction stays`);
+  assert.ok(shows(tree, `${model.ltr('0599000103')} · 3: `) && shows(tree, 'R-81'), `${language}: the receipt is added beside it`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+}
+console.log('Admin cash receipt never replaces an earlier instruction');
+
+// Sol R23-L3, Haiku r20 N20-4: while the mount recovery's receipt lookup is open, no handover can be marked; afterwards a
+// confirmed resolution is sent and its notice sits beside the recovered receipt.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const saved = cashCommand.newCashCommand(1, 7, 'remittance', 100, '');
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(saved));
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const data = { ...cashData, '/admin/cash/pending': [{ id: 5, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: null }] };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store, receipt: () => held });
+  view.render(); await flush();
+  let tree = view.render();
+  for (const title of [c.cashMarkConfirmed, c.cashMarkDisputed])
+    assert.ok(button(tree, title).length === 1 && button(tree, title)[0].disabled, `${language}: ${title} waits for the recovery`);
+  release({ id: 71, kind: 'remittance', reference: 'R-71', amountCents: 100, note: '' }); await flush(); await flush();
+  tree = view.render();
+  assert.ok(shows(tree, 'R-71'), `${language}: the recovered receipt is shown`);
+  for (const title of [c.cashMarkConfirmed, c.cashMarkDisputed])
+    assert.equal(button(tree, title)[0].disabled, false, `${language}: ${title} is available after the recovery`);
+  await tap(view, c.cashMarkConfirmed);
+  field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
+  await tap(view, c.cashResolveSave);
+  view.dialogs.at(-1).yes(); await flush();
+  const sent = view.calls.at(-1);
+  assert.deepEqual([sent.path, sent.body.decision], ['/admin/cash/5/resolve', 'confirm'], `${language}: the resolution is sent`);
+  tree = view.render();
+  assert.ok(shows(tree, 'R-71') && shows(tree, c.cashResolved), `${language}: the resolution notice is added beside the receipt`);
+}
+console.log('Admin cash handover marking waits for the recovery');

@@ -378,7 +378,8 @@ assert.doesNotMatch(screen, /fail\(err\('cash_storage_failed'\)\)/);
 // Sol R19-M5: a saved entry in this build's slot closes the typed draft too. Sol R19-M1: no cash entry without Web Locks.
 assert.match(screen, /if \(e instanceof Error && e\.message === 'cash_command_pending'\) \{\n\s+if \(!open\.uncertain\) \{ setOpen\(null\);/);
 // Sol R20-M2: a later recorded receipt never clears an earlier slot's instruction; Haiku r18 N-A: an open uncertain form is kept.
-assert.doesNotMatch(screen, /setFailure\(''\); recorded\(outcome\.entry\)/);
+// (Sol R20-M2 / R23-L2: a receipt never erases an earlier instruction; tests/admin-review.test.mjs drains a legacy refusal
+// followed by a current receipt and asserts both lines.)
 assert.match(screen, /setOpen\(o => o\?\.uncertain && o\.requestId !== command\.requestId \? o/);
 assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 // Sol R18-M4 / Haiku r16 L1: settling a saved installed-build entry closes the typed fresh form and says why.
