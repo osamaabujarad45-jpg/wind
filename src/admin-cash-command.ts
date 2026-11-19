@@ -2,7 +2,7 @@ import { newRequestId } from './command-id.ts';
 
 // A-01: an admin's remittance or adjustment is saved before it is sent, so a lost reply survives an app restart and a
 // forced sign-out, and is settled by the admin's own command receipt or by resending the same request id; never by guessing.
-export type CashKind = 'remittance' | 'adjustment';
+export type CashKind = 'remittance' | 'adjustment' | 'payout';
 export type CashCommand = { type: 'admin_cash'; schemaVersion: 1; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
 export type CashEntry = { id: number; kind?: CashKind; reference?: string | null };
@@ -33,7 +33,7 @@ export function parseCashSlot(raw: string | null): unknown {
 export function readCashCommand(raw: unknown, actorId: number): CashCommand | null {
   const c = raw as CashCommand | null;
   if (!c || typeof c !== 'object' || c.type !== 'admin_cash' || c.actorId !== actorId) return null;
-  if (c.schemaVersion !== 1 || !uuid.test(String(c.requestId)) || !id(c.driverId) || !['remittance', 'adjustment'].includes(c.kind)
+  if (c.schemaVersion !== 1 || !uuid.test(String(c.requestId)) || !id(c.driverId) || !['remittance', 'adjustment', 'payout'].includes(c.kind)
     || !Number.isSafeInteger(c.amountCents) || c.amountCents === 0 || typeof c.note !== 'string' || c.note.length > 500) throw new Error('invalid_pending_command');
   return c;
 }
@@ -43,7 +43,7 @@ export const newCashCommand = (actorId: number, driverId: number, kind: CashKind
 
 export const cashCommandBody = (c: CashCommand) => c.kind === 'remittance'
   ? { driverId: c.driverId, amountCents: c.amountCents, note: c.note, requestId: c.requestId }
-  : { driverId: c.driverId, amountCents: c.amountCents, reason: c.note, requestId: c.requestId };
+  : { driverId: c.driverId, amountCents: c.amountCents, reason: c.note, requestId: c.requestId, ...(c.kind === 'payout' && { source: 'payout' }) };
 
 /** Only a refusal of the request itself proves nothing was recorded under this id: the server replays a saved entry
  *  before it checks the balance. 401/403/408/429 and 5xx say nothing about an earlier attempt. */

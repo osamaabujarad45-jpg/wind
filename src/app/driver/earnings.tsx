@@ -6,7 +6,7 @@ import { PlanCard, useFormat } from '../../parts';
 import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number; tripPayCents?: number };
-type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
+type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string; source?: 'trip_pay' | 'pickup_pay' | 'payout';
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
 type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
 const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
@@ -23,7 +23,7 @@ export default function Earnings() {
         const tripPayCents = bucket.tripPayCents ?? 0;
         const lines: [string, number][] = bucket === data.all ? [[c.gross, bucket.gross], [c.commission, -bucket.commission]] : [];
         if (tripPayCents > 0) lines.push([c.tripPay, tripPayCents / 100]);
-        lines.push([c.net, bucket.net]);
+        lines.push([c.earnedPay, bucket.net]);
         return <Card key={title}>
           <Txt variant="title">{title}</Txt>
           <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: bucket.jobs })}</Txt>
@@ -54,6 +54,7 @@ function CashCard() {
     catch (e) { setFailure(err(e)); } finally { setBusy(null); }
   }
   return <Card tone={data.owedCents > 0 ? 'clay' : 'card'}>
+    <Txt variant="micro">{c.cashSettlement}</Txt>
     <Row style={{ justifyContent: 'space-between' }}>
       <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>
       <Txt variant="h2">{money(Math.abs(data.owedCents) / 100)}</Txt>
@@ -76,9 +77,9 @@ function CashCard() {
     </View>)}
     {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
     {data.entries.slice(0, shown).map(entry => {
-      const note = entry.note.startsWith('DRV-17 ') ? c.tripPayEntry
-        : entry.note.startsWith('DRV-18 ') ? c.pickupTripPayEntry
-        : entry.note.startsWith('PAYOUT ') ? c.officePayoutEntry : entry.note;
+      const note = entry.source === 'trip_pay' ? c.tripPayEntry
+        : entry.source === 'pickup_pay' ? c.pickupTripPayEntry
+        : entry.source === 'payout' ? c.officePayoutEntry : entry.note;
       return <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
         <View style={{ flex: 1 }}>
           <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>

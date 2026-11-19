@@ -16,9 +16,21 @@
     },
     {
       "type": "index",
+      "name": "cash_entries_source_order",
+      "tableName": "cash_entries",
+      "sql": "CREATE UNIQUE INDEX cash_entries_source_order ON cash_entries(source, order_id) WHERE order_id IS NOT NULL"
+    },
+    {
+      "type": "index",
       "name": "checkpoint_reports_recent",
       "tableName": "checkpoint_reports",
       "sql": "CREATE INDEX checkpoint_reports_recent ON checkpoint_reports(checkpoint_id, created_at)"
+    },
+    {
+      "type": "index",
+      "name": "courier_block_reviews_open",
+      "tableName": "courier_block_reviews",
+      "sql": "CREATE INDEX courier_block_reviews_open ON courier_block_reviews(due_at) WHERE decided_at IS NULL"
     },
     {
       "type": "index",
@@ -124,6 +136,12 @@
     },
     {
       "type": "index",
+      "name": "security_events_order_action",
+      "tableName": "security_events",
+      "sql": "CREATE INDEX security_events_order_action ON security_events(order_id, action)"
+    },
+    {
+      "type": "index",
       "name": "sessions_token_user",
       "tableName": "sessions",
       "sql": "CREATE UNIQUE INDEX sessions_token_user ON sessions(token_hash, user_id)"
@@ -186,7 +204,7 @@
       "type": "table",
       "name": "cash_entries",
       "tableName": "cash_entries",
-      "sql": "CREATE TABLE cash_entries (\n  id INTEGER PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),\n  kind TEXT NOT NULL CHECK (kind IN ('remittance','adjustment')), amount_cents INTEGER NOT NULL CHECK (amount_cents <> 0),\n  note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),\n  recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER, request_id TEXT, resolved_by INTEGER, resolution_note TEXT)"
+      "sql": "CREATE TABLE cash_entries (\n  id INTEGER PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),\n  kind TEXT NOT NULL CHECK (kind IN ('remittance','adjustment')), amount_cents INTEGER NOT NULL CHECK (amount_cents <> 0),\n  note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('pending','confirmed','disputed')),\n  recorded_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, decided_at INTEGER, request_id TEXT, resolved_by INTEGER, resolution_note TEXT, order_id INTEGER REFERENCES orders(id), source TEXT CHECK (source IS NULL OR (kind = 'adjustment' AND status = 'confirmed' AND ((source IN ('trip_pay','pickup_pay') AND order_id IS NOT NULL AND amount_cents < 0) OR (source = 'payout' AND order_id IS NULL AND amount_cents > 0 AND request_id IS NOT NULL)))))"
     },
     {
       "type": "table",
@@ -199,6 +217,12 @@
       "name": "checkpoints",
       "tableName": "checkpoints",
       "sql": "CREATE TABLE checkpoints (\n  id INTEGER PRIMARY KEY, name TEXT NOT NULL, cities TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, lat REAL, lng REAL)"
+    },
+    {
+      "type": "table",
+      "name": "courier_block_reviews",
+      "tableName": "courier_block_reviews",
+      "sql": "CREATE TABLE courier_block_reviews (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id),\n  driver_id INTEGER NOT NULL REFERENCES users(id),\n  blocked_by INTEGER NOT NULL REFERENCES users(id),\n  service TEXT NOT NULL CHECK (service IN ('parcel','freight')),\n  from_status TEXT NOT NULL,\n  trip_pay_cents INTEGER NOT NULL CHECK (trip_pay_cents >= 0),\n  blocked_at INTEGER NOT NULL,\n  due_at INTEGER NOT NULL,\n  decided_at INTEGER,\n  decided_by INTEGER REFERENCES users(id),\n  cleared INTEGER CHECK (cleared IN (0,1)),\n  paid_cents INTEGER CHECK (paid_cents >= 0),\n  note TEXT NOT NULL DEFAULT '',\n  CHECK ((decided_at IS NULL) = (decided_by IS NULL) AND (decided_at IS NULL) = (cleared IS NULL)),\n  CHECK (decided_by IS NULL OR decided_by <> blocked_by)\n)"
     },
     {
       "type": "table",
@@ -300,7 +324,7 @@
       "type": "table",
       "name": "orders",
       "tableName": "orders",
-      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, collected_cents INTEGER, variance_reason TEXT, door_expected_cents INTEGER, door_collected_by INTEGER REFERENCES users(id), door_request_id TEXT, exception_detail TEXT, priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
+      "sql": "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id),\n  service TEXT NOT NULL, shared INTEGER NOT NULL, pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL,\n  pickup_lat REAL, pickup_lng REAL, pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, price REAL NOT NULL, commission REAL,\n  status TEXT NOT NULL, handover_code TEXT, rating INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  completed_at INTEGER, pickup_contact TEXT, return_code TEXT, exception_reason TEXT, share_token_hash TEXT, share_created_at INTEGER, scheduled_for INTEGER, discount REAL, job_alerted_at INTEGER, dropoff_lat REAL, dropoff_lng REAL, recommended_price REAL, price_rating INTEGER, route_km REAL, customer_rating INTEGER, recipient_name TEXT, recipient_phone TEXT, assigned_at INTEGER, picked_up_at INTEGER, commission_rate REAL, collected_cents INTEGER, variance_reason TEXT, door_expected_cents INTEGER, door_collected_by INTEGER REFERENCES users(id), door_request_id TEXT, exception_detail TEXT, priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')), assignment_epoch INTEGER NOT NULL DEFAULT 0)"
     },
     {
       "type": "table",
@@ -484,6 +508,18 @@
     },
     {
       "type": "trigger",
+      "name": "orders_assignment_epoch_insert",
+      "tableName": "orders",
+      "sql": "CREATE TRIGGER orders_assignment_epoch_insert AFTER INSERT ON orders\n  WHEN NEW.driver_id IS NOT NULL AND NEW.assignment_epoch = 0\n  BEGIN UPDATE orders SET assignment_epoch = 1 WHERE id = NEW.id; END"
+    },
+    {
+      "type": "trigger",
+      "name": "orders_assignment_epoch_update",
+      "tableName": "orders",
+      "sql": "CREATE TRIGGER orders_assignment_epoch_update AFTER UPDATE OF driver_id, status ON orders\n  WHEN NEW.driver_id IS NOT OLD.driver_id OR\n    (OLD.status NOT IN ('assigned','at_pickup','in_transit','on_hold','returning')\n      AND NEW.status IN ('assigned','at_pickup','in_transit','on_hold','returning'))\n  BEGIN UPDATE orders SET assignment_epoch = OLD.assignment_epoch + 1 WHERE id = NEW.id; END"
+    },
+    {
+      "type": "trigger",
       "name": "orders_door_cash_write_once",
       "tableName": "orders",
       "sql": "CREATE TRIGGER orders_door_cash_write_once BEFORE UPDATE OF collected_cents, variance_reason, door_expected_cents, door_collected_by, door_request_id ON orders\n  WHEN OLD.collected_cents IS NOT NULL AND (NEW.collected_cents IS NOT OLD.collected_cents OR NEW.variance_reason IS NOT OLD.variance_reason\n    OR NEW.door_expected_cents IS NOT OLD.door_expected_cents OR NEW.door_collected_by IS NOT OLD.door_collected_by OR NEW.door_request_id IS NOT OLD.door_request_id)\n  BEGIN SELECT RAISE(ABORT, 'door cash is write-once'); END"
@@ -648,11 +684,37 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
         }
       ],
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "users",
           "from": "recorded_by",
@@ -662,7 +724,7 @@
           "match": "NONE"
         },
         {
-          "id": 1,
+          "id": 2,
           "seq": 0,
           "table": "users",
           "from": "driver_id",
@@ -822,6 +884,157 @@
           "seq": 0,
           "table": "users",
           "from": "created_by",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "courier_block_reviews",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "driver_id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "blocked_by",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "service",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "from_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "trip_pay_cents",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "blocked_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "due_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "decided_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "decided_by",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "cleared",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "paid_cents",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "''",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "decided_by",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "blocked_by",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "users",
+          "from": "driver_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
           "to": "id",
           "on_update": "NO ACTION",
           "on_delete": "NO ACTION",
@@ -2605,6 +2818,14 @@
           "type": "TEXT",
           "notnull": 1,
           "dflt_value": "'standard'",
+          "pk": 0
+        },
+        {
+          "cid": 49,
+          "name": "assignment_epoch",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
           "pk": 0
         }
       ],

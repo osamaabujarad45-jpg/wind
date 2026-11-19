@@ -1,10 +1,10 @@
--- DRV-17 / SRS §2.1: a courier block's review. A ride ended in transit or a shop, parcel or freight order taken into custody by a courier block
+-- DRV-17 / SRS §2.1: a courier block's review. A ride ended in transit or a shop order taken into custody by a courier block
 -- pays the blocked captain the trip so far only if a second admin records that the review cleared them, within 2 working days.
 CREATE TABLE IF NOT EXISTS courier_block_reviews (
   order_id BIGINT PRIMARY KEY REFERENCES orders(id),
   driver_id BIGINT NOT NULL REFERENCES users(id),
   blocked_by BIGINT NOT NULL REFERENCES users(id),
-  service TEXT NOT NULL CHECK (service IN ('ride','shop','parcel','freight')),
+  service TEXT NOT NULL CHECK (service IN ('ride','shop')),
   from_status TEXT NOT NULL,
   trip_pay_cents BIGINT NOT NULL CHECK (trip_pay_cents >= 0),
   blocked_at BIGINT NOT NULL,

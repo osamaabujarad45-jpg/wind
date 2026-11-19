@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
-import { cashCommandBody, cashCommandKey, formAfter, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashOutcome } from '../../admin-cash-command';
+import { cashCommandBody, cashCommandKey, formAfter, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -16,10 +16,10 @@ const cashIO = (actorId: number): CashIO => ({
   read: async () => parseCashSlot(await storage.get(cashCommandKey(actorId), true)),
   write: async command => { await storage.set(cashCommandKey(actorId), command && JSON.stringify(command), true); },
   receipt: command => api<{ entry: CashEntry | null }>(`/admin/cash/commands/${command.requestId}`),
-  send: command => api<CashEntry>(`/admin/cash/${command.kind}`, cashCommandBody(command)),
+  send: command => api<CashEntry>(`/admin/cash/${command.kind === 'payout' ? 'adjustment' : command.kind}`, cashCommandBody(command)),
   exclusive: run => storage.exclusive(run, 'wind.admin.cash'),
 });
-type Form = { id: number; kind: 'remittance' | 'adjustment'; amount: string; note: string; requestId: string; uncertain?: boolean };
+type Form = { id: number; kind: CashKind; amount: string; note: string; requestId: string; uncertain?: boolean };
 type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string; reference?: string | null };
 
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
@@ -45,16 +45,17 @@ export default function AdminCash() {
   const cents = minorFromText;
   const inFlight = useRef(false); // a confirm built in an earlier render sees a stale `busy`: this one is current
   // Why the amount cannot be recorded, or null. The server stays authoritative; this only spares a confirm that would fail.
-  const amountProblem = (kind: 'remittance' | 'adjustment', text: string, room: number) => {
+  const amountProblem = (kind: CashKind, text: string, room: number) => {
     const value = cents(text);
     if (Number.isNaN(value)) return c.cash_amount_format;
     if (value === 0) return c.cash_amount_needed;
     if (kind === 'remittance' && (value < 0 || value > room)) return c.err_invalid_amount;
+    if (kind === 'payout' && (value < 0 || value > -room)) return c.err_invalid_amount;
     if (kind === 'adjustment' && value < 0) return c.err_approval_required; // forgiving debt needs a second finance approver
     return null;
   };
 
-  const recorded = (entry: CashEntry) => setMessage(entry.reference ? fill(c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded);
+  const recorded = (entry: CashEntry) => setMessage(entry.reference ? fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded);
   // After a restart the saved form comes back locked until this admin's command receipt or a same-id resend settles it.
   useEffect(() => {
     if (!actorId) return;
@@ -125,11 +126,11 @@ export default function AdminCash() {
               onChangeText={amount => setOpen({ ...open, amount })} disabled={busy || !!open.uncertain} />
             <Field label={open.kind === 'remittance' ? c.problemNote : c.cashReason} value={open.note} maxLength={open.kind === 'remittance' ? 200 : 500}
               onChangeText={note => setOpen({ ...open, note })} disabled={busy || !!open.uncertain} />
-            {!open.uncertain && <Button title={open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
-              disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind === 'adjustment' && open.note.trim().length < 5)}
+            {!open.uncertain && <Button title={open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
+              disabled={busy || !!amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) || (open.kind !== 'remittance' && open.note.trim().length < 5)}
               reason={busy ? c.wait_busy : amountProblem(open.kind, open.amount, row.owedCents - row.pendingCents) ?? c.reason_min5}
-              onPress={() => confirm(fill(open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
-                () => void submit(), open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />}
+              onPress={() => confirm(fill(open.kind === 'payout' ? c.cashReviewPayout : open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
+                () => void submit(), open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />}
             {open.uncertain && <>
               {/* The balance already counts this entry's own pending copy, so the same-id resend is the one way to settle it. */}
               <Txt variant="caption" style={{ marginTop: 8 }}>{c.cashUncertain}</Txt>
@@ -141,7 +142,7 @@ export default function AdminCash() {
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={blocked || row.owedCents - row.pendingCents <= 0} reason={blocked ? blockedReason : c.cash_none_owed}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
             {row.owedCents - row.pendingCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked} reason={blockedReason}
-              onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: String((row.pendingCents - row.owedCents) / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
+              onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'payout', amount: String((row.pendingCents - row.owedCents) / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
             <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
           </Row>}
         </Card>

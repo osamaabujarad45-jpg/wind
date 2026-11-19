@@ -18,13 +18,14 @@ const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
-NON_LEGACY_TABLES.add('courier_block_reviews'); // PostgreSQL-only (migration 39): SQLite has no ride lifecycle or block review
 NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; a cutover simply asks the user to request it again
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
 const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
+const importValue = (table: Table, row: Row, column: string) =>
+  table.name === 'courier_block_reviews' && column === 'cleared' && row[column] !== null ? Boolean(row[column]) : row[column];
 // Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
 const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
@@ -121,7 +122,7 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
       for(const entries of grouped.values())entries.sort();
       return grouped;
     };
-    const source = group(snapshot.rows[table.name].map(row => Object.fromEntries(columns.map(c => [c.name, row[c.name]])))), target = group(rows);
+    const source = group(snapshot.rows[table.name].map(row => Object.fromEntries(columns.map(c => [c.name, importValue(table, row, c.name)])))), target = group(rows);
     for (const [key, value] of source) if (JSON.stringify(target.get(key)) !== JSON.stringify(value)) mismatches.push({ table: table.name, key, reason: target.has(key) ? 'row/multiplicity differs' : 'missing key' });
     for (const key of target.keys()) if (!source.has(key)) mismatches.push({ table: table.name, key, reason: 'unexpected key' });
     tables.push({ table: table.name, keyColumns:table.keyColumns, sourceRows: snapshot.rows[table.name].length, targetRows: rows.length,
@@ -202,11 +203,12 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
       // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
       const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
-        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger']);
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
-      // Assignment guards lock accounts; insert users before the deferred-reference tables.
-      for (const table of [...snapshot.tables].sort((a,b) => Number(b.name === 'users') - Number(a.name === 'users'))) for (const row of snapshot.rows[table.name]) {
+      // Users satisfy assignment guards, and reviews reference the already imported orders.
+      const importRank = (name: string) => name === 'users' ? -1 : name === 'courier_block_reviews' ? 1 : 0;
+      for (const table of [...snapshot.tables].sort((a,b) => importRank(a.name) - importRank(b.name))) for (const row of snapshot.rows[table.name]) {
         if (NON_LEGACY_TABLES.has(table.name)) continue; // policy seed installed by migration 11; quotes/restrictions are PG-only (see preflight)
         const key = keyOf(table, row);
         await database.run('SAVEPOINT import_row');
@@ -216,7 +218,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
             if (amount !== null && cents! / 100 !== amount) rounding.push({ table: table.name, key, column, legacyAmount: amount, minor: cents });
           }
           const columns = importColumns(table);
-          await database.run(`INSERT INTO ${quote(table.name)} (${columns.map(c => quote(c.name)).join(',')}) VALUES(${columns.map(() => '?').join(',')})`, ...columns.map(c => row[c.name]));
+          await database.run(`INSERT INTO ${quote(table.name)} (${columns.map(c => quote(c.name)).join(',')}) VALUES(${columns.map(() => '?').join(',')})`, ...columns.map(c => importValue(table, row, c.name)));
         } catch (error) {
           await database.run('ROLLBACK TO SAVEPOINT import_row');
           const e = error as { code?: string; constraint?: string };
