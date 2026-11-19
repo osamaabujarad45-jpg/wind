@@ -69,7 +69,8 @@ export default function AdminCash() {
     const live = { get current() { return generation.current === run; } };
     try {
       for (const legacy of [true, false]) {
-        const outcome = await recoverCashCommand(cashIO(id, legacy), id);
+        if (!live.current) return; // superseded: stop before the next lookup
+        const outcome = await recoverCashCommand(cashIO(id, legacy), id, () => live.current);
         if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
         if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
@@ -91,7 +92,7 @@ export default function AdminCash() {
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     try {
-      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.origin);
+      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain);
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes

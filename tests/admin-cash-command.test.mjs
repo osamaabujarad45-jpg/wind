@@ -63,9 +63,22 @@ for (const status of [400, 404]) { // the server refused this request id before 
   const thin = rig({ receipt: async () => ({ entry: { id: 9, reference: 'R-9' } }) }); thin.stored = command;
   assert.equal((await recoverCashCommand(thin, 7)).state, 'unconfirmed');
   assert.equal(thin.stored, command);
-  // A refusal whose slot cannot be cleared stays unconfirmed, never resendable after a restart.
+  // Sol R12-M2: a refusal whose slot cannot be cleared is marked refused; a restart and a Retry settle it by receipt only.
   const stuck = rig({ send: failing(400) }); stuck.write = async c => { if (c === null) throw new Error('disk'); stuck.stored = c; };
-  assert.equal((await sendCashCommand(stuck, command)).state, 'unconfirmed');
+  assert.equal((await sendCashCommand(stuck, command)).state, 'refused');
+  assert.equal(stuck.stored.refused, true);
+  assert.equal(stuck.sends, 1);
+  const afterRestart = rig(); afterRestart.stored = stuck.stored;
+  assert.deepEqual([(await recoverCashCommand(afterRestart, 7)).state, afterRestart.sends], ['refused', 0]);
+  const retried = rig(); retried.stored = stuck.stored;
+  assert.deepEqual([(await sendCashCommand(retried, command, true)).state, retried.sends], ['refused', 0]);
+  // Sol R12-M1 / Haiku r10 M1: a fresh form's Retry after a lost reply is a retry too (its slot was cleared elsewhere).
+  const fresh = rig(); fresh.stored = null;
+  assert.deepEqual([(await sendCashCommand(fresh, command, true)).error, fresh.sends], ['cash_command_settled', 0]);
+  // Sol R12-L2: a recovery that another admin's sign-in superseded stops before its lookup and leaves the slot alone.
+  const superseded = rig(); superseded.stored = command;
+  assert.deepEqual(await recoverCashCommand(superseded, 7, () => false), { state: 'empty' });
+  assert.deepEqual([superseded.receipts, superseded.stored], [0, command]);
 }
 for (const language of ['ar', 'en']) for (const key of ['err_cash_command_settled', 'cashPendingElsewhere']) assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 { // Sol R10-H1: a refused restored form closes. It would only ever send its saved record, so an edit could not be what is sent.
@@ -156,8 +169,13 @@ assert.equal(legacyCashCommandKey(7), 'adminCash.7');
   const none = rig(); none.stored = legacy;
   assert.deepEqual(await recoverCashCommand(none, 7), { state: 'refused', command: legacy, error: 'cash_command_ambiguous' });
   assert.equal(none.sends, 0); assert.equal(none.stored, null);
-  const booked = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8' } }) }); booked.stored = legacy;
+  // Its receipt settles it under either meaning, when amount, kind and note match (Sol R12-L1).
+  const booked = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8', kind: 'adjustment', amountCents: 2000, note: legacy.note, source: 'payout' } }) }); booked.stored = legacy;
   assert.equal((await recoverCashCommand(booked, 7)).state, 'recorded');
+  const thinLegacy = rig({ receipt: async () => ({ entry: { id: 8, reference: 'P-8' } }) }); thinLegacy.stored = legacy;
+  assert.deepEqual([(await recoverCashCommand(thinLegacy, 7)).state, thinLegacy.stored], ['unconfirmed', legacy], 'a receipt naming only its id settles nothing');
+  const otherAmount = rig({ receipt: async () => ({ entry: { id: 8, kind: 'adjustment', amountCents: 999, note: legacy.note } }) }); otherAmount.stored = legacy;
+  assert.equal((await recoverCashCommand(otherAmount, 7)).error, 'idempotency_conflict');
   const unknown = rig({ receipt: failing(503) }); unknown.stored = legacy;
   assert.equal((await recoverCashCommand(unknown, 7)).state, 'unconfirmed');
   assert.equal(unknown.stored, legacy, 'kept for the next receipt lookup');
@@ -190,7 +208,7 @@ assert.doesNotMatch(screen, /recoveryStorage/);
 assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(\(legacy \? legacyCashCommandKey : cashCommandKey\)\(actorId\), true\)\)/);
 // A retry resends the restored record itself, from its own slot, never one rebuilt from the form (Sol R9-H1).
 assert.match(screen, /sendCashCommand\(cashIO\(actorId, !!open\.legacy\), open\.origin \?\? newCashCommand\(/);
-assert.match(screen, /, !!open\.origin\);/); // a restored form's send is a retry (Haiku r9 M1)
+assert.match(screen, /, !!open\.uncertain\);/); // every uncertain form's send is a retry, fresh or restored (Sol R12-M1, Haiku r10 M1)
 // Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
 assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
 assert.equal(parseCashSlot(null), null);

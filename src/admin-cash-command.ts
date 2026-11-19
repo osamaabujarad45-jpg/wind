@@ -5,7 +5,8 @@ import { newRequestId } from './command-id.ts';
 export type CashKind = 'remittance' | 'adjustment' | 'payout';
 // schemaVersion 2 (this build): a positive 'adjustment' is a charge and a payout is its own kind. Version 1 is the installed
 // build's record, whose Pay driver also saved a positive 'adjustment': its intent is unknowable (Sol R8-H1).
-export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; actorId: number; requestId: string; driverId: number;
+// `refused`: the server refused it for good but the slot could not be cleared; it is then settled by receipt only (Sol R12-M2).
+export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; refused?: true; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
 export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string; source?: string };
 export type CashIO = { read: () => Promise<unknown>; write: (command: CashCommand | null) => Promise<void>;
@@ -68,11 +69,17 @@ const settledElsewhere = 'cash_command_settled';
 /** Settle a command by its receipt alone, never by sending it. Used for an installed build's command whose meaning is
  *  unknowable (any receipt settles it), and for a retry whose slot no longer holds it: another tab or window already
  *  settled it, so resending could book it twice (Haiku r9 M1). No receipt: refused for good, check the balance. */
-async function settleByReceipt(io: CashIO, command: CashCommand): Promise<CashOutcome> {
+async function settleByReceipt(io: CashIO, command: CashCommand, alive: () => boolean = () => true): Promise<CashOutcome> {
   const legacy = ambiguousLegacy(command);
   try {
+    if (!alive()) return { state: 'empty' };
     const { entry } = await io.receipt(command);
-    const match = entry && !legacy ? receiptMatches(entry, command) : true;
+    if (!alive()) return { state: 'empty' }; // another admin signed in meanwhile: that receipt answered for them, not for this slot
+    // An installed build's adjustment is a payout or a charge: either meaning settles it, but amount, kind and note must
+    // match, and a receipt naming only its id settles nothing (Sol R12-L1, Haiku r10 N1).
+    const match = !entry ? false : legacy
+      ? (entry.amountCents === undefined ? undefined : entry.kind === 'adjustment' && entry.amountCents === command.amountCents && (entry.note ?? '') === command.note)
+      : receiptMatches(entry, command);
     if (entry && match === undefined) return { state: 'unconfirmed', command };
     // Clear only this command: another tab may have settled it and a different command may hold the slot now.
     const now = await io.read().then(raw => readCashCommand(raw, command.actorId)).catch(() => null);
@@ -102,7 +109,7 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false)
     if (saved && saved.requestId !== command.requestId) throw new Error('cash_command_pending');
     // An installed build's positive adjustment is never sent under either meaning (Sol R9-H1), and a retry whose slot
     // was cleared elsewhere is never sent again (Haiku r9 M1): both are settled by their receipt alone.
-    if (ambiguousLegacy(command) || (saved && ambiguousLegacy(saved)) || (retry && !saved)) return settleByReceipt(io, saved ?? command);
+    if (ambiguousLegacy(command) || (saved && (ambiguousLegacy(saved) || saved.refused)) || (retry && !saved)) return settleByReceipt(io, saved ?? command);
     await io.write(command); // before the request: a reply lost after this point is still recoverable
     try {
       const entry = await io.send(command);
@@ -120,8 +127,12 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false)
           if (entry) { await clear(io); return { state: 'recorded', command, entry }; }
         } catch { return { state: 'unconfirmed', command, error }; }
       }
-      // A refusal whose slot could not be cleared stays unconfirmed: after a restart it must not come back as resendable.
-      if (!(await io.write(null).then(() => true, () => false))) return { state: 'unconfirmed', command, error };
+      // A refusal whose slot could not be cleared is marked refused, so a restart or a Retry settles it by receipt only and
+      // never sends it again (Sol R12-M2). If even that write fails, storage is broken: it stays unconfirmed.
+      if (!(await io.write(null).then(() => true, () => false))) {
+        if (await io.write({ ...command, refused: true }).then(() => true, () => false)) return { state: 'refused', command, error };
+        return { state: 'unconfirmed', command, error };
+      }
       return { state: 'refused', command, error };
     }
   });
@@ -129,7 +140,7 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false)
 
 /** After a restart: the admin's own command receipt settles a saved command; no receipt keeps it unconfirmed.
  *  An unreadable record cannot be resent, so it is dropped; a storage read failure is thrown and keeps it. */
-export function recoverCashCommand(io: CashIO, actorId: number): Promise<CashOutcome> {
+export function recoverCashCommand(io: CashIO, actorId: number, alive: () => boolean = () => true): Promise<CashOutcome> {
   return locked(io, async () => {
     let command: CashCommand | null;
     try { command = readCashCommand(await io.read(), actorId); }
@@ -139,9 +150,12 @@ export function recoverCashCommand(io: CashIO, actorId: number): Promise<CashOut
       return { state: 'empty' };
     }
     if (!command) return { state: 'empty' };
-    if (ambiguousLegacy(command)) return settleByReceipt(io, command);
+    if (ambiguousLegacy(command) || command.refused) return settleByReceipt(io, command, alive);
     try {
+      // A recovery started for another admin stops before its lookup and before touching the slot (Sol R12-L2).
+      if (!alive()) return { state: 'empty' };
       const { entry } = await io.receipt(command);
+      if (!alive()) return { state: 'empty' };
       if (!entry) return { state: 'unconfirmed', command }; // a point-in-time read, never proof the first send cannot land
       const match = receiptMatches(entry, command);
       if (match === undefined) return { state: 'unconfirmed', command };

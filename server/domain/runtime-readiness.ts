@@ -48,13 +48,13 @@ export function clientUpdateRequired(sent: string | string[] | undefined, env: N
 
 /** Cashier protocol (Sol R10-H2, Haiku r9 M2): from client build 10105 a pending cash command lives in its own slot and
  *  every positive adjustment says payout or charge. A fresh cash write from an older bundle, or in production from a
- *  bundle that sends no build at all (installs up to 1.0.13), is refused with the update screen. Outside production a
- *  request without the header is a script or a test, not a cashier. */
+ *  bundle that sends no build header at all (builds before the forced-upgrade gate), is refused with 426. Outside
+ *  production a request without the header is a script or a test, not a cashier. Digits only (Haiku r10 N2). */
 export const cashProtocolBuild = 10105;
 export function cashClientFenced(sent: string | string[] | undefined, production: boolean) {
   if (sent === undefined) return production;
-  const build = Number((Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim());
-  return !(Number.isSafeInteger(build) && build >= cashProtocolBuild);
+  const first = (Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim();
+  return !(/^\d{1,9}$/.test(first) && Number(first) >= cashProtocolBuild);
 }
 
 /** Additive operator detail; bare legacy /ready remains a storage probe, not a feature activation claim. */

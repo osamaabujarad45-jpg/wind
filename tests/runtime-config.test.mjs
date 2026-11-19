@@ -38,6 +38,8 @@ assert.equal(cashClientFenced(undefined, true), true, 'production: an install up
 assert.equal(cashClientFenced(undefined, false), false, 'outside production: scripts and tests');
 assert.equal(cashClientFenced('10104, 10105', true), true, 'a repeated header cannot slip past with a later value');
 assert.equal(cashClientFenced('junk', true), true);
+assert.equal(cashClientFenced('0x2791', true), true, 'digits only (Haiku r10 N2)');
+assert.equal(cashClientFenced('1e5', true), true);
 // Every map renderer reads its ready deadline from the setting, and the WebView page gets it through its config fragment.
 resetRuntime(); assert.equal(mapReadyMs(), 20_000);
 configureRuntime({ ...clientConfiguration({}, Date.now()), values: { ...clientConfiguration({}, Date.now()).values, mapReadyTimeoutMs: 9_000 } });
