@@ -18,8 +18,10 @@
 #
 # Speed: node_modules is installed once per (package-lock.json, image) into the volume wind-test-cache and hard-linked into
 # each run (3.7 s, against 26 s for a copy); a package file whose content or mode changed (change time) is detected after
-# the run, which then fails and drops the entry, and an entry left in use by a killed run is reinstalled. typecheck+lint+export, then unit+persistence+parity, run side by side (--serial: one at a
-# time). Runs on one device are serialized by a lock; a second run waits for the first (up to an hour).
+# the run, which then fails and drops the entry. An entry left in use by a killed run stops setup until it is cleared by
+# hand (the message says how). typecheck+lint+export, then unit+persistence+parity, run side by side (--serial: one at a
+# time). Runs are serialized twice: a host lock, and a lock inside the shared cache volume, so runners in different WSL
+# namespaces on one Docker daemon also wait for each other (up to an hour each).
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SERIAL=0
@@ -63,11 +65,14 @@ g ls-files -c -i --exclude-standard > "$SRC/ignored" 2>/dev/null || fail_setup "
 [ -s "$SRC/ignored" ] && fail_setup "tracked files match ignore rules (untrack them first): $(head -3 "$SRC/ignored" | tr '\n' ' ')"
 # Credential-looking names, on both routes (Sol R10-L2): a clean archive refuses a tracked one, a dirty run skips one.
 # .env.example is the reviewed template and passes.
-SECRET='*/.env|*/.env.*|*/.envrc|*/.npmrc|*/.netrc|*/.git-credentials|*.pem|*.key|*.p8|*.p12|*.jks|*.keystore|*.mobileprovision|*/id_rsa*|*/id_ed25519*|*/credentials*|*/service-account*|*/secrets*'
+# Matched on the lowercased path (Windows names are case-insensitive): every .env* name except the template.
+SECRET='*/.env*|*/.npmrc|*/.netrc|*/.git-credentials|*.pem|*.key|*.p8|*.p12|*.jks|*.keystore|*.mobileprovision|*/id_rsa*|*/id_ed25519*|*/credentials*|*/service-account*|*/secrets*'
 if [ -n "$COMMIT" ] && [ "$DIRTY" = 0 ]; then
   # Gate evidence: exactly the committed tree, from git objects. No working-tree file can reach the container (Sol R9-M1).
-  g ls-files -z > "$SRC/all" || fail_setup "list tracked files"
-  (xargs -0 -r sh -c 'for f; do case "/$f" in */.env.example) ;; '"$SECRET"') echo "$f"; exit 1 ;; esac; done; :' sh < "$SRC/all") > "$SRC/secret" \
+  # The names come from the pinned commit's own tree, and HEAD must still be that commit (Sol R11-M2).
+  g ls-tree -r -z --name-only "$COMMIT" > "$SRC/all" || fail_setup "list $COMMIT"
+  [ "$(g rev-parse HEAD 2>/dev/null)" = "$COMMIT" ] || fail_setup "HEAD moved while the run was starting; run it again"
+  (xargs -0 -r sh -c 'for f; do l=$(printf "%s" "/$f" | tr "[:upper:]" "[:lower:]"); case "$l" in */.env.example) ;; '"$SECRET"') echo "$f"; exit 1 ;; esac; done; :' sh < "$SRC/all") > "$SRC/secret" \
     || fail_setup "a tracked file looks like a credential: $(cat "$SRC/secret"); untrack it or rename it"
   g archive --format=tar "$COMMIT" > "$SRC/src.tar" || fail_setup "archive $COMMIT"
 else
@@ -77,7 +82,7 @@ else
   REAL=$(cd "$REPO" && pwd -P)
   (cd "$REPO" && xargs -0 -r sh -c '
     for f; do
-      case "/$f" in */.env.example) ;; '"$SECRET"') continue ;; esac
+      l=$(printf "%s" "/$f" | tr "[:upper:]" "[:lower:]"); case "$l" in */.env.example) ;; '"$SECRET"') continue ;; esac
       [ -e "$f" ] || [ -L "$f" ] || continue
       if [ -d "$f" ] && [ ! -L "$f" ]; then echo "tracked path is now a directory: $f" >&2; exit 1; fi
       d=$(dirname "$f"); [ "$(cd "$d" && pwd -P)" = "$0/$d" ] || [ "$d" = . ] || { echo "parent is a symlink: $f" >&2; exit 1; }
@@ -119,6 +124,8 @@ docker run --rm --network host --entrypoint sh \
   set -u
   die() { echo "setup failed: $1" >> /logs/summary.txt; exit 2; }
   mkdir -p /cache/runs /cache/nm || die "cache volume"
+  # One run at a time per cache volume, whichever WSL namespace started it (Sol R11-M1): held until the container exits.
+  exec 8>/cache/.wind-run.lock && flock -w 3600 8 || die "the cache volume stayed busy for an hour"
   RUN=$(mktemp -d /cache/runs/run.XXXXXX) || die "run dir"
   case "$RUN" in /cache/runs/run.??????) ;; *) die "unexpected run dir" ;; esac
   STAGE=""
@@ -174,7 +181,7 @@ docker run --rm --network host --entrypoint sh \
   # A package file rewritten in place shares its inode with the cache: the run is not evidence, and the entry is dropped.
   # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
   # A scan that cannot read the entry fails the run: an unreadable cache is not a clean one (Sol R10-M2).
-  find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     || { echo "dependency cache scan failed" >> /logs/summary.txt; status=1; }
+  find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     || { echo "dependency cache scan failed (entry dropped)" >> /logs/summary.txt; status=1; echo scan-failed > "$RUN/changed"; }
   changed=$(head -3 "$RUN/changed")
   if [ -n "$changed" ]; then
     { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt

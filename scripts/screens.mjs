@@ -32,6 +32,9 @@ for (const key of ['WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRE
 // Synthetic screenshots also cover gated legacy services; production defaults stay parcel-only.
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight,shop';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+// The fixture sets the driver-presence mode itself rather than inheriting the caller's (Sol R11-L2): presence on (the card)
+// for the screenshots, off for the production accept-to-tracking check below.
+delete process.env.WIND_DRIVER_PRESENCE;
 // Deterministic West Bank road fixture (recorded OSRM highway geometries, with curved fallback) so every route map draws real road lines offline.
 const recordedRoutes = JSON.parse(readFileSync(join(root, 'scripts', 'screens-routes.json'), 'utf8'));
 function syntheticRoad([lng1, lat1], [lng2, lat2]) {
@@ -449,6 +452,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   // Production's driver flow (presence off, SQLite): the job board is the whole flow, and accepting a job is what starts
   // sharing the location. The API reads this per request; presence returns for the screenshots and checks after this block.
   process.env.WIND_DRIVER_PRESENCE = 'off';
+  try {
   const testOrder = await order(layla, true, { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'bireh',
     pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: 'فحص دورة السائق' });
   const context = await browser.newContext({ viewport: phone, reducedMotion: 'reduce', permissions: ['geolocation'],
@@ -615,7 +619,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, loggedOutPublications);
   await context.close();
   console.log('Driver UI: idle GPS privacy, foreground assignment/permission recovery, revoked/granted/pending/failed/stale permission reads, busy offers, role hints, completion cleanup, direct accept, late callbacks and logout passed');
-  delete process.env.WIND_DRIVER_PRESENCE;
+  } finally { delete process.env.WIND_DRIVER_PRESENCE; } // back to the fixture's presence-on mode, even after a failed check
 }
 // ---------- 4b. interactive states: a held quote and an offer price outside its band ----------
 if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-range')) {
@@ -646,17 +650,20 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
   const calculating = screens.find(s => s.id === 'book-calculating');
   const offerRange = screens.find(s => s.id === 'driver-offer-range');
   // A smart-priced ride no driver has taken yet, and a fresh approved driver with no custody, so the offer form opens.
-  // Its own rider: Omar already has a ride open, and one rider holds one active ride.
-  const rider = await register('0599000013', 'رهف عمر');
-  await smartOrder(rider, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
-  const fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
-  await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
+  // Its own rider: Omar already has a ride open, and one rider holds one active ride. Seeded only when that shot runs.
+  let fresh;
+  if (offerRange) {
+    const rider = await register('0599000013', 'رهف عمر');
+    await smartOrder(rider, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
+    fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
+    await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
+  }
   for (const language of ['ar', 'en']) {
     // The quote request is held for 9 s, so the footer shows the calculating reason and a disabled Request.
-    await stateShot(calculating, language, layla.token, {
+    if (calculating) await stateShot(calculating, language, layla.token, {
       setup: page => page.route(/\/api\/price(?:\?|$)/, async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
     });
-    await stateShot(offerRange, language, fresh.token, {
+    if (offerRange) await stateShot(offerRange, language, fresh.token, {
       run: async page => {
         await page.getByRole('button', { name: copy[language].offerPrice, exact: true }).first().click();
         await page.getByLabel(`${copy[language].offerPrice} (₪)`).first().fill('5');
