@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
-import { cashCommandBody, cashCommandKey, formAfter, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
+import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -12,14 +12,16 @@ import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, ha
 type Balance = { driverId: number; name: string; phone: string; owedCents: number; pendingCents: number; lastRemittanceAt: number | null };
 // A-01: the form is saved in the admin's own secure slot before it is sent (it outlives a forced sign-out, like a pending
 // booking) and settled after a restart by this admin's command receipt or a same-id resend.
-const cashIO = (actorId: number): CashIO => ({
-  read: async () => parseCashSlot(await storage.get(cashCommandKey(actorId), true)),
-  write: async command => { await storage.set(cashCommandKey(actorId), command && JSON.stringify(command), true); },
+const cashIO = (actorId: number, legacy = false): CashIO => ({
+  read: async () => parseCashSlot(await storage.get((legacy ? legacyCashCommandKey : cashCommandKey)(actorId), true)),
+  write: async command => { await storage.set((legacy ? legacyCashCommandKey : cashCommandKey)(actorId), command && JSON.stringify(command), true); },
   receipt: command => api<{ entry: CashEntry | null }>(`/admin/cash/commands/${command.requestId}`),
   send: command => api<CashEntry>(`/admin/cash/${command.kind === 'payout' ? 'adjustment' : command.kind}`, cashCommandBody(command)),
   exclusive: run => storage.exclusive(run, 'wind.admin.cash'),
 });
-type Form = { id: number; kind: CashKind; amount: string; note: string; requestId: string; uncertain?: boolean };
+// A restored form keeps the saved command itself (`origin`) and its slot (`legacy`): a retry resends exactly that record,
+// never one rebuilt from the form under this build's meaning (Sol R9-H1).
+type Form = { id: number; kind: CashKind; amount: string; note: string; requestId: string; uncertain?: boolean; origin?: CashCommand; legacy?: boolean };
 type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string; reference?: string | null };
 
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
@@ -61,13 +63,19 @@ export default function AdminCash() {
   useEffect(() => {
     if (!actorId) return;
     let live = true;
-    recoverCashCommand(cashIO(actorId), actorId).then(outcome => {
-      if (!live || outcome.state === 'empty') return;
-      if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); return; }
-      if (outcome.state === 'refused') { fail(err(outcome.error)); return; } // an installed build's unknowable entry: enter it again
-      const { command } = outcome;
-      setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true });
-    }).catch(e => { if (live) fail(err(e)); }) // the saved command stays on the device for the next attempt
+    // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
+    // form at a time: a second unconfirmed command stays saved and comes back once the first is settled.
+    (async () => {
+      for (const legacy of [true, false]) {
+        const outcome = await recoverCashCommand(cashIO(actorId, legacy), actorId);
+        if (!live || outcome.state === 'empty') continue;
+        if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
+        if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
+        const { command } = outcome;
+        setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
+        return;
+      }
+    })().catch(e => { if (live) fail(err(e)); }) // the saved command stays on the device for the next attempt
       .finally(() => { if (live) setRecovering(false); });
     return () => { live = false; };
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
@@ -77,7 +85,7 @@ export default function AdminCash() {
     inFlight.current = true;
     setBusy(true); setFailure(''); setMessage('');
     try {
-      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId), newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId));
+      const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId));
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes

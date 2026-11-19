@@ -300,7 +300,7 @@ try {
   // The grant pauses on the driver row while it holds the order lock. The denial must wait behind it.
   const blocker = await persistence.pool.connect();
   const waitForReviewLocks = async count => {
-    const deadline = Date.now() + 350;
+    const deadline = Date.now() + 5000; // a wait loop, not a sleep: generous for a loaded gate run (Haiku r7 N-6)
     for (;;) {
       const { n } = await persistence.one(`WITH waiting AS (
         SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_stat_activity

@@ -1,7 +1,7 @@
 // T25: administrator resolution for pending cash handovers (additive module: the frozen main.ts route
-// inventory requires new routes to own their declarations). A handover its driver cannot confirm — blocked,
-// gone, dispute deadlock — stays resolvable; every resolution names its actor, reason and optional evidence
-// reference, and the CAS shares the driver's own predicate so a double tap or a racing driver decision moves
+// inventory requires new routes to own their declarations). A pending handover its driver cannot confirm (blocked,
+// gone) stays resolvable. A disputed one is final and moves no money: the office records a corrected remittance.
+// Every resolution names its actor, reason and optional evidence reference, and the CAS shares the driver's own predicate so a double tap or a racing driver decision moves
 // the entry exactly once. Callers run under the HTTP envelope's transaction, which queuePush requires.
 import type { SQLInputValue } from 'node:sqlite';
 import type { User } from '../../src/model.ts';

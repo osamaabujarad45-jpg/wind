@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cashCommandBody, cashCommandKey, formAfter, newCashCommand, parseCashSlot, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
+import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, newCashCommand, parseCashSlot, readCashCommand, recoverCashCommand, refusedForGood, sendCashCommand } from '../src/admin-cash-command.ts';
 import { copy } from '../src/copy.ts';
 
 // A-01: a remittance whose reply is lost survives an app restart and a forced sign-out, and is settled only by the admin's
@@ -29,6 +29,12 @@ for (const status of [400, 404]) { // the server refused this request id before 
   const io = rig({ send: failing(status) });
   assert.equal((await sendCashCommand(io, command)).state, 'refused', String(status));
   assert.equal(io.stored, null);
+}
+{ // Haiku r7 L-4: a receipt for the same id with another amount or note is a conflict, never shown as recorded.
+  const io = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5', amountCents: 1250, note: 'Another note' } }) });
+  assert.deepEqual(await sendCashCommand(io, command), { state: 'refused', command, error: 'idempotency_conflict' });
+  const same = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5', amountCents: 1250, note: 'Office handover' } }) });
+  assert.equal((await sendCashCommand(same, command)).state, 'recorded');
 }
 { // 409 may be this admin's own entry with other fields: the receipt decides, and only an empty receipt means refused.
   const own = rig({ send: failing(409), receipt: async () => ({ entry: { id: 5, reference: 'R-5' } }) });
@@ -98,7 +104,8 @@ assert.equal(refusedForGood(null), false);
 assert.deepEqual(cashCommandBody(command), { driverId: 42, amountCents: 1250, note: 'Office handover', requestId: command.requestId });
 assert.deepEqual(cashCommandBody({ ...command, kind: 'adjustment' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'charge' });
 assert.deepEqual(cashCommandBody({ ...command, kind: 'payout' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'payout', source: 'payout' });
-assert.equal(cashCommandKey(7), 'adminCash.7');
+assert.equal(cashCommandKey(7), 'adminCash.v2.7'); // its own slot: an installed bundle reads and clears only adminCash.7 (Sol R9-H2)
+assert.equal(legacyCashCommandKey(7), 'adminCash.7');
 
 // Sol R8-H1: the installed build saved its Pay driver as a positive 'adjustment' (schema 1). This build would send that as a
 // charge, so it is never sent: its receipt settles it, no receipt refuses it for good (enter it again), an unreadable receipt
@@ -118,6 +125,15 @@ assert.equal(cashCommandKey(7), 'adminCash.7');
   const outcome = await sendCashCommand(retry, newCashCommand(7, 42, 'adjustment', 2000, legacy.note, legacy.requestId));
   assert.deepEqual([outcome.state, outcome.error, retry.sends, retry.stored], ['refused', 'cash_command_ambiguous', 0, null]);
   assert.equal(formAfter({ requestId: legacy.requestId, uncertain: true }, outcome), null, 'its form closes: never resubmitted as a charge');
+  // Sol R9-H1: another tab settled it and cleared the slot; this tab's Retry submits the restored record (schema 1).
+  const cleared = rig(); cleared.stored = null;
+  const late = await sendCashCommand(cleared, legacy);
+  assert.deepEqual([late.state, late.error, cleared.sends, cleared.stored], ['refused', 'cash_command_ambiguous', 0, null]);
+  // ... and when a different command took the slot meanwhile, it is kept, not cleared by this settlement.
+  const other = newCashCommand(7, 42, 'remittance', 500, 'Office handover', '2b8f6a52-6c1e-4f7a-9d2b-3e4f5a6b7c8d');
+  const busy = rig(); busy.stored = other;
+  await assert.rejects(sendCashCommand(busy, legacy), /cash_command_pending/);
+  assert.equal(busy.stored, other);
   // Schema 1 remittances, negative adjustments and this build's charges are unambiguous and go through as before.
   const remit = rig(); remit.stored = { ...command, schemaVersion: 1 };
   assert.equal((await sendCashCommand(remit, { ...command, schemaVersion: 1 })).state, 'recorded');
@@ -129,9 +145,11 @@ for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'e
 // The screen keeps the command in the admin's own secure slot (not the token-scoped recovery store a forced sign-out wipes),
 // recovers when it opens, changes only the sent form, and blocks a new entry while one is unconfirmed.
 const screen = readFileSync(new URL('../src/app/admin/cash.tsx', import.meta.url), 'utf8');
-assert.match(screen, /storage\.(get|set)\(cashCommandKey\(actorId\)/);
+assert.match(screen, /storage\.(get|set)\(\(legacy \? legacyCashCommandKey : cashCommandKey\)\(actorId\)/);
 assert.doesNotMatch(screen, /recoveryStorage/);
-assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(cashCommandKey\(actorId\), true\)\)/);
+assert.match(screen, /read: async \(\) => parseCashSlot\(await storage\.get\(\(legacy \? legacyCashCommandKey : cashCommandKey\)\(actorId\), true\)\)/);
+// A retry resends the restored record itself, from its own slot, never one rebuilt from the form (Sol R9-H1).
+assert.match(screen, /sendCashCommand\(cashIO\(actorId, !!open\.legacy\), open\.origin \?\? newCashCommand\(/);
 assert.equal(parseCashSlot(null), null);
 assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);

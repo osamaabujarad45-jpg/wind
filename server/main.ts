@@ -766,7 +766,8 @@ async function pickupPay(order: Row, actorId: number, reason: NonNullable<Order[
   const originKm = from && Number.isFinite(from.km) ? from.km : null;
   const current = await currentPickupEvidence(order, order.driver_id, order.assigned_at ?? 0);
   const currentKm = current?.km ?? null;
-  const drivenKm = originKm != null && currentKm != null ? Math.max(0, originKm - currentKm) : null;
+  // Two decimals, as the review card prefills it: the suggestion, the grant preview and the paid amount agree (Haiku r7 L-1).
+  const drivenKm = originKm != null && currentKm != null ? Math.round(Math.max(0, originKm - currentKm) * 100) / 100 : null;
   const rate = (await settings()).pickupPayPerKm;
   const suggestedCents = drivenKm == null ? null : pickupPayCents(order, drivenKm, rate);
   await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_PAY_REVIEW', ?, ?)`,
@@ -3567,7 +3568,6 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   const positiveAdjustment = kind === 'adjustment' && amount > 0;
   const payout = intent === 'payout';
   const note = kind === 'adjustment' ? text(body.reason, 500, false) : text(body.note, 200, false);
-  if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input'); // every adjustment, payout included, names its reason
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !uuid.test(requestId))) fail(400, 'invalid_request_id');
   // A completed request can replay across the admin app update, even if its original form did not send intent.
@@ -3581,6 +3581,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     if (!sameEntry(saved)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
+  // After replay, so a saved entry still answers its own request id (Haiku r7 N-1): every new adjustment, payout included, names its reason.
+  if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     await lockCashDriver(Number(body.driverId));

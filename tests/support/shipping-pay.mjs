@@ -102,7 +102,7 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     await checkEntry(order, 0);
     await review(order, 'absent', false, 0, 0, { originKm: km(0.05), currentKm: km(0.05), suggestedCents: 0, originFixAt, currentFixAt });
 
-    const driven = km(0.05) - km(0.02);
+    const driven = Math.round((km(0.05) - km(0.02)) * 100) / 100; // two decimals, as the server records it and the card prefills it
     const distancePay = Math.round(driven * 125);
     order = await arrive(await accept(await book(), position(0.05)));
     jump(60_000);

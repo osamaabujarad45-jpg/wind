@@ -184,7 +184,7 @@ try {
   await call(`/orders/${carrier.id}/cancel`, { token: customer.token, body: {} });
   await call(`/admin/orders/${carrier.id}/pickup-pay-review`, { token: admin.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
   const partnerKm = crowKm(beforePickup, pinned.pickupPoint);
-  const partnerPay = Math.round(partnerKm * defaultSettings.pickupPayPerKm * 100);
+  const partnerPay = Math.round(Math.round(partnerKm * 100) / 100 * defaultSettings.pickupPayPerKm * 100); // driven km rounded to 2 decimals
   const partnerReview = (await call(`/orders/${pinnedOrder.id}`, { token: admin.token })).pickupPayReview;
   assert.deepEqual([partnerReview.reason, partnerReview.originKm, partnerReview.currentKm, partnerReview.suggestedCents],
     ['partner_cancelled', partnerKm, 0, partnerPay]);

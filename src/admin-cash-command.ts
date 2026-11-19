@@ -7,7 +7,7 @@ export type CashKind = 'remittance' | 'adjustment' | 'payout';
 // build's record, whose Pay driver also saved a positive 'adjustment': its intent is unknowable (Sol R8-H1).
 export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
-export type CashEntry = { id: number; kind?: CashKind; reference?: string | null };
+export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string };
 export type CashIO = { read: () => Promise<unknown>; write: (command: CashCommand | null) => Promise<void>;
   receipt: (command: CashCommand) => Promise<{ entry: CashEntry | null }>; send: (command: CashCommand) => Promise<CashEntry>;
   /** One command at a time across tabs: without it a second tab overwrites a saved unconfirmed command. */
@@ -22,8 +22,12 @@ const status = (error: unknown) => (error as { status?: number } | null)?.status
 const clear = (io: CashIO) => io.write(null).catch(() => undefined);
 const locked = <T>(io: CashIO, run: () => Promise<T>) => io.exclusive ? io.exclusive(run) : run();
 
-/** The account's own slot (like a pending booking): it outlives the session token, so a forced sign-out keeps it. */
-export const cashCommandKey = (actorId: number) => `adminCash.${actorId}`;
+/** The account's own slot (like a pending booking): it outlives the session token, so a forced sign-out keeps it.
+ *  Schema 2 has its own slot: an installed bundle reads only the legacy one and clears a record it cannot parse, which
+ *  would erase this build's pending request id (Sol R9-H2), and a rolled-back bundle never sees it either (Haiku r7 L-5). */
+export const cashCommandKey = (actorId: number) => `adminCash.v2.${actorId}`;
+/** The installed build's slot, read so its pending command is settled by its own receipt; this build never writes it. */
+export const legacyCashCommandKey = (actorId: number) => `adminCash.${actorId}`;
 /** The admin's slot as stored. Unparseable bytes are a broken cash record: dropped like one, not an error on every visit
  *  (no request id survives them, so nothing could be resent or looked up). */
 export function parseCashSlot(raw: string | null): unknown {
@@ -50,7 +54,9 @@ const ambiguous = 'cash_command_ambiguous';
 async function settleAmbiguous(io: CashIO, command: CashCommand): Promise<CashOutcome> {
   try {
     const { entry } = await io.receipt(command);
-    await clear(io);
+    // Clear only this command: another tab may have settled it and a different command may hold the slot now.
+    const now = await io.read().then(raw => readCashCommand(raw, command.actorId)).catch(() => null);
+    if (now?.requestId === command.requestId) await clear(io);
     return entry ? { state: 'recorded', command, entry } : { state: 'refused', command, error: ambiguous };
   } catch (error) { return { state: 'unconfirmed', command, error }; }
 }
@@ -72,7 +78,9 @@ export function sendCashCommand(io: CashIO, command: CashCommand): Promise<CashO
   return locked(io, async () => {
     const saved = readCashCommand(await io.read(), command.actorId);
     if (saved && saved.requestId !== command.requestId) throw new Error('cash_command_pending');
-    if (saved && ambiguousLegacy(saved)) return settleAmbiguous(io, saved); // a retry of it rebuilds the form: never send
+    // Never sent under either meaning, whether the slot still holds it or another tab already cleared it (Sol R9-H1):
+    // the restored form carries the original command, so the submitted record says what it is.
+    if (ambiguousLegacy(command) || (saved && ambiguousLegacy(saved))) return settleAmbiguous(io, saved ?? command);
     await io.write(command); // before the request: a reply lost after this point is still recoverable
     try {
       const entry = await io.send(command);
@@ -83,6 +91,11 @@ export function sendCashCommand(io: CashIO, command: CashCommand): Promise<CashO
       if (status(error) === 409) { // 409 can also mean this admin's own entry exists: only its receipt can tell
         try {
           const { entry } = await io.receipt(command);
+          // The same id with another amount or note is a different request (Haiku r7 L-4): never shown as recorded.
+          if (entry && entry.amountCents !== undefined && (entry.amountCents !== command.amountCents || (entry.note ?? '') !== command.note)) {
+            await clear(io);
+            return { state: 'refused', command, error: 'idempotency_conflict' };
+          }
           if (entry) { await clear(io); return { state: 'recorded', command, entry }; }
         } catch { return { state: 'unconfirmed', command, error }; }
       }

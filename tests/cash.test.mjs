@@ -82,6 +82,8 @@ try {
   const wrong = await call('/admin/cash/remittance', { token: admin.token, body: retry });
   assert.equal((await call('/admin/cash/remittance', { token: admin.token, body: retry })).id, wrong.id);
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, amountCents: 301 }, expect: 409 });
+  // Haiku r7 N-7: a remittance resent under its id with another note is a different request too.
+  assert.equal((await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, note: 'Changed note' }, expect: 409 })).error, 'idempotency_conflict');
   await call('/admin/cash/adjustment', { token: admin.token, body: { ...retry, reason: 'Same id, other form' }, expect: 409 });
   await call('/admin/cash/remittance', { token: admin.token, body: { ...retry, requestId: 'not-a-uuid' }, expect: 400 });
   // A-01: a lost reply is recovered from the recording admin's command receipt, never by recording again.
