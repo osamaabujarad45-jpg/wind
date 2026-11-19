@@ -49,6 +49,19 @@ try {
   for (const kind of ['decided','returned']) assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='notification.requested' AND payload->>'kind'=?",winner.id,kind),kind+' reaches its party');
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);
+
+  // Using the eligibility close route does not make a captain-carried return a custody recovery.
+  const officeReturn=await f.book();await f.assess(officeReturn,tiny);
+  await call(`/jobs/${officeReturn.id}/accept`,{token:loserDriver.token,body:{}});
+  for(const expectedStatus of ['assigned','at_pickup'])
+    await call(`/orders/${officeReturn.id}/advance`,{token:loserDriver.token,body:{requestId:randomUUID(),expectedStatus}});
+  await call(`/orders/${officeReturn.id}/exception`,{token:loserDriver.token,body:{requestId:randomUUID(),expectedStatus:'in_transit',reason:'absent'}});
+  const returningToOffice=await call(`/admin/orders/${officeReturn.id}/resolve`,{token:admin.token,body:{action:'return',reason:'Captain carrying return to office'}});
+  const {version}=await db.one('SELECT version FROM orders WHERE id=?',officeReturn.id);
+  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',expectedVersion:version});
+  assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?',`DRV-17 trip pay order ${officeReturn.id}`),
+    [{amount_cents:-2*Math.round(returningToOffice.price*100),recorded_by:admin.user.id}], 'office receipt without custody recovery pays both legs');
+
   // Vacated shared vehicle no longer blocks a different eligible driver.
   await call(`/orders/${ride.id}/cancel`, {token:f.customer.token,body:{}});
   const seats=await f.book({service:'ride',option:'1'});await f.assess(seats,{items:[],seats:5});

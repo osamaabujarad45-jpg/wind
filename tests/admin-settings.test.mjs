@@ -10,7 +10,7 @@ process.env.DB_PATH = join(dir, 'settings.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SUPPORT_CONTACT = 'Synthetic <support> & "contact"';
 
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -31,6 +31,8 @@ try {
   const token = (await call('/auth/login', { body: { phone: '0599700001', password: 'secret1' } })).token;
 
   const saved = () => call('/me', { token }).then(m => m.settings);
+  await persistence.run("INSERT INTO settings (key, value) VALUES ('returnPolicyFrom', 123)");
+  assert.equal(Object.hasOwn(await saved(), 'returnPolicyFrom'), false);
 
   // A blank field reaches the server as 0. It must be refused by name, not stored.
   for (const [body, field] of [

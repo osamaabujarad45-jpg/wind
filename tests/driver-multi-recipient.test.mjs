@@ -108,7 +108,8 @@ try {
   assert.equal(Number(earnings.jobs), 3);
   assert.equal(Number(earnings.gross), 50, 'a return collected no fare, so it adds no gross (SRS DRV-17)');
   assert.equal(Math.round(Number(earnings.commission) * 100), Math.round((recovered.commission + completedB.commission + returned.commission) * 100));
-  assert.equal(Math.round(earnings.net * 100), 5000 - Math.round(earnings.commission * 100));
+  assert.equal(earnings.tripPayCents, 2 * Math.round(returned.price * 100));
+  assert.equal(Math.round(earnings.net * 100), 5000 - Math.round(earnings.commission * 100) + earnings.tripPayCents);
   console.log(`${persistence.backend} multi-recipient: current run sheet, proof/cash association, lost ACK/reconnect, reattempt, sender return and earnings passed`);
 } finally {
   await shutdown(); globalThis.fetch = actualFetch; rmSync(directory, { recursive: true, force: true });

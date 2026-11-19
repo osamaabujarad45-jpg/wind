@@ -127,9 +127,10 @@ try {
   process.env.WIND_GOODS_COD = 'on';
   await pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000});
   assert.equal((await pay.collectCod(driver,order.id,{amountMinor:400})).status,'partial');
+  delete process.env.WIND_GOODS_COD;
   await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:601}), e => e.status === 400);
   const finalCollect = randomUUID(), finalRemit = randomUUID();
-  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected');
+  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected','existing COD can finish with the flag off');
   assert.equal(Number((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).collected_minor), 1000, 'retrying a lost final response does not collect twice');
   await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:500,requestId:finalCollect}), e => e.status === 409 && e.message === 'idempotency_conflict');
   assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic',requestId:finalRemit})).status,'remitted');
@@ -137,6 +138,7 @@ try {
   assert.deepEqual(await f.db.one('SELECT price_minor,commission_minor FROM orders WHERE id=?', order.id), original);
   assert.deepEqual(await f.db.one('SELECT count(*) AS n FROM ledger_journals'), ledger);
   await assert.rejects(f.db.run('DELETE FROM payment_events WHERE id=?::uuid', dup.event.id));
+  process.env.WIND_GOODS_COD = 'on';
   // T31: one settlement authority per order — a standing card capture and a cash collection exclude each
   // other, a full refund releases the order back to cash, and the loser of a race is refused.
   const cashLedger = new Ledger(f.db, fail);

@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
-import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Stat, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number; tripPayCents?: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
@@ -14,27 +14,25 @@ const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones
 export default function Earnings() {
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<{ today: Bucket; week: Bucket; all: Bucket }>('/driver/earnings');
-  const tripPayCents = data?.all.tripPayCents ?? 0;
   return <Screen onRefresh={reload}>
     <Header title={c.earnings} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.earningsNote}</Txt>
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
-      <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
-        <Stat index={0} tone="olive" label={c.today} detail={fill(c.tripsCount, { n: data.today.jobs })} value={money(data.today.net)} />
-        <Stat index={1} label={c.week} detail={fill(c.tripsCount, { n: data.week.jobs })} value={money(data.week.net)} />
-      </Row>
-      <Card>
-        <Txt variant="title">{c.allTime}</Txt>
-        <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: data.all.jobs })}</Txt>
-        {([[c.gross, data.all.gross], [c.commission, -data.all.commission], [c.net, data.all.net],
-          ...(tripPayCents > 0 ? [[c.tripPay, tripPayCents / 100]] as const : [])] as const).map(([label, value]) =>
-          <Row key={label} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
-            <Txt>{label}</Txt>
+    {!data ? <Loading failed={!!error} onRetry={reload} /> :
+      ([[c.today, data.today], [c.week, data.week], [c.allTime, data.all]] as const).map(([title, bucket]) => {
+        const tripPayCents = bucket.tripPayCents ?? 0;
+        const lines: [string, number][] = bucket === data.all ? [[c.gross, bucket.gross], [c.commission, -bucket.commission]] : [];
+        if (tripPayCents > 0) lines.push([c.tripPay, tripPayCents / 100]);
+        lines.push([c.net, bucket.net]);
+        return <Card key={title}>
+          <Txt variant="title">{title}</Txt>
+          <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: bucket.jobs })}</Txt>
+          {lines.map(([label, value]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Txt style={{ flex: 1 }}>{label}</Txt>
             <Txt variant="title">{money(value)}</Txt>
           </Row>)}
-      </Card>
-    </>}
+        </Card>;
+      })}
     <CashCard />
     <View style={{ marginTop: 4 }}><PlanCard /></View>
   </Screen>;
@@ -77,16 +75,21 @@ function CashCard() {
         onPress={() => confirm(c.cashDisputeConfirm, () => decide(entry, 'dispute'), c.cashDispute, c.no)} />
     </View>)}
     {data.entries.length > 0 && <Txt variant="title" style={{ marginTop: 14, marginBottom: 4 }}>{c.cashEntries}</Txt>}
-    {data.entries.slice(0, shown).map(entry => <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
-      <View style={{ flex: 1 }}>
-        <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
-        <Txt variant="micro">{entry.note ? `${time(entry.createdAt)} · ${entry.note}` : time(entry.createdAt)}</Txt>
-      </View>
-      <View style={{ alignItems: 'flex-end', gap: 4 }}>
-        <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
-        <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
-      </View>
-    </Row>)}
+    {data.entries.slice(0, shown).map(entry => {
+      const note = entry.note.startsWith('DRV-17 ') ? c.tripPayEntry
+        : entry.note.startsWith('DRV-18 ') ? c.pickupTripPayEntry
+        : entry.note.startsWith('PAYOUT ') ? c.officePayoutEntry : entry.note;
+      return <Row key={entry.id} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+        <View style={{ flex: 1 }}>
+          <Txt>{entry.reference ? `${c[`entry_${entry.kind}`]} · ${entry.reference}` : c[`entry_${entry.kind}`]}</Txt>
+          <Txt variant="micro">{note ? `${time(entry.createdAt)} · ${note}` : time(entry.createdAt)}</Txt>
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+          <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
+          <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
+        </View>
+      </Row>;
+    })}
     {data.entries.length > shown && <Button title={c.showMore} variant="ghost" size="sm" onPress={() => setShown(n => n + 20)} />}
   </Card>;
 }

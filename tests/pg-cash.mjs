@@ -156,6 +156,8 @@ try {
   const returnPath = `/orders/${returned.id}/advance`;
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
+  await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 });
+  assert.equal(await persistence.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${returned.id}:discount`), undefined, 'a no-fare return has no discount journal');
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2, 'a return collected no fare, so it adds no commission (SRS DRV-17)');
   const returnPay = 2 * Math.round(returned.price * 100);
@@ -217,7 +219,13 @@ try {
 
   await checkPickupPay({ call, persistence, input, driver, customer, admin });
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings' } });
+  const payout = await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings' } });
+  assert.equal(payout.note, 'PAYOUT Office paid trip earnings');
+  assert.deepEqual(await journalFor(payout.id), [
+    { kind: 'cash_adjustment', code: `driver:${driver.user.id}:receivable`, account_kind: 'driver_receivable', debit_minor: -credit, credit_minor: 0 },
+    { kind: 'cash_adjustment', code: 'platform:provider_clearing', account_kind: 'provider_clearing', debit_minor: 0, credit_minor: -credit },
+  ]);
+  assert.equal((await call('/admin/ledger/import', { token: admin.token, body: {} })).journals, 0, 'import agrees with the live payout journal');
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 

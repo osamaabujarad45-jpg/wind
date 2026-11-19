@@ -114,6 +114,12 @@ try {
   assert.equal(mine.dropoffPoint, null, "the shop does not get the customer's address");
   const pickupCode = mine.shop.pickupCode;
 
+  const rejectClock = Date.now;
+  try {
+    Date.now = () => order.shop.acceptDeadline + 1;
+    await err(`/merchant/orders/${order.id}/reject`, { token: owner.token, body: { reason: 'out_of_stock' } }, 409, 'accept_expired');
+  } finally { Date.now = rejectClock; }
+
   // ---- accept and prepare (DLV-07, DLV-08); free cancel ends at acceptance (D-2) ----
   order = await call(`/merchant/orders/${order.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
   assert.equal(order.shop.state, 'accepted');

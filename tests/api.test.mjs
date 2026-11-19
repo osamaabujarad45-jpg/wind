@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { defaultSettings, quote } from '../src/model.ts';
+import { crowKm, defaultSettings, quote } from '../src/model.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -158,10 +158,19 @@ try {
   await call('/partner/quotes', { partnerKey, body: { ...pinned, pickupPoint: { latitude: '31.9', longitude: 35.2 } }, expect: 400 });
   const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
     quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });
+  const beforePickup = { latitude: 31.875, longitude: pinned.pickupPoint.longitude };
+  const fixedAt = Date.now();
+  db.prepare('INSERT INTO driver_locations (driver_id, lat, lng, updated_at, good_lat, good_lng, good_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(driver.user.id, beforePickup.latitude, beforePickup.longitude, fixedAt, beforePickup.latitude, beforePickup.longitude, fixedAt);
   await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: {} });
   const pinnedJob = await call(`/orders/${pinnedOrder.id}`, { token: driver.token });
   assert.deepEqual([pinnedJob.pickupPoint, pinnedJob.dropoffPoint], [pinned.pickupPoint, pinned.dropoffPoint]);
-  await call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
+  assert.equal((await call('/location', { token: driver.token, body: pinned.pickupPoint })).accepted, true);
+  const partnerCancel = () => call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
+  assert.equal((await partnerCancel()).status, 'cancelled');
+  assert.equal((await partnerCancel()).status, 'cancelled');
+  const partnerPay = Math.round(crowKm(beforePickup, pinned.pickupPoint) * defaultSettings.pickupPayPerKm * 100);
+  assert.deepEqual(db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?').all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents), [-partnerPay]);
   // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
   const souq = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get();
   assert.ok(!(await call('/admin/users?q=partner', { token: admin.token })).some(u => u.id === souq.id));
@@ -246,7 +255,8 @@ try {
 
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 1);
-  assert.equal(earnings.all.net, Math.round((order.price - done.commission) * 100) / 100);
+  assert.equal(earnings.all.tripPayCents, partnerPay);
+  assert.equal(earnings.all.net, (Math.round((order.price - done.commission) * 100) + partnerPay) / 100);
 
   // Subscriptions: request, admin activates, plan applies
   const pending = await call('/subscriptions', { token: driver.token, body: {} });

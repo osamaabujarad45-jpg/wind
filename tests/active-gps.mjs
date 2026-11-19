@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {freshPostgres,selectRuntime,connectionString} from './pg-support.mjs';
 import {startApiProcess} from './support/api-process.mjs';
 import {apiCaller} from './support/api.mjs';
+import {defaultSettings} from '../src/model.ts';
 const {schema,database}=await freshPostgres('activegps'); selectRuntime(schema);
 process.env.DB_PATH=join(await mkdtemp(join(tmpdir(),'gps-')),'compat.sqlite');
 process.env.WIND_ENABLED_SERVICES='parcel'; delete process.env.WIND_IDENTITY_MODE;
@@ -105,5 +106,14 @@ try {
  await call('/auth/logout',{token:fresh.token,body:{}}); const later=await login();
  const delayed=await call('/location/session',{token:later.token,body:{deviceId,sessionId:randomUUID(),previousSessionId:null,expectedGeneration:inspection.generation},expect:409});
  assert.equal(delayed.error,'active_gps_session_stale');
+ const gpsState=await call('/location/session',{token:later.token,body:{deviceId}});
+ const current=await call('/location/session',{token:later.token,body:{deviceId,sessionId:randomUUID(),previousSessionId:null,expectedGeneration:gpsState.generation}});
+ const pickup={latitude:31.9038,longitude:35.2034};
+ const currentFix=await call('/location',{token:later.token,body:{...pickup,activeGps:{deviceId,sessionId:current.sessionId,seq:1,assignments:current.assignments}}});
+ assert.equal(currentFix.accepted,true);
+ assert.equal((await call(`/orders/${another.id}/cancel`,{token:customer.token,body:{}})).status,'cancelled');
+ assert.equal(await database.one('SELECT driver_id FROM driver_locations WHERE driver_id=?',driver.user.id),undefined);
+ const pickupPay=Math.min(2000,Math.round(JSON.parse(assignedFrom.detail).km*defaultSettings.pickupPayPerKm*100));
+ assert.equal((await database.one('SELECT amount_cents FROM cash_entries WHERE note=?',`DRV-18 pickup pay order ${another.id}`)).amount_cents,-pickupPay);
  console.log('Active GPS CAS, replay, assignment set, device, legacy exclusion and logout passed');
 } finally {await child.stop();await shutdown();await database.close();}

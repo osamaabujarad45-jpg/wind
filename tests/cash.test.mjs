@@ -173,6 +173,7 @@ try {
   const returnPath = `/orders/${returned.id}/advance`;
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
+  await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2, 'a return collected no fare, so it adds no commission (SRS DRV-17)');
   const returnPay = 2 * Math.round(returned.price * 100);
@@ -201,7 +202,13 @@ try {
 
   await checkPickupPay({ call, persistence, input, driver, customer, admin });
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings' } });
+  const payoutBody = { driverId: driver.user.id, amountCents: 100 };
+  for (const reason of ['drv-17 manual', 'Drv-18 manual', 'pAyOuT manual'])
+    assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, reason }, expect: 400 })).error, 'invalid_input');
+  const partialPayout = await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, reason: 'Office paid part of the balance' } });
+  assert.equal(partialPayout.note, 'PAYOUT Office paid part of the balance');
+  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, credit + 100);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, amountCents: -credit - 100, reason: 'Office paid trip earnings' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 

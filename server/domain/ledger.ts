@@ -13,6 +13,7 @@ type Journal = { businessRef: string; kind: string; entries: Entry[]; currency?:
 export const RETURN_NO_FARE = 'RETURN_NO_FARE';
 /** DRV-17/18: a cash entry with this note is captain pay from Wind operating expenses (server/main.ts captainPay). */
 export const captainPayNote = /^DRV-1[78] /;
+export const cashPayoutPrefix = 'PAYOUT ';
 export const PROJECTED_CASH_CAP_MINOR = 100000;
 export function ledgerConfig() { return { projectedCashCapMinor: PROJECTED_CASH_CAP_MINOR, cashCapActivated: false }; }
 export async function ledgerAvailable(db: Persistence) {
@@ -89,14 +90,16 @@ export class Ledger {
       for (const entry of cash) {
         const amount = Number(entry.amount_cents); if (!amount) continue;
         const receivable = await this.ensureAccount(`driver:${entry.driver_id}:receivable`, 'driver_receivable', Number(entry.driver_id));
-        const tripPay = captainPayNote.test(String(entry.note));
+        const note = String(entry.note);
+        const tripPay = captainPayNote.test(note);
+        const payout = note.startsWith(cashPayoutPrefix);
         const other = tripPay
           ? (expense ??= await this.ensureAccount('platform:operating_expense', 'operating_expense', null))
-          : entry.kind === 'remittance' ? clearing : revenue;
+          : entry.kind === 'remittance' || payout ? clearing : revenue;
         // Sign-aware: a negative remittance reverses a confirmed handover (Dr receivable), a negative adjustment relieves it (Cr receivable).
-        const debitReceivable = !tripPay && (entry.kind === 'adjustment' ? amount > 0 : amount < 0);
+        const debitReceivable = payout || (!tripPay && (entry.kind === 'adjustment' ? amount > 0 : amount < 0));
         const n = Math.abs(amount);
-        await post({ businessRef: `cash-entry:${entry.id}`, kind: !tripPay && entry.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id), entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }] : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }] });
+        await post({ businessRef: `cash-entry:${entry.id}`, kind: !tripPay && !payout && entry.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id), entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }] : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }] });
       }
       return { journals, orders: orders.length, cashEntries: cash.length };
     });

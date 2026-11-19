@@ -31,6 +31,10 @@ try {
   const commandId=randomUUID();
   const booked=await call('/orders',{token:customer.token,body:{commandId,payload:input}});
   assert.equal(booked.status,'searching');
+  for(const action of ['block-review','shop/lines/1/remove']) {
+    const refused=await call(`/admin/orders/${booked.id}/${action}`,{token:admin.token,body:{commandId:randomUUID()},expect:400});
+    assert.equal(refused.error,'unsupported_command');
+  }
   await db.run("UPDATE settings SET value=90 WHERE key='parcelSmall'");
   assert.deepEqual(await other('/orders',{token:customer.token,body:{commandId,payload:input}}),booked,'replay before current price');
   await call('/orders',{token:customer.token,body:{commandId,payload:{...input,detail:'changed'}},expect:409});
