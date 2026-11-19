@@ -464,7 +464,7 @@ for (const language of ['ar', 'en']) {
   assert.ok(unknown.calls.every(call => call.path !== '/admin/cash/remittance'), `${language}: the lookup never records`);
   assert.equal(store.size, 1);
 
-  const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041' } });
+  const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041', amountCents: sent.amountCents, note: sent.note ?? '' } }); // a receipt names what it holds
   known.render(); // mounting runs the recovery lookup
   await flush();
   tree = known.render();
