@@ -106,9 +106,9 @@ try {
   offline = false;
   const earnings = (await call('/driver/earnings', { token: driver.token })).all;
   assert.equal(Number(earnings.jobs), 3);
-  assert.equal(Number(earnings.gross), 70);
+  assert.equal(Number(earnings.gross), 50, 'a return collected no fare, so it adds no gross (SRS DRV-17)');
   assert.equal(Math.round(Number(earnings.commission) * 100), Math.round((recovered.commission + completedB.commission + returned.commission) * 100));
-  assert.equal(Math.round(earnings.net * 100), 7000 - Math.round(earnings.commission * 100));
+  assert.equal(Math.round(earnings.net * 100), 5000 - Math.round(earnings.commission * 100));
   console.log(`${persistence.backend} multi-recipient: current run sheet, proof/cash association, lost ACK/reconnect, reattempt, sender return and earnings passed`);
 } finally {
   await shutdown(); globalThis.fetch = actualFetch; rmSync(directory, { recursive: true, force: true });
