@@ -90,6 +90,9 @@ const osrm = createServer((req, res) => {
 });
 await new Promise(resolve => osrm.listen(0, '127.0.0.1', resolve));
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}`;
+// The synthetic API runs outside production whatever the caller's shell says (Sol R12-L5): an inherited NODE_ENV=production
+// would turn presence off. The web export below sets its own production build environment.
+delete process.env.NODE_ENV;
 const { db, server, promote } = await import('../server/main.ts');
 const { quote, defaultSettings } = await import('../src/model.ts');
 const { scheduleSlots } = await import('../src/booking.ts');
@@ -238,7 +241,7 @@ if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   rmSync(webDir, { recursive: true, force: true });
   const built = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--clear', '--output-dir', webDir], {
     cwd: root, stdio: 'inherit', shell: process.platform === 'win32',
-    env: { ...process.env, CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
+    env: { ...process.env, NODE_ENV: 'production', CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
       EXPO_PUBLIC_API_URL: `http://localhost:${API_PORT}`, EXPO_PUBLIC_SUPPORT_WHATSAPP: '970590000000' },
   });
   if (built.status !== 0) throw new Error('expo export failed');

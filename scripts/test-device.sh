@@ -20,8 +20,9 @@
 # each run (3.7 s, against 26 s for a copy); a package file whose content or mode changed (change time) is detected after
 # the run, which then fails and drops the entry. An entry left in use by a killed run stops setup until it is cleared by
 # hand (the message says how). typecheck+lint+export, then unit+persistence+parity, run side by side (--serial: one at a
-# time). Runs are serialized twice: a host lock, and a lock inside the shared cache volume, so runners in different WSL
-# namespaces on one Docker daemon also wait for each other (up to an hour each).
+# time). Runs are serialized by a host lock, and cache access by a lock inside the shared cache volume. A runner in another
+# WSL namespace on the same Docker daemon does not wait for the sidecars: it stops at setup while another run holds them.
+# This runner is the emergency fallback; the cloud sandbox is the test device.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SERIAL=0
@@ -100,7 +101,7 @@ echo "checkout $REV (+$DIRTY uncommitted) | gate evidence: $EVIDENCE (only a cle
 ready() { # container port: TCP readiness, as the tests connect (the image's init server listens on the socket only)
   i=0; until docker exec "$1" pg_isready -h 127.0.0.1 -p "$2" -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && return 1; sleep 1; done; }
 pg18() { # name port
-  docker ps -aq --filter "name=^$1$" | grep -q . && fail_setup "a container named $1 already exists (another run, or one left by an interrupted run): check it, then docker rm -f $1"
+  docker ps -aq --filter "name=^$1$" | grep -q . && fail_setup "a container named $1 already exists: another run on this device is using it, or one was interrupted. Wait for an active run; remove it (docker rm -f $1) only when no run is active"
   id=$(docker run -d --name "$1" --label wind.test-device=1 --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g \
     -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT="$2" \
     postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off) || fail_setup "start $1"
@@ -180,13 +181,17 @@ docker run --rm --network host --entrypoint sh \
   done
   # A package file rewritten in place shares its inode with the cache: the run is not evidence, and the entry is dropped.
   # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
-  # A scan that cannot read the entry fails the run: an unreadable cache is not a clean one (Sol R10-M2).
-  find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     || { echo "dependency cache scan failed (entry dropped)" >> /logs/summary.txt; status=1; echo scan-failed > "$RUN/changed"; }
-  changed=$(head -3 "$RUN/changed")
-  if [ -n "$changed" ]; then
-    { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
+  # The branch follows the exit status of the scan and of reading its result: an unreadable cache is not a clean one, and
+  # only a clean, readable scan releases the entry (Sol R10-M2, R12-L4).
+  if find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     && changed=$(head -3 "$RUN/changed"); then
+    if [ -n "$changed" ]; then
+      { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
+      rm -rf "/cache/nm/$KEY"; status=1
+    else rm -f "/cache/nm/$KEY/.in-use"; fi
+  else
+    echo "dependency cache scan failed (entry dropped, the next run reinstalls)" >> /logs/summary.txt
     rm -rf "/cache/nm/$KEY"; status=1
-  else rm -f "/cache/nm/$KEY/.in-use"; fi
+  fi
   exit $status'
 STATUS=$?
 # Every requested suite must have reported a pass in this invocation's own summary, whatever the exit code says.

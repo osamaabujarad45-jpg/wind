@@ -72,10 +72,12 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     - Cashiers record cash in the web app this host serves (`WEB_ROOT`): reloading it gives the release's own bundle.
       A browser tab still on an older bundle gets the update screen (Reload) for a new cash write; its own pending
       request still replays.
-    - Production refuses new cash writes from any bundle below 10105, and from one that sends no build at all
-      (installs up to 1.0.13). Supported cashier builds: the web app of this release, and native 1.1.5 or later.
-    - A native 1.1.4 admin install shows the update screen without a Download action (`EXPO_PUBLIC_UPDATE_URL` is unset
-      on this EAS project), so its admins use the web app for cash until a 1.1.5 APK is published.
+    - Production refuses new cash writes from any bundle below 10105, and from one that sends no build header at all
+      (builds before the forced-upgrade gate). Supported cashier builds: the web app of this release, and native 1.1.5
+      or later.
+    - A native 1.1.4 admin install that taps a cash write gets 426 and the whole app shows the update screen, without a
+      Download action (`EXPO_PUBLIC_UPDATE_URL` is unset on this EAS project), until the app is closed and reopened.
+      Nothing is written. Tell native admins to record cash in the web app until a 1.1.5 APK is published.
     - Order: release the server first. A native 1.1.5 build sends typed payouts that the 16 November API would book as
       ordinary adjustments, so no 1.1.5 APK reaches a cashier before this server is live.
   - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
