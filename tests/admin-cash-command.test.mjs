@@ -78,14 +78,16 @@ for (const status of [400, 404]) { // the server refused this request id before 
   // Sol R13-M2: when neither the clear nor the marker can be written, it is a storage failure, never a resendable entry.
   const broken = rig({ send: failing(400) }); broken.write = async c => { if (c === null || c.refused) throw new Error('disk'); broken.stored = c; };
   assert.deepEqual([(await sendCashCommand(broken, command)).state, (await sendCashCommand(rig({ send: failing(400) }), command)).state], ['refused', 'refused']);
-  assert.equal((await sendCashCommand(Object.assign(rig({ send: failing(400) }), { write: async c => { if (c === null || c?.refused) throw new Error('disk'); } }), command)).error, 'cash_storage_failed');
+  const neither = rig({ send: failing(400) }); neither.write = async c => { if (c === null || c?.refused) throw new Error('disk'); neither.stored = c; };
+  assert.equal((await sendCashCommand(neither, command)).error, 'cash_storage_failed');
   // Sol R14-L1 / M1, Haiku r12 F1/F2: a refusal whose record stays in the slot (marked, or storage broken) is `kept`, and
   // its form closes even on a first send: a new entry gets a new request id, and an edit is never settled as the old one.
   const kept = rig({ send: failing(400) }); kept.write = async c => { if (c === null) throw new Error('disk'); kept.stored = c; };
   const keptOutcome = await sendCashCommand(kept, command);
   assert.equal(keptOutcome.kept, true);
   assert.equal(formAfter({ requestId: command.requestId, amount: '12.5' }, keptOutcome), null);
-  const brokenOutcome = await sendCashCommand(Object.assign(rig({ send: failing(400) }), { write: async c => { if (c === null || c?.refused) throw new Error('disk'); } }), command);
+  const brokenRig = rig({ send: failing(400) }); brokenRig.write = async c => { if (c === null || c?.refused) throw new Error('disk'); brokenRig.stored = c; };
+  const brokenOutcome = await sendCashCommand(brokenRig, command);
   assert.deepEqual([brokenOutcome.error, brokenOutcome.kept, formAfter({ requestId: command.requestId }, brokenOutcome)], ['cash_storage_failed', true, null]);
   // Sol R14-M2: a 409 whose admin session changed before the receipt lookup makes no lookup and leaves the slot alone.
   let live = true;
@@ -123,6 +125,18 @@ for (const status of [400, 404]) { // the server refused this request id before 
   unreadable.read = async () => { if (++reads > 1) throw new Error('disk'); return unreadable.stored; };
   const unreadableOutcome = await recoverCashCommand(unreadable, 7);
   assert.deepEqual([unreadableOutcome.error, unreadableOutcome.kept], ['cash_storage_failed', true]);
+  // Sol R17-M2: a late refusal never touches a newer command that the slot holds now.
+  const newer = newCashCommand(7, 42, 'remittance', 700, 'Next handover', '3b8f6a52-6c1e-4f7a-9d2b-3e4f5a6b7c8d');
+  const lateOld = rig({ send: async () => { lateOld.stored = newer; throw Object.assign(new Error('invalid_amount'), { status: 400 }); } });
+  assert.deepEqual([(await sendCashCommand(lateOld, command)).state, lateOld.stored], ['refused', newer]);
+  // Haiku r15 F1: a matched receipt keeps its verdict when the record cannot be cleared; the stop rides along.
+  const matched = { id: 9, kind: 'remittance', amountCents: 1250, note: 'Office handover' };
+  const stuckRecorded = rig({ receipt: async () => ({ entry: matched }) }); stuckRecorded.stored = { ...command, refused: true };
+  stuckRecorded.write = async c => { if (c === null) throw new Error('disk'); stuckRecorded.stored = c; };
+  const verdict = await recoverCashCommand(stuckRecorded, 7);
+  assert.deepEqual([verdict.state, verdict.stop], ['recorded', true]);
+  // Sol R17-L1: a known conflict closes its form, cleared or not.
+  assert.equal(formAfter({ requestId: command.requestId, amount: '12.5' }, { state: 'refused', command, error: 'idempotency_conflict' }), null);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -273,7 +287,12 @@ assert.match(screen, /, !!open\.uncertain, alive\);/); // every uncertain form's
 assert.match(screen, /const alive = \(\) => generation\.current === run && apiSessionRevision\(\) === session;/);
 assert.match(screen, /await recover\(actorId, run, session\)/);
 // Sol R14-M1: a storage failure stops cash entry on this screen. Sol R16-M2: a fresh entry first settles the installed build's slot.
-assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyHeld\)/);
+assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyState === 'held'\)/);
+// Sol R17-M1: a storage failure reading the installed build's slot stops entries instead of reading as empty.
+assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyState === 'failed'\) \{ if \(alive\(\)\) \{ stopEntries\(\);/);
+// Sol R17-L2: Confirm and Retry honour the storage stop.
+assert.match(screen, /disabled=\{busy \|\| storageFailed \|\| !!amountProblem/);
+assert.match(screen, /disabled=\{busy \|\| storageFailed\} reason=\{storageFailed \? c\.err_cash_storage_failed : c\.wait_busy\}/);
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain \|\| storageFailed;/);
 // Sol R15-M1: a cancelled drain only stops blocking; it is never restarted on its own (a restart could ask as another admin).
 assert.match(screen, /finally \{ if \(generation\.current === run\) setRecovering\(false\); \}/);
