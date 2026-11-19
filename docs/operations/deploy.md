@@ -63,6 +63,17 @@ Production moved to a VM on a separate student subscription. The 15 November sec
   Going back to the pre-master server (`/opt/windapi-old-20261116`) also needs `10-master.conf` removed and
   `systemctl daemon-reload`, and that server cannot read master's schema: it would need its own empty database
   (`/data/pre-master-20261116/wind.db`).
+- **Release notes, 19 November (PR #97):**
+  - Returns (SRS DRV-17): from the first balance read after the deploy, the server stores a cutover instant
+    (`settings` key `returnPolicyFrom`). A return finished from then on owes no commission and gets no promo relief;
+    returns before it keep what they were booked with, so no captain's balance moves at the deploy. Rolling back to an
+    earlier tree gives returns made since the cutover their promo relief again (their commission stays 0): check
+    `/admin/cash` for those captains after a rollback.
+  - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
+    tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
+  - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:
+    `SELECT customer_id, COUNT(*) FROM orders WHERE service='ride' AND status IN ('assigned','at_pickup','in_transit') GROUP BY customer_id HAVING COUNT(*) > 1;`
+    The fence that prevents new ones assumes one API writer at a time, which this single-service swap gives.
 - **Data:** the database started fresh on 16 November. Users register again; the old data is only on the disabled
   subscription.
   - `/data/pre-master-20261116/` keeps the pre-master database and the QA journey database.
@@ -189,7 +200,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–36 under `MIGRATION_LOCK` (35 saved-place pins, 36 quote privacy scrub). `/api/ready` must then report schema 36. This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–39 under `MIGRATION_LOCK` (35 saved-place pins, 36 quote privacy scrub, 37 captain ride-offer seconds, 38 rider grace extension, 39 courier block reviews). `/api/ready` must then report schema 39. An API on a schema-36 database keeps working: each of 37–39 is gated on its `schema_migrations` row (20 s offers, no grace extension, no block review). This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
 
 `server/migrate.ts` separately restricts its import CLI to test mode, loopback and an isolated schema. Its `--freeze-writes` holds the SQLite lock only while taking the snapshot, releasing it before import. Production needs a reviewed importer and a continuously enforced freeze of every SQLite writer.
 

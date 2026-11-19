@@ -2215,6 +2215,8 @@ route('POST', '/api/orders/:id/share/revoke', async ({ user, params }) => {
   return { ok: true };
 });
 const shareRefKey = randomBytes(32); // in memory only: public driver refs must not be invertible from the link itself
+// Per link and per assignment: A, then B, then A again gives a new ref, so a follower never redraws A's earlier fix (Sol M5).
+const shareDriverRef = (token: string, r: Row) => createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}:${r.assigned_at ?? ''}`).digest('hex').slice(0, 12);
 route('GET', '/api/track/([a-f0-9]{64})', async ({ params, req }) => {
   (await limit(identityKey('track-view', clientAddress(req)), 600, 10 * 60_000));
   return (await trackView(params[0]!)).view;
@@ -2237,7 +2239,7 @@ async function trackView(token: string) {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at, scheduledFor: r.scheduled_for ?? null, // the recipient's page says booked ahead, as the sender's does
     driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
-      ref: createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}`).digest('hex').slice(0, 12) } : null, // opaque per link: tells a reassignment apart, names no one
+      ref: shareDriverRef(token, r) } : null, // opaque per link: tells a reassignment apart, names no one
     driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
   } };
 }
@@ -3192,7 +3194,7 @@ route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const token = params[0]!, hash = sha(token);
   const { row: r } = await trackView(token); // validate the link and reuse the same snapshot
   (await limit(identityKey('track-eta', hash), 300, 10 * 60_000)); // after one lookup (a made-up token leaves no row)
-  const driverKey = r.driver_id ? createHmac('sha256', shareRefKey).update(`${token}:${r.driver_id}`).digest('hex').slice(0, 12) : null;
+  const driverKey = r.driver_id ? shareDriverRef(token, r) : null;
   if (query.has('driver') && query.get('driver') !== driverKey) return { minutes: null };
   if (query.has('status') && query.get('status') !== r.status) return { minutes: null };
   if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };

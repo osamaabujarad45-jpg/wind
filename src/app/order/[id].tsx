@@ -72,7 +72,7 @@ export default function OrderScreen() {
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
   const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
-  const assignment = polled && `${polled.id}:${polled.driverId}`;
+  const assignment = polled && `${polled.id}:${polled.driverId}:${polled.recovery?.assignmentEpoch ?? polled.assignedAt ?? ''}`; // A→B→A is a new assignment (Sol M5)
   const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
   if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
   const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
