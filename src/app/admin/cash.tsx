@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { api, apiSessionRevision, useApi } from '../../api';
-import { cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, readCashCommand, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
+import { ambiguousLegacy, cashCommandBody, cashCommandKey, formAfter, legacyCashCommandKey, parseCashSlot, readCashCommand, newCashCommand, recoverCashCommand, sendCashCommand, type CashCommand, type CashEntry, type CashIO, type CashKind, type CashOutcome } from '../../admin-cash-command';
 import { newRequestId } from '../../booking';
 import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
@@ -67,7 +67,10 @@ export default function AdminCash() {
   const generation = useRef(0);
   // This device could not keep a refused entry's state: no more cash entries on this screen (Sol R14-M1; deploy.md).
   const storageBroken = useRef(false);
-  const [storageFailed, setStorageFailed] = useState(false);
+  // A browser without Web Locks cannot keep two tabs from settling one saved entry each (Sol R19-M1): no cash entry there.
+  const lockless = Platform.OS === 'web' && !(globalThis.navigator as unknown as { locks?: unknown } | undefined)?.locks;
+  const [storageFailedState, setStorageFailed] = useState(false);
+  const storageFailed = storageFailedState || lockless;
   const stopEntries = () => { storageBroken.current = true; setStorageFailed(true); };
   // A run is alive while its effect generation and the API session it started under are current: a sign-in switches the
   // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1). Liveness gates
@@ -79,13 +82,14 @@ export default function AdminCash() {
       for (const legacy of [true, false]) {
         if (!live.current) return false; // superseded: stop before the next lookup
         const outcome = await recoverCashCommand(cashIO(id, legacy), id, () => live.current);
-        // A device storage failure stops entries on this screen whatever the session, next to any verdict (Sol R16-L1, R18-M2/M3).
-        if (generation.current === run && outcome.stop) { stopEntries(); fail(err('cash_storage_failed')); }
+        // A device storage failure stops entries on this screen whatever the session, next to any verdict; its warning is a
+        // banner of its own, so no message replaces it (Sol R16-L1, R18-M2/M3, R19-M3).
+        if (generation.current === run && outcome.stop) stopEntries();
         if (!live.current || outcome.state === 'empty') continue;
         if (outcome.state === 'recorded') { setFailure(''); recorded(outcome.entry); reload(); reloadPending(); continue; }
         // The marker of a refusal just shown keeps that refusal's own reason on screen (Sol R17-L3).
         if (outcome.state === 'refused' && outcome.command.requestId === quiet) continue;
-        if (outcome.state === 'refused') { if (!outcome.stop) fail(err(outcome.error)); continue; } // an installed build's unknowable entry: enter it again
+        if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // its own reason, next to any storage banner
         const { command } = outcome;
         setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
         return true;
@@ -116,26 +120,26 @@ export default function AdminCash() {
       // Absent, saved (or unreadable bytes, which recovery clears), or a storage read failure, which stops entries (Sol R17-M1).
       const legacyState = await cashIO(actorId, true).read().then(raw => { try { return readCashCommand(raw, actorId) ? 'held' : 'absent'; } catch { return 'held'; } },
         e => e instanceof Error && e.message === 'invalid_pending_command' ? 'held' : 'failed');
-      if (!open.uncertain && !open.legacy && legacyState === 'failed') { if (alive()) { stopEntries(); fail(err('cash_storage_failed')); } return; }
+      if (!open.uncertain && !open.legacy && legacyState === 'failed') { if (alive()) stopEntries(); return; } // the storage banner says it
       if (!open.uncertain && !open.legacy && legacyState === 'held') {
         if (!alive()) return;
-        // The typed form closes: it may repeat the entry being settled, and it never posts after that settlement. The
-        // cashier opens a new form once the saved entry is shown (Sol R18-M4, Haiku r16 L1).
+        // The typed form closes: it may repeat the entry being settled, and it never posts after that settlement. Recovery
+        // then shows its own outcome (recorded, refused with its instruction, or the restored form) (Sol R18-M4, R19-M4).
         setOpen(null); setMessage(c.cashSettledFirst);
         setRecovering(true);
-        if (!(await recover(actorId, run, session)) && !storageBroken.current) setFailure(''); // nothing to act on: no pending warning (Sol R18-L1)
+        await recover(actorId, run, session);
         return;
       }
       const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
       // This device's own facts apply to this screen whatever the session (Sol R15-M2): a storage failure stops entries and
       // shows its warning, and a closed form stays closed. Everything else waits for a live session.
       if (generation.current === run) {
-        if (outcome.stop) { stopEntries(); fail(err('cash_storage_failed')); }
+        if (outcome.stop) stopEntries(); // the banner says it; the verdict below keeps its own message (Haiku r17 N3)
         setOpen(o => formAfter(o, outcome));
       }
       if (!alive()) return; // another admin signed in meanwhile: nothing else of this send belongs on their screen
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
-      else if (outcome.state !== 'empty' && !outcome.stop) fail(err(outcome.error));
+      else if (outcome.state !== 'empty') fail(err(outcome.error));
       reload(); reloadPending();
       // A restored form's settlement, or a refusal whose record stays in the slot, drains the slots before the next entry:
       // the other slot may hold a command, and a marked refusal is settled now, not on the next form (Sol R15-L1).
@@ -144,7 +148,9 @@ export default function AdminCash() {
     } catch (e) {
       if (!alive()) return; // a failure of another session's work is not shown on this one (Sol R14-M2)
       fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
-      if (e instanceof Error && e.message === 'cash_command_pending' && alive()) { setRecovering(true); await recover(actorId, run, session); } // show the command that holds the slot
+      // A saved entry holds this build's slot: the typed draft closes before it is shown, as with the installed build's slot,
+      // so the draft can never post after that entry settles (Sol R19-M5, Haiku r17 N6).
+      if (e instanceof Error && e.message === 'cash_command_pending' && alive()) { setOpen(null); setMessage(c.cashSettledFirst); setRecovering(true); await recover(actorId, run, session); }
     } finally { inFlight.current = false; setBusy(false); }
   }
 
@@ -163,11 +169,12 @@ export default function AdminCash() {
 
   // A new entry would replace the one form and the one saved command: wait for the lookup, the send, or the unconfirmed entry.
   const blocked = busy || recovering || !!open?.uncertain || storageFailed;
-  const blockedReason = storageFailed ? c.err_cash_storage_failed : open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
+  const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
 
   return <Screen onRefresh={() => { setMessage(''); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
+    {storageFailed && <ErrorText>{lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed}</ErrorText>}
     <ErrorText>{failure || (error && err(error))}</ErrorText>
     {!!message && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{message}</Txt></View>}
     {/* A saved entry for a captain no longer on the list (an account deleted meanwhile) still needs its Retry: without it
@@ -175,8 +182,8 @@ export default function AdminCash() {
     {open?.uncertain && data && !data.some(row => row.driverId === open.id) && <Card style={{ marginBottom: 12 }}>
       <Txt variant="title">{fill(c.cashPendingElsewhere, { a: money(cents(open.amount) / 100) })}</Txt>
       {!!open.note && <Txt variant="caption">{open.note}</Txt>}
-      <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : c.cashUncertain}</Txt>
-      <Button title={open.origin?.refused ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
+      <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : open.origin && ambiguousLegacy(open.origin) ? c.cashAmbiguousCheck : c.cashUncertain}</Txt>
+      <Button title={open.origin && (open.origin.refused || ambiguousLegacy(open.origin)) ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : c.wait_busy} onPress={() => void submit()} />
     </Card>}
     {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0 ? <Empty icon="cash-outline" title={c.cashNoDrivers} />
       : data.map((row, i) => <Appear key={row.driverId} index={i}>
@@ -200,13 +207,13 @@ export default function AdminCash() {
               onChangeText={note => setOpen({ ...open, note })} disabled={busy || !!open.uncertain} />
             {!open.uncertain && <Button title={open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust} icon="checkmark-done-outline" loading={busy}
               disabled={busy || storageFailed || !!amountProblem(open.kind, open.amount, row) || (open.kind !== 'remittance' && open.note.trim().length < 5)}
-              reason={busy ? c.wait_busy : storageFailed ? c.err_cash_storage_failed : amountProblem(open.kind, open.amount, row) ?? c.reason_min5}
+              reason={busy ? c.wait_busy : storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : amountProblem(open.kind, open.amount, row) ?? c.reason_min5}
               onPress={() => confirm(fill(open.kind === 'payout' ? c.cashReviewPayout : open.kind === 'remittance' ? c.cashReviewRecord : c.cashReviewAdjust, { a: money(cents(open.amount) / 100), n: row.name }),
                 () => void submit(), open.kind === 'payout' ? c.cashPayDriver : open.kind === 'remittance' ? c.cashRecord : c.cashAdjust, c.cancel)} />}
             {open.uncertain && <>
               {/* The balance already counts this entry's own pending copy, so the same-id resend is the one way to settle it. */}
-              <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : c.cashUncertain}</Txt>
-              <Button title={open.origin?.refused ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? c.err_cash_storage_failed : c.wait_busy} onPress={() => void submit()} />
+              <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : open.origin && ambiguousLegacy(open.origin) ? c.cashAmbiguousCheck : c.cashUncertain}</Txt>
+              <Button title={open.origin && (open.origin.refused || ambiguousLegacy(open.origin)) ? c.cashCheckRecord : c.cashRetrySame} icon="refresh" variant="soft" loading={busy} disabled={busy || storageFailed} reason={storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : c.wait_busy} onPress={() => void submit()} />
             </>}
             {/* An unconfirmed entry is never dismissed: only its receipt or a same-id resend settles it. */}
             {!open.uncertain && <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />}

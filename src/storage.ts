@@ -1,16 +1,9 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { inProcess } from './serial-lock';
 import { webGet, webSet, type WebStore } from './web-storage';
 const webStore: WebStore = () => localStorage;
 type LockManager = { request: <T>(name: string, run: () => Promise<T>) => Promise<T> };
-// Without Web Locks (native, or an older browser) one app process still runs one holder of a lock at a time: two screen
-// instances that share a saved record wait for each other (Sol R17-M2). Another process is not covered here.
-const chains = new Map<string, Promise<unknown>>();
-function inProcess<T>(lock: string, run: () => Promise<T>): Promise<T> {
-  const next = (chains.get(lock) ?? Promise.resolve()).then(run, run);
-  chains.set(lock, next.catch(() => undefined));
-  return next;
-}
 
 export const storage = {
   /**

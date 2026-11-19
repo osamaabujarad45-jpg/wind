@@ -62,6 +62,7 @@ const suites = [
   "receipt-payment.test.mjs",
   "cash-lines.test.mjs",
   "admin-cash-command.test.mjs",
+  "serial-lock.test.mjs",
   "admin-assign.test.mjs",
   "share.test.mjs",
   "map.test.mjs",

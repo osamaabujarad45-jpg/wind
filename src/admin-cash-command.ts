@@ -84,7 +84,11 @@ const legacyMatch = (entry: CashEntry, command: CashCommand) =>
 async function clearIfHeld(io: CashIO, command: CashCommand): Promise<'cleared' | 'absent' | 'unreadable' | 'failed'> {
   let now: CashCommand | null;
   try { now = readCashCommand(await io.read(), command.actorId); }
-  catch (error) { if ((error as Error).message !== 'invalid_pending_command') return 'unreadable'; now = null; }
+  catch (error) {
+    if ((error as Error | undefined)?.message !== 'invalid_pending_command') return 'unreadable';
+    // Unreadable bytes carry no request id anyone could own: dropped here as everywhere (rule 3; Haiku r17 N5).
+    return io.write(null).then(() => 'absent' as const, () => 'failed' as const);
+  }
   if (now?.requestId !== command.requestId) return 'absent';
   return io.write(null).then(() => 'cleared' as const, () => 'failed' as const);
 }
@@ -92,17 +96,19 @@ async function clearIfHeld(io: CashIO, command: CashCommand): Promise<'cleared' 
  *  restart or Retry settles it by receipt only; a record already marked that still cannot be deleted, or a mark that fails,
  *  stops entries instead of meeting the same record on every new one (Sol R15-L1). Ownership unknown: nothing is
  *  written and entries stop (Sol R18-M1). In every stopped case the refusal itself stays the verdict (Sol R18-M2). */
-async function finalRefusal(io: CashIO, command: CashCommand, error: unknown): Promise<CashOutcome> {
+async function finalRefusal(io: CashIO, command: CashCommand, error: unknown, settling = false): Promise<CashOutcome> {
   const cleared = await clearIfHeld(io, command);
   if (cleared === 'cleared' || cleared === 'absent') return { state: 'refused', command, error };
+  // A refusal of a fresh send whose delete failed is marked and drained next; a settlement (a receipt already decided it)
+  // whose delete failed stops entries even when the mark works (Sol R19-M2).
   if (cleared === 'failed' && !command.refused && await io.write({ ...command, refused: true }).then(() => true, () => false))
-    return { state: 'refused', command, error, kept: true };
+    return settling ? { state: 'refused', command, error, kept: true, stop: true } : { state: 'refused', command, error, kept: true };
   return { state: 'refused', command, error, kept: true, stop: true };
 }
-/** A complete receipt decides: a match is recorded, a mismatch is a conflict that spends the id. Cleanup follows the
- *  rules above and only ever adds `stop` (Sol R18-M2). */
+/** A complete receipt decides: a match is recorded, a mismatch is a conflict that spends the id. Cleanup never changes
+ *  that verdict: a failed cleanup adds `stop` (and `kept` when the record stays marked) (Sol R18-M2, R19-M2). */
 async function withReceipt(io: CashIO, command: CashCommand, entry: CashEntry, match: boolean): Promise<CashOutcome> {
-  if (!match) return finalRefusal(io, command, conflict);
+  if (!match) return finalRefusal(io, command, conflict, true);
   const cleared = await clearIfHeld(io, command);
   return cleared === 'failed' || cleared === 'unreadable' ? { state: 'recorded', command, entry, stop: true } : { state: 'recorded', command, entry };
 }
@@ -125,7 +131,7 @@ async function settleByReceipt(io: CashIO, command: CashCommand, alive: () => bo
 async function readSlot(io: CashIO, actorId: number): Promise<CashCommand | null | 'stop'> {
   try { return readCashCommand(await io.read(), actorId); }
   catch (error) {
-    if ((error as Error).message !== 'invalid_pending_command') return 'stop';
+    if ((error as Error | undefined)?.message !== 'invalid_pending_command') return 'stop';
     return io.write(null).then(() => null, () => 'stop' as const);
   }
 }
@@ -213,8 +219,9 @@ export function recoverCashCommand(io: CashIO, actorId: number, alive: () => boo
 
 /** The open form after an outcome. Only the form that was sent changes; a form opened meanwhile for another driver keeps
  *  its input. Recorded closes it and unconfirmed locks it. A refusal closes it when the form was uncertain or restored,
- *  when its record stays in the slot (`kept`), or when it was an installed build's ambiguous entry; only a clean refusal
- *  of a first send unlocks it for editing (nothing was recorded under this id). */
+ *  when its record stays in the slot (`kept`), when it is a known `idempotency_conflict` (the id belongs to another
+ *  request), or when it was an installed build's ambiguous entry; only another clean refusal of a first send unlocks it
+ *  for editing (nothing was recorded under this id). */
 export function formAfter<F extends { requestId: string; uncertain?: boolean; origin?: unknown }>(form: F | null, outcome: CashOutcome): F | null {
   if (!form || outcome.state === 'empty' || form.requestId !== outcome.command.requestId) return form;
   // An installed build's unknowable entry closes too: the cashier enters a payout or a charge afresh, never this form again.

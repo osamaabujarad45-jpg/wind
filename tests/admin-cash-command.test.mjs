@@ -111,7 +111,7 @@ for (const status of [400, 404]) { // the server refused this request id before 
   assert.deepEqual([(await recoverCashCommand(midLookup, 7, () => still)).state, midLookup.stored?.requestId], ['empty', command.requestId]);
   // Sol R16-M1: the API client turns a reply that arrives after a session change into session_changed (401) but keeps what
   // the server said: a served 400 or 404 still settles this admin's own slot for good; a served 409 needs a receipt.
-  const late400 = rig({ send: async () => { throw Object.assign(new Error('session_changed'), { status: 401, servedStatus: 400, servedCode: 'invalid_amount' }); } });
+  const late400 = rig({ send: async () => { throw Object.assign(new Error('session_changed'), { status: 401, servedStatus: 400 }); } });
   assert.deepEqual([(await sendCashCommand(late400, command)).state, late400.stored], ['refused', null]);
   const late409 = rig({ send: async () => { throw Object.assign(new Error('session_changed'), { status: 401, servedStatus: 409 }); } });
   assert.deepEqual([(await sendCashCommand(late409, command)).state, late409.stored?.requestId], ['unconfirmed', command.requestId]);
@@ -160,6 +160,24 @@ for (const status of [400, 404]) { // the server refused this request id before 
   assert.deepEqual(await recoverCashCommand(garbage, 7), { state: 'empty' });
   const garbageStuck = rig(); garbageStuck.read = async () => { throw new Error('invalid_pending_command'); }; garbageStuck.write = async () => { throw new Error('disk'); };
   assert.deepEqual(await recoverCashCommand(garbageStuck, 7), { state: 'empty', stop: true });
+  // Haiku r17 N7a: recovery and 409 receipts whose clear fails keep their verdict with `stop`; a settled conflict whose delete
+  // fails stops entries even when its mark works (Sol R19-M2).
+  const failClear = r => { r.write = async c => { if (c === null) throw new Error('disk'); r.stored = c; }; return r; };
+  const recMatch = failClear(rig({ receipt: async () => ({ entry: matched }) })); recMatch.stored = command;
+  assert.deepEqual([(await recoverCashCommand(recMatch, 7)).state, (await recoverCashCommand(failClear(Object.assign(rig({ receipt: async () => ({ entry: matched }) }), { stored: command })), 7)).stop], ['recorded', true]);
+  const recConflict = failClear(rig({ receipt: async () => ({ entry: { ...matched, amountCents: 1 } }) })); recConflict.stored = command;
+  const conflictOutcome = await recoverCashCommand(recConflict, 7);
+  assert.deepEqual([conflictOutcome.error, conflictOutcome.kept, conflictOutcome.stop, recConflict.stored?.refused], ['idempotency_conflict', true, true, true]);
+  const match409 = failClear(rig({ send: failing(409), receipt: async () => ({ entry: matched }) }));
+  const match409Outcome = await sendCashCommand(match409, command);
+  assert.deepEqual([match409Outcome.state, match409Outcome.stop], ['recorded', true]);
+  // Haiku r17 N5: unreadable bytes found while cleaning up are dropped, as everywhere.
+  let garbled = true;
+  const dropAtCleanup = rig({ send: async () => { garbled = true; throw Object.assign(new Error('invalid_amount'), { status: 400 }); } });
+  dropAtCleanup.read = async () => { if (garbled && dropAtCleanup.sends) throw new Error('invalid_pending_command'); return dropAtCleanup.stored; };
+  garbled = false;
+  const dropped = await sendCashCommand(dropAtCleanup, command);
+  assert.deepEqual([dropped.state, dropped.stop, dropAtCleanup.stored], ['refused', undefined, null]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -312,20 +330,26 @@ assert.match(screen, /await recover\(actorId, run, session\)/);
 // Sol R14-M1: a storage failure stops cash entry on this screen. Sol R16-M2: a fresh entry first settles the installed build's slot.
 assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyState === 'held'\)/);
 // Sol R17-M1: a storage failure reading the installed build's slot stops entries instead of reading as empty.
-assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyState === 'failed'\) \{ if \(alive\(\)\) \{ stopEntries\(\);/);
+assert.match(screen, /if \(!open\.uncertain && !open\.legacy && legacyState === 'failed'\) \{ if \(alive\(\)\) stopEntries\(\); return; \}/);
 // Sol R17-L2: Confirm and Retry honour the storage stop.
 assert.match(screen, /disabled=\{busy \|\| storageFailed \|\| !!amountProblem/);
-assert.match(screen, /disabled=\{busy \|\| storageFailed\} reason=\{storageFailed \? c\.err_cash_storage_failed : c\.wait_busy\}/);
+assert.match(screen, /disabled=\{busy \|\| storageFailed\} reason=\{storageFailed \? \(lockless \? c\.err_cash_browser_unsupported : c\.err_cash_storage_failed\) : c\.wait_busy\}/);
 assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain \|\| storageFailed;/);
 // Sol R15-M1: a cancelled drain only stops blocking; it is never restarted on its own (a restart could ask as another admin).
 assert.match(screen, /finally \{ if \(generation\.current === run\) setRecovering\(false\); \}/);
 assert.doesNotMatch(screen, /then\(\(\) => recover\(id, run, apiSessionRevision\(\)\)\)/);
 // Sol R15-M2: a storage failure stops entries on this screen before the session check, and a pending confirmation honours it.
-assert.match(screen, /if \(generation\.current === run\) \{\n\s+if \(outcome\.stop\) \{ stopEntries\(\);/);
+assert.match(screen, /if \(generation\.current === run\) \{\n\s+if \(outcome\.stop\) stopEntries\(\);/);
+// Sol R19-M3 / Haiku r17 N1-N3: the storage stop has a banner of its own; verdict messages keep theirs.
+assert.match(screen, /\{storageFailed && <ErrorText>\{lockless \? c\.err_cash_browser_unsupported : c\.err_cash_storage_failed\}<\/ErrorText>\}/);
+assert.doesNotMatch(screen, /fail\(err\('cash_storage_failed'\)\)/);
+// Sol R19-M5: a saved entry in this build's slot closes the typed draft too. Sol R19-M1: no cash entry without Web Locks.
+assert.match(screen, /e\.message === 'cash_command_pending' && alive\(\)\) \{ setOpen\(null\);/);
+assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 // Sol R18-M4 / Haiku r16 L1: settling a saved installed-build entry closes the typed fresh form and says why.
 assert.match(screen, /setOpen\(null\); setMessage\(c\.cashSettledFirst\);/);
 // Sol R18-L1: a marked refusal is checked, not resent.
-assert.match(screen, /title=\{open\.origin\?\.refused \? c\.cashCheckRecord : c\.cashRetrySame\}/);
+assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);
 assert.match(screen, /inFlight\.current \|\| storageBroken\.current\) return;/);
 // Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
 assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);

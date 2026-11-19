@@ -81,6 +81,8 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     - A cashier who sees “This device could not save the cash entry’s state” stops using that device for cash: the entry
       is checked against the captain’s balance and any correction is recorded from another device. If that device later
       restores the entry after a restart, do not press Retry on it there; check the balance from another device first.
+    - Cash entry in the web app needs a browser with Web Locks (every current browser, over https): it keeps two tabs from
+      settling one saved entry each. A browser without them shows a notice and takes no cash entries.
     - Order: release the server first. A native 1.1.5 build sends typed payouts that the 16 November API would book as
       ordinary adjustments, so no 1.1.5 APK reaches a cashier before this server is live.
   - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
