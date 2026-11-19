@@ -500,7 +500,7 @@ for (const language of ['ar', 'en']) for (const restored of [false, true]) {
   await tap(view, c.cashRetrySame); await flush();
   const tree = view.render();
   assert.ok(shows(tree, 'R-201') && shows(tree, 'R-202'), `${language}/${restored}: both receipts stay on screen`);
-  assert.ok(shows(tree, 'Other · 3: '), `${language}/${restored}: the drained receipt names its captain and amount`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · 3: `), `${language}/${restored}: the drained receipt names its captain and amount`);
   assert.equal(view.calls.filter(call => call.path === '/admin/cash/remittance').length, posts, `${language}/${restored}: nothing is posted again`);
   assert.equal(store.size, 0, `${language}/${restored}: both slots are settled`);
   assert.ok(!shows(tree, c.cashUncertain), `${language}/${restored}: no form is left open`);
@@ -508,18 +508,22 @@ for (const language of ['ar', 'en']) for (const restored of [false, true]) {
 console.log('Admin cash Retry drains another saved entry and keeps both receipts');
 
 // Sol R21-M2, Haiku r19 N19-2: the installed build's positive adjustment and this build's refused record for another captain,
-// neither with a receipt. Both instructions stay on screen, each naming its captain.
+// neither with a receipt. Both instructions stay on screen, each naming its captain, even when the drain finishes before the
+// balance list loads (Haiku r20 N20-1).
 for (const language of ['ar', 'en']) {
   const store = new Map();
+  const data = { ...cashData, '/admin/cash': undefined }; // the balance list has not loaded yet
   const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 100, 'Promo credits paid in cash'), schemaVersion: 1 };
   const marked = { ...cashCommand.newCashCommand(1, 8, 'remittance', 300, ''), refused: true };
   store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
   store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
-  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
   view.render(); await flush();
+  assert.ok(shows(view.render(), '1: cash_command_ambiguous') && shows(view.render(), '3: cash_command_settled'), `${language}: both lines before the list loads`);
+  data['/admin/cash'] = cashData['/admin/cash']; // the list arrives
   const tree = view.render();
-  assert.ok(shows(tree, 'Driver · 1: cash_command_ambiguous'), `${language}: the installed build's instruction names its captain`);
-  assert.ok(shows(tree, 'Other · 3: cash_command_settled'), `${language}: the second refusal is added, not swapped in`);
+  assert.ok(shows(tree, `${model.isolate('Driver')} · 1: cash_command_ambiguous`), `${language}: the installed build's instruction names its captain`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · 3: cash_command_settled`), `${language}: the second refusal is added, not swapped in`);
   assert.equal(store.size, 0, `${language}: both slots are settled`);
   assert.ok(view.calls.every(call => !call.path.startsWith('/admin/cash/remittance') && !call.path.startsWith('/admin/cash/adjustment')), `${language}: nothing is posted`);
 }

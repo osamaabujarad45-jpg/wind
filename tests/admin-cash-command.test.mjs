@@ -385,9 +385,9 @@ assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 assert.match(screen, /setOpen\(null\); note\(c\.cashSettledFirst\);/);
 // Sol R21-M1/M2, Haiku r19 N19-1/N19-2: notices are added within one action, drained entries name their captain, and every
 // settled uncertain form drains the other slot. The behaviour is exercised in tests/admin-review.test.mjs.
-assert.match(screen, /const fail = \(message: string\) => \{ setFailure\(add\(message\)\);/);
+assert.match(screen, /const fail = \(notice: Notice\) => \{ setFailure\(shown => \[\.\.\.shown, notice\]\);/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
-assert.doesNotMatch(copy.en.err_cash_command_pending ?? '', /./, 'the resend instruction is gone (Haiku r19 N19-4)');
+for (const language of ['ar', 'en']) assert.equal(copy[language].err_cash_command_pending, undefined, `${language}: the resend instruction is gone (Haiku r19 N19-4, r20 N20-6)`);
 // Sol R18-L1: a marked refusal is checked, not resent.
 assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);
 assert.match(screen, /inFlight\.current \|\| storageBroken\.current\) return;/);
