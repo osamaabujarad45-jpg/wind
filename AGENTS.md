@@ -59,6 +59,7 @@ C:\Users\osama\.docker-sandbox\test-cloud.ps1 -VerifyOnly  # re-run npm test, no
 
 The runner rsyncs the source tree (`.expo`/`.claude`/`.artifacts`/`.git`/`node_modules`/`research_notes` excluded), provisions Node 24.12.0 (matches CI) + pinned Bicep 0.48.1, syncs the prebuilt `node_modules`, repairs the 4 Windows junction links (`decode-uri-component`, `deepmerge`, `node-forge` ×2) with real copies of `vendor/`, starts PostGIS 16 on :55473, and runs `npm test` with `WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:55473/fastship_test`. Verified live 2026-11-19: **Integration gate: 106 suites passed**.
 
+- The WSL fallback runner's own image (`infra/test-device`, Node 24.12 with npm 11.6) does install the lockfile with `npm ci` ("added 874 packages", 19 Nov); the failure below concerns the cloud sandbox's npm.
 - **Never run `npm ci`/`npm install` in the sandbox.** The repo's `"overrides": { "decode-uri-component": "$decode-uri-component", ... }` makes npm's `OverrideSet` call `semver.intersects()` on `file:./vendor/decode-uri-component` → `TypeError: Invalid comparator` (fails on npm 9/10/11 alike). The runner's node_modules sync exists for exactly this reason.
 - The cloud sandbox cannot mount the host workspace; the source is always synced in. Local working-tree changes are what get tested (uncommitted files included).
 - Tests that need live Azure tooling are covered by the pinned standalone Bicep 0.48.1 via `BICEP_COMMAND=/home/agent/bicep/bicep`; no Azure login is used.

@@ -68,6 +68,16 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     captains. Stop scheduled and manual finance ledger imports. Record the time the freeze began and retain it throughout rollback.
     An older binary can restore promo relief in its balance view for a discounted `RETURN_NO_FARE` return and classify newer
     entries differently during import. Keep the database and any orders written during rollback.
+  - **Cashier builds and order** (cashier protocol 1.1.5, client build 10105):
+    - Cashiers record cash in the web app this host serves (`WEB_ROOT`): reloading it gives the release's own bundle.
+      A browser tab still on an older bundle gets the update screen (Reload) for a new cash write; its own pending
+      request still replays.
+    - Production refuses new cash writes from any bundle below 10105, and from one that sends no build at all
+      (installs up to 1.0.13). Supported cashier builds: the web app of this release, and native 1.1.5 or later.
+    - A native 1.1.4 admin install shows the update screen without a Download action (`EXPO_PUBLIC_UPDATE_URL` is unset
+      on this EAS project), so its admins use the web app for cash until a 1.1.5 APK is published.
+    - Order: release the server first. A native 1.1.5 build sends typed payouts that the 16 November API would book as
+      ordinary adjustments, so no 1.1.5 APK reaches a cashier before this server is live.
   - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
     protocol and would book a current tab's payout as an ordinary adjustment. Freeze cash writes and close every open Cash
     tab before stopping the service, keep them frozen while the previous API runs, and reopen them only after re-release.
