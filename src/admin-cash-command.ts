@@ -86,8 +86,9 @@ async function clearIfHeld(io: CashIO, command: CashCommand): Promise<'cleared' 
   try { now = readCashCommand(await io.read(), command.actorId); }
   catch (error) {
     if ((error as Error | undefined)?.message !== 'invalid_pending_command') return 'unreadable';
-    // Unreadable bytes carry no request id anyone could own: dropped here as everywhere (rule 3; Haiku r17 N5).
-    return io.write(null).then(() => 'absent' as const, () => 'failed' as const);
+    // Unreadable bytes carry no request id anyone could own: dropped here as everywhere (rule 3; Haiku r17 N5). If they
+    // cannot be dropped, ownership stays unknown: 'unreadable', so nothing is marked over them (Sol R20-M1).
+    return io.write(null).then(() => 'absent' as const, () => 'unreadable' as const);
   }
   if (now?.requestId !== command.requestId) return 'absent';
   return io.write(null).then(() => 'cleared' as const, () => 'failed' as const);
@@ -165,10 +166,12 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
     if (saved === 'stop') return { state: 'empty', stop: true };
     // A send started for one signed-in admin never goes out under another's session (Haiku r11 N-M1).
     if (!alive()) return { state: 'empty' };
+    // A retry whose slot no longer holds it (cleared elsewhere, or now holding another command) is never sent again: it is
+    // settled by its own receipt, and the other command is left alone (Haiku r9 M1, r18 N-A).
+    if (retry && saved?.requestId !== command.requestId) return settleByReceipt(io, command, alive);
     if (saved && saved.requestId !== command.requestId) throw new Error('cash_command_pending');
-    // An installed build's positive adjustment is never sent under either meaning (Sol R9-H1), and a retry whose slot
-    // was cleared elsewhere is never sent again (Haiku r9 M1): both are settled by their receipt alone.
-    if (ambiguousLegacy(command) || (saved && (ambiguousLegacy(saved) || saved.refused)) || (retry && !saved)) return settleByReceipt(io, saved ?? command, alive);
+    // An installed build's positive adjustment is never sent under either meaning (Sol R9-H1), nor a record marked refused.
+    if (ambiguousLegacy(command) || (saved && (ambiguousLegacy(saved) || saved.refused))) return settleByReceipt(io, saved ?? command, alive);
     // Saved before the request, so a reply lost after this point is still recoverable; unsaved means unsent.
     if (!(await io.write(command).then(() => true, () => false))) return { state: 'empty', stop: true };
     if (!alive()) return { state: 'empty' };
@@ -191,8 +194,9 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
         } catch { return { state: 'unconfirmed', command, error }; }
       }
       // The refusal is final whoever is signed in now: this admin's own slot is settled either way, so it never comes back as
-      // resendable (Sol R12-M2, R13-M2, R14-M1, Haiku r13 N1). Only receipt lookups need this admin's session.
-      return finalRefusal(io, command, error);
+      // resendable (Sol R12-M2, R13-M2, R14-M1, Haiku r13 N1). Only receipt lookups need this admin's session. The server's
+      // own idempotency_conflict is reported as the conflict verdict, so its form closes like any known conflict (Haiku r18 N-B).
+      return finalRefusal(io, command, status(error) === 409 && (error as Error).message === conflict ? conflict : error);
     }
   });
 }

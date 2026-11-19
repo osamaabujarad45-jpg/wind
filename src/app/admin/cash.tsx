@@ -86,12 +86,15 @@ export default function AdminCash() {
         // banner of its own, so no message replaces it (Sol R16-L1, R18-M2/M3, R19-M3).
         if (generation.current === run && outcome.stop) stopEntries();
         if (!live.current || outcome.state === 'empty') continue;
-        if (outcome.state === 'recorded') { setFailure(''); recorded(outcome.entry); reload(); reloadPending(); continue; }
+        // A recorded receipt sits next to any instruction an earlier slot left (check the balance, a conflict): it never clears it (Sol R20-M2).
+        if (outcome.state === 'recorded') { recorded(outcome.entry); reload(); reloadPending(); continue; }
         // The marker of a refusal just shown keeps that refusal's own reason on screen (Sol R17-L3).
         if (outcome.state === 'refused' && outcome.command.requestId === quiet) continue;
         if (outcome.state === 'refused') { fail(err(outcome.error)); continue; } // its own reason, next to any storage banner
         const { command } = outcome;
-        setOpen({ id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
+        // An uncertain form already open for another entry is never replaced: its own Retry settles it first (Haiku r18 N-A).
+        setOpen(o => o?.uncertain && o.requestId !== command.requestId ? o
+          : { id: command.driverId, kind: command.kind, amount: String(command.amountCents / 100), note: command.note, requestId: command.requestId, uncertain: true, origin: command, legacy });
         return true;
       }
     } catch (e) { if (live.current) fail(err(e)); } // the saved command stays on the device for the next attempt
@@ -147,10 +150,13 @@ export default function AdminCash() {
       if ((open.origin || kept) && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session, open.requestId); }
     } catch (e) {
       if (!alive()) return; // a failure of another session's work is not shown on this one (Sol R14-M2)
-      fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
       // A saved entry holds this build's slot: the typed draft closes before it is shown, as with the installed build's slot,
-      // so the draft can never post after that entry settles (Sol R19-M5, Haiku r17 N6).
-      if (e instanceof Error && e.message === 'cash_command_pending' && alive()) { setOpen(null); setMessage(c.cashSettledFirst); setRecovering(true); await recover(actorId, run, session); }
+      // so it can never post after that entry settles; recovery then says what comes next (Sol R19-M5, R20-L1). An uncertain
+      // form is never dismissed: its own Retry settles it by receipt (Haiku r18 N-A).
+      if (e instanceof Error && e.message === 'cash_command_pending') {
+        if (!open.uncertain) { setOpen(null); setMessage(c.cashSettledFirst); }
+        setRecovering(true); await recover(actorId, run, session);
+      } else fail(err(e)); // not saved, so nothing was sent
     } finally { inFlight.current = false; setBusy(false); }
   }
 
@@ -169,7 +175,7 @@ export default function AdminCash() {
 
   // A new entry would replace the one form and the one saved command: wait for the lookup, the send, or the unconfirmed entry.
   const blocked = busy || recovering || !!open?.uncertain || storageFailed;
-  const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
+  const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.cashSettleFirst : c.wait_busy;
 
   return <Screen onRefresh={() => { setMessage(''); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />

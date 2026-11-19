@@ -14,7 +14,9 @@ await assert.rejects(inProcess('cash', async () => { throw new Error('boom'); })
 assert.equal(await inProcess('cash', async () => 'after-reject'), 'after-reject');
 await assert.rejects(inProcess('cash', () => { throw new Error('sync'); }), /sync/);
 assert.equal(await inProcess('cash', async () => 'after-throw'), 'after-throw');
-let other = false;
-await inProcess('other', async () => { other = true; });
-assert.ok(other, 'another lock name does not wait');
+// Another lock name runs while the first is still held (Sol R20-L2).
+let hold;
+const held = inProcess('cash', () => new Promise(resolve => { hold = resolve; }));
+assert.equal(await inProcess('other', async () => 'independent'), 'independent', 'another lock name does not wait');
+hold(); await held;
 console.log('PASS: in-process lock serializes holders and survives rejecting and throwing ones');

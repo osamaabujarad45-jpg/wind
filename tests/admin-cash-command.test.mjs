@@ -178,6 +178,24 @@ for (const status of [400, 404]) { // the server refused this request id before 
   garbled = false;
   const dropped = await sendCashCommand(dropAtCleanup, command);
   assert.deepEqual([dropped.state, dropped.stop, dropAtCleanup.stored], ['refused', undefined, null]);
+  // Sol R20-M1: corrupt bytes that cannot be dropped leave ownership unknown: no marker is written over them, entries stop.
+  const corruptStuck = rig({ send: async () => { corruptStuck.corrupt = true; throw Object.assign(new Error('invalid_amount'), { status: 400 }); } });
+  corruptStuck.read = async () => { if (corruptStuck.corrupt) throw new Error('invalid_pending_command'); return corruptStuck.stored; };
+  corruptStuck.write = async c => { if (c === null && corruptStuck.corrupt) throw new Error('disk'); corruptStuck.stored = c; };
+  const corruptOutcome = await sendCashCommand(corruptStuck, command);
+  assert.deepEqual([corruptOutcome.state, corruptOutcome.stop, corruptStuck.stored?.refused], ['refused', true, undefined]);
+  // Haiku r18 N-A: a retry whose slot now holds another command is settled by its own receipt; the other command stays.
+  const otherHeld = rig({ receipt: async () => ({ entry: matched }) }); otherHeld.stored = newer;
+  const settledOwn = await sendCashCommand(otherHeld, command, true);
+  assert.deepEqual([settledOwn.state, otherHeld.sends, otherHeld.stored], ['recorded', 0, newer]);
+  // Haiku r18 N-B: the server's own idempotency_conflict closes its form like any known conflict.
+  const serverConflict = rig({ send: async () => { throw Object.assign(new Error('idempotency_conflict'), { status: 409 }); } });
+  const serverConflictOutcome = await sendCashCommand(serverConflict, command);
+  assert.deepEqual([serverConflictOutcome.error, formAfter({ requestId: command.requestId, amount: '12.5' }, serverConflictOutcome)], ['idempotency_conflict', null]);
+  // Sol R20-L2: one recovery call gives both the verdict and the stop.
+  const oneCall = failClear(rig({ receipt: async () => ({ entry: matched }) })); oneCall.stored = command;
+  const oneCallOutcome = await recoverCashCommand(oneCall, 7);
+  assert.deepEqual([oneCallOutcome.state, oneCallOutcome.stop], ['recorded', true]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -344,7 +362,10 @@ assert.match(screen, /if \(generation\.current === run\) \{\n\s+if \(outcome\.st
 assert.match(screen, /\{storageFailed && <ErrorText>\{lockless \? c\.err_cash_browser_unsupported : c\.err_cash_storage_failed\}<\/ErrorText>\}/);
 assert.doesNotMatch(screen, /fail\(err\('cash_storage_failed'\)\)/);
 // Sol R19-M5: a saved entry in this build's slot closes the typed draft too. Sol R19-M1: no cash entry without Web Locks.
-assert.match(screen, /e\.message === 'cash_command_pending' && alive\(\)\) \{ setOpen\(null\);/);
+assert.match(screen, /if \(e instanceof Error && e\.message === 'cash_command_pending'\) \{\n\s+if \(!open\.uncertain\) \{ setOpen\(null\);/);
+// Sol R20-M2: a later recorded receipt never clears an earlier slot's instruction; Haiku r18 N-A: an open uncertain form is kept.
+assert.doesNotMatch(screen, /setFailure\(''\); recorded\(outcome\.entry\)/);
+assert.match(screen, /setOpen\(o => o\?\.uncertain && o\.requestId !== command\.requestId \? o/);
 assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 // Sol R18-M4 / Haiku r16 L1: settling a saved installed-build entry closes the typed fresh form and says why.
 assert.match(screen, /setOpen\(null\); setMessage\(c\.cashSettledFirst\);/);
