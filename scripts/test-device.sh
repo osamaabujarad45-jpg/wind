@@ -183,8 +183,10 @@ docker run --rm --network host --entrypoint sh \
   # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
   # An invalid entry leaves the reusable path first (one rename, under the volume lock), then is deleted: a removal that
   # stops halfway can never look like a cache hit (Sol R13-L3).
-  drop() {
-    if mv -T "/cache/nm/$KEY" "/cache/nm/trash.$$"; then rm -rf "/cache/nm/trash.$$"; echo "entry $KEY dropped; the next run reinstalls" >> /logs/summary.txt
+  drop() { # into the directory of this run on the same volume: unique, and removed with the run in any case
+    if mv -T "/cache/nm/$KEY" "$RUN/dropped"; then
+      if rm -rf "$RUN/dropped"; then echo "entry $KEY dropped; the next run reinstalls" >> /logs/summary.txt
+      else echo "entry $KEY moved out of the cache; deleting it failed ($RUN/dropped goes with the run directory)" >> /logs/summary.txt; fi
     else echo "could not drop dependency cache entry $KEY (its in-use marker remains): remove it by hand" >> /logs/summary.txt; fi
   }
   # The branch follows the exit status of the scan and of reading its result: an unreadable cache is not a clean one, and

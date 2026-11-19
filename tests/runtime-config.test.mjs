@@ -34,7 +34,7 @@ assert.equal(clientUpdateRequired('10012, 10014', { WIND_MIN_CLIENT_BUILD: '1001
 // Cashier protocol (Sol R10-H2, Haiku r9 M2): older or header-less cashier bundles cannot write cash in production.
 assert.equal(cashClientFenced('10104', false), true);
 assert.equal(cashClientFenced(String(CLIENT_BUILD), true), false, 'this build writes');
-assert.equal(cashClientFenced(undefined, true), true, 'production: an install up to 1.0.13 sends no build');
+assert.equal(cashClientFenced(undefined, true), true, 'production: a build from before the forced-upgrade gate sends no build');
 assert.equal(cashClientFenced(undefined, false), false, 'outside production: scripts and tests');
 assert.equal(cashClientFenced('10104, 10105', true), true, 'a repeated header cannot slip past with a later value');
 assert.equal(cashClientFenced('junk', true), true);

@@ -65,6 +65,9 @@ export default function AdminCash() {
   // again, so a second saved command is never left without a form (Sol R10-M1).
   // Each recovery run belongs to one signed-in admin: a run started for another one never touches this screen (Haiku r9 L1).
   const generation = useRef(0);
+  // This device could not keep a refused entry's state: no more cash entries on this screen (Sol R14-M1; deploy.md).
+  const storageBroken = useRef(false);
+  const [storageFailed, setStorageFailed] = useState(false);
   // A run is alive while its effect generation and the API session it started under are current: a sign-in switches the
   // token before React re-renders, so the generation alone is not enough (Sol R13-L1, Haiku r11 N-M1).
   async function recover(id: number, run = generation.current, session = apiSessionRevision()) { // `recovering` is already true
@@ -81,7 +84,12 @@ export default function AdminCash() {
         return;
       }
     } catch (e) { if (live.current) fail(err(e)); } // the saved command stays on the device for the next attempt
-    finally { if (live.current) setRecovering(false); }
+    finally {
+      if (live.current) setRecovering(false);
+      // Cancelled by a new API session for the same admin (a sign-out that did not complete): the screen is still theirs, so
+      // the drain starts again under the new session instead of leaving every entry blocked (Sol R14-M3).
+      else if (generation.current === run && !storageBroken.current) void Promise.resolve().then(() => recover(id, run, apiSessionRevision()));
+    }
   }
   useEffect(() => {
     const run = ++generation.current;
@@ -99,12 +107,14 @@ export default function AdminCash() {
     try {
       const outcome: CashOutcome = await sendCashCommand(cashIO(actorId, !!open.legacy), open.origin ?? newCashCommand(actorId, open.id, open.kind, cents(open.amount), open.note.trim(), open.requestId), !!open.uncertain, alive);
       if (!alive()) return; // another admin signed in meanwhile: nothing of this send belongs on their screen
+      if (outcome.state === 'refused' && outcome.error === 'cash_storage_failed') { storageBroken.current = true; setStorageFailed(true); }
       if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
       reload(); reloadPending();
-      if (open.origin && outcome.state !== 'unconfirmed') { setRecovering(true); await recover(actorId, run, session); } // the other slot may hold a command too
+      if (open.origin && outcome.state !== 'unconfirmed' && !storageBroken.current) { setRecovering(true); await recover(actorId, run, session); } // the other slot may hold a command too
     } catch (e) {
+      if (!alive()) return; // a failure of another session's work is not shown on this one (Sol R14-M2)
       fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
       if (e instanceof Error && e.message === 'cash_command_pending' && alive()) { setRecovering(true); await recover(actorId, run, session); } // show the command that holds the slot
     } finally { inFlight.current = false; setBusy(false); }
@@ -124,8 +134,8 @@ export default function AdminCash() {
   }
 
   // A new entry would replace the one form and the one saved command: wait for the lookup, the send, or the unconfirmed entry.
-  const blocked = busy || recovering || !!open?.uncertain;
-  const blockedReason = open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
+  const blocked = busy || recovering || !!open?.uncertain || storageFailed;
+  const blockedReason = storageFailed ? c.err_cash_storage_failed : open?.uncertain ? c.err_cash_command_pending : c.wait_busy;
 
   return <Screen onRefresh={() => { setMessage(''); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />

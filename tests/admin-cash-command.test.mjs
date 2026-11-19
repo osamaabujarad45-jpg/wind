@@ -79,6 +79,18 @@ for (const status of [400, 404]) { // the server refused this request id before 
   const broken = rig({ send: failing(400) }); broken.write = async c => { if (c === null || c.refused) throw new Error('disk'); broken.stored = c; };
   assert.deepEqual([(await sendCashCommand(broken, command)).state, (await sendCashCommand(rig({ send: failing(400) }), command)).state], ['refused', 'refused']);
   assert.equal((await sendCashCommand(Object.assign(rig({ send: failing(400) }), { write: async c => { if (c === null || c?.refused) throw new Error('disk'); } }), command)).error, 'cash_storage_failed');
+  // Sol R14-L1 / M1, Haiku r12 F1/F2: a refusal whose record stays in the slot (marked, or storage broken) is `kept`, and
+  // its form closes even on a first send: a new entry gets a new request id, and an edit is never settled as the old one.
+  const kept = rig({ send: failing(400) }); kept.write = async c => { if (c === null) throw new Error('disk'); kept.stored = c; };
+  const keptOutcome = await sendCashCommand(kept, command);
+  assert.equal(keptOutcome.kept, true);
+  assert.equal(formAfter({ requestId: command.requestId, amount: '12.5' }, keptOutcome), null);
+  const brokenOutcome = await sendCashCommand(Object.assign(rig({ send: failing(400) }), { write: async c => { if (c === null || c?.refused) throw new Error('disk'); } }), command);
+  assert.deepEqual([brokenOutcome.error, brokenOutcome.kept, formAfter({ requestId: command.requestId }, brokenOutcome)], ['cash_storage_failed', true, null]);
+  // Sol R14-M2: a 409 whose admin session changed before the receipt lookup makes no lookup and leaves the slot alone.
+  let live = true;
+  const late = rig({ send: async () => { live = false; throw Object.assign(new Error('remittance_pending'), { status: 409 }); } });
+  assert.deepEqual([(await sendCashCommand(late, command, false, () => live)).state, late.receipts, late.stored?.requestId], ['empty', 0, command.requestId]);
   // Haiku r11 N-M1: a send whose admin session changed before it went out is not sent.
   const switched = rig();
   assert.deepEqual([(await sendCashCommand(switched, command, false, () => false)).state, switched.sends], ['empty', 0]);
@@ -228,12 +240,15 @@ assert.match(screen, /, !!open\.uncertain, alive\);/); // every uncertain form's
 // Haiku r11 N-M1 / Sol R13-L1: a send and its follow-on drain stop if another admin's session replaced theirs.
 assert.match(screen, /const alive = \(\) => generation\.current === run && apiSessionRevision\(\) === session;/);
 assert.match(screen, /await recover\(actorId, run, session\)/);
+// Sol R14-M1: a storage failure stops cash entry on this screen; R14-M3: a drain cancelled by a same-admin session change restarts.
+assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain \|\| storageFailed;/);
+assert.match(screen, /else if \(generation\.current === run && !storageBroken\.current\) void Promise\.resolve\(\)\.then\(\(\) => recover\(id, run, apiSessionRevision\(\)\)\);/);
 // Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
 assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
 assert.equal(parseCashSlot(null), null);
 assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);
-assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/);
+assert.match(screen, /const blocked = busy \|\| recovering \|\| !!open\?\.uncertain/); // (plus a storage failure, below)
 assert.match(screen, /!open\.uncertain && <Button title=\{c\.cancel\}/);
 // A53 walk 18 Nov: resolving a waiting handover is an action (Confirm/Dispute handover), not a status word, and the form
 // names its decision, driver and amount; the save button is not a question.

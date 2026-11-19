@@ -14,7 +14,8 @@ export type CashIO = { read: () => Promise<unknown>; write: (command: CashComman
   /** One command at a time across tabs: without it a second tab overwrites a saved unconfirmed command. */
   exclusive?: <T>(run: () => Promise<T>) => Promise<T> };
 export type CashOutcome = { state: 'empty' } | { state: 'recorded'; command: CashCommand; entry: CashEntry }
-  | { state: 'refused'; command: CashCommand; error: unknown } | { state: 'unconfirmed'; command: CashCommand; error?: unknown };
+  // `kept`: refused, but the slot still holds the record (marked refused, or storage would not change it at all).
+  | { state: 'refused'; command: CashCommand; error: unknown; kept?: true } | { state: 'unconfirmed'; command: CashCommand; error?: unknown };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const id = (n: unknown) => Number.isSafeInteger(n) && (n as number) > 0;
@@ -67,9 +68,10 @@ export function receiptMatches(entry: CashEntry, command: CashCommand): boolean 
 const conflict = 'idempotency_conflict';
 const settledElsewhere = 'cash_command_settled';
 const storageFailed = 'cash_storage_failed';
-/** Settle a command by its receipt alone, never by sending it. Used for an installed build's command whose meaning is
- *  unknowable (any receipt settles it), and for a retry whose slot no longer holds it: another tab or window already
- *  settled it, so resending could book it twice (Haiku r9 M1). No receipt: refused for good, check the balance. */
+/** Settle a command by its receipt alone, never by sending it: an installed build's adjustment (intent unknowable), a
+ *  record marked refused, and any uncertain form's Retry whose slot no longer holds it (another tab or window settled it,
+ *  so resending could book it twice; Haiku r9 M1). A complete matching receipt records it, a complete mismatch is a
+ *  conflict, an incomplete receipt settles nothing, and no receipt is a refusal for good (check the balance). */
 async function settleByReceipt(io: CashIO, command: CashCommand, alive: () => boolean = () => true): Promise<CashOutcome> {
   const legacy = ambiguousLegacy(command);
   try {
@@ -104,8 +106,9 @@ export function cashCommandBody({ kind, driverId, amountCents, note, requestId }
 export const refusedForGood = (error: unknown) => [400, 404, 409].includes(status(error));
 
 /** Save, then send. Recorded or refused-for-good clears the saved command; anything else keeps it unconfirmed.
- *  A different command still unconfirmed is never overwritten: it must be settled first. `retry`: the command comes
- *  from a restored, uncertain form, so it is resent only while its slot still holds it. */
+ *  A different command still unconfirmed is never overwritten: it must be settled first. `retry`: the command comes from
+ *  an uncertain form (restored, or a lost reply in this tab), so it is resent only while its slot still holds it.
+ *  `alive`: false once another admin's session replaced the one this send started under; nothing more is done then. */
 export function sendCashCommand(io: CashIO, command: CashCommand, retry = false, alive: () => boolean = () => true): Promise<CashOutcome> {
   return locked(io, async () => {
     const saved = readCashCommand(await io.read(), command.actorId);
@@ -126,7 +129,9 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
       // The server said this id holds another request: that is the answer, whatever a receipt shows (Sol R10-L1).
       if (status(error) === 409 && (error as Error).message !== conflict) { // another 409: only its receipt can tell
         try {
+          if (!alive()) return { state: 'empty' }; // the lookup would ask as the replacement admin (Sol R14-M2)
           const { entry } = await io.receipt(command);
+          if (!alive()) return { state: 'empty' };
           const match = entry ? receiptMatches(entry, command) : false;
           if (entry && match === undefined) return { state: 'unconfirmed', command, error };
           if (entry && !match) { await clear(io); return { state: 'refused', command, error: conflict }; }
@@ -135,11 +140,13 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
       }
       // A refusal whose slot could not be cleared is marked refused, so a restart or a Retry settles it by receipt only and
       // never sends it again (Sol R12-M2). If even that write fails, storage is broken: it stays unconfirmed.
+      if (!alive()) return { state: 'empty' };
       if (!(await io.write(null).then(() => true, () => false))) {
-        if (await io.write({ ...command, refused: true }).then(() => true, () => false)) return { state: 'refused', command, error };
-        // Neither write took: this device cannot keep the refusal. It is reported as a storage failure, never as a
-        // resendable entry, and the cashier is told not to retry it here (Sol R13-M2; deploy.md).
-        return { state: 'refused', command, error: storageFailed };
+        // The record stays in the slot either way, so the form closes (`kept`): a new entry gets a new request id.
+        if (await io.write({ ...command, refused: true }).then(() => true, () => false)) return { state: 'refused', command, error, kept: true };
+        // Neither write took: this device cannot keep the refusal. It is a storage failure, never a resendable entry; the
+        // screen stops taking cash entries and the cashier reconciles from another device (Sol R13-M2, R14-M1; deploy.md).
+        return { state: 'refused', command, error: storageFailed, kept: true };
       }
       return { state: 'refused', command, error };
     }
@@ -178,8 +185,9 @@ export function recoverCashCommand(io: CashIO, actorId: number, alive: () => boo
 export function formAfter<F extends { requestId: string; uncertain?: boolean; origin?: unknown }>(form: F | null, outcome: CashOutcome): F | null {
   if (!form || outcome.state === 'empty' || form.requestId !== outcome.command.requestId) return form;
   // An installed build's unknowable entry closes too: the cashier enters a payout or a charge afresh, never this form again.
-  // So does any refused form that was uncertain (restored, or a lost reply in this tab): its request id is spent, and a
-  // deliberate new entry starts from the balance row with a new one (Sol R10-H1, R13-M1, Haiku r11 N-M2).
-  if (outcome.state === 'recorded' || (outcome.state === 'refused' && (outcome.error === ambiguous || form.origin || form.uncertain))) return null;
+  // So does any refused form that was uncertain (restored, or a lost reply in this tab), and any refusal whose record stays
+  // in the slot (`kept`): its request id is spent, and a deliberate new entry starts from the balance row with a new one
+  // (Sol R10-H1, R13-M1, R14-L1, Haiku r11 N-M2, r12 F1/F2). Only a clean first-send refusal stays open for editing.
+  if (outcome.state === 'recorded' || (outcome.state === 'refused' && (outcome.error === ambiguous || outcome.kept || form.origin || form.uncertain))) return null;
   return { ...form, uncertain: outcome.state === 'unconfirmed' };
 }
