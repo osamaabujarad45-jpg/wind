@@ -3775,6 +3775,7 @@ async function createShippingBlockReview(order: Row, driverId: number, blockerId
   await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, fareCents(order), at, twoWorkingDays(at));
 }
+// Best effort: a database this release cannot read yet (a legacy file mid-migration) logs and starts; nothing is lost, the next start retries.
 await persistence.scope(async () => {
   if (!(await captainPayAvailable())) return;
   // Recover missed shipping reviews at startup, including blocks an older binary recorded during a rollback.
@@ -3789,7 +3790,7 @@ await persistence.scope(async () => {
       && (detail.assignmentEpoch == null || detail.assignmentEpoch === order.assignment_epoch))
       await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at);
   }
-});
+}).catch(error => logServerError('maintenance_failed', error));
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
   cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
 registerBlockReviewRoutes(route, async ({ user, params, body }) => {
