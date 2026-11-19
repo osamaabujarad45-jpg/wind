@@ -63,8 +63,9 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
 
     await deps.db.exec('BEGIN IMMEDIATE');
     try {
-      // Same lock order as the driver accept (driver, then order) so the two cannot deadlock on PostgreSQL.
+      // Same lock order as the driver accept: order (HTTP preflight), rider fence, captain, then policy (Sol R3-H2).
       if (deps.db.backend === 'postgres') {
+        await deps.guardRideAssignment(orderId);
         await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
         await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', orderId);
       }

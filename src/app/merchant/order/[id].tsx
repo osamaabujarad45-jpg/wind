@@ -51,7 +51,7 @@ export default function MerchantOrder() {
       {!s.acceptExtended && clock.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
       <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
-      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject} reason={reject ? undefined : c.merchantRejectChoose}
+      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject || clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : reject ? undefined : c.merchantRejectChoose}
         onPress={() => reject && confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
     </Card>}
     {s.state === 'accepted' && <Button title={c.merchantStartPreparing} icon="construct-outline" loading={busy === 'prep'} onPress={() => act('prep', `/merchant/orders/${order.id}/preparing`)} />}

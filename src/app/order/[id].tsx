@@ -68,7 +68,7 @@ export default function OrderScreen() {
   const { time } = useFormat();
   const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
-  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}` : null);
+  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}&assignment=${polled.recovery?.assignmentEpoch ?? polled.assignedAt ?? ''}` : null); // A→B→A restarts the watch (Sol R3-M3)
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
   const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
@@ -1068,7 +1068,12 @@ function GraceClock({ left, extended }: { left: number; extended: boolean }) {
   const { c } = useCopy();
   const text = left > 0 ? fill(c.rideGrace, { n: left }) : c.rideGraceEnded;
   const step = left > 120 ? 4 : left > 60 ? 3 : left > 30 ? 2 : left > 0 ? 1 : 0;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- speak on a step or extension change, not every second
-  useEffect(() => { AccessibilityInfo.announceForAccessibility(text); }, [step, extended]);
-  return <Txt variant="caption">{text}</Txt>;
+  // What is spoken changes only at a step or an extension: native announces it, the web reads it from a polite live region
+  // (announceForAccessibility is a no-op on react-native-web; Sol R3-M5), the same pattern as the captain's offer clock.
+  const spoken = step === 0 ? c.rideGraceEnded : `${extended ? `${c.rideGraceExtended} ` : ''}${fill(c.rideGrace, { n: [0, 30, 60, 120, Math.ceil(left / 60) * 60][step] })}`;
+  useEffect(() => { if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(spoken); }, [spoken]);
+  return <View>
+    <Txt variant="caption">{text}</Txt>
+    {Platform.OS === 'web' && <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{spoken}</Txt></View>}
+  </View>;
 }

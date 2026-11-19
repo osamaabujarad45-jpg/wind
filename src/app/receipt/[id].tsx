@@ -65,7 +65,7 @@ export default function Receipt() {
           <View style={{ flexDirection: 'row' /* ltr: one centred badge, direction unused */ }}><Badge label={statusText(c, order)} status={order.status} /></View>
         </View>
         <View style={styles.tear} />
-        {lines.map(([label, value]) => <Row key={label} gap={12} style={styles.line}>
+        {lines.map(([label, value], i) => <Row key={i} gap={12} style={styles.line}>{/* two items can share a name (Sol R3-L2); the list is static */}
           <Txt variant="caption" style={{ width: 104 }}>{label}</Txt>
           <Txt variant="title" style={{ flex: 1, fontSize: 14 }}>{value}</Txt>
         </Row>)}

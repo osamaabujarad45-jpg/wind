@@ -18,7 +18,7 @@ import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecy
 import { registerBlockReviewRoutes } from './domain/block-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
-import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_POLICY_KEY } from './domain/ledger.ts';
+import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_NO_FARE } from './domain/ledger.ts';
 import { codGoodsMinor, createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { needStaff, Ops, registerOpsRoutes, staffActor } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
@@ -220,7 +220,6 @@ function logAccountCommandFailure(error: unknown) {
 
 async function settings(): Promise<Settings> {
   const stored = Object.fromEntries((await all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
-  delete stored[RETURN_POLICY_KEY]; // an internal fact, not an owner setting
   return { ...defaultSettings, ...(enabledServices.includes('shop') && { driverCashCap: 1000 }), ...stored };
 }
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
@@ -607,16 +606,12 @@ registerResourceScopeRoutes(route, resourceScope);
 const privateObjects = createPrivateObjects(persistence, fail);
 registerPrivateObjectRoutes(route, privateObjects);
 const ledger = new Ledger(persistence, fail);
-/** The DRV-17 return cutover (see owedColumns): recorded once when the release starts (import.meta.main) or, failing that, in the first
- * transaction that needs it. Never cached across requests, so a rolled-back first write is simply written again. */
-async function returnPolicyFrom() {
-  return persistence.memo('returnPolicyFrom', async () => {
-    const read = async () => (await one('SELECT value FROM settings WHERE key = ?', RETURN_POLICY_KEY))?.value;
-    let at = await read();
-    if (at == null) { await run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', RETURN_POLICY_KEY, Date.now()); at = await read(); }
-    return Number(at);
-  });
-}
+/** DRV-17 (Sol R3-H1): a return closed by this release carries its policy on the order: commission 0 and a RETURN_NO_FARE marker
+ * written in the same transaction. Balances, the live journal, the ledger import and reconciliation read the marker, so a return closed
+ * by any earlier writer (before the release or during a rollback) keeps exactly the commission and promo relief it was booked with. */
+const markNoFare = (actorId: number, orderId: number) =>
+  run('INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, ?, ?)', actorId, orderId, RETURN_NO_FARE, Date.now());
+const noFareSql = (alias: string) => `EXISTS (SELECT 1 FROM security_events nf WHERE nf.order_id = ${alias}.id AND nf.action = '${RETURN_NO_FARE}')`;
 
 // T29/T30: live ledger posting on the PostgreSQL capability. Journals reuse importLegacy's stable business
 // references, so a later import meets the posted journals and dedupes on the business_ref instead of
@@ -634,8 +629,8 @@ const postOrderJournals = async (orderId: number) => {
   const commission = Number(o.commission_minor ?? 0), discount = Number(o.discount_minor ?? 0);
   if (commission > 0) await ledger.postJournal({ businessRef: `order:${o.id}:commission`, kind: 'commission_accrual', orderId: o.id as number,
     entries: [{ accountId: receivable.id as number, debitMinor: commission }, { accountId: revenue.id as number, creditMinor: commission }] });
-  // DRV-17 cutover, the same predicate as owedColumns and the import: a return before the stored instant keeps its promo relief.
-  if (discount > 0 && (o.status !== 'returned' || Number(o.completed_at ?? o.updated_at) < await returnPolicyFrom())) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
+  // DRV-17: the same predicate as owedColumns and the import: only a return this release closed (marker) loses its promo relief.
+  if (discount > 0 && !(o.status === 'returned' && await one(`SELECT 1 FROM orders o WHERE o.id = ? AND ${noFareSql('o')}`, o.id))) await ledger.postJournal({ businessRef: `order:${o.id}:discount`, kind: 'discount_funding', orderId: o.id as number,
     entries: [{ accountId: promo.id as number, debitMinor: discount }, { accountId: receivable.id as number, creditMinor: discount }] });
 };
 // Shop door cash on PostgreSQL: the captain owes the goods (the shop's money) and the service fee (Wind's), so a remittance relieves a
@@ -2720,7 +2715,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
       next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), // DRV-17: a return earns no commission
       now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
       door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
-    if (next === 'returned') (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now));
+    if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
     else (await rewardReferral(r.id, now));
     await shop.afterFinish(r, next, user.id, body);
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
@@ -2789,6 +2784,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (body.action === 'confirm_return') {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
+      await markNoFare(user.id, id);
       await shop.afterFinish(order, 'returned', user.id);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
@@ -3257,18 +3253,17 @@ const cashMinor = (column: 'commission' | 'discount') => persistence.backend ===
 // less captain pay from the shop ledger (DRV-17).
 const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 ELSE COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot END)
     FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
-// DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. Returns finished from the cutover
-// instant (stored once, on the first balance read of this release) carry commission 0 and no discount relief; earlier returns keep the
-// commission and discount they were booked with, so no live balance moves on deploy (Sol R2-H5). The ledger import and the migration
-// reconciliation read the same instant. Rolling back to a release without it gives returns since the cutover their discount relief again.
-const owedColumns = (shop: boolean, returnCutoff: number) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
+// DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. A return this release closed carries
+// commission 0 and the RETURN_NO_FARE marker; any other return keeps what it was booked with, so no live balance moves on deploy, rollback
+// or re-release (Sol R2-H5, R3-H1).
+const owedColumns = (shop: boolean) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
     COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND (status = 'completed'
-      OR (status = 'returned' AND COALESCE(completed_at, updated_at) < ${Math.trunc(returnCutoff)}))), 0) discounts,
+      OR (status = 'returned' AND NOT ${noFareSql('orders')}))), 0) discounts,
     ${cashSum("kind = 'adjustment'")} adjustments, ${cashSum("kind = 'remittance' AND status = 'confirmed'")} remitted`;
 async function cashBalances(where: string, ...params: SQLInputValue[]) {
   const shopTablesReady = await shopTables(persistence);
   return (await all(`SELECT u.id, u.name, u.phone,
-    ${owedColumns(shopTablesReady, await returnPolicyFrom())},
+    ${owedColumns(shopTablesReady)},
     ${cashSum("kind = 'remittance' AND status = 'pending'")} pending,
     (SELECT MAX(created_at) FROM cash_entries e WHERE e.driver_id = u.id AND kind = 'remittance') last_remittance
     FROM users u WHERE u.role = 'driver' AND u.phone NOT LIKE 'deleted-%' AND ${where}`, ...params))
@@ -3285,7 +3280,7 @@ async function cashExposureCents(driverId: number) {
   // One statement, so PostgreSQL reads owed and in-hand from one snapshot: a job finishing between two reads cannot vanish from both.
   const shopReady = await shopTables(persistence);
   // A shop job in hand also holds the most cash its door can collect for Wind and the shop: the goods cap and the service fee.
-  const r = (await one(`SELECT ${owedColumns(shopReady, await returnPolicyFrom())},
+  const r = (await one(`SELECT ${owedColumns(shopReady)},
     COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${activeSql})), 0) active,
     ${shopReady ? `COALESCE((SELECT SUM(s.goods_cap_agorot + s.service_fee_agorot) FROM shop_orders s JOIN orders o ON o.id = s.order_id
       WHERE o.driver_id = u.id AND o.status IN (${activeSql})), 0)` : '0'} shop_hold
@@ -3439,7 +3434,7 @@ route('POST', '/api/admin/orders/:id/proof-reset', async ({ user, params, body }
 route('GET', '/api/admin/stats', async ({ user }) => {
   need(user, 'admin');
   const orders = (await one(`SELECT COUNT(*) completed, COALESCE(SUM(price), 0) gmv, COALESCE(SUM(commission), 0) commission,
-    COALESCE(SUM(discount), 0) discounts FROM orders WHERE status IN (${finishedSql})`))!;
+    COALESCE(SUM(CASE WHEN status = 'returned' AND ${noFareSql('orders')} THEN 0 ELSE discount END), 0) discounts FROM orders WHERE status IN (${finishedSql})`))!; // DRV-17 promo spend
   const subs = (await one("SELECT COUNT(*) count, COALESCE(SUM(price), 0) revenue FROM subscriptions WHERE activated_at IS NOT NULL"))!;
   // Calendar days in server local time (set TZ), built with setDate so DST changes don't shift the buckets.
   const start = new Date();
@@ -4148,8 +4143,6 @@ if (import.meta.main) {
   } else {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     (await pruneExpired());
-    // DRV-17: the return cutover is the release start (the first balance read records it too, for a process started otherwise).
-    try { await persistence.atomic({ purpose: 'release_start' }, () => returnPolicyFrom()); } catch (error) { logServerError('maintenance_failed', error); }
     setInterval(async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));

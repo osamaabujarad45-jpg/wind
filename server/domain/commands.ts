@@ -16,6 +16,8 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   // Ride lifecycle steps replay on their own state (arrival, no-show event, one-shot grace) and take strict bodies with no
   // envelope fields: refuse the envelope before anything is stored rather than record an invalid_input (review 19 Nov).
   if (/^\/api\/orders\/\d+\/(?:arrive|ride\/no-show|ride\/grace-extension)$/.test(path)) fail(400, 'unsupported_command');
+  // Staff-duty decisions replay on their own record under the current duty check, never from a saved receipt (Sol R3-M2).
+  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };

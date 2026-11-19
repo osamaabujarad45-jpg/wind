@@ -64,11 +64,11 @@ Production moved to a VM on a separate student subscription. The 15 November sec
   `systemctl daemon-reload`, and that server cannot read master's schema: it would need its own empty database
   (`/data/pre-master-20261116/wind.db`).
 - **Release notes, 19 November (PR #97):**
-  - Returns (SRS DRV-17): from the first balance read after the deploy, the server stores a cutover instant
-    (`settings` key `returnPolicyFrom`). A return finished from then on owes no commission and gets no promo relief;
-    returns before it keep what they were booked with, so no captain's balance moves at the deploy. Rolling back to an
-    earlier tree gives returns made since the cutover their promo relief again (their commission stays 0): check
-    `/admin/cash` for those captains after a rollback.
+  - Returns (SRS DRV-17): a return this release closes owes no commission and gets no promo relief. The order itself records
+    that (commission 0 and a `RETURN_NO_FARE` audit row written in the same transaction), so every return closed before the deploy,
+    or by an earlier tree during a rollback, keeps exactly what it was booked with, and no captain's balance moves at deploy,
+    rollback or re-release. An earlier tree reading the database gives this release's returns their promo relief again while it
+    runs (their commission stays 0); check `/admin/cash` for those captains after a rollback.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
   - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:

@@ -593,6 +593,7 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     } else {
       if (order.status!=='returning') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='returned',commission=0,completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id); // DRV-17
+      await db.run("INSERT INTO security_events(actor_id,order_id,action,created_at) VALUES(?,?,'RETURN_NO_FARE',?)",user.id,id,Date.now()); // main.ts markNoFare
     }
     await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
     await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id); return after;

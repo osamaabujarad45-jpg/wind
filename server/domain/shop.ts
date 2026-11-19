@@ -580,6 +580,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (!merchantRejects.includes(body.reason)) fail(400, 'invalid_input');
     if (r.status === 'cancelled' && s.cancel_reason === body.reason) return getOrder(r.id, user);
     if (r.status !== 'requested' || s.merchant_state) fail(409, 'cannot_reject');
+    if (Number(s.accept_deadline) <= Date.now()) fail(409, 'accept_expired'); // past the window the sweep records the timeout (Sol R3-L4)
     await cancelWith(r, s, body.reason, user.id);
     return getOrder(r.id, user);
   }));

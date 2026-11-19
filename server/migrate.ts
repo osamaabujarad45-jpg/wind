@@ -156,17 +156,17 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
   };
   if (stable(financial) !== stable(targetFinancial)) mismatches.push({ table: 'financial', reason: 'minor-unit totals differ' });
   const obligations: Row[] = [];
-  // DRV-17 cutover instant from the source settings (main.ts owedColumns); without one every return keeps its promo relief.
-  const returnCutoff = Math.trunc(Number((snapshot.rows.settings ?? []).find((r: Row) => r.key === 'returnPolicyFrom')?.value ?? Number.MAX_SAFE_INTEGER));
+  // DRV-17: returns closed under the no-fare rule (RETURN_NO_FARE marker) get no promo relief; every other return keeps its booked terms.
+  const noFare = new Set((snapshot.rows.security_events ?? []).filter((r: Row) => r.action === 'RETURN_NO_FARE').map((r: Row) => Number(r.order_id)));
   for (const driver of new Set([...orders.map(r => r.driver_id), ...cash.map(r => r.driver_id), ...snapshot.rows.users.filter(r => r.role === 'driver').map(r => r.id)].filter(v => v !== null))) {
     const sourceOrders = orders.filter(r => r.driver_id === driver && ['completed','returned'].includes(r.status));
-    const relieved = sourceOrders.filter(r => r.status === 'completed' || Number(r.completed_at ?? r.updated_at) < returnCutoff); // DRV-17 cutover
+    const relieved = sourceOrders.filter(r => r.status === 'completed' || !noFare.has(Number(r.id))); // DRV-17 no-fare returns
     const sourceCash = cash.filter(r => r.driver_id === driver);
     const owed = BigInt(sum(sourceOrders, 'commission', true)) - BigInt(sum(relieved, 'discount', true))
       + BigInt(sum(sourceCash.filter(r => r.kind === 'adjustment'), 'amount_cents'))
       - BigInt(sum(sourceCash.filter(r => r.kind === 'remittance' && r.status === 'confirmed'), 'amount_cents'));
     const pg = (await database.one(`SELECT COALESCE((SELECT SUM(COALESCE(commission_minor,0)) FROM orders WHERE driver_id=? AND status IN ('completed','returned')),0)
-      -COALESCE((SELECT SUM(COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND (status='completed' OR (status='returned' AND COALESCE(completed_at,updated_at)<${returnCutoff}))),0)
+      -COALESCE((SELECT SUM(COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND (status='completed' OR (status='returned' AND NOT EXISTS (SELECT 1 FROM security_events nf WHERE nf.order_id=orders.id AND nf.action='RETURN_NO_FARE')))),0)
       +COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='adjustment'),0)
       -COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='remittance' AND status='confirmed'),0) owed`, driver, driver, driver, driver))!;
     if (BigInt(pg.owed) !== owed) mismatches.push({ table: 'financial', key: hash(String(driver)), reason: 'driver open obligation differs' });
