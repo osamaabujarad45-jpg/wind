@@ -64,8 +64,7 @@ export default function AdminCash() {
   // form at a time; whenever a restored form settles (or a send meets another pending command) the slots are drained
   // again, so a second saved command is never left without a form (Sol R10-M1).
   const live = useRef(true);
-  async function recover(id: number) {
-    setRecovering(true);
+  async function recover(id: number) { // `recovering` is already true: the initial state, or set by the caller
     try {
       for (const legacy of [true, false]) {
         const outcome = await recoverCashCommand(cashIO(id, legacy), id);
@@ -81,7 +80,7 @@ export default function AdminCash() {
   }
   useEffect(() => {
     live.current = true;
-    if (actorId) void recover(actorId);
+    if (actorId) void Promise.resolve(actorId).then(recover); // from a callback, as the lookup itself is: no state set in the effect body
     return () => { live.current = false; };
   }, [actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- once per signed-in admin, not per copy/reload identity
 
@@ -95,10 +94,10 @@ export default function AdminCash() {
       else if (outcome.state !== 'empty') fail(err(outcome.error));
       setOpen(o => formAfter(o, outcome)); // only the form that was sent changes
       reload(); reloadPending();
-      if (open.origin && outcome.state !== 'unconfirmed') await recover(actorId); // the other slot may hold a command too
+      if (open.origin && outcome.state !== 'unconfirmed') { setRecovering(true); await recover(actorId); } // the other slot may hold a command too
     } catch (e) {
       fail(err(e instanceof Error && e.message === 'cash_command_pending' ? e.message : e)); // not saved, so nothing was sent
-      if (e instanceof Error && e.message === 'cash_command_pending') await recover(actorId); // show the command that holds the slot
+      if (e instanceof Error && e.message === 'cash_command_pending') { setRecovering(true); await recover(actorId); } // show the command that holds the slot
     } finally { inFlight.current = false; setBusy(false); }
   }
 
