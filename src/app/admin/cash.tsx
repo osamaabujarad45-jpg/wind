@@ -47,14 +47,18 @@ export default function AdminCash() {
   const list = useRef<ScrollView>(null);
   // One action (a send and its drain, or a recovery) can settle several entries: each notice is its own line, added and never
   // replaced or merged, so no captain's receipt or instruction is lost to the next one (Sol R21-M1, R21-M2, Haiku r19 N19-2,
-  // r20 N20-3). Each action clears them first.
+  // r20 N20-3). Submit and resolve start with both cleared; pull-to-refresh clears only the success notice, so an instruction
+  // (check a balance) stays while the balances reload (Sol R22-L1).
   const fail = (notice: Notice) => { setFailure(shown => [...shown, notice]); list.current?.scrollTo({ y: 0 }); };
   const note = (notice: Notice) => setMessage(shown => [...shown, notice]);
   // The screen's direction leads and the name is isolated, as on the handover rows (A53 walk; Haiku r20 N20-2).
   const lines = (notices: Notice[]) => notices.map(notice => {
     if (typeof notice === 'string') return notice;
-    const name = data?.find(row => row.driverId === notice.driverId)?.name;
-    return `${rtl ? '\u200f' : '\u200e'}${name ? `${isolate(name)} · ` : ''}${money(notice.amountCents / 100)}: ${notice.text}`;
+    // The phone tells two captains with one name apart; a captain not on the list (not loaded yet, or gone) is named by
+    // account number, so every line names whose balance to check (Sol R22-M1, R22-M2).
+    const row = data?.find(candidate => candidate.driverId === notice.driverId);
+    const who = row ? `${isolate(row.name)} · ${ltr(row.phone)}` : `#${notice.driverId}`;
+    return `${rtl ? '\u200f' : '\u200e'}${who} · ${money(notice.amountCents / 100)}: ${notice.text}`;
   }).join('\n');
   // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
   const cents = minorFromText;

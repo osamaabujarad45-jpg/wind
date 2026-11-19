@@ -500,7 +500,7 @@ for (const language of ['ar', 'en']) for (const restored of [false, true]) {
   await tap(view, c.cashRetrySame); await flush();
   const tree = view.render();
   assert.ok(shows(tree, 'R-201') && shows(tree, 'R-202'), `${language}/${restored}: both receipts stay on screen`);
-  assert.ok(shows(tree, `${model.isolate('Other')} · 3: `), `${language}/${restored}: the drained receipt names its captain and amount`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: `), `${language}/${restored}: the drained receipt names its captain and amount`);
   assert.equal(view.calls.filter(call => call.path === '/admin/cash/remittance').length, posts, `${language}/${restored}: nothing is posted again`);
   assert.equal(store.size, 0, `${language}/${restored}: both slots are settled`);
   assert.ok(!shows(tree, c.cashUncertain), `${language}/${restored}: no form is left open`);
@@ -519,12 +519,35 @@ for (const language of ['ar', 'en']) {
   store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
   const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
   view.render(); await flush();
-  assert.ok(shows(view.render(), '1: cash_command_ambiguous') && shows(view.render(), '3: cash_command_settled'), `${language}: both lines before the list loads`);
+  assert.ok(shows(view.render(), '#7 · 1: cash_command_ambiguous') && shows(view.render(), '#8 · 3: cash_command_settled'), `${language}: both lines name their captain before the list loads`);
   data['/admin/cash'] = cashData['/admin/cash']; // the list arrives
   const tree = view.render();
-  assert.ok(shows(tree, `${model.isolate('Driver')} · 1: cash_command_ambiguous`), `${language}: the installed build's instruction names its captain`);
-  assert.ok(shows(tree, `${model.isolate('Other')} · 3: cash_command_settled`), `${language}: the second refusal is added, not swapped in`);
+  assert.ok(shows(tree, `${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1: cash_command_ambiguous`), `${language}: the installed build's instruction names its captain`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the second refusal is added, not swapped in`);
   assert.equal(store.size, 0, `${language}: both slots are settled`);
   assert.ok(view.calls.every(call => !call.path.startsWith('/admin/cash/remittance') && !call.path.startsWith('/admin/cash/adjustment')), `${language}: nothing is posted`);
 }
 console.log('Admin cash recovery keeps every instruction of one drain');
+
+// Sol R22-M2: two captains with one name, one adjustment each of the same amount, in the installed build's slot and in this
+// build's; both receipts match and carry no reference. Two recorded lines, told apart by phone.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const data = { '/admin/cash': [
+    { driverId: 7, name: 'Omar', phone: '0599000201', owedCents: 0, pendingCents: 0, lastRemittanceAt: null },
+    { driverId: 8, name: 'Omar', phone: '0599000202', owedCents: 0, pendingCents: 0, lastRemittanceAt: null }], '/admin/cash/pending': [] };
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 500, 'Fuel card charge'), schemaVersion: 1 };
+  const current = cashCommand.newCashCommand(1, 8, 'adjustment', 500, 'Fuel card charge');
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(current));
+  const receipts = { [legacy.requestId]: { id: 61, kind: 'adjustment', reference: null, amountCents: 500, note: legacy.note },
+    [current.requestId]: { id: 62, kind: 'adjustment', reference: null, amountCents: 500, note: current.note } };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null });
+  view.render(); await flush();
+  const tree = view.render();
+  for (const phone of ['0599000201', '0599000202'])
+    assert.ok(shows(tree, `${model.isolate('Omar')} · ${model.ltr(phone)} · 5: ${c.cashAdjustRecorded}`), `${language}: the adjustment for ${phone} is shown`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+}
+console.log('Admin cash drain tells same-name captains apart');
