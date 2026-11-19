@@ -54,22 +54,30 @@ IMAGE_ID=$(docker image inspect "$IMAGE" --format '{{.Id}}' | cut -c8-19) || fai
 
 # The source. WSL's git cannot read a worktree whose .git points at a Windows path; Windows git (interop) can: pick once.
 if git -C "$REPO" rev-parse HEAD >/dev/null 2>&1; then g() { git -C "$REPO" "$@"; }; else g() { git.exe -C "$(wslpath -w "$REPO")" "$@"; }; fi
-REV=$(g rev-parse --short HEAD 2>/dev/null) || REV=unknown
-DIRTY=$(g status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+COMMIT=$(g rev-parse HEAD 2>/dev/null) || COMMIT=""
+REV=${COMMIT:+$(echo "$COMMIT" | cut -c1-8)}; REV=${REV:-unknown}
+g status --porcelain > "$SRC/status" 2>/dev/null || fail_setup "git status failed: cannot tell whether the checkout is clean"
+DIRTY=$(wc -l < "$SRC/status" | tr -d ' ')
 # A tracked file that an ignore rule names (a key or .env committed by mistake) never reaches the container (Haiku r7 L-2).
-IGNORED=$(g ls-files -c -i --exclude-standard 2>/dev/null | head -3)
-[ -z "$IGNORED" ] || fail_setup "tracked files match ignore rules (untrack them first): $(echo $IGNORED)"
-if [ "$REV" != unknown ] && [ "$DIRTY" = 0 ]; then
+g ls-files -c -i --exclude-standard > "$SRC/ignored" 2>/dev/null || fail_setup "git ls-files failed"
+[ -s "$SRC/ignored" ] && fail_setup "tracked files match ignore rules (untrack them first): $(head -3 "$SRC/ignored" | tr '\n' ' ')"
+# Credential-looking names, on both routes (Sol R10-L2): a clean archive refuses a tracked one, a dirty run skips one.
+# .env.example is the reviewed template and passes.
+SECRET='*/.env|*/.env.*|*/.envrc|*/.npmrc|*/.netrc|*/.git-credentials|*.pem|*.key|*.p8|*.p12|*.jks|*.keystore|*.mobileprovision|*/id_rsa*|*/id_ed25519*|*/credentials*|*/service-account*|*/secrets*'
+if [ -n "$COMMIT" ] && [ "$DIRTY" = 0 ]; then
   # Gate evidence: exactly the committed tree, from git objects. No working-tree file can reach the container (Sol R9-M1).
-  g archive --format=tar HEAD > "$SRC/src.tar" || fail_setup "archive HEAD"
+  g ls-files -z > "$SRC/all" || fail_setup "list tracked files"
+  (xargs -0 -r sh -c 'for f; do case "/$f" in */.env.example) ;; '"$SECRET"') echo "$f"; exit 1 ;; esac; done; :' sh < "$SRC/all") > "$SRC/secret" \
+    || fail_setup "a tracked file looks like a credential: $(cat "$SRC/secret"); untrack it or rename it"
+  g archive --format=tar "$COMMIT" > "$SRC/src.tar" || fail_setup "archive $COMMIT"
 else
   # A developer run of uncommitted work: tracked and unignored regular files and symlinks only, never a directory's
-  # contents (a tracked path replaced by a directory, a symlinked parent), and never local credentials.
+  # contents (a tracked path replaced by a directory, a symlinked parent), and never credential-looking files.
   g ls-files -z --cached --others --exclude-standard > "$SRC/all" || fail_setup "list source files"
   REAL=$(cd "$REPO" && pwd -P)
   (cd "$REPO" && xargs -0 -r sh -c '
     for f; do
-      case "/$f" in */.npmrc|*/.env|*/.env.*|*.pem|*.key|*.p12|*.jks|*/credentials*) continue ;; esac
+      case "/$f" in */.env.example) ;; '"$SECRET"') continue ;; esac
       [ -e "$f" ] || [ -L "$f" ] || continue
       if [ -d "$f" ] && [ ! -L "$f" ]; then echo "tracked path is now a directory: $f" >&2; exit 1; fi
       d=$(dirname "$f"); [ "$(cd "$d" && pwd -P)" = "$0/$d" ] || [ "$d" = . ] || { echo "parent is a symlink: $f" >&2; exit 1; }
@@ -77,7 +85,7 @@ else
     done' "$REAL" < "$SRC/all" > "$SRC/files") || fail_setup "list source files"
   tar -C "$REPO" --null --no-recursion -T "$SRC/files" -cf "$SRC/src.tar" || fail_setup "archive source"
 fi
-EVIDENCE=no; [ "$REV" != unknown ] && [ "$DIRTY" = 0 ] && EVIDENCE=yes
+EVIDENCE=no; [ -n "$COMMIT" ] && [ "$DIRTY" = 0 ] && EVIDENCE=yes
 echo "checkout $REV (+$DIRTY uncommitted) | gate evidence: $EVIDENCE (only a clean, known revision counts) | image $IMAGE | suites: $SUITES" > "$LOGS/env.txt"
 
 # PostgreSQL. PG16 is the owner's long-lived device (parity). PostgreSQL 18 sidecars belong to this invocation: one for
@@ -121,8 +129,9 @@ docker run --rm --network host --entrypoint sh \
   [ -f "$APP/package-lock.json" ] || die "unpack source (no package-lock.json)"
   KEY=$(sha256sum < "$APP/package-lock.json" | cut -c1-16)-$IMAGE_ID
   case "$KEY" in [0-9a-f]*-[0-9a-f]*) ;; *) die "unexpected cache key" ;; esac
-  # An entry a run was still using when it died may have been changed in place: dropped and reinstalled (Haiku r7 L-6).
-  [ -e "/cache/nm/$KEY/.in-use" ] && { echo "dependency cache entry $KEY was in use by a run that did not finish: reinstalling" >> /logs/summary.txt; rm -rf "/cache/nm/$KEY"; }
+  # An entry marked in use belongs to another run, or to one that died mid-run and may have changed it: never evicted
+  # here (Sol R10-M2). Setup stops and says how to clear it once no run is using it.
+  [ -e "/cache/nm/$KEY/.in-use" ] && die "dependency cache entry $KEY is in use (another run, or one interrupted). When no run is active: docker run --rm -v wind-test-cache:/cache alpine rm -rf /cache/nm/$KEY"
   if [ ! -d "/cache/nm/$KEY/node_modules" ]; then
     # First run for this lockfile and image: install in the full copy (install scripts may read repo files), then publish.
     # An entry without node_modules is an earlier failed publish under this key: replaced.
@@ -134,7 +143,7 @@ docker run --rm --network host --entrypoint sh \
   touch "/cache/nm/$KEY/.in-use" || die "cache marker"
   cp -al "/cache/nm/$KEY/node_modules" "$APP/node_modules" || die "link node_modules"
   # After linking (a new link changes the change time of each inode): any later write or mode change to a shared inode shows.
-  sleep 1; touch "$RUN/start"
+  sleep 1; touch "$RUN/start"; sleep 1 # a change in the same clock tick as the marker would not count as newer (Haiku r8 N4)
   # Tool caches go to a directory of this run (a new directory, not a link), so routine cache writes never reach the cache.
   rm -rf "$APP/node_modules/.cache" && mkdir "$APP/node_modules/.cache" || die "private cache dir"
   cd "$APP"
@@ -164,7 +173,9 @@ docker run --rm --network host --entrypoint sh \
   done
   # A package file rewritten in place shares its inode with the cache: the run is not evidence, and the entry is dropped.
   # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
-  changed=$(find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print 2>/dev/null | head -3)
+  # A scan that cannot read the entry fails the run: an unreadable cache is not a clean one (Sol R10-M2).
+  find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print > "$RUN/changed"     || { echo "dependency cache scan failed" >> /logs/summary.txt; status=1; }
+  changed=$(head -3 "$RUN/changed")
   if [ -n "$changed" ]; then
     { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
     rm -rf "/cache/nm/$KEY"; status=1
