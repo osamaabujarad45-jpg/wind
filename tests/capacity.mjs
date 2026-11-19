@@ -44,6 +44,8 @@ try {
   await recover('confirm_return');const returned=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
   assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(Number(returned.commission),0,'a recovered return owes no commission (SRS DRV-17)');
   assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
+  assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?', `DRV-17 trip pay order ${winner.id}`),
+    [{amount_cents:-Math.round(Number(snapshot.price)*100),recorded_by:admin.user.id}], 'eligibility close pays only the trip so far');
   for (const kind of ['decided','returned']) assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='notification.requested' AND payload->>'kind'=?",winner.id,kind),kind+' reaches its party');
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);

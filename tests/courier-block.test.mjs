@@ -62,8 +62,20 @@ try {
   assert.match(back.returnCode, /^\d{4}$/);
   const returned = await call(`/admin/orders/${carried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Support collected it from the courier' } });
   assert.equal(returned.status, 'returned');
+  assert.equal(db.prepare('SELECT id FROM cash_entries WHERE note = ?').get(`DRV-17 trip pay order ${carried.id}`), undefined, 'without a review table, block recovery pays nothing');
   const events = db.prepare("SELECT order_id, detail FROM security_events WHERE action = 'COURIER_BLOCKED' ORDER BY order_id").all();
   assert.deepEqual(events.map(e => JSON.parse(e.detail).from), ['assigned', 'at_pickup', 'in_transit']);
+
+  // A pre-pickup block requeued this order. After reapproval a later trip by the same captain can earn return pay.
+  await call(path, { token: admin.token, method: 'PATCH', body: { status: 'active' } });
+  blocked.token = (await call('/auth/login', { body: { phone: '0599300003', password: 'secret1' } })).token;
+  const acceptedAgain = await call(`/jobs/${atPickup.id}/accept`, { token: blocked.token, body: {} });
+  const pickedUp = await advance(blocked.token, await advance(blocked.token, acceptedAgain));
+  await call(`/orders/${pickedUp.id}/exception`, { token: blocked.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  const resolve = `/admin/orders/${pickedUp.id}/resolve`;
+  await call(resolve, { token: admin.token, body: { action: 'return', reason: 'Return to sender' } });
+  await call(resolve, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
+  assert.equal(db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?').get(`DRV-17 trip pay order ${pickedUp.id}`).amount_cents, -4000);
 
   // A courier with nothing in hand is blocked as before.
   await call(`/admin/users/${spare.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' }, expect: 409 }); // spare now holds a job

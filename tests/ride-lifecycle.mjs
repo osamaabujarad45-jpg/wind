@@ -130,10 +130,10 @@ try {
     who.driver.user.id, 100, g.admin.user.id, Date.now());
   const decided = await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } });
   assert.equal(decided.cleared, true);
-  assert.equal(decided.paidCents, Math.min(100, review.tripPayCents), 'pay relieves what the captain owes, never a payout');
+  assert.equal(decided.paidCents, review.tripPayCents, 'a cleared review pays the full trip so far (owner 19 Nov: owed may go below zero)');
   assert.deepEqual(await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } }), decided, 'a lost reply replays');
   assert.equal((await g.call(reviewPath, { token: auditor.token, body: { cleared: false, note: 'Synthetic change of mind' }, expect: 409 })).error, 'review_decided');
-  assert.equal(Number((await g.db.one("SELECT COALESCE(SUM(amount_cents),0) s FROM cash_entries WHERE driver_id=? AND note LIKE 'Trip so far%'", who.driver.user.id)).s), -decided.paidCents);
+  assert.equal(Number((await g.db.one('SELECT COALESCE(SUM(amount_cents),0) s FROM cash_entries WHERE driver_id=? AND note=?', who.driver.user.id, `DRV-17 trip pay order ${order.id}`)).s), -decided.paidCents);
   assert.equal(Number((await g.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='BLOCK_REVIEW_DECIDED'", order.id)).n), 1);
   console.log('WP11 ride-lifecycle: far/stale/missing fix rejection, audited operator override and courier block review passed');
 } finally { await g.close(); }

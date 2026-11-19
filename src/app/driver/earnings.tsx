@@ -5,7 +5,7 @@ import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
 import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Stat, tones, Txt, useCopy } from '../../ui';
 
-type Bucket = { jobs: number; gross: number; commission: number; net: number };
+type Bucket = { jobs: number; gross: number; commission: number; net: number; tripPayCents?: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string;
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
 type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
@@ -14,6 +14,7 @@ const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones
 export default function Earnings() {
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<{ today: Bucket; week: Bucket; all: Bucket }>('/driver/earnings');
+  const tripPayCents = data?.all.tripPayCents ?? 0;
   return <Screen onRefresh={reload}>
     <Header title={c.earnings} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.earningsNote}</Txt>
@@ -26,7 +27,8 @@ export default function Earnings() {
       <Card>
         <Txt variant="title">{c.allTime}</Txt>
         <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: data.all.jobs })}</Txt>
-        {([[c.gross, data.all.gross], [c.commission, -data.all.commission], [c.net, data.all.net]] as const).map(([label, value]) =>
+        {([[c.gross, data.all.gross], [c.commission, -data.all.commission], [c.net, data.all.net],
+          ...(tripPayCents > 0 ? [[c.tripPay, tripPayCents / 100]] as const : [])] as const).map(([label, value]) =>
           <Row key={label} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
             <Txt>{label}</Txt>
             <Txt variant="title">{money(value)}</Txt>

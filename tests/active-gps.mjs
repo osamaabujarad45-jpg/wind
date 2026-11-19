@@ -20,7 +20,7 @@ try {
  const customer=await call('/auth/register',{body:{phone:'0599890002',name:'Customer',password:'secret1'}});
  const driver=await call('/auth/register',{body:{phone:'0599890003',name:'Driver',password:'secret1',role:'driver',vehicle:'car'}});
  await call(`/admin/users/${driver.user.id}/approve`,{token:admin.token,body:{}});
- const makeOrder=()=>call('/orders',{token:customer.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,pickupNote:'Gate',dropoffNote:'Door',contact:'0599890002',detail:'Box',quotedPrice:20}});
+ const makeOrder=()=>call('/orders',{token:customer.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,pickupNote:'Gate',pickupPoint:{latitude:31.9038,longitude:35.2034},dropoffNote:'Door',contact:'0599890002',detail:'Box',quotedPrice:20}});
  const order=await makeOrder(); await call(`/jobs/${order.id}/accept`,{token:driver.token,body:{}});
  const deviceId=randomUUID(), first=randomUUID(), second=randomUUID();
  const acquire=(body,expect=200)=>call('/location/session',{token:driver.token,body:{deviceId,...body},expect});
@@ -52,8 +52,11 @@ try {
  assert.equal((await acquire({sessionId:first,previousSessionId:second,expectedGeneration:replacement.generation},409)).error,'active_gps_session_stale');
  assert.equal((await acquire({sessionId:randomUUID(),previousSessionId:first,expectedGeneration:firstSession.generation},409)).error,'active_gps_session_stale');
  assert.equal((await call('/location/session',{token:driver.token,body:{deviceId:randomUUID()},expect:409})).error,'active_gps_session_conflict');
+ assert.equal((await upload({deviceId,sessionId:second,seq:1,assignments:replacement.assignments})).accepted,true);
  const another=await makeOrder(); await call(`/jobs/${another.id}/accept`,{token:driver.token,body:{}});
- assert.equal((await upload({deviceId,sessionId:second,seq:1,assignments:replacement.assignments})).reason,'assignment_stale');
+ const assignedFrom=await database.one("SELECT detail FROM security_events WHERE order_id=? AND action='ASSIGNED_FROM'",another.id);
+ assert.ok(JSON.parse(assignedFrom.detail).km>0,'capture the fix before the PostgreSQL assignment invalidates it');
+ assert.equal((await upload({deviceId,sessionId:second,seq:2,assignments:replacement.assignments})).reason,'assignment_stale');
  const inspected=await acquire({}); const third=randomUUID();
  const refreshed=await acquire({sessionId:third,previousSessionId:second,expectedGeneration:inspected.generation}); assert.equal(refreshed.assignments.length,2); assert.equal(refreshed.seq,0);
  await database.run("UPDATE orders SET status='cancelled' WHERE id=?",order.id);

@@ -133,6 +133,7 @@ export const defaultSettings = {
   parcelPrice: 20, parcelLarge: 10, // standard parcel, any distance (SPEC-parcel-standard.md)
   rideBase: 15, ridePerKm: 1.1,
   freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
+  pickupPayPerKm: 1, // DRV-18: pre-pickup shipping pay per km, capped at the booked fare
   sharedDiscount: 0.4, plusDiscount: 0.15,
   commission: 0.15, proCommission: 0.05,
   plusPrice: 29, proPrice: 99,
@@ -160,21 +161,18 @@ export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDisc
 // fat-fingered 2000 quoted every parcel at 2000. Fractions are capped below 1 because
 // 100% commission or discount is never a real tariff.
 export const settingCeilings: Record<keyof Settings, number> = {
-  parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100,
+  parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100, pickupPayPerKm: 10,
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
   plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
   shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120, shopHandoverMinutes: 120,
   orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
-// Returns the offending key, or null when every value is storable. `Number.isFinite`
-// rejects the NaN an empty or non-numeric field produces; `<= 0` rejects the 0 that a
-// blank field becomes (no setting has a meaningful zero: free delivery and zero commission
-// are not supported states, and minorUnits(0) throws).
+// A zero pickup pay rate disables DRV-18 pay. All other settings require a positive value.
 export function invalidSetting(values: Record<string, number>): keyof Settings | null {
   for (const [key, value] of Object.entries(values)) {
     const ceiling = settingCeilings[key as keyof Settings];
-    if (ceiling === undefined || !Number.isFinite(value) || value <= 0 || value > ceiling) return key as keyof Settings;
+    if (ceiling === undefined || !Number.isFinite(value) || value < 0 || (value === 0 && key !== 'pickupPayPerKm') || value > ceiling) return key as keyof Settings;
   }
   return null;
 }

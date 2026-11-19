@@ -18,7 +18,7 @@ import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecy
 import { registerBlockReviewRoutes } from './domain/block-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
-import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_NO_FARE } from './domain/ledger.ts';
+import { captainPayNote, Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_NO_FARE } from './domain/ledger.ts';
 import { codGoodsMinor, createPayments, registerPaymentsRoutes } from './domain/payments.ts';
 import { needStaff, Ops, registerOpsRoutes, staffActor } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
@@ -576,6 +576,7 @@ registerEligibilityRoutes(route, eligibility, async (order, action, actorId) => 
     // DRV-17: a custody recovery settles a shop order like any return, but support carried the goods back: trip so far only.
     const row = await one('SELECT * FROM orders WHERE id = ?', order.id);
     if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, true);
+    else if (row) await shippingTripPay(row, actorId, 'recovery');
     await postOrderJournals(order.id);
   }
   await queuePush([order.driver_id], 'decided', order.id);
@@ -663,17 +664,62 @@ const postCashJournal = async (entryId: number) => {
   const amount = Number(e.amount_cents);
   if (!amount) return;
   const receivable = await ledger.ensureAccount(`driver:${e.driver_id}:receivable`, 'driver_receivable', Number(e.driver_id));
-  const clearing = await ledger.ensureAccount('platform:provider_clearing', 'provider_clearing', null);
-  const revenue = await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
-  const other = e.kind === 'remittance' ? clearing : revenue;
+  const tripPay = captainPayNote.test(String(e.note));
+  const other = tripPay
+    ? await ledger.ensureAccount('platform:operating_expense', 'operating_expense', null)
+    : e.kind === 'remittance'
+      ? await ledger.ensureAccount('platform:provider_clearing', 'provider_clearing', null)
+      : await ledger.ensureAccount('platform:revenue', 'platform_revenue', null);
   // Sign-aware, exactly like the import: a positive adjustment increases the debt, a negative one relieves it.
-  const debitReceivable = e.kind === 'adjustment' ? amount > 0 : amount < 0;
+  const debitReceivable = !tripPay && (e.kind === 'adjustment' ? amount > 0 : amount < 0);
   const n = Math.abs(amount);
-  await ledger.postJournal({ businessRef: `cash-entry:${e.id}`, kind: e.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: e.id as number,
+  await ledger.postJournal({ businessRef: `cash-entry:${e.id}`, kind: !tripPay && e.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: e.id as number,
     entries: debitReceivable ? [{ accountId: receivable.id as number, debitMinor: n }, { accountId: other.id as number, creditMinor: n }]
       : [{ accountId: other.id as number, debitMinor: n }, { accountId: receivable.id as number, creditMinor: n }] });
 };
 registerLedgerRoutes(route, ledger);
+// Status changes and review decisions serialize each order before posting pay. A negative balance is owed by Wind.
+async function captainPay(driverId: number, cents: number, note: string, actorId: number) {
+  if (!(cents > 0) || await one('SELECT 1 FROM cash_entries WHERE note = ?', note)) return;
+  const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at)
+    VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?)`, driverId, -cents, note, actorId, Date.now())).lastInsertRowid);
+  await postCashJournal(id);
+}
+const shippingOrder = (o: Row) => o.service === 'parcel' || o.service === 'freight';
+const fareCents = (o: Row) => Math.round(Number(o.price) * 100); // the booked fare, before any discount
+function auditDetail(event: Row): Row {
+  try { return (JSON.parse(String(event.detail)) ?? {}) as Row; } catch { return {}; }
+}
+async function shippingTripPay(o: Row, actorId: number, method: 'code' | 'office' | 'recovery') {
+  if (!shippingOrder(o) || o.driver_id == null) return;
+  const history = await all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'ELIGIBILITY_CUSTODY_RECOVERY')", o.id);
+  // A custody block is paid by review on PostgreSQL. SQLite has no review table and fails closed.
+  if (history.some(event => {
+    if (event.action !== 'COURIER_BLOCKED') return false;
+    const detail = auditDetail(event);
+    return Number(detail.driverId) === Number(o.driver_id) && detail.from !== 'assigned' && detail.from !== 'at_pickup';
+  })) return;
+  const supportCollected = method === 'recovery' || (method === 'office' &&
+    history.some(e => e.action === 'ELIGIBILITY_CUSTODY_RECOVERY' && auditDetail(e).action === 'return'));
+  await captainPay(Number(o.driver_id), (supportCollected ? 1 : 2) * fareCents(o), `DRV-17 trip pay order ${o.id}`, actorId);
+}
+/** DRV-18: a parcel or freight order cancelled before pickup after assignment pays the km toward the pickup recorded at acceptance
+ * (ASSIGNED_FROM) x pickupPayPerKm, capped at the fare. No recorded km, no pay. */
+async function pickupPay(o: Row, actorId: number) {
+  if (!shippingOrder(o) || o.driver_id == null || o.assigned_at == null) return;
+  const from = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'ASSIGNED_FROM' AND created_at = ? ORDER BY id DESC LIMIT 1", o.id, o.assigned_at);
+  const km = from && auditDetail(from).km;
+  if (typeof km !== 'number' || !Number.isFinite(km) || km <= 0) return;
+  const cents = Math.min(fareCents(o), Math.round(km * (await settings()).pickupPayPerKm * 100));
+  await captainPay(Number(o.driver_id), cents, `DRV-18 pickup pay order ${o.id}`, actorId);
+}
+// Read before assigning: PostgreSQL's active GPS trigger can clear the fix on the assignment update.
+async function recordAssignedFrom(orderId: number, driverId: number, actorId: number, assignedAt: number) {
+  const r = await one('SELECT l.lat, l.lng, o.pickup_lat, o.pickup_lng FROM orders o JOIN driver_locations l ON l.driver_id = ? WHERE o.id = ?', driverId, orderId);
+  if (!r || r.pickup_lat == null || r.pickup_lng == null) return;
+  const km = Math.round(crowKm({ latitude: Number(r.lat), longitude: Number(r.lng) }, { latitude: Number(r.pickup_lat), longitude: Number(r.pickup_lng) }) * 10) / 10;
+  await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ASSIGNED_FROM', ?, ?)`, actorId, orderId, JSON.stringify({ km }), assignedAt);
+}
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
 // OpenCode / T3 provider service (runs zro CLI and records jobs)
@@ -2073,6 +2119,10 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
     if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), order.id)).changes) fail(409, 'cannot_cancel');
     // Read again: this route holds no row lock while it reads above, so a driver can accept before the update.
     const cancelled = (await partnerOrder(req, order.id));
+    if (cancelled.driverId && shippingOrder(cancelled)) {
+      const row = (await one('SELECT * FROM orders WHERE id = ?', order.id))!;
+      await pickupPay(row, Number(row.customer_id));
+    }
     if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
     return cancelled;
   }));
@@ -2139,6 +2189,8 @@ route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
     if (user.role === 'admin') (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', '{}', ?)`, user.id, order.id, Date.now()));
     // Read again: with two SQLite processes a driver can accept between the read above and this update (PostgreSQL holds the row lock).
     const cancelled = (await getOrder(order.id, user));
+    if (cancelled.driverId && user.id === cancelled.customerId && shippingOrder(cancelled))
+      await pickupPay((await one('SELECT * FROM orders WHERE id = ?', order.id))!, user.id);
     if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
     if (user.role === 'admin') await queuePush([order.customerId ?? null], 'cancelled', order.id); // support cancelled it for the sender
     (await persistence.exec('COMMIT'));
@@ -2564,9 +2616,11 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
     { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor }, freshDriver!, rate);
   if (refused) fail(409, refused);
   await guardRideAssignment(order.id);
+  const now = Date.now();
+  if (shippingOrder(order)) await recordAssignedFrom(order.id, user.id, user.id, now);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
-  user.id, commissionOn(order.price, rate), Date.now(), Date.now(), order.id, order.id, user.id)).changes;
+  user.id, commissionOn(order.price, rate), now, now, order.id, order.id, user.id)).changes;
   if (!changed) fail(409, 'already_taken');
   await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id); // T33: both backends bind the rate snapshot
   await rideLifecycle.ensureAssignment(order.id, user.id, 'legacy');
@@ -2621,9 +2675,11 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     await guardCashCeiling(Number(f.price), r.id); // lowered since the driver offered, or a goods COD added since
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
+    const now = Date.now();
+    if (shippingOrder(r)) await recordAssignedFrom(r.id, Number(f.id), user.id, now);
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
-      commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), Date.now(), Date.now(), r.id));
+      commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), now, now, r.id));
     await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id); // T33: both backends bind the rate snapshot
     await rideLifecycle.ensureAssignment(r.id, Number(f.id), 'legacy');
     (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id));
@@ -2718,6 +2774,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
     else (await rewardReferral(r.id, now));
     await shop.afterFinish(r, next, user.id, body);
+    if (next === 'returned') await shippingTripPay(r, user.id, 'code');
     await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   await rideLifecycle.markVerified(r, next);
@@ -2741,6 +2798,8 @@ async function reportException(user: User, id: number, body: Row) {
     (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, exception_detail = ?, updated_at = ? WHERE id = ?", body.reason, refusal ? body.detail : null, now, r.id));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
       user.id, r.id, JSON.stringify({ reason: body.reason, ...(refusal && { detail: body.detail }), note: text(body.note, 200, false) }), now));
+    // shortcut: captain_refused_pickup pays once support confirms it, add payment to that step when it exists.
+    if (!refusal) await pickupPay(r, user.id);
     await queuePush([r.customer_id], 'cancelled', r.id);
     return (await getOrder(r.id, user));
   }
@@ -2770,7 +2829,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const id = Number(params[0]);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
+    const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason, price FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (order.service === 'ride') fail(409, 'cannot_resolve'); // SRS §2.1: rides never hold or return
     await shop.guardResolve(id, String(body.action));
@@ -2786,6 +2845,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
       await shop.afterFinish(order, 'returned', user.id);
+      await shippingTripPay(order, user.id, 'office');
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
@@ -3238,7 +3298,9 @@ route('GET', '/api/driver/earnings', async ({ user }) => {
       FROM orders WHERE driver_id = ? AND status IN (${finishedSql}) AND completed_at >= ?`, user.id, from))!;
     const trip = await shopTables(persistence) ? Number((await one(`SELECT COALESCE(SUM(amount_agorot), 0) n FROM shop_ledger WHERE book = 'captain' AND driver_id = ? AND created_at >= ?`, user.id, from))!.n) / 100 : 0;
     const gross = Math.round((Number(r.gross) + trip) * 100) / 100;
-    return { jobs: r.jobs, gross, commission: r.commission, net: Math.round((gross - r.commission) * 100) / 100 };
+    const tripPayCents = Number((await one(`SELECT -COALESCE(SUM(amount_cents), 0) n FROM cash_entries WHERE driver_id = ?
+      AND (note LIKE 'DRV-17 %' OR note LIKE 'DRV-18 %') AND created_at >= ?`, user.id, from))!.n);
+    return { jobs: r.jobs, gross, commission: r.commission, net: Math.round((gross - r.commission) * 100) / 100, tripPayCents };
   };
   const midnight = new Date().setHours(0, 0, 0, 0);
   return { today: (await since(midnight)), week: (await since(Date.now() - 7 * DAY)), all: (await since(0)) };
@@ -3306,7 +3368,7 @@ registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queue
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
-  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), guardRideAssignment, ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), getOrder, queuePush,
+  safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), guardRideAssignment, ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), assignedFrom: recordAssignedFrom, getOrder, queuePush,
   permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, eligibility, measured: () => measuredCapability(persistence) });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
@@ -3354,6 +3416,8 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
     if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
+  // Only the order and block review flows can write these accounting notes.
+  if (captainPayNote.test(note)) fail(400, 'invalid_input');
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', Number(body.driverId));
@@ -3365,7 +3429,7 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
       return cashEntry(raced);
     }
     const balance = (await cashBalances('u.id = ?', Number(body.driverId)))[0] ?? fail(404, 'not_found');
-    // No overpayment, and no adjustment that turns a debt into a payout (payouts are out of scope).
+    // Manual adjustments cannot leave a payout outstanding. The office can settle a negative balance in full.
     if (kind === 'remittance' && (amount < 0 || amount > balance.owedCents - balance.pendingCents)) fail(400, 'invalid_amount');
     if (kind === 'adjustment' && balance.owedCents - balance.pendingCents + amount < 0) fail(400, 'invalid_amount');
     // T23 fail-closed dual control: forgiving debt binds to an approved request decided by a different
@@ -3578,6 +3642,9 @@ const editUser: Handler = async ({ user, params, body }) => {
         // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
         if (o.service === 'shop' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
           SELECT ?, ?, ?, 'shop', ?, delivery_fee_agorot, ?, ? FROM shop_orders WHERE order_id = ? ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status, now, twoWorkingDays(now), o.id);
+        // DRV-17: a parcel or freight captain's trip so far (one leg, the booked fare) waits on the same review.
+        if (shippingOrder(o) && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.service, o.status, fareCents(o), now, twoWorkingDays(now));
         if (o.status !== 'returning') {
           (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
           (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
@@ -3596,8 +3663,8 @@ const editUser: Handler = async ({ user, params, body }) => {
   if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
   return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found')));
 };
-// DRV-17 / SRS §2.1 block review (PostgreSQL migration 39). Rides and shop orders run on PostgreSQL; a parcel's trip pay follows
-// SPEC-delivery-exceptions.md and needs no review. Without the table a block records nothing and posts no pay (fail-closed).
+// DRV-17 / SRS §2.1 block review (PostgreSQL migration 39): rides, shop orders, parcels and freight. Without the table a block records
+// nothing and posts no pay (fail-closed).
 const blockReviewsAvailable = async () => persistence.backend === 'postgres'
   && persistence.memo('blockReviews', async () => !!(await one('SELECT version FROM schema_migrations WHERE version = 39')));
 /** Two working days on the operating calendar (Asia/Hebron), Friday and Saturday off (Sol R2-L1).
@@ -3629,17 +3696,8 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
   try {
   if (body.cleared && pay > 0) {
     if (review.service === 'shop') { await shop.blockTripPay(id, driverId, pay, user.id); paid = pay; }
-    else {
-      // A cash-only captain is paid by relieving what they owe Wind; a payout is out of scope, so any rest stays visible as owed.
-      await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
-      const balance = (await cashBalances('u.id = ?', driverId))[0];
-      paid = Math.min(pay, Math.max(0, Number(balance?.owedCents ?? 0) - Number(balance?.pendingCents ?? 0)));
-      if (paid) {
-        const entry = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at)
-          VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?)`, driverId, -paid, `Trip so far, courier block review cleared (order ${id})`, user.id, now)).lastInsertRowid);
-        await postCashJournal(entry);
-      }
-    }
+    // Rides, parcels and freight: the full trip so far as DRV-17 trip pay (owed may go below zero: Wind owes the captain).
+    else { await captainPay(driverId, pay, `DRV-17 trip pay order ${id}`, user.id); paid = pay; }
   }
   await run('UPDATE courier_block_reviews SET decided_at = ?, decided_by = ?, cleared = ?, paid_cents = ?, note = ? WHERE order_id = ? AND decided_at IS NULL',
     now, user.id, body.cleared, paid, note, id);
@@ -3787,11 +3845,12 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
   for (const key of Object.keys(expected ?? {})) if (!(key in body)) fail(400, 'invalid_setting');
   if (expected !== undefined) for (const key of Object.keys(body)) if (!(key in expected)) fail(400, 'invalid_setting');
   for (const [key, value] of Object.entries(body)) {
+    if (key === 'pickupPayPerKm' && typeof value !== 'number' && !(typeof value === 'string' && value.trim()))
+      fail(400, 'invalid_setting:pickupPayPerKm');
     const n = Number(value);
     if (!(key in defaultSettings) || !Number.isFinite(n) || n < 0 || (fractionSettings.includes(key as keyof Settings) && n >= 1)) fail(400, 'invalid_setting');
   }
-  // A blank field arrives as 0 and a mistyped one as 2000; both are refused by the shared
-  // ceiling in model.ts, which the admin form checks too.
+  // The admin form and API share the bounds in model.ts.
   const bad = invalidSetting(Object.fromEntries(Object.entries(body).map(([k, v]) => [k, Number(v)])));
   if (bad) fail(400, `invalid_setting:${bad}`);
   (await persistence.exec('BEGIN IMMEDIATE'));

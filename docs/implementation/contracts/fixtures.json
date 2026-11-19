@@ -1006,6 +1006,7 @@
           "freightPerKm": 2.5,
           "freightLarge": 50,
           "loadingHelp": 30,
+          "pickupPayPerKm": 1,
           "sharedDiscount": 0.4,
           "plusDiscount": 0.15,
           "commission": 0.15,
@@ -2330,6 +2331,107 @@
       }
     },
     {
+      "id": "cash-remittance",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/cash/remittance",
+      "request": {
+        "driverId": 3,
+        "amountCents": 300,
+        "requestId": "<requestId>",
+        "note": "Synthetic two-person handover"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 300,
+        "note": "Synthetic two-person handover",
+        "status": "pending",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": null
+      }
+    },
+    {
+      "id": "cash-pending",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 300,
+        "pendingCents": 300,
+        "commissionCents": 300,
+        "discountsCents": 0,
+        "remittedCents": 0,
+        "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 300,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 300,
+            "note": "Synthetic two-person handover",
+            "status": "pending",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "cash-confirm",
+      "role": "driver",
+      "method": "POST",
+      "path": "/driver/cash/1/confirm",
+      "request": {
+        "decision": "confirm"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 300,
+        "note": "Synthetic two-person handover",
+        "status": "confirmed",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": "<server-timestamp>"
+      }
+    },
+    {
+      "id": "cash-settled",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 0,
+        "pendingCents": 0,
+        "commissionCents": 300,
+        "discountsCents": 0,
+        "remittedCents": 300,
+        "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 0,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 300,
+            "note": "Synthetic two-person handover",
+            "status": "confirmed",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": "<server-timestamp>"
+          }
+        ]
+      }
+    },
+    {
       "id": "delivery-exception",
       "role": "driver",
       "method": "POST",
@@ -2952,105 +3054,25 @@
       "path": "/driver/cash",
       "httpStatus": 200,
       "response": {
-        "owedCents": 300,
-        "pendingCents": 0,
-        "commissionCents": 300,
-        "discountsCents": 0,
-        "remittedCents": 0,
-        "adjustmentsCents": 0,
-        "capCents": 15000,
-        "exposureCents": 300,
-        "entries": []
-      }
-    },
-    {
-      "id": "cash-remittance",
-      "role": "admin",
-      "method": "POST",
-      "path": "/admin/cash/remittance",
-      "request": {
-        "driverId": 3,
-        "amountCents": 300,
-        "requestId": "<requestId>",
-        "note": "Synthetic two-person handover"
-      },
-      "httpStatus": 200,
-      "response": {
-        "id": 1,
-        "kind": "remittance",
-        "amountCents": 300,
-        "note": "Synthetic two-person handover",
-        "status": "pending",
-        "reference": "R-000001",
-        "createdAt": "<server-timestamp>",
-        "decidedAt": null
-      }
-    },
-    {
-      "id": "cash-pending",
-      "role": "driver",
-      "method": "GET",
-      "path": "/driver/cash",
-      "httpStatus": 200,
-      "response": {
-        "owedCents": 300,
-        "pendingCents": 300,
-        "commissionCents": 300,
-        "discountsCents": 0,
-        "remittedCents": 0,
-        "adjustmentsCents": 0,
-        "capCents": 15000,
-        "exposureCents": 300,
-        "entries": [
-          {
-            "id": 1,
-            "kind": "remittance",
-            "amountCents": 300,
-            "note": "Synthetic two-person handover",
-            "status": "pending",
-            "reference": "R-000001",
-            "createdAt": "<server-timestamp>",
-            "decidedAt": null
-          }
-        ]
-      }
-    },
-    {
-      "id": "cash-confirm",
-      "role": "driver",
-      "method": "POST",
-      "path": "/driver/cash/1/confirm",
-      "request": {
-        "decision": "confirm"
-      },
-      "httpStatus": 200,
-      "response": {
-        "id": 1,
-        "kind": "remittance",
-        "amountCents": 300,
-        "note": "Synthetic two-person handover",
-        "status": "confirmed",
-        "reference": "R-000001",
-        "createdAt": "<server-timestamp>",
-        "decidedAt": "<server-timestamp>"
-      }
-    },
-    {
-      "id": "cash-settled",
-      "role": "driver",
-      "method": "GET",
-      "path": "/driver/cash",
-      "httpStatus": 200,
-      "response": {
-        "owedCents": 0,
+        "owedCents": -4000,
         "pendingCents": 0,
         "commissionCents": 300,
         "discountsCents": 0,
         "remittedCents": 300,
-        "adjustmentsCents": 0,
+        "adjustmentsCents": -4000,
         "capCents": 15000,
-        "exposureCents": 0,
+        "exposureCents": -4000,
         "entries": [
+          {
+            "id": 2,
+            "kind": "adjustment",
+            "amountCents": -4000,
+            "note": "DRV-17 trip pay order 3",
+            "status": "confirmed",
+            "reference": null,
+            "createdAt": "<server-timestamp>",
+            "decidedAt": null
+          },
           {
             "id": 1,
             "kind": "remittance",

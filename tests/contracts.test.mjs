@@ -162,6 +162,12 @@ try {
   }
   await exchange('customer-rating-privacy', 'customer', `/orders/${order.id}`, { token: customer.token });
 
+  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
+    body: { driverId: driver.user.id, amountCents: 300, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
+  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
+  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
+
   order = await inTransit();
   order = await transition('delivery-exception', 'driver', order, `/orders/${order.id}/exception`, { token: driver.token,
     body: { requestId: randomUUID(), expectedStatus: 'in_transit', reason: 'refused' } }, 'on_hold');
@@ -185,11 +191,6 @@ try {
     token: actor.token, body: actor === customer ? { rating: 4, priceRating: 4 } : { customerRating: 4 }, expect: 409 });
   await exchange('returned-dispute', 'customer', `/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Synthetic return handling review' } });
   await exchange('finished-cash', 'driver', '/driver/cash', { token: driver.token });
-  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
-    body: { driverId: driver.user.id, amountCents: 300, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
-  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
-  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
-  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
 
   for (const stage of ['searching', 'assigned', 'at_pickup']) {
     let current = await book();

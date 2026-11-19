@@ -19,6 +19,7 @@
       "freightPerKm": 2.5,
       "freightLarge": 50,
       "loadingHelp": 30,
+      "pickupPayPerKm": 1,
       "sharedDiscount": 0.4,
       "plusDiscount": 0.15,
       "commission": 0.15,

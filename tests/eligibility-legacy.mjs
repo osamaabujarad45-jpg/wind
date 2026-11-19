@@ -38,7 +38,9 @@ try {
   await recover('return');await recover('confirm_return');
   const after=await db.one('SELECT * FROM orders WHERE id=?',legacy.id);
   assert.equal(after.id,before.id);assert.equal(after.driver_id,before.driver_id);assert.equal(after.status,'returned');assert.equal(after.handover_code,before.handover_code);assert.equal(Number(after.commission),0);assert.equal(after.price,before.price);assert.ok(after.completed_at);
-  assert.deepEqual(await db.all('SELECT * FROM cash_entries'),cash);
+  const tripPay = await db.all("SELECT driver_id, kind, amount_cents, status FROM cash_entries WHERE note=?", `DRV-17 trip pay order ${legacy.id}`);
+  assert.deepEqual(tripPay,[{driver_id:before.driver_id,kind:'adjustment',amount_cents:-Math.round(Number(before.price)*100),status:'confirmed'}]);
+  assert.equal((await db.one('SELECT count(*) n FROM cash_entries')).n,cash.length+1);
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',legacy.id)).n,1);
   console.log('WP05 legacy: unknown load inspection gate, custody/proof/cash preserved, in-place measured overload, shared vehicle accounting, expiry and audited same-order return passed');
 }finally{await f.close();}

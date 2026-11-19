@@ -11,6 +11,8 @@ type Journal = { businessRef: string; kind: string; entries: Entry[]; currency?:
 
 /** security_events action marking a return closed under the DRV-17 rule (commission 0, no promo relief); see main.ts markNoFare. */
 export const RETURN_NO_FARE = 'RETURN_NO_FARE';
+/** DRV-17/18: a cash entry with this note is captain pay from Wind operating expenses (server/main.ts captainPay). */
+export const captainPayNote = /^DRV-1[78] /;
 export const PROJECTED_CASH_CAP_MINOR = 100000;
 export function ledgerConfig() { return { projectedCashCapMinor: PROJECTED_CASH_CAP_MINOR, cashCapActivated: false }; }
 export async function ledgerAvailable(db: Persistence) {
@@ -83,14 +85,18 @@ export class Ledger {
         if (discount > 0 && !(order.status === 'returned' && noFare.has(Number(order.id)))) await post({ businessRef: `order:${order.id}:discount`, kind: 'discount_funding', orderId: Number(order.id), entries: [{ accountId: promo.id, debitMinor: discount }, { accountId: receivable.id, creditMinor: discount }] });
       }
       const cash = await this.db.all("SELECT * FROM cash_entries WHERE kind='adjustment' OR (kind='remittance' AND status='confirmed') ORDER BY id");
+      let expense: Row | undefined;
       for (const entry of cash) {
         const amount = Number(entry.amount_cents); if (!amount) continue;
         const receivable = await this.ensureAccount(`driver:${entry.driver_id}:receivable`, 'driver_receivable', Number(entry.driver_id));
-        const other = entry.kind === 'remittance' ? clearing : revenue;
+        const tripPay = captainPayNote.test(String(entry.note));
+        const other = tripPay
+          ? (expense ??= await this.ensureAccount('platform:operating_expense', 'operating_expense', null))
+          : entry.kind === 'remittance' ? clearing : revenue;
         // Sign-aware: a negative remittance reverses a confirmed handover (Dr receivable), a negative adjustment relieves it (Cr receivable).
-        const debitReceivable = entry.kind === 'adjustment' ? amount > 0 : amount < 0;
+        const debitReceivable = !tripPay && (entry.kind === 'adjustment' ? amount > 0 : amount < 0);
         const n = Math.abs(amount);
-        await post({ businessRef: `cash-entry:${entry.id}`, kind: entry.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id), entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }] : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }] });
+        await post({ businessRef: `cash-entry:${entry.id}`, kind: !tripPay && entry.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id), entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }] : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }] });
       }
       return { journals, orders: orders.length, cashEntries: cash.length };
     });

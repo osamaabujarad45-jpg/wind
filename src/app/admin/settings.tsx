@@ -8,7 +8,7 @@ import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, 
 import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
-  { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
+  { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
   // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
   { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
@@ -83,7 +83,7 @@ export default function AdminSettings() {
     setMessage('');
     // Catch it on the screen that can name the field, instead of letting the server
     // store a 0 or a mistyped 2000 that only shows up on the next customer's quote.
-    const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)]));
+    const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.trim() ? typedNumber(v) : NaN]));
     const invalid = invalidSetting(numbers);
     if (invalid) {
       haptic.error();

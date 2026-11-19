@@ -49,6 +49,9 @@ try {
     [{ parcelPrice: 2000 }, 'parcelPrice'],
     [{ plusPrice: 2000 }, 'plusPrice'],
     [{ ridePerKm: 500 }, 'ridePerKm'],
+    [{ pickupPayPerKm: 10.01 }, 'pickupPayPerKm'],
+    [{ pickupPayPerKm: '' }, 'pickupPayPerKm'],
+    [{ pickupPayPerKm: null }, 'pickupPayPerKm'],
   ]) {
     const r = await call('/admin/settings', { token, body, expect: 400 });
     assert.equal(r.error, `invalid_setting:${field}`, `${field} ceiling`);
@@ -62,6 +65,12 @@ try {
   assert.equal(after.commission, 0.15);
   assert.equal(after.parcelPrice, 20);
   assert.equal(after.plusPrice, 29);
+  assert.equal(after.pickupPayPerKm, 1);
+  await call('/admin/settings', { token, body: { pickupPayPerKm: -0.01 }, expect: 400 });
+  for (const pickupPayPerKm of [0, 10]) {
+    await call('/admin/settings', { token, body: { pickupPayPerKm } });
+    assert.equal((await saved()).pickupPayPerKm, pickupPayPerKm);
+  }
 
   // Valid values still save, including at the ceiling.
   await call('/admin/settings', { token, body: { parcelPrice: 25, commission: 0.2 } });
