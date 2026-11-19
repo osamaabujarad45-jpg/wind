@@ -361,7 +361,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     safetyHold: (owner || assigned) && r.safety_open > 0,
     // SHIP-08: a parcel or freight delivery failure may be reattempted twice; a support hold is not a delivery attempt.
     ...(viewer.role === 'admin' && r.status === 'on_hold' && (r.service === 'parcel' || r.service === 'freight') && exceptionReasons.includes(r.exception_reason)
-      && { reattemptAllowed: (await shippingDeliveryAttempts(r)) < 3 }),
+      && { reattemptAllowed: (await orderDeliveryAttempts(r.id)) < 3 }),
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
@@ -694,6 +694,9 @@ const fareCents = (o: Row) => Math.round(Number(o.price) * 100); // the booked f
 function auditDetail(event: Row): Row {
   try { return (JSON.parse(String(event.detail)) ?? {}) as Row; } catch { return {}; }
 }
+// SHIP-08: the reattempt limit is the order's, whichever captain failed; pay (below) counts the holding captain's attempts.
+const orderDeliveryAttempts = async (orderId: number) =>
+  Number((await one("SELECT COUNT(*) AS n FROM security_events WHERE order_id = ? AND action = 'DELIVERY_EXCEPTION'", orderId))?.n);
 async function shippingDeliveryAttempts(order: Row) {
   const events = await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND actor_id = ? AND action = 'DELIVERY_EXCEPTION'", order.id, order.driver_id);
   return events.filter(event => {
@@ -2942,7 +2945,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     if (order.service === 'ride') fail(409, 'cannot_resolve'); // SRS §2.1: rides never hold or return
     await shop.guardResolve(id, String(body.action));
     if (body.action === 'reattempt' && (order.service === 'parcel' || order.service === 'freight') && exceptionReasons.includes(order.exception_reason)) {
-      if (await shippingDeliveryAttempts(order) >= 3) fail(409, 'reattempt_limit');
+      if (await orderDeliveryAttempts(id) >= 3) fail(409, 'reattempt_limit');
     }
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.

@@ -73,6 +73,11 @@ try {
   await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
   assert.equal((await call(`/orders/${retried.id}`, { token: admin.token })).reattemptAllowed, false, 'the admin sees the limit before submitting (SHIP-08)');
   assert.equal((await call(`/orders/${retried.id}`, { token: customer.token })).reattemptAllowed, undefined);
+  // The limit is the order's: a parcel now held by another captain (a new assignment) still has no attempt left.
+  const held = db.prepare('SELECT driver_id, assignment_epoch FROM orders WHERE id = ?').get(retried.id);
+  db.prepare('UPDATE orders SET driver_id = ?, assignment_epoch = assignment_epoch + 1 WHERE id = ?').run(admin.user.id, retried.id);
+  assert.equal((await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'New captain tries' }, expect: 409 })).error, 'reattempt_limit');
+  db.prepare('UPDATE orders SET driver_id = ?, assignment_epoch = ? WHERE id = ?').run(held.driver_id, held.assignment_epoch, retried.id);
   const refused = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' }, expect: 409 });
   assert.equal(refused.error, 'reattempt_limit');
   const decided = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
