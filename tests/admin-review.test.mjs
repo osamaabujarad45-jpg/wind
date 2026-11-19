@@ -71,7 +71,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   const ui = new Proxy({
     fill, palette: {}, tones: {}, haptic: { success() {}, error() {} },
     confirm: (message, yes, yesLabel, noLabel) => dialogs.push({ message, yes, yesLabel, noLabel }),
-    useCopy: () => ({ c, err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
+    useCopy: () => ({ c, rtl: language === 'ar', err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
   }, { get: (target, name) => name in target ? target[name] : String(name) });
   const session = { me, refresh: async () => {}, signOut: async () => {}, language, setLanguage() {} };
   class ApiError extends Error {}
@@ -79,7 +79,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': new Proxy({}, { get: (_, name) => String(name) }),
-    '../../api': { api, ApiError, apiSessionRevision: () => 0, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : data[path] ?? [], error: undefined, reload: async () => {} }) },
+    '../../api': { api, ApiError, apiSessionRevision: () => 0, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : path in data ? data[path] : [], error: undefined, reload: async () => {} }) },
     '../../model': model,
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
@@ -526,6 +526,15 @@ for (const language of ['ar', 'en']) {
   assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the second refusal is added, not swapped in`);
   assert.equal(store.size, 0, `${language}: both slots are settled`);
   assert.ok(view.calls.every(call => !call.path.startsWith('/admin/cash/remittance') && !call.path.startsWith('/admin/cash/adjustment')), `${language}: nothing is posted`);
+  // Haiku r21 N21-5: the line leads with the screen's direction mark.
+  assert.ok(shows(tree, `${language === 'ar' ? '\u200f' : '\u200e'}${model.isolate('Driver')}`), `${language}: the line leads with the screen's direction`);
+  // Haiku r21 N21-1: a new action keeps every captain's drained instruction.
+  await tap(view, copy[language].cashRecord); // a row's form opens
+  await tap(view, copy[language].cashRecord); // the form's record button asks for review
+  view.dialogs.at(-1).yes(); await flush(); // a new entry is submitted and recorded
+  const after = view.render();
+  assert.ok(shows(after, 'REF-1'), `${language}: the new entry is recorded`);
+  assert.ok(shows(after, '1: cash_command_ambiguous') && shows(after, '3: cash_command_settled'), `${language}: a submit keeps every captain's instruction`);
 }
 console.log('Admin cash recovery keeps every instruction of one drain');
 
@@ -551,3 +560,16 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 0, `${language}: both slots are settled`);
 }
 console.log('Admin cash drain tells same-name captains apart');
+
+// Haiku r21 N21-2: a captain who leaves the balance list after the drain keeps the name and phone the list showed.
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const data = { ...cashData };
+  const marked = { ...cashCommand.newCashCommand(1, 8, 'remittance', 300, ''), refused: true };
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  data['/admin/cash'] = cashData['/admin/cash'].filter(row => row.driverId !== 8); // captain 8 left the list
+  assert.ok(shows(view.render(), `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the captured name stays`);
+}
+console.log('Admin cash drained line keeps a departed captain\'s name');

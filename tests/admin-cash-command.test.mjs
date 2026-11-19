@@ -387,6 +387,12 @@ assert.match(screen, /setOpen\(null\); note\(c\.cashSettledFirst\);/);
 // settled uncertain form drains the other slot. The behaviour is exercised in tests/admin-review.test.mjs.
 assert.match(screen, /const fail = \(notice: Notice\) => \{ setFailure\(shown => \[\.\.\.shown, notice\]\);/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
+// Haiku r20 N20-4 / r21 N21-6: a resolution adds its notice, and no handover is resolved while a recovery may add one.
+assert.match(screen, /note\(c\.cashResolved\);/);
+assert.equal((screen.match(/disabled=\{busy \|\| recovering\} reason=\{c\.wait_busy\}/g) ?? []).length, 2);
+// Haiku r21 N21-1: a new action keeps every captain's drained line; refresh never clears the failure channel.
+assert.match(screen, /setBusy\(true\); setFailure\(drained\); setMessage\(drained\);/);
+assert.match(screen, /onRefresh=\{\(\) => \{ setMessage\(\[\]\); reloadPending\(\);/);
 for (const language of ['ar', 'en']) assert.equal(copy[language].err_cash_command_pending, undefined, `${language}: the resend instruction is gone (Haiku r19 N19-4, r20 N20-6)`);
 // Sol R18-L1: a marked refusal is checked, not resent.
 assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);
