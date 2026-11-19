@@ -40,27 +40,29 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker build -q -t "$IMAGE" -t sandbox-node24:local "$REPO/infra/test-device" >/dev/null || fail_setup "image build"
 fi
 
-# PostgreSQL. PG16 is the owner's long-lived device; PG18 is a sidecar this run owns (port 55475; 55474 stays free for ad-hoc checks) (label wind.test-device), recreated on a
-# fresh tmpfs with 1 GB of shared memory (the 64 MB default makes pg_dump fail) and removed when the run ends.
-PG18=wind-test-pg18
-cleanup() { docker ps -aq --filter "name=^${PG18}$" --filter label=wind.test-device=1 | xargs -r docker rm -f >/dev/null 2>&1; }
+# PostgreSQL. PG16 is the owner's long-lived device (parity). PostgreSQL 18 sidecars are owned by this run (label
+# wind.test-device): one for persistence (55475) and one for unit (55476), because the suites both need the database
+# fastship_test and lock each other out when they share one server. Fresh tmpfs, 1 GB shared memory (the 64 MB default
+# makes pg_dump fail), removed when the run ends. 55474 stays free for agents' ad-hoc checks.
+owned() { docker ps -aq --filter "name=^$1$" --filter label=wind.test-device=1; }
+cleanup() { for n in wind-test-pg18 wind-test-pg18u; do owned $n; done | xargs -r docker rm -f >/dev/null 2>&1; }
 ready() { # container port: TCP readiness, as the tests connect (the image's init server listens on the socket only)
   i=0; until docker exec "$1" pg_isready -h 127.0.0.1 -p "$2" -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && return 1; sleep 1; done; }
+pg18() { # name port
+  if docker ps -aq --filter "name=^$1$" | grep -q .; then
+    owned "$1" | grep -q . || fail_setup "a container named $1 exists that this runner does not own; remove or rename it"
+    owned "$1" | xargs -r docker rm -f >/dev/null
+  fi
+  docker run -d --name "$1" --label wind.test-device=1 --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g     -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT="$2"     postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off >/dev/null || fail_setup "start $1"; }
+trap cleanup EXIT
 case " $SUITES " in *" parity "*)
   docker ps --format '{{.Names}}' | grep -qx sandbox-pg-host || docker start sandbox-pg-host >/dev/null || fail_setup "start sandbox-pg-host"
   ready sandbox-pg-host 55473 || fail_setup "sandbox-pg-host not ready over TCP after 300 s" ;;
 esac
-case " $SUITES " in *" persistence "*|*" unit "*)
-  if docker ps -aq --filter "name=^${PG18}$" | grep -q .; then
-    docker ps -aq --filter "name=^${PG18}$" --filter label=wind.test-device=1 | grep -q . || fail_setup "a container named $PG18 exists that this runner does not own; remove or rename it"
-    cleanup
-  fi
-  trap cleanup EXIT
-  docker run -d --name "$PG18" --label wind.test-device=1 --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g \
-    -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT=55475 \
-    postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off >/dev/null || fail_setup "start $PG18"
-  ready "$PG18" 55475 || fail_setup "$PG18 not ready over TCP after 300 s" ;;
-esac
+case " $SUITES " in *" persistence "*) pg18 wind-test-pg18 55475 ;; esac
+case " $SUITES " in *" unit "*) pg18 wind-test-pg18u 55476 ;; esac
+case " $SUITES " in *" persistence "*) ready wind-test-pg18 55475 || fail_setup "wind-test-pg18 not ready over TCP after 300 s" ;; esac
+case " $SUITES " in *" unit "*) ready wind-test-pg18u 55476 || fail_setup "wind-test-pg18u not ready over TCP after 300 s" ;; esac
 
 # WSL's git cannot read a worktree whose .git points at a Windows path; Windows git (interop) can.
 g() { git -C "$REPO" "$@" 2>/dev/null || git.exe -C "$(wslpath -w "$REPO" 2>/dev/null)" "$@" 2>/dev/null; }
@@ -73,6 +75,7 @@ docker run --rm --network host --entrypoint sh \
   -e SUITES="$SUITES" -e SERIAL="$SERIAL" -e IMAGE_TAG="$IMAGE_TAG" \
   -e PG16_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55473/fastship_test \
   -e PG18_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55475/fastship_test \
+  -e PG18U_URL=postgresql://fastship_test:fastship_test@127.0.0.1:55476/fastship_test \
   "$IMAGE" -c '
   set -u
   die() { echo "setup failed: $1" >> /logs/summary.txt; exit 2; }
@@ -101,7 +104,7 @@ docker run --rm --network host --entrypoint sh \
     case $1 in
       typecheck) npx tsc --noEmit ;;
       lint) npx expo lint ;;
-      unit) WIND_TEST_DATABASE_URL=$PG18_URL WIND_TEST_PG_BIN=/usr/lib/postgresql/18/bin npm test ;;
+      unit) WIND_TEST_DATABASE_URL=$PG18U_URL WIND_TEST_PG_BIN=/usr/lib/postgresql/18/bin npm test ;;
       persistence) WIND_TEST_DATABASE_URL=$PG18_URL WIND_TEST_PG_BIN=/usr/lib/postgresql/18/bin npm run test:persistence ;;
       export) EXPO_PUBLIC_API_URL=https://4.223.118.16.sslip.io EXPO_PUBLIC_SUPPORT_WHATSAPP=972597127547 WIND_RELEASE=1 WIND_LOCAL_TEST=0 \
         NODE_ENV=production EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH=1 EXPO_UNSTABLE_TREE_SHAKING=1 npx expo export --platform web --clear --output-dir "$RUN/dist" ;;
