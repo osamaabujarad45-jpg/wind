@@ -20,7 +20,7 @@ Recompute amount limits, outstanding pending remittances and the no-negative-bal
 
 ## Pending remittance recovery
 
-Loss of the driver's device or a blocked account must not strand a pending remittance indefinitely. T25 must provide an authorized support recovery decision with immutable actor/reason/evidence and expected version. Recovery cannot bypass custody or clear debt merely to allow deletion/role changes. Reconcile the physical remittance and the cash-entry state before accepting a decision. Return disputed or uncertain money effects to a review queue; never mark them received from an unverified client claim.
+Loss of the driver's device or a blocked account must not strand a pending remittance indefinitely. T25 must provide an authorized recovery decision with immutable actor/reason/evidence and expected version. On PostgreSQL, finance or platform admins record handovers and make office recovery decisions. Captains can confirm or dispute their own handovers. Recovery cannot bypass custody or clear debt merely to allow deletion/role changes. Reconcile the physical remittance and the cash-entry state before accepting a decision. Return disputed or uncertain money effects to a review queue; never mark them received from an unverified client claim.
 
 ## Activation evidence
 

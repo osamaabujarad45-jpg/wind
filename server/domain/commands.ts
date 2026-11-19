@@ -22,7 +22,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
-  if ((path === '/api/admin/cash/adjustment' && input.source === 'payout') ||
+  if ((path === '/api/admin/cash/adjustment' && (input.source === 'payout' || input.intent === 'payout')) ||
     (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path) && input.action === 'confirm_return'))
     fail(400, 'unsupported_command');
   const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
@@ -44,7 +44,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     if ((driverAction || customerAction) && actor.status !== 'active')
       fail(403,actor.status === 'pending' ? 'pending_approval' : 'blocked');
     if (driverAction && policy.requirePermanentDriverApproval && !actor.approved_at) fail(403,'pending_approval');
-    if (path === '/api/admin/cash/adjustment') needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
+    if (/^\/api\/admin\/cash\/(?:adjustment|remittance|\d+\/resolve)$/.test(path)) needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
     if (saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
     const response = JSON.parse(saved.response);
     const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(path);

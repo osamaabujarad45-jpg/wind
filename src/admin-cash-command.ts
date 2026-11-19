@@ -41,9 +41,12 @@ export function readCashCommand(raw: unknown, actorId: number): CashCommand | nu
 export const newCashCommand = (actorId: number, driverId: number, kind: CashKind, amountCents: number, note: string, requestId = newRequestId()): CashCommand =>
   ({ type: 'admin_cash', schemaVersion: 1, actorId, requestId, driverId, kind, amountCents, note });
 
-export const cashCommandBody = (c: CashCommand) => c.kind === 'remittance'
-  ? { driverId: c.driverId, amountCents: c.amountCents, note: c.note, requestId: c.requestId }
-  : { driverId: c.driverId, amountCents: c.amountCents, reason: c.note, requestId: c.requestId, ...(c.kind === 'payout' && { source: 'payout' }) };
+export function cashCommandBody({ kind, driverId, amountCents, note, requestId }: CashCommand) {
+  const body = { driverId, amountCents, requestId };
+  if (kind === 'remittance') return { ...body, note };
+  if (kind === 'payout') return { ...body, reason: note, intent: 'payout', source: 'payout' };
+  return { ...body, reason: note, ...(amountCents > 0 && { intent: 'charge' }) };
+}
 
 /** Only a refusal of the request itself proves nothing was recorded under this id: the server replays a saved entry
  *  before it checks the balance. 401/403/408/429 and 5xx say nothing about an earlier attempt. */

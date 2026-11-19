@@ -30,6 +30,7 @@ const err = async (path, options, status, code) => assert.equal((await call(path
 try {
   const admin = await call('/auth/register', { body: { phone: '0599510001', name: 'Admin', password: 'secret1' } });
   await promote('0599510001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599510001', password: 'secret1' } })).token;
   const owner = await call('/auth/register', { body: { phone: '0599510002', name: 'Baker', password: 'secret1' } });
   const customer = await call('/auth/register', { body: { phone: '0599510003', name: 'Maha', password: 'secret1' } });
   const captain = await call('/auth/register', { body: { phone: '0599510004', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'motorcycle' } });

@@ -55,6 +55,7 @@ async function call(path, { body, token, method = 'POST', expect = 200 } = {}) {
 try {
   const admin = await call('/auth/register', { body: { phone: '0599700001', name: 'Route Admin', password: 'secret1' } });
   await promote('0599700001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599700001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599700002', name: 'Route Customer', password: 'secret1' } });
   const road = (await call('/admin/roads', { token: admin.token, body: { name: 'Qalandia slow', cities: ['ramallah', 'nablus'],
     point: { latitude: 32.0, longitude: 35.25 } } })).find(r => r.name === 'Qalandia slow');

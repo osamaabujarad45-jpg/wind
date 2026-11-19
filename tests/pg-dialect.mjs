@@ -16,6 +16,7 @@ try{
   assert.throws(()=>cashOwed(Number.MAX_SAFE_INTEGER,0,1,0),/safe-integer/);
   assert.deepEqual(await persistence.one('SELECT 1 numberValue, (SELECT 2) nestedValue, 3 AS explicitValue'),{numberValue:1,nestedValue:2,explicitValue:3});
   const admin=await register(1);await promote(admin.user.phone);
+  admin.token = (await call('/auth/login', { body: { phone: admin.user.phone, password: 'synthetic-secret' } })).token;
   const customer=await register(2,{email:'Case@wp03.example'});
   await call('/me/email',{token:customer.token,body:{email:'Case@wp03.example'}});
   const friend=await register(3);

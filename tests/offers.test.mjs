@@ -22,6 +22,7 @@ const advance = (token, order, extra = {}) => call(`/orders/${order.id}/advance`
 try {
   const admin = await call('/auth/register', { body: { phone: '0599200001', name: 'Admin', password: 'secret1' } });
   await promote('0599200001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599200001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599200002', name: 'Lina', password: 'secret1' } });
   const driver = async (phone, name) => {
     const d = await call('/auth/register', { body: { phone, name, password: 'secret1', role: 'driver', vehicle: 'car' } });

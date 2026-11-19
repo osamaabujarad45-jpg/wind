@@ -22,8 +22,10 @@ const advance = (token, order) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Admin', password: 'secret1' } });
   await promote('0599300001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599300001', password: 'secret1' } })).token;
   const reviewer = await call('/auth/register', { body: { phone: '0599300007', name: 'Reviewer', password: 'secret1' } });
   await promote('0599300007');
+  reviewer.token = (await call('/auth/login', { body: { phone: '0599300007', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const drivers = [];
   for (const phone of ['0599300003', '0599300004']) {
@@ -171,6 +173,14 @@ try {
   await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'customer' } });
   await call(departPath, { token: admin.token, method: 'PATCH', body: { role: 'driver', vehicle: 'car' } });
   await call(departPath, { token: admin.token, method: 'DELETE' });
+  await recordReview(savedEvidence); // a pre-fence receipt retained after the captain left
+  assert.equal((await stats()).pickupPayReviewsOpen, openBefore);
+  assert.equal((await call(pickupPath, { token: reviewer.token, body: { ...denial, km: 1, granted: true }, expect: 409 })).error, 'driver_departed');
+  const closedPickup = await call(pickupPath, { token: reviewer.token, body: denial });
+  assert.equal(closedPickup.paidCents, 0);
+  assert.deepEqual(await call(pickupPath, { token: reviewer.token, body: denial }), closedPickup);
+  assert.equal((await stats()).pickupPayReviewsOpen, openBefore - 1);
+  assert.equal(db.prepare("SELECT id FROM cash_entries WHERE order_id = ? AND source = 'pickup_pay'").get(departOrder.id), undefined);
 
   const credited = await call('/auth/register', { body: { phone: '0599300012', name: 'Nada', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${credited.user.id}/approve`, { token: admin.token, body: {} });
@@ -249,9 +259,15 @@ try {
     assert.ok(restarted.diagnostics().includes('"category":"block_review_driver_departed"'));
     assert.ok(restarted.diagnostics().includes(`"driverId":${departed.user.id}`));
   } finally { await restarted.stop(); }
-  assert.equal((await call(`/admin/orders/${existingReview.id}/block-review`, {
-    token: reviewer.token, body: decision, expect: 409,
-  })).error, 'driver_departed');
+  const retainedReviewPath = `/admin/orders/${existingReview.id}/block-review`;
+  db.prepare('UPDATE courier_block_reviews SET due_at = ? WHERE order_id = ?').run(Date.now() - 1, existingReview.id);
+  const overdue = (await stats()).blockReviewsOverdue;
+  assert.equal((await call(retainedReviewPath, { token: reviewer.token, body: decision, expect: 409 })).error, 'driver_departed');
+  const close = { cleared: false, note: 'Former captain review reconciled' };
+  const closed = await call(retainedReviewPath, { token: reviewer.token, body: close });
+  assert.equal(closed.paidCents, 0);
+  assert.deepEqual(await call(retainedReviewPath, { token: reviewer.token, body: close }), closed);
+  assert.equal((await stats()).blockReviewsOverdue, overdue - 1);
   assert.equal(db.prepare("SELECT id FROM cash_entries WHERE driver_id = ? AND source = 'trip_pay'").get(departed.user.id), undefined);
   console.log('courier-block: parcels recover through custody and boarded rides end unpaid');
 } finally {

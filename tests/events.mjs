@@ -17,7 +17,9 @@ const failureTrigger=async(kind)=>db.run(`CREATE OR REPLACE FUNCTION fail_notifi
 const clearFailure=()=>db.run('DROP TRIGGER fail_notification ON domain_events');
 try {
   const reg=(n,extra={})=>call('/auth/register',{body:{phone:`059970000${n}`,name:'Synthetic',password:'synthetic-secret',...extra}});
-  const admin=await reg(1);await promote(admin.user.phone);const customer=await reg(2);
+  const admin=await reg(1);await promote(admin.user.phone);
+  admin.token = (await call('/auth/login', { body: { phone: admin.user.phone, password: 'synthetic-secret' } })).token;
+  const customer=await reg(2);
   const drivers=[await reg(3,{role:'driver',vehicle:'car'}),await reg(4,{role:'driver',vehicle:'car'})];
   for(const d of drivers)await call(`/admin/users/${d.user.id}/approve`,{token:admin.token,body:{}});
   const ecdh=createECDH('prime256v1');ecdh.generateKeys();const keys={p256dh:ecdh.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,7).toString('base64url')};
@@ -47,7 +49,7 @@ try {
   const purpose=await db.one("SELECT payload FROM domain_events WHERE order_id=? AND type='notification.requested' ORDER BY sequence DESC LIMIT 1",scheduled.id);
   assert.equal(purpose.payload.systemPurpose,'scheduled_job_release');
   // Cash adjustment state + journal + notification + saved command are one commit, replay once.
-  const cashBody={commandId:randomUUID(),payload:{driverId:drivers[0].user.id,amountCents:1000,currency:'ILS',reason:'Synthetic exact ILS adjustment'}};
+  const cashBody={commandId:randomUUID(),payload:{driverId:drivers[0].user.id,amountCents:1000,currency:'ILS',intent:'charge',reason:'Synthetic exact ILS adjustment'}};
   const cash=await call('/admin/cash/adjustment',{token:admin.token,body:cashBody});
   assert.deepEqual(await call('/admin/cash/adjustment',{token:admin.token,body:cashBody}),cash);
   assert.equal((await db.one("SELECT count(*) n FROM domain_events WHERE type='cash.changed' AND (payload->>'entryId')::bigint=?",cash.id)).n,1);

@@ -24,6 +24,7 @@ const call = apiCaller(base);
 try {
   const admin = await call('/auth/register', { body: { phone: '0599010001', name: 'Admin', password: 'secret123' } });
   await promote('0599010001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599010001', password: 'secret123' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599010002', name: 'Lina', password: 'secret123' } });
   const driver = await call('/auth/register', { body: { phone: '0599010003', name: 'Sami', password: 'secret123', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });

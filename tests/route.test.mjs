@@ -72,6 +72,7 @@ const call = apiCaller(() => base);
 try {
   const admin = await call('/auth/register', { body: { phone: '0599800001', name: 'Admin', password: 'secret1' } });
   await promote('0599800001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599800001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599800002', name: 'Lina', password: 'secret1' } });
   await call('/admin/routing', { expect: 401 });
   await call('/admin/routing', { token: customer.token, expect: 403 });

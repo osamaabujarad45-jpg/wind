@@ -41,7 +41,14 @@ try {
   // Registering can't make an admin; only the server-side promote command can.
   const admin = await call('/auth/register', { body: { phone: '0599000001', name: 'Admin', password: 'secret1', role: 'admin' } });
   assert.equal(admin.user.role, 'customer');
+  const adminId = admin.user.id;
+  db.prepare('INSERT INTO firebase_resets (user_id, requested_at) VALUES (?, ?)').run(adminId, Date.now());
+  db.prepare('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)').run(adminId, 'https://example.test/admin', 'test', 'test', Date.now());
   await promote('0599000001');
+  await call('/me', { token: admin.token, expect: 401 });
+  for (const table of ['push_subscriptions', 'firebase_resets'])
+    assert.equal(db.prepare(`SELECT 1 FROM ${table} WHERE user_id = ?`).get(adminId), undefined);
+  admin.token = (await call('/auth/login', { body: { phone: '0599000001', password: 'secret1' } })).token;
   assert.equal((await call('/me', { token: admin.token })).user.role, 'admin');
   assert.deepEqual((await call('/me', { token: admin.token })).capabilities, { enabledServices: ['parcel'], pooling: false, emailVerification: false });
   await assert.rejects(() => promote('0599999999'));
@@ -181,6 +188,8 @@ try {
   const partnerReview = (await call(`/orders/${pinnedOrder.id}`, { token: admin.token })).pickupPayReview;
   assert.deepEqual([partnerReview.reason, partnerReview.originKm, partnerReview.currentKm, partnerReview.suggestedCents],
     ['partner_cancelled', partnerKm, 0, partnerPay]);
+  const partnerActorId = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get().id;
+  assert.equal(db.prepare("SELECT actor_id FROM security_events WHERE order_id = ? AND action = 'PICKUP_PAY_REVIEW'").get(pinnedOrder.id).actor_id, partnerActorId);
   const partnerEntries = () => db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?')
     .all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents);
   assert.deepEqual(partnerEntries(), []);

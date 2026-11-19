@@ -40,6 +40,7 @@ try {
 
   const admin = await register('0599810001', 'Matrix Admin');
   await promote('0599810001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599810001', password: 'Matrix_Password_2026' } })).token;
   const customer = await register('0599810002', 'Matrix Customer');
   const foreignCustomer = await register('0599810003', 'Foreign Customer');
   const driver = await register('0599810004', 'Matrix Driver', { role: 'driver', vehicle: 'car' });
@@ -48,6 +49,7 @@ try {
   const blockedUser = await register('0599810007', 'Blocked User');
   const demotedAdmin = await register('0599810008', 'Demoted Admin');
   await promote('0599810008');
+  demotedAdmin.token = (await call('/auth/login', { body: { phone: '0599810008', password: 'Matrix_Password_2026' } })).token;
   assert.equal((await call('/admin/routing', { token: demotedAdmin.token })).provider, 'osrm');
   // Demote staff role directly and verify bearer session loses admin authority on the very next request.
   db.prepare("UPDATE users SET role = 'customer' WHERE id = ?").run(demotedAdmin.user.id);

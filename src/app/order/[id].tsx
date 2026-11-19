@@ -573,7 +573,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
-    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} review={order.pickupPayReview} onDone={reload} />}
+    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} assignedAt={order.assignedAt} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
     {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
@@ -1035,9 +1035,9 @@ const styles = StyleSheet.create({
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
 });
 
-/** DRV-17: a second admin records whether a courier block's review cleared the captain; only then is the trip so far paid. */
-function PickupPayReviewCard({ orderId, review, onDone }: { orderId: number; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
+function PickupPayReviewCard({ orderId, assignedAt, review, onDone }: { orderId: number; assignedAt?: number | null; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
   const { c, money, err } = useCopy();
+  const { time } = useFormat();
   const [km, setKm] = useState(review.drivenKm?.toFixed(2) ?? '');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1055,13 +1055,22 @@ function PickupPayReviewCard({ orderId, review, onDone }: { orderId: number; rev
     } catch (error) { setFailure(err(error)); }
     finally { inFlight.current = false; setBusy(false); }
   }
-  const { decision } = review;
+  const { decision, originKm, currentKm, originFixAt, currentFixAt, suggestedCents, drivenKm } = review;
+  const originAge = originFixAt == null || assignedAt == null ? null : Math.ceil((assignedAt - originFixAt) / 1000);
+  const distanceText = (km: number | null | undefined) => km == null ? c.pickupPayEvidenceUnavailable : fill(c.pickupPayDistance, { km: km.toFixed(2) });
   return <Card>
     <Txt variant="title">{c.pickupPayReview}</Txt>
+    <Txt variant="caption">{c[`pickup_${review.reason}`]}</Txt>
+    <Txt variant="caption">{fill(c.pickupPayOrigin, { distance: distanceText(originKm), time: originFixAt == null ? c.pickupPayEvidenceUnavailable : time(originFixAt) })}</Txt>
+    <Txt variant="caption">{fill(c.pickupPayCurrent, { distance: distanceText(currentKm), time: currentFixAt == null ? c.pickupPayEvidenceUnavailable : time(currentFixAt) })}</Txt>
+    {originAge == null && <Txt variant="caption">{c.pickupPayWeakOrigin}</Txt>}
+    {originAge != null && originAge > 0 && <Txt variant="caption">{fill(c.pickupPayBeforeAssignment, { seconds: originAge })}</Txt>}
+    <Txt variant="caption">{suggestedCents == null ? c.pickupPayNoSuggestion : fill(c.pickupPaySuggestion, { pay: money(suggestedCents / 100) })}</Txt>
     {decision ? <>
       <Txt>{decision.granted ? fill(c.pickupPayCredited, { pay: money(decision.paidCents / 100) }) : c.pickupPayDenied}</Txt>
       <Txt variant="caption">{decision.reason}</Txt>
     </> : <>
+      {drivenKm != null && <Txt variant="caption">{c.pickupPayDistanceBasis}</Txt>}
       <Field label={c.pickupPayKm} value={km} onChangeText={setKm} keyboardType="decimal-pad" disabled={busy} />
       <Field label={c.cashReason} value={reason} onChangeText={setReason} maxLength={500} disabled={busy} />
       <ErrorText>{failure}</ErrorText>
@@ -1073,6 +1082,7 @@ function PickupPayReviewCard({ orderId, review, onDone }: { orderId: number; rev
   </Card>;
 }
 
+// DRV-17: a second admin decides whether the captain is cleared and the trip pay can be posted.
 function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
   const { c, err } = useCopy();
   const [note, setNote] = useState('');

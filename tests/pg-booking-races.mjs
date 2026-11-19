@@ -68,8 +68,9 @@ const check = async (label, work) => {
   finally { routeGate?.release.resolve(); routeGate = undefined; await release(); }
 };
 try {
-  const admin = await customer();
-  await promote(admin.user.phone);
+  const { user: operator } = await call('/auth/register', { body: { phone: '0599760000', name: 'Race fixture admin', password: 'synthetic-secret' } });
+  await promote(operator.phone);
+  const admin = await call('/auth/login', { body: { phone: operator.phone, password: 'synthetic-secret' } });
   for (const quoted of [false, true]) await check(`same key replays winner (${quoted ? 'quote' : 'legacy'})`, async () => {
     const owner = await customer();
     const terms = { ...input(owner.user), ...(quoted && { scheduledFor: Date.now() + 86_400_000 }) };

@@ -26,6 +26,7 @@ try {
     accounts[role] = { userId: account.user.id, token: account.token };
   }
   await promote(phone.admin);
+  accounts.admin.token = (await call('/auth/login', { body: { phone: phone.admin, password } })).token;
   await call(`/admin/users/${accounts.driver.userId}/approve`, { token: accounts.admin.token, body: {} });
   for (const account of Object.values(accounts)) account.baseline = db.prepare('SELECT * FROM users WHERE id=?').get(account.userId);
   assert.equal(restorePhoneTestIdentity(db, {}, 'customer', phone.customer), false, 'first startup has no baseline to restore');

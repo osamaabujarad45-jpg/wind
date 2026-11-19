@@ -29,6 +29,7 @@ async function register(phone, name, extra = {}) {
 try {
   const admin = await register('0599000101', 'Admin');
   await promote('0599000101');
+  admin.token = (await call('/auth/login', { body: { phone: '0599000101', password: 'secret123' } })).token;
   const customer = await register('0599000102', 'Lina');
   const customer2 = await register('0599000103', 'Omar');
   const driver = await register('0599000104', 'Sami', { role: 'driver', vehicle: 'car' });

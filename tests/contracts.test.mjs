@@ -104,6 +104,7 @@ try {
   [admin, customer, driver, , spare] = actors;
   const foreign = actors[3];
   await promote(phones[0]);
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password: 'synthetic-local-password' } })).token;
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
   const session = await exchange('customer-session', 'customer', '/me', { token: customer.token });

@@ -27,6 +27,7 @@ const countTokens = async uid => (await conn.one('SELECT count(*) n FROM native_
 try {
   const reg = (n, extra = {}) => call('/auth/register', { body: { phone: `05994000${String(n).padStart(2, '0')}`, name: 'Synthetic', password: 'synthetic-secret', ...extra } });
   const admin = await reg(1); await promote(admin.user.phone);
+  admin.token = (await call('/auth/login', { body: { phone: admin.user.phone, password: 'synthetic-secret' } })).token;
   const a = await reg(2), b = await reg(3);
 
   // Validation and session binding.

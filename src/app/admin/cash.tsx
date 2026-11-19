@@ -53,7 +53,6 @@ export default function AdminCash() {
     if (kind === 'payout' && pendingCents > 0) return c.err_remittance_pending;
     if (kind === 'payout' && (value < 0 || value > -owedCents)) return c.err_invalid_amount;
     if (kind === 'adjustment' && value < 0) return c.err_approval_required; // forgiving debt needs a second finance approver
-    if (kind === 'adjustment' && owedCents < 0) return c.cashSettleCreditFirst;
     return null;
   };
 
@@ -145,7 +144,7 @@ export default function AdminCash() {
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
             {row.owedCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked || row.pendingCents > 0} reason={blocked ? blockedReason : c.err_remittance_pending}
               onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'payout', amount: String(-row.owedCents / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
-            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked || row.owedCents < 0} reason={blocked ? blockedReason : c.cashSettleCreditFirst} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
+            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(''); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
           </Row>}
         </Card>
       </Appear>)}

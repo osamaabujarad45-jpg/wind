@@ -108,6 +108,7 @@ try {
   [admin, customer, driver, , spare] = actors;
   const foreign = actors[3];
   await promote(phones[0]);
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password: 'synthetic-local-password' } })).token;
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
   // Additive admin and driver routes enforce their roles here, where no SQLite capability gate answers first (authz-matrix covers SQLite).
@@ -340,7 +341,7 @@ try {
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
       if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
-        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 40, 'readiness reports typed cash and shipping block reviews');
+        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 41, 'readiness reports the finance handover audit migration');
         ex.response.schema = 3;
       }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {

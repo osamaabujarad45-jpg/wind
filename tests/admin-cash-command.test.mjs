@@ -96,9 +96,10 @@ assert.equal(refusedForGood(null), false);
 }
 // The body is the same one the form sent: an adjustment names its reason, a remittance its note.
 assert.deepEqual(cashCommandBody(command), { driverId: 42, amountCents: 1250, note: 'Office handover', requestId: command.requestId });
-assert.deepEqual(cashCommandBody({ ...command, kind: 'adjustment' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId });
+assert.deepEqual(cashCommandBody({ ...command, kind: 'adjustment' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'charge' });
+assert.deepEqual(cashCommandBody({ ...command, kind: 'payout' }), { driverId: 42, amountCents: 1250, reason: 'Office handover', requestId: command.requestId, intent: 'payout', source: 'payout' });
 assert.equal(cashCommandKey(7), 'adminCash.7');
-for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending'])
+for (const language of ['ar', 'en']) for (const key of ['cashAdjustRecorded', 'err_cash_command_pending', 'err_admin_update_required', 'err_captain_pay_schema_required', 'err_invalid_request_id'])
   assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 
 // The screen keeps the command in the admin's own secure slot (not the token-scoped recovery store a forced sign-out wipes),

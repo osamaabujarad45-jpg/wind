@@ -116,6 +116,7 @@ const ahmad = await register('0599000002', 'أحمد يوسف', { role: 'driver'
 const sami = await register('0569000003', 'سامي خليل', { role: 'driver', vehicle: 'van' }); // stays pending
 const boss = await register('0599000009', 'إدارة ويند');
 await promote('0599000009');
+boss.token = (await call('/auth/login', null, { phone: '0599000009', password: 'Screenshot_Secret1' })).token;
 await call(`/admin/users/${ahmad.user.id}/approve`, boss.token, {});
 
 // Layla has Wind Plus (requested, then activated by the admin); Omar and Ahmad have requests waiting.

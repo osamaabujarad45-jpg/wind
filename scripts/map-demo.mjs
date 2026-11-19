@@ -18,6 +18,7 @@ const call = async (path, token, body) => {
 };
 const reg = (phone, name, extra = {}) => call('/auth/register', null, { phone, name, email: `${phone}@example.test`, consent: true, password: 'Demo_Secret1', ...extra });
 const admin = await reg('0599000009', 'Admin'); await promote('0599000009');
+admin.token = (await call('/auth/login', null, { phone: '0599000009', password: 'Demo_Secret1' })).token;
 const customer = await reg('0599000001', 'Layla');
 const driver = await reg('0599000002', 'Ahmad', { role: 'driver', vehicle: 'car' });
 await call(`/admin/users/${driver.user.id}/approve`, admin.token, {});

@@ -8,15 +8,14 @@ import { defaultSettings as standard, quote } from '../src/model.ts';
 import { cashLines } from '../src/cash-lines.ts';
 import { copy } from '../src/copy.ts';
 import { apiCaller } from './support/api.mjs';
-import { checkPickupPay } from './support/shipping-pay.mjs';
+import { checkCompletedReattempt, checkPickupPay } from './support/shipping-pay.mjs';
 // The ledger maths below were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
 const defaultSettings = { ...standard, parcelPrice: 49 };
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote, liveWatcherCount, installedPayoutNotes } = await import('../server/main.ts');
-assert.deepEqual(installedPayoutNotes, [copy.ar.cashPayoutNote, copy.en.cashPayoutNote]); // pinned to the installed admin copy
+const { shutdown, server, promote, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -27,8 +26,10 @@ const advance = (token, order, extra = {}) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Cashier', password: 'secret1' } });
   await promote('0599300001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599300001', password: 'secret1' } })).token;
   const secondCashier = await call('/auth/register', { body: { phone: '0599300005', name: 'Second cashier', password: 'secret1' } });
   await promote('0599300005');
+  secondCashier.token = (await call('/auth/login', { body: { phone: '0599300005', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599300003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599300004', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -103,7 +104,7 @@ try {
   assert.equal(cash.owedCents, commissionCents - 500); // disputed never counts
   assert.equal(cash.pendingCents, 0);
 
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, reason: 'x' }, expect: 400 });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, intent: 'charge', reason: 'x' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 0, reason: 'Nothing at all' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1_000_001, reason: 'Too much money' }, expect: 400 });
   await call('/admin/approvals', { token: admin.token, body: { subjectType: 'cash_adjustment', subjectId: String(driver.user.id), amountMinor: 200, reason: 'Forgive test debt' }, expect: 409 }); // SQLite cannot host the protocol
@@ -126,7 +127,7 @@ try {
 
   // An older handover stays confirmable however many newer entries follow it.
   const handover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1 } });
-  for (let i = 0; i < 50; i++) await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, reason: 'Fuel card top-up' } });
+  for (let i = 0; i < 50; i++) await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, intent: 'charge', reason: 'Fuel card top-up' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.entries.filter(e => e.status !== 'pending').length, 50); // the history stays one page
   assert.deepEqual(cash.entries.filter(e => e.status === 'pending').map(e => e.id), [handover.id]);
@@ -166,9 +167,9 @@ try {
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   const charge = await call('/admin/cash/adjustment', { token: admin.token, body: {
-    driverId: driver.user.id, amountCents: 100, reason: 'Office fuel charge', requestId: randomUUID(),
+    driverId: driver.user.id, amountCents: 100, intent: 'charge', reason: 'Office fuel charge', requestId: randomUUID(),
   } });
-  assert.equal(charge.source, undefined, 'with no credit, a positive adjustment is a charge');
+  assert.equal(charge.source, undefined, 'the explicit charge is recorded as a charge');
   const handovers = [];
   for (let i = 0; i < 2; i++) handovers.push(await call('/admin/cash/remittance', {
     token: admin.token, body: { driverId: driver.user.id, amountCents: 50 },
@@ -190,7 +191,7 @@ try {
   const returnPay = 2 * Math.round(returned.price * 100);
   assert.equal(cash.owedCents, 100 - returnPay);
   assert.equal(cash.pendingCents, 100);
-  const blockedPayout = { driverId: driver.user.id, amountCents: 100 - cash.owedCents, reason: 'Office paid driver', requestId: randomUUID() };
+  const blockedPayout = { driverId: driver.user.id, amountCents: 100 - cash.owedCents, intent: 'payout', reason: 'Office paid driver', requestId: randomUUID() };
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: blockedPayout, expect: 409 })).error, 'remittance_pending');
   await call(`/driver/cash/${handovers[0].id}/confirm`, { token: driver.token, body: { decision: 'dispute' } });
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...blockedPayout, amountCents: 1 }, expect: 409 })).error, 'remittance_pending');
@@ -206,38 +207,40 @@ try {
   // An unknown failure type is refused; the new typed ones are accepted (PROD-06).
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'lost_in_space' }, expect: 400 });
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient asked to try again' } });
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
   assert.equal((await call(`/orders/${supportReturn.id}`, { token: driver.token })).exceptionReason, 'access_blocked');
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
   const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
   assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2);
-  const officePay = 2 * Math.round(supportReturn.price * 100);
+  const officePay = 3 * Math.round(supportReturn.price * 100);
   assert.equal(cash.owedCents, 50 - returnPay - officePay);
   assert.deepEqual(tripEntries(cash, supportReturn).map(e => e.amountCents), [-officePay]);
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 4);
   assert.equal(earnings.all.tripPayCents, returnPay + officePay);
 
+  await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
-  const owing = (await call('/driver/cash', { token: driver.token })).owedCents;
-  const installed = { driverId: driver.user.id, amountCents: -owing - 2,
-    reason: `${copy.en.cashPayoutNote} (receipt 12)`, requestId: randomUUID() };
-  const { requestId: _id, ...noRequestId } = installed;
-  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: noRequestId, expect: 400 })).error, 'payout_request_id_required');
-  for (const language of ['ar', 'en']) assert.ok(copy[language].err_payout_request_id_required);
-  const installedPay = await call('/admin/cash/adjustment', { token: admin.token, body: installed });
-  assert.equal(installedPay.source, 'payout');
-  assert.equal(installedPay.note, installed.reason);
-  assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: installed }), installedPay);
-  await call('/admin/cash/adjustment', { token: admin.token, body: { ...installed, requestId: randomUUID() }, expect: 400 });
-  // A second cashier's untouched installed form (exact Pay-driver note, fresh request id) after the credit is settled is a
-  // stale payout, refused in both languages, never a charge that creates captain debt (lead decision, round 6).
-  for (const language of ['ar', 'en']) await call('/admin/cash/adjustment', { token: admin.token, expect: 400,
-    body: { driverId: driver.user.id, amountCents: 100, reason: copy[language].cashPayoutNote, requestId: randomUUID() } });
-
-  // The base binary saved a Pay-driver adjustment without a source. Its lost reply survives this upgrade.
-  const retained = { ...installed, amountCents: 1, requestId: randomUUID(), reason: copy.ar.cashPayoutNote };
+  const creditBeforeCharge = (await call('/driver/cash', { token: driver.token })).owedCents;
+  assert.ok(creditBeforeCharge < -100);
+  const chargeInCredit = { driverId: driver.user.id, amountCents: 100, reason: 'Office fuel charge', intent: 'charge', requestId: randomUUID() };
+  const charged = await call('/admin/cash/adjustment', { token: admin.token, body: chargeInCredit });
+  assert.equal(charged.source, undefined);
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: admin.token, body: chargeInCredit }), charged);
+  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, creditBeforeCharge + 100);
+  const oldForm = { driverId: driver.user.id, amountCents: 100, reason: 'Payout for receipt 12', requestId: randomUUID() };
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: oldForm, expect: 409 })).error, 'admin_update_required');
+  const { requestId: _id, ...noRequestId } = oldForm;
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...noRequestId, intent: 'payout' }, expect: 400 })).error, 'payout_request_id_required');
+  for (const language of ['ar', 'en']) {
+    assert.ok(copy[language].err_payout_request_id_required);
+    assert.ok(copy[language].err_admin_update_required);
+  }
+  // A receipt saved without a source can still replay after the admin app update.
+  const retained = { ...oldForm, amountCents: 1, requestId: randomUUID() };
   const retainedId = Number((await persistence.run(`INSERT INTO cash_entries
     (driver_id, kind, amount_cents, note, status, recorded_by, created_at, request_id)
     VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?, ?)`, retained.driverId, retained.amountCents, retained.reason,
@@ -248,7 +251,7 @@ try {
   assert.deepEqual(await call(`/admin/cash/commands/${retained.requestId}`, { token: admin.token }), { entry: replay });
 
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
-  const payoutBody = { driverId: driver.user.id, source: 'payout', amountCents: -credit, reason: 'Office paid trip earnings' };
+  const payoutBody = { driverId: driver.user.id, intent: 'payout', amountCents: -credit, reason: 'Office paid trip earnings' };
   await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, amountCents: -credit + 1, requestId: randomUUID() }, expect: 400 });
   const bodies = [admin, secondCashier].map(actor => ({ actor, body: { ...payoutBody, requestId: randomUUID() } }));
   const results = await Promise.all(bodies.map(({ actor, body }) => fetch(`${base}/admin/cash/adjustment`, {
@@ -262,6 +265,11 @@ try {
   assert.match(payout.reference, /^P-/);
   assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: bodies[winner].body }), payout);
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  const stale = { ...payoutBody, requestId: randomUUID() };
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: stale, expect: 400 })).error, 'invalid_amount');
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...oldForm, requestId: randomUUID() }, expect: 409 })).error, 'admin_update_required');
+  const { intent: _intent, ...withAlias } = bodies[winner].body;
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: { ...withAlias, source: 'payout' } }), payout);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----
@@ -392,7 +400,7 @@ try {
   // An adjustment has no reference; its receipt still names the entry for the admin who recorded it.
   const fresh = await call('/auth/register', { body: { phone: '0599300019', name: 'Nour', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${fresh.user.id}/approve`, { token: admin.token, body: {} });
-  const adjusted = { driverId: fresh.user.id, amountCents: 200, reason: 'Fuel advance correction', requestId: randomUUID() };
+  const adjusted = { driverId: fresh.user.id, amountCents: 200, intent: 'charge', reason: 'Fuel advance correction', requestId: randomUUID() };
   const adjustment = await call('/admin/cash/adjustment', { token: admin.token, body: adjusted });
   const adjustmentReceipt = (await call(`/admin/cash/commands/${adjusted.requestId}`, { token: admin.token, method: 'GET' })).entry;
   assert.deepEqual([adjustmentReceipt.id, adjustmentReceipt.kind, adjustmentReceipt.reference], [adjustment.id, 'adjustment', null]);

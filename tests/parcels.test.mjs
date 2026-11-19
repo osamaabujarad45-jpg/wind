@@ -32,6 +32,7 @@ const call = apiCaller(() => base, realFetch);
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Admin', password: 'secret1' } });
   await promote('0599300001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599300001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Huda', password: 'secret1' } });
   const driver = async (phone, name) => {
     const d = await call('/auth/register', { body: { phone, name, password: 'secret1', role: 'driver', vehicle: 'car' } });

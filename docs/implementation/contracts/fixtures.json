@@ -3085,19 +3085,19 @@
       "path": "/driver/cash",
       "httpStatus": 200,
       "response": {
-        "owedCents": -4000,
+        "owedCents": -6000,
         "pendingCents": 0,
         "commissionCents": 300,
         "discountsCents": 0,
         "remittedCents": 300,
-        "adjustmentsCents": -4000,
+        "adjustmentsCents": -6000,
         "capCents": 15000,
-        "exposureCents": -4000,
+        "exposureCents": -6000,
         "entries": [
           {
             "id": 2,
             "kind": "adjustment",
-            "amountCents": -4000,
+            "amountCents": -6000,
             "note": "Trip pay · أجر الرحلة · order 3",
             "status": "confirmed",
             "reference": null,

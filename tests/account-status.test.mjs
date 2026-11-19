@@ -34,6 +34,7 @@ const login = (phone, password, expect) => call('/auth/login', { body: { phone, 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599810001', name: 'Admin', password: 'secret1' } });
   await promote('0599810001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599810001', password: 'secret1' } })).token;
   const driver = await call('/auth/register', { body: { phone: '0599810002', name: 'Driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const customer = await call('/auth/register', { body: { phone: '0599810003', name: 'Customer', password: 'secret1' } });
   const driverPush = 'https://fcm.googleapis.com/fcm/send/driver';

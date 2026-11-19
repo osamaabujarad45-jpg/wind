@@ -63,6 +63,7 @@ try {
   };
   const admin = await call('/auth/register', { body: { phone: '0599970001', name: 'Synthetic admin', password: 'secret1' } });
   await promote('0599970001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599970001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599970002', name: 'Synthetic sender', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599970003', name: 'Synthetic courier', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });

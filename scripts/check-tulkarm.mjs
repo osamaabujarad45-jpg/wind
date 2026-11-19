@@ -38,6 +38,7 @@ const password = 'Tulkarm_Local_2026';
 const register = (phone, name, extra = {}) => call('/auth/register', { body: { phone, name, email: `${phone}@example.test`, consent: true, password, ...extra } });
 const admin = await register('0599000901', 'مدير');
 await promote('0599000901');
+admin.token = (await call('/auth/login', { body: { phone: '0599000901', password } })).token;
 const customer = await register('0599000902', 'سارة');
 const driver = await register('0599000903', 'أحمد', { role: 'driver', vehicle: 'car' });
 await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });

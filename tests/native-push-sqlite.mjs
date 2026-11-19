@@ -50,6 +50,7 @@ const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus'
 try {
   const admin = await call('/auth/register', { body: { phone: '0599160001', name: 'Admin', password: 'secret1' } });
   await promote('0599160001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599160001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599160002', name: 'Rana', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599160003', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599160004', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });

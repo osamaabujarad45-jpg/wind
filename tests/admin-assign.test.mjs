@@ -24,6 +24,7 @@ const raw = (path, token, body) => fetch(base + path, { method: 'POST', headers:
 try {
   const admin = await call('/auth/register', { body: { phone: '0599400001', name: 'Dispatcher', password: 'secret1' } });
   await promote('0599400001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599400001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599400002', name: 'Lina', password: 'secret1' } });
   const driver = (phone, name, vehicle) => call('/auth/register', { body: { phone, name, password: 'secret1', role: 'driver', vehicle } });
   const d1 = await driver('0599400003', 'Sami', 'car'), d2 = await driver('0599400004', 'Omar', 'car'), d3 = await driver('0599400005', 'Rana', 'car');

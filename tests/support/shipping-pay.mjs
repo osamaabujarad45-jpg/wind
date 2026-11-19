@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { crowKm } from '../../src/model.ts';
 
+export async function checkCompletedReattempt({ call, persistence, input, driver, customer, admin }) {
+  const order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: 49 } });
+  const path = `/orders/${order.id}`;
+  const advance = (expectedStatus, extra = {}) => call(`${path}/advance`, { token: driver.token, body: { expectedStatus, requestId: randomUUID(), ...extra } });
+  const pay = () => persistence.all("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", order.id);
+  await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
+  await advance('assigned');
+  await advance('at_pickup');
+  await call(`${path}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient is ready now' } });
+  assert.deepEqual(await pay(), []);
+  const { handoverCode } = await call(path, { token: customer.token });
+  const proof = { requestId: randomUUID(), code: handoverCode };
+  assert.ok((await advance('in_transit', proof)).commission > 0, 'successful delivery earns the fare as usual');
+  assert.equal((await advance('in_transit', proof)).status, 'completed');
+  assert.deepEqual((await pay()).map(row => row.amount_cents), [-Math.round(order.price * 100)]);
+}
+
 export async function checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount }) {
   const pickupPoint = { latitude: 31.9038, longitude: 35.2034 };
   const book = (point = pickupPoint) => call('/orders', { token: customer.token, body: { ...input, pickupPoint: point, quotedPrice: 49 } });
@@ -29,7 +47,7 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     const before = (await call(`/orders/${order.id}`, { token: admin.token })).pickupPayReview;
     assert.equal(before.reason, reason);
     assert.equal(before.decision, null);
-    if (evidence) assert.deepEqual({ originKm: before.originKm, currentKm: before.currentKm, suggestedCents: before.suggestedCents }, evidence);
+    if (evidence) assert.deepEqual(Object.fromEntries(Object.keys(evidence).map(key => [key, before[key]])), evidence);
     await checkEntry(order, 0);
     assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).pickupPayReview, undefined);
     const path = `/admin/orders/${order.id}/pickup-pay-review`;
@@ -69,15 +87,20 @@ export async function checkPickupPay({ call, persistence, input, driver, other, 
     assert.equal(await from(carrier), undefined);
     assert.equal((await upload(0.05)).accepted, true);
 
+    const fixAt = async () => (await persistence.one('SELECT good_at FROM driver_locations WHERE driver_id = ?', driver.user.id)).good_at;
+    const originFixAt = await fixAt();
+    jump(1000);
     order = await arrive(await accept(await book(), position(0.05)));
     const scope = await call(`/orders/${order.id}?liveProtocol=1`, { token: customer.token });
-    assert.deepEqual(JSON.parse((await from(order)).detail), { km: km(0.05), driverId: driver.user.id, assignmentEpoch: scope.assignmentEpoch });
+    assert.deepEqual(JSON.parse((await from(order)).detail), { km: km(0.05), fixAt: originFixAt, driverId: driver.user.id, assignmentEpoch: scope.assignmentEpoch });
+    assert.ok(originFixAt < order.assignedAt);
     // The origin is the pre-accept fix. Pay compares a fix taken after assignment, so the same place is reported again.
     jump(60_000);
     assert.equal((await upload(0.05)).accepted, true);
+    const currentFixAt = await fixAt();
     assert.equal((await report(order)).status, 'cancelled');
     await checkEntry(order, 0);
-    await review(order, 'absent', false, 0, 0, { originKm: km(0.05), currentKm: km(0.05), suggestedCents: 0 });
+    await review(order, 'absent', false, 0, 0, { originKm: km(0.05), currentKm: km(0.05), suggestedCents: 0, originFixAt, currentFixAt });
 
     const driven = km(0.05) - km(0.02);
     const distancePay = Math.round(driven * 125);
