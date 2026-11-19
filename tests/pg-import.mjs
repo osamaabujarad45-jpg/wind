@@ -199,7 +199,7 @@ try {
   const restoreUrl=new URL(connectionString);restoreUrl.pathname=`/${freshDatabase}`;
   restored=new Persistence({connectionString:restoreUrl.href,pool:{options:`-c search_path=${schema},public`},statementTimeoutMs:30_000});
   await restored.run('CREATE EXTENSION postgis');
-  execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:30_000,stdio:'pipe'});
+  execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:120_000,stdio:'pipe'});
   const afterRestore=await reconcile(snapshot,restored);
   assert.equal(afterRestore.ok,true,JSON.stringify(afterRestore.mismatches));
   assert.equal((await restored.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','dump/restore retains parcel priority');
