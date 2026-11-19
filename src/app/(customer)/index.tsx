@@ -1,7 +1,7 @@
 // Home, Uber/Careem pattern: one "Where to?" entry, the three services as small tiles, the live order,
 // recent routes to book again, and short cards that explain saving and safety.
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -20,6 +20,8 @@ const book = (params: { service: Service; from?: string; to?: string; pick?: 'to
 export default function Home() {
   const { me } = useSession();
   const { c, row, rtl, language } = useCopy();
+  // At 150% text and up a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
+  const stacked = useWindowDimensions().fontScale >= 1.5;
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
   // A newer booked-ahead order hid a live trip or a search running now behind "See all". Stable sort keeps newest first per rank.
@@ -132,10 +134,10 @@ export default function Home() {
         </View>
         <Row gap={8} style={{ alignItems: 'stretch' }}>
           {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
-            <Press accessibilityLabel={c[service]} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, { flexDirection: row }]}>
+            <Press accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>
               <ServiceIcon service={service} size={28} />
               {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
-              <Txt variant="label" numberOfLines={2} style={{ flex: 1, fontSize: 12 }}>{c[service]}</Txt>
+              <Txt variant="label" numberOfLines={stacked ? 3 : 2} center={stacked} style={stacked ? { alignSelf: 'stretch', fontSize: 12 } : { flex: 1, fontSize: 12 }}>{c[service]}</Txt>
             </Press>
           </Appear>)}
         </Row>
@@ -175,7 +177,9 @@ const styles = StyleSheet.create({
   searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },
   now: { alignItems: 'center', gap: 5, minHeight: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
   nowText: { fontSize: 13, fontWeight: '700', color: palette.ink },
-  tile: { flex: 1, alignItems: 'center', gap: 6, borderRadius: 14, backgroundColor: palette.card, minHeight: 48, paddingHorizontal: 8 },
+  // flexGrow, not flex: 1. Inside the Pressable's column, flex: 1 set a zero height basis and held the tile at minHeight, so large text spilled out.
+  tile: { flexGrow: 1, alignItems: 'center', gap: 6, borderRadius: 14, backgroundColor: palette.card, minHeight: 48, paddingHorizontal: 8 },
+  tileStacked: { flexDirection: 'column', justifyContent: 'center', paddingVertical: 8 },
   recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },
   clock: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
   promo: { width: 224, borderRadius: 16, padding: 14, minHeight: 118 },

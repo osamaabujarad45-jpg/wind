@@ -202,7 +202,8 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
               {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
-              <Row gap={8}>
+              {/* wraps at large text: on one line the code ran off the card's edge (A53, 200%) */}
+              <Row gap={8} style={{ flexWrap: 'wrap', flexShrink: 1 }}>
                 <Txt variant="micro">{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
                 <Txt variant="micro">{orderCode(order.id)}</Txt>
               </Row>
