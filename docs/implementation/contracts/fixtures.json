@@ -1006,7 +1006,6 @@
           "freightPerKm": 2.5,
           "freightLarge": 50,
           "loadingHelp": 30,
-          "pickupPayPerKm": 1,
           "sharedDiscount": 0.4,
           "plusDiscount": 0.15,
           "commission": 0.15,
@@ -1021,8 +1020,7 @@
           "shopAcceptMinutes": 5,
           "shopConsentMinutes": 5,
           "shopNoCaptainMinutes": 10,
-          "shopDispatchLeadMinutes": 15,
-          "shopHandoverMinutes": 10
+          "shopDispatchLeadMinutes": 15
         },
         "capabilities": {
           "enabledServices": [
@@ -1030,6 +1028,36 @@
           ],
           "pooling": false,
           "emailVerification": false
+        }
+      }
+    },
+    {
+      "id": "driver-earnings",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/earnings",
+      "httpStatus": 200,
+      "response": {
+        "today": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "tripPayCents": 0
+        },
+        "week": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "tripPayCents": 0
+        },
+        "all": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "tripPayCents": 0
         }
       }
     },
@@ -3071,7 +3099,8 @@
             "status": "confirmed",
             "reference": null,
             "createdAt": "<server-timestamp>",
-            "decidedAt": null
+            "decidedAt": null,
+            "source": "trip_pay"
           },
           {
             "id": 1,
@@ -4477,7 +4506,15 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "blockReview": {
+          "dueAt": "<server-timestamp>",
+          "tripPayCents": 2000,
+          "decidedAt": null,
+          "cleared": null,
+          "paidCents": null,
+          "blockedBy": 1
+        }
       }
     },
     {

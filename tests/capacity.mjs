@@ -46,6 +46,9 @@ try {
   assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
   assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?', `DRV-17 trip pay order ${winner.id}`),
     [{amount_cents:-Math.round(Number(snapshot.price)*100),recorded_by:admin.user.id}], 'eligibility close pays only the trip so far');
+  const received = await call(`/admin/orders/${winner.id}/office`, { token: admin.token, body: { action: 'received', note: 'Received at Wind office' } });
+  assert.equal(received.orderId, winner.id);
+  assert.ok(received.office.until > received.office.receivedAt, 'eligibility confirmation opens SHIP-19 intake');
   for (const kind of ['decided','returned']) assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='notification.requested' AND payload->>'kind'=?",winner.id,kind),kind+' reaches its party');
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);

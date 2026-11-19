@@ -18,7 +18,7 @@ const defaultSettings = { ...standard, parcelPrice: 49 };
 const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -154,6 +154,23 @@ try {
   const { returnCode } = await call(`/orders/${returned.id}`, { token: customer.token });
   const returnProof = { expectedStatus: 'returning', requestId: randomUUID(), code: returnCode };
   const returnPath = `/orders/${returned.id}/advance`;
+  await call(returnPath, { token: driver.token, body: { ...returnProof, code: 'incorrect', requestId: randomUUID() }, expect: 400 });
+  await persistence.run("INSERT INTO ledger_accounts(code,kind,created_at) VALUES('platform:operating_expense','platform_revenue',?)", Date.now());
+  assert.equal((await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 })).error, 'account_conflict');
+  assert.equal((await persistence.one('SELECT status FROM orders WHERE id = ?', returned.id)).status, 'returning');
+  assert.equal(await persistence.one("SELECT 1 FROM security_events WHERE order_id = ? AND action IN ('RETURN_NO_FARE','RETURN_COMPLETED')", returned.id), undefined);
+  assert.equal(await persistence.one("SELECT 1 FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", returned.id), undefined);
+  assert.equal((await persistence.one('SELECT failures FROM proof_attempts WHERE order_id = ?', returned.id)).failures, 1);
+  // Repair the synthetic account metadata before testing a fresh successful request.
+  await persistence.scope(async () => {
+    await persistence.exec('BEGIN');
+    try {
+      await persistence.run('ALTER TABLE ledger_accounts DISABLE TRIGGER ledger_accounts_immutable');
+      await persistence.run("UPDATE ledger_accounts SET kind = 'operating_expense' WHERE code = 'platform:operating_expense'");
+      await persistence.run('ALTER TABLE ledger_accounts ENABLE TRIGGER ledger_accounts_immutable');
+      await persistence.exec('COMMIT');
+    } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  });
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
   assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
   await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 });
@@ -170,7 +187,12 @@ try {
   supportReturn = await advance(driver.token, await advance(driver.token, supportReturn));
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
+  const confirmReturn = { action: 'confirm_return', reason: 'Received at office' };
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn, expect: 403 });
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn });
+  await persistence.run('UPDATE users SET staff_role=NULL WHERE id=?', approver.user.id);
   assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
   const { persistence: ledgerDb } = await import('../server/main.ts');
   assert.equal(await ledgerDb.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${supportReturn.id}:commission`), undefined, 'and post no commission journal');
@@ -201,6 +223,15 @@ try {
   cash = await call('/driver/cash', { token: driver.token });
   assert.deepEqual(tripEntries(cash, recovered).map(e => e.amountCents), [-Math.round(recovered.price * 100)]);
 
+  const codeAfterRecovery = await deliver(false);
+  const recoveryVersion = (await ledgerDb.one('SELECT version FROM orders WHERE id = ?', codeAfterRecovery.id)).version;
+  await call(`/admin/eligibility/orders/${codeAfterRecovery.id}/recovery`, { token: admin.token,
+    body: { action: 'return', expectedVersion: recoveryVersion, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
+  const recoveryCode = (await call(`/orders/${codeAfterRecovery.id}`, { token: customer.token })).returnCode;
+  await advance(driver.token, { ...codeAfterRecovery, status: 'returning' }, { code: recoveryCode });
+  assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", codeAfterRecovery.id)).amount_cents,
+    -Math.round(codeAfterRecovery.price * 100), 'a code closure uses the same custody transfer evidence');
+
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'blocked', recovery: 'return' } });
@@ -217,10 +248,19 @@ try {
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'active' } });
   driver.token = (await call('/auth/login', { body: { phone: '0599300003', password: 'secret1' } })).token;
 
-  await checkPickupPay({ call, persistence, input, driver, customer, admin });
+  await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
-  const payout = await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings' } });
-  assert.equal(payout.note, 'PAYOUT Office paid trip earnings');
+  const payoutBody = { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings', source: 'payout', requestId: randomUUID() };
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call('/admin/settings?payroll=1', { token: approver.token, body: { pickupPayPerKm: 1 }, expect: 403 });
+  await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody, expect: 403 });
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  const payout = await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody });
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody }), payout);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, requestId: randomUUID() }, expect: 400 });
+  assert.equal(payout.note, payoutBody.reason);
+  assert.equal(payout.source, 'payout');
+  assert.match(payout.reference, /^P-/);
   assert.deepEqual(await journalFor(payout.id), [
     { kind: 'cash_adjustment', code: `driver:${driver.user.id}:receivable`, account_kind: 'driver_receivable', debit_minor: -credit, credit_minor: 0 },
     { kind: 'cash_adjustment', code: 'platform:provider_clearing', account_kind: 'provider_clearing', debit_minor: 0, credit_minor: -credit },

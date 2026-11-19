@@ -15,7 +15,7 @@ const defaultSettings = { ...standard, parcelPrice: 49 };
 const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -26,6 +26,8 @@ const advance = (token, order, extra = {}) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Cashier', password: 'secret1' } });
   await promote('0599300001');
+  const secondCashier = await call('/auth/register', { body: { phone: '0599300005', name: 'Second cashier', password: 'secret1' } });
+  await promote('0599300005');
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599300003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599300004', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -200,15 +202,21 @@ try {
   assert.equal(earnings.all.jobs, 4);
   assert.equal(earnings.all.tripPayCents, returnPay + officePay);
 
-  await checkPickupPay({ call, persistence, input, driver, customer, admin });
+  await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
   const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
-  const payoutBody = { driverId: driver.user.id, amountCents: 100 };
-  for (const reason of ['drv-17 manual', 'Drv-18 manual', 'pAyOuT manual'])
-    assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, reason }, expect: 400 })).error, 'invalid_input');
-  const partialPayout = await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, reason: 'Office paid part of the balance' } });
-  assert.equal(partialPayout.note, 'PAYOUT Office paid part of the balance');
-  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, credit + 100);
-  await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, amountCents: -credit - 100, reason: 'Office paid trip earnings' } });
+  const payoutBody = { driverId: driver.user.id, source: 'payout', amountCents: -credit, reason: 'Office paid trip earnings' };
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, amountCents: -credit + 1, requestId: randomUUID() }, expect: 400 });
+  const bodies = [admin, secondCashier].map(actor => ({ actor, body: { ...payoutBody, requestId: randomUUID() } }));
+  const results = await Promise.all(bodies.map(({ actor, body }) => fetch(`${base}/admin/cash/adjustment`, {
+    method: 'POST', headers: { Authorization: `Bearer ${actor.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 400]);
+  const winner = results.findIndex(result => result.status === 200);
+  const payout = await results[winner].json();
+  assert.equal(payout.source, 'payout');
+  assert.equal(payout.note, payoutBody.reason);
+  assert.match(payout.reference, /^P-/);
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: bodies[winner].actor.token, body: bodies[winner].body }), payout);
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 

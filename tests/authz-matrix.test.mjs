@@ -74,6 +74,7 @@ try {
   const additiveAdmin = additions.modules.flatMap(m => m.endpoints)
     .filter(e => e.path.startsWith('/api/admin/') || e.path.startsWith('/api/opencode'))
     .map(e => ({ ...e, additive: true }));
+  assert.ok(additiveAdmin.some(e => e.method === 'POST' && e.path === '/api/admin/orders/:id/pickup-pay-review'));
   const adminEndpoints = [...installedAdmin, ...additiveAdmin];
   assert.ok(adminEndpoints.length >= 25, `Expected admin route surface, saw ${adminEndpoints.length}`);
   const assertRefused = async (res, additive, detail) => {

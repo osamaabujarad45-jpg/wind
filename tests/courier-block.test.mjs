@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+import { startApiProcess } from './support/api-process.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-block-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -21,6 +22,8 @@ const advance = (token, order) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Admin', password: 'secret1' } });
   await promote('0599300001');
+  const reviewer = await call('/auth/register', { body: { phone: '0599300007', name: 'Reviewer', password: 'secret1' } });
+  await promote('0599300007');
   const customer = await call('/auth/register', { body: { phone: '0599300002', name: 'Lina', password: 'secret1' } });
   const drivers = [];
   for (const phone of ['0599300003', '0599300004']) {
@@ -39,6 +42,7 @@ try {
   const assigned = await book();
   const atPickup = await advance(blocked.token, await book());
   const carried = await advance(blocked.token, await advance(blocked.token, await book()));
+  const denied = await advance(blocked.token, await advance(blocked.token, await book()));
   assert.deepEqual([assigned.status, atPickup.status, carried.status], ['assigned', 'at_pickup', 'in_transit']);
 
   // A plain block would strand three parcels, so it is refused until support confirms the recovery.
@@ -62,9 +66,43 @@ try {
   assert.match(back.returnCode, /^\d{4}$/);
   const returned = await call(`/admin/orders/${carried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Support collected it from the courier' } });
   assert.equal(returned.status, 'returned');
-  assert.equal(db.prepare('SELECT id FROM cash_entries WHERE note = ?').get(`DRV-17 trip pay order ${carried.id}`), undefined, 'without a review table, block recovery pays nothing');
+  assert.equal(returned.blockReview.tripPayCents, 2000);
+  assert.equal(returned.blockReview.decidedAt, null);
+  assert.equal(db.prepare("SELECT id FROM cash_entries WHERE source = 'trip_pay' AND order_id = ?").get(carried.id), undefined);
+  await call(`/admin/orders/${denied.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Office received denied parcel' } });
+
+  // A retained audit without its row is recovered when another API process opens this database.
+  db.prepare('DELETE FROM courier_block_reviews WHERE order_id = ?').run(carried.id);
+  for (let start = 0; start < 2; start++) {
+    const api = await startApiProcess({ DB_PATH: process.env.DB_PATH });
+    try {
+      const recovered = await apiCaller(() => api.base)(`/orders/${carried.id}`, { token: admin.token });
+      assert.deepEqual(recovered.blockReview, returned.blockReview);
+    } finally { await api.stop(); }
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM courier_block_reviews WHERE order_id = ?').get(carried.id).n, 1);
+  const realNow = Date.now;
+  try {
+    Date.now = () => returned.blockReview.dueAt + 1;
+    assert.equal((await call('/admin/stats', { token: admin.token })).blockReviewsOverdue, 2);
+  } finally { Date.now = realNow; }
+  const decision = { cleared: true, note: 'Second admin cleared the captain' };
+  const reviewPath = `/admin/orders/${carried.id}/block-review`;
+  assert.equal((await call(reviewPath, { token: admin.token, body: decision, expect: 409 })).error, 'second_admin_required');
+  const cleared = await call(reviewPath, { token: reviewer.token, body: decision });
+  assert.equal(cleared.paidCents, 2000);
+  assert.deepEqual(await call(reviewPath, { token: reviewer.token, body: decision }), cleared);
+  const refused = await call(`/admin/orders/${denied.id}/block-review`, { token: reviewer.token, body: { ...decision, cleared: false } });
+  assert.equal(refused.paidCents, 0);
+  const payable = (await call('/admin/cash', { token: admin.token })).find(row => row.driverId === blocked.user.id);
+  assert.equal(payable.owedCents, -2000);
+  const payout = await call('/admin/cash/adjustment', { token: reviewer.token, body: {
+    driverId: blocked.user.id, source: 'payout', amountCents: 2000, requestId: randomUUID(), reason: 'Office handed cash to captain',
+  } });
+  assert.match(payout.reference, /^P-/);
+  assert.equal((await call('/admin/cash', { token: admin.token })).find(row => row.driverId === blocked.user.id).owedCents, 0);
   const events = db.prepare("SELECT order_id, detail FROM security_events WHERE action = 'COURIER_BLOCKED' ORDER BY order_id").all();
-  assert.deepEqual(events.map(e => JSON.parse(e.detail).from), ['assigned', 'at_pickup', 'in_transit']);
+  assert.deepEqual(events.map(e => JSON.parse(e.detail).from), ['assigned', 'at_pickup', 'in_transit', 'in_transit']);
 
   // A pre-pickup block requeued this order. After reapproval a later trip by the same captain can earn return pay.
   await call(path, { token: admin.token, method: 'PATCH', body: { status: 'active' } });

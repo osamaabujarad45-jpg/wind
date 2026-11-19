@@ -11,7 +11,7 @@ const {schema,database}=await freshPostgres('activegps'); selectRuntime(schema);
 process.env.DB_PATH=join(await mkdtemp(join(tmpdir(),'gps-')),'compat.sqlite');
 process.env.WIND_ENABLED_SERVICES='parcel'; delete process.env.WIND_IDENTITY_MODE;
 process.env.WIND_TEST_ACTIVE_GPS='1';
-const {server,promote,shutdown}=await import('../server/main.ts');
+const {server,promote,shutdown,liveWatcherCount}=await import('../server/main.ts');
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const call=apiCaller(()=>`http://127.0.0.1:${server.address().port}/api`);
 const child=await startApiProcess({DB_PATH:process.env.DB_PATH,WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema});
@@ -60,6 +60,11 @@ try {
  assert.equal((await upload({deviceId,sessionId:second,seq:2,assignments:replacement.assignments})).reason,'assignment_stale');
  const inspected=await acquire({}); const third=randomUUID();
  const refreshed=await acquire({sessionId:third,previousSessionId:second,expectedGeneration:inspected.generation}); assert.equal(refreshed.assignments.length,2); assert.equal(refreshed.seq,0);
+ const liveOrder = await call(`/orders/${order.id}?liveProtocol=1`, {token:customer.token});
+ const livePath = `/orders/${order.id}/live?driver=${driver.user.id}`;
+ const held = call(`${livePath}&assignment=${liveOrder.assignmentEpoch}&since=${Date.now() + 20_000}`, {token:customer.token});
+ for (let retry = 0; retry < 100 && !liveWatcherCount(order.id); retry++) await new Promise(resolve => setTimeout(resolve, 10));
+ assert.equal(liveWatcherCount(order.id), 1, 'the authenticated request is waiting on the old assignment');
  await database.run("UPDATE orders SET status='cancelled' WHERE id=?",order.id);
  await database.run("UPDATE orders SET status='assigned' WHERE id=?",order.id);
  const afterReassign=await acquire({}); const fourth=randomUUID();
@@ -79,6 +84,8 @@ try {
  });
  assert.equal((await database.one('SELECT seq FROM driver_active_gps_sessions WHERE driver_id=?',driver.user.id)).seq,2);
  assert.equal((await upload({deviceId,sessionId:fourth,seq:3,assignments:reassigned.assignments})).accepted,true);
+ assert.deepEqual(await held, {driverLocation:null,driverKey:String(driver.user.id),driverChanged:true});
+ assert.ok((await call(livePath,{token:customer.token})).driverLocation, 'installed driver-only long poll still works');
  // A different API process waits while a new assignment holds the shared driver lock.
  const pending=await makeOrder(); let committed; const gate=new Promise(resolve=>{committed=resolve;}); let locked;
  const entered=new Promise(resolve=>{locked=resolve;});

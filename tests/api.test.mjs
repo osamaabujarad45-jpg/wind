@@ -159,10 +159,7 @@ try {
   const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
     quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });
   const beforePickup = { latitude: 31.875, longitude: pinned.pickupPoint.longitude };
-  const fixedAt = Date.now();
-  db.prepare('INSERT INTO driver_locations (driver_id, lat, lng, updated_at, good_lat, good_lng, good_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(driver.user.id, beforePickup.latitude, beforePickup.longitude, fixedAt, beforePickup.latitude, beforePickup.longitude, fixedAt);
-  await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: {} });
+  await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: { position: { ...beforePickup, at: Date.now(), accuracy: 5 } } });
   const pinnedJob = await call(`/orders/${pinnedOrder.id}`, { token: driver.token });
   assert.deepEqual([pinnedJob.pickupPoint, pinnedJob.dropoffPoint], [pinned.pickupPoint, pinned.dropoffPoint]);
   assert.equal((await call('/location', { token: driver.token, body: pinned.pickupPoint })).accepted, true);

@@ -140,6 +140,7 @@ try {
   assert.equal(session.capabilities.declaredScope, persistence.backend === 'postgres' ? true : undefined,
     'scope forms follow the migrated server capability');
   assert.equal(typeof session.user.id, 'number');
+  await exchange('driver-earnings', 'driver', '/driver/earnings', { token: driver.token });
   for (const actor of actors) assert.equal((await persistence.one('SELECT token_hash FROM sessions WHERE user_id = ?', actor.user.id)).token_hash.length, 64);
   assert.equal((await persistence.one('SELECT 1 FROM sessions WHERE token_hash = ?', customer.token)), undefined);
   assert.match((await persistence.one('SELECT password FROM users WHERE id = ?', customer.user.id)).password, /^[a-f0-9]{32}:[a-f0-9]{64}$/);
@@ -338,13 +339,9 @@ try {
       if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 39, 'PG readiness reports ride offer settings (37), the rider grace extension (38) and block reviews (39) and preserves the installed payload'); ex.response.schema = 3; }
-      // Migration 39 exposes a pending review to the admin on PostgreSQL. The shared SQLite fixture has no review table.
-      if (persistence.backend === 'postgres' && ex.id === 'blocked-support-return') {
-        assert.deepEqual(ex.response.blockReview, {
-          blockedBy: admin.user.id, cleared: null, decidedAt: null, dueAt: '<server-timestamp>', paidCents: null, tripPayCents: 2000,
-        });
-        delete ex.response.blockReview;
+      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
+        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 40, 'readiness reports typed cash and shipping block reviews');
+        ex.response.schema = 3;
       }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;

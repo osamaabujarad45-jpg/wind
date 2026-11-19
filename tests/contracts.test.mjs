@@ -110,6 +110,7 @@ try {
   assert.deepEqual(session.capabilities.enabledServices, ['parcel']);
   assert.equal(session.capabilities.pooling, false);
   assert.equal(typeof session.user.id, 'number');
+  await exchange('driver-earnings', 'driver', '/driver/earnings', { token: driver.token });
   for (const actor of actors) assert.equal(db.prepare('SELECT token_hash FROM sessions WHERE user_id = ?').get(actor.user.id).token_hash.length, 64);
   assert.equal(db.prepare('SELECT 1 FROM sessions WHERE token_hash = ?').get(customer.token), undefined);
   assert.match(db.prepare('SELECT password FROM users WHERE id = ?').get(customer.user.id).password, /^[a-f0-9]{32}:[a-f0-9]{64}$/);

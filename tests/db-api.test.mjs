@@ -49,7 +49,9 @@ try {
   await setup.run('INSERT INTO schema_migrations VALUES(31, 0)');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'A12 priority migration 32 is required');
   await setup.run('INSERT INTO schema_migrations VALUES(32, 0)');
-  assert.deepEqual(await call('/ready'), { ok: true, schema: 32 });
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'captain_pay_schema_required' });
+  await setup.run('INSERT INTO schema_migrations VALUES(33, 0)');
+  assert.deepEqual(await call('/ready'), { ok: true, schema: 33 });
   await setup.run('DELETE FROM schema_migrations WHERE version=19');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(19, 0)');
