@@ -53,3 +53,6 @@ yarn-error.*
 .map-demo/
 reports/*.zip
 /.artifacts/
+
+# npm registry credentials
+.npmrc

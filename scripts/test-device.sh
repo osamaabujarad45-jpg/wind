@@ -10,14 +10,15 @@
 #   persistence  the full PostgreSQL suite (the repo requires PostgreSQL 18) on a run-owned PostgreSQL 18 sidecar
 #   parity       eleven PostgreSQL suites on the owner's PostGIS 16 device (sandbox-pg-host, the production major)
 #   export       the production web export with the deploy build arguments
-# Only the checkout's tracked and unignored files reach the container (as one archive): ignored files such as .env, keys
-# and local databases never do, and the checkout itself is not mounted. Nothing in the checkout is written except logs.
+# The container gets one archive, never a mount of the checkout: a clean checkout is archived from git objects (HEAD);
+# uncommitted work sends tracked and unignored regular files only, without .env, .npmrc or keys. Nothing in the
+# checkout is written except logs. Run on the owner's cloud sandbox by default; this WSL runner is the fallback.
 # Logs: <checkout>/.expo/test-device/<UTC time>-<pid>/ (env.txt with the revision, summary.txt). Exit 0 only when every
 # requested suite ran and passed. Gate evidence comes from a clean worktree: env.txt shows "+0 uncommitted".
 #
 # Speed: node_modules is installed once per (package-lock.json, image) into the volume wind-test-cache and hard-linked into
-# each run (3.7 s, against 26 s for a copy); a package file changed in place is detected after the run, which then fails
-# and drops that cache entry. typecheck+lint+export, then unit+persistence+parity, run side by side (--serial: one at a
+# each run (3.7 s, against 26 s for a copy); a package file whose content or mode changed (change time) is detected after
+# the run, which then fails and drops the entry, and an entry left in use by a killed run is reinstalled. typecheck+lint+export, then unit+persistence+parity, run side by side (--serial: one at a
 # time). Runs on one device are serialized by a lock; a second run waits for the first (up to an hour).
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,7 +31,7 @@ for s in $SUITES; do case $s in typecheck|lint|unit|persistence|export|parity) ;
 exec 9>/tmp/wind-test-device.lock
 flock -w 3600 9 || { echo "setup failed: the device stayed busy for an hour" >&2; exit 2; }
 LOGS="$REPO/.expo/test-device/$(date -u +%Y%m%dT%H%M%SZ)-$$"
-mkdir -p "$REPO/.expo/test-device" && mkdir "$LOGS" || exit 2 # a fresh folder per invocation, never a shared one
+mkdir -p "$REPO/.expo/test-device" && mkdir "$LOGS" || { echo "setup failed: cannot create the log folder $LOGS" >&2; exit 2; } # fresh per invocation
 SUMMARY="$LOGS/summary.txt"
 fail_setup() { echo "setup failed: $1" | tee -a "$SUMMARY" >&2; exit 2; }
 
@@ -40,6 +41,7 @@ SRC=$(mktemp -d /tmp/wind-test-src.XXXXXX) || fail_setup "source staging"
 case "$SRC" in /tmp/wind-test-src.??????) ;; *) fail_setup "unexpected staging dir" ;; esac
 cleanup() { [ -n "$LAUNCHED" ] && docker rm -f $LAUNCHED >/dev/null 2>&1; rm -rf "$SRC"; }
 trap cleanup EXIT
+trap 'exit 130' INT TERM # an interrupted run still cleans up through the EXIT trap
 
 # The image: the owner's sandbox-node:local plus Node 24.12 (CI/production runtime) and PostgreSQL 16/18 clients. Tagged by
 # the Dockerfile and the base image's id, so editing either builds a new image. Built from the Dockerfile alone (no context).
@@ -50,29 +52,42 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 IMAGE_ID=$(docker image inspect "$IMAGE" --format '{{.Id}}' | cut -c8-19) || fail_setup "image id"
 
-# The source: tracked and unignored files only, listed by git (Windows git through interop when WSL's git cannot read a
-# worktree whose .git points at a Windows path). A file deleted in the worktree is left out; a read error fails the run.
-g() { git -C "$REPO" "$@" 2>/dev/null || git.exe -C "$(wslpath -w "$REPO" 2>/dev/null)" "$@" 2>/dev/null; }
-REV=$(g rev-parse --short HEAD) || REV=unknown
-DIRTY=$(g status --porcelain | wc -l | tr -d ' ')
-g ls-files -z --cached --others --exclude-standard > "$SRC/all" || fail_setup "list source files"
-(cd "$REPO" && xargs -0 -r sh -c 'for f; do [ -e "$f" ] && printf "%s\0" "$f"; done; :' sh < "$SRC/all" > "$SRC/files") || fail_setup "list source files"
-tar -C "$REPO" --null -T "$SRC/files" -cf "$SRC/src.tar" || fail_setup "archive source"
-echo "checkout $REV (+$DIRTY uncommitted) | image $IMAGE | suites: $SUITES" > "$LOGS/env.txt"
+# The source. WSL's git cannot read a worktree whose .git points at a Windows path; Windows git (interop) can: pick once.
+if git -C "$REPO" rev-parse HEAD >/dev/null 2>&1; then g() { git -C "$REPO" "$@"; }; else g() { git.exe -C "$(wslpath -w "$REPO")" "$@"; }; fi
+REV=$(g rev-parse --short HEAD 2>/dev/null) || REV=unknown
+DIRTY=$(g status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+# A tracked file that an ignore rule names (a key or .env committed by mistake) never reaches the container (Haiku r7 L-2).
+IGNORED=$(g ls-files -c -i --exclude-standard 2>/dev/null | head -3)
+[ -z "$IGNORED" ] || fail_setup "tracked files match ignore rules (untrack them first): $(echo $IGNORED)"
+if [ "$REV" != unknown ] && [ "$DIRTY" = 0 ]; then
+  # Gate evidence: exactly the committed tree, from git objects. No working-tree file can reach the container (Sol R9-M1).
+  g archive --format=tar HEAD > "$SRC/src.tar" || fail_setup "archive HEAD"
+else
+  # A developer run of uncommitted work: tracked and unignored regular files and symlinks only, never a directory's
+  # contents (a tracked path replaced by a directory, a symlinked parent), and never local credentials.
+  g ls-files -z --cached --others --exclude-standard > "$SRC/all" || fail_setup "list source files"
+  REAL=$(cd "$REPO" && pwd -P)
+  (cd "$REPO" && xargs -0 -r sh -c '
+    for f; do
+      case "/$f" in */.npmrc|*/.env|*/.env.*|*.pem|*.key|*.p12|*.jks|*/credentials*) continue ;; esac
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      if [ -d "$f" ] && [ ! -L "$f" ]; then echo "tracked path is now a directory: $f" >&2; exit 1; fi
+      d=$(dirname "$f"); [ "$(cd "$d" && pwd -P)" = "$0/$d" ] || [ "$d" = . ] || { echo "parent is a symlink: $f" >&2; exit 1; }
+      printf "%s\0" "$f"
+    done' "$REAL" < "$SRC/all" > "$SRC/files") || fail_setup "list source files"
+  tar -C "$REPO" --null --no-recursion -T "$SRC/files" -cf "$SRC/src.tar" || fail_setup "archive source"
+fi
+EVIDENCE=no; [ "$REV" != unknown ] && [ "$DIRTY" = 0 ] && EVIDENCE=yes
+echo "checkout $REV (+$DIRTY uncommitted) | gate evidence: $EVIDENCE (only a clean, known revision counts) | image $IMAGE | suites: $SUITES" > "$LOGS/env.txt"
 
 # PostgreSQL. PG16 is the owner's long-lived device (parity). PostgreSQL 18 sidecars belong to this invocation: one for
 # persistence (55475), one for unit (55476), as both suites need the database fastship_test and lock each other out on one
 # server. Fresh tmpfs, 1 GB shared memory (the 64 MB default makes pg_dump fail). 55474 stays free for ad-hoc checks.
-# A labeled container already holding one of these names is a dead run's leftover (this run holds the device lock): it is
-# replaced only when this run needs that name. Rename one to keep it for inspection; an unlabeled one is never touched.
+# A container already holding one of these names is never touched (Sol R9-M2): setup stops and says how to clear it.
 ready() { # container port: TCP readiness, as the tests connect (the image's init server listens on the socket only)
   i=0; until docker exec "$1" pg_isready -h 127.0.0.1 -p "$2" -q 2>/dev/null; do i=$((i+1)); [ $i -gt 300 ] && return 1; sleep 1; done; }
 pg18() { # name port
-  if docker ps -aq --filter "name=^$1$" | grep -q .; then
-    left=$(docker ps -aq --filter "name=^$1$" --filter label=wind.test-device=1)
-    [ -n "$left" ] || fail_setup "a container named $1 exists that this runner does not own; remove or rename it"
-    docker rm -f $left >/dev/null || fail_setup "remove leftover $1"
-  fi
+  docker ps -aq --filter "name=^$1$" | grep -q . && fail_setup "a container named $1 already exists (another run, or one left by an interrupted run): check it, then docker rm -f $1"
   id=$(docker run -d --name "$1" --label wind.test-device=1 --network host --shm-size=1g --tmpfs /var/lib/postgresql:rw,size=4g \
     -e POSTGRES_USER=fastship_test -e POSTGRES_PASSWORD=fastship_test -e POSTGRES_DB=fastship_test -e PGPORT="$2" \
     postgis/postgis:18-3.6 -c max_connections=300 -c fsync=off) || fail_setup "start $1"
@@ -100,11 +115,14 @@ docker run --rm --network host --entrypoint sh \
   case "$RUN" in /cache/runs/run.??????) ;; *) die "unexpected run dir" ;; esac
   STAGE=""
   trap "rm -rf \"$RUN\"; [ -n \"\$STAGE\" ] && rm -rf \"\$STAGE\"" EXIT
+  trap "exit 130" INT TERM
   APP="$RUN/app"; mkdir -p "$APP" || die "app dir"
   tar -C "$APP" -xf /src.tar || die "unpack source"
   [ -f "$APP/package-lock.json" ] || die "unpack source (no package-lock.json)"
   KEY=$(sha256sum < "$APP/package-lock.json" | cut -c1-16)-$IMAGE_ID
   case "$KEY" in [0-9a-f]*-[0-9a-f]*) ;; *) die "unexpected cache key" ;; esac
+  # An entry a run was still using when it died may have been changed in place: dropped and reinstalled (Haiku r7 L-6).
+  [ -e "/cache/nm/$KEY/.in-use" ] && { echo "dependency cache entry $KEY was in use by a run that did not finish: reinstalling" >> /logs/summary.txt; rm -rf "/cache/nm/$KEY"; }
   if [ ! -d "/cache/nm/$KEY/node_modules" ]; then
     # First run for this lockfile and image: install in the full copy (install scripts may read repo files), then publish.
     # An entry without node_modules is an earlier failed publish under this key: replaced.
@@ -113,8 +131,10 @@ docker run --rm --network host --entrypoint sh \
     mv "$APP/node_modules" "$STAGE/node_modules" && rm -rf "/cache/nm/$KEY" && mv -T "$STAGE" "/cache/nm/$KEY" || die "publish node_modules"
     STAGE=""
   fi
-  touch "$RUN/start"
+  touch "/cache/nm/$KEY/.in-use" || die "cache marker"
   cp -al "/cache/nm/$KEY/node_modules" "$APP/node_modules" || die "link node_modules"
+  # After linking (a new link changes the change time of each inode): any later write or mode change to a shared inode shows.
+  sleep 1; touch "$RUN/start"
   # Tool caches go to a directory of this run (a new directory, not a link), so routine cache writes never reach the cache.
   rm -rf "$APP/node_modules/.cache" && mkdir "$APP/node_modules/.cache" || die "private cache dir"
   cd "$APP"
@@ -143,11 +163,12 @@ docker run --rm --network host --entrypoint sh \
     for p in $pids; do wait "$p" || status=1; done
   done
   # A package file rewritten in place shares its inode with the cache: the run is not evidence, and the entry is dropped.
-  changed=$(find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -type f -newer "$RUN/start" -print 2>/dev/null | head -3)
+  # Change time, not modification time: a chmod through a link changes the inode without touching mtime (Sol R9-L1).
+  changed=$(find "/cache/nm/$KEY/node_modules" -path "*/node_modules/.cache" -prune -o -cnewer "$RUN/start" -print 2>/dev/null | head -3)
   if [ -n "$changed" ]; then
     { echo "dependency cache changed in place (entry dropped, the next run reinstalls):"; echo "$changed" | sed "s/^/  /"; } >> /logs/summary.txt
     rm -rf "/cache/nm/$KEY"; status=1
-  fi
+  else rm -f "/cache/nm/$KEY/.in-use"; fi
   exit $status'
 STATUS=$?
 # Every requested suite must have reported a pass in this invocation's own summary, whatever the exit code says.
