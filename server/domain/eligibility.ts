@@ -1,3 +1,4 @@
+import { needStaff, staffActor } from './ops.ts';
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { offerRange, vehicleServices, type Vehicle } from '../../src/model.ts';
@@ -582,10 +583,15 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     if (e.int(body.expectedVersion,1)!==order.version) fail(409,'VERSION_CONFLICT');
     const reason=e.reason(body),ref=e.ref(body),action=e.choice(body.action,['hold','return','confirm_return']);
     if (order.service === 'ride' || !['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
+    if (action === 'return' || action === 'confirm_return') needStaff(await staffActor(db, user), fail, 'support');
     if (action==='hold') {
       if (order.status!=='in_transit') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='on_hold',exception_reason='support',updated_at=? WHERE id=?",Date.now(),id);
     } else if (action==='return') {
+      const taken = await db.one(`SELECT 1 FROM security_events WHERE order_id=? AND action='CUSTODY_TAKEN'
+        AND detail::jsonb->>'assignmentEpoch'=? AND detail::jsonb->>'driverId'=?`, id, String(order.assignment_epoch), String(order.driver_id));
+      if (!taken) await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'CUSTODY_TAKEN',?,?)",
+        user.id,id,JSON.stringify({assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason, evidenceRef: ref}),Date.now());
       if (order.status!=='returning') {
         await db.run("UPDATE orders SET status='returning',return_code=?,updated_at=? WHERE id=?",String(randomInt(1000,10000)),Date.now(),id);
         await db.run('DELETE FROM proof_attempts WHERE order_id=?',id);
@@ -594,6 +600,8 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
       if (order.status!=='returning') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='returned',commission=0,completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id); // DRV-17
       await db.run("INSERT INTO security_events(actor_id,order_id,action,created_at) VALUES(?,?,'RETURN_NO_FARE',?)",user.id,id,Date.now()); // main.ts markNoFare
+      await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'EXCEPTION_RESOLVED',?,?)",
+        user.id,id,JSON.stringify({action,reason}),Date.now());
     }
     await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
     await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id); return after;

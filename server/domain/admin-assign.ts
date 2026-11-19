@@ -20,7 +20,7 @@ type Deps = RefusalDeps & {
   hasOpenOffer: (orderId: number) => Promise<boolean>;
   guardRideAssignment: (orderId: number) => Promise<void>;
   ensureAssignment: (orderId: number, driverId: number, source: 'legacy') => Promise<void>;
-  assignedFrom: (orderId: number, driverId: number, actorId: number, assignedAt: number) => Promise<void>;
+  assignedFrom: (orderId: number, driverId: number, actorId: number) => Promise<void>;
   getOrder: (id: number, viewer: never) => Promise<unknown>;
   queuePush: (ids: any[], kind: any, order: number, path?: string) => Promise<void>;
   // The measured eligibility guard (server/domain/eligibility.ts), which the driver accept runs before its handler.
@@ -103,7 +103,7 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         // Their other parcels (if any) keep the live position; an empty load clears the stale one below.
         const carrying = await deps.activeLoad(driverId);
         const now = Math.max(Date.now(), Number(order.assigned_at ?? 0) + 1);
-        if (order.service === 'parcel' || order.service === 'freight') await deps.assignedFrom(orderId, driverId, user.id, now);
+        if (order.service === 'parcel' || order.service === 'freight') await deps.assignedFrom(orderId, driverId, user.id);
         const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
           WHERE id = ? AND status = ? AND COALESCE(driver_id, 0) = ? AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
         driverId, deps.commissionOn(Number(order.price), rate), now, now, orderId, order.status, order.driver_id ?? 0, orderId, driverId)).changes;

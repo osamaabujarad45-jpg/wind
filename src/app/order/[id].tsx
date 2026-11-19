@@ -11,8 +11,8 @@ import { canOrderAgain, canSendAnother, newRequestId, scheduleSlots } from '../.
 import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } from '../../chat-outbox';
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
-import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { acceptPosition, useDriverWork } from '../../driver-work';
+import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, typedNumber, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
@@ -66,13 +66,13 @@ export default function OrderScreen() {
     return label ? `${title}: ${label}` : title;
   };
   const { time } = useFormat();
-  const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1`, effectiveRuntime().values.orderRefreshMs);
+  const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1&liveProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
-  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}&assignment=${polled.recovery?.assignmentEpoch ?? polled.assignedAt ?? ''}` : null); // A→B→A restarts the watch (Sol R3-M3)
+  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}${polled.assignmentEpoch == null ? '' : `&assignment=${polled.assignmentEpoch}`}` : null); // A→B→A restarts the watch (Sol R3-M3)
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
   const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
-  const assignment = polled && `${polled.id}:${polled.driverId}:${polled.recovery?.assignmentEpoch ?? polled.assignedAt ?? ''}`; // A→B→A is a new assignment (Sol M5)
+  const assignment = polled && `${polled.id}:${polled.driverId}:${polled.assignmentEpoch ?? polled.assignedAt ?? ''}`; // A→B→A is a new assignment (Sol M5)
   const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
   if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
   const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
@@ -225,7 +225,9 @@ export default function OrderScreen() {
         if (!prepared) { setActionError(c.locationOff); return; }
         const lease = dispatchAcceptance(order, tapTime());
         if (lease === null) { setActionError(c.dispatchExpired); return; }
-        body = { ...lease, ...capacityCommand(order) };
+        const position = await acceptPosition(order.service);
+        if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+        body = { ...lease, ...capacityCommand(order), position };
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
@@ -571,6 +573,7 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
+    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
     {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
 
@@ -1033,6 +1036,43 @@ const styles = StyleSheet.create({
 });
 
 /** DRV-17: a second admin records whether a courier block's review cleared the captain; only then is the trip so far paid. */
+function PickupPayReviewCard({ orderId, review, onDone }: { orderId: number; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
+  const { c, money, err } = useCopy();
+  const [km, setKm] = useState(review.drivenKm?.toFixed(2) ?? '');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const [failure, setFailure] = useState('');
+  const distance = km.trim() ? typedNumber(km) : NaN;
+  const canGrant = Number.isFinite(distance) && distance >= 0 && distance <= 20_016;
+  async function decide(granted: boolean) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true); setFailure('');
+    try {
+      await api(`/admin/orders/${orderId}/pickup-pay-review`, { granted, km: granted ? distance : 0, reason: reason.trim() });
+      await onDone();
+    } catch (error) { setFailure(err(error)); }
+    finally { inFlight.current = false; setBusy(false); }
+  }
+  const { decision } = review;
+  return <Card>
+    <Txt variant="title">{c.pickupPayReview}</Txt>
+    {decision ? <>
+      <Txt>{decision.granted ? fill(c.pickupPayCredited, { pay: money(decision.paidCents / 100) }) : c.pickupPayDenied}</Txt>
+      <Txt variant="caption">{decision.reason}</Txt>
+    </> : <>
+      <Field label={c.pickupPayKm} value={km} onChangeText={setKm} keyboardType="decimal-pad" disabled={busy} />
+      <Field label={c.cashReason} value={reason} onChangeText={setReason} maxLength={500} disabled={busy} />
+      <ErrorText>{failure}</ErrorText>
+      <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Button title={c.pickupPayGrant} size="sm" disabled={busy || !canGrant || reason.trim().length < 5} onPress={() => void decide(true)} />
+        <Button title={c.pickupPayDeny} size="sm" variant="outline" disabled={busy || reason.trim().length < 5} onPress={() => void decide(false)} />
+      </Row>
+    </>}
+  </Card>;
+}
+
 function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
   const { c, err } = useCopy();
   const [note, setNote] = useState('');

@@ -17,10 +17,13 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   // envelope fields: refuse the envelope before anything is stored rather than record an invalid_input (review 19 Nov).
   if (/^\/api\/orders\/\d+\/(?:arrive|ride\/no-show|ride\/grace-extension)$/.test(path)) fail(400, 'unsupported_command');
   // Staff-duty decisions replay on their own record under the current duty check, never from a saved receipt (Sol R3-M2).
-  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
+  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|pickup-pay-review|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
+  if ((path === '/api/admin/cash/adjustment' && input.source === 'payout') ||
+    (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path) && input.action === 'confirm_return'))
+    fail(400, 'unsupported_command');
   const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
   await db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `${user.id}:${commandId}`);
   const saved = await db.one('SELECT * FROM command_results WHERE actor_id=? AND command_id=?', user.id, commandId);

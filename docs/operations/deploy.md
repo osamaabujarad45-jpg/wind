@@ -64,16 +64,19 @@ Production moved to a VM on a separate student subscription. The 15 November sec
   `systemctl daemon-reload`, and that server cannot read master's schema: it would need its own empty database
   (`/data/pre-master-20261116/wind.db`).
 - **Release notes, 19 November (PR #97):**
-  - Returns (SRS DRV-17): a return this release closes owes no commission and gets no promo relief. The order itself records
-    that (commission 0 and a `RETURN_NO_FARE` audit row written in the same transaction), so every return closed before the deploy,
-    or by an earlier tree during a rollback, keeps exactly what it was booked with, and no captain's balance moves at deploy,
-    rollback or re-release. An earlier tree reading the database gives this release's returns their promo relief again while it
-    runs (their commission stays 0); check `/admin/cash` for those captains after a rollback.
-  - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the captain the booked fare per leg (trip and return
-    leg; one leg after a custody recovery; after a courier block only through a cleared block review, PostgreSQL), and a
-    shipping order cancelled before pickup pays the km from the captain's position at acceptance to the pickup x the owner
-    setting `pickupPayPerKm`, capped at the fare. It is recorded as a `DRV-17`/`DRV-18` cash adjustment, so `/admin/cash` can
-    show a negative balance: Wind owes that captain, settled at the office cash handover.
+  - **Before rolling back past this release**, have the finance lead freeze office payouts and balance adjustments used to settle
+    captains. Stop scheduled and manual finance ledger imports. Record the time the freeze began and retain it throughout rollback.
+    An older binary can restore promo relief in its balance view for a discounted `RETURN_NO_FARE` return and classify newer
+    entries differently during import. Keep the database and any orders written during rollback.
+  - **After re-release**, reconcile the captains on orders marked `RETURN_NO_FARE` or linked to a `trip_pay` cash entry. Compare
+    booked fares, discounts, credits, payouts and any pending handovers with the office receipts and current cash balances.
+    For PostgreSQL, also compare captain receivables and operating-expense journals to those entries before resuming imports.
+    The finance lead records any differences and resolves them before reopening payouts and import.
+  - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the booked fare per leg. Support custody recovery pays
+    one leg. A courier block waits for a second admin's clearing review on either database. On API startup, missing shipping
+    reviews are recovered from custody-block audits with the original block time and deadline. Pre-pickup cancellation pays
+    for the validated distance driven toward pickup, capped at the booked fare. Support can decide the credit when GPS evidence
+    is unavailable or the cancellation needs confirmation. The office records disbursements with the Pay driver action.
   - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
@@ -206,7 +209,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–39 under `MIGRATION_LOCK` (35 saved-place pins, 36 quote privacy scrub, 37 captain ride-offer seconds, 38 rider grace extension, 39 courier block reviews). `/api/ready` must then report schema 39. An API on a schema-36 database keeps working: each of 37–39 is gated on its `schema_migrations` row (20 s offers, no grace extension, no block review). This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–40 under `MIGRATION_LOCK`. Migration 40 adds typed captain cash entries and opens shipping block reviews. `/api/ready` must then report schema 40. A PostgreSQL schema without migration 33 reports that the captain-pay schema is required. Typed credits and payouts require migration 40. This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
 
 `server/migrate.ts` separately restricts its import CLI to test mode, loopback and an isolated schema. Its `--freeze-writes` holds the SQLite lock only while taking the snapshot, releasing it before import. Production needs a reviewed importer and a continuously enforced freeze of every SQLite writer.
 

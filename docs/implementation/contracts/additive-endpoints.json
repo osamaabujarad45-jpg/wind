@@ -711,6 +711,14 @@
       ]
     },
     {
+      "packet": "DRV-18",
+      "source": "server/domain/pickup-pay-review.ts",
+      "registrar": "registerPickupPayRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/admin/orders/:id/pickup-pay-review", "anonymousStatus": 401 }
+      ]
+    },
+    {
       "packet": "DRV-17",
       "source": "server/domain/block-review.ts",
       "registrar": "registerBlockReviewRoutes",

@@ -10,7 +10,7 @@ import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { DriverMap } from '../../driver-map';
 import { pickupLocation } from '../../pickup-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useDriverWork } from '../../driver-work';
+import { acceptPosition, useDriverWork } from '../../driver-work';
 import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
@@ -97,7 +97,9 @@ export default function Jobs() {
       }
       const lease = dispatchAcceptance(order, Date.now()); // tracking permission can outlive a short offer
       if (lease === null) { setActionError(c.dispatchExpired); reload(); return; }
-      work.update(await api<Order>(`/jobs/${order.id}/accept`, { ...lease, ...capacityCommand(order) }));
+      const position = await acceptPosition(order.service);
+      if (!current()) return;
+      work.update(await api<Order>(`/jobs/${order.id}/accept`, { ...lease, ...capacityCommand(order), position }));
       haptic.success();
       router.push(`/order/${order.id}`);
     } catch (e) {

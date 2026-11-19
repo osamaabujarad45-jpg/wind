@@ -22,6 +22,7 @@ type Deps = {
   cashEntry: (r: Row) => Row;
   // T30: a resolution that confirms the handover settles it in the same envelope transaction.
   postCashJournal: (entryId: number) => Promise<void>;
+  lockCashDriver: (driverId: number) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queuePush: (ids: any[], kind: any, order: number, path?: string) => Promise<void>;
 };
@@ -41,6 +42,7 @@ export function registerCashOpsRoutes(route: Register, deps: Deps): void {
     if (reason.length < 5) deps.fail(400, 'invalid_input');
     const evidenceRef = body.evidenceRef == null ? null : deps.text(body.evidenceRef, 200);
     const entry = (await deps.one("SELECT * FROM cash_entries WHERE id = ? AND kind = 'remittance'", Number(params[0]))) ?? deps.fail(404, 'not_found');
+    await deps.lockCashDriver(entry.driver_id);
     if (!(await deps.run("UPDATE cash_entries SET status = ?, decided_at = ?, resolved_by = ?, resolution_note = ? WHERE id = ? AND status = 'pending'",
       body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), user.id,
       evidenceRef ? `${reason} | evidence: ${evidenceRef}` : reason, entry.id)).changes)

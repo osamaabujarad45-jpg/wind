@@ -862,7 +862,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     void actor;
   }
   /** After a completed or returned shop order commits its status: the money rows (DLV-15, DLV-25, DRV-17). */
-  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}, supportCollected = false) {
+  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}) {
     if (r.service !== 'shop') return;
     if (next === 'completed') await recordSeals(r, body, 'deliver', actor);
     const s = (await shopRow(r.id))!;
@@ -890,11 +890,17 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
     // Pay follows how custody entered the return, whichever route closes it (Sol R2-H3), from the order's own audit:
     // DRV-17: the captain holding it was blocked: the trip so far is paid only by a cleared block review (none on a schema without one).
-    const history = await db.all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'ELIGIBILITY_CUSTODY_RECOVERY')", r.id);
+    const history = await db.all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'CUSTODY_TAKEN')", r.id);
     const said = (row: Row) => { try { return JSON.parse(String(row.detail ?? '{}')); } catch { return {}; } };
-    if (history.some(e => e.action === 'COURIER_BLOCKED' && Number(said(e).driverId) === Number(r.driver_id))) return;
+    if (history.some(e => {
+      if (e.action !== 'COURIER_BLOCKED') return false;
+      const detail = said(e);
+      return Number(detail.driverId) === r.driver_id && detail.custody !== false
+        && (detail.assignmentEpoch == null || detail.assignmentEpoch === r.assignment_epoch);
+    })) return;
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
-    const recovered = supportCollected || history.some(e => e.action === 'ELIGIBILITY_CUSTODY_RECOVERY' && said(e).action === 'return');
+    const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
+      && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id);
     const pay = (recovered ? 1 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, recovered ? 'Trip so far, support recovered the goods' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);

@@ -3,8 +3,8 @@ import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
-import { useSession, type Me } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { useSession } from '../../session';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
@@ -20,16 +20,26 @@ const unitless = (key: keyof Settings) => key.endsWith('Minutes'); // the label 
 
 const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
 
+type SettingsResponse = { settings: Omit<Settings, 'pickupPayPerKm'>; pickupPayPerKm: number };
+const payrollSettings = ({ settings, pickupPayPerKm }: SettingsResponse): Settings => ({ ...settings, pickupPayPerKm });
+
 export default function AdminSettings() {
+  const { c } = useCopy();
+  const { data, error, reload } = useApi<SettingsResponse>('/me?payroll=1');
+  if (!data) return <Screen><Header title={c.settings} /><Loading failed={!!error} onRetry={reload} /></Screen>;
+  return <AdminSettingsForm initial={payrollSettings(data)} />;
+}
+
+function AdminSettingsForm({ initial }: { initial: Settings }) {
   const { me, refresh, signOut, language, setLanguage } = useSession();
   const { c, err } = useCopy();
-  const [values, setValues] = useState(() => toText(me!.settings));
+  const [values, setValues] = useState(() => toText(initial));
   // Keys this admin has typed into since the server last confirmed the form. Only these are reviewed and sent:
   // comparing text against the mount value would miss a reversal (12 → 10 looks unedited when 10 was loaded).
   const [touched, setTouched] = useState<Partial<Record<keyof Settings, true>>>({});
   // What the server last confirmed. A failed save clears it: a lost reply may hide a committed write,
   // so the next comparison reads /me first instead of trusting an old copy.
-  const [baseline, setBaseline] = useState<Settings | null>(me!.settings);
+  const [baseline, setBaseline] = useState<Settings | null>(initial);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false); // a confirm built before this render must not send a second write
   const [message, setMessage] = useState('');
@@ -47,7 +57,7 @@ export default function AdminSettings() {
     setMessage('');
     try {
       // The reply is the server's settings after this write: it becomes the comparison baseline.
-      const saved = await api<Settings>('/admin/settings', { ...patch, expected }, 'POST');
+      const saved = payrollSettings(await api<SettingsResponse>('/admin/settings?payroll=1', { ...patch, expected }, 'POST'));
       setBaseline(saved);
       setValues(toText(saved));
       setTouched({});
@@ -71,7 +81,7 @@ export default function AdminSettings() {
     if (baseline) return baseline;
     setBusy(true);
     try {
-      const settings = (await api<Me>('/me')).settings;
+      const settings = payrollSettings(await api<SettingsResponse>('/me?payroll=1'));
       setBaseline(settings);
       return settings;
     } finally { setBusy(false); }

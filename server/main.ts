@@ -16,6 +16,7 @@ import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/disp
 import { etaProjection, journeyOrder, offerFailure } from './domain/journey.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
 import { registerBlockReviewRoutes } from './domain/block-review.ts';
+import { registerPickupPayRoutes } from './domain/pickup-pay-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
 import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_NO_FARE } from './domain/ledger.ts';
@@ -219,9 +220,12 @@ function logAccountCommandFailure(error: unknown) {
 // ---------- helpers ----------
 
 async function settings(): Promise<Settings> {
-  const stored = Object.fromEntries((await all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
-  delete stored.returnPolicyFrom;
+  const stored = Object.fromEntries((await all('SELECT key, value FROM settings'))
+    .filter(r => Object.hasOwn(defaultSettings, r.key)).map(r => [r.key, r.value]));
   return { ...defaultSettings, ...(enabledServices.includes('shop') && { driverCashCap: 1000 }), ...stored };
+}
+function settingsResponse({ pickupPayPerKm, shopHandoverMinutes, ...settings }: Settings, payroll: boolean) {
+  return payroll ? { settings: { ...settings, shopHandoverMinutes }, pickupPayPerKm } : { settings };
 }
 /** ADM-12 (D-1): refuses a price above the per-order cash ceiling. Every path that sets what a customer pays at the door calls it. */
 async function guardCashCeiling(price: number, orderId?: number) {
@@ -361,6 +365,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
+    ...(viewer.role === 'admin' && r.status === 'cancelled' && shippingOrder(r)
+      && await (async () => { const review = await pickupReview(r.id); return review ? { pickupPayReview: review } : {}; })()),
     safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
       ? (await one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id)) as Order['safetyReport'] ?? null
       : null,
@@ -435,7 +441,7 @@ const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.al
   WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL))
   .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) }))));
 
-async function getOrder(id: number, viewer: User): Promise<Order> {
+async function getOrder(id: number, viewer: User, liveProtocol = false): Promise<Order> {
   const r = (await one(`${orderSelect} WHERE o.id = ?`, id)) ?? fail(404, 'not_found');
   const released = viewer.role === 'driver' && r.status === 'searching' &&
     !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
@@ -444,6 +450,7 @@ async function getOrder(id: number, viewer: User): Promise<Order> {
       && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE)) || (await shop.merchantSees(r, viewer));
   if (!canSee || released) fail(404, 'not_found');
   const order = await toOrder(r, viewer);
+  if (liveProtocol) order.assignmentEpoch = Number(r.assignment_epoch);
   // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
   if (order.driverId && (viewer.role === 'admin' || viewer.id === r.customer_id || viewer.id === r.driver_id))
     order.driverRating = (await driverStats(order.driverId)).rating;
@@ -576,8 +583,8 @@ registerEligibilityRoutes(route, eligibility, async (order, action, actorId) => 
   if (action === 'confirm_return') {
     // DRV-17: a custody recovery settles a shop order like any return, but support carried the goods back: trip so far only.
     const row = await one('SELECT * FROM orders WHERE id = ?', order.id);
-    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, true);
-    else if (row) await shippingTripPay(row, actorId, 'recovery');
+    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId);
+    else if (row) await shippingTripPay(row, actorId);
     await postOrderJournals(order.id);
   }
   await queuePush([order.driver_id], 'decided', order.id);
@@ -659,7 +666,8 @@ async function postShopJournal(orderId: number, driverId: number, kind: 'collect
   }
 }
 const captainPayAvailable = async () => persistence.backend === 'sqlite' || persistence.memo('captainPay', async () =>
-  !!(await one('SELECT version FROM schema_migrations WHERE version=40')));
+  !!(await one("SELECT to_regclass('schema_migrations') AS migrations"))?.migrations
+    && !!(await one('SELECT version FROM schema_migrations WHERE version=40')));
 const postCashJournal = async (entryId: number) => {
   if (!(await ledgerReady())) return;
   const journal = await ledger.cashJournal((await one('SELECT * FROM cash_entries WHERE id = ?', entryId))!);
@@ -686,43 +694,103 @@ const fareCents = (o: Row) => Math.round(Number(o.price) * 100); // the booked f
 function auditDetail(event: Row): Row {
   try { return (JSON.parse(String(event.detail)) ?? {}) as Row; } catch { return {}; }
 }
-async function shippingTripPay(o: Row, actorId: number, method: 'code' | 'office' | 'recovery') {
+async function shippingTripPay(o: Row, actorId: number) {
   if (!shippingOrder(o) || o.driver_id == null) return;
-  const history = await all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'ELIGIBILITY_CUSTODY_RECOVERY')", o.id);
+  const history = await all("SELECT action, detail FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", o.id);
   // A custody block is paid only by a clearing review.
   if (history.some(event => {
-    if (event.action !== 'COURIER_BLOCKED') return false;
     const detail = auditDetail(event);
-    return Number(detail.driverId) === Number(o.driver_id) && detail.from !== 'assigned' && detail.from !== 'at_pickup';
+    return Number(detail.driverId) === o.driver_id && custodyStatuses.includes(detail.from)
+      && (detail.assignmentEpoch == null || detail.assignmentEpoch === o.assignment_epoch);
   })) return;
-  const supportCollected = method !== 'code' &&
-    history.some(e => e.action === 'ELIGIBILITY_CUSTODY_RECOVERY' && auditDetail(e).action === 'return');
+  const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN');
   await captainPay(o.id, Number(o.driver_id), (supportCollected ? 1 : 2) * fareCents(o), 'trip_pay', actorId);
 }
-async function validatedPickupKm(orderId: number, driverId: number, at: number) {
-  const r = await one(`SELECT l.good_lat, l.good_lng, o.pickup_lat, o.pickup_lng FROM orders o JOIN driver_locations l ON l.driver_id = ?
-    WHERE o.id = ? AND l.good_at BETWEEN ? AND ?`, driverId, orderId, at - 120_000, at);
-  if (!r || r.good_lat == null || r.good_lng == null || r.pickup_lat == null || r.pickup_lng == null) return;
-  return crowKm({ latitude: Number(r.good_lat), longitude: Number(r.good_lng) }, { latitude: Number(r.pickup_lat), longitude: Number(r.pickup_lng) });
+const pickupFixAge = 120_000;
+function pickupDistance(order: Row, fix: { latitude: number; longitude: number }) {
+  if (order.pickup_lat == null || order.pickup_lng == null) return;
+  return crowKm(fix, { latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) });
 }
-// DRV-18 pays the reduction in distance to pickup, capped at the booked fare.
-async function pickupPay(o: Row, actorId: number) {
-  if (!shippingOrder(o) || o.driver_id == null || o.assigned_at == null) return;
-  const from = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'ASSIGNED_FROM' AND created_at = ? ORDER BY id DESC LIMIT 1", o.id, o.assigned_at);
-  const kmAtAccept = from && auditDetail(from).km;
-  if (typeof kmAtAccept !== 'number' || !Number.isFinite(kmAtAccept) || kmAtAccept <= 0) return;
-  const kmNow = await validatedPickupKm(o.id, o.driver_id, Date.now());
-  if (kmNow === undefined) return; // Support can review a cancellation without a fresh validated fix.
-  const driven = Math.max(0, kmAtAccept - kmNow);
-  const cents = Math.min(fareCents(o), Math.round(driven * (await settings()).pickupPayPerKm * 100));
-  await captainPay(o.id, Number(o.driver_id), cents, 'pickup_pay', actorId);
+async function currentPickupKm(order: Row, driverId: number, since: number) {
+  const fix = await one(`SELECT good_lat, good_lng FROM driver_locations WHERE driver_id = ?
+    AND good_at BETWEEN ? AND ? AND good_acc BETWEEN 0 AND 200`, driverId, Math.max(since, Date.now() - pickupFixAge), Date.now());
+  if (fix?.good_lat != null && fix.good_lng != null)
+    return pickupDistance(order, { latitude: fix.good_lat, longitude: fix.good_lng });
 }
-// Read before assigning: PostgreSQL's active GPS trigger can clear the fix on the assignment update.
-async function recordAssignedFrom(orderId: number, driverId: number, actorId: number, assignedAt: number) {
-  const km = await validatedPickupKm(orderId, driverId, assignedAt);
+// Read before the assignment update can clear the previous fix. All three shipping assignment paths change driver_id.
+async function recordAssignedFrom(orderId: number, driverId: number, actorId: number, position?: Row) {
+  const order = (await one('SELECT assignment_epoch, pickup_lat, pickup_lng FROM orders WHERE id = ?', orderId))!;
+  const now = Date.now();
+  let km: number | undefined;
+  if (position === undefined) {
+    const active = await one(`SELECT MIN(COALESCE(assigned_at, 0)) AS since FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId);
+    if (active?.since != null) km = await currentPickupKm(order, driverId, active.since);
+  } else if (position && finite(position.latitude, 90) && finite(position.longitude, 180)
+    && (position.latitude !== 0 || position.longitude !== 0)
+    && finite(position.accuracy, 200, 0) && finite(position.at, now + pickupFixAge, now - pickupFixAge)) {
+    km = pickupDistance(order, { latitude: position.latitude, longitude: position.longitude });
+  }
   if (km === undefined) return;
-  await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ASSIGNED_FROM', ?, ?)`, actorId, orderId, JSON.stringify({ km }), assignedAt);
+  await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ASSIGNED_FROM', ?, ?)`,
+    actorId, orderId, JSON.stringify({ km, driverId, assignmentEpoch: Number(order.assignment_epoch) + 1 }), now);
 }
+async function assignmentEvidence(order: Row, action: 'ASSIGNED_FROM' | 'CUSTODY_TAKEN') {
+  const events = await all('SELECT detail FROM security_events WHERE order_id = ? AND action = ? ORDER BY id DESC', order.id, action);
+  return events.map(auditDetail).find(detail => detail.assignmentEpoch === order.assignment_epoch && detail.driverId === order.driver_id);
+}
+const pickupPayCents = (order: Row, km: number, rate: number) => Math.min(fareCents(order), Math.round(km * rate * 100));
+// DRV-18 pays the reduction in distance to pickup. Staff verify refusals and operational cancels even when GPS exists.
+async function pickupPay(order: Row, actorId: number, reviewReason?: string) {
+  if (!shippingOrder(order) || order.driver_id == null) return;
+  const from = await assignmentEvidence(order, 'ASSIGNED_FROM');
+  const kmNow = await currentPickupKm(order, order.driver_id, order.assigned_at ?? 0);
+  const drivenKm = from && kmNow !== undefined ? Math.max(0, from.km - kmNow) : null;
+  const rate = (await settings()).pickupPayPerKm;
+  if (!reviewReason && drivenKm != null) {
+    await captainPay(order.id, order.driver_id, pickupPayCents(order, drivenKm, rate), 'pickup_pay', actorId);
+    return;
+  }
+  await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_PAY_REVIEW', ?, ?)`,
+    actorId, order.id, JSON.stringify({ reason: reviewReason ?? 'missing_position', rate, drivenKm, driverId: order.driver_id,
+      assignmentEpoch: order.assignment_epoch }), Date.now());
+}
+type PickupReview = NonNullable<Order['pickupPayReview']>;
+async function pickupReview(orderId: number): Promise<PickupReview | undefined> {
+  const events = await all(`SELECT action, detail FROM security_events WHERE order_id = ?
+    AND action IN ('PICKUP_PAY_REVIEW', 'PICKUP_PAY_DECIDED') ORDER BY id DESC`, orderId);
+  const review = events.find(event => event.action === 'PICKUP_PAY_REVIEW');
+  const decision = events.find(event => event.action === 'PICKUP_PAY_DECIDED');
+  if (!review) return;
+  return { ...auditDetail(review), decision: decision ? auditDetail(decision) : null } as PickupReview;
+}
+registerPickupPayRoutes(route, async ({ user, params, body }) => {
+  need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'finance', 'support');
+  const { granted, km } = body;
+  const reason = text(body.reason, 500);
+  if (typeof granted !== 'boolean' || !finite(km, 20_016, 0) || reason.length < 5) fail(400, 'invalid_input');
+  const id = Number(params[0]);
+  await persistence.exec('BEGIN IMMEDIATE');
+  try {
+    const order = await one('SELECT * FROM orders WHERE id = ?', id) ?? fail(404, 'not_found');
+    const review = await pickupReview(id) ?? fail(404, 'not_found');
+    if (!shippingOrder(order) || order.status !== 'cancelled' || review.driverId !== order.driver_id || review.assignmentEpoch !== order.assignment_epoch)
+      fail(409, 'order_changed');
+    if (review.decision) {
+      const saved = review.decision;
+      if (saved.granted !== granted || saved.km !== km || saved.reason !== reason || saved.decidedBy !== user.id) fail(409, 'review_decided');
+      await persistence.exec('COMMIT');
+      return saved;
+    }
+    const paidCents = granted ? pickupPayCents(order, km, review.rate) : 0;
+    if (granted) await captainPay(id, order.driver_id, paidCents, 'pickup_pay', user.id);
+    const decision = { granted, km, reason, paidCents, decidedBy: user.id, decidedAt: Date.now() };
+    await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_PAY_DECIDED', ?, ?)`,
+      user.id, id, JSON.stringify(decision), decision.decidedAt);
+    await persistence.exec('COMMIT');
+    return decision;
+  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+});
 const payments = createPayments(persistence, fail);
 registerPaymentsRoutes(route, payments);
 // OpenCode / T3 provider service (runs zro CLI and records jobs)
@@ -877,9 +945,9 @@ async function startSession(userId: number) {
   return { token, ...(await me((await toUser((await one('SELECT * FROM users WHERE id = ?', userId))!)))) };
 }
 
-async function me(user: User) {
+async function me(user: User, payroll = false) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), settings: (await settings()), rideOfferSeconds, capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds, capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -1043,7 +1111,7 @@ route('POST', '/api/auth/logout', async ({ user }) => {
   (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id)); // every session ended, so every browser stops alerting
   return { ok: true };
 });
-route('GET', '/api/me', async ({ user }) => (await me(user)));
+route('GET', '/api/me', async ({ user, query }) => me(user, query.get('payroll') === '1'));
 
 // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
 const HEADING_FOR = 3 * 3_600_000; // ponytail: Uber-like window; tune from how long intercity drives home take
@@ -1607,7 +1675,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   const recipientName = recipientPhone ? String(body.recipientName ?? '').trim().slice(0,60) : '';
   const pickupContact = body.pickupContact == null ? null : normalizePhone(String(body.pickupContact));
   const scheduledFor = Number.isInteger(body.scheduledFor) ? body.scheduledFor as number : null;
-  const tariffSnapshot = (await settings()) as unknown as Record<string, unknown>;
+  const tariffSnapshot = settingsResponse(await settings(), false).settings;
   const tariffVersion = tariffVersionFor(tariffSnapshot);
   const tariffBps = tariffBasisPoints(tariffSnapshot);
   const priceMinor = minorUnits(base.price);
@@ -2114,11 +2182,11 @@ route('GET', '/api/partner/orders/by-reference', async ({ req, query }) => {
 route('GET', '/api/partner/orders/:id', async ({ req, params }) => (await partnerOrder(req, Number(params[0]))), true);
 // Until the courier holds the parcel the order can still be called off; at_pickup included, or a no-show strands both sides.
 const cancellable = ['searching', 'assigned', 'at_pickup'];
-async function cancelBeforePickup(id: number, actorId?: number) {
+async function cancelBeforePickup(id: number, actorId?: number, reviewReason?: string) {
   const row = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
   if (!cancellable.includes(row.status)) fail(409, 'cannot_cancel');
   // On PostgreSQL the active GPS trigger can delete the validated fix when the order leaves the active set.
-  if (row.status !== 'searching') await pickupPay(row, actorId ?? Number(row.customer_id));
+  if (row.status !== 'searching') await pickupPay(row, actorId ?? Number(row.customer_id), reviewReason);
   if (!(await run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('searching', 'assigned', 'at_pickup')", Date.now(), id)).changes) fail(409, 'cannot_cancel');
 }
 route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
@@ -2166,7 +2234,7 @@ async function recoveryMetadata(id: number) {
   return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
 }
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
-  const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user);
+  const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user,query.get('liveProtocol') === '1');
   if ('journey' in order) return order;
   const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
   if (query.get('recoveryProtocol') !== '1') return result;
@@ -2178,11 +2246,11 @@ route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
   return (await liveFix(async () => {
     // A held request must not retain a session revoked while waiting for the next fix.
     const viewer = (await authenticate(req)) ?? fail(401, 'unauthorized');
-    const o = (await getOrder(Number(params[0]), viewer));
+    const o = await getOrder(Number(params[0]), viewer, true);
     // Counted after the lookup: a stranger polling must not write to the database.
     if (!limited) { (await limit(identityKey('order-live', user.id), 2400, 10 * 60_000)); limited = true; }
-    return { orderId: o.id, driverId: o.driverId, driverKey: o.driverId == null ? null : String(o.driverId), fix: o.driverLocation ?? null };
-  }, query, req));
+    return { orderId: o.id, driverId: o.driverId, driverKey: o.driverId == null ? null : String(o.driverId), assignmentEpoch: o.assignmentEpoch, fix: o.driverLocation ?? null };
+  }, query, req, true));
 });
 
 route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
@@ -2196,7 +2264,7 @@ route('POST', '/api/orders/:id/cancel', async ({ user, params }) => {
   if (!allowed) fail(409, 'cannot_cancel');
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    await cancelBeforePickup(order.id, user.id);
+    await cancelBeforePickup(order.id, user.id, user.role === 'admin' ? 'support_cancelled' : undefined);
     if (user.role === 'admin') (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', '{}', ?)`, user.id, order.id, Date.now()));
     const cancelled = (await getOrder(order.id, user));
     if (cancelled.driverId) await queuePush([cancelled.driverId], 'cancelled', order.id);
@@ -2625,7 +2693,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   if (refused) fail(409, refused);
   await guardRideAssignment(order.id);
   const now = Date.now();
-  if (shippingOrder(order)) await recordAssignedFrom(order.id, user.id, user.id, now);
+  if (shippingOrder(order)) await recordAssignedFrom(order.id, user.id, user.id, body.position);
   const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
     WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
   user.id, commissionOn(order.price, rate), now, now, order.id, order.id, user.id)).changes;
@@ -2684,7 +2752,7 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
     const now = Date.now();
-    if (shippingOrder(r)) await recordAssignedFrom(r.id, Number(f.id), user.id, now);
+    if (shippingOrder(r)) await recordAssignedFrom(r.id, Number(f.id), user.id);
     // A promo or credit never discounts more than the fare minus ₪1 (as at booking).
     (await run(`UPDATE orders SET driver_id = ?, price = ?, discount = CASE WHEN discount IS NULL THEN NULL ELSE MIN(discount, ? - 1) END,
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), now, now, r.id));
@@ -2772,18 +2840,20 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     }
     const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
     const door = next === 'completed' ? (r.service === 'shop' ? await shop.doorCash(r, body) : doorCash(r.price, r.discount, body, fail)) : null;
-    // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
-    // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
-    if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
-      door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
-      next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), // DRV-17: a return earns no commission
-      now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
-      door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
-    if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
-    else (await rewardReferral(r.id, now));
-    await shop.afterFinish(r, next, user.id, body);
-    if (next === 'returned') await shippingTripPay(r, user.id, 'code');
-    await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
+    await persistence.savepoint(async () => {
+      // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
+      // The status guard makes a concurrent advance that committed first win: PostgreSQL re-checks it after waiting on the row lock.
+      if (!(await run(`UPDATE orders SET status = ?, commission = ?, completed_at = ?, updated_at = ?, collected_cents = ?, variance_reason = ?,
+        door_expected_cents = ?, door_collected_by = ?, door_request_id = ? WHERE id = ? AND status = ?`,
+        next, next === 'returned' ? 0 : r.commission ?? commissionOn(r.price, rate), // DRV-17: a return earns no commission
+        now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
+        door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
+      if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
+      else (await rewardReferral(r.id, now));
+      await shop.afterFinish(r, next, user.id, body);
+      if (next === 'returned') await shippingTripPay(r, user.id);
+      await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
+    });
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   await rideLifecycle.markVerified(r, next);
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
@@ -2803,11 +2873,12 @@ async function reportException(user: User, id: number, body: Row) {
   const now = Date.now();
   if (r.status === 'at_pickup') {
     // Nothing was collected, so there is nothing to hold or return: the pickup fails and the sender is told why.
-    // ponytail: pay captain_refused_pickup when a support confirmation step exists.
-    if (!refusal) await pickupPay(r, user.id);
-    (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, exception_detail = ?, updated_at = ? WHERE id = ?", body.reason, refusal ? body.detail : null, now, r.id));
-    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
-      user.id, r.id, JSON.stringify({ reason: body.reason, ...(refusal && { detail: body.detail }), note: text(body.note, 200, false) }), now));
+    await persistence.savepoint(async () => {
+      await pickupPay(r, user.id, refusal ? 'captain_refused_pickup' : undefined);
+      (await run("UPDATE orders SET status = 'cancelled', exception_reason = ?, exception_detail = ?, updated_at = ? WHERE id = ?", body.reason, refusal ? body.detail : null, now, r.id));
+      (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_FAILED', ?, ?)`,
+        user.id, r.id, JSON.stringify({ reason: body.reason, ...(refusal && { detail: body.detail }), note: text(body.note, 200, false) }), now));
+    });
     await queuePush([r.customer_id], 'cancelled', r.id);
     return (await getOrder(r.id, user));
   }
@@ -2834,10 +2905,11 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const from = { reattempt: 'on_hold', return: 'on_hold', confirm_return: 'returning' }[String(body.action)];
   const to = { reattempt: 'in_transit', return: 'returning', confirm_return: 'returned' }[String(body.action)] as PushKind;
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
+  if (body.action === 'confirm_return') needStaff(await staffActor(persistence, user), fail, 'support');
   const id = Number(params[0]);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason, price FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
+    const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason, price, assignment_epoch FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (order.service === 'ride') fail(409, 'cannot_resolve'); // SRS §2.1: rides never hold or return
     await shop.guardResolve(id, String(body.action));
@@ -2853,7 +2925,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
       await shop.afterFinish(order, 'returned', user.id);
-      await shippingTripPay(order, user.id, 'office');
+      await shippingTripPay(order, user.id);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
@@ -3070,12 +3142,15 @@ const fixWaiters = new Map<number, Set<() => void>>(); // keyed by order id: a r
 let liveTotal = 0;
 // In-process observation for deterministic lifecycle tests; it exposes no coordinates or API route.
 export const liveWatcherCount = (orderId: number) => fixWaiters.get(orderId)?.size ?? 0;
-type LiveRead = { orderId: number; driverId: number | null; driverKey: string | null; fix: { updatedAt: number } | null };
-async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, req: IncomingMessage) {
+type LiveRead = { orderId: number; driverId: number | null; driverKey: string | null; assignmentEpoch?: number; fix: { updatedAt: number } | null };
+async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, req: IncomingMessage, authenticated = false) {
   const since = Number(query.get('since')) || 0;
   const want = query.get('driver'); // the driver the client already shows: a fix from another car is never returned
+  const assignment = authenticated ? query.get('assignment') : null;
+  const changed = (snapshot: LiveRead) => (want != null && want !== snapshot.driverKey)
+    || (assignment != null && assignment !== String(snapshot.assignmentEpoch));
   const now = (await read());
-  if (want != null && want !== now.driverKey) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
+  if (changed(now)) return { driverLocation: null, driverKey: now.driverKey, driverChanged: true };
   // No live source (no driver, or a finished trip): answer at once instead of holding a socket for nothing.
   if (!now.driverId || !now.driverKey) return { driverLocation: null, driverKey: null };
   if (now.fix && now.fix.updatedAt > since) return { driverLocation: now.fix, driverKey: now.driverKey };
@@ -3101,7 +3176,7 @@ async function liveFix(read: () => Promise<LiveRead>, query: URLSearchParams, re
   // Re-read: access, status, freshness and the assigned driver are checked again before any coordinate goes out.
   const after = (await read());
   // The driver may have changed while the request was held: its position is not the one this client asked for.
-  if (want != null && want !== after.driverKey) return { driverLocation: null, driverKey: after.driverKey, driverChanged: true };
+  if (changed(after)) return { driverLocation: null, driverKey: after.driverKey, driverChanged: true };
   return { driverLocation: after.fix, driverKey: after.driverKey };
 }
 
@@ -3324,8 +3399,7 @@ const cashMinor = (column: 'commission' | 'discount') => persistence.backend ===
 const shopDue = (shop: boolean) => shop ? `COALESCE((SELECT SUM(CASE WHEN COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot <= 0 THEN 0 ELSE COALESCE(o.collected_cents, 0) - s.delivery_fee_agorot END)
     FROM shop_orders s JOIN orders o ON o.id = s.order_id WHERE o.driver_id = u.id AND o.status = 'completed'), 0) - COALESCE((SELECT SUM(l.amount_agorot) FROM shop_ledger l WHERE l.book = 'captain' AND l.driver_id = u.id), 0)` : '0';
 // DRV-17 (19 Nov): a return collects no fare, so it owes no commission and earns no promo relief. A return this release closed carries
-// commission 0 and the RETURN_NO_FARE marker; any other return keeps what it was booked with, so no live balance moves on deploy, rollback
-// or re-release (Sol R2-H5, R3-H1).
+// commission 0 and the RETURN_NO_FARE marker; any other return keeps what it was booked with.
 const owedColumns = (shop: boolean) => `${shopDue(shop)} shop_due, COALESCE((SELECT SUM(${cashMinor('commission')}) FROM orders WHERE driver_id = u.id AND status IN (${finishedSql})), 0) commission,
     COALESCE((SELECT SUM(${cashMinor('discount')}) FROM orders WHERE driver_id = u.id AND (status = 'completed'
       OR (status = 'returned' AND NOT ${noFareSql('orders')}))), 0) discounts,
@@ -3373,7 +3447,10 @@ const cashEntry = (r: Row) => ({ id: r.id, kind: r.kind, amountCents: r.amount_c
   ...(r.source != null && { source: r.source }),
   reference: r.source === 'payout' ? `P-${String(r.id).padStart(6, '0')}` : r.kind === 'remittance' ? `R-${String(r.id).padStart(6, '0')}` : null, createdAt: r.created_at, decidedAt: r.decided_at ?? null });
 // T25: administrator resolution of pending cash handovers (additive module owns its route declarations).
-registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal });
+async function lockCashDriver(driverId: number) {
+  if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
+}
+registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal, lockCashDriver });
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
@@ -3396,6 +3473,7 @@ route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => 
   need(user, 'driver');
   if (!['confirm', 'dispute'].includes(body.decision)) fail(400, 'invalid_input');
   const entry = (await one("SELECT * FROM cash_entries WHERE id = ? AND driver_id = ? AND kind = 'remittance'", Number(params[0]), user.id)) ?? fail(404, 'not_found');
+  await lockCashDriver(entry.driver_id);
   if (!(await run("UPDATE cash_entries SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
     body.decision === 'confirm' ? 'confirmed' : 'disputed', Date.now(), entry.id)).changes) fail(409, 'already_decided');
   if (body.decision === 'dispute') await queuePush([entry.recorded_by], 'attention', 0, '/admin/cash'); // the admin who recorded it decides
@@ -3429,16 +3507,16 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   const saved = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
   if (saved) {
     // Only the recording admin replays an entry (A-01): another admin's id is a conflict, never their receipt.
-    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount || (saved.source ?? null) !== (payout ? 'payout' : null)) fail(409, 'idempotency_conflict');
+    if (saved.recorded_by !== user.id || saved.driver_id !== Number(body.driverId) || saved.kind !== kind || saved.amount_cents !== amount || (saved.source ?? null) !== (payout ? 'payout' : null) || (payout && saved.note !== note)) fail(409, 'idempotency_conflict');
     return cashEntry(saved);
   }
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
-    if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', Number(body.driverId));
+    await lockCashDriver(Number(body.driverId));
     // The same request may have committed while this one waited for the lock: replay it here too, never a second entry.
     const raced = requestId && (await one('SELECT * FROM cash_entries WHERE request_id = ?', requestId));
     if (raced) {
-      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount || (raced.source ?? null) !== (payout ? 'payout' : null)) fail(409, 'idempotency_conflict');
+      if (raced.recorded_by !== user.id || raced.driver_id !== Number(body.driverId) || raced.kind !== kind || raced.amount_cents !== amount || (raced.source ?? null) !== (payout ? 'payout' : null) || (payout && raced.note !== note)) fail(409, 'idempotency_conflict');
       (await persistence.exec('ROLLBACK'));
       return cashEntry(raced);
     }
@@ -3602,7 +3680,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       // An assignment that committed between the order locks above and the captain lock is not waited on while holding the
       // captain row (its advance would wait on that row: a deadlock, Sol R2-H1); the admin retries and the scan above takes it.
       if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
-      carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
+      carrying = (await all(`SELECT id, status, service, customer_id, price, discount, recommended_price, assignment_epoch FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
       if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
@@ -3665,7 +3743,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         }
       }
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
-        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status }), now));
+        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' }), now));
     }
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -3692,14 +3770,15 @@ async function createShippingBlockReview(order: Row, driverId: number, blockerId
 await persistence.scope(async () => {
   if (!(await captainPayAvailable())) return;
   // Recover missed shipping reviews at startup, including blocks an older binary recorded during a rollback.
-  const missing = await all(`SELECT o.id, o.service, o.price, o.driver_id, e.actor_id, e.detail, e.created_at
+  const missing = await all(`SELECT o.id, o.service, o.price, o.driver_id, o.assignment_epoch, e.actor_id, e.detail, e.created_at
     FROM security_events e JOIN orders o ON o.id = e.order_id
     WHERE e.action = 'COURIER_BLOCKED' AND o.service IN ('parcel','freight') AND o.driver_id IS NOT NULL
       AND o.status IN ('returning','returned') AND NOT EXISTS (SELECT 1 FROM courier_block_reviews b WHERE b.order_id = o.id)
     ORDER BY e.id DESC`);
   for (const order of missing) {
     const detail = auditDetail(order);
-    if (Number(detail.driverId) === order.driver_id && custodyStatuses.includes(detail.from))
+    if (Number(detail.driverId) === order.driver_id && custodyStatuses.includes(detail.from)
+      && (detail.assignmentEpoch == null || detail.assignmentEpoch === order.assignment_epoch))
       await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at);
   }
 });
@@ -3716,32 +3795,33 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
   const id = Number(params[0]);
   await persistence.exec('BEGIN IMMEDIATE');
   try {
-  const review = (await one(`SELECT * FROM courier_block_reviews WHERE order_id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
-  if (review.decided_at != null) {
-    if (!!review.cleared === body.cleared && Number(review.decided_by) === user.id && review.note === note) {
-      await persistence.exec('COMMIT');
-      return blockReviewView(review);
+    const review = (await one(`SELECT * FROM courier_block_reviews WHERE order_id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
+    if (review.decided_at != null) {
+      if (!!review.cleared === body.cleared && Number(review.decided_by) === user.id && review.note === note) {
+        await persistence.exec('COMMIT');
+        return blockReviewView(review);
+      }
+      fail(409, 'review_decided');
     }
-    fail(409, 'review_decided');
-  }
-  // The admin who blocked does not also judge the block: a second admin decides, as a forgiven debt needs a second approver.
-  if (Number(review.blocked_by) === user.id) fail(409, 'second_admin_required');
-  const now = Date.now(), driverId = Number(review.driver_id), pay = Number(review.trip_pay_cents);
-  let paid = 0;
-  // One rollback boundary: a ledger or cash refusal after the local inserts leaves the review pending with nothing posted (Sol R2-H4).
-  if (body.cleared && pay > 0) {
-    if (review.service === 'shop') { await shop.blockTripPay(id, driverId, pay, user.id); paid = pay; }
-    // Rides, parcels and freight: the full trip so far as DRV-17 trip pay (owed may go below zero: Wind owes the captain).
-    else { await captainPay(id, driverId, pay, 'trip_pay', user.id); paid = pay; }
-  }
-  await run('UPDATE courier_block_reviews SET decided_at = ?, decided_by = ?, cleared = ?, paid_cents = ?, note = ? WHERE order_id = ? AND decided_at IS NULL',
-    now, user.id, persistence.backend === 'sqlite' ? Number(body.cleared) : body.cleared, paid, note, id);
-  await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_DECIDED', ?, ?)",
-    user.id, id, JSON.stringify({ driverId, cleared: body.cleared, tripPayCents: pay, paidCents: paid }), now);
-  await persistence.exec('COMMIT');
+    // The admin who blocked does not also judge the block: a second admin decides, as a forgiven debt needs a second approver.
+    if (Number(review.blocked_by) === user.id) fail(409, 'second_admin_required');
+    const now = Date.now(), driverId = Number(review.driver_id), pay = Number(review.trip_pay_cents);
+    let paid = 0;
+    // One rollback boundary: a ledger or cash refusal after the local inserts leaves the review pending with nothing posted (Sol R2-H4).
+    if (body.cleared && pay > 0) {
+      if (review.service === 'shop') { await shop.blockTripPay(id, driverId, pay, user.id); paid = pay; }
+      // Rides, parcels and freight: the full trip so far as DRV-17 trip pay (owed may go below zero: Wind owes the captain).
+      else { await captainPay(id, driverId, pay, 'trip_pay', user.id); paid = pay; }
+    }
+    await run('UPDATE courier_block_reviews SET decided_at = ?, decided_by = ?, cleared = ?, paid_cents = ?, note = ? WHERE order_id = ? AND decided_at IS NULL',
+      now, user.id, persistence.backend === 'sqlite' ? Number(body.cleared) : body.cleared, paid, note, id);
+    await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_DECIDED', ?, ?)",
+      user.id, id, JSON.stringify({ driverId, cleared: body.cleared, tripPayCents: pay, paidCents: paid }), now);
+    if (paid) await queuePush([driverId], 'cash', 0, '/driver/earnings');
+    const result = blockReviewView((await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', id))!);
+    await persistence.exec('COMMIT');
+    return result;
   } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
-  if (paid) await queuePush([driverId], 'cash', 0, '/driver/earnings');
-  return blockReviewView((await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', id))!);
 });
 route('POST', '/api/admin/users/:id', editUser); // existing clients
 route('PATCH', '/api/admin/users/:id', editUser);
@@ -3871,8 +3951,13 @@ route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => 
   }));
 });
 
-route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } }) => {
+route('POST', '/api/admin/settings', async ({ user, query, body: { expected, ...body } }) => {
   need(user, 'admin');
+  const payroll = query.get('payroll') === '1';
+  if (Object.hasOwn(body, 'pickupPayPerKm')) {
+    if (!payroll) fail(400, 'invalid_setting');
+    needStaff(await staffActor(persistence, user), fail, 'finance');
+  }
   // `expected` is the value each changed key had when this admin's review was built. If the stored value has moved
   // since, another admin saved first: refuse, so a review is never written over a change it did not show.
   // Clients that predate it send no `expected` and keep the old behaviour.
@@ -3883,7 +3968,7 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
     if (key === 'pickupPayPerKm' && typeof value !== 'number' && !(typeof value === 'string' && value.trim()))
       fail(400, 'invalid_setting:pickupPayPerKm');
     const n = Number(value);
-    if (!(key in defaultSettings) || !Number.isFinite(n) || n < 0 || (fractionSettings.includes(key as keyof Settings) && n >= 1)) fail(400, 'invalid_setting');
+    if (!Object.hasOwn(defaultSettings, key) || !Number.isFinite(n) || n < 0 || (fractionSettings.includes(key as keyof Settings) && n >= 1)) fail(400, 'invalid_setting');
   }
   // The admin form and API share the bounds in model.ts.
   const bad = invalidSetting(Object.fromEntries(Object.entries(body).map(([k, v]) => [k, Number(v)])));
@@ -3904,7 +3989,8 @@ route('POST', '/api/admin/settings', async ({ user, body: { expected, ...body } 
       user.id, JSON.stringify({ changes }), Date.now()));
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
-  return (await settings());
+  const result = settingsResponse(await settings(), payroll);
+  return payroll ? result : result.settings;
 });
 
 // Additive protocol; installed-client snapshots keep their frozen response shapes.
