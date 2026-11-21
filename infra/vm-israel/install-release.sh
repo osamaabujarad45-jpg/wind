@@ -24,8 +24,9 @@ RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HO
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 # Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
-systemctl cat caddy 2>/dev/null | grep -q wind-ingress-hold && systemctl cat wind-api 2>/dev/null | grep -q wind-db-expected \
-  || { echo "re-run provision.sh first: the Caddy hold check or the API database check is missing" >&2; exit 1; }
+# The loaded units, not just the files on disk (Haiku N4), matched without a pipe.
+case "$(systemctl show -p ExecStartPre --value caddy 2>/dev/null)" in *wind-ingress-hold*) ;; *) echo "re-run provision.sh first: the Caddy hold check is not loaded" >&2; exit 1 ;; esac
+case "$(systemctl show -p ExecStartPre --value wind-api 2>/dev/null)" in *wind-db-expected*) ;; *) echo "re-run provision.sh first: the API database check is not loaded" >&2; exit 1 ;; esac
 [ ! -e "$HOLD" ] || { echo "an ingress hold is in place ($(cat "$HOLD")): finish that first, then remove $HOLD" >&2; exit 1; }
 STAMP=$(date +%Y%m%d%H%M%S)
 REL="$RELEASES/$STAMP"; SNAP="$DATA/backups/pre-install-$STAMP.db"
@@ -34,6 +35,9 @@ WORK=$(mktemp -d); chmod 700 "$WORK"
 DRY=""; PID=""; PREV=""; CHECKPOINT=""; HALT=""; TIMER_STOPPED=""; RERUN=""
 PHASE=prepare # prepare -> frozen -> switched -> started -> live (committed)
 
+# Every file operation inside /data runs as the service user that owns it: /data is wind's, so a root write or rename there
+# could be steered by a symlink or a swapped directory; as wind it can only reach what wind already can (Haiku H1, N1, N5).
+as_wind() { sudo -u wind "$@" 8<&-; }
 say() { echo "install-release: $*" >&2; }
 ready() { # $1 port: the API answers /api/ready within $2 seconds
   local i; for i in $(seq 1 "$2"); do
@@ -101,13 +105,13 @@ recover() {
         # Stage the checkpoint next to the live file first (a full disk fails here, before anything is moved), then two renames.
         if [ -n "$CHECKPOINT" ]; then
           # Copied by the service user, so a planted symlink can only reach what wind can already write (Haiku H1).
-          { sudo -u wind cp -- "$CHECKPOINT" "$DB.rollback-$STAMP" && sudo -u wind chmod 600 -- "$DB.rollback-$STAMP"; } 8<&- \
+          as_wind sh -c 'umask 077; cp -- "$1" "$2"' sh "$CHECKPOINT" "$DB.rollback-$STAMP" \
             || { fatal "could not stage the checkpoint; the live database is unchanged"; return; }
         fi
         for suffix in '' -wal -shm; do
-          [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$DB.failed-$STAMP$suffix" || { fatal "could not move the candidate's database aside"; return; }
+          [ ! -e "$DB$suffix" ] || as_wind mv -Tf -- "$DB$suffix" "$DB.failed-$STAMP$suffix" || { fatal "could not move the candidate's database aside"; return; }
         done
-        if [ -n "$CHECKPOINT" ]; then mv -f "$DB.rollback-$STAMP" "$DB" || { fatal "could not put the checkpoint in place"; return; }; fi
+        if [ -n "$CHECKPOINT" ]; then as_wind mv -Tf -- "$DB.rollback-$STAMP" "$DB" || { fatal "could not put the checkpoint in place"; return; }; fi
         sync
         say "the database is back at the checkpoint; the candidate's file is $DB.failed-$STAMP"
       fi
@@ -124,7 +128,7 @@ on_exit() {
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
   [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
   # A backup this script stopped runs again (the timer's stamp says it already ran today); it waits for the lock released below.
-  [ -z "$RERUN" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
+  [ -z "$RERUN" ] || [ -n "$HALT" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
   [ -z "$DRY" ] || rm -rf -- "$DRY"
   rm -rf -- "$WORK"
   exit "$code"
@@ -186,10 +190,10 @@ sync # the hold is on disk before anything moves, so a power loss reboots closed
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 { stopped wind-api && port_free 4000; } || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 if [ -s "$DB" ]; then
-  snapshot "$DB" "$SNAP" || { rm -f -- "$SNAP"; say "the checkpoint failed; nothing was changed"; exit 1; }
+  snapshot "$DB" "$SNAP" || { as_wind rm -f -- "$SNAP"; say "the checkpoint failed; nothing was changed"; exit 1; }
   CHECKPOINT=$SNAP; echo "checkpoint of the stopped database: $SNAP"
   # From now on the API refuses to start without a database instead of creating an empty one (provision.sh unit check).
-  sudo -u wind touch -- "$DATA/.wind-db-expected" 8<&- # as wind: root never writes through a path wind controls (Haiku H1)
+  as_wind touch -- "$DATA/.wind-db-expected"
 fi
 
 # Switch (a one-time move of a legacy directory first; its window is only while the API is stopped).
@@ -205,7 +209,7 @@ ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candida
 trap '' INT TERM HUP # the commit tail (lift the hold, start Caddy) always completes (Sonnet L2, Sol recheck 5)
 PHASE=live
 # A first-ever install that created the database marks it too: from now on the API never starts on a fresh empty file.
-[ ! -s "$DB" ] || sudo -u wind touch -- "$DATA/.wind-db-expected" 8<&-
+[ ! -s "$DB" ] || as_wind touch -- "$DATA/.wind-db-expected" || say "could not write the database marker; committing anyway" # Haiku N2
 systemctl enable wind-api >/dev/null 2>&1 || true
 rm -f -- "$HOLD"; sync
 systemctl start caddy || { say "the new release is live and ready, but Caddy did not start ($(state)): sudo systemctl start caddy"; exit 1; }

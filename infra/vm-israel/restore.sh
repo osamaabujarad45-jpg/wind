@@ -20,16 +20,20 @@ COPY=${1:?backup file}; OPEN=${2:-}
 DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 [ -f "$COPY" ] || { echo "no such backup: $COPY" >&2; exit 1; }
 # Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
-systemctl cat caddy 2>/dev/null | grep -q wind-ingress-hold && systemctl cat wind-api 2>/dev/null | grep -q wind-db-expected \
-  || { echo "re-run provision.sh first: the Caddy hold check or the API database check is missing" >&2; exit 1; }
+# The loaded units, not just the files on disk (Haiku N4), matched without a pipe.
+case "$(systemctl show -p ExecStartPre --value caddy 2>/dev/null)" in *wind-ingress-hold*) ;; *) echo "re-run provision.sh first: the Caddy hold check is not loaded" >&2; exit 1 ;; esac
+case "$(systemctl show -p ExecStartPre --value wind-api 2>/dev/null)" in *wind-db-expected*) ;; *) echo "re-run provision.sh first: the API database check is not loaded" >&2; exit 1 ;; esac
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
-WORK=$(mktemp -d "$DATA/restore.XXXXXX")   # same filesystem as the live file, so the final move is a rename
+WORK=$(sudo -u wind mktemp -d "$DATA/restore.XXXXXX")   # wind's own, on the live file's filesystem: the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
 HALT=""; NEWINO=""; TIMER_STOPPED=""; RERUN=""
 FAILED="$DATA/wind.db.restore-failed-$(date -u +%Y%m%dT%H%M%SZ)" # a replacement the API failed on, kept for diagnosis
 PREHOLD=""; [ ! -e "$HOLD" ] || PREHOLD=1 # an earlier restore still awaiting reconciliation keeps its hold
+# Every file operation inside /data runs as the service user that owns it: /data is wind's, so a root write or rename there
+# could be steered by a symlink or a swapped directory; as wind it can only reach what wind already can (Haiku H1, N1, N5).
+as_wind() { sudo -u wind "$@" 8<&-; }
 say() { echo "restore: $*" >&2; }
 ready() { local i; for i in $(seq 1 60); do curl -fsS -m 3 http://127.0.0.1:4000/api/ready >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 stopped() { systemctl stop "$1" || return 1; ! systemctl is-active --quiet "$1" && [ "$(systemctl show -p MainPID --value "$1")" = "0" ]; }
@@ -70,11 +74,11 @@ recover() {
       stopped wind-api || { fatal "the API did not stop; nothing was put back"; return; }
       if is_replacement; then # whatever point the swap reached, the file at the live path is the replacement
         for suffix in '' -wal -shm; do # the restored file and its journal go aside, never deleted (Sonnet L3)
-          [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$FAILED$suffix" || { fatal "could not move the restored file aside"; return; }
+          [ ! -e "$DB$suffix" ] || as_wind mv -Tf -- "$DB$suffix" "$FAILED$suffix" || { fatal "could not move the restored file aside"; return; }
         done
       fi
       for suffix in '' -wal -shm; do # only what was moved comes back; a file still in place stays
-        [ ! -e "$KEPT$suffix" ] || [ -e "$DB$suffix" ] || mv -f "$KEPT$suffix" "$DB$suffix" || { fatal "could not put the previous database back"; return; }
+        [ ! -e "$KEPT$suffix" ] || [ -e "$DB$suffix" ] || as_wind mv -Tf -- "$KEPT$suffix" "$DB$suffix" || { fatal "could not put the previous database back"; return; }
       done
       sync; reopen ;;
   esac
@@ -84,15 +88,16 @@ on_exit() {
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
   [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
-  [ -z "$RERUN" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
-  [ -n "$HALT" ] || rm -rf -- "$WORK" # kept for diagnosis when a person must look
+  # Not during manual recovery: a fresh backup would clear the stale-backup warning (Haiku N3).
+  [ -z "$RERUN" ] || [ -n "$HALT" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
+  [ -n "$HALT" ] || as_wind rm -rf -- "$WORK" # kept for diagnosis when a person must look
   exit "$code"
 }
 trap on_exit EXIT
 trap 'exit 130' INT TERM HUP
 
-cp -- "$COPY" "$WORK/wind.db"
-chown -R wind:wind "$WORK"
+# Root reads the operator's file; wind writes the staged copy (Haiku N1).
+as_wind sh -c 'umask 077; cat > "$1"' sh "$WORK/wind.db" < "$COPY"
 sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB);
@@ -112,19 +117,20 @@ sync # the hold is on disk before anything moves, so a power loss reboots closed
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 stopped wind-api || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 # Before anything moves: from now on the API never starts on a fresh empty file (Sonnet M2).
-sudo -u wind touch -- "$DATA/.wind-db-expected" 8<&-; sync # as wind: root never writes through a path wind controls (Haiku H1)
+as_wind touch -- "$DATA/.wind-db-expected"; sync
 PHASE=swapped # from the first move on, recovery puts the previous files back
 for suffix in '' -wal -shm; do # a stale journal must not replay over the restored file
-  [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$KEPT$suffix"
+  [ ! -e "$DB$suffix" ] || as_wind mv -Tf -- "$DB$suffix" "$KEPT$suffix"
 done
 NEWINO=$(stat -c %i "$WORK/wind.db") # the rename keeps the inode: recovery tells the replacement from the original by it
-sudo -u wind chmod 600 -- "$WORK/wind.db" 8<&- # owned by wind already (chown -R above); root changes nothing through it
-mv "$WORK/wind.db" "$DB"; sync
+as_wind mv -T -- "$WORK/wind.db" "$DB"; sync
 systemctl start wind-api
 ready || { journalctl -u wind-api -n 20 --no-pager >&2; say "the API did not become ready on the restored database"; exit 1; }
 trap '' INT TERM HUP # the tail always completes (Sonnet L2, Sol recheck 5)
 PHASE=live
-if [ "$OPEN" = --open ]; then rm -f -- "$HOLD"; sync
+if [ "$OPEN" = --open ]; then
+  [ -z "$PREHOLD" ] || say "--open lifts the earlier hold, which said: $(cat "$HOLD" 2>/dev/null)" # Haiku N6
+  rm -f -- "$HOLD"; sync
   systemctl start caddy || { say "restored $COPY, but Caddy did not start ($(state)); what was there is at $KEPT"; exit 1; }
   say "restored $COPY and reopened; what was there is at $KEPT"
 else printf 'restored %s at %s: re-apply later blocks, deletions, demotions and password resets, then remove this file and start Caddy\n' "$COPY" "$(date -u +%FT%TZ)" > "$HOLD"

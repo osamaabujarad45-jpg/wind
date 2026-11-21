@@ -46,8 +46,8 @@ case "$1" in
       if [ "$u" = caddy ] && [ -n "$FAKE_TERM_ON_CADDY_START" ]; then kill -TERM "$PPID"; fi
       done ;;
   is-active) for a; do u=$a; done; s=$(st "$u"); case "$*" in *--quiet*) ;; *) echo "$s" ;; esac; [ "$s" = active ] ;;
-  cat) [ -n "$FAKE_NO_GUARDS" ] || echo "ExecStartPre=... wind-ingress-hold ... wind-db-expected" ;;
-  show) if [ "$3" = ActiveState ]; then st "$5"; elif [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
+  show) if [ "$3" = ExecStartPre ]; then case "$5,$FAKE_NO_GUARDS" in caddy,*caddy*|wind-api,*wind-api*) ;; caddy,*) echo "{ argv[]=/bin/sh -c if [ -e /etc/wind-ingress-hold ] }" ;; *) echo "{ argv[]=/bin/sh -c if [ -e /data/.wind-db-expected ] }" ;; esac
+    elif [ "$3" = ActiveState ]; then st "$5"; elif [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
   *) exit 0 ;;
 esac`);
 // Port checks (-w) answer 200 or 000; readiness on :4000 needs the API active, a good release and an unpoisoned database.
@@ -209,14 +209,24 @@ ${r.err}`);
   // 2g. Without provision.sh's two unit checks nothing runs.
   setUnits();
   for (const file of [install, restore]) {
-    r = run(file, file === install ? release() : [join(data, 'backups', checkpoint)], { FAKE_NO_GUARDS: '1' });
-    assert.equal(r.status, 1, r.err);
-    assert.match(r.err, /re-run provision\.sh first/);
-    assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
+    for (const missing of ['caddy', 'wind-api']) { // either guard alone missing refuses
+      r = run(file, file === install ? release() : [join(data, 'backups', checkpoint)], { FAKE_NO_GUARDS: missing });
+      assert.equal(r.status, 1, r.err);
+      assert.match(r.err, /re-run provision\.sh first/);
+      assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
+    }
   }
   // Root never writes through the wind-owned marker path, and a stopped backup runs again (Haiku H1, L1).
-  for (const name of ['install-release.sh', 'restore.sh', 'provision.sh'])
-    assert.ok(!/(chown|touch)[^\n]*wind-db-expected/.test(readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8').replace(/sudo -u wind touch[^\n]*/g, '')), `${name}: the marker is written as wind`);
+  // Static guard: in install and restore every write, copy or rename of a /data path ($DB, $KEPT, $WORK, $SNAP, the marker)
+  // goes through as_wind; root never acts through a path wind controls.
+  // (install's own $WORK is a root-private directory under /tmp, so it is not one of them.)
+  for (const [name, write] of [['install-release.sh', /(^|[;{|&]\s*)(mv|cp|touch|chmod|chown|install|rm|ln)\s.*\$(DB|SNAP|DATA)\b/],
+    ['restore.sh', /(^|[;{|&]\s*)(mv|cp|touch|chmod|chown|install|rm|ln)\s.*\$(DB|KEPT|WORK|FAILED|DATA)\b/]]) {
+    const lines = readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8').split('\n');
+    const rootWrites = lines.filter(l => write.test(l) && !/as_wind\s+(mv|cp|touch|rm|sh)/.test(l));
+    assert.deepEqual(rootWrites, [], `${name}: root writes under /data`);
+  }
+  assert.ok(/sudo -u wind touch -- \/data\/\.wind-db-expected/.test(readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8')));
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');
