@@ -62,9 +62,12 @@ fatal() { # the host is in a state a person must look at; with the hold present 
   say "$(state). Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
 }
 drain_backup() { # the timer paused, then no backup running or queued: a pre-lock release's backup takes no lock (Sol recheck 3)
+  # A running backup is stopped, not waited for: a lock-aware one would wait on this script's lock (Sonnet L5), and stopping
+  # one is safe (its staging file is cleaned up, last-ok moves only after an upload).
   systemctl stop wind-backup.timer || return 1
   TIMER_STOPPED=1
-  local i s; for i in $(seq 1 900); do # a oneshot is "activating" while its script runs, so is-active is not enough
+  systemctl stop wind-backup.service || return 1
+  local i s; for i in $(seq 1 30); do # a oneshot is "activating" while its script runs, so is-active is not enough
     s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
     case "$s" in inactive|failed) [ -z "$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null)" ] && return 0 ;; esac
     sleep 1
@@ -73,6 +76,7 @@ drain_backup() { # the timer paused, then no backup running or queued: a pre-loc
 
 reopen_previous() { # the previous release, ready, then the hold is lifted and Caddy starts
   if [ -z "$PREV" ]; then fatal "first install failed; there is no previous release to start"; return; fi
+  if [ -n "$CHECKPOINT" ] && [ ! -s "$DB" ]; then fatal "the database is missing; restore the checkpoint"; return; fi
   systemctl start wind-api || { fatal "the previous release did not start"; return; }
   ready 4000 60 || { fatal "the previous release did not become ready"; return; }
   rm -f -- "$HOLD"
@@ -165,8 +169,8 @@ fi
 
 # Freeze: no requests, then no writer, both checked. From here a failure recovers through on_exit; an uncertain stop or a failed
 # checkpoint changes nothing, and the previous release is reopened only once it answers /api/ready.
-stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
-PHASE=frozen
+PHASE=frozen # from the Caddy stop on, any exit reopens what was there (Sonnet L1)
+stopped caddy || { say "Caddy did not stop; nothing was changed"; exit 1; }
 printf 'install %s in progress (%s)\n' "$STAMP" "$(date -u +%FT%TZ)" > "$HOLD"
 sync # the hold is on disk before anything moves, so a power loss reboots closed
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
@@ -189,6 +193,7 @@ ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candida
 # Commit: from here the candidate is the release and its database is the database. A signal or a Caddy failure after this line
 # never rolls anything back, because Caddy may already have let requests through (Sol second recheck of PR #101).
 PHASE=live
+trap '' INT TERM HUP # the commit tail (lift the hold, start Caddy) always completes (Sonnet L2)
 systemctl enable wind-api >/dev/null 2>&1 || true
 rm -f -- "$HOLD"
 systemctl start caddy || { say "the new release is live and ready, but Caddy did not start ($(state)): sudo systemctl start caddy"; exit 1; }

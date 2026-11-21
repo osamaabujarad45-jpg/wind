@@ -148,7 +148,8 @@ try {
   r = run(install, release(['MIGRATE', 'BAD']), { FAKE_WRITE_ON_STOP: 'acknowledged-at-stop-2' });
   assert.equal(r.status, 1, r.err);
   assert.equal(active(), first, 'the previous release is active again');
-  assert.deepEqual(notes(db), ['first', 'acknowledged-at-stop', 'acknowledged-at-stop-2'], 'the migration is undone, nothing acknowledged is lost');
+  assert.deepEqual(notes(db), ['first', 'acknowledged-at-stop', 'acknowledged-at-stop-2'], `the migration is undone, nothing acknowledged is lost
+${r.err}`);
   const failed = readdirSync(data).find(n => /^wind\.db\.failed-\d+$/.test(n));
   assert.ok(failed && notes(join(data, failed)).includes('migrated'), "the candidate's database is kept beside it");
   assert.ok(readdirSync(releases).some(n => n.endsWith('-failed')), 'the candidate tree is kept for diagnosis');
@@ -169,7 +170,8 @@ try {
   const failedFiles = () => readdirSync(data).filter(n => /^wind\.db\.failed-\d+$/.test(n)).length;
   const failedBefore = failedFiles();
   r = run(install, release(['MIGRATE']), { FAKE_TERM_ON_CADDY_START: '1' });
-  assert.equal(r.status, 130, r.err);
+  assert.equal(r.status, 0, r.err); // the commit tail ignores the signal and completes (Sonnet L2)
+  assert.match(r.err, /live: /);
   assert.notEqual(active(), first, 'the committed release stays active');
   assert.ok(notes(db).includes('migrated'), 'its database stays');
   assert.equal(failedFiles(), failedBefore, 'nothing is rolled back');
@@ -185,14 +187,22 @@ try {
   first = active();
   assert.ok(r.calls.includes('systemctl stop wind-backup.timer') && r.calls.at(-1) === 'systemctl start wind-backup.timer', 'the backup timer is paused and restarted');
 
-  // 2f. A oneshot backup still running ("activating", which is-active does not report) is waited for, never overlapped.
+  // 2f. A oneshot backup still running ("activating", which is-active does not report) is stopped before anything moves.
   setUnits(); writeFileSync(join(state, 'wind-backup.service'), 'activating\n');
   r = run(install, release());
+  assert.equal(r.status, 0, r.err);
+  const order = r.calls.filter(c => /systemctl (stop|start) (caddy|wind-api|wind-backup\.\w+)$/.test(c));
+  assert.deepEqual(order.slice(0, 4), ['systemctl stop caddy', 'systemctl stop wind-backup.timer', 'systemctl stop wind-backup.service', 'systemctl stop wind-api'],
+    'the backup is stopped after the freeze and before the API');
+  assert.equal(unit('wind-backup.service'), 'inactive');
+  first = active();
+  // A backup that will not stop: nothing moves, and what was there reopens.
+  setUnits();
+  r = run(install, release(), { FAKE_STOP_FAIL: 'wind-backup.service' });
   assert.equal(r.status, 1, r.err);
   assert.match(r.err, /backup is still running/);
   assert.equal(active(), first);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
-  rmSync(join(state, 'wind-backup.service'));
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');
@@ -316,6 +326,16 @@ try {
   assert.equal(r.status, 1, r.err);
   assert.deepEqual(notes(db), ['first']);
   assert.deepEqual([unit('caddy'), readFileSync(hold, 'utf8')], ['inactive', 'restored earlier: re-apply\n']);
+  rmSync(hold);
+
+  // 10b. A new disk (no database before the restore) and a copy the API cannot run on: nothing to reopen, so the hold stays and
+  //      the API is not started on an empty file; the failed copy is kept.
+  setUnits(); for (const s of ['', '-wal', '-shm']) rmSync(db + s, { force: true });
+  r = run(restore, [poisoned]);
+  assert.equal(r.status, 2, r.err);
+  assert.match(r.err, /no previous database to reopen/);
+  assert.deepEqual([existsSync(db), existsSync(hold), unit('caddy')], [false, true, 'inactive']);
+  assert.ok(readdirSync(data).some(n => /^wind\.db\.restore-failed-/.test(n)), 'the failed replacement is kept');
   rmSync(hold);
 
   // 11. A signal right after the replacement is renamed into place: recovery recognises it and puts the original back.

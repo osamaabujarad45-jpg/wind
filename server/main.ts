@@ -3989,8 +3989,10 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     // this route to clear a block, so without this check a blocked driver holding parcels came
     // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
     if (target.role === 'driver' && target.status === 'blocked') {
-      const carrying = await all(`SELECT id, status FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
-      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+      const carrying = await all(`SELECT id, status, driver_id, assignment_epoch FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+      const stranded = [];
+      for (const o of carrying) if (!(o.status === 'returning' && await assignmentEvidence(o, 'CUSTODY_TAKEN'))) stranded.push(o);
+      if (stranded.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
     // This route also unblocks customers: the row says what changed, not that a driver was approved.

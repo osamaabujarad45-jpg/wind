@@ -24,6 +24,7 @@ KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
 WORK=$(mktemp -d "$DATA/restore.XXXXXX")   # same filesystem as the live file, so the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
 HALT=""; NEWINO=""; TIMER_STOPPED=""
+FAILED="$DATA/wind.db.restore-failed-$(date -u +%Y%m%dT%H%M%SZ)" # a replacement the API failed on, kept for diagnosis
 PREHOLD=""; [ ! -e "$HOLD" ] || PREHOLD=1 # an earlier restore still awaiting reconciliation keeps its hold
 say() { echo "restore: $*" >&2; }
 ready() { local i; for i in $(seq 1 60); do curl -fsS -m 3 http://127.0.0.1:4000/api/ready >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
@@ -31,9 +32,12 @@ stopped() { systemctl stop "$1" || return 1; ! systemctl is-active --quiet "$1" 
 state() { echo "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold $HOLD: $([ -e "$HOLD" ] && echo present || echo absent)"; }
 fatal() { HALT=1; say "MANUAL RECOVERY NEEDED: $*"; say "$(state). The database that was live is at $KEPT (if it was moved)."; }
 drain_backup() { # the timer paused, then no backup running or queued: a pre-lock release's backup takes no lock (Sol recheck 3)
+  # A running backup is stopped, not waited for: a lock-aware one would wait on this script's lock (Sonnet L5), and stopping
+  # one is safe (its staging file is cleaned up, last-ok moves only after an upload).
   systemctl stop wind-backup.timer || return 1
   TIMER_STOPPED=1
-  local i s; for i in $(seq 1 900); do # a oneshot is "activating" while its script runs, so is-active is not enough
+  systemctl stop wind-backup.service || return 1
+  local i s; for i in $(seq 1 30); do # a oneshot is "activating" while its script runs, so is-active is not enough
     s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
     case "$s" in inactive|failed) [ -z "$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null)" ] && return 0 ;; esac
     sleep 1
@@ -41,6 +45,8 @@ drain_backup() { # the timer paused, then no backup running or queued: a pre-loc
 }
 
 reopen() { # the database that was live, ready, then Caddy unless an earlier hold is still owed its reconciliation
+  # A host with no database before the restore (a new disk) has nothing to reopen: the API would create an empty one (Sonnet M2).
+  [ -s "$DB" ] || { fatal "there is no previous database to reopen; the restored copy is at $FAILED"; return; }
   systemctl start wind-api || { fatal "the API did not start on the previous database"; return; }
   ready || { fatal "the API did not become ready on the previous database"; return; }
   if [ -n "$PREHOLD" ]; then say "restore failed; the previous database is live again, and the earlier ingress hold stays"; return; fi
@@ -57,8 +63,8 @@ recover() {
     swapped)
       stopped wind-api || { fatal "the API did not stop; nothing was put back"; return; }
       if is_replacement; then # whatever point the swap reached, the file at the live path is the replacement
-        for suffix in '' -wal -shm; do # the restored file and its journal go aside, never deleted
-          [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$WORK/restored$suffix" || { fatal "could not move the restored file aside"; return; }
+        for suffix in '' -wal -shm; do # the restored file and its journal go aside, never deleted (Sonnet L3)
+          [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$FAILED$suffix" || { fatal "could not move the restored file aside"; return; }
         done
       fi
       for suffix in '' -wal -shm; do # only what was moved comes back; a file still in place stays
@@ -91,23 +97,25 @@ sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=Experim
   console.log('copy ok', JSON.stringify(before));
 " 8<&-
 
-# Freeze: no requests, then no writer, both checked.
-stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
+# Freeze: no requests, then no writer, both checked. From the Caddy stop on, any exit reopens what was there (Sonnet L1).
 PHASE=frozen
+stopped caddy || { say "Caddy did not stop; nothing was changed"; exit 1; }
 [ -n "$PREHOLD" ] || printf 'restore of %s in progress (%s)\n' "$COPY" "$(date -u +%FT%TZ)" > "$HOLD"
 sync # the hold is on disk before anything moves, so a power loss reboots closed
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 stopped wind-api || { say "the API did not stop for certain; nothing was changed"; exit 1; }
+# Before anything moves: from now on the API never starts on a fresh empty file (Sonnet M2).
+touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected"
 PHASE=swapped # from the first move on, recovery puts the previous files back
 for suffix in '' -wal -shm; do # a stale journal must not replay over the restored file
   [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$KEPT$suffix"
 done
 NEWINO=$(stat -c %i "$WORK/wind.db") # the rename keeps the inode: recovery tells the replacement from the original by it
 mv "$WORK/wind.db" "$DB"; chown wind:wind "$DB"; chmod 600 "$DB"; sync
-touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected" # the API never starts on a fresh empty file instead
 systemctl start wind-api
 ready || { journalctl -u wind-api -n 20 --no-pager >&2; say "the API did not become ready on the restored database"; exit 1; }
 PHASE=live
+trap '' INT TERM HUP # the tail always completes (Sonnet L2)
 if [ "$OPEN" = --open ]; then rm -f -- "$HOLD"; systemctl start caddy; say "restored $COPY and reopened; what was there is at $KEPT"
 else printf 'restored %s at %s: re-apply later blocks, deletions, demotions and password resets, then remove this file and start Caddy\n' "$COPY" "$(date -u +%FT%TZ)" > "$HOLD"
   say "restored $COPY; what was there is at $KEPT. The ingress hold stays (also across reboots): reapply later blocks and deletions, then: sudo rm $HOLD && sudo systemctl start caddy"; fi
