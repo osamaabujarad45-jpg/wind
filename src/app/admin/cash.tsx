@@ -25,7 +25,8 @@ type Form = { id: number; kind: CashKind; amount: string; note: string; requestI
 // A notice line: plain text about the current action, or an entry a drain settled. The latter is named at render time from
 // the balance list, so a drain that finishes before the list loads still names its captain once it does (Haiku r20 N20-1),
 // and keeps the name and phone the list showed when it settled, for a captain who has since left the list (Haiku r21 N21-2).
-type Notice = string | { driverId: number; amountCents: number; text: string; name?: string; phone?: string };
+// The verdict is kept, not its sentence, so a language switch re-reads it (Opus R24-L3); one line per entry (R24-L1).
+type Notice = string | { driverId: number; amountCents: number; requestId: string; name?: string; phone?: string; error?: unknown; entry?: CashEntry };
 type PendingEntry = { id: number; amountCents: number; createdAt: number; userName: string; userPhone: string; userStatus: string; reference?: string | null };
 
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
@@ -53,8 +54,10 @@ export default function AdminCash() {
   // instruction stays until the screen closes. Pull-to-refresh clears the message channel (receipts and the closed-form note)
   // and never the failure channel.
   const drained = (shown: Notice[]) => shown.filter(notice => typeof notice !== 'string');
-  const fail = (notice: Notice) => { setFailure(shown => [...shown, notice]); list.current?.scrollTo({ y: 0 }); };
-  const note = (notice: Notice) => setMessage(shown => [...shown, notice]);
+  // An entry settled again (a marked record met by the next entry) replaces its own earlier line, never doubles it (Opus R24-L1).
+  const add = (notice: Notice) => (shown: Notice[]) => [...shown.filter(line => typeof line === 'string' || typeof notice === 'string' || line.requestId !== notice.requestId), notice];
+  const fail = (notice: Notice) => { setFailure(add(notice)); list.current?.scrollTo({ y: 0 }); };
+  const note = (notice: Notice) => setMessage(add(notice));
   // The screen's direction leads and the name is isolated, as on the handover rows (A53 walk; Haiku r20 N20-2).
   const lines = (notices: Notice[]) => notices.map(notice => {
     if (typeof notice === 'string') return notice;
@@ -62,7 +65,7 @@ export default function AdminCash() {
     // account number, so every line names whose balance to check (Sol R22-M1, R22-M2).
     const row = data?.find(candidate => candidate.driverId === notice.driverId) ?? (notice.name && notice.phone ? notice as { name: string; phone: string } : undefined);
     const who = row ? `${isolate(row.name)} · ${ltr(row.phone)}` : `#${notice.driverId}`;
-    return `${rtl ? '\u200f' : '\u200e'}${who} · ${money(notice.amountCents / 100)}: ${notice.text}`;
+    return `${rtl ? '\u200f' : '\u200e'}${who} · ${money(notice.amountCents / 100)}: ${notice.entry ? receiptText(notice.entry) : err(notice.error)}`;
   }).join('\n');
   // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
   const cents = minorFromText;
@@ -84,9 +87,9 @@ export default function AdminCash() {
   // An entry settled by a drain names its captain and amount: it may not be the one the cashier just asked about (Sol R21-M1).
   const rows = useRef(data);
   useEffect(() => { rows.current = data; }, [data]);
-  const about = (command: CashCommand, text: string): Notice => {
+  const about = (command: CashCommand, verdict: { entry: CashEntry } | { error: unknown }): Notice => {
     const row = rows.current?.find(candidate => candidate.driverId === command.driverId);
-    return { driverId: command.driverId, amountCents: command.amountCents, text, ...(row && { name: row.name, phone: row.phone }) };
+    return { driverId: command.driverId, amountCents: command.amountCents, requestId: command.requestId, ...verdict, ...(row && { name: row.name, phone: row.phone }) };
   };
   // After a restart the saved form comes back locked until this admin's command receipt or a same-id resend settles it.
   // The installed build's slot first (its pending command is settled by its own receipt), then this build's. One locked
@@ -116,10 +119,10 @@ export default function AdminCash() {
         if (generation.current === run && outcome.stop) stopEntries();
         if (!live.current || outcome.state === 'empty') continue;
         // A recorded receipt sits next to any instruction an earlier slot left (check the balance, a conflict): it never clears it (Sol R20-M2).
-        if (outcome.state === 'recorded') { note(about(outcome.command, receiptText(outcome.entry))); reload(); reloadPending(); continue; }
+        if (outcome.state === 'recorded') { note(about(outcome.command, { entry: outcome.entry })); reload(); reloadPending(); continue; }
         // The marker of a refusal just shown keeps that refusal's own reason on screen (Sol R17-L3).
         if (outcome.state === 'refused' && outcome.command.requestId === quiet) continue;
-        if (outcome.state === 'refused') { fail(about(outcome.command, err(outcome.error))); continue; } // its own reason, next to any storage banner
+        if (outcome.state === 'refused') { fail(about(outcome.command, { error: outcome.error })); continue; } // its own reason, next to any storage banner
         const { command } = outcome;
         // An uncertain form already open for another entry is never replaced: its own Retry settles it first (Haiku r18 N-A).
         setOpen(o => o?.uncertain && o.requestId !== command.requestId ? o
@@ -170,8 +173,10 @@ export default function AdminCash() {
         setOpen(o => formAfter(o, outcome));
       }
       if (!alive()) return; // another admin signed in meanwhile: nothing else of this send belongs on their screen
-      if (outcome.state === 'recorded') { haptic.success(); recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(err(outcome.error));
+      // A restored entry's check is about a captain the cashier did not just type in: its line names the captain and stays like
+      // a drained one (Opus R24-L5). A fresh form's verdict is about the form in hand.
+      if (outcome.state === 'recorded') { haptic.success(); if (open.origin) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
+      else if (outcome.state !== 'empty') fail(open.origin ? about(outcome.command, { error: outcome.error }) : err(outcome.error));
       reload(); reloadPending();
       // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
       // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled
@@ -211,7 +216,8 @@ export default function AdminCash() {
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     {storageFailed && <ErrorText>{lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed}</ErrorText>}
-    <ErrorText>{lines(failure) || (error && err(error))}</ErrorText>
+    {/* the balance list's own error shows beside any kept instruction, never hidden by it (Opus R24-L2) */}
+    <ErrorText>{[lines(failure), error && err(error)].filter(Boolean).join('\n')}</ErrorText>
     {message.length > 0 && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{lines(message)}</Txt></View>}
     {/* A saved entry for a captain no longer on the list (an account deleted meanwhile) still needs its Retry: without it
         every new entry stays blocked (Sol R11-H1). The same-id resend settles it: replay, or a refusal that closes it. */}

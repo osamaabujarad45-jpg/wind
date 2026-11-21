@@ -386,7 +386,13 @@ assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 assert.match(screen, /setOpen\(null\); note\(c\.cashSettledFirst\);/);
 // Sol R21-M1/M2, Haiku r19 N19-1/N19-2: notices are added within one action, drained entries name their captain, and every
 // settled uncertain form drains the other slot. The behaviour is exercised in tests/admin-review.test.mjs.
-assert.match(screen, /const fail = \(notice: Notice\) => \{ setFailure\(shown => \[\.\.\.shown, notice\]\);/);
+assert.match(screen, /const fail = \(notice: Notice\) => \{ setFailure\(add\(notice\)\);/);
+// Opus R24: one line per entry (L1), the list error beside kept lines (L2), verdicts re-read in the current language (L3),
+// a restored entry's check named and kept (L5).
+assert.match(screen, /line\.requestId !== notice\.requestId\), notice\]/);
+assert.match(screen, /\[lines\(failure\), error && err\(error\)\]\.filter\(Boolean\)/);
+assert.match(screen, /notice\.entry \? receiptText\(notice\.entry\) : err\(notice\.error\)/);
+assert.match(screen, /fail\(open\.origin \? about\(outcome\.command, \{ error: outcome\.error \}\) : err\(outcome\.error\)\)/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
 // Haiku r20 N20-4 / r21 N21-6: a resolution adds its notice, and no handover is resolved while a recovery may add one.
 assert.match(screen, /note\(c\.cashResolved\);/);
