@@ -272,9 +272,70 @@ try {
   // Pre-release recovery wrote ELIGIBILITY_CUSTODY_RECOVERY without a CUSTODY_TAKEN event.
   await ledgerDb.atomic({ purpose: 'test' }, () => ledgerDb.run("DELETE FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", codeAfterRecovery.id));
   const recoveryCode = (await call(`/orders/${codeAfterRecovery.id}`, { token: customer.token })).returnCode;
-  await advance(driver.token, { ...codeAfterRecovery, status: 'returning' }, { code: recoveryCode });
+  // G-PG: support holds the goods after a legacy recovery too, so the captain's code no longer closes the order; support's office
+  // intake does, as the only carrier it accepts, and pays the trip so far once. Both screens say support has the goods.
+  for (const viewer of [admin, driver]) assert.equal((await call(`/orders/${codeAfterRecovery.id}`, { token: viewer.token })).supportHasGoods, true);
+  assert.equal((await call(`/orders/${codeAfterRecovery.id}/advance`, { token: driver.token,
+    body: { requestId: randomUUID(), expectedStatus: 'returning', code: recoveryCode }, expect: 409 })).error, 'cannot_advance');
+  assert.equal((await call(`/admin/orders/${codeAfterRecovery.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Wrong carrier' }, expect: 409 })).error, 'cannot_resolve');
+  await call(`/admin/orders/${codeAfterRecovery.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it in' } });
   assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", codeAfterRecovery.id)).amount_cents,
-    -Math.round(codeAfterRecovery.price * 100), 'a code closure also recognizes custody transferred by a legacy release');
+    -Math.round(codeAfterRecovery.price * 100), 'a legacy recovery is still recognized: the trip so far');
+
+  // G-PG: eligibility office intake by support on a return that had no custody record yet (admin resolve 'return'): it records
+  // custody for this assignment and pays the trip so far, with no return leg, once.
+  const plainReturn = await deliver(false);
+  await call(`/orders/${plainReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${plainReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  const eligibilityIntake = async (carrier, expect) => call(`/admin/eligibility/orders/${plainReturn.id}/recovery`, { token: admin.token, ...(expect && { expect }),
+    body: { action: 'confirm_return', carrier, expectedVersion: (await ledgerDb.one('SELECT version FROM orders WHERE id = ?', plainReturn.id)).version,
+      reason: 'Support brought it to the office', evidenceRef: 'synthetic:office' } });
+  await eligibilityIntake('support');
+  const custodyRows = await ledgerDb.all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", plainReturn.id);
+  assert.equal(custodyRows.length, 1);
+  const plainRow = await ledgerDb.one('SELECT status, assignment_epoch, driver_id FROM orders WHERE id = ?', plainReturn.id);
+  assert.deepEqual([JSON.parse(custodyRows[0].detail).assignmentEpoch, JSON.parse(custodyRows[0].detail).driverId, plainRow.status],
+    [plainRow.assignment_epoch, plainRow.driver_id, 'returned']);
+  assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", plainReturn.id)).amount_cents,
+    -Math.round(plainReturn.price * 100), 'one trip, no return leg');
+  assert.equal((await eligibilityIntake('captain', 409)).error, 'custody_required'); // closed: nothing more to intake
+
+  // G-PG barrier (Sonnet L6, Haiku M2 on #102): a takeover holds the order row and commits CUSTODY_TAKEN while the captain's
+  // return code is in flight. The captain's advance must wait on the row and then see the custody, not close the order.
+  const takenRace = await deliver(false);
+  await call(`/orders/${takenRace.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${takenRace.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  const takenRaceCode = (await call(`/orders/${takenRace.id}`, { token: customer.token })).returnCode;
+  ledgerDb.pool.options.lock_timeout = 5000; // intentional barrier: longer than production's fast-fail wait
+  await ledgerDb.pool.query("SET lock_timeout='5s'");
+  const takeover = await ledgerDb.pool.connect();
+  let takenRaceAdvance;
+  try {
+    await takeover.query("SET lock_timeout='5s'");
+    await takeover.query('BEGIN');
+    const row = (await takeover.query('SELECT assignment_epoch, driver_id FROM orders WHERE id = $1 FOR UPDATE', [takenRace.id])).rows[0];
+    await takeover.query("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES ($1, $2, 'CUSTODY_TAKEN', $3, $4)",
+      [admin.user.id, takenRace.id, JSON.stringify({ assignmentEpoch: Number(row.assignment_epoch), driverId: Number(row.driver_id), reason: 'Barrier takeover' }), Date.now()]);
+    takenRaceAdvance = fetch(`${base}/orders/${takenRace.id}/advance`, { method: 'POST', headers: { Authorization: `Bearer ${driver.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: randomUUID(), expectedStatus: 'returning', code: takenRaceCode }) });
+    const deadline = Date.now() + 4000;
+    for (;;) { // the advance is waiting on the takeover's row lock
+      const { n } = await ledgerDb.one(`SELECT COUNT(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND ? = ANY(pg_blocking_pids(pid))`, takeover.processID);
+      if (Number(n) >= 1) break;
+      assert.ok(Date.now() < deadline, 'the captain advance reached the order row lock');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    await takeover.query('COMMIT');
+  } catch (error) { await takeover.query('ROLLBACK').catch(() => {}); throw error; } finally {
+    takeover.release();
+    ledgerDb.pool.options.lock_timeout = 500; // production's wait again, whatever happened above
+  }
+  const takenRaceReply = await takenRaceAdvance;
+  assert.deepEqual([takenRaceReply.status, (await takenRaceReply.json()).error], [409, 'cannot_advance'], 'the takeover that committed first wins');
+  assert.equal((await ledgerDb.one('SELECT status FROM orders WHERE id = ?', takenRace.id)).status, 'returning');
+  await call(`/admin/orders/${takenRace.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it in' } });
+  await ledgerDb.pool.query("SET lock_timeout='500ms'");
 
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);

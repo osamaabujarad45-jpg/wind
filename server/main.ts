@@ -365,7 +365,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
     // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
     ...((viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
-      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN')) }),
+      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)) }), // legacy: PostgreSQL only
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
@@ -2852,7 +2852,9 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
 });
 
 async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
-  const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
+  // PostgreSQL: lock the row first, so a support takeover or custody recovery committing meanwhile is seen by the custody check
+  // below instead of racing it (SQLite's BEGIN IMMEDIATE already serialises both; Sonnet L6 on PR #101, G-PG).
+  const r = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
@@ -2865,7 +2867,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   if (next === 'completed' || next === 'returned') {
     // Support holds the goods once it took them from this assignment's captain, or once that captain was blocked holding them: the
     // captain's old return code no longer closes the order as a sender handback (Sol full review 21 Nov, item 3).
-    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN')
+    // A recovery by an eligibility build from before CUSTODY_TAKEN counts too (PostgreSQL only; Haiku M4 / Sol money 3 on PR #101).
+    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)
       || (await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", r.id)).some(event => custodyBlockFrom(r, event) !== null)))
       fail(409, 'cannot_advance');
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
@@ -2980,7 +2983,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
-    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN'));
+    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, order));
     // Once support holds the goods, neither the captain nor a staff pickup after the captain's return leg brought them in.
     if (custodyTaken && (carrier === 'captain' || carrier === 'staff')) fail(409, 'cannot_resolve');
     const recordCustody = async () => {
@@ -3820,7 +3823,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
       carrying = (await all(`SELECT id, status, service, customer_id, driver_id, price, discount, recommended_price, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
       // Orders whose goods support already took (CUSTODY_TAKEN) strand nothing: they need no recovery choice (Sol recheck 3).
-      for (const o of carrying) o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN'));
+      for (const o of carrying) o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o));
       if (carrying.some(o => !o.supportHolds) && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
@@ -3989,9 +3992,9 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     // this route to clear a block, so without this check a blocked driver holding parcels came
     // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
     if (target.role === 'driver' && target.status === 'blocked') {
-      const carrying = await all(`SELECT id, status, driver_id, assignment_epoch FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+      const carrying = await all(`SELECT id, status, driver_id, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
       const stranded = [];
-      for (const o of carrying) if (!(o.status === 'returning' && await assignmentEvidence(o, 'CUSTODY_TAKEN'))) stranded.push(o);
+      for (const o of carrying) if (!(o.status === 'returning' && (await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o)))) stranded.push(o);
       if (stranded.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));

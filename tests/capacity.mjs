@@ -36,11 +36,13 @@ try {
   const newWork=await f.book();await f.assess(newWork,tiny);
   assert.equal((await call(`/jobs/${newWork.id}/accept`,{token:driver.token,body:{},expect:409})).error,'driver_ineligible');
   assert.equal((await db.one('SELECT status FROM orders WHERE id=?',winner.id)).status,'in_transit');
-  const recover=async(action)=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,...(action==='confirm_return'&&{carrier:'captain'}),expectedVersion:version});};
+  const recover=async(action,carrier='support')=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,...(action==='confirm_return'&&{carrier}),expectedVersion:version});};
   await recover('hold');assert.equal((await db.one('SELECT failures FROM proof_attempts WHERE order_id=?',winner.id)).failures,2);
   await recover('return');const returning=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
   assert.equal(returning.driver_id,snapshot.driver_id);assert.equal(returning.price,snapshot.price);assert.ok(returning.return_code);
   assert.equal((await call(`/orders/${winner.id}`,{token:f.customer.token})).returnCode,returning.return_code);
+  // Support took the goods in this recovery's return: neither the captain nor staff can be named as the office carrier (G-PG).
+  for(const wrong of ['captain','staff']){const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;assert.equal((await f.post(`/orders/${winner.id}/recovery`,{action:'confirm_return',carrier:wrong,expectedVersion:version},409)).error,'cannot_resolve');}
   await recover('confirm_return');const returned=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
   assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(Number(returned.commission),0,'a recovered return owes no commission (SRS DRV-17)');
   assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
