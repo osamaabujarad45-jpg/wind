@@ -216,6 +216,16 @@ try {
   await shopSweep();
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
   const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
+  const staleCancel = { reason: 'handover_exception_unresolved', note: 'Synthetic stale decision' };
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: staleCancel }, 400, 'invalid_input');
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, exceptionAt: stuck.shop.handoverExceptionAt - 1 } }, 409, 'exception_changed');
+  if (persistence.backend === 'postgres') {
+    const duty = role => persistence.atomic({ purpose: 'test' }, () => persistence.run('UPDATE users SET staff_role = ? WHERE id = ?', role, admin.user.id));
+    await duty('finance');
+    try {
+      await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, exceptionAt: stuck.shop.handoverExceptionAt } }, 403, 'forbidden');
+    } finally { await duty(null); }
+  }
   // A removal binds to the exception episode support saw, with a reason (Sol R2-M3).
   await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt - 1, note: 'Synthetic stale decision' } }, 409, 'exception_changed');
   await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt } }, 400, 'invalid_input');
@@ -280,15 +290,18 @@ try {
 
   // ---- DLV-13 removal past the minutes: above the minimum the order goes on, a retry replays, below it cancels (Sol R2-H6) ----
   const second = [{ itemId: labneh.id, qtyMilli: 1000, policy: 'remove' }, { itemId: cheese.id, qtyMilli: 1000, policy: 'remove' }, { itemId: bread.id, qtyMilli: 2000, policy: 'remove' }];
-  let o2 = await call('/orders', { token: customer.token, body: { ...placeBody, lines: second, expectedGoodsAgorot: 2000 + 2500 + 1200, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 } });
-  await call(`/merchant/orders/${o2.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
-  o2 = await call(`/merchant/orders/${o2.id}/preparing`, { token: owner.token, body: {} });
+  async function stuckAtHandover() {
+    const placed = await call('/orders', { token: customer.token, body: { ...placeBody, lines: second, expectedGoodsAgorot: 2000 + 2500 + 1200, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 } });
+    await call(`/merchant/orders/${placed.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
+    await call(`/merchant/orders/${placed.id}/preparing`, { token: owner.token, body: {} });
+    await call(`/merchant/orders/${placed.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+    await call(`/jobs/${placed.id}/accept`, { token: captain.token, body: {} });
+    await call(`/orders/${placed.id}/advance`, { token: captain.token, body: { expectedStatus: 'assigned', requestId: randomUUID() } });
+    return call(`/orders/${placed.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
+  }
+  let o2 = await stuckAtHandover();
   const line2 = id => o2.shop.lines.find(l => l.itemId === id && !l.removed).id;
   const cheese2 = line2(cheese.id), labneh2 = line2(labneh.id);
-  await call(`/merchant/orders/${o2.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
-  await call(`/jobs/${o2.id}/accept`, { token: captain.token, body: {} });
-  await call(`/orders/${o2.id}/advance`, { token: captain.token, body: { expectedStatus: 'assigned', requestId: randomUUID() } });
-  await call(`/orders/${o2.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
   const realNow2 = Date.now;
   Date.now = () => realNow2() + 11 * 60_000;
   try {
@@ -303,6 +316,17 @@ try {
     o2 = await remove(labneh2);
     assert.equal(o2.status, 'cancelled', 'below the minimum the removal cancels (DLV-06)');
     assert.equal(o2.shop.cancelReason, 'below_minimum');
+  } finally { Date.now = realNow2; }
+
+  const toCancel = await stuckAtHandover();
+  Date.now = () => realNow2() + 11 * 60_000;
+  try {
+    const episode = (await call(`/orders/${toCancel.id}`, { token: admin.token })).shop.handoverExceptionAt;
+    const cancelled = await call(`/admin/orders/${toCancel.id}/shop/cancel`, { token: admin.token,
+      body: { reason: 'handover_exception_unresolved', exceptionAt: episode, note: 'Synthetic handover could not be resolved' } });
+    assert.equal(cancelled.shop.cancelReason, 'handover_exception_unresolved');
+    const event = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_CANCELLED'", toCancel.id);
+    assert.equal(JSON.parse(event.detail).exceptionAt, episode);
   } finally { Date.now = realNow2; }
 
   console.log('Shop flow: place, edit, accept, weighed and substituted lines with consent, ceiling, packing, pickup code lockout and reset, handover exception, sealed delivery with door cash, money rows, captain cash, payout after handover, ratings and order-again passed');

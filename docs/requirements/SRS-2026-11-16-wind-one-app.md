@@ -573,10 +573,10 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 
 | Gate | Blocks | What is needed |
 |---|---|---|
-| G-RIDE | §5 | Passenger-transport permission, insurance, captain supply, dispatch review |
+| G-RIDE | §5 | Passenger-transport permission, insurance, captain supply, dispatch review, and validation of the trip-so-far estimate used in courier block reviews |
 | G-FREIGHT | Freight in §6 | Vehicle supply, load and damage policy |
 | G-SHOP | §7, MER | **Decided D-2 (go):** one-town pilot with 3–5 shops. Still needed: signed merchants and their product lists, a food-handling policy, and the DLV-19 policy before any regulated category (pharmacy OTC is excluded until then) |
-| G-PG | NFR-06, ride lifecycle, dispatch, presence, ledger, COD | SQLite → PostgreSQL decision and migration. Before cutover (from PR #97, production runs SQLite with one writer): take the captain row before the cash entry in captain pay (deferred-FK cycle with a captain confirmation), and before run or policy locks in shipping completion and eligibility recovery (cycles with a measured accept); add barrier tests on test connections with lock timeouts longer than the barrier, including the captain-versus-office cash decision race. Covers the staging path too. |
+| G-PG | NFR-06, ride lifecycle, dispatch, presence, ledger, COD | SQLite → PostgreSQL decision and migration. Before cutover (from PR #97, production runs SQLite with one writer): align captain, vehicle, run and policy lock order across measured assignment, approach and eligibility edits, presence and dispatch offer issuance, shipping completion, custody recovery and cash settlement. Cover the deferred-FK captain-pay cycle, measured-accept races and captain-versus-office cash decision with barrier tests on isolated connections with lock timeouts longer than the barrier. Covers the staging path too. DRV-18 needs validated origin evidence on presence-enabled shipping assignments. The current idle-location notice limits retention to the latest fix, so collecting pickup-pay evidence at acceptance needs a reviewed purpose and retention rule. |
 | G-PAY | PAY-06 | PMA-licensed provider contract |
 | G-COD | SHIP-12, SHIP-18, DLV-15 | **Decided D-1 (yes):** Wind collects goods cash for shops and senders, under the ADM-12 ceiling; remittance per MER-07. The code part still waits on G-PG |
 | G-SMS / G-EMAIL | ACC-02/03 | SMS provider and sender id; email sending domain |

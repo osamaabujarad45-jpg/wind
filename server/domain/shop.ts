@@ -424,12 +424,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }));
 
   /** Cancels with one typed reason (§2.1) and tells everyone on the order. Ledger effects follow DLV-23 in `postCancel`. */
-  async function cancelWith(r: Row, s: Row, reason: ShopCancelReason, actor: number, note = '') {
+  async function cancelWith(r: Row, s: Row, reason: ShopCancelReason, actor: number, note = '', exceptionAt?: number) {
     const now = Date.now();
     if (!(await db.run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status = ?", now, r.id, r.status)).changes) fail(409, 'order_changed');
     await db.run('UPDATE shop_orders SET cancel_reason = ? WHERE order_id = ?', reason, r.id);
     await db.run("UPDATE shop_changes SET status = 'expired', decided_at = ? WHERE order_id = ? AND status = 'pending'", now, r.id);
-    await audit(actor, r.id, 'SHOP_CANCELLED', { reason, note });
+    await audit(actor, r.id, 'SHOP_CANCELLED', { reason, note, exceptionAt });
     await postCancel(r, s, reason, actor);
     const owner = (await db.one('SELECT owner_user_id FROM merchants WHERE id = ?', s.merchant_id))!.owner_user_id;
     await push([r.customer_id, r.driver_id ?? null], 'cancelled', r.id);
@@ -862,7 +862,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     void actor;
   }
   /** After a completed or returned shop order commits its status: the money rows (DLV-15, DLV-25, DRV-17). */
-  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}) {
+  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}, deliveredToOffice = false) {
     if (r.service !== 'shop') return;
     if (next === 'completed') await recordSeals(r, body, 'deliver', actor);
     const s = (await shopRow(r.id))!;
@@ -901,9 +901,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
     const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
       && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id);
-    const pay = (recovered ? 1 : 2) * Number(s.delivery_fee_agorot);
+    const pay = (recovered ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
-      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, recovered ? 'Trip so far, support recovered the goods' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
+      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay,
+        recovered ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }
@@ -1013,16 +1014,22 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (!adminShopCancels.includes(reason)) fail(400, 'invalid_input');
     const note = text(body.note, 500);
     if (note.length < 5) fail(400, 'invalid_input');
+    const handover = reason === 'handover_exception_unresolved';
+    if (handover) needStaff(await staffActor(db, user as never), fail, 'support', 'dispatcher');
     if (r.status === 'cancelled') return getOrder(r.id, user);
     if (s.merchant_state === 'handed_over' || !['requested', 'searching', 'assigned', 'at_pickup'].includes(r.status)) fail(409, 'use_hold'); // after collection it is a hold, never a cancel
     const state = s.merchant_state as MerchantState | null;
     const allowed = reason === 'customer_via_support_accepted' ? state === 'accepted'
       : reason === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(state ?? '') && ['requested', 'searching'].includes(r.status)
-      : reason === 'handover_exception_unresolved' ? await handoverOverdue(r.id)
+      : handover ? await handoverOverdue(r.id)
       : reason === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(state ?? '')
       : true; // operational: safety, legal hold or platform outage, before collection
     if (!allowed) fail(409, 'cancel_refused');
-    await cancelWith(r, s, reason, user.id, note);
+    if (handover) {
+      if (!Number.isSafeInteger(body.exceptionAt)) fail(400, 'invalid_input');
+      if (await openExceptionAt(r.id) !== body.exceptionAt) fail(409, 'exception_changed');
+    }
+    await cancelWith(r, s, reason, user.id, note, handover ? body.exceptionAt : undefined);
     return getOrder(r.id, user);
   }));
   // DLV-22: support records who answers for a failed or disputed order once; credits and PAY-09 wait for it.

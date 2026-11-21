@@ -225,7 +225,7 @@ export const sealsReady = (order: Order, value: Record<number, boolean>) => (ord
 export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
   const { c, language, err } = useCopy();
   const s = order.shop!;
-  const [reason, setReason] = useState<string>('operational');
+  const [cancel, setCancel] = useState<{ orderId: number; reason: string; exceptionAt?: number | null }>();
   const [note, setNote] = useState('');
   const [fault, setFault] = useState<'merchant' | 'wind' | 'none'>('wind');
   const [line, setLine] = useState<string>(String(s.lines.find(l => !l.removed)?.id ?? ''));
@@ -251,16 +251,21 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
     : true);
   const before = ['requested', 'searching', 'assigned', 'at_pickup'].includes(order.status) && s.state !== 'handed_over';
   const after = ['returned', 'cancelled', 'completed', 'on_hold'].includes(order.status);
+  const cancelReason = cancel?.orderId === order.id && (cancel.reason !== 'handover_exception_unresolved'
+    || cancel.exceptionAt === s.handoverExceptionAt) ? cancels.find(k => k === cancel.reason) : undefined;
   return <Card>
     <Section title={c.adminShopActions} />
     <Txt variant="caption">{`${c.shopPickupCode}: ${s.pickupCode ?? '—'}`}</Txt>
     <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
     {before && <>
       <Txt variant="label">{c.adminShopCancelWhy}</Txt>
-      <Choices label={c.adminShopCancelWhy} value={cancels.some(k => k === reason) ? reason : 'operational'} onChange={setReason}
+      <Choices label={c.adminShopCancelWhy} value={cancelReason ?? ''} disabled={!!busy}
+        onChange={reason => setCancel({ orderId: order.id, reason, exceptionAt: s.handoverExceptionAt })}
         items={cancels.map(k => ({ key: k, label: c[`adminCancel_${k}`] }))} />
-      <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!noteOk} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'cancel'}
-        onPress={() => act('cancel', `/admin/orders/${order.id}/shop/cancel`, { reason: cancels.some(k => k === reason) ? reason : 'operational', note: note.trim() })} />
+      <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!!busy || !noteOk || !cancelReason}
+        reason={busy ? c.wait_busy : !cancelReason ? c.adminShopCancelWhy : c.adminNoteNeeded} loading={busy === 'cancel'}
+        onPress={() => cancelReason && act('cancel', `/admin/orders/${order.id}/shop/cancel`,
+          { reason: cancelReason, note: note.trim(), exceptionAt: cancelReason === 'handover_exception_unresolved' ? cancel?.exceptionAt : undefined })} />
       <Button title={c.adminShopResetPickup} variant="outline" size="sm" disabled={!noteOk} loading={busy === 'reset'}
         onPress={() => act('reset', `/admin/orders/${order.id}/shop/reset-pickup`, { reason: note.trim() })} />
       {/* DLV-13: past the shop's minutes, support removes the line at fault (DLV-06 re-runs) or cancels above. */}

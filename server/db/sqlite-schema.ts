@@ -306,11 +306,14 @@ try {
 for (const column of ['resolved_by INTEGER', "resolution_note TEXT"])
   if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
 // Match the PostgreSQL assignment epoch across releases and reassignments.
-if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'assignment_epoch')) {
-  db.exec(`ALTER TABLE orders ADD COLUMN assignment_epoch INTEGER NOT NULL DEFAULT 0;
-    UPDATE orders SET assignment_epoch = 1 WHERE driver_id IS NOT NULL;`);
-}
-db.exec(`CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_insert AFTER INSERT ON orders
+db.exec('BEGIN IMMEDIATE');
+try {
+  if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'assignment_epoch')) {
+    db.exec('ALTER TABLE orders ADD COLUMN assignment_epoch INTEGER NOT NULL DEFAULT 0');
+  }
+  // Also recover an interrupted upgrade from a build that added the column before backfilling it.
+  db.exec(`UPDATE orders SET assignment_epoch = 1 WHERE driver_id IS NOT NULL AND assignment_epoch = 0;
+CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_insert AFTER INSERT ON orders
   WHEN NEW.driver_id IS NOT NULL AND NEW.assignment_epoch = 0
   BEGIN UPDATE orders SET assignment_epoch = 1 WHERE id = NEW.id; END;
 CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_update AFTER UPDATE OF driver_id, status ON orders
@@ -318,6 +321,8 @@ CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_update AFTER UPDATE OF driv
     (OLD.status NOT IN ('assigned','at_pickup','in_transit','on_hold','returning')
       AND NEW.status IN ('assigned','at_pickup','in_transit','on_hold','returning'))
   BEGIN UPDATE orders SET assignment_epoch = OLD.assignment_epoch + 1 WHERE id = NEW.id; END;`);
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
 
 // DRV-17/18: legacy cash entries have no typed source.
 for (const column of [

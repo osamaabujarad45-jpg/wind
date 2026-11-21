@@ -25,7 +25,7 @@ for (const language of ['ar', 'en']) {
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
 // `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id (which may
 // return a promise, to hold the lookup open).
-function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
+function screen(file, language, { data = {}, errors = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
   let loseNext = false, forbidNext = false, holding = false, releaseHeld = null;
@@ -81,7 +81,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': new Proxy({}, { get: (_, name) => String(name) }),
-    '../../api': { api, ApiError, apiSessionRevision: () => 0, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : path in data ? data[path] : [], error: undefined, reload: async () => {} }) },
+    '../../api': { api, ApiError, apiSessionRevision: () => 0, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : path in data ? data[path] : [], error: errors[path], reload: async () => {} }) },
     '../../model': model,
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
@@ -467,6 +467,14 @@ for (const language of ['ar', 'en']) {
   assert.ok(button(tree, c.cashAdjust).every(props => props.disabled), `${language}: no new entry while one is unconfirmed`);
   assert.ok(unknown.calls.every(call => call.path !== '/admin/cash/remittance'), `${language}: the lookup never records`);
   assert.equal(store.size, 1);
+
+  const withoutBalances = screen('cash', language, { data: { ...cashData, '/admin/cash': undefined }, errors: { '/admin/cash': new Error('network') },
+    me: cashAdmin, effects: true, store: new Map(store) });
+  withoutBalances.render(); await flush();
+  assert.ok(shows(withoutBalances.render(), c.cashUncertain), `${language}: the balance error leaves the receipt visible`);
+  await tap(withoutBalances, c.cashRetrySame); await flush();
+  assert.deepEqual(withoutBalances.calls.find(call => call.path === '/admin/cash/remittance')?.body, sent,
+    `${language}: Retry sends the original receipt without the balances`);
 
   const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041', amountCents: sent.amountCents, note: sent.note ?? '' } }); // a receipt names what it holds
   known.render(); // mounting runs the recovery lookup

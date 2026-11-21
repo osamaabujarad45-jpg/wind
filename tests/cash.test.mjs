@@ -213,11 +213,13 @@ try {
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
   assert.equal((await call(`/orders/${supportReturn.id}`, { token: driver.token })).exceptionReason, 'access_blocked');
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
+  const officeReturn = { action: 'confirm_office_return', reason: 'Received at office' };
+  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn });
   assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn, expect: 409 });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2);
-  const officePay = 3 * Math.round(supportReturn.price * 100);
+  const officePay = 4 * Math.round(supportReturn.price * 100); // two attempts, return endpoint, then office
   assert.equal(cash.owedCents, 50 - returnPay - officePay);
   assert.deepEqual(tripEntries(cash, supportReturn).map(e => e.amountCents), [-officePay]);
   const earnings = await call('/driver/earnings', { token: driver.token });

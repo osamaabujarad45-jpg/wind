@@ -705,7 +705,7 @@ async function shippingDeliveryAttempts(order: Row) {
     return assignmentEpoch == null ? event.created_at >= (order.assigned_at ?? 0) : assignmentEpoch === order.assignment_epoch;
   }).length;
 }
-async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId: number) {
+async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId: number, deliveredToOffice = false) {
   if (!shippingOrder(o) || o.driver_id == null) return;
   const attempts = await shippingDeliveryAttempts(o);
   if (status === 'completed') {
@@ -721,7 +721,8 @@ async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId
   })) return;
   const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN');
   const trips = Math.max(1, attempts);
-  await captainPay(o.id, o.driver_id, (trips + (supportCollected ? 0 : 1)) * fareCents(o), 'trip_pay', actorId);
+  const returnLegs = supportCollected ? 0 : deliveredToOffice ? 2 : 1;
+  await captainPay(o.id, o.driver_id, (trips + returnLegs) * fareCents(o), 'trip_pay', actorId);
 }
 const pickupFixAge = 120_000;
 function pickupDistance(order: Row, fix: { latitude: number; longitude: number }) {
@@ -2933,18 +2934,21 @@ route('POST', '/api/orders/:id/exception', async ({ user, params, body }) => {
 route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) => {
   need(user, 'admin');
   const reason = text(body.reason, 500);
-  // confirm_return is the way out when the sender cannot give the code: support verifies the handback and records why.
-  const from = { reattempt: 'on_hold', return: 'on_hold', confirm_return: 'returning' }[String(body.action)];
-  const to = { reattempt: 'in_transit', return: 'returning', confirm_return: 'returned' }[String(body.action)] as PushKind;
+  // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
+  const action = String(body.action);
+  const deliveredToOffice = action === 'confirm_office_return';
+  const confirmsReturn = action === 'confirm_return' || deliveredToOffice;
+  const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
+  const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
-  if (body.action === 'confirm_return') needStaff(await staffActor(persistence, user), fail, 'support');
+  if (confirmsReturn) needStaff(await staffActor(persistence, user), fail, 'support');
   const id = Number(params[0]);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     const order = (await one(`SELECT id, customer_id, driver_id, status, service, exception_reason, price, assignment_epoch, assigned_at FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
     if (order.status !== from) fail(409, 'cannot_resolve');
     if (order.service === 'ride') fail(409, 'cannot_resolve'); // SRS §2.1: rides never hold or return
-    await shop.guardResolve(id, String(body.action));
+    await shop.guardResolve(id, confirmsReturn ? 'confirm_return' : action);
     if (body.action === 'reattempt' && (order.service === 'parcel' || order.service === 'freight') && exceptionReasons.includes(order.exception_reason)) {
       if (await orderDeliveryAttempts(id) >= 3) fail(409, 'reattempt_limit');
     }
@@ -2952,11 +2956,11 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
     if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
-    else if (body.action === 'confirm_return') {
+    else if (confirmsReturn) {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
-      await shop.afterFinish(order, 'returned', user.id);
-      await shippingTripPay(order, 'returned', user.id);
+      await shop.afterFinish(order, 'returned', user.id, {}, deliveredToOffice);
+      await shippingTripPay(order, 'returned', user.id, deliveredToOffice);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
@@ -2964,7 +2968,8 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
     }
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
-      user.id, id, JSON.stringify({ action: body.action, reason }), Date.now()));
+      user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason,
+        ...(deliveredToOffice && { handoff: 'office' }) }), Date.now()));
     await queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
     await queuePush([order.customer_id], to, id);
     (await persistence.exec('COMMIT'));

@@ -223,7 +223,7 @@ try {
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient asked to try again' } });
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const confirmReturn = { action: 'confirm_return', reason: 'Received at office' };
+  const confirmReturn = { action: 'confirm_office_return', reason: 'Received at office' };
   await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn, expect: 403 });
   await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
@@ -234,7 +234,7 @@ try {
   assert.equal(await ledgerDb.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${supportReturn.id}:commission`), undefined, 'and post no commission journal');
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.commissionCents, 735 * 2);
-  const officePay = 3 * Math.round(supportReturn.price * 100);
+  const officePay = 4 * Math.round(supportReturn.price * 100);
   assert.equal(cash.owedCents, -returnPay - officePay);
   assert.deepEqual(tripEntries(cash, supportReturn).map(e => e.amountCents), [-officePay]);
   const earnings = await call('/driver/earnings', { token: driver.token });
@@ -255,7 +255,7 @@ try {
   const { version } = await ledgerDb.one('SELECT version FROM orders WHERE id = ?', recovered.id);
   await call(`/admin/eligibility/orders/${recovered.id}/recovery`, { token: admin.token,
     body: { action: 'return', expectedVersion: version, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
-  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received from support' } });
+  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Received from support' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.deepEqual(tripEntries(cash, recovered).map(e => e.amountCents), [-Math.round(recovered.price * 100)]);
 

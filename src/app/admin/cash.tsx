@@ -235,9 +235,8 @@ export default function AdminCash() {
     {/* the balance list's own error shows beside any kept instruction, never hidden by it (Opus R24-L2) */}
     <ErrorText>{[lines(failure), error && err(error)].filter(Boolean).join('\n')}</ErrorText>
     {message.length > 0 && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{lines(message)}</Txt></View>}
-    {/* A saved entry for a captain no longer on the list (an account deleted meanwhile) still needs its Retry: without it
-        every new entry stays blocked (Sol R11-H1). The same-id resend settles it: replay, or a refusal that closes it. */}
-    {open?.uncertain && data && !data.some(row => row.driverId === open.id) && <Card style={{ marginBottom: 12 }}>
+    {/* The saved entry has its own Retry even when the balance feed is unavailable or omits this captain. */}
+    {open?.uncertain && !data?.some(row => row.driverId === open.id) && <Card style={{ marginBottom: 12 }}>
       <Txt variant="title">{fill(c.cashPendingElsewhere, { a: money(cents(open.amount) / 100) })}</Txt>
       {!!open.note && <Txt variant="caption">{open.note}</Txt>}
       <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : open.origin && ambiguousLegacy(open.origin) ? c.cashAmbiguousCheck : c.cashUncertain}</Txt>

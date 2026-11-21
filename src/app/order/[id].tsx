@@ -546,14 +546,18 @@ export default function OrderScreen() {
     </Card>}
 
     {isAdmin && order.status === 'returning' && <Card tone="clay">
-      <Txt variant="title">{c.confirmReturn}</Txt>
-      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.confirmReturnHint}</Txt>
+      <Txt variant="title">{c.confirmReturnTitle}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
-      <Button title={c.confirmReturn} variant="outline" icon="checkmark-done-outline" loading={busy === 'confirm_return'}
-        disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
-        onPress={() => confirm(c.confirmReturnHint, () => act('confirm_return', `/admin/orders/${order.id}/resolve`,
-          { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.confirmReturn, c.no)} />
+      <View style={{ gap: 8 }}>
+        {([
+          ['confirm_return', c.confirmReturn, c.confirmReturnHint],
+          ['confirm_office_return', c.custodyDecision_confirm_return, c.confirmOfficeReturnHint],
+        ] as const).map(([action, title, hint]) => <Button key={action} title={title} variant="outline" icon="checkmark-done-outline"
+          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
+          onPress={() => confirm(hint, () => act(action, `/admin/orders/${order.id}/resolve`,
+            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), title, c.no)} />)}
+      </View>
     </Card>}
 
     {isAdmin && (order.status === 'returning' || (order.status === 'in_transit' && order.service !== 'ride')) && <Card>
