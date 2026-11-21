@@ -216,6 +216,7 @@ try {
   // The office leg follows who carried the goods: a missing carrier is refused before anything changes.
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Received at office' }, expect: 400 });
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', carrier: 'captain', reason: 'Sender has it' }, expect: 400 });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'driver', reason: 'Received at office' }, expect: 400 });
   assert.equal((await call(`/orders/${supportReturn.id}`, { token: admin.token })).status, 'returning', 'a refused confirmation changes nothing');
   const officeReturn = { action: 'confirm_office_return', carrier: 'captain', reason: 'Received at office' };
   const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn });

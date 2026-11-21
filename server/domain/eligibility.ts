@@ -606,7 +606,7 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
       await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'EXCEPTION_RESOLVED',?,?)",
         user.id,id,JSON.stringify({action,reason,handoff:'office',carrier}),Date.now());
     }
-    await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
+    await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref,...(carrier&&{carrier})}),Date.now());
     await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id,carrier === 'captain'); return after;
   }));
 }

@@ -85,6 +85,7 @@ Production moved to a VM on a separate student subscription. The 15 November sec
       settling one saved entry each. A browser without them shows a notice and takes no cash entries.
     - Order: release the server first. A native 1.1.5 build sends typed payouts that the 16 November API would book as
       ordinary adjustments, so no 1.1.5 APK reaches a cashier before this server is live.
+  - **Return decisions during a rollback:** freeze return confirmations and office intake with cash writes. The previous API prices an office return without the carrier rule and cannot read the typed commands.
   - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
     protocol and would book a current tab's payout as an ordinary adjustment. Freeze cash writes and close every open Cash
     tab before stopping the service, keep them frozen while the previous API runs, and reopen them only after re-release.
@@ -105,9 +106,9 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     `confirm_office_return` with `carrier: captain` or `carrier: staff` and enters the holding details on the returned order.
     The extra office leg is paid only for `captain`, and not when support collected the goods or the captain was blocked
     holding them (a block review decides that pay). A verified handback at the return endpoint uses `confirm_sender_return`. For an overdue shop
-    handover, `cancel_handover_exception` carries the timestamp of the open exception. An older API refuses these commands.
+    handover, `cancel_handover_exception` carries the timestamp of the open exception. The 16 November API now in production refuses these commands. The eligibility custody recovery (PostgreSQL only) closes an office return with the same `carrier`.
   - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
-  - Shop delivery (off in this pilot) needs admin builds of 1.1.5 or later before it is switched on. A 1.1.4 admin cannot cancel an overdue handover exception, because the cancellation must now name the exception episode: the request is refused and nothing changes. A 1.1.4 support build's plain `confirm_return` keeps its one-return-leg price and is not office intake: goods kept at the office are confirmed with the web bundle's typed office action, because a plain confirmation cannot be shelved afterwards.
+  - Shop delivery (off in this pilot) needs admin builds of 1.1.5 or later before it is switched on. A 1.1.4 admin cannot cancel an overdue handover exception, because the cancellation must now name the exception episode: the request is refused and nothing changes. A 1.1.4 support build's plain `confirm_return` keeps its one-return-leg price and is not office intake: goods kept at the office are confirmed with the web bundle's typed office action, because a plain confirmation made from this release on cannot be shelved afterwards (before this release it could). Plain confirmations recorded before this release keep their office meaning. If a captain did carry goods closed with the plain command, finance records the missing office leg as a documented payout adjustment.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
   - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:
