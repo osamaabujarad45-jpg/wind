@@ -105,7 +105,7 @@ try {
     o = await advance(driver.token, o);
     await call(`/orders/${o.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'refused' } });
     await call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'fraud' } }); // one word, still support's own text
-    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action, reason: 'Received at office' } });
+    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action, ...(action === 'confirm_office_return' && { carrier: 'captain' }), reason: 'Received at office' } });
   }
   let kept = await backAtOffice();
   assert.equal(kept.status, 'returned');
@@ -142,7 +142,12 @@ try {
   assert.equal((await call('/admin/office', { token: admin.token })).items.length, 0);
 
   // Past the hold (non-perishable, 7 days) it may be donated, with the actor recorded.
-  kept = await backAtOffice('confirm_return'); // older clients had no separate office command
+  // A markerless confirm_return (installed 1.1.4 admin) is no longer office intake: it kept its one-leg sender price, so the
+  // goods are not shelved against it; office intake needs the typed command with its carrier (Kimi review of the Sol lead).
+  const markerless = await backAtOffice('confirm_return');
+  assert.equal((await call(`/admin/orders/${markerless.id}/office`, { token: admin.token })).canReceive, false);
+  await call(`/admin/orders/${markerless.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' }, expect: 409 });
+  kept = await backAtOffice();
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' } });
   db.prepare("UPDATE security_events SET created_at = created_at - ? WHERE order_id = ? AND action = 'OFFICE_RECEIVED'").run(8 * 24 * 3_600_000, kept.id);
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'donated', note: 'no' }, expect: 400 }); // donating says why

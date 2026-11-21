@@ -94,7 +94,7 @@ async function viaOffice(db: Persistence, orderId: number) {
   return !rows.some(r => r.action === 'RETURN_COMPLETED') && rows.some(r => {
     const detail = parse(r.detail);
     return detail.action === 'confirm_return' && (r.action === 'ELIGIBILITY_CUSTODY_RECOVERY'
-      || r.action === 'EXCEPTION_RESOLVED' && (detail.handoff === 'office' || detail.handoff === undefined));
+      || r.action === 'EXCEPTION_RESOLVED' && (detail.handoff === 'office' || detail.handoff === undefined)); // undefined: rows before 'unspecified'
   });
 }
 

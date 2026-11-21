@@ -349,7 +349,7 @@ try {
     seals: [{ no: 1, intact: true }] } });
   const resolveReturn = `/admin/orders/${officeId}/resolve`;
   await call(resolveReturn, { token: admin.token, body: { action: 'return', reason: 'Recipient absent' } });
-  await call(resolveReturn, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Shop closed, brought to office' } });
+  await call(resolveReturn, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Shop closed, brought to office' } });
   const trip = await one("SELECT amount_agorot FROM shop_ledger WHERE business_ref = ?", `shop-trip-${officeId}`);
   assert.equal(trip.amount_agorot, 3000, 'captain gets the delivery, return and office legs');
   const officePath = `/admin/orders/${officeId}/office`;
@@ -387,7 +387,7 @@ try {
   const reviewPath = `/admin/orders/${carriedId}/block-review`;
   await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
   const returned = await call(`/admin/orders/${carriedId}/resolve`, { token: admin.token,
-    body: { action: 'confirm_office_return', reason: 'Support delivered the recovered goods' } });
+    body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Support delivered the recovered goods' } });
   assert.equal(returned.blockReview.tripPayCents, 1000, 'the block opens a one-leg review on both databases');
   assert.equal(await one('SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = ?', carriedId, 'trip_pay'), undefined);
   // Older releases could leave only the audit and no review row.

@@ -553,12 +553,14 @@ export default function OrderScreen() {
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
         {([
-          ['confirm_sender_return', c.confirmReturn, c.confirmReturnHint],
-          ['confirm_office_return', c.custodyDecision_confirm_return, c.confirmOfficeReturnHint],
-        ] as const).map(([action, title, hint]) => <Button key={action} title={title} variant="outline" icon="checkmark-done-outline"
-          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
-          onPress={() => confirm(hint, () => act(action, `/admin/orders/${order.id}/resolve`,
-            { action, reason: decisionReason.trim() },
+          ['confirm_sender_return', undefined, c.confirmReturn, c.confirmReturnHint],
+          // Who brought the goods decides the captain's office leg: recorded by the button, never assumed.
+          ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
+          ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
+        ] as const).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon="checkmark-done-outline"
+          loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
+          onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
+            { action, ...(carrier && { carrier }), reason: decisionReason.trim() },
             () => setDecision({ id, reason: '' })), title, c.no)} />)}
       </View>
     </Card>}

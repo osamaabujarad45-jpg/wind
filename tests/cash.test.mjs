@@ -213,7 +213,10 @@ try {
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
   assert.equal((await call(`/orders/${supportReturn.id}`, { token: driver.token })).exceptionReason, 'access_blocked');
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const officeReturn = { action: 'confirm_office_return', reason: 'Received at office' };
+  // The office leg follows who carried the goods: a missing carrier is refused before anything changes.
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Received at office' }, expect: 400 });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', carrier: 'captain', reason: 'Sender has it' }, expect: 400 });
+  const officeReturn = { action: 'confirm_office_return', carrier: 'captain', reason: 'Received at office' };
   const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn });
   assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn, expect: 409 });
@@ -225,6 +228,15 @@ try {
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 4);
   assert.equal(earnings.all.tripPayCents, returnPay + officePay);
+  // Staff, not the captain, brought an ordinary return to the office: the captain is paid the trip and the return leg only.
+  let staffReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  staffReturn = await call(`/jobs/${staffReturn.id}/accept`, { token: driver.token, body: {} });
+  staffReturn = await advance(driver.token, await advance(driver.token, staffReturn));
+  await call(`/orders/${staffReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Staff brought it to the office' } });
+  const staffPay = 2 * Math.round(staffReturn.price * 100); // one attempt and the return leg, no office leg
+  assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), staffReturn).map(e => e.amountCents), [-staffPay]);
 
   await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });

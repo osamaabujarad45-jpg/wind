@@ -2936,7 +2936,13 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const deliveredToOffice = action === 'confirm_office_return';
   const deliveredToSender = action === 'confirm_sender_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice || deliveredToSender;
-  const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : undefined;
+  // Who carried the goods to the office decides the captain's office leg; it is recorded, never assumed (Kimi, Haiku review of
+  // the Sol lead commits). A markerless confirm_return from this release on is neither office nor sender: it keeps its one-leg
+  // price, and office intake needs the typed command (historical rows without a handoff keep their old meaning).
+  const carrier = deliveredToOffice ? body.carrier : undefined;
+  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400, 'invalid_input');
+  const officeLeg = deliveredToOffice && carrier === 'captain';
+  const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
   const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
@@ -2958,8 +2964,8 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     else if (confirmsReturn) {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
-      await shop.afterFinish(order, 'returned', user.id, {}, deliveredToOffice);
-      await shippingTripPay(order, 'returned', user.id, deliveredToOffice);
+      await shop.afterFinish(order, 'returned', user.id, {}, officeLeg);
+      await shippingTripPay(order, 'returned', user.id, officeLeg);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
     }
     else {
@@ -2967,7 +2973,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
     }
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
-      user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason, handoff }), Date.now()));
+      user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason, handoff, ...(carrier && { carrier }) }), Date.now()));
     await queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
     await queuePush([order.customer_id], to, id);
     (await persistence.exec('COMMIT'));

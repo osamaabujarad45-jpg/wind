@@ -223,7 +223,7 @@ try {
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient asked to try again' } });
   await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const confirmReturn = { action: 'confirm_office_return', reason: 'Received at office' };
+  const confirmReturn = { action: 'confirm_office_return', carrier: 'captain', reason: 'Received at office' };
   await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn, expect: 403 });
   await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
@@ -255,7 +255,7 @@ try {
   const { version } = await ledgerDb.one('SELECT version FROM orders WHERE id = ?', recovered.id);
   await call(`/admin/eligibility/orders/${recovered.id}/recovery`, { token: admin.token,
     body: { action: 'return', expectedVersion: version, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
-  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Received from support' } });
+  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Received from support' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.deepEqual(tripEntries(cash, recovered).map(e => e.amountCents), [-Math.round(recovered.price * 100)]);
 

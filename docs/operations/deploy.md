@@ -102,11 +102,12 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     credit, capped at the booked fare. A support or finance decision grants or denies the credit. The office records
     disbursements with the Pay driver action after pending handovers are resolved.
   - Return and shop handover decisions use the web bundle served by this release. Support records an office handback with
-    `confirm_office_return` and enters the holding details on the returned order. The extra office leg is paid when the
-    captain carried the goods. A verified handback at the return endpoint uses `confirm_sender_return`. For an overdue shop
+    `confirm_office_return` with `carrier: captain` or `carrier: staff` and enters the holding details on the returned order.
+    The extra office leg is paid only for `captain`, and not when support collected the goods or the captain was blocked
+    holding them (a block review decides that pay). A verified handback at the return endpoint uses `confirm_sender_return`. For an overdue shop
     handover, `cancel_handover_exception` carries the timestamp of the open exception. An older API refuses these commands.
   - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
-  - Shop delivery (off in this pilot) needs admin builds of 1.1.5 or later before it is switched on. A 1.1.4 admin cannot cancel an overdue handover exception, because the cancellation must now name the exception episode: the request is refused and nothing changes. A 1.1.4 support build's plain `confirm_return` keeps its one-return-leg price.
+  - Shop delivery (off in this pilot) needs admin builds of 1.1.5 or later before it is switched on. A 1.1.4 admin cannot cancel an overdue handover exception, because the cancellation must now name the exception episode: the request is refused and nothing changes. A 1.1.4 support build's plain `confirm_return` keeps its one-return-leg price and is not office intake: goods kept at the office are confirmed with the web bundle's typed office action, because a plain confirmation cannot be shelved afterwards.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
   - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:
