@@ -42,7 +42,7 @@ export default function AdminCash() {
   // replays that entry instead of booking it twice; an edit makes it a new entry with a new id.
   const [open, setOpen] = useState<Form | null>(null);
   const [recovering, setRecovering] = useState(true); // no new entry until a saved one has been looked up
-  const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string } | null>(null);
+  const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string; who: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Notice[]>([]);
   const [failure, setFailure] = useState<Notice[]>([]);
@@ -220,11 +220,11 @@ export default function AdminCash() {
   const blocked = busy || recovering || !!open?.uncertain || storageFailed;
   const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.cashSettleFirst : c.wait_busy;
 
-  // A handover the driver answered while its card was open leaves the waiting list: Save then waits and says why, and the
-  // confirmation names whose handover and how much it decides (Haiku r23 F6).
-  const resolvingTarget = resolving ? pending?.find(entry => entry.id === resolving.id) : undefined;
-  const resolvingWho = resolvingTarget ? `${isolate(resolvingTarget.userName)} · ${money(resolvingTarget.amountCents / 100)}` : '';
-  return <Screen onRefresh={() => { setMessage([]); reloadPending(); return reload(); }} scrollRef={list}>
+  // The Mark card keeps the handover it was opened for (name, phone, amount, reference), captured at the press: the waiting list is
+  // bounded and polled, so a still-pending entry can drop out of it. The server's compare-and-set decides, and the confirmation
+  // names the decision and whose handover it is (Haiku r23 F6, Sol R26-L2).
+  const markWho = (entry: PendingEntry) => `${rtl ? '\u200f' : '\u200e'}${isolate(entry.userName)} · ${ltr(entry.userPhone)} · ${money(entry.amountCents / 100)}${entry.reference ? ` · ${ltr(entry.reference)}` : ''}`;
+  return <Screen onRefresh={() => { setMessage(drained); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
     {storageFailed && <ErrorText>{lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed}</ErrorText>}
@@ -283,15 +283,14 @@ export default function AdminCash() {
       {resolving && <Card>
         {/* Which decision, for whom and how much: a dispute and a confirmation must not look alike. */}
         <Txt variant="title">{resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}</Txt>
-        {(() => { const target = pending?.find(entry => entry.id === resolving.id);
-          // The screen's direction leads, the name is isolated: an Arabic name first would flip an English line (A53 walk).
-          return target && <Txt variant="caption" style={{ marginBottom: 8 }}>{`${rtl ? '\u200f' : '\u200e'}${isolate(target.userName)} · ${money(target.amountCents / 100)}${target.reference ? ` · ${ltr(target.reference)}` : ''}`}</Txt>; })()}
+        {/* captured at the Mark press; the screen's direction leads and the name is isolated (A53 walk) */}
+        <Txt variant="caption" style={{ marginBottom: 8 }}>{resolving.who}</Txt>
         <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
-          <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || !resolvingTarget || resolving.reason.trim().length < 5}
-            reason={busy ? c.wait_busy : !resolvingTarget ? c.err_already_decided : c.reason_min5}
-            onPress={() => confirm(`${c.cashResolveConfirm}\n${resolvingWho}`, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
+          <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
+            reason={busy ? c.wait_busy : c.reason_min5}
+            onPress={() => confirm(`${c.cashResolveConfirm}\n${resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}\n${resolving.who}`, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
           <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
         </Row>
       </Card>}
@@ -313,9 +312,9 @@ export default function AdminCash() {
             {/* Actions, not statuses: the entry is still waiting until one of these is saved. */}
             <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
               <Button title={c.cashMarkConfirmed} size="sm" variant="soft" disabled={busy || recovering} reason={c.wait_busy}
-                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '' }); }} />
+                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '', who: markWho(entry) }); }} />
               <Button title={c.cashMarkDisputed} size="sm" variant="outline" disabled={busy || recovering} reason={c.wait_busy}
-                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '' }); }} />
+                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '', who: markWho(entry) }); }} />
             </Row>
           </Card>
         </Appear>)}

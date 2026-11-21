@@ -90,20 +90,49 @@ try {
   // Sol R25-M3: the captain's versioned decision and the office resolution of one handover lock the captain row first on
   // both paths, so a race ends in one decision and a domain refusal, never a deadlock (HTTP 500).
   const bigHandover=await cashRaces.find(r=>r.status===200).json();
-  for(const [handover,amountCents] of [[bigHandover,150],[smallHandover,1]]){
+  const post=(server,path,token,body)=>fetch(server.base+path,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const decide=async(handover,amountCents)=>{
     const entries=(await call('/driver/cash?protocol=1',{token:driver.token})).protocol.entries;
     const expectedVersion=entries.find(e=>e.id===handover.id).version;
-    const post=(server,path,token,body)=>fetch(server.base+path,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const decided=await Promise.all([
-      post(a,`/driver/cash/${handover.id}/confirm`,driver.token,{commandId:randomUUID(),expectedVersion,payload:{decision:'confirm',amountCents,currency:'ILS'}}),
-      post(b,`/admin/cash/${handover.id}/resolve`,admin.token,{commandId:randomUUID(),payload:{decision:'dispute',reason:'Office counted a different amount',currency:'ILS'}}),
-    ]);
-    const statuses=decided.map(r=>r.status);
+    return {
+      office:()=>post(b,`/admin/cash/${handover.id}/resolve`,admin.token,{commandId:randomUUID(),payload:{decision:'dispute',reason:'Office counted a different amount',currency:'ILS'}}),
+      captain:()=>post(a,`/driver/cash/${handover.id}/confirm`,driver.token,{commandId:randomUUID(),expectedVersion,payload:{decision:'confirm',amountCents,currency:'ILS'}}),
+    };
+  };
+  const settled=async(handover,responses)=>{
+    const statuses=responses.map(r=>r.status);
     assert.ok(statuses.filter(s=>s===200).length===1 && statuses.every(s=>s===200||s===409),`one decision and a refusal, never a deadlock: ${statuses}`);
     const row=await db.one('SELECT status FROM cash_entries WHERE id=?',handover.id);
     const journals=(await db.one('SELECT count(*) n FROM ledger_journals WHERE cash_entry_id=?',handover.id)).n;
     assert.equal(Number(journals),row.status==='confirmed'?1:0,'a confirmed handover posts once, a disputed one never');
-  }
+    return statuses;
+  };
+  // Deterministic schedule (Sol R26-L4): hold the captain row, queue the office first, then the captain's versioned confirm,
+  // and release once both wait. Under the old order the confirm already held the handover row here, so releasing the captain
+  // row left the office and the confirm waiting on each other (a deadlock, HTTP 503).
+  const blocker=await db.pool.connect();
+  const waiting=async count=>{
+    const deadline=Date.now()+5000;
+    for(;;){
+      const {n}=await db.one(`WITH w AS (SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock')
+        SELECT COUNT(*) AS n FROM w WHERE ?=ANY(w.blockers) OR EXISTS (SELECT 1 FROM w ahead WHERE ahead.pid=ANY(w.blockers) AND ?=ANY(ahead.blockers))`,blocker.processID,blocker.processID);
+      if(Number(n)>=count) return;
+      assert.ok(Date.now()<deadline,'both cash decisions reached their row locks');
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+  };
+  const big=await decide(bigHandover,150);
+  let office,captain;
+  try {
+    await blocker.query('BEGIN');
+    await blocker.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[driver.user.id]);
+    office=big.office(); await waiting(1);
+    captain=big.captain(); await waiting(2);
+  } finally { await blocker.query('ROLLBACK'); blocker.release(); }
+  assert.deepEqual(await settled(bigHandover,await Promise.all([office,captain])),[200,409],'the office decides first; the captain gets a domain refusal');
+  // And an unscheduled race on the second handover.
+  const small=await decide(smallHandover,1);
+  await settled(smallHandover,await Promise.all([small.captain(),small.office()]));
   const releasable=await call('/orders',{token:customer.token,body:{commandId:randomUUID(),payload:input}});
   const previousAccept={commandId:randomUUID(),expectedVersion:await version(releasable.id)};
   await call(`/jobs/${releasable.id}/accept`,{token:driver.token,body:previousAccept});

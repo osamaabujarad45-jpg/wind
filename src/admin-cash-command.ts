@@ -197,6 +197,9 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
           const match = entry ? receiptMatches(entry, command) : false;
           if (entry && match === undefined) return { state: 'unconfirmed', command, error };
           if (entry) return withReceipt(io, command, entry, match === true);
+          // A Retry follows an attempt whose write may still be running: "no receipt" is a point-in-time read, so the key stays
+          // and the form keeps saying finance duty is needed to retry; only a first send is refused outright (Sol R26-M1).
+          if (forbidden && retry) return { state: 'unconfirmed', command, error };
         } catch { return { state: 'unconfirmed', command, error }; }
       }
       // The refusal is final whoever is signed in now: this admin's own slot is settled either way, so it never comes back as

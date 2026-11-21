@@ -37,6 +37,18 @@ for (const status of [undefined, 0, 500, 502, 401, 408, 429]) { // lost reply, s
   assert.equal((await sendCashCommand(unknown, command)).state, 'unconfirmed');
   assert.equal(unknown.stored?.requestId, command.requestId);
 }
+{ // Sol R26-M1: the first send's reply is lost and the cashier's finance duty is removed. The Retry gets 403 and no receipt yet
+  // (the first write may still commit): the key stays. When the receipt appears, the next Retry settles it as recorded.
+  let receipt = null;
+  const io = rig({ send: failing(403), receipt: async () => ({ entry: receipt }) });
+  io.stored = command;
+  const miss = await sendCashCommand(io, command, true);
+  assert.equal(miss.state, 'unconfirmed');
+  assert.equal(io.stored?.requestId, command.requestId, 'the key survives a receipt miss on Retry');
+  receipt = { id: 5, reference: 'R-5', kind: 'remittance', amountCents: 1250, note: 'Office handover' };
+  assert.equal((await sendCashCommand(io, command, true)).state, 'recorded');
+  assert.equal(io.stored, null, 'cleared only once the receipt is found');
+}
 for (const status of [400, 404]) { // the server refused this request id before any replay could exist: nothing was recorded
   const io = rig({ send: failing(status) });
   assert.equal((await sendCashCommand(io, command)).state, 'refused', String(status));
@@ -415,7 +427,8 @@ assert.match(screen, /note\(c\.cashResolved\);/);
 assert.equal((screen.match(/disabled=\{busy \|\| recovering\} reason=\{c\.wait_busy\}/g) ?? []).length, 2);
 // Haiku r21 N21-1: a new action keeps every captain's drained line; refresh never clears the failure channel.
 assert.match(screen, /setBusy\(true\); setFailure\(drained\); setMessage\(drained\);/);
-assert.match(screen, /onRefresh=\{\(\) => \{ setMessage\(\[\]\); reloadPending\(\);/);
+// Sol R26-L3: refresh keeps every keyed receipt and instruction (a disputed receipt's check is not in the refreshed lists).
+assert.match(screen, /onRefresh=\{\(\) => \{ setMessage\(drained\); reloadPending\(\);/);
 // Haiku r22 F1-F4: every new-action reset keeps drained lines in both channels: submit and resolve, both Mark presses,
 // and the three form openers; the live list wins over the captured name; the harness keeps an unloaded list unloaded.
 assert.equal((screen.match(/setBusy\(true\); setFailure\(drained\); setMessage\(drained\);/g) ?? []).length, 2);

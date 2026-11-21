@@ -494,9 +494,12 @@ for (const language of ['ar', 'en']) for (const status of ['pending', 'confirmed
   const tree = after.render();
   const expected = { pending: c.cashRecorded, confirmed: c.cashRecordedConfirmed, disputed: c.cashRecordedDisputed }[status];
   assert.ok(shows(tree, fill(expected, { r: model.ltr('R-000061') })), `${language}/${status}: the receipt reads its status`);
-  if (status !== 'pending') assert.ok(!shows(tree, fill(c.cashRecorded, { r: model.ltr('R-000061') })), `${language}/${status}: no promise that it waits for the driver`);
+  if (status !== 'pending') assert.ok(!shows(tree, fill(c.cashRecorded, { r: model.ltr('R-000061') })), `${language}/${status}: no pending wording for a decided entry`);
+  // Sol R26-L3: the disputed instruction (and any receipt) survives a pull-to-refresh: the refreshed lists do not show it.
+  await nodes(tree, 'Screen').find(props => props.onRefresh).onRefresh(); await flush();
+  assert.ok(shows(after.render(), fill(expected, { r: model.ltr('R-000061') })), `${language}/${status}: a refresh keeps the named receipt`);
 }
-console.log('Admin cash recovered receipt reads pending, confirmed or disputed');
+console.log('Admin cash recovered receipt reads its status at the check and survives a refresh');
 
 // Sol R25-M1: a restored entry's Retry fails offline (unconfirmed), then records on the next Retry. The captain has one line,
 // the receipt, beside another captain's kept instruction; a refresh does not bring the failure back.
@@ -676,7 +679,7 @@ for (const language of ['ar', 'en']) {
   assert.ok(shows(view.render(), 'R-71'), `${language}: a Mark press keeps the drained receipt (Haiku r22 F2/F3)`);
   field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
   await tap(view, c.cashResolveSave);
-  assert.ok(view.dialogs.at(-1).message.includes(`${model.isolate('Driver')} · 1`), `${language}: the confirmation names the captain and amount (Haiku r23 F6)`);
+  assert.ok(view.dialogs.at(-1).message.includes(`${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1`) && view.dialogs.at(-1).message.includes(c.cashMarkConfirmed), `${language}: the confirmation names the decision, captain and amount (Haiku r23 F6, Sol R26-L2)`);
   view.dialogs.at(-1).yes(); await flush();
   const sent = view.calls.at(-1);
   assert.deepEqual([sent.path, sent.body.decision], ['/admin/cash/5/resolve', 'confirm'], `${language}: the resolution is sent`);
@@ -685,19 +688,24 @@ for (const language of ['ar', 'en']) {
 }
 console.log('Admin cash handover marking waits for the recovery');
 
-// Haiku r23 F6: the driver answered the handover while its card was open, so it left the waiting list: Save waits and says
-// it was already answered.
+// Haiku r23 F6, Sol R26-L2: the handover leaves the bounded waiting list while its card is open (answered, or pushed out by
+// newer entries). The card keeps whose handover it is, Save stays available and the server's compare-and-set decides.
 for (const language of ['ar', 'en']) {
   const c = copy[language];
-  const entry = { id: 6, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: null };
+  const entry = { id: 6, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: 'R-000006' };
   const data = { ...cashData, '/admin/cash/pending': [entry] };
   const view = screen('cash', language, { data, me: cashAdmin, effects: true });
   view.render(); await flush();
-  await tap(view, c.cashMarkConfirmed);
-  field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
-  assert.equal(button(view.render(), c.cashResolveSave)[0].disabled, false, `${language}: Save is ready while the handover waits`);
-  data['/admin/cash/pending'] = []; // the next poll: the driver confirmed it
-  const save = button(view.render(), c.cashResolveSave)[0];
-  assert.deepEqual([save.disabled, save.reason], [true, c.err_already_decided], `${language}: Save waits and says why`);
+  await tap(view, c.cashMarkDisputed);
+  field(view.render(), c.cashResolutionReason).onChangeText('Office counted a different amount');
+  data['/admin/cash/pending'] = []; // the next poll no longer lists it
+  const who = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1 · ${model.ltr('R-000006')}`;
+  assert.ok(shows(view.render(), who), `${language}: the card still names the handover`);
+  assert.equal(button(view.render(), c.cashResolveSave)[0].disabled, false, `${language}: Save stays available`);
+  await tap(view, c.cashResolveSave);
+  const dialog = view.dialogs.at(-1).message;
+  assert.ok(dialog.includes(c.cashMarkDisputed) && dialog.includes(who), `${language}: the confirmation names the decision and the handover`);
+  view.dialogs.at(-1).yes(); await flush();
+  assert.equal(view.calls.at(-1).path, '/admin/cash/6/resolve', `${language}: the server decides`);
 }
-console.log('Admin cash resolution waits when the handover was answered meanwhile');
+console.log('Admin cash resolution keeps its handover when the list moves');

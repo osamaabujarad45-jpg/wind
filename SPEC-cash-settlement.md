@@ -41,8 +41,12 @@ that the driver settles with a cashier. Add the same for Wind:
 | `GET /api/driver/cash` | driver | `{ owedCents, pendingCents, commissionCents, remittedCents, adjustmentsCents, entries[≤50] }` |
 | `POST /api/driver/cash/:id/confirm` | that driver | `{ decision: 'confirm' \| 'dispute' }` on a pending remittance |
 | `GET /api/admin/cash` | admin | `[{ driverId, name, phone, owedCents, pendingCents, lastRemittanceAt }]` |
-| `POST /api/admin/cash/remittance` | admin | `{ driverId, amountCents, note? }` → entry with `reference` |
-| `POST /api/admin/cash/adjustment` | admin | `{ driverId, amountCents, reason }` → entry |
+| `POST /api/admin/cash/remittance` | admin (finance) | `{ driverId, amountCents, note?, requestId }` → entry with `reference` and `status` |
+| `POST /api/admin/cash/adjustment` | admin (finance) | `{ driverId, amountCents, reason, intent: 'charge' \| 'payout', requestId }` → entry |
+
+`requestId` (a UUID) is required for a fresh entry from a current cashier build and in production (`invalid_request_id`); a
+same-id resend replays the recorded entry instead of writing a second one. `GET /api/admin/cash/commands/:requestId` returns the
+recording admin's own entry for that id, or `null` at that moment.
 
 ## Data (additive, `user_version` stays 3)
 
