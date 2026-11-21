@@ -14,6 +14,57 @@ node tests/azure-infra.test.mjs
 
 The validation script compiles/lints the template and builds all three parameter examples with a fixed compile-only placeholder. It does not read operator secrets. The test checks compiled ingress/probe ports against the packaged API, the polling worker's minimum replica, and the separate graph-storage foundation. It has no deployment command, Azure login, or authenticated provider call.
 
+## Production host from 21 November 2026 (Israel Central)
+
+Production moved to a new Pay-As-You-Go Azure subscription (`bb245244-…`) at the owner's decision. The subscription has
+**no spending limit**: watch its cost in the portal. The student host below stays up for installs built for its address until
+its data is backed up and those installs are rebuilt.
+
+- **Public address:** `https://20.217.202.98.sslip.io` (static IP `wind-ip`, 20.217.202.98). This is the repository
+  variable `WIND_API_URL`. The EAS `production` and `preview` variable `EXPO_PUBLIC_API_URL` must be changed to it before the next APK.
+  Keep the IP: every APK built for it depends on it.
+- **Host:** resource group `wind-prod`, region `israelcentral` (closest to the pilot). VM `wind-vm`, `Standard_D2ls_v6`,
+  Ubuntu 24.04, 64 GB Standard SSD. The classic B-series and B2s_v2 have no quota in this region on this subscription.
+  - NSG `wind-nsg`: 80 and 443 from the Internet; 22 only from the operator's address (rule `ssh-admin`). Change the rule
+    when that address changes.
+  - SSH: `ssh -i ~/.ssh/wind-vm-prod-1121 windadmin@20.217.202.98`.
+- **Runtime:** `sudo bash infra/vm-israel/provision.sh <host>` (idempotent).
+  - Node 24.12.0 (checksum-verified) in `/opt/node`.
+  - Caddy terminates TLS.
+  - `wind-api.service` runs `/opt/windapi` as the unprivileged user `wind` (not root), on 127.0.0.1:4000. It has
+    `ProtectSystem=strict` and write access only to `/data`.
+  - `/etc/wind-api.env` (0600) holds the same keys as the student host, with `WIND_PUSH_SUBJECT` set to the new address.
+  - `wind-backup.timer` runs `backup.sh` daily at 00:00 UTC into `/data/backups` (14 days).
+- **Release:** `infra/vm-israel/build-release.sh` runs in the Docker sandbox on a synced checkout of master. It does the
+  production web export for `WIND_API_HOST` (default: this address), the runtime dependency closure, and the deploy.md assembly.
+  It refuses any secret or database file, dry-runs the packaged API on :4010 and writes a tarball with its SHA-256.
+  1. Copy the tarball and `infra/vm-israel/install-release.sh` to the VM.
+  2. Run `sudo bash install-release.sh /tmp/wind-release.tar.gz <sha256>`. It:
+     - checks the hash;
+     - unpacks the archive's `windapi/` directory to `/opt/windapi-new`;
+     - dry-runs it as `wind` on :4010 with a throwaway database (a failure leaves the live service untouched);
+     - moves the current tree to `/opt/windapi-old-<time>`, moves the new one in, and starts the service.
+  3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
+- **Rollback:**
+  - `/opt/windapi-old-20261121125020` holds master `8df0f778` (PR #97); `/opt/windapi` is `078da0a2` (PR #99), installed with install-release.sh on 21 November.
+  - Releases keep SQLite `user_version` 3, so the previous tree can open the database. A database created by the current schema is not rebuilt. An older database may be rebuilt once, on first start (`security_events`, `users`, `courier_block_reviews`; `server/db/sqlite-schema.ts`): drivers with no recognized vehicle become `pending`, and the `users` rebuild drops any column it does not list. Duplicate pending subscriptions are rejected on each start. Rolling back to the previous tree does not undo these changes; to return to the data from before an install, restore the backup taken before it (`sudo systemctl start wind-backup` before every install).
+  1. Freeze cash writes and return decisions, as the release notes below say, and close every open Cash tab.
+  2. Check that `/opt/windapi-old-<time>` exists (`ls -d /opt/windapi-old-*`).
+  3. `sudo systemctl stop wind-api`.
+  4. `sudo mv /opt/windapi /opt/windapi-bad-<time>` and `sudo mv /opt/windapi-old-<time> /opt/windapi`.
+  5. `sudo systemctl start wind-api`, then run the deployment check.
+  - `/data/wind.db` stays.
+  - To restore a backup instead: stop the service and copy `/data/backups/wind-<date>.db` over `/data/wind.db`, as user `wind`. Remove `wind.db-wal` and `wind.db-shm` first. Then start the service.
+- **Admin commands** run as the service user with its environment, so the files stay owned by `wind`:
+  `sudo bash -c 'set -a; . /etc/wind-api.env; set +a; cd /opt/windapi && sudo -E -u wind env NODE_ENV=production DB_PATH=/data/wind.db /opt/node/bin/node server/main.ts verify-phone 05XXXXXXXX --phone-verified'`
+  Then run the same with `promote 05XXXXXXXX`.
+- **21 November releases:** master `8df0f778` (PR #97), then `078da0a2` (PR #99, customer polish). Deployment check 10/10 on each. The first backup was written. The database
+  is fresh: users register again, then an admin is made with the admin commands above.
+- **Open:**
+  - Back up `/data/wind.db` from the student host once its account can be signed in again.
+  - Rebuild the APKs for this address (needs a new EAS token).
+  - Then retire `4.223.118.16.sslip.io` (add it to `scripts/retired-api-hosts.json`).
+
 ## Production host from 16 November 2026 (student Azure subscription)
 
 The 15 November subscription (`7bd97ddb…`, host `windapp-ps.swedencentral.cloudapp.azure.com`) went into the
