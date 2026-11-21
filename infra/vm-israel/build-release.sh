@@ -22,7 +22,8 @@ cp -a api-runtime/src "$T/src"
 cp -a api-runtime/node_modules "$T/node_modules"
 cp -a dist "$T/web"
 cp assets/icon.png "$T/web/wind-icon.png"
-install -m 755 infra/vm-student/backup.sh "$T/backup.sh" # run by the unprivileged service user
+install -m 755 infra/vm-israel/backup.sh "$T/backup.sh" # run by the unprivileged service user; writes the API's last-ok marker
+install -m 755 infra/vm-israel/restore.sh "$T/restore.sh" # shipped with each release: sudo bash /opt/windapi/restore.sh <file>
 # A release never carries secrets or local databases.
 # -print -quit, not `| grep -q`: under pipefail a SIGPIPE'd find made the pipeline fail and the guard pass (Haiku PR #98 M-1).
 if [ -n "$(find "$T" \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite*' -o -name '*.pem' -o -name '*.key' \) -print -quit)" ]; then

@@ -188,7 +188,7 @@ export default function OrderScreen() {
   const doorReasons = doorDiffers ? allowedReasons(collectedCents, dueCents) : [];
   const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
   const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
-  const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || order.status === 'returning';
+  const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || (order.status === 'returning' && !order.supportHasGoods);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -561,6 +561,7 @@ export default function OrderScreen() {
 
     {isAdmin && order.status === 'returning' && <Card tone="clay">
       <Txt variant="title">{c.confirmReturnTitle}</Txt>
+      {order.supportHasGoods && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.supportHasGoodsAdmin}</Txt>}
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
@@ -569,7 +570,10 @@ export default function OrderScreen() {
           // Who brought the goods decides the captain's office leg: recorded by the button, never assumed.
           ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
           ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
-        ] as const).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon="checkmark-done-outline"
+          ['confirm_office_return', 'support', c.confirmOfficeReturnSupport, c.confirmOfficeReturnSupportHint],
+          // Support collected the goods mid-return: recorded when they change hands, before any closure (Sol recheck of PR 101).
+          ['support_takeover', undefined, c.supportTakeover, c.supportTakeoverHint],
+        ] as const).filter(([action, carrier]) => !order.supportHasGoods || (action !== 'support_takeover' && carrier !== 'captain' && carrier !== 'staff')).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
           loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
             { action, ...(carrier && { carrier }), reason: decisionReason.trim() },
@@ -792,10 +796,11 @@ export default function OrderScreen() {
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
+        {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
         {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
-        {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
+        {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
           reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}

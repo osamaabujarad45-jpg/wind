@@ -25,7 +25,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   if (Object.hasOwn(input, '__proto__')) fail(400, 'invalid_input');
   if ((path === '/api/admin/cash/adjustment' && (input.source === 'payout' || input.intent === 'payout')) ||
     (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path)
-      && ['confirm_return', 'confirm_office_return', 'confirm_sender_return'].includes(input.action))
+      && ['confirm_return', 'confirm_office_return', 'confirm_sender_return', 'support_takeover'].includes(input.action))
     || (/^\/api\/admin\/orders\/\d+\/shop\/cancel$/.test(path) && input.action === 'cancel_handover_exception'))
     fail(400, 'unsupported_command');
   const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
