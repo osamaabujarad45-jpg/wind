@@ -2852,7 +2852,9 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
 });
 
 async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
-  const r = (await one('SELECT * FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
+  // PostgreSQL: lock the row first, so a support takeover or custody recovery committing meanwhile is seen by the custody check
+  // below instead of racing it (SQLite's BEGIN IMMEDIATE already serialises both; Sonnet L6 on PR #101, G-PG).
+  const r = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
   if (r.driver_id !== user.id || !activeStatuses.includes(r.status)) fail(409, 'cannot_advance');
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
@@ -2865,7 +2867,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   if (next === 'completed' || next === 'returned') {
     // Support holds the goods once it took them from this assignment's captain, or once that captain was blocked holding them: the
     // captain's old return code no longer closes the order as a sender handback (Sol full review 21 Nov, item 3).
-    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN')
+    // A recovery by an eligibility build from before CUSTODY_TAKEN counts too (PostgreSQL only; Haiku M4 / Sol money 3 on PR #101).
+    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)
       || (await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", r.id)).some(event => custodyBlockFrom(r, event) !== null)))
       fail(409, 'cannot_advance');
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
@@ -2980,7 +2983,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
-    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN'));
+    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, order));
     // Once support holds the goods, neither the captain nor a staff pickup after the captain's return leg brought them in.
     if (custodyTaken && (carrier === 'captain' || carrier === 'staff')) fail(409, 'cannot_resolve');
     const recordCustody = async () => {

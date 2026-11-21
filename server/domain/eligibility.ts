@@ -3,6 +3,7 @@ import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { offerRange, vehicleServices, type Vehicle } from '../../src/model.ts';
 import { declaredScopeRow } from './resource-scope.ts';
+import { legacySupportCollected } from './office.ts';
 
 type Fail = (status: number, message: string) => never;
 type Actor = { id: number; role: string; status: string };
@@ -585,8 +586,14 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     if (order.service === 'ride' || !['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
     if (action === 'return' || action === 'confirm_return') needStaff(await staffActor(db, user), fail, 'support');
     // Closing at the office names who brought the goods, as the support resolve does: only a captain carrier earns the office leg.
+    // Once support holds the goods (this recovery's 'return', a takeover, or a legacy recovery) only 'support' can have brought
+    // them in (Sol second recheck of PR #101, deferred to G-PG).
     const carrier = action === 'confirm_return' ? body.carrier : undefined;
-    if (action === 'confirm_return' ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400,'invalid_input');
+    if (action === 'confirm_return' ? carrier !== 'captain' && carrier !== 'staff' && carrier !== 'support' : body.carrier !== undefined) fail(400,'invalid_input');
+    const custodyTaken = !!(await db.one(`SELECT 1 FROM security_events WHERE order_id=? AND action='CUSTODY_TAKEN'
+      AND detail::jsonb->>'assignmentEpoch'=? AND detail::jsonb->>'driverId'=?`, id, String(order.assignment_epoch), String(order.driver_id)))
+      || await legacySupportCollected(db, order);
+    if (action === 'confirm_return' && custodyTaken && carrier !== 'support') fail(409,'cannot_resolve');
     if (action==='hold') {
       if (order.status!=='in_transit') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='on_hold',exception_reason='support',updated_at=? WHERE id=?",Date.now(),id);
@@ -601,6 +608,8 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
       }
     } else {
       if (order.status!=='returning') fail(409,'cannot_resolve');
+      if (carrier === 'support' && !custodyTaken) await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'CUSTODY_TAKEN',?,?)",
+        user.id,id,JSON.stringify({assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason, evidenceRef: ref}),Date.now());
       await db.run("UPDATE orders SET status='returned',commission=0,completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id); // DRV-17
       await db.run("INSERT INTO security_events(actor_id,order_id,action,created_at) VALUES(?,?,'RETURN_NO_FARE',?)",user.id,id,Date.now()); // main.ts markNoFare
       await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'EXCEPTION_RESOLVED',?,?)",

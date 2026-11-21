@@ -272,9 +272,14 @@ try {
   // Pre-release recovery wrote ELIGIBILITY_CUSTODY_RECOVERY without a CUSTODY_TAKEN event.
   await ledgerDb.atomic({ purpose: 'test' }, () => ledgerDb.run("DELETE FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", codeAfterRecovery.id));
   const recoveryCode = (await call(`/orders/${codeAfterRecovery.id}`, { token: customer.token })).returnCode;
-  await advance(driver.token, { ...codeAfterRecovery, status: 'returning' }, { code: recoveryCode });
+  // G-PG: support holds the goods after a legacy recovery too, so the captain's code no longer closes the order; support's office
+  // intake does, as the only carrier it accepts, and pays the trip so far once.
+  assert.equal((await call(`/orders/${codeAfterRecovery.id}/advance`, { token: driver.token,
+    body: { requestId: randomUUID(), expectedStatus: 'returning', code: recoveryCode }, expect: 409 })).error, 'cannot_advance');
+  assert.equal((await call(`/admin/orders/${codeAfterRecovery.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Wrong carrier' }, expect: 409 })).error, 'cannot_resolve');
+  await call(`/admin/orders/${codeAfterRecovery.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it in' } });
   assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", codeAfterRecovery.id)).amount_cents,
-    -Math.round(codeAfterRecovery.price * 100), 'a code closure also recognizes custody transferred by a legacy release');
+    -Math.round(codeAfterRecovery.price * 100), 'a legacy recovery is still recognized: the trip so far');
 
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);
