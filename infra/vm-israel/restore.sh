@@ -104,7 +104,7 @@ trap 'exit 130' INT TERM HUP
 # command for root to read it: any path it printed could lead through a link wind planted (Haiku W1, W2, confirmation 5 F1, F2).
 # docs/operations/deploy.md says how an operator stages a file it has checked.
 as_wind sh -c 'umask 077; cat -- "$1" > "$2"' sh "$COPY" "$WORK/wind.db" \
-  || { say "could not stage $COPY: the service user cannot read it, or there is no space. See docs/operations/deploy.md (restore)."; exit 1; }
+  || { say "could not stage $COPY: the service user cannot read it, or there is no space. See the repository runbook, docs/operations/deploy.md (restore)."; exit 1; }
 sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB);
