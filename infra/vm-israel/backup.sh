@@ -26,8 +26,10 @@ TOKEN=$(curl -fsS -m 10 -H 'Metadata: true' \
   'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/' \
   | /opt/node/bin/node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).access_token))")
 NAME="wind-$(date -u +%Y%m%dT%H%M%SZ).db"
-curl -fsS -m 300 -X PUT -T "$DIR/wind-$STAMP.db" \
-  -H "Authorization: Bearer $TOKEN" -H 'x-ms-version: 2023-11-03' -H 'x-ms-blob-type: BlockBlob' \
+# The bearer token goes to curl in a private header file, never on its command line (Haiku PR #101 M3).
+HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
+printf 'Authorization: Bearer %s\nx-ms-version: 2023-11-03\nx-ms-blob-type: BlockBlob\n' "$TOKEN" > "$HDR"; unset TOKEN
+curl -fsS -m 300 -X PUT -T "$DIR/wind-$STAMP.db" -H @"$HDR" \
   "https://$ACCOUNT.blob.core.windows.net/$CONTAINER/$NAME" -o /dev/null
 touch "$DIR/last-ok"
 echo "backed up, verified and copied off the VM: wind-$STAMP.db -> $ACCOUNT/$CONTAINER/$NAME"

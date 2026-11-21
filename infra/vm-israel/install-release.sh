@@ -31,6 +31,7 @@ sudo -u wind test -x /opt/windapi-new/backup.sh || { echo "backup.sh is not exec
 # The snapshot of the live database for this install (Sol full review 21 Nov, item 5), checked, kept 30 days.
 STAMP=$(date +%Y%m%d%H%M%S)
 SNAP="/data/backups/pre-install-$STAMP.db"
+[ -f /data/wind.db ] || SNAP=""   # a first install has no database to snapshot
 snapshot() { # $1 source, $2 target: VACUUM INTO and quick_check, as the service user
   sudo -u wind env SRC="$1" DST="$2" /opt/node/bin/node -e "
 const { DatabaseSync } = require('node:sqlite');
@@ -56,6 +57,8 @@ fi
 # The dry run must be the only thing answering on :4010, or the check below would pass against something else.
 if [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:4010/ || true)" != "000" ]; then echo "port 4010 is already in use" >&2; rm -rf /opt/windapi-new; exit 1; fi
 set -a; . /etc/wind-api.env; set +a
+# The dry run talks to nothing outside the VM: no Firebase, email or SMS provider keys (Haiku PR #101 M2).
+for v in $(compgen -e | grep -E '^(WIND_FIREBASE|FIREBASE|GOOGLE_|WIND_EMAIL|WIND_SMTP|WIND_SMS|WIND_OTP|WIND_PHONE|CLOUDFLARE)' || true); do unset "$v"; done
 cd /opt/windapi-new
 sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT=/opt/windapi-new/web \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 &
@@ -73,6 +76,12 @@ OLD="/opt/windapi-old-$STAMP"
 rollback() { # the old tree goes back and starts again; the candidate stays aside for diagnosis
   echo "install failed: putting the previous release back" >&2
   systemctl stop wind-api 2>/dev/null || true
+  # The candidate may have migrated the live database before failing: the database goes back to this install's snapshot
+  # too, keeping what was there beside it (Haiku PR #101 M1).
+  if [ -n "$SNAP" ] && [ -f "$SNAP" ]; then
+    for suffix in '' -wal -shm; do [ ! -e "/data/wind.db$suffix" ] || mv -f "/data/wind.db$suffix" "/data/wind.db.failed-$STAMP$suffix"; done
+    install -o wind -g wind -m 600 "$SNAP" /data/wind.db
+  fi
   if [ -d "$OLD" ]; then
     [ ! -d /opt/windapi ] || mv /opt/windapi "/opt/windapi-failed-$STAMP"
     mv "$OLD" /opt/windapi
