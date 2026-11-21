@@ -20,7 +20,7 @@ export default function MerchantHome() {
   const merchant = mine.data?.merchant;
   // A working shop is asked for notifications here: new orders are its work (customers are asked after their first order).
   const working = !!merchant && merchant.status !== 'pending';
-  useEffect(() => { if (working) void registerNativePush(language, true); }, [working, language]);
+  useEffect(() => { if (working) void registerNativePush(language, 'always'); }, [working, language]);
   const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(merchant && merchant.status !== 'pending' ? '/merchant/orders' : null, 10_000);
   const statement = useApi<Statement>(merchant && merchant.status !== 'pending' ? '/merchant/statement' : null);
   const [busy, setBusy] = useState(false);

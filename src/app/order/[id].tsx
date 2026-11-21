@@ -120,7 +120,8 @@ export default function OrderScreen() {
     reload, next => { setData(next); work.update(next); }, () => { setAdvanceLocked(null); advanceAttempt.current = null; problemAttempt.current = null; });
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
-  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState({ id, open: false }); // keyed like the dispute draft: another order starts closed
+  const reportOpen = report.id === id && report.open;
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
@@ -144,7 +145,7 @@ export default function OrderScreen() {
   // A customer is asked for notifications here, with an order on its way: every route to a first order (booking, a recovered
   // booking, order again, shop checkout) lands on this screen, and "your driver accepted" is then the reason (product audit, 21 Nov).
   const customerLive = me?.user.role === 'customer' && !!order && (order.status === 'searching' || activeStatuses.includes(order.status));
-  useEffect(() => { if (customerLive) void registerNativePush(language, true); }, [customerLive, language]);
+  useEffect(() => { if (customerLive) void registerNativePush(language, 'once'); }, [customerLive, language]);
 
   if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
@@ -682,7 +683,7 @@ export default function OrderScreen() {
       </Card>}
       {/* Behind one button until asked for: an open, empty complaint box under a good delivery read as a warning (product audit, 21 Nov).
           A started draft keeps it open. */}
-      {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="outline" size="sm" icon="flag-outline" onPress={() => setReportOpen(true)} />}
+      {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="outline" size="sm" icon="flag-outline" onPress={() => setReport({ id, open: true })} />}
       {canDispute && !order.dispute && (reportOpen || !!disputeReason) && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
@@ -744,7 +745,7 @@ export default function OrderScreen() {
       {/* How long it has been, and past five minutes a way to reach support: a silent wait with a small pilot fleet reads as broken
           and ends in a cancel (Uber and inDrive show both; product audit, 21 Nov). Counted from the booked time once it passed. */}
       {isCustomer && searchMinutes >= 1 && order.dispatch?.state !== 'exhausted' && <Txt center variant="micro" style={{ marginTop: 4 }}>{fill(c.searchingFor, { n: searchMinutes })}</Txt>}
-      {isCustomer && searchMinutes >= 5 && order.dispatch?.state !== 'exhausted' && <View style={{ marginTop: 10, alignSelf: 'stretch', gap: 6 }}>
+      {isCustomer && searchMinutes >= 5 && order.dispatch?.state !== 'exhausted' && <View accessibilityLiveRegion="polite" style={{ marginTop: 10, alignSelf: 'stretch', gap: 6 }}>
         <Txt center variant="caption">{c.stillLooking}</Txt>
         <Button title={c.helpWithOrder} variant="soft" size="sm" icon="chatbubble-ellipses-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
       </View>}

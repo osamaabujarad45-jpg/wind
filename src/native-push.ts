@@ -29,18 +29,27 @@ if (Platform.OS !== 'web') {
 // Native push registration (Expo Push). Best-effort by design: any failure —
 // permission denied, Expo Go, missing EAS credentials, server gate closed —
 // leaves the existing polling path untouched and never blocks sign-in.
-// `ask` shows the system dialog when permission is still undecided. A customer is asked only once they have placed an order
-// (they then have a reason: "your driver accepted"); a cold ask at sign-in that gets denied is final on Android 13+
-// (product audit, 21 Nov). Without `ask`, a device that already granted it just re-registers.
-export async function registerNativePush(lang: 'ar' | 'en', ask = false): Promise<void> {
-  if (Platform.OS === 'web') return;
+// `ask` shows the system dialog while permission is undecided and the OS still allows asking:
+// - 'once': a customer with an order on its way (the reason is "your driver accepted"), asked once per device, so the dialog is not
+//   raised on every order. On Android 13+ a second denial is final, so a cold ask at sign-in spends one of two (product audit, 21 Nov).
+// - 'always': captains and merchants, for whom alerts are the work, and the Account row the person taps; a customer's earlier
+//   answer on a shared device does not stop them being asked (Haiku polish M1).
+// Without `ask`, a device that already granted it just re-registers. One registration runs at a time: sign-in and the session
+// effect can both start one, and two system dialogs must not race (Haiku polish M2).
+let running: Promise<void> = Promise.resolve();
+export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' = false): Promise<void> {
+  if (Platform.OS === 'web') return Promise.resolve();
+  const next = running.then(() => register(lang, ask));
+  running = next.catch(() => undefined);
+  return next;
+}
+async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always'): Promise<void> {
   try {
     // The channel must exist before Android 13 can ask for permission; high importance gives a heads-up. server/push.ts names it.
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
-    // Asked once per device: an answered dialog is not shown again on every order (Account's notification row stays the way back).
-    if (status !== 'granted' && ask && current.canAskAgain && await storage.get('pushAsked') !== '1') {
+    if (status !== 'granted' && ask && current.canAskAgain && (ask === 'always' || await storage.get('pushAsked') !== '1')) {
       await storage.set('pushAsked', '1');
       status = (await Notifications.requestPermissionsAsync()).status;
     }
@@ -54,6 +63,16 @@ export async function registerNativePush(lang: 'ar' | 'en', ask = false): Promis
     }
     await api('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
   } catch { /* polling fallback remains authoritative */ }
+}
+
+/** This device's notification permission for the Account row: on, off (the OS can still ask), or blocked (only the system
+ *  settings can change it). */
+export async function nativePushState(): Promise<'on' | 'off' | 'denied' | 'unsupported'> {
+  if (Platform.OS === 'web') return 'unsupported';
+  try {
+    const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+    return status === 'granted' ? 'on' : canAskAgain ? 'off' : 'denied';
+  } catch { return 'unsupported'; }
 }
 
 export async function unregisterNativePush(): Promise<void> {

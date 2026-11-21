@@ -226,7 +226,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const stopDiagnostics = startDiagnosticDelivery();
     // T37: a relaunch into an existing session re-authorizes this device's push destination against the
     // current session (registering is idempotent; failures keep the polling fallback).
-    void registerNativePush(language, askAtSignIn);
+    void registerNativePush(language, askAtSignIn ? 'always' : false);
     // Updater form: a reply landing after sign-out must not bring the session back.
     const quiet = () => {
       const revision = apiSessionRevision();
@@ -261,7 +261,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       configureRecoveryActor(data.user);
       accountLoaded.current = true;
       setOffline(false);
-      void registerNativePush(language, data.user.role !== 'customer');
+      void registerNativePush(language, data.user.role !== 'customer' ? 'always' : false);
     },
     signOut: async () => {
       takeAuthNotice(); // a normal sign-out never shows a leftover session-ended message

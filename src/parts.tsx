@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } from './api';
 import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
+import { NativePushRow } from './native-push-row';
 import { city, HISTORY_PAGE, isOpen, isolate, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
 import { arrivingNow, etaBucket, kmLabel } from './map-math';
@@ -228,9 +229,9 @@ export function PushRow() {
   if (!state || state === 'unsupported') return null;
   async function toggle() {
     if (busy) return;
-    // Blocked: the browser (or the phone) owns the permission. The way back is shown under the row; on a phone, the app's
-    // settings open (a bare "Blocked" with an alert was a dead end, product audit 21 Nov).
-    if (state === 'denied') { if (Platform.OS !== 'web') void Linking.openSettings(); return; }
+    // Blocked: the browser owns the permission. The way back is the caption under the row, and the tap says it too. Phones use
+    // NativePushRow, which opens the app's system settings (product audit 21 Nov, Haiku polish H1/L7).
+    if (state === 'denied') { if (typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(c.pushDeniedHelp); return; }
     setBusy(true);
     try {
       const next = state === 'on' ? (await disablePush(), 'off' as const) : await enablePush(language);
@@ -484,7 +485,7 @@ export function AccountScreen() {
     <ListGroup>
       <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="clay" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
-      {pushSupported() && <PushRow />}
+      {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}
     </ListGroup>
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
