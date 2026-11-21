@@ -92,7 +92,8 @@ export default function AdminCash() {
       : entry.status === 'disputed' ? c.cashRecordedDisputed : c.cashRecorded, { r: ltr(entry.reference) }); // R-/P- read left to right in Arabic (Haiku r23 F4)
   // A 403 means this account lacks finance duty. A Retry keeps its saved receipt number (the first send may still land), so the
   // cashier learns the one safe way out instead of a bare refusal (Sol R27-M1).
-  const cashErr = (e: unknown) => (e as { status?: number } | null)?.status === 403 ? c.cashFinanceRequired : err(e);
+  // kept: the entry is still saved (an uncertain Retry). A refused first send, or a Mark decision, saved nothing (Haiku r25 M1).
+  const cashErr = (e: unknown, kept = true) => (e as { status?: number } | null)?.status === 403 ? (kept ? c.cashFinanceRequired : c.cashFinanceRefused) : err(e);
   const recorded = (entry: CashEntry) => note(receiptText(entry));
   // An entry settled by a drain names its captain and amount: it may not be the one the cashier just asked about (Sol R21-M1).
   const rows = useRef(data);
@@ -187,7 +188,7 @@ export default function AdminCash() {
       // captain and stays like a drained one (Opus R24-L5, Sol R25-L1). A fresh form's verdict is about the form in hand.
       const named = !!(open.origin || open.uncertain);
       if (outcome.state === 'recorded') { haptic.success(); if (named) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : cashErr(outcome.error));
+      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : cashErr(outcome.error, false));
       reload(); reloadPending();
       // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
       // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled
@@ -216,7 +217,7 @@ export default function AdminCash() {
       haptic.success();
       note(c.cashResolved); // added: a receipt the mount recovery just showed stays (Haiku r20 N20-4)
       setResolving(null); reload(); reloadPending();
-    } catch (e) { fail(err(e)); } finally { setBusy(false); }
+    } catch (e) { fail(cashErr(e, false)); } finally { setBusy(false); }
   }
 
   // A new entry would replace the one form and the one saved command: wait for the lookup, the send, or the unconfirmed entry.

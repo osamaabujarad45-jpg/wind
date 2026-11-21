@@ -562,6 +562,21 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 0, `${language}: cleared only once the receipt is found`);
 }
 console.log('Admin cash Retry without finance duty keeps the entry and settles by its receipt');
+// Haiku r25 M1: a first send refused with 403 and no receipt saved nothing: the line says so and the slot is clear.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.forbidNextWrite();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, c.cashFinanceRefused) && !shows(tree, c.cashFinanceRequired), `${language}: nothing was recorded`);
+  assert.equal(store.size, 0, `${language}: nothing stays saved`);
+}
+console.log('Admin cash first send without finance duty says nothing was recorded');
 
 // Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
 // tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both
