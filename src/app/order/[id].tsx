@@ -556,7 +556,8 @@ export default function OrderScreen() {
         ] as const).map(([action, title, hint]) => <Button key={action} title={title} variant="outline" icon="checkmark-done-outline"
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(action, `/admin/orders/${order.id}/resolve`,
-            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), title, c.no)} />)}
+            { action, reason: decisionReason.trim(), ...(action === 'confirm_return' && { handoff: 'sender' }) },
+            () => setDecision({ id, reason: '' })), title, c.no)} />)}
       </View>
     </Card>}
 
@@ -579,7 +580,7 @@ export default function OrderScreen() {
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
     {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} fareCents={Math.round(order.price * 100)} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
-    {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
+    {isAdmin && order.status === 'returned' && order.service !== 'ride' && <OfficePanel orderId={order.id} shop={order.service === 'shop'} />}
 
     {!live && <ErrorText>{actionError}</ErrorText>}
 

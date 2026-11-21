@@ -581,10 +581,10 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
 export const eligibility = new Eligibility(persistence, fail); // exported for the admin-assign test seam
 registerEligibilityRoutes(route, eligibility, async (order, action, actorId) => {
   if (action === 'confirm_return') {
-    // DRV-17: a custody recovery settles a shop order like any return, but support carried the goods back: trip so far only.
+    // DRV-17: eligibility closes the return at the office. A custody transfer or block overrides captain return-leg pay.
     const row = await one('SELECT * FROM orders WHERE id = ?', order.id);
-    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId);
-    else if (row) await shippingTripPay(row, 'returned', actorId);
+    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, true);
+    else if (row) await shippingTripPay(row, 'returned', actorId, true);
     await postOrderJournals(order.id);
   }
   await queuePush([order.driver_id], 'decided', order.id);
@@ -825,7 +825,7 @@ registerRuntimeRoutes(route, { db: persistence, need, needActive, fail, limit })
 registerDriverReceiptRoutes(route, { db: persistence, need, needActive, fail });
 registerCommandReceiptRoutes(route, { db: persistence, fail });
 registerCustodyRoutes(route, { db: persistence, fail });
-registerOfficeRoutes(route, { db: persistence, fail, need, text, push: (ids, kind, order) => queuePush(ids, kind, order) });
+registerOfficeRoutes(route, { db: persistence, fail, need, text, push: (ids, kind, order, path) => queuePush(ids, kind, order, path) });
 const nativePush = new NativePush(persistence, fail);
 registerNativePushRoutes(route, nativePush);
 const realtime = new Realtime(persistence, fail);
@@ -1584,7 +1584,7 @@ async function reofferReleased(service: Service, orderId: number, customerId: nu
 /** Scheduled orders reach drivers when they are released (30 minutes before pickup), once. */
 /** SHIP-19: the daily office reminders, with each push and its OFFICE_REMINDED record in one transaction. */
 export async function remindOfficeJobs(now = Date.now()) {
-  return persistence.atomic({ purpose: 'office_reminders' }, () => remindOffice(persistence, (ids, kind, order) => queuePush(ids, kind, order), now));
+  return persistence.atomic({ purpose: 'office_reminders' }, () => remindOffice(persistence, queuePush, now));
 }
 export async function alertReleasedJobs(now = Date.now()) {
   return persistence.atomic({ purpose: 'scheduled_job_release' }, () => releaseJobAlerts(now));
@@ -2938,6 +2938,8 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const action = String(body.action);
   const deliveredToOffice = action === 'confirm_office_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice;
+  if (body.handoff !== undefined && (action !== 'confirm_return' || body.handoff !== 'sender')) fail(400, 'invalid_input');
+  const handoff = deliveredToOffice ? 'office' : body.handoff;
   const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
@@ -2968,8 +2970,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
       (await run('DELETE FROM proof_attempts WHERE order_id = ?', id)); // the return gets its own five attempts
     }
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
-      user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason,
-        ...(deliveredToOffice && { handoff: 'office' }) }), Date.now()));
+      user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason, handoff }), Date.now()));
     await queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
     await queuePush([order.customer_id], to, id);
     (await persistence.exec('COMMIT'));

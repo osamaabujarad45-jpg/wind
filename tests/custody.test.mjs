@@ -84,23 +84,30 @@ try {
   assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, null]);
   const startReturn = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Three delivery attempts completed' } });
   assert.equal(startReturn.status, 'returning');
-  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Support verified receipt' } });
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', handoff: 'sender', reason: 'Support verified receipt' } });
+  const senderReturn = await call(`/orders/${retried.id}/custody`, { token: customer.token });
+  assert.ok(senderReturn.steps.some(step => step.kind === 'returned' && step.by === 'support'));
+  assert.ok(!senderReturn.steps.some(step => step.kind === 'decided' && step.reason === 'confirm_return'));
+  const officePath = `/admin/orders/${retried.id}/office`;
+  assert.equal((await call(officePath, { token: admin.token })).canReceive, false);
+  await call(officePath, { token: admin.token, body: { action: 'received', note: 'Wrong destination' }, expect: 409 });
   await call(`/orders/${order.id}/custody`, { token: other.token, expect: 404 });
   await call(`/orders/${order.id}/custody`, { expect: 401 });
   await call('/orders/999999/custody', { token: admin.token, expect: 404 });
 
   // SHIP-19: nobody took the return, support received it at the office (perishable: 24 h), the sender is reminded daily, and the
   // order ends once: collected, or after the hold, donated/destroyed with a reason and an actor.
-  async function backAtOffice() {
+  async function backAtOffice(action = 'confirm_office_return') {
     let o = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
     o = await advance(driver.token, await call(`/jobs/${o.id}/accept`, { token: driver.token, body: {} }));
     o = await advance(driver.token, o);
     await call(`/orders/${o.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'refused' } });
     await call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'fraud' } }); // one word, still support's own text
-    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
+    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action, reason: 'Received at office' } });
   }
   let kept = await backAtOffice();
   assert.equal(kept.status, 'returned');
+  assert.equal((await call(`/admin/orders/${kept.id}/office`, { token: admin.token })).canReceive, true);
   await call(`/admin/orders/${kept.id}/office`, { token: customer.token, body: { action: 'received', note: 'Shelf A' }, expect: 403 });
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'collected' }, expect: 409 }); // not received yet
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'x' }, expect: 400 }); // a reason is needed
@@ -130,7 +137,7 @@ try {
   assert.equal((await call('/admin/office', { token: admin.token })).items.length, 0);
 
   // Past the hold (non-perishable, 7 days) it may be donated, with the actor recorded.
-  kept = await backAtOffice();
+  kept = await backAtOffice('confirm_return'); // older clients had no separate office command
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' } });
   db.prepare("UPDATE security_events SET created_at = created_at - ? WHERE order_id = ? AND action = 'OFFICE_RECEIVED'").run(8 * 24 * 3_600_000, kept.id);
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'donated', note: 'no' }, expect: 400 }); // donating says why

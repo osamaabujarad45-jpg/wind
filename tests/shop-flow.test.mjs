@@ -16,7 +16,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,shop';
 delete process.env.WIND_SHOP_TOWN;
 delete process.env.OSRM_URL;
-const { persistence, shutdown, server, promote, shopSweep } = await import('../server/main.ts');
+const { persistence, shutdown, server, promote, shopSweep, remindOfficeJobs } = await import('../server/main.ts');
 // One reader for both backends: tests/pg-shop.mjs runs this same file on PostgreSQL.
 const one = (sql, ...args) => persistence.atomic({ purpose: 'test' }, () => persistence.one(sql, ...args));
 await new Promise(resolve => server.listen(0, resolve));
@@ -328,6 +328,36 @@ try {
     const event = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_CANCELLED'", toCancel.id);
     assert.equal(JSON.parse(event.detail).exceptionAt, episode);
   } finally { Date.now = realNow2; }
+
+  const officeOrder = await stuckAtHandover();
+  const officeId = officeOrder.id;
+  await call(`/merchant/orders/${officeId}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+  const shopCode = (await call(`/orders/${officeId}`, { token: admin.token })).shop.pickupCode;
+  await call(`/orders/${officeId}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: shopCode, check: { result: 'ok' } } });
+  await call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent',
+    seals: [{ no: 1, intact: true }] } });
+  const resolveReturn = `/admin/orders/${officeId}/resolve`;
+  await call(resolveReturn, { token: admin.token, body: { action: 'return', reason: 'Recipient absent' } });
+  await call(resolveReturn, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Shop closed, brought to office' } });
+  const trip = await one("SELECT amount_agorot FROM shop_ledger WHERE business_ref = ?", `shop-trip-${officeId}`);
+  assert.equal(trip.amount_agorot, 3000, 'captain gets the delivery, return and office legs');
+  const officePath = `/admin/orders/${officeId}/office`;
+  assert.equal((await call(officePath, { token: admin.token })).canReceive, true);
+  if (persistence.backend === 'postgres') {
+    for (const account of [owner, customer]) await call('/push/native/register', { token: account.token,
+      body: { expoPushToken: `ExpoPushToken[synthetic-office-${account.user.id}]`, deviceId: randomUUID(), platform: 'android' } });
+  }
+  const kept = await call(officePath, { token: admin.token, body: { action: 'received', perishable: true, note: 'Shop order on shelf A' } });
+  assert.equal(kept.office.until - kept.office.receivedAt, 24 * 3_600_000);
+  assert.equal(await remindOfficeJobs(kept.office.receivedAt + 24 * 3_600_000), 1);
+  if (persistence.backend === 'postgres') {
+    const notices = await persistence.atomic({ purpose: 'test' }, () => persistence.all(`SELECT q.destination, e.payload->>'path' AS url
+      FROM outbox q JOIN domain_events e ON e.id = q.event_id
+      WHERE e.order_id = ? AND e.type = 'notification.requested' AND e.payload->>'kind' = 'office'`, officeId));
+    assert.equal(notices.length, 2);
+    assert.ok(notices.every(notice => notice.destination.startsWith(`expon:${owner.user.id}:`) && notice.url === `/merchant/order/${officeId}`));
+  }
+  assert.equal((await call(officePath, { token: admin.token, body: { action: 'collected' } })).office.closed.action, 'collected');
 
   console.log('Shop flow: place, edit, accept, weighed and substituted lines with consent, ceiling, packing, pickup code lockout and reset, handover exception, sealed delivery with door cash, money rows, captain cash, payout after handover, ratings and order-again passed');
 } finally {

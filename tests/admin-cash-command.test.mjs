@@ -441,8 +441,7 @@ for (const language of ['ar', 'en']) assert.equal(copy[language].err_cash_comman
 // Sol R18-L1: a marked refusal is checked, not resent.
 assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);
 assert.match(screen, /inFlight\.current \|\| storageBroken\.current\) return;/);
-// Sol R11-H1: a saved entry for a captain no longer on the list keeps its Retry, so new entries are never blocked for good.
-assert.match(screen, /open\?\.uncertain && data && !data\.some\(row => row\.driverId === open\.id\)/);
+// A saved entry's standalone Retry is exercised with an unavailable balance feed in admin-review.test.mjs.
 assert.equal(parseCashSlot(null), null);
 assert.deepEqual(parseCashSlot(JSON.stringify(command)), command);
 assert.match(screen, /setOpen\(o => formAfter\(o, outcome\)\)/);

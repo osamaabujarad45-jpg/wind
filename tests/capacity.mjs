@@ -63,7 +63,7 @@ try {
   const {version}=await db.one('SELECT version FROM orders WHERE id=?',officeReturn.id);
   await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',expectedVersion:version});
   assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?',`DRV-17 trip pay order ${officeReturn.id}`),
-    [{amount_cents:-2*Math.round(returningToOffice.price*100),recorded_by:admin.user.id}], 'office receipt without custody recovery pays both legs');
+    [{amount_cents:-3*Math.round(returningToOffice.price*100),recorded_by:admin.user.id}], 'office receipt pays the delivery, return and office legs');
 
   // Vacated shared vehicle no longer blocks a different eligible driver.
   await call(`/orders/${ride.id}/cancel`, {token:f.customer.token,body:{}});
