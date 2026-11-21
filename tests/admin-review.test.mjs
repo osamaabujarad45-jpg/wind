@@ -476,6 +476,60 @@ for (const language of ['ar', 'en']) {
 }
 console.log('Admin cash entry survives a restart and is settled only by its command receipt');
 
+// Sol R25-M2: a recovered handover is read with its status at the check. One the driver already confirmed says so, one the
+// driver disputed asks for a check with the driver, and neither promises it waits under Handovers.
+for (const language of ['ar', 'en']) for (const status of ['pending', 'confirmed', 'disputed']) {
+  const c = copy[language];
+  const store = new Map();
+  const before = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  before.render(); await flush();
+  await tap(before, c.cashRecord);
+  before.loseNextCall();
+  await tap(before, c.cashRecord);
+  before.dialogs.at(-1).yes(); await flush();
+  const sent = before.calls.at(-1).body;
+  const after = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store,
+    receipt: { id: 61, kind: 'remittance', reference: 'R-000061', amountCents: sent.amountCents, note: sent.note ?? '', status } });
+  after.render(); await flush();
+  const tree = after.render();
+  const expected = { pending: c.cashRecorded, confirmed: c.cashRecordedConfirmed, disputed: c.cashRecordedDisputed }[status];
+  assert.ok(shows(tree, fill(expected, { r: model.ltr('R-000061') })), `${language}/${status}: the receipt reads its status`);
+  if (status !== 'pending') assert.ok(!shows(tree, fill(c.cashRecorded, { r: model.ltr('R-000061') })), `${language}/${status}: no promise that it waits for the driver`);
+}
+console.log('Admin cash recovered receipt reads pending, confirmed or disputed');
+
+// Sol R25-M1: a restored entry's Retry fails offline (unconfirmed), then records on the next Retry. The captain has one line,
+// the receipt, beside another captain's kept instruction; a refresh does not bring the failure back.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  const receipts = {};
+  const options = { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null };
+  let view = screen('cash', language, options);
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  view = screen('cash', language, options); view.render(); await flush(); // restarted: X comes back restored
+  assert.ok(shows(view.render(), c.cashUncertain), `${language}: X is restored and uncertain`);
+  view.loseNextCall(); // the same-id resend of this Retry loses its reply: still unconfirmed
+  await tap(view, c.cashRetrySame); await flush();
+  const prefix = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `;
+  assert.ok(shows(view.render(), prefix + 'network'), `${language}: the offline Retry says it failed, naming the captain`);
+  await tap(view, c.cashRetrySame); await flush(); // the resend answers with the entry (the stub's REF-1)
+  let tree = view.render();
+  assert.ok(shows(tree, prefix + fill(c.cashRecorded, { r: model.ltr('REF-1') })), `${language}: the receipt names the captain`);
+  assert.ok(!shows(tree, prefix + 'network'), `${language}: the failed attempt's line is replaced by the receipt`);
+  const refresh = nodes(tree, 'Screen').find(props => props.onRefresh)?.onRefresh;
+  assert.ok(refresh, 'the cash screen refreshes');
+  await refresh(); await flush();
+  tree = view.render();
+  assert.ok(!shows(tree, prefix + 'network'), `${language}: a refresh does not bring the failure back`);
+}
+console.log('Admin cash Retry that records after a failed attempt keeps one line for the entry');
+
 // Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
 // tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both
 // receipts stay on screen, Y names its captain, and nothing is posted again.

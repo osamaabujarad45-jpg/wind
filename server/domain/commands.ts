@@ -81,6 +81,9 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     const cashDecision = /^\/api\/driver\/cash\/(\d+)\/confirm$/.exec(path);
     if (/^\/api\/(?:admin|driver)\/cash/.test(path) && input.currency !== 'ILS') fail(400, 'invalid_currency');
     if (cashDecision) {
+      // Captain row first, then the handover: the office resolution and the confirm handler take them in that order, and
+      // the opposite order here deadlocked against a cashier deciding the same handover (Sol R25-M3).
+      await db.one('SELECT id FROM users WHERE id=? FOR UPDATE', user.id);
       const entry = await db.one('SELECT * FROM cash_entries WHERE id=? AND driver_id=? FOR UPDATE', Number(cashDecision[1]), user.id) ?? fail(404, 'not_found');
       if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) fail(400, 'invalid_version');
       if (input.expectedVersion !== entry.version) fail(409, 'VERSION_CONFLICT');

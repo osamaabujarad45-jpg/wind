@@ -20,10 +20,22 @@ const failing = status => async () => { throw Object.assign(new Error('x'), { st
   assert.equal(io.stored, null, 'a recorded entry clears the saved command');
   assert.equal(io.locks, 1);
 }
-for (const status of [undefined, 0, 500, 502, 401, 403, 408, 429]) { // lost reply, server error, or a session problem: nothing is known
+for (const status of [undefined, 0, 500, 502, 401, 408, 429]) { // lost reply, server error, or a session problem: nothing is known
   const io = rig({ send: failing(status) });
   assert.equal((await sendCashCommand(io, command)).state, 'unconfirmed', String(status));
   assert.equal(io.stored?.requestId, command.requestId, `${status} keeps the command for a same-id resend`);
+}
+{ // Haiku r23 F1: a 403 (no finance duty) is settled by the receipt: none means refused and the slot clears; an entry from an
+  // earlier send means recorded; a failed lookup stays unconfirmed.
+  const none = rig({ send: failing(403) });
+  assert.equal((await sendCashCommand(none, command)).state, 'refused');
+  assert.deepEqual([none.receipts, none.stored], [1, null]);
+  const entry = { id: 5, reference: 'R-5', kind: 'remittance', amountCents: 1250, note: 'Office handover' };
+  const booked = rig({ send: failing(403), receipt: async () => ({ entry }) });
+  assert.equal((await sendCashCommand(booked, command)).state, 'recorded');
+  const unknown = rig({ send: failing(403), receipt: async () => { throw new Error('network'); } });
+  assert.equal((await sendCashCommand(unknown, command)).state, 'unconfirmed');
+  assert.equal(unknown.stored?.requestId, command.requestId);
 }
 for (const status of [400, 404]) { // the server refused this request id before any replay could exist: nothing was recorded
   const io = rig({ send: failing(status) });
@@ -386,13 +398,17 @@ assert.match(screen, /const lockless = Platform\.OS === 'web' && !/);
 assert.match(screen, /setOpen\(null\); note\(c\.cashSettledFirst\);/);
 // Sol R21-M1/M2, Haiku r19 N19-1/N19-2: notices are added within one action, drained entries name their captain, and every
 // settled uncertain form drains the other slot. The behaviour is exercised in tests/admin-review.test.mjs.
-assert.match(screen, /const fail = \(notice: Notice\) => \{ setFailure\(add\(notice\)\);/);
+assert.match(screen, /const fail = \(notice: Notice\) => \{ setMessage\(drop\(notice\)\); setFailure\(add\(notice\)\);/);
+// Sol R25-M1: a verdict replaces its entry's line in the other channel too (behaviour in tests/admin-review.test.mjs).
+assert.match(screen, /const note = \(notice: Notice\) => \{ setFailure\(drop\(notice\)\); setMessage\(add\(notice\)\); \};/);
 // Opus R24: one line per entry (L1), the list error beside kept lines (L2), verdicts re-read in the current language (L3),
 // a restored entry's check named and kept (L5).
 assert.match(screen, /line\.requestId !== notice\.requestId\), notice\]/);
 assert.match(screen, /\[lines\(failure\), error && err\(error\)\]\.filter\(Boolean\)/);
 assert.match(screen, /notice\.entry \? receiptText\(notice\.entry\) : err\(notice\.error\)/);
-assert.match(screen, /fail\(open\.origin \? about\(outcome\.command, \{ error: outcome\.error \}\) : err\(outcome\.error\)\)/);
+// Sol R25-L1: an in-place uncertain form's verdict is named too.
+assert.match(screen, /const named = !!\(open\.origin \|\| open\.uncertain\);/);
+assert.match(screen, /fail\(named \? about\(outcome\.command, \{ error: outcome\.error \}\) : err\(outcome\.error\)\)/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
 // Haiku r20 N20-4 / r21 N21-6: a resolution adds its notice, and no handover is resolved while a recovery may add one.
 assert.match(screen, /note\(c\.cashResolved\);/);

@@ -3585,6 +3585,10 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   // An older cashier bundle cannot see this build's pending request ids and could re-enter a handover under a new one:
   // its fresh writes get the update screen it already shows. Same-id replay above still answers it.
   if (cashClientFenced(client, production)) fail(426, 'client_update_required');
+  // A current cashier always names its request. Without an id a retried lost reply would write a second handover or charge
+  // outside the unique index (Sol R25-M4), so a fresh entry from a build that says who it is, or any production write, needs
+  // one. Scripts and tests elsewhere send no build. A payout keeps its own refusal below.
+  if (requestId === null && !payout && (production || client !== undefined)) fail(400, 'invalid_request_id');
   // After replay, so a saved entry still answers its own request id (Haiku r7 N-1): every new adjustment, payout included, names its reason.
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
   (await persistence.exec('BEGIN IMMEDIATE'));

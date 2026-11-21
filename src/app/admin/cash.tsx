@@ -56,8 +56,11 @@ export default function AdminCash() {
   const drained = (shown: Notice[]) => shown.filter(notice => typeof notice !== 'string');
   // An entry settled again (a marked record met by the next entry) replaces its own earlier line, never doubles it (Opus R24-L1).
   const add = (notice: Notice) => (shown: Notice[]) => [...shown.filter(line => typeof line === 'string' || typeof notice === 'string' || line.requestId !== notice.requestId), notice];
-  const fail = (notice: Notice) => { setFailure(add(notice)); list.current?.scrollTo({ y: 0 }); };
-  const note = (notice: Notice) => setMessage(add(notice));
+  // One line per entry across both channels: a verdict replaces that entry's earlier line in the other channel too, so a
+  // Retry that records after a failed attempt shows the receipt alone, and a refresh cannot bring the failure back (Sol R25-M1).
+  const drop = (notice: Notice) => (shown: Notice[]) => typeof notice === 'string' ? shown : shown.filter(line => typeof line === 'string' || line.requestId !== notice.requestId);
+  const fail = (notice: Notice) => { setMessage(drop(notice)); setFailure(add(notice)); list.current?.scrollTo({ y: 0 }); };
+  const note = (notice: Notice) => { setFailure(drop(notice)); setMessage(add(notice)); };
   // The screen's direction leads and the name is isolated, as on the handover rows (A53 walk; Haiku r20 N20-2).
   const lines = (notices: Notice[]) => notices.map(notice => {
     if (typeof notice === 'string') return notice;
@@ -82,7 +85,11 @@ export default function AdminCash() {
     return null;
   };
 
-  const receiptText = (entry: CashEntry) => entry.reference ? fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : c.cashRecorded, { r: entry.reference }) : c.cashAdjustRecorded;
+  // A handover is read with its status at that moment: a recovered one may already be confirmed, or disputed and needing
+  // the office (Sol R25-M2). Only a pending one promises where it waits.
+  const receiptText = (entry: CashEntry) => !entry.reference ? c.cashAdjustRecorded
+    : fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : entry.status === 'confirmed' ? c.cashRecordedConfirmed
+      : entry.status === 'disputed' ? c.cashRecordedDisputed : c.cashRecorded, { r: ltr(entry.reference) }); // R-/P- read left to right in Arabic (Haiku r23 F4)
   const recorded = (entry: CashEntry) => note(receiptText(entry));
   // An entry settled by a drain names its captain and amount: it may not be the one the cashier just asked about (Sol R21-M1).
   const rows = useRef(data);
@@ -173,10 +180,11 @@ export default function AdminCash() {
         setOpen(o => formAfter(o, outcome));
       }
       if (!alive()) return; // another admin signed in meanwhile: nothing else of this send belongs on their screen
-      // A restored entry's check is about a captain the cashier did not just type in: its line names the captain and stays like
-      // a drained one (Opus R24-L5). A fresh form's verdict is about the form in hand.
-      if (outcome.state === 'recorded') { haptic.success(); if (open.origin) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(open.origin ? about(outcome.command, { error: outcome.error }) : err(outcome.error));
+      // An uncertain entry's check (restored, or in place after a lost reply) can end with its form closed: its line names the
+      // captain and stays like a drained one (Opus R24-L5, Sol R25-L1). A fresh form's verdict is about the form in hand.
+      const named = !!(open.origin || open.uncertain);
+      if (outcome.state === 'recorded') { haptic.success(); if (named) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
+      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : err(outcome.error));
       reload(); reloadPending();
       // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
       // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled

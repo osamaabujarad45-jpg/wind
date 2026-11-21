@@ -8,7 +8,9 @@ export type CashKind = 'remittance' | 'adjustment' | 'payout';
 // `refused`: the server refused it for good but the slot could not be cleared; it is then settled by receipt only (Sol R12-M2).
 export type CashCommand = { type: 'admin_cash'; schemaVersion: 1 | 2; refused?: true; actorId: number; requestId: string; driverId: number;
   kind: CashKind; amountCents: number; note: string };
-export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string; source?: string };
+// `status` is the server's as of the reply: a recovered handover may already be confirmed or disputed (Sol R25-M2).
+export type CashEntry = { id: number; kind?: CashKind; reference?: string | null; amountCents?: number; note?: string; source?: string;
+  status?: string };
 export type CashIO = { read: () => Promise<unknown>; write: (command: CashCommand | null) => Promise<void>;
   receipt: (command: CashCommand) => Promise<{ entry: CashEntry | null }>; send: (command: CashCommand) => Promise<CashEntry>;
   /** One command at a time across tabs: without it a second tab overwrites a saved unconfirmed command. */
@@ -181,9 +183,13 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
       return cleared === 'failed' || cleared === 'unreadable' ? { state: 'recorded', command, entry, stop: true } : { state: 'recorded', command, entry };
     } catch (error) {
       if (servedRefusal(error)) return finalRefusal(io, command, error);
-      if (!refusedForGood(error)) return { state: 'unconfirmed', command, error };
+      // A 403 (this admin lacks finance duty, or lost it) is refused before any write; but a same-id resend after the duty was
+      // removed may still have an entry from its first send. Its receipt decides, as for an unexplained 409, so the form never
+      // stays locked as "may be recorded" with nothing booked (Haiku r23 F1).
+      const forbidden = status(error) === 403;
+      if (!refusedForGood(error) && !forbidden) return { state: 'unconfirmed', command, error };
       // The server said this id holds another request: that is the answer, whatever a receipt shows (Sol R10-L1).
-      if (status(error) === 409 && (error as Error).message !== conflict) { // another 409: only its receipt can tell
+      if (forbidden || (status(error) === 409 && (error as Error).message !== conflict)) { // only its receipt can tell
         try {
           if (!alive()) return { state: 'empty' }; // the lookup would ask as the replacement admin (Sol R14-M2)
           const { entry } = await io.receipt(command);

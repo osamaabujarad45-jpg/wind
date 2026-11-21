@@ -247,6 +247,14 @@ try {
   const remitOld = await fetch(`${base}/admin/cash/remittance`, { method: 'POST', headers: { Authorization: `Bearer ${admin.token}`,
     'Content-Type': 'application/json', 'X-Wind-Client': '10104' }, body: JSON.stringify({ driverId: driver.user.id, amountCents: 1, requestId: randomUUID() }) });
   assert.equal(remitOld.status, 426, 'remittances too: an old bundle cannot re-enter a pending handover under a new id');
+  // Sol R25-M4: a current build cannot write a fresh handover or charge without a request id (a retry would write it twice).
+  const unkeyedRemit = await fetch(`${base}/admin/cash/remittance`, { method: 'POST', headers: { Authorization: `Bearer ${admin.token}`,
+    'Content-Type': 'application/json', 'X-Wind-Client': '10105' }, body: JSON.stringify({ driverId: driver.user.id, amountCents: 1 }) });
+  assert.deepEqual([unkeyedRemit.status, (await unkeyedRemit.json()).error], [400, 'invalid_request_id']);
+  const { requestId: _chargeId, ...unkeyedCharge } = chargeInCredit;
+  const unkeyedChargeReply = await withBuild('10105', unkeyedCharge);
+  assert.deepEqual([unkeyedChargeReply.status, (await unkeyedChargeReply.json()).error], [400, 'invalid_request_id']);
+  assert.equal((await withBuild('10105', chargeInCredit)).status, 200, 'a keyed replay still answers the current build');
   // Haiku r6 F2: a payout names its reason like every adjustment.
   assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 50, intent: 'payout', reason: '', requestId: randomUUID() }, expect: 400 })).error, 'invalid_input');
   const oldForm = { driverId: driver.user.id, amountCents: 100, reason: 'Payout for receipt 12', requestId: randomUUID() };
