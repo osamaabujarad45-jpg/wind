@@ -188,7 +188,7 @@ export default function AdminCash() {
       // captain and stays like a drained one (Opus R24-L5, Sol R25-L1). A fresh form's verdict is about the form in hand.
       const named = !!(open.origin || open.uncertain);
       if (outcome.state === 'recorded') { haptic.success(); if (named) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : cashErr(outcome.error, false));
+      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : cashErr(outcome.error, outcome.state === 'unconfirmed'));
       reload(); reloadPending();
       // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
       // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled

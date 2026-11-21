@@ -577,6 +577,22 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 0, `${language}: nothing stays saved`);
 }
 console.log('Admin cash first send without finance duty says nothing was recorded');
+// Haiku r26 N1: a first send refused with 403 whose receipt lookup fails is still saved and unconfirmed: it says so, and never
+// "nothing was recorded" beside a form that says the receipt may be recorded.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: () => { throw new Error('network'); } });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.forbidNextWrite();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, c.cashFinanceRequired) && !shows(tree, c.cashFinanceRefused), `${language}: the kept entry says it stays saved`);
+  assert.ok(shows(tree, c.cashUncertain) && store.size === 1, `${language}: the entry stays saved and open`);
+}
+console.log('Admin cash first send without finance duty and an unknown receipt keeps the entry');
 
 // Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
 // tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both

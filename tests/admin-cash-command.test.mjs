@@ -420,7 +420,7 @@ assert.match(screen, /\[lines\(failure\), error && err\(error\)\]\.filter\(Boole
 assert.match(screen, /notice\.entry \? receiptText\(notice\.entry\) : cashErr\(notice\.error\)/);
 // Sol R25-L1: an in-place uncertain form's verdict is named too.
 assert.match(screen, /const named = !!\(open\.origin \|\| open\.uncertain\);/);
-assert.match(screen, /fail\(named \? about\(outcome\.command, \{ error: outcome\.error \}\) : cashErr\(outcome\.error, false\)\)/);
+assert.match(screen, /fail\(named \? about\(outcome\.command, \{ error: outcome\.error \}\) : cashErr\(outcome\.error, outcome\.state === 'unconfirmed'\)\)/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
 // Haiku r20 N20-4 / r21 N21-6: a resolution adds its notice, and no handover is resolved while a recovery may add one.
 assert.match(screen, /note\(c\.cashResolved\);/);
@@ -474,3 +474,4 @@ assert.match(copy.ar.cashFinanceRequired, /صلاحية المالية[\s\S]*ا�
 assert.match(copy.en.cashFinanceRefused, /Nothing was recorded/);
 assert.match(copy.ar.cashFinanceRefused, /لم يُسجَّل شيء/);
 assert.match(copy.en.cashFinanceRequired, /another account or device/);
+assert.match(copy.ar.cashFinanceRequired, /حساب أو جهاز آخر/); // Haiku r26 N2
