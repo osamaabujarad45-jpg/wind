@@ -68,7 +68,7 @@ export function registerOfficeRoutes(route: Register, deps: Deps) {
     deps.need(user, 'admin');
     const id = Number(params[0]);
     if (!Number.isSafeInteger(id) || id < 1) deps.fail(400, 'invalid_input');
-    const order = await deps.db.one('SELECT status, service FROM orders WHERE id = ?', id);
+    const order = await deps.db.one('SELECT status, service FROM orders WHERE id = ?', id) ?? deps.fail(404, 'not_found');
     const canReceive = order?.status === 'returned' && ['parcel', 'freight', 'shop'].includes(order.service) && await viaOffice(deps.db, id);
     const actor = await staffActor(deps.db, user);
     const canManage = ['platform_admin', 'support'].includes(staffRoleOf(actor) ?? '');

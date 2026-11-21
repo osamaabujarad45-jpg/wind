@@ -236,7 +236,7 @@ export default function AdminCash() {
     <ErrorText>{[lines(failure), error && err(error)].filter(Boolean).join('\n')}</ErrorText>
     {message.length > 0 && <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginBottom: 10 }}>{lines(message)}</Txt></View>}
     {/* The saved entry has its own Retry even when the balance feed is unavailable or omits this captain. */}
-    {open?.uncertain && !data?.some(row => row.driverId === open.id) && <Card style={{ marginBottom: 12 }}>
+    {open?.uncertain && (data ? !data.some(row => row.driverId === open.id) : !!error) && <Card style={{ marginBottom: 12 }}>{/* not while the list loads: its captain row may hold the form (Haiku sol-lead L2) */}
       <Txt variant="title">{fill(c.cashPendingElsewhere, { a: money(cents(open.amount) / 100) })}</Txt>
       {!!open.note && <Txt variant="caption">{open.note}</Txt>}
       <Txt variant="caption" style={{ marginTop: 8 }}>{open.origin?.refused ? c.cashRefusedCheck : open.origin && ambiguousLegacy(open.origin) ? c.cashAmbiguousCheck : c.cashUncertain}</Txt>
