@@ -106,4 +106,6 @@ systemctl daemon-reload
 systemctl enable --now caddy >/dev/null
 systemctl reload caddy || systemctl restart caddy
 systemctl enable --now wind-backup.timer >/dev/null
+# Enabled so a reboot brings the API back; started by install-release.sh once a release is in /opt/windapi (Haiku PR #98 H-1).
+systemctl enable wind-api >/dev/null
 echo "provisioned for $HOST"

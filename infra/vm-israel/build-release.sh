@@ -22,9 +22,10 @@ cp -a api-runtime/src "$T/src"
 cp -a api-runtime/node_modules "$T/node_modules"
 cp -a dist "$T/web"
 cp assets/icon.png "$T/web/wind-icon.png"
-install -m 750 infra/vm-student/backup.sh "$T/backup.sh"
+install -m 755 infra/vm-student/backup.sh "$T/backup.sh" # run by the unprivileged service user
 # A release never carries secrets or local databases.
-if find "$T" \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite*' -o -name '*.pem' -o -name '*.key' \) -print | grep -q .; then
+# -print -quit, not `| grep -q`: under pipefail a SIGPIPE'd find made the pipeline fail and the guard pass (Haiku PR #98 M-1).
+if [ -n "$(find "$T" \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite*' -o -name '*.pem' -o -name '*.key' \) -print -quit)" ]; then
   echo "secret or database file in release tree" >&2; exit 1; fi
 # The packaged API must start on its own: a throwaway database on a spare port, parcel only, as production runs.
 DB=$(mktemp /tmp/wind-release-db-XXXXXX); rm -f "$DB"

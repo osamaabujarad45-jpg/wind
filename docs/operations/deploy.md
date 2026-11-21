@@ -38,13 +38,25 @@ its data is backed up and those installs are rebuilt.
 - **Release:** `infra/vm-israel/build-release.sh` runs in the Docker sandbox on a synced checkout of master. It does the
   production web export for `WIND_API_HOST` (default: this address), the runtime dependency closure, and the deploy.md assembly.
   It refuses any secret or database file, dry-runs the packaged API on :4010 and writes a tarball with its SHA-256.
-  1. Copy the tarball to the VM and check the hash.
-  2. Unpack it to `/opt/windapi-new`.
-  3. Dry-run it as `wind` on :4010 with a throwaway database.
-  4. Move the current tree to `/opt/windapi-old-<time>`, then move the new one in and start the service.
-  5. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
+  1. Copy the tarball and `infra/vm-israel/install-release.sh` to the VM.
+  2. Run `sudo bash install-release.sh /tmp/wind-release.tar.gz <sha256>`. It:
+     - checks the hash;
+     - unpacks the archive's `windapi/` directory to `/opt/windapi-new`;
+     - dry-runs it as `wind` on :4010 with a throwaway database (a failure leaves the live service untouched);
+     - moves the current tree to `/opt/windapi-old-<time>`, moves the new one in, and starts the service.
+  3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
+- **Rollback:**
+  1. Freeze cash writes and return decisions, as the release notes below say.
+  2. `sudo systemctl stop wind-api`.
+  3. `sudo mv /opt/windapi /opt/windapi-bad-<time>` and `sudo mv /opt/windapi-old-<time> /opt/windapi`.
+  4. `sudo systemctl start wind-api`, then run the deployment check.
+  - `/data/wind.db` stays.
+  - To restore a backup instead: stop the service and copy `/data/backups/wind-<date>.db` over `/data/wind.db`, as user `wind`. Remove `wind.db-wal` and `wind.db-shm` first. Then start the service.
+- **Admin commands** run as the service user with its environment, so the files stay owned by `wind`:
+  `sudo bash -c 'set -a; . /etc/wind-api.env; set +a; cd /opt/windapi && sudo -E -u wind env NODE_ENV=production DB_PATH=/data/wind.db /opt/node/bin/node server/main.ts verify-phone 05XXXXXXXX --phone-verified'`
+  Then run the same with `promote 05XXXXXXXX`.
 - **21 November release:** master `8df0f778` (PR #97). Deployment check 10/10. The first backup was written. The database
-  is fresh: users register again, then an admin is made with `verify-phone` and `promote` as below (run with `sudo -u wind`).
+  is fresh: users register again, then an admin is made with the admin commands above.
 - **Open:**
   - Back up `/data/wind.db` from the student host once its account can be signed in again.
   - Rebuild the APKs for this address (needs a new EAS token).
