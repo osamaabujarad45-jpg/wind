@@ -238,7 +238,7 @@ try {
   sent.length = 0;
   await resolve('confirm_return', 'Sender handed it back at the shop');
   await settle();
-  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'returned']]);
+  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'return_complete']]);
   // Support, money, safety and plans (SPEC-notification-audit.md): each change someone waits on reaches that person.
   const newcomer = await call('/auth/register', { body: { phone: '0599150009', name: 'Yara', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const newcomerBrowser = ownBrowser();

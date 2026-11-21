@@ -337,7 +337,7 @@ CREATE TABLE IF NOT EXISTS courier_block_reviews (
   order_id INTEGER PRIMARY KEY REFERENCES orders(id),
   driver_id INTEGER NOT NULL REFERENCES users(id),
   blocked_by INTEGER NOT NULL REFERENCES users(id),
-  service TEXT NOT NULL CHECK (service IN ('parcel','freight')),
+  service TEXT NOT NULL CHECK (service IN ('parcel','freight','shop')),
   from_status TEXT NOT NULL,
   trip_pay_cents INTEGER NOT NULL CHECK (trip_pay_cents >= 0),
   blocked_at INTEGER NOT NULL,

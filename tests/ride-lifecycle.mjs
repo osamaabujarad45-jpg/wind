@@ -193,6 +193,11 @@ try {
   assert.equal((await noShow(who.driver.token, missed)).ok, true);
   const ended = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
   assert.equal(ended.status, 'cancelled');
+  const replayed = await extend(h.customer.token);
+  assert.equal(replayed.ride.graceExtended, true, 'the previously accepted extension can still be acknowledged after no-show');
+  assert.equal(replayed.ride.graceUntil, ended.ride.graceUntil);
+  assert.equal(replayed.ride.boardingCode, undefined, 'a replay after cancellation never reveals a boarding code');
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_GRACE_EXTENDED'", missedOrder.id)).n), 1);
   assert.equal((await h.db.one('SELECT commission FROM orders WHERE id=?', missedOrder.id)).commission, null);
   assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_NO_SHOW'", missedOrder.id)).n), 1);
   assert.ok(await h.db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='order.changed' AND payload->>'status'='cancelled'", missedOrder.id));

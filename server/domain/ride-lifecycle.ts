@@ -236,10 +236,10 @@ export class RideLifecycle {
     // A tap or retry from before a reassignment never extends the next captain's grace (Sol R2-M2).
     if (Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
     const viewer = { id: user.id, role: user.role };
-    if (!['assigned', 'at_pickup'].includes(String(order.status)) || order.driver_id == null) this.fail(409, 'ride_grace_not_running');
     const ride = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId);
     if (!ride || ride.arrived_at == null || Number(ride.assignment_epoch) !== Number(order.assignment_epoch)) this.fail(409, 'ride_grace_not_running');
     if (ride.grace_extended_at != null) return { ok: true, orderId, ride: await this.summary(orderId, viewer, order) };
+    if (!['assigned', 'at_pickup'].includes(String(order.status)) || order.driver_id == null) this.fail(409, 'ride_grace_not_running');
     const now = Date.now();
     if (now >= graceEnd(ride)) this.fail(409, 'ride_grace_not_running');
     await this.db.run('UPDATE ride_lifecycle SET grace_extended_at=?,updated_at=? WHERE order_id=? AND grace_extended_at IS NULL', now, now, orderId);

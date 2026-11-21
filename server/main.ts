@@ -3827,10 +3827,8 @@ const editUser: Handler = async ({ user, params, body }) => {
       else { // in custody: support recovers it and confirms the return to the sender
         // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's. A captain
         // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
-        if (o.service === 'shop' && persistence.backend === 'postgres' && await blockReviewsAvailable()) await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
-          SELECT ?, ?, ?, 'shop', ?, delivery_fee_agorot, ?, ? FROM shop_orders WHERE order_id = ? ON CONFLICT (order_id) DO NOTHING`, o.id, target.id, user.id, o.status, now, twoWorkingDays(now), o.id);
-        // DRV-17: a parcel or freight captain's trip pay waits on the same review.
-        if (shippingOrder(o) && await captainPayAvailable()) await createShippingBlockReview(o, target.id, user.id, o.status, now);
+        const reviewAvailable = o.service === 'shop' ? await blockReviewsAvailable() : shippingOrder(o) && await captainPayAvailable();
+        if (reviewAvailable) await createDeliveryBlockReview(o, target.id, user.id, o.status, now);
         if (o.status !== 'returning') {
           (await run("UPDATE orders SET status = 'returning', return_code = ?, updated_at = ? WHERE id = ?", String(randomInt(1000, 10000)), now, o.id));
           (await run('DELETE FROM proof_attempts WHERE order_id = ?', o.id));
@@ -3857,33 +3855,37 @@ const blockReviewsAvailable = async () => persistence.backend === 'sqlite'
 const hebronWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Hebron', weekday: 'short' });
 const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (!['Fri', 'Sat'].includes(hebronWeekday.format(t))) n++; } return t; };
 const custodyStatuses = ['in_transit', 'on_hold', 'returning'];
-async function createShippingBlockReview(order: Row, driverId: number, blockerId: number, from: string, blockedAt: number, dueAt = twoWorkingDays(blockedAt)) {
-  const trips = Math.max(1, await shippingDeliveryAttempts(order));
+async function createDeliveryBlockReview(order: Row, driverId: number, blockerId: number, from: string, blockedAt: number, dueAt = twoWorkingDays(blockedAt)) {
+  const pay = order.service === 'shop'
+    ? Number(((await one('SELECT delivery_fee_agorot FROM shop_orders WHERE order_id = ?', order.id)) ?? fail(409, 'shop_state')).delivery_fee_agorot)
+    : Math.max(1, await shippingDeliveryAttempts(order)) * fareCents(order);
   return (await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, trips * fareCents(order), blockedAt, dueAt)).changes;
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, pay, blockedAt, dueAt)).changes;
 }
 // Best effort: a database this release cannot read yet (a legacy file mid-migration) logs and starts; nothing is lost, the next start retries.
-await persistence.scope(async () => {
-  if (!(await captainPayAvailable())) return;
-  // Recover missed shipping reviews at startup, including blocks an older binary recorded during a rollback.
+export const recoverBlockReviews = () => persistence.scope(async () => {
+  if (!(await blockReviewsAvailable())) return;
+  const services = await captainPayAvailable() ? "('parcel','freight','shop')" : "('shop')";
+  // Recover missed delivery reviews at startup, including blocks an older binary recorded during a rollback.
   const missing = await all(`SELECT o.id, o.service, o.price, o.driver_id, o.assignment_epoch, o.assigned_at, e.actor_id, e.detail, e.created_at
     FROM security_events e JOIN orders o ON o.id = e.order_id
-    WHERE e.action = 'COURIER_BLOCKED' AND o.service IN ('parcel','freight') AND o.driver_id IS NOT NULL
+    WHERE e.action = 'COURIER_BLOCKED' AND o.service IN ${services} AND o.driver_id IS NOT NULL
       AND o.status IN ('returning','returned') AND NOT EXISTS (SELECT 1 FROM courier_block_reviews b WHERE b.order_id = o.id)
     ORDER BY e.id DESC`);
   const recoveredAt = Date.now();
   const dueAt = twoWorkingDays(recoveredAt); // from the recovery, not the original block (R5-L2)
   for (const order of missing) {
     const detail = auditDetail(order);
-    if (Number(detail.driverId) !== order.driver_id || !custodyStatuses.includes(detail.from)
+    const inCustody = custodyStatuses.includes(detail.from) || (order.service === 'shop' && detail.from === 'at_pickup');
+    if (Number(detail.driverId) !== order.driver_id || !inCustody || detail.custody === false || order.created_at < (order.assigned_at ?? 0)
       || (detail.assignmentEpoch != null && detail.assignmentEpoch !== order.assignment_epoch)) continue;
     const context = { orderId: order.id, driverId: order.driver_id };
     try {
       await persistence.exec('BEGIN IMMEDIATE');
       if (!(await settleableDriver(order.driver_id))) logServerError('block_review_driver_departed', undefined, context);
-      else {
+      else if (order.service !== 'shop' || !(await one("SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = 'trip_pay'", order.id))) {
         // blocked_at stays the original audit time. The recovered marker commits with the review.
-        const inserted = await createShippingBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
+        const inserted = await createDeliveryBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
         if (inserted) await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_RECOVERED', ?, ?)`,
           order.actor_id, order.id, JSON.stringify({ driverId: order.driver_id, dueAt, recoveredAt }), recoveredAt);
       }
@@ -3894,6 +3896,7 @@ await persistence.scope(async () => {
     }
   }
 }).catch(error => logServerError('maintenance_failed', error));
+await recoverBlockReviews();
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
   cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
 registerBlockReviewRoutes(route, async ({ user, params, body }) => {

@@ -95,7 +95,7 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     For PostgreSQL, also compare captain receivables and operating-expense journals to those entries before resuming imports.
     The finance lead records any differences and resolves them before reopening payouts and import.
   - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the booked fare per leg. Support custody recovery pays
-    one leg. A courier block waits for a second admin's clearing review on either database. On API startup, missing shipping
+    one leg. A courier block waits for a second admin's clearing review on either database. On API startup, missing shipping and shop
     reviews are recovered from custody-block audits for drivers who can still settle cash. The review keeps the original
     block time and is due two working days after recovery. The API logs skipped reviews for departed drivers. Every pre-pickup
     cancellation after assignment and every failed pickup goes to support review. Validated distance informs the suggested

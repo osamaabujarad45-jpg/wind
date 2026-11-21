@@ -16,7 +16,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,shop';
 delete process.env.WIND_SHOP_TOWN;
 delete process.env.OSRM_URL;
-const { persistence, shutdown, server, promote, shopSweep, remindOfficeJobs } = await import('../server/main.ts');
+const { persistence, shutdown, server, promote, shopSweep, remindOfficeJobs, recoverBlockReviews } = await import('../server/main.ts');
 // One reader for both backends: tests/pg-shop.mjs runs this same file on PostgreSQL.
 const one = (sql, ...args) => persistence.atomic({ purpose: 'test' }, () => persistence.one(sql, ...args));
 await new Promise(resolve => server.listen(0, resolve));
@@ -333,11 +333,14 @@ try {
     assert.equal(JSON.parse(event.detail).exceptionAt, episode);
   } finally { Date.now = realNow2; }
 
-  const officeOrder = await stuckAtHandover();
+  async function shopInTransit() {
+    const atShop = await stuckAtHandover();
+    await call(`/merchant/orders/${atShop.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+    const code = (await call(`/orders/${atShop.id}`, { token: admin.token })).shop.pickupCode;
+    return call(`/orders/${atShop.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code, check: { result: 'ok' } } });
+  }
+  const officeOrder = await shopInTransit();
   const officeId = officeOrder.id;
-  await call(`/merchant/orders/${officeId}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
-  const shopCode = (await call(`/orders/${officeId}`, { token: admin.token })).shop.pickupCode;
-  await call(`/orders/${officeId}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: shopCode, check: { result: 'ok' } } });
   await call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent',
     seals: [{ no: 1, intact: true }] } });
   const resolveReturn = `/admin/orders/${officeId}/resolve`;
@@ -374,6 +377,36 @@ try {
     assert.ok(notices.every(notice => notice.destination.startsWith(`expon:${owner.user.id}:`) && notice.url === `/merchant/order/${officeId}`));
   }
   assert.equal((await call(officePath, { token: admin.token, body: { action: 'collected' } })).office.closed.action, 'collected');
+
+  const carried = await shopInTransit();
+  const carriedId = carried.id;
+  const reviewPath = `/admin/orders/${carriedId}/block-review`;
+  await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  const returned = await call(`/admin/orders/${carriedId}/resolve`, { token: admin.token,
+    body: { action: 'confirm_office_return', reason: 'Support delivered the recovered goods' } });
+  assert.equal(returned.blockReview.tripPayCents, 1000, 'the block opens a one-leg review on both databases');
+  assert.equal(await one('SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = ?', carriedId, 'trip_pay'), undefined);
+  // Older releases could leave only the audit and no review row.
+  await persistence.atomic({ purpose: 'test' }, async () => {
+    await persistence.run('DELETE FROM courier_block_reviews WHERE order_id = ?', carriedId);
+    await persistence.run("UPDATE security_events SET detail = ? WHERE order_id = ? AND action = 'COURIER_BLOCKED'",
+      JSON.stringify({ driverId: captain.user.id, from: 'in_transit' }), carriedId);
+    await persistence.run("INSERT INTO security_events(actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)",
+      admin.user.id, officeId, JSON.stringify({ driverId: captain.user.id, from: 'in_transit' }), Date.now());
+  });
+  await recoverBlockReviews();
+  assert.equal((await call(`/orders/${carriedId}`, { token: admin.token })).blockReview.tripPayCents, 1000);
+  assert.equal(await one('SELECT 1 FROM courier_block_reviews WHERE order_id = ?', officeId), undefined, 'an already-paid legacy return cannot be paid again');
+  const verdict = { cleared: true, note: 'Support cleared the captain' };
+  await err(reviewPath, { token: admin.token, body: verdict }, 409, 'second_admin_required');
+  const reviewerPhone = '0599510091';
+  await call('/auth/register', { body: { phone: reviewerPhone, name: 'Second admin', password: 'secret1' } });
+  await promote(reviewerPhone);
+  const reviewer = await call('/auth/login', { body: { phone: reviewerPhone, password: 'secret1' } });
+  const approvedPay = await call(reviewPath, { token: reviewer.token, body: verdict });
+  assert.equal(approvedPay.paidCents, 1000);
+  assert.deepEqual(await call(reviewPath, { token: reviewer.token, body: verdict }), approvedPay);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM shop_ledger WHERE order_id = ? AND kind IN ('trip_pay','opex_trip')", carriedId)).n), 2);
 
   console.log('Shop flow: place, edit, accept, weighed and substituted lines with consent, ceiling, packing, pickup code lockout and reset, handover exception, sealed delivery with door cash, money rows, captain cash, payout after handover, ratings and order-again passed');
 } finally {

@@ -22,6 +22,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
+  if (Object.hasOwn(input, '__proto__')) fail(400, 'invalid_input');
   if ((path === '/api/admin/cash/adjustment' && (input.source === 'payout' || input.intent === 'payout')) ||
     (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path)
       && ['confirm_return', 'confirm_office_return', 'confirm_sender_return'].includes(input.action))
@@ -92,7 +93,9 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
       if (input.amountCents !== entry.amount_cents) fail(409, 'cash_amount_changed');
     }
     if (input.currency !== undefined && input.currency !== 'ILS') fail(400, 'invalid_currency');
-    Object.keys(body).forEach(key => delete body[key]); Object.assign(body, input);
+    Object.keys(body).forEach(key => delete body[key]);
+    // Define the normalized request fields directly so copying them cannot invoke an inherited setter.
+    Object.defineProperties(body, Object.getOwnPropertyDescriptors(input));
     // Shared installed handlers retain every custody, price and proof rule.
     if (body.requestId === undefined) body.requestId = commandId;
     response = await invoke();
