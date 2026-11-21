@@ -146,6 +146,7 @@ try {
   // goods are not shelved against it; office intake needs the typed command with its carrier (Kimi review of the Sol lead).
   const markerless = await backAtOffice('confirm_return');
   assert.equal((await call(`/admin/orders/${markerless.id}/office`, { token: admin.token })).canReceive, false);
+  assert.equal(JSON.parse(db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED' ORDER BY id DESC LIMIT 1").get(markerless.id).detail).handoff, 'unspecified');
   await call(`/admin/orders/${markerless.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' }, expect: 409 });
   kept = await backAtOffice();
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' } });

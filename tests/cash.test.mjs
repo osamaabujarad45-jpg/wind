@@ -216,6 +216,7 @@ try {
   // The office leg follows who carried the goods: a missing carrier is refused before anything changes.
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', reason: 'Received at office' }, expect: 400 });
   await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', carrier: 'captain', reason: 'Sender has it' }, expect: 400 });
+  assert.equal((await call(`/orders/${supportReturn.id}`, { token: admin.token })).status, 'returning', 'a refused confirmation changes nothing');
   const officeReturn = { action: 'confirm_office_return', carrier: 'captain', reason: 'Received at office' };
   const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: officeReturn });
   assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
@@ -236,6 +237,8 @@ try {
   await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
   await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Staff brought it to the office' } });
   const staffPay = 2 * Math.round(staffReturn.price * 100); // one attempt and the return leg, no office leg
+  const carriers = await persistence.all("SELECT order_id, detail FROM security_events WHERE action = 'EXCEPTION_RESOLVED' AND order_id IN (?, ?) ORDER BY id", supportReturn.id, staffReturn.id);
+  assert.deepEqual(carriers.map(r => JSON.parse(r.detail)).filter(d => d.handoff === 'office').map(d => d.carrier), ['captain', 'staff'], 'the audit records who carried the goods');
   assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), staffReturn).map(e => e.amountCents), [-staffPay]);
 
   await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
