@@ -15,8 +15,8 @@
 #   a failed restore never lifts an earlier hold. Apply them again (docs/operations/deploy.md), then:
 #   sudo rm /etc/wind-ingress-hold && sudo systemctl start caddy
 set -euo pipefail
+COPY=$(realpath -s -- "${1:?backup file}"); OPEN=${2:-} # absolute before the cd below (Haiku C1)
 cd / # the service user's commands never start in a directory it cannot read
-COPY=${1:?backup file}; OPEN=${2:-}
 [ -z "$OPEN" ] || [ "$OPEN" = --open ] || { echo "usage: restore.sh <file> [--open]" >&2; exit 1; }
 DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 [ -f "$COPY" ] || { echo "no such backup: $COPY" >&2; exit 1; }
@@ -100,10 +100,10 @@ trap on_exit EXIT
 trap 'exit 130' INT TERM HUP
 
 # The service user reads the backup by its path and writes the staged copy: root never opens a path wind could have planted as
-# a symlink (a backup in wind's /data/backups; Haiku N1, F1). A file wind cannot read is refused: put it where wind can first,
-# e.g. sudo install -o wind -g wind -m 600 <file> /data/backups/.
+# a symlink (a backup in wind's /data/backups; Haiku N1, F1). A file wind cannot read is refused: the operator stages it with
+# root reading only the file and wind writing the copy (docs/operations/deploy.md; Haiku W1).
 as_wind sh -c 'umask 077; cat -- "$1" > "$2"' sh "$COPY" "$WORK/wind.db" \
-  || { say "the service user cannot read $COPY: sudo install -o wind -g wind -m 600 $COPY /data/backups/ and restore that"; exit 1; }
+  || { say "could not stage $COPY (unreadable by the service user, or no space). Stage it with: sudo cat -- <file> | sudo -u wind sh -c 'umask 077; cat > \"\$1\"' sh /data/backups/<name>.db"; exit 1; }
 sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB);

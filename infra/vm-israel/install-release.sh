@@ -19,8 +19,8 @@
 #    opens only once the previous release is ready again; otherwise everything stays closed and the script says so (exit 2).
 # Rollback by hand and the drills: docs/operations/deploy.md.
 set -euo pipefail
+TAR=$(realpath -s -- "${1:?release tarball}"); SUM=${2:?expected sha256} # absolute before the cd below (Haiku C1)
 cd / # the service user's commands never start in a directory it cannot read
-TAR=${1:?release tarball}; SUM=${2:?expected sha256}
 RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
@@ -144,10 +144,11 @@ cp -- "$TAR" "$WORK/release.tar.gz"
 echo "$SUM  $WORK/release.tar.gz" | sha256sum -c -
 mkdir -p "$RELEASES"
 tar -xzf "$WORK/release.tar.gz" -C "$WORK"   # the archive's top-level directory is windapi/
+[ -d "$WORK/windapi" ] && [ ! -L "$WORK/windapi" ] || { say "the archive's windapi/ is not a plain directory"; exit 1; } # Haiku R1
 mv -T "$WORK/windapi" "$REL"
 [ -f "$REL/backup.sh" ] && [ ! -L "$REL/backup.sh" ] || { say "backup.sh in the release is not a regular file"; exit 1; }
 chown -R root:root "$REL" && chmod 755 "$REL" "$REL/backup.sh"
-sudo -u wind test -x "$REL/backup.sh" || { say "backup.sh is not executable by wind"; exit 1; }
+sudo -u wind test -x "$REL/backup.sh" 8<&- || { say "backup.sh is not executable by wind"; exit 1; }
 
 # Dry run on a copy of the live data, while the live release keeps serving.
 DRY=$(mktemp -d); chown wind:wind "$DRY"

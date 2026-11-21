@@ -64,7 +64,7 @@ case "$url" in
 esac`);
 // A signal right after a given rename, such as restore's move of the replacement into place.
 stub('mv', '/bin/mv "$@"; rc=$?; if [ -n "$FAKE_TERM_AFTER_MV_FROM" ]; then case "$*" in *"$FAKE_TERM_AFTER_MV_FROM"*) kill -TERM "$PPID" ;; esac; fi; exit $rc');
-stub('sudo', 'while [ $# -gt 0 ]; do case "$1" in -u) shift 2 ;; -E) shift ;; *) break ;; esac; done; exec "$@"');
+stub('sudo', 'w=""; while [ $# -gt 0 ]; do case "$1" in -u) w=$2; shift 2 ;; -E) shift ;; *) break ;; esac; done; if [ "$w" = wind ] && [ -n "$FAKE_WIND_UNREADABLE" ]; then for a; do case "$a" in *"$FAKE_WIND_UNREADABLE") echo "Permission denied" >&2; exit 1 ;; esac; done; fi; exec "$@"');
 stub('chown', 'exit 0');
 stub('sleep', 'exit 0');
 stub('journalctl', 'echo "(journal)"');
@@ -224,14 +224,28 @@ ${r.err}`);
   for (const [name, write] of [['install-release.sh', /^(mv|cp|cat|touch|chmod|chown|install|rm|ln|find)\s.*\$(DB|SNAP|DATA)\b/],
     ['restore.sh', /^(mv|cp|cat|touch|chmod|chown|install|rm|ln|find)\s.*\$(DB|KEPT|WORK|FAILED|DATA|COPY)\b|<\s*"?\$COPY/]]) {
     const lines = readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8').split('\n');
-    const segments = lines.filter(l => !/^\s*#/.test(l)).flatMap(l => l.replace(/'[^']*'/g, "''").replace(/\s#\s.*$/, '').split(/;|&&|\|\||\bthen\b|\bdo\b|\belse\b|[{(!]/).map(s => s.trim()));
+    // Single-quoted bodies are as_wind sh -c scripts (no root sh -c exists, asserted below); pipes, backgrounding and the
+    // if/elif/while/until/exec/sudo prefixes start a new command too, and literal /data paths count (Haiku G1).
+    assert.ok(!lines.some(l => /(^|[;|&]\s*)(sudo\s+)?(ba)?sh\s+-c/.test(l.trim()) && !/as_wind\s+sh\s+-c/.test(l)), `${name}: no root sh -c`);
+    const segments = lines.filter(l => !/^\s*#/.test(l)).flatMap(l => l.replace(/'[^']*'/g, "''").replace(/\s#\s.*$/, '').replace(/\/data\//g, '$DATA/')
+      .split(/;|&&|\|\||\||&|\bthen\b|\bdo\b|\belse\b|[{(!]/).map(s => s.trim().replace(/^((if|elif|while|until|time|exec)\s+)+/, '').replace(/^sudo\s+(?!-u\s+wind)/, '')));
     const rootWrites = segments.filter(s => write.test(s));
     assert.deepEqual(rootWrites, [], `${name}: root writes under /data`);
   }
   const provisionText = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
   assert.ok(/sudo -u wind touch -- \/data\/\.wind-db-expected/.test(provisionText));
   // The strings the preflight looks for are the ones provision.sh puts in the two units.
-  assert.ok(/ExecStartPre=.*\/etc\/wind-ingress-hold/.test(provisionText) && /ExecStartPre=.*\/data\/\.wind-db-expected/.test(provisionText));
+  const unitText = marker => provisionText.slice(provisionText.indexOf(marker), provisionText.indexOf('\nEOF', provisionText.indexOf(marker)));
+  assert.match(unitText('wind-hold.conf <<'), /ExecStartPre=.*\/etc\/wind-ingress-hold/, 'the hold check is in the Caddy drop-in');
+  assert.match(unitText('wind-api.service <<'), /ExecStartPre=.*\/data\/\.wind-db-expected/, 'the database check is in the API unit');
+  // The detector itself: forms that must be caught.
+  const caught = s => s.replace(/'[^']*'/g, "''").replace(/\/data\//g, '$DATA/').split(/;|&&|\|\||\||&|\bthen\b|\bdo\b|\belse\b|[{(!]/)
+    .map(x => x.trim().replace(/^((if|elif|while|until|time|exec)\s+)+/, '').replace(/^sudo\s+(?!-u\s+wind)/, ''))
+    .some(x => /^(mv|cp|cat|touch|chmod|chown|install|rm|ln|find)\s.*\$(DB|KEPT|WORK|FAILED|DATA|COPY)\b|<\s*"?\$COPY/.test(x));
+  for (const sample of ['if rm -f -- "$DB"; then', 'elif rm -f "$DB"', 'printf x | rm -f "$DB"', 'printf x & rm -f "$DB"', 'sudo rm -f -- "$DB"',
+    'exec rm -f "$DB"', 'sudo cat "$COPY" > /x', 'rm -f /data/wind.db', 'if [ -s x ]; then rm -f -- "$DB"; fi'])
+    assert.ok(caught(sample), `the static guard catches: ${sample}`);
+  assert.ok(!caught('as_wind mv -T -- "$WORK/wind.db" "$DB"'), 'and lets as_wind through');
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');
@@ -336,6 +350,19 @@ ${r.err}`);
   assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false], '--open lifts the hold');
 
   assert.ok(existsSync(join(data, '.wind-db-expected')), 'after a restore the API refuses to start without a database');
+
+  // 8b. A relative path is resolved from the operator's directory, not from / (Haiku C1).
+  setUnits();
+  r = spawnSync('bash', [restore, 'copy.db', '--open'], { encoding: 'utf8', cwd: root, env: env({}) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(notes(db), ['first', 'from-copy']);
+  // A copy the service user cannot stage is refused before anything stops (the stub's wind user cannot read *.unreadable).
+  setUnits();
+  const unreadable = join(root, 'x.unreadable'); writeFileSync(unreadable, 'x');
+  r = run(restore, [unreadable], { FAKE_WIND_UNREADABLE: '.unreadable' });
+  assert.equal(r.status, 1, r.err);
+  assert.match(r.err, /could not stage/);
+  assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
 
   // 9. A copy the API cannot run on: the previous database comes back and Caddy reopens only once it is ready.
   setUnits(); freshDb(db);
