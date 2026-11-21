@@ -11,19 +11,23 @@
 #   back (the replacement is recognised by its inode, not by how far the script got) and the hold is lifted only once that
 #   database answers /api/ready and no earlier hold was in place. A failed recovery stays closed and says so (exit 2).
 # - After a successful restore the HOLD STAYS unless --open is given: blocks, deletions, demotions and password changes made
-#   after the snapshot are not in it. Apply them again (docs/operations/deploy.md), then:
+#   after the snapshot are not in it. --open asserts nothing needs re-applying and lifts any hold, an earlier restore's too;
+#   a failed restore never lifts an earlier hold. Apply them again (docs/operations/deploy.md), then:
 #   sudo rm /etc/wind-ingress-hold && sudo systemctl start caddy
 set -euo pipefail
 COPY=${1:?backup file}; OPEN=${2:-}
 [ -z "$OPEN" ] || [ "$OPEN" = --open ] || { echo "usage: restore.sh <file> [--open]" >&2; exit 1; }
 DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 [ -f "$COPY" ] || { echo "no such backup: $COPY" >&2; exit 1; }
+# Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
+systemctl cat caddy 2>/dev/null | grep -q wind-ingress-hold && systemctl cat wind-api 2>/dev/null | grep -q wind-db-expected \
+  || { echo "re-run provision.sh first: the Caddy hold check or the API database check is missing" >&2; exit 1; }
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
 WORK=$(mktemp -d "$DATA/restore.XXXXXX")   # same filesystem as the live file, so the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
-HALT=""; NEWINO=""; TIMER_STOPPED=""
+HALT=""; NEWINO=""; TIMER_STOPPED=""; RERUN=""
 FAILED="$DATA/wind.db.restore-failed-$(date -u +%Y%m%dT%H%M%SZ)" # a replacement the API failed on, kept for diagnosis
 PREHOLD=""; [ ! -e "$HOLD" ] || PREHOLD=1 # an earlier restore still awaiting reconciliation keeps its hold
 say() { echo "restore: $*" >&2; }
@@ -36,6 +40,7 @@ drain_backup() { # the timer paused, then no backup running or queued: a pre-loc
   # one is safe (its staging file is cleaned up, last-ok moves only after an upload).
   TIMER_STOPPED=1 # armed first: a signal during the stop still restarts the timer (Sol recheck 5)
   systemctl stop wind-backup.timer || return 1
+  case "$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null)" in activating|active|reloading) RERUN=1 ;; esac # a backup that was running is run again at the end
   systemctl stop wind-backup.service || return 1
   local i s jobs; for i in $(seq 1 30); do # a oneshot is "activating" while its script runs, so is-active is not enough
     s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
@@ -47,7 +52,7 @@ drain_backup() { # the timer paused, then no backup running or queued: a pre-loc
 
 reopen() { # the database that was live, ready, then Caddy unless an earlier hold is still owed its reconciliation
   # A host with no database before the restore (a new disk) has nothing to reopen: the API would create an empty one (Sonnet M2).
-  [ -s "$DB" ] || { fatal "there is no previous database to reopen; the restored copy is at $FAILED"; return; }
+  [ -s "$DB" ] || { fatal "there is no previous database to reopen; the copy being restored is kept in $WORK or as $FAILED"; return; }
   systemctl start wind-api || { fatal "the API did not start on the previous database"; return; }
   ready || { fatal "the API did not become ready on the previous database"; return; }
   if [ -n "$PREHOLD" ]; then say "restore failed; the previous database is live again, and the earlier ingress hold stays"; return; fi
@@ -79,6 +84,7 @@ on_exit() {
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
   [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
+  [ -z "$RERUN" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
   [ -n "$HALT" ] || rm -rf -- "$WORK" # kept for diagnosis when a person must look
   exit "$code"
 }
@@ -106,13 +112,14 @@ sync # the hold is on disk before anything moves, so a power loss reboots closed
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 stopped wind-api || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 # Before anything moves: from now on the API never starts on a fresh empty file (Sonnet M2).
-touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected"; sync
+sudo -u wind touch -- "$DATA/.wind-db-expected" 8<&-; sync # as wind: root never writes through a path wind controls (Haiku H1)
 PHASE=swapped # from the first move on, recovery puts the previous files back
 for suffix in '' -wal -shm; do # a stale journal must not replay over the restored file
   [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$KEPT$suffix"
 done
 NEWINO=$(stat -c %i "$WORK/wind.db") # the rename keeps the inode: recovery tells the replacement from the original by it
-mv "$WORK/wind.db" "$DB"; chown wind:wind "$DB"; chmod 600 "$DB"; sync
+sudo -u wind chmod 600 -- "$WORK/wind.db" 8<&- # owned by wind already (chown -R above); root changes nothing through it
+mv "$WORK/wind.db" "$DB"; sync
 systemctl start wind-api
 ready || { journalctl -u wind-api -n 20 --no-pager >&2; say "the API did not become ready on the restored database"; exit 1; }
 trap '' INT TERM HUP # the tail always completes (Sonnet L2, Sol recheck 5)

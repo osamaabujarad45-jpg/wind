@@ -41,7 +41,7 @@ id wind >/dev/null 2>&1 || useradd --system --home /data --shell /usr/sbin/nolog
 # /opt/windapi is install-release.sh's symlink to the active release under /opt/wind-releases; provisioning never creates it.
 mkdir -p /data /data/backups
 chown -R wind:wind /data && chmod 750 /data
-[ ! -s /data/wind.db ] || install -o wind -g wind -m 600 /dev/null /data/.wind-db-expected
+[ ! -s /data/wind.db ] || sudo -u wind touch -- /data/.wind-db-expected # as wind: never through a path wind controls
 
 # Service environment (root-only file; the unit loads it).
 if [ ! -f /etc/wind-api.env ]; then

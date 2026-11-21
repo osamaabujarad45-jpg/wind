@@ -46,6 +46,7 @@ case "$1" in
       if [ "$u" = caddy ] && [ -n "$FAKE_TERM_ON_CADDY_START" ]; then kill -TERM "$PPID"; fi
       done ;;
   is-active) for a; do u=$a; done; s=$(st "$u"); case "$*" in *--quiet*) ;; *) echo "$s" ;; esac; [ "$s" = active ] ;;
+  cat) [ -n "$FAKE_NO_GUARDS" ] || echo "ExecStartPre=... wind-ingress-hold ... wind-db-expected" ;;
   show) if [ "$3" = ActiveState ]; then st "$5"; elif [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
   *) exit 0 ;;
 esac`);
@@ -194,7 +195,8 @@ ${r.err}`);
   const order = r.calls.filter(c => /systemctl (stop|start) (caddy|wind-api|wind-backup\.\w+)$/.test(c));
   assert.deepEqual(order.slice(0, 4), ['systemctl stop caddy', 'systemctl stop wind-backup.timer', 'systemctl stop wind-backup.service', 'systemctl stop wind-api'],
     'the backup is stopped after the freeze and before the API');
-  assert.equal(unit('wind-backup.service'), 'inactive');
+  assert.equal(r.calls.at(-1), 'systemctl start --no-block wind-backup.service', 'and started again at the end');
+  rmSync(join(state, 'wind-backup.service'), { force: true }); rmSync(join(state, '--no-block'), { force: true }); // the rerun is the stub's last call
   first = active();
   // A backup that will not stop: nothing moves, and what was there reopens.
   setUnits();
@@ -203,6 +205,18 @@ ${r.err}`);
   assert.match(r.err, /backup is still running/);
   assert.equal(active(), first);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
+
+  // 2g. Without provision.sh's two unit checks nothing runs.
+  setUnits();
+  for (const file of [install, restore]) {
+    r = run(file, file === install ? release() : [join(data, 'backups', checkpoint)], { FAKE_NO_GUARDS: '1' });
+    assert.equal(r.status, 1, r.err);
+    assert.match(r.err, /re-run provision\.sh first/);
+    assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
+  }
+  // Root never writes through the wind-owned marker path, and a stopped backup runs again (Haiku H1, L1).
+  for (const name of ['install-release.sh', 'restore.sh', 'provision.sh'])
+    assert.ok(!/(chown|touch)[^\n]*wind-db-expected/.test(readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8').replace(/sudo -u wind touch[^\n]*/g, '')), `${name}: the marker is written as wind`);
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');
