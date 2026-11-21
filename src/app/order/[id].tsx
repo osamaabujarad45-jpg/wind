@@ -279,6 +279,9 @@ export default function OrderScreen() {
   const age = location?.ageSeconds ?? 0;
   const later = bookedAhead(order, now) ? order.scheduledFor! : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
+  // Help with this order, one tap from the top on every state (it opened only from the foot of a long page): the help page
+  // prefills the support message with the order number (product audit, 21 Nov).
+  const helpButton = <IconButton icon="help-circle-outline" label={c.helpWithOrder} tone="muted" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />;
   // The booked time stays in the closed sheet until pickup, including the last 30 minutes while drivers already see it.
   const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor ? order.scheduledFor : 0;
 
@@ -706,6 +709,7 @@ export default function OrderScreen() {
           <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>
         </View>
         {!finding && !activeStatuses.includes(order.status) ? <Badge label={statusText(c, order, mine, now)} status={order.status} /> : null}
+        {helpButton}
       </View>}
     </SafeAreaView>
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
@@ -794,7 +798,10 @@ export default function OrderScreen() {
   </View>;
   return <Screen onRefresh={reload}>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={order.status === 'completed' || finding || activeStatuses.includes(order.status) ? undefined : <Badge label={statusText(c, order, mine, now)} status={order.status} />} />
+      right={<Row gap={8} style={{ alignItems: 'center' }}>
+        {order.status === 'completed' || finding || activeStatuses.includes(order.status) ? null : <Badge label={statusText(c, order, mine, now)} status={order.status} />}
+        {helpButton}
+      </Row>} />
     {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {body}

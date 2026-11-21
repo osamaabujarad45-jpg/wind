@@ -191,7 +191,8 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
             <Row style={{ justifyContent: 'space-between' }}>
-              <Txt variant="title" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {/* two lines: one cut a shop order's destination off entirely ("حلويات السلطان → الطابق الثالث …", 21 Nov) */}
+              <Txt variant="title" numberOfLines={2} style={{ flexShrink: 1 }}>
                 {tripTitle(order, language, rtl)}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
@@ -227,7 +228,9 @@ export function PushRow() {
   if (!state || state === 'unsupported') return null;
   async function toggle() {
     if (busy) return;
-    if (state === 'denied') { window.alert(c.pushDeniedHelp); return; } // web only: the browser owns this permission
+    // Blocked: the browser (or the phone) owns the permission. The way back is shown under the row; on a phone, the app's
+    // settings open (a bare "Blocked" with an alert was a dead end, product audit 21 Nov).
+    if (state === 'denied') { if (Platform.OS !== 'web') void Linking.openSettings(); return; }
     setBusy(true);
     try {
       const next = state === 'on' ? (await disablePush(), 'off' as const) : await enablePush(language);
@@ -236,8 +239,11 @@ export function PushRow() {
       AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : next === 'off' ? c.pushDisabled : c.pushDeniedHelp);
     } catch { haptic.error(); setState(await pushState().catch(() => 'off' as const)); } finally { setBusy(false); }
   }
-  return <ListRow icon="notifications-outline" label={c.pushRow} tone="blue" onPress={toggle}
-    value={busy ? '…' : state === 'on' ? c.pushOn : state === 'denied' ? c.pushDenied : c.pushOff} />;
+  return <>
+    <ListRow icon="notifications-outline" label={c.pushRow} tone="blue" onPress={toggle}
+      value={busy ? '…' : state === 'on' ? c.pushOn : state === 'denied' ? c.pushDenied : c.pushOff} />
+    {state === 'denied' && <Txt variant="caption" style={{ paddingHorizontal: 16, paddingBottom: 10 }}>{c.pushDeniedHelp}</Txt>}
+  </>;
 }
 
 // Invite friends (SPEC-referral.md): the code, a share sheet where one exists, progress and ready reward codes.
